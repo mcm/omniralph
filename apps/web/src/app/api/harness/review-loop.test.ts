@@ -47,6 +47,8 @@ import { and, asc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionResult } from "@/lib/action-result";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
 
@@ -103,10 +105,19 @@ const { enqueueReview } = await import("@/lib/review/enqueue");
 const { POST: claim } = await import("./claim/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
-const { cloneAgentDefinition, updateAgentDefinition } =
-  await import("@/app/(app)/settings/agents/actions");
-const { cloneTaskDefinition, updateTaskDefinition } =
-  await import("@/app/(app)/settings/tasks/actions");
+const agentRoute = await import("@/app/api/ui/agents/[id]/route");
+const agentCloneRoute = await import("@/app/api/ui/agents/[id]/clone/route");
+const taskRoute = await import("@/app/api/ui/tasks/[id]/route");
+const taskCloneRoute = await import("@/app/api/ui/tasks/[id]/clone/route");
+type Cloned = ActionResult | { ok: true; id: string };
+const cloneAgentDefinition = async (id: string) =>
+  (await callAction(agentCloneRoute.POST, "POST", { id })) as Cloned;
+const updateAgentDefinition = (id: string, input: unknown) =>
+  callAction(agentRoute.PUT, "PUT", { id }, input);
+const cloneTaskDefinition = async (id: string) =>
+  (await callAction(taskCloneRoute.POST, "POST", { id })) as Cloned;
+const updateTaskDefinition = (id: string, input: unknown) =>
+  callAction(taskRoute.PUT, "PUT", { id }, input);
 const { getAgentDefinition, getTaskDefinition } = await import("@/lib/definitions");
 const { saveRepositorySettings } = await import("@/lib/repositories/settings");
 

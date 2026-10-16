@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -25,13 +24,34 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
-import type { AgentDefinition, NamedContent, TaskType } from "@omniralph/tasks";
+import { useQueryClient } from "@tanstack/react-query";
+import type { NamedContent } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
-import { cloneAgentDefinition, deleteAgentDefinition } from "../actions";
+import { useQueryKeys } from "@/components/query-provider";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import {
+  definitionPath,
+  savedDefinitionSchema,
+  type AgentDetail,
+  type AgentTask,
+} from "@/lib/api/definitions";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { stateLabel } from "@/lib/state-variants";
+import {
+  DefinitionLoading,
+  notFoundOn404,
+  useDefinitionId,
+  useIsAdmin,
+} from "../../definition-page";
+import {
+  definitionDeleted,
+  definitionKeys,
+  definitionsChanged,
+  useAgentDetail,
+} from "../../definition-queries";
 import {
   agentEditHref,
   BuiltinBadge,
@@ -41,20 +61,9 @@ import {
   TaskTypeBadges,
 } from "../agent-parts";
 
-/** A task running on the agent. */
-export interface AgentTask {
-  id: string;
-  name: string;
-  taskType: TaskType;
-  builtin: boolean;
-}
+export type { AgentTask };
 
-interface AgentDetailViewProps {
-  agent: AgentDefinition;
-  builtin: boolean;
-  tasks: AgentTask[];
-  isAdmin: boolean;
-}
+type AgentDetailContentProps = AgentDetail & { isAdmin: boolean };
 
 function Documents({ documents, empty }: { documents: NamedContent[]; empty: string }) {
   if (documents.length === 0) return <Muted>{empty}</Muted>;
@@ -71,28 +80,35 @@ function Documents({ documents, empty }: { documents: NamedContent[]; empty: str
 }
 
 /** Clone (any agent), and Edit and Delete (the organization's own). */
-function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isAdmin">) {
+function AdminActions({ agent, builtin, tasks }: AgentDetail) {
   const router = useRouter();
-  const { pending, run } = useAction();
-
-  const clone = () => {
-    let cloneId: string | undefined;
-    run(
-      async () => {
-        const result = await cloneAgentDefinition(agent.id);
-        if (result.ok && "id" in result) cloneId = result.id;
-        return result;
-      },
-      `Cloned ${agent.name}`,
-      () => {
-        if (cloneId) router.push(agentEditHref(cloneId));
-      },
-    );
-  };
+  const client = useQueryClient();
+  const keys = useQueryKeys();
+  const clone = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.post(definitionPath("agents", agent.id, "clone"), savedDefinitionSchema, {
+        organizationId,
+      }),
+    invalidate: definitionsChanged,
+    success: `Cloned ${agent.name}`,
+    onSuccess: ({ id }) => router.push(agentEditHref(id)),
+  });
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(definitionPath("agents", agent.id), mutationResultSchema, { organizationId }),
+    invalidate: definitionDeleted("agents"),
+    success: `Deleted ${agent.name}`,
+    onSuccess: () => {
+      router.push("/settings/agents");
+      client.removeQueries({ queryKey: definitionKeys(keys).agents.detail(agent.id) });
+    },
+  });
+  // Held until the page changes: the list or the clone's form is on its way.
+  const pending = clone.isPending || clone.isSuccess || remove.isPending || remove.isSuccess;
 
   return (
     <>
-      <Button variant="outline" disabled={pending} onClick={clone}>
+      <Button variant="outline" disabled={pending} onClick={() => clone.mutate()}>
         <IconCopy size={14} />
         Clone
       </Button>
@@ -108,7 +124,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
             <AlertDialogTrigger asChild>
               <Button variant="danger" disabled={pending}>
                 <IconTrash size={14} />
-                Delete
+                {remove.isPending ? "Deleting…" : "Delete"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -122,16 +138,7 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="danger"
-                  onClick={() =>
-                    run(
-                      () => deleteAgentDefinition(agent.id),
-                      `Deleted ${agent.name}`,
-                      () => router.push("/settings/agents"),
-                    )
-                  }
-                >
+                <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
                   Delete
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -143,7 +150,26 @@ function AdminActions({ agent, builtin, tasks }: Omit<AgentDetailViewProps, "isA
   );
 }
 
-export function AgentDetailView({ agent, builtin, tasks, isAdmin }: AgentDetailViewProps) {
+/**
+ * One agent definition of the organization (a built-in or one of its rows) and the tasks
+ * that run on it, live. Unknown IDs, another organization's too, are not found.
+ */
+export function AgentDetailView() {
+  const id = useDefinitionId();
+  const isAdmin = useIsAdmin();
+  const query = useAgentDetail(id);
+  if (query.data) return <AgentDetailContent {...query.data} isAdmin={isAdmin} />;
+  notFoundOn404(query.error);
+  return (
+    <DefinitionLoading
+      breadcrumbs={[{ label: "Agents", href: "/settings/agents" }, { label: "Agent" }]}
+      query={query}
+      what="the agent"
+    />
+  );
+}
+
+export function AgentDetailContent({ agent, builtin, tasks, isAdmin }: AgentDetailContentProps) {
   return (
     <>
       <AppHeader

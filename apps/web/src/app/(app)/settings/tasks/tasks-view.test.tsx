@@ -1,13 +1,33 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import type { ReactNode } from "react";
+import {
+  createTestQueryClient,
+  queryWrapper,
+  TEST_ORGANIZATION_ID,
+  testUser,
+} from "@/components/query-test-utils";
+import { queryKeys } from "@/lib/api/keys";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
-import { TaskDetailView } from "./[id]/task-detail-view";
+import { definitionKeys } from "../definition-queries";
+import { TaskDetailContent } from "./[id]/task-detail-view";
 import { TasksView, type TaskSummary } from "./tasks-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("./actions", () => ({ cloneTaskDefinition: vi.fn(), deleteTaskDefinition: vi.fn() }));
+
+/** The static markup of `node` with a query client holding `tasks` as the task list. */
+const markup = (node: ReactNode, { isAdmin = false, tasks = [] as TaskSummary[] } = {}) => {
+  const client = createTestQueryClient();
+  client.setQueryData(definitionKeys(queryKeys(TEST_ORGANIZATION_ID)).tasks.list, { tasks });
+  const Wrapper = queryWrapper(client, { ...testUser, role: isAdmin ? "admin" : "member" });
+  return renderToStaticMarkup(<Wrapper>{node}</Wrapper>);
+};
+
+/** The tasks page listing `tasks`. */
+const tasksView = (isAdmin: boolean, tasks: TaskSummary[]) =>
+  markup(<TasksView />, { isAdmin, tasks });
 
 const CUSTOM_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -60,17 +80,12 @@ const group = (html: string, label: string) => {
 
 describe("TasksView", () => {
   it("groups built-in and custom tasks under Query, Review and Coding", () => {
-    const html = renderToStaticMarkup(
-      <TasksView
-        isAdmin={false}
-        tasks={[
-          summary(askAboutCode, true, "Code explainer"),
-          summary(reviewPr, true, "Reviewer"),
-          summary(implementStory, true, "Engineer"),
-          CUSTOM_REVIEW,
-        ]}
-      />,
-    );
+    const html = tasksView(false, [
+      summary(askAboutCode, true, "Code explainer"),
+      summary(reviewPr, true, "Reviewer"),
+      summary(implementStory, true, "Engineer"),
+      CUSTOM_REVIEW,
+    ]);
     expect(html.indexOf('aria-label="Query tasks"')).toBeLessThan(
       html.indexOf('aria-label="Review tasks"'),
     );
@@ -107,23 +122,21 @@ describe("TasksView", () => {
   });
 
   it("offers admins a new task", () => {
-    const admin = renderToStaticMarkup(<TasksView isAdmin tasks={[CUSTOM_REVIEW]} />);
+    const admin = tasksView(true, [CUSTOM_REVIEW]);
     expect(admin).toContain('href="/settings/tasks/new"');
-    const member = renderToStaticMarkup(<TasksView isAdmin={false} tasks={[CUSTOM_REVIEW]} />);
+    const member = tasksView(false, [CUSTOM_REVIEW]);
     expect(member).not.toContain('href="/settings/tasks/new"');
   });
 
   it("shows the bare agent ID when the agent doesn't resolve", () => {
-    const html = renderToStaticMarkup(
-      <TasksView isAdmin={false} tasks={[{ ...CUSTOM_REVIEW, agentName: null }]} />,
-    );
+    const html = tasksView(false, [{ ...CUSTOM_REVIEW, agentName: null }]);
     const custom = row(html, "Security review");
     expect(custom).toContain(AGENT_ID);
     expect(custom).not.toContain(`href="/settings/agents/${AGENT_ID}"`);
   });
 });
 
-describe("TaskDetailView", () => {
+describe("TaskDetailContent", () => {
   it("shows a built-in coding task with its timing and PR description task, Clone only for admins", () => {
     const task: TaskDefinition = {
       ...implementStory,
@@ -132,8 +145,8 @@ describe("TaskDetailView", () => {
       prDescriptionTaskId: "builtin:describe-pr",
     };
     const render = (isAdmin: boolean) =>
-      renderToStaticMarkup(
-        <TaskDetailView
+      markup(
+        <TaskDetailContent
           isAdmin={isAdmin}
           task={task}
           builtin
@@ -191,8 +204,8 @@ describe("TaskDetailView", () => {
       model: "claude-sonnet-5-5",
       tokenBudget: { tokens: 50_000 },
     };
-    const html = renderToStaticMarkup(
-      <TaskDetailView
+    const html = markup(
+      <TaskDetailContent
         isAdmin={false}
         task={task}
         builtin={false}
@@ -255,8 +268,8 @@ describe("TaskDetailView", () => {
   it("shows admins Clone, Edit and Delete on a custom task", () => {
     const task: TaskDefinition = { ...reviewPr, id: CUSTOM_ID, name: "Security review" };
     const render = (isAdmin: boolean) =>
-      renderToStaticMarkup(
-        <TaskDetailView
+      markup(
+        <TaskDetailContent
           isAdmin={isAdmin}
           task={task}
           builtin={false}
@@ -279,7 +292,7 @@ describe("TaskDetailView", () => {
 
 describe("TasksView on phone", () => {
   it("repeats the agent, triggers, sink and pool under the name and hides their columns", () => {
-    const html = renderToStaticMarkup(<TasksView isAdmin={false} tasks={[CUSTOM_REVIEW]} />);
+    const html = tasksView(false, [CUSTOM_REVIEW]);
     const tr = row(html, "Security review");
     const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
     const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));

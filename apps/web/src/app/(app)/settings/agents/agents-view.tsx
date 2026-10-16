@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
   Muted,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -18,28 +19,36 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconPlus } from "@tabler/icons-react";
-import type { TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
+import type { AgentSummary } from "@/lib/api/definitions";
+import { useIsAdmin } from "../definition-page";
+import { useAgentList } from "../definition-queries";
 import { agentHref, BuiltinBadge, ModelName, TaskTypeBadges } from "./agent-parts";
 
-export interface AgentSummary {
-  id: string;
-  name: string;
-  description: string;
-  builtin: boolean;
-  taskTypes: TaskType[];
-  model: string | null;
+export type { AgentSummary };
+
+/** The agents table while it loads, shaped like it. */
+function AgentsSkeleton() {
+  return (
+    <Stack gap={3}>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Skeleton key={i} className="h-9 w-full" />
+      ))}
+    </Stack>
+  );
 }
 
-interface AgentsViewProps {
-  agents: AgentSummary[];
-  isAdmin: boolean;
-}
-
-export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
+/**
+ * The organization's agent definitions, live: built-ins first, then its own. Every member
+ * may look; an agent created, changed or deleted elsewhere shows without a reload.
+ */
+export function AgentsView() {
+  const isAdmin = useIsAdmin();
+  const query = useAgentList();
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Agents" }]} />
@@ -72,51 +81,58 @@ export function AgentsView({ agents, isAdmin }: AgentsViewProps) {
             <CardDescription>Built-in agents first, then your organization&apos;s.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table className="list-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className={WIDE_COLUMN}>ID</TableHead>
-                  <TableHead className={WIDE_COLUMN}>Task types</TableHead>
-                  <TableHead className={WIDE_COLUMN}>Model</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {agents.map((agent) => (
-                  <TableRow key={agent.id}>
-                    <TableCell>
-                      <Stack gap={1}>
-                        <div className="definition-name-row">
-                          <Link href={agentHref(agent.id)} className="text-sm text-text-primary">
-                            {agent.name}
-                          </Link>
-                          {agent.builtin && <BuiltinBadge />}
-                        </div>
-                        {agent.description && (
-                          <Muted className="text-xs">{agent.description}</Muted>
-                        )}
-                      </Stack>
-                      <PhoneMeta>
-                        <TaskTypeBadges taskTypes={agent.taskTypes} />
-                        <ModelName model={agent.model} />
-                      </PhoneMeta>
-                    </TableCell>
-                    <TableCell className={WIDE_COLUMN}>
-                      <MonoValue value={agent.id} className="text-xs text-text-secondary" />
-                    </TableCell>
-                    <TableCell className={WIDE_COLUMN}>
-                      <TaskTypeBadges taskTypes={agent.taskTypes} />
-                    </TableCell>
-                    <TableCell className={WIDE_COLUMN}>
-                      <ModelName model={agent.model} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <QueryBoundary query={query} skeleton={<AgentsSkeleton />} what="the agents">
+              {({ agents }) => <AgentsTable agents={agents} />}
+            </QueryBoundary>
           </CardContent>
         </Card>
       </main>
     </>
+  );
+}
+
+/** One row per agent: name, ID, task types and model. */
+export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
+  return (
+    <Table className="list-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead className={WIDE_COLUMN}>ID</TableHead>
+          <TableHead className={WIDE_COLUMN}>Task types</TableHead>
+          <TableHead className={WIDE_COLUMN}>Model</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {agents.map((agent) => (
+          <TableRow key={agent.id}>
+            <TableCell>
+              <Stack gap={1}>
+                <div className="definition-name-row">
+                  <Link href={agentHref(agent.id)} className="text-sm text-text-primary">
+                    {agent.name}
+                  </Link>
+                  {agent.builtin && <BuiltinBadge />}
+                </div>
+                {agent.description && <Muted className="text-xs">{agent.description}</Muted>}
+              </Stack>
+              <PhoneMeta>
+                <TaskTypeBadges taskTypes={agent.taskTypes} />
+                <ModelName model={agent.model} />
+              </PhoneMeta>
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <MonoValue value={agent.id} className="text-xs text-text-secondary" />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <TaskTypeBadges taskTypes={agent.taskTypes} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <ModelName model={agent.model} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

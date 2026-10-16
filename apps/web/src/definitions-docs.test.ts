@@ -85,16 +85,16 @@ describe("docs/definitions.md", () => {
     for (const identifier of identifiers) {
       expect(source.includes(identifier), identifier).toBe(true);
     }
-    // The server actions the forms call.
+    // What the forms' `/api/ui` handlers call.
     for (const action of [
-      "createAgentDefinition",
-      "updateAgentDefinition",
-      "cloneAgentDefinition",
-      "deleteAgentDefinition",
-      "createTaskDefinition",
-      "updateTaskDefinition",
-      "cloneTaskDefinition",
-      "deleteTaskDefinition",
+      "createAgent",
+      "updateAgent",
+      "cloneAgent",
+      "deleteAgent",
+      "createTask",
+      "updateTask",
+      "cloneTask",
+      "deleteTask",
     ]) {
       expect(source).toContain(`export async function ${action}(`);
     }

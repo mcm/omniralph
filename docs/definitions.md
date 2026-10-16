@@ -174,11 +174,11 @@ fencing.
 
 **Save** (and **Create**, and **Clone** of a task) validates the definition with
 `validateAgentDefinition` / `validateTaskDefinition` from `packages/tasks/src/validate.ts`, against
-the organization's agents and tasks and the control panel's sinks. The forms call the server actions
-`createAgentDefinition`, `updateAgentDefinition`, `cloneAgentDefinition` (and the same for tasks:
-`createTaskDefinition`, `updateTaskDefinition`, `cloneTaskDefinition`), and **Delete** calls
-`deleteAgentDefinition` / `deleteTaskDefinition`. A rejected save says "Fix the
-highlighted fields." and shows each error under its field; nothing is stored. The rules, with the
+the organization's agents and tasks and the control panel's sinks. The forms send the definition to
+the `/api/ui/agents` and `/api/ui/tasks` handlers, which call `createAgent`, `updateAgent`,
+`cloneAgent` (and the same for tasks: `createTask`, `updateTask`, `cloneTask`) in
+`apps/web/src/lib/definitions/manage.ts`, and **Delete** calls `deleteAgent` / `deleteTask`. A
+rejected save says "Fix the highlighted fields." and shows each error under its field; nothing is stored. The rules, with the
 field each error appears on and an example message:
 
 | Rule                                                                                                       | Field                    | Example error                                                                                                                                    |
