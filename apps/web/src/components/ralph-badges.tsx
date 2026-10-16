@@ -43,10 +43,22 @@ export function JobStatusBadge({
 }: {
   job: Pick<JobRow, "status"> & { cancelRequested?: boolean };
 }) {
+  // A running job asked to cancel stops after its harness's next heartbeat, which confirms it.
+  if (job.status === "running" && job.cancelRequested) {
+    return (
+      <Badge
+        variant={JOB_STATUS_VARIANTS.running}
+        dot
+        live
+        title="Still running: it stops when its harness confirms with its next heartbeat."
+      >
+        Cancel requested
+      </Badge>
+    );
+  }
   return (
     <Badge variant={JOB_STATUS_VARIANTS[job.status]} dot live={job.status === "running"}>
       {stateLabel(job.status)}
-      {job.status === "running" && job.cancelRequested ? " (canceling)" : ""}
     </Badge>
   );
 }

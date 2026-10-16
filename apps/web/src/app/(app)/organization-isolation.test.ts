@@ -104,8 +104,6 @@ vi.mock("./repositories/[id]/settings/repository-settings-view", () => ({
 vi.mock("./repositories/[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
-vi.mock("./coding/ralph-runs-view", () => ({ RalphRunsView: () => null }));
-vi.mock("./coding/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
 vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
 vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
 vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
@@ -127,8 +125,6 @@ const { default: RepositoryRulesPage } = await import("./repositories/[id]/rules
 const { default: RepositoryReviewsPage } = await import("./repositories/[id]/reviews/page");
 const { default: ReviewsPage } = await import("./reviews/page");
 const { default: ReviewPage } = await import("./reviews/[id]/page");
-const { default: RalphRunsPage } = await import("./coding/page");
-const { default: RalphRunPage } = await import("./coding/[id]/page");
 const { default: TriageRunsPage } = await import("./triage/page");
 const { default: TriageRunPage } = await import("./triage/[id]/page");
 const { default: JobsPage } = await import("./jobs/page");
@@ -391,8 +387,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       repositoryReviews: await RepositoryReviewsPage({ ...params(own.repoId), ...search() }),
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
-      ralphRuns: await RalphRunsPage(search()),
-      ralphRun: await RalphRunPage(params(own.runId)),
       triageRuns: await TriageRunsPage(search()),
       triageRun: await TriageRunPage(params(own.triageRunId)),
       jobs: await JobsPage(search()),
@@ -434,10 +428,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.review!.props.review.id).toBe(own.reviewId);
       expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
-      expect(ids(pages.ralphRuns!.props.runs)).toEqual([own.runId]);
-      expect(pages.ralphRuns!.props.linearConnected).toBe(true);
-      expect(pages.ralphRun!.props.run.id).toBe(own.runId);
-      expect(JSON.stringify(pages.ralphRun!.props.run)).toContain(own.storyId);
       expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
       expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
       expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
@@ -480,7 +470,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     expect((await ReviewsPage(search({ repository: b.repoId }))).props.reviews).not.toContainEqual(
       expect.objectContaining({ id: b.reviewId }),
     );
-    expect((await RalphRunsPage(search({ repository: b.repoId }))).props.runs).toEqual([]);
     expect((await JobsPage(search({ status: "running" }))).props.jobs).toMatchObject([
       { id: a.jobId },
     ]);
@@ -494,7 +483,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       notFound,
     );
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
-    await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
@@ -531,7 +519,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
-      [`/coding/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
       [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
       [
         `/repositories/${b.repoId}/settings`,

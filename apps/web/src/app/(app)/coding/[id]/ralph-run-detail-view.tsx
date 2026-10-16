@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -23,6 +24,7 @@ import {
   CardTitle,
   InlineCode,
   Muted,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -40,16 +42,22 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
+import { Freshness } from "@/components/freshness";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
 import {
   JobStatusBadge,
   RalphRunStatusBadge,
   RalphStoryStatusBadge,
 } from "@/components/ralph-badges";
-import { useAction } from "@/components/use-action";
+import { RelativeTime } from "@/components/relative-time";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import type { RunDetail } from "@/lib/api/runs";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { formatDateTime } from "@/lib/format-date";
 import { jobPageHref, shortJobId } from "@/lib/jobs/list";
 import {
@@ -67,13 +75,13 @@ import {
 } from "@/lib/ralph/display";
 import { RALPH_MESSAGE_STATE_VARIANTS, stateLabel } from "@/lib/state-variants";
 import { ProviderIcon } from "@/components/provider-icon";
-import { stopRalphRun } from "../actions";
 import {
   AgentName,
   LinearIssueLink,
   LinearNotConnected,
   PullRequestLink,
 } from "../ralph-runs-view";
+import { useRunDetail } from "../run-queries";
 import { EmptyValue } from "@/components/empty-value";
 
 /** Characters of a story's last feedback shown in the table (all of it on hover). */
@@ -140,14 +148,25 @@ function WaitingOn({ run }: { run: RalphRunDetail }) {
   );
 }
 
+/**
+ * Stops the run (admins). It shows "Stopping…" until the run reads as stopped; its running
+ * job then shows "Cancel requested" until its harness confirms with its next heartbeat.
+ */
 function StopRunButton({ run }: { run: RalphRunDetail }) {
-  const { pending, run: runAction } = useAction();
+  const stop = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.post(`/api/ui/runs/${run.id}/stop`, mutationResultSchema, { organizationId }),
+    // The run, its jobs (Jobs pages) and the harness running them.
+    invalidate: (keys) => [keys.runs.all, keys.jobs.all, keys.harnesses.all],
+    success: "Run stopped",
+  });
+  const stopping = stop.isPending || stop.isSuccess;
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="danger" disabled={pending}>
+        <Button variant="danger" disabled={stopping}>
           <IconPlayerStop size={14} />
-          Stop
+          {stopping ? "Stopping…" : "Stop"}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -161,10 +180,7 @@ function StopRunButton({ run }: { run: RalphRunDetail }) {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep running</AlertDialogCancel>
-          <AlertDialogAction
-            variant="danger"
-            onClick={() => runAction(() => stopRalphRun(run.id), "Run stopped")}
-          >
+          <AlertDialogAction variant="danger" onClick={() => stop.mutate()}>
             Stop run
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -789,115 +805,158 @@ export function RunFacts({ run, isAdmin }: { run: RalphRunDetail; isAdmin: boole
         <Timestamp iso={run.createdAt} />
       </Fact>
       <Fact label="Last updated">
-        <Timestamp iso={run.updatedAt} />
+        <RelativeTime iso={run.updatedAt} />
       </Fact>
     </FactStrip>
   );
 }
 
-export function RalphRunDetailView({
-  run,
-  linearConnected,
-  year,
-}: {
-  run: RalphRunDetail;
-  /** False while no Linear workspace is connected. */
-  linearConnected: boolean;
-  /** The current year, which job times leave out. */
-  year: number;
-}) {
-  const isAdmin = useCurrentUser().role === "admin";
-  const stoppable = STOPPABLE_RALPH_RUN_STATUSES.includes(run.status);
+function RunContent({ detail, isAdmin }: { detail: RunDetail; isAdmin: boolean }) {
+  const { run, linearConnected } = detail;
   const empty = emptySections(run);
+  // Job times leave out the browser's current year.
+  const year = new Date().getFullYear();
+  return (
+    <>
+      {!linearConnected && <LinearNotConnected isAdmin={isAdmin} />}
+
+      <RunErrorAlert run={run} />
+
+      <WaitingOn run={run} />
+
+      <RunFacts run={run} isAdmin={isAdmin} />
+
+      <StoriesCard run={run} />
+
+      <RecommendationsCard run={run} />
+
+      <EmptySections names={empty} />
+
+      {run.pendingRequests.length > 0 && <PendingRequestsCard run={run} />}
+
+      {run.messages.length > 0 && <MessagesCard run={run} />}
+
+      {run.guidance.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Guidance</CardTitle>
+            <CardDescription>
+              Replies in the agent session, applied to the next story attempts (the latest ten).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ol className="run-guidance">
+              {run.guidance.map((g, i) => (
+                <li key={`${g.at}-${i}`} className="run-guidance-item">
+                  <Timestamp iso={g.at} />
+                  <span className="run-guidance-text">{g.text}</span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
+
+      {run.progress.trim() && (
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Progress log</CardTitle>
+            <CardDescription>Appended to after every finished story.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="run-code-block">{run.progress}</pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} year={year} />}
+    </>
+  );
+}
+
+/** The run's facts and stories while the first load is pending. */
+function RunSkeleton() {
+  return (
+    <>
+      <Skeleton height="4.5rem" />
+      <Card>
+        <CardHeader>
+          <Skeleton width="6rem" height="1.25rem" />
+        </CardHeader>
+        <CardContent>
+          <Stack gap={3}>
+            {Array.from({ length: 4 }, (_, index) => (
+              <Skeleton key={index} width={`${50 + ((index * 17) % 40)}%`} />
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * A coding run's page, live: the run polls (`GET /api/ui/runs/{id}`), so its status,
+ * stories, waiting-on, jobs and progress log move while it's open. A run of another of the
+ * user's organizations switches to it first.
+ */
+export function RalphRunDetailView() {
+  const { id } = useParams<{ id: string }>();
+  const detail = useRunDetail(id);
+  const isAdmin = useCurrentUser().role === "admin";
+  const run = detail.data?.run;
+  const stoppable = run !== undefined && STOPPABLE_RALPH_RUN_STATUSES.includes(run.status);
 
   return (
     <>
       <AppHeader
-        breadcrumbs={[{ label: "Coding tasks", href: "/coding" }, { label: runSourceLabel(run) }]}
+        breadcrumbs={[
+          { label: "Coding tasks", href: "/coding" },
+          { label: run ? runSourceLabel(run) : "Coding task" },
+        ]}
       />
       <main className="detail-main">
         <PageHeader
           title={
-            <>
-              <span className="text-numeric">{runSourceLabel(run)}</span>
-              {run.linearTitle && <> {run.linearTitle}</>}
-            </>
+            run ? (
+              <>
+                <span className="text-numeric">{runSourceLabel(run)}</span>
+                {run.linearTitle && <> {run.linearTitle}</>}
+              </>
+            ) : (
+              <Skeleton width="16rem" height="1.75rem" />
+            )
           }
           meta={
-            <>
-              <RalphRunStatusBadge status={run.status} />
-              <Badge variant="neutral" title={RUN_KIND_DESCRIPTIONS[run.kind]}>
-                {RUN_KIND_LABELS[run.kind]}
-              </Badge>
-            </>
+            run && (
+              <>
+                <RalphRunStatusBadge status={run.status} />
+                <Badge variant="neutral" title={RUN_KIND_DESCRIPTIONS[run.kind]}>
+                  {RUN_KIND_LABELS[run.kind]}
+                </Badge>
+                <Freshness query={detail} />
+              </>
+            )
           }
           actions={
-            <>
-              {run.origin === "linear" && run.linearUrl && (
-                <Button asChild variant="ghost" className="page-header-ghost">
-                  <a href={run.linearUrl} target="_blank" rel="noreferrer">
-                    <IconExternalLink size={14} />
-                    Open in Linear
-                  </a>
-                </Button>
-              )}
-              {isAdmin && stoppable && <StopRunButton run={run} />}
-            </>
+            run && (
+              <>
+                {run.origin === "linear" && run.linearUrl && (
+                  <Button asChild variant="ghost" className="page-header-ghost">
+                    <a href={run.linearUrl} target="_blank" rel="noreferrer">
+                      <IconExternalLink size={14} />
+                      Open in Linear
+                    </a>
+                  </Button>
+                )}
+                {isAdmin && stoppable && <StopRunButton run={run} />}
+              </>
+            )
           }
         />
-
-        {!linearConnected && <LinearNotConnected isAdmin={isAdmin} />}
-
-        <RunErrorAlert run={run} />
-
-        <WaitingOn run={run} />
-
-        <RunFacts run={run} isAdmin={isAdmin} />
-
-        <StoriesCard run={run} />
-
-        <RecommendationsCard run={run} />
-
-        <EmptySections names={empty} />
-
-        {run.pendingRequests.length > 0 && <PendingRequestsCard run={run} />}
-
-        {run.messages.length > 0 && <MessagesCard run={run} />}
-
-        {run.guidance.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Guidance</CardTitle>
-              <CardDescription>
-                Replies in the agent session, applied to the next story attempts (the latest ten).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ol className="run-guidance">
-                {run.guidance.map((g, i) => (
-                  <li key={`${g.at}-${i}`} className="run-guidance-item">
-                    <Timestamp iso={g.at} />
-                    <span className="run-guidance-text">{g.text}</span>
-                  </li>
-                ))}
-              </ol>
-            </CardContent>
-          </Card>
-        )}
-
-        {run.progress.trim() && (
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Progress log</CardTitle>
-              <CardDescription>Appended to after every finished story.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="run-code-block">{run.progress}</pre>
-            </CardContent>
-          </Card>
-        )}
-
-        {run.jobs.length > 0 && <JobsCard run={run} isAdmin={isAdmin} year={year} />}
+        <QueryBoundary query={detail} skeleton={<RunSkeleton />} what="the coding task">
+          {(data) => <RunContent detail={data} isAdmin={isAdmin} />}
+        </QueryBoundary>
       </main>
     </>
   );

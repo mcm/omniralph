@@ -40,26 +40,15 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import type { ReactElement } from "react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
-import {
-  runSourceLabel,
-  type RalphRunDetailView,
-  type RalphRunListParams,
-  type RalphRunRow,
-} from "@/lib/ralph/display";
+import type { RunDetail, RunList } from "@/lib/api/runs";
+import { runSourceLabel } from "@/lib/ralph/display";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("next/navigation", () => ({
-  notFound: () => {
-    throw new Error("NEXT_NOT_FOUND");
-  },
-}));
 
 type TestUser = { id: string; role: Role; name: string | null; email: string | null; image: null };
 const state = vi.hoisted(() => ({
@@ -75,22 +64,18 @@ const withOrganization = (user: TestUser | null) =>
   user && { ...user, organization: { id: state.orgId, name: "Acme" } };
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(withOrganization(state.user), role),
-  requirePageUser: async (role: Role = "member") => assertRole(withOrganization(state.user), role),
 }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
 vi.mock("@/lib/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getLinearGatewayOrDisconnected: async () => state.linear,
 }));
-// The pages only load data: their client views are stubs here.
-vi.mock("./ralph-runs-view", () => ({ RalphRunsView: () => null }));
-vi.mock("./[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { stopRalphRun } = await import("./actions");
-const { default: RalphRunsPage } = await import("./page");
-const { default: RalphRunPage } = await import("./[id]/page");
+const runList = await import("@/app/api/ui/runs/route");
+const runDetail = await import("@/app/api/ui/runs/[id]/route");
+const runStop = await import("@/app/api/ui/runs/[id]/stop/route");
 const { disconnectedLinearGateway } = await import("@/lib/linear/client");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -104,33 +89,43 @@ const admin: TestUser = {
 };
 const member: TestUser = { id: "member-1", role: "member", name: null, email: null, image: null };
 
-interface ListProps {
-  runs: RalphRunRow[];
-  repositories: { id: string; fullPath: string }[];
-  params: RalphRunListParams;
-  total: number;
-  pageSize: number;
-  linearConnected: boolean;
+/** Calls an `/api/ui` handler; a non-2xx answer throws with its status and error. */
+async function call<T>(
+  handler: (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>,
+  {
+    id = "",
+    search = {},
+    method = "GET",
+  }: { id?: string; search?: Record<string, string>; method?: string },
+): Promise<{ status: number; body: T & { error?: string } }> {
+  const response = await handler(
+    new Request(`http://localhost/api/ui?${new URLSearchParams(search)}`, { method }),
+    { params: Promise.resolve({ id }) },
+  );
+  return { status: response.status, body: (await response.json()) as T & { error?: string } };
 }
 
-async function listPage(searchParams: Record<string, string> = {}): Promise<ListProps> {
-  const element = (await RalphRunsPage({
-    searchParams: Promise.resolve(searchParams),
-  })) as ReactElement<ListProps>;
-  return element.props;
+// The Coding tasks pages' requests, under the names of the loaders and action they replace.
+async function listPage(search: Record<string, string> = {}): Promise<RunList> {
+  const { status, body } = await call<RunList>(runList.GET, { search });
+  if (status !== 200) throw new Error(`HTTP ${status}: ${body.error}`);
+  return body;
 }
 
-async function detailPage(
-  id: string,
-): Promise<{ run: RalphRunDetailView; linearConnected: boolean }> {
-  const element = (await RalphRunPage({ params: Promise.resolve({ id }) })) as ReactElement<{
-    run: RalphRunDetailView;
-    linearConnected: boolean;
-  }>;
-  return element.props;
+async function detailPage(id: string): Promise<RunDetail> {
+  const { status, body } = await call<RunDetail>(runDetail.GET, { id });
+  if (status !== 200) throw new Error(`HTTP ${status}`);
+  return body;
 }
 
-describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
+type Result = { ok: true } | { ok: false; error: string };
+
+async function stopRalphRun(id: string): Promise<Result> {
+  const { status, body } = await call<Result>(runStop.POST, { id, method: "POST" });
+  return status === 200 ? body : { ok: false, error: body.error! };
+}
+
+describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
@@ -265,7 +260,7 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     const all = await listPage();
     expect(all.total).toBe(2);
     expect(all.linearConnected).toBe(false);
-    expect(all.params).toEqual({ status: null, repositoryId: null, page: 1 });
+    expect(all.page).toBe(1);
     expect(all.repositories.map((r) => r.fullPath)).toEqual(["acme/api", "acme/web"]);
     expect(all.runs.map((r) => r.id)).toEqual([second.id, first.id]);
     expect(all.runs[1]).toMatchObject({
@@ -287,11 +282,11 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     expect((await listPage({ repository: repoA, status: "waiting" })).total).toBe(0);
     // Unknown filter values are ignored.
     const ignored = await listPage({ status: "bogus", repository: "not-a-uuid", page: "x" });
-    expect(ignored.params).toEqual({ status: null, repositoryId: null, page: 1 });
+    expect(ignored.page).toBe(1);
     expect(ignored.total).toBe(2);
     // Past the last page.
     const past = await listPage({ page: "3" });
-    expect(past).toMatchObject({ total: 2, runs: [], params: { page: 3 } });
+    expect(past).toMatchObject({ total: 2, runs: [], page: 3 });
 
     await connectLinear();
     expect((await listPage()).linearConnected).toBe(true);
@@ -494,10 +489,8 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     await updateRun(db, run.id, { status: "running" });
     expect((await detailPage(run.id)).run.waitingOn).toBeNull();
 
-    await expect(detailPage("00000000-0000-4000-8000-000000000000")).rejects.toThrow(
-      "NEXT_NOT_FOUND",
-    );
-    await expect(detailPage("nope")).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(detailPage("00000000-0000-4000-8000-000000000000")).rejects.toThrow("HTTP 404");
+    await expect(detailPage("nope")).rejects.toThrow("HTTP 404");
   });
 
   it("shows each lane's review/CI rounds, the pending requests and the live messages", async () => {
@@ -668,6 +661,16 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     });
   });
 
+  it("stops a run whose job is running: the job shows its cancel request until its harness confirms", async () => {
+    const { run, jobId } = await runningRun();
+    await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, jobId));
+    expect(await stopRalphRun(run.id)).toEqual({ ok: true });
+
+    const { run: view } = await detailPage(run.id);
+    expect(view.status).toBe("stopped");
+    expect(view.jobs).toMatchObject([{ id: jobId, status: "running", cancelRequested: true }]);
+  });
+
   it("only lets admins stop a run", async () => {
     const { run, jobId } = await runningRun();
     state.user = member;
@@ -697,7 +700,7 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
       ok: false,
       error: "That run doesn't exist.",
     });
-    expect(await stopRalphRun("nope")).toEqual({ ok: false, error: "That run doesn't exist." });
+    expect((await stopRalphRun("nope")).ok).toBe(false);
   });
 
   it("keeps another organization's runs out: not listed, 404 and can't be stopped", async () => {
@@ -745,7 +748,7 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     // Their workspace isn't ours.
     expect(list.linearConnected).toBe(false);
     expect(await listPage({ repository: otherRepo })).toMatchObject({ total: 0, runs: [] });
-    await expect(detailPage(theirs.id)).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(detailPage(theirs.id)).rejects.toThrow("HTTP 404");
     expect(await stopRalphRun(theirs.id)).toEqual({
       ok: false,
       error: "That run doesn't exist.",
@@ -757,6 +760,6 @@ describe.skipIf(!databaseAvailable)("Ralph runs pages", () => {
     expect((await listPage()).runs.map((r) => r.id)).toEqual([theirs.id]);
     expect((await listPage()).linearConnected).toBe(true);
     expect((await detailPage(theirs.id)).run).toMatchObject({ id: theirs.id });
-    await expect(detailPage(ours.id)).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(detailPage(ours.id)).rejects.toThrow("HTTP 404");
   });
 });

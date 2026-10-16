@@ -78,7 +78,9 @@ const jobs = useQuery({
 
 Paginated lists keep `page` (and filters) in the URL (`useSearchParams`) and use `placeholderData:
 keepPreviousData`; wrap the table in `.list-pending` with `aria-busy={query.isPlaceholderData}`, so
-the previous page stays, dimmed, while the next one loads (`repositories-view.tsx`).
+the previous page stays, dimmed, while the next one loads (`repositories-view.tsx`). A filter
+select shows the chosen value at once: hold the choice in state keyed to the URL it was made on,
+query with it, and `router.push` the new URL (`useRunListParams` in `coding/ralph-runs-view.tsx`).
 
 **Polling defaults** (`src/lib/api/query-client.ts`). Every query is live: it refetches every 3s
 while its tab is visible (`refetchInterval: 3000`, `refetchIntervalInBackground: false`), when the
