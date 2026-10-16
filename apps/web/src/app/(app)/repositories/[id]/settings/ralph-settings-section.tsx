@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { Button, Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui";
 import {
   CLAUDE_CODE_TOOLS,

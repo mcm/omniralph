@@ -38,6 +38,10 @@ interface CaptureResult {
   /** The visible text around each "Ralph" on the page (none expected). */
   retiredWording: string[];
   consoleErrors: string[];
+  /** Why the page never showed its content (still loading, or its error boundary). */
+  notRendered: string | null;
+  /** The in-place errors on the page (failed loads), e.g. a code host the fixtures can't reach. */
+  loadErrors: string[];
   error: string | null;
   screenshot: string | null;
   html: string | null;
@@ -207,6 +211,8 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   const retired = results.filter((r) => r.retiredWording.length > 0);
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
   const redirected = results.filter((r) => r.finalPath && r.finalPath !== r.path);
+  const notRendered = results.filter((r) => r.notRendered);
+  const loadErrors = results.filter((r) => r.loadErrors.length > 0);
 
   for (const result of results) {
     if (result.screenshot) console.log(join(outDir, result.screenshot));
@@ -242,6 +248,20 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
     for (const r of redirected)
       summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.path} → ${r.finalPath}`);
   }
+  if (notRendered.length > 0) {
+    summary.push(`\nNot rendered:`);
+    for (const r of notRendered)
+      summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.notRendered}`);
+  } else {
+    summary.push("Every route rendered its content.");
+  }
+  if (loadErrors.length > 0) {
+    summary.push(`\nShows a load error:`);
+    for (const r of loadErrors) {
+      for (const text of r.loadErrors)
+        summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${text}`);
+    }
+  }
   if (failed.length > 0) {
     summary.push(`\nFailed captures:`);
     for (const r of failed) summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.error}`);
@@ -249,7 +269,7 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   summary.push(`Details: ${join(outDir, "results.json")}`);
   log(summary.join("\n"));
 
-  if (failed.length > 0 || retired.length > 0) return 1;
+  if (failed.length > 0 || retired.length > 0 || notRendered.length > 0) return 1;
   if (strict && overflowing.length > 0) return 1;
   return 0;
 }

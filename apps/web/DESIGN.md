@@ -89,9 +89,26 @@ same rules: rime focus, the library's states in both themes, and no local colors
 - **Empty states** use the library's `Empty` (frozen ribbon) with a sentence that says what will
   appear here and how to make it happen (e.g. "Delegate a Linear epic to the Omniralph app to
   start a run").
-- **Loading** uses the whiteout `Skeleton` shaped like the content it replaces.
+- **Live data.** Every page reads its data in the browser from the panel's `/api/ui` endpoints
+  and keeps it current: it refetches every 3 seconds while the tab is visible and as soon as the
+  tab is back (README, Data fetching). A page never asks for a reload to show a change.
+  Pages of in-flight entities show how fresh they are in the header (`Freshness`, "Updated 3s
+  ago"), which turns into a warning with a retry when refetching has failed for 30 seconds.
+  Relative times tick on the browser's clock.
+- **Loading** uses the whiteout `Skeleton` shaped like the content it replaces, shown at once on
+  navigation. A list moving to another page or filter keeps the previous rows, dimmed
+  (`aria-busy`), while the new ones load.
+- **Navigation feedback.** A link whose page is loading (sidebar items, breadcrumbs, tabs, row
+  links, pagination) dims and pulses after a short delay, so fast navigations don't flicker
+  (`components/link.tsx`).
+- **Pending changes.** A save shows its pending state ("Saving…", disabled fieldset); switches
+  and toggles change at once and roll back with a danger toast if the save fails; a change that
+  takes effect on a harness's next heartbeat shows its in-between state ("Saved — waiting for
+  …", "Cancel requested") and then its outcome.
 - **Errors** say what failed, why if known, and what to do next, with a retry where one makes
-  sense.
+  sense. A failed load is shown in place of the content it was loading, with Retry; an
+  unexpected render error replaces the page (sidebar and header stay) with Retry
+  (`(app)/error.tsx`).
 
 ## Do's and Don'ts
 

@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { SettingChangeList, SettingsCard } from "./settings-card";
 
-vi.mock("./use-action", () => ({ useAction: () => ({ pending: false, run: vi.fn() }) }));
+vi.mock("./use-settings-save", () => ({
+  useSettingsSave: () => ({ pending: false, run: vi.fn() }),
+}));
 
 const change = { key: "model", label: "Model", from: "opus", to: "sonnet" };
 

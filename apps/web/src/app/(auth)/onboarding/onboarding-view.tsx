@@ -20,7 +20,7 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconBuilding, IconLogout, IconPlus } from "@tabler/icons-react";
 import { AuthBrand } from "@/components/auth-shell";
-import { useAction } from "@/components/use-action";
+import { useServerAction } from "../use-server-action";
 import { signOutAction } from "@/lib/auth/actions";
 import type { Role } from "@/lib/auth/roles";
 import {
@@ -62,7 +62,7 @@ function OrganizationName({ name, detail }: { name: string; detail?: string }) {
 /** Runs an organization action and, on success, opens the control panel in it. */
 function useOrganizationAction() {
   const router = useRouter();
-  const { pending, run } = useAction();
+  const { pending, run } = useServerAction();
   const open = React.useCallback(
     (action: () => ReturnType<typeof switchOrganizationAction>, success: string) =>
       run(action, success, () => router.push("/")),

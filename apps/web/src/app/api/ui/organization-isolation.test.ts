@@ -1,6 +1,8 @@
 // Every `/api/ui` endpoint against two organizations: a user of one never gets a row of the
-// other, gets a 404 on the other's resources, and only creates rows in their own. Each area
-// adds its endpoints here as it moves from page loaders and server actions to `/api/ui`.
+// other, gets a 404 on the other's resources, and only creates rows in their own; opening a
+// resource of another of their own organizations switches to it (`/api/organizations/enter`).
+// Pages read no data (only the signed-in layout lists the user's organizations, tested here
+// too), so this is where every page's organization isolation is checked.
 import { randomBytes } from "node:crypto";
 import {
   addMember,
@@ -59,9 +61,11 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
+import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import { ENTER_ORGANIZATION_PATH, ORGANIZATION_COOKIE } from "@/lib/auth/routes";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/dispatch", () => ({
@@ -123,10 +127,14 @@ vi.mock("@/lib/auth/session", async () => {
     );
   };
   return {
+    getCurrentUser: async () => (state.userId === null ? null : { id: state.userId }),
     requireUser: async (role: Role = "member") => current(role),
     requireSignedInUser: async () => current("member"),
+    requirePageUser: async (role: Role = "member") => current(role),
   };
 });
+// The signed-in layout's shell is a client component; the test reads the props it gets.
+vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
@@ -199,7 +207,10 @@ const reviewProfile = await import("./review-profiles/[id]/route");
 const harnessDefaults = await import("./harness-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
-const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
+const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
+const { default: AppLayout } = await import("../../(app)/layout");
+const { readEnterOrganizationToken, createEnterOrganizationPath } =
+  await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
 async function call<P extends Record<string, string>>(
@@ -1303,6 +1314,72 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       organizationId: b.orgId,
       next: page,
     });
+  });
+
+  it("lists only the user's own organizations in the signed-in layout", async () => {
+    for (const own of [a, b]) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const layout = await AppLayout({ children: null });
+        expect(layout.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
+      }
+    }
+  });
+
+  it("never switches a non-member to the other organization through the enter route", async () => {
+    state.userId = a.adminId;
+    state.cookies.clear();
+    const enter = async (url: string) =>
+      (await enterOrganization(new NextRequest(`http://localhost${url}`))).status;
+    // Unsigned (a link from another site), signed for someone else, or signed for a.
+    const unsigned = new URLSearchParams({ organization: b.orgId, next: "/" });
+    expect(await enter(`${ENTER_ORGANIZATION_PATH}?${unsigned}`)).toBe(404);
+    for (const userId of [b.adminId, a.adminId]) {
+      const signed = await createEnterOrganizationPath({
+        userId,
+        organizationId: b.orgId,
+        next: "/",
+      });
+      expect(await enter(signed)).toBe(404);
+    }
+    expect((await getActiveOrganization(db, a.adminId))?.id).toBe(a.orgId);
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBeUndefined();
+  });
+
+  it("opens another of the user's organizations' resources by switching to it", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-enter-admin", email: "both-enter@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "admin" },
+      { organizationId: b.orgId, userId: user!.id, role: "admin" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+    state.cookies.clear();
+
+    // The run's page asks the API, which answers 409 with the signed path that switches to
+    // the run's organization and comes back to the page, which then gets the run.
+    const page = `/triage/${b.triageRunId}`;
+    const open = () =>
+      call(triageDetail.GET, {
+        params: { id: b.triageRunId },
+        path: `/api/ui?${new URLSearchParams({ next: page })}`,
+      });
+    const refused = await open();
+    expect(refused.status).toBe(409);
+    const enterPath = refused.body.enterPath as string;
+    expect(enterPath).toMatch(new RegExp(`^${ENTER_ORGANIZATION_PATH}\\?token=`));
+    expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
+    const response = await enterOrganization(new NextRequest(`http://localhost${enterPath}`));
+    expect(response.headers.get("location")).toBe(`http://localhost${page}`);
+    expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
+    expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
+    const opened = await open();
+    expect(opened.status).toBe(200);
+    expect(JSON.stringify(opened.body)).toContain(b.triageRunId);
+    state.cookies.clear();
   });
 
   describe("organization settings, the organization switcher and chat accounts", () => {

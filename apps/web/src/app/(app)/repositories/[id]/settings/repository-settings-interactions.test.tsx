@@ -14,7 +14,9 @@ import { RepositorySettingsContent, type RepositorySettingsTab } from "./reposit
 import type { RalphSettingsValues } from "./ralph-settings-section";
 
 const run = vi.fn((action: () => unknown) => action());
-vi.mock("@/components/use-action", () => ({ useAction: () => ({ pending: false, run }) }));
+vi.mock("@/components/use-settings-save", () => ({
+  useSettingsSave: () => ({ pending: false, run }),
+}));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/settings",

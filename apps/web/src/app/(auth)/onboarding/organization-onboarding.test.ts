@@ -81,12 +81,11 @@ vi.mock("@/lib/scm/github-app", () => ({
   GITHUB_INSTALL_PATH: "/repositories/github/install",
 }));
 // The onboarding view is a client component; the tests read the props the page passes it.
-vi.mock("../(auth)/onboarding/onboarding-view", () => ({ OnboardingView: () => null }));
+vi.mock("./onboarding-view", () => ({ OnboardingView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { acceptInvitationAction, createOrganizationAction } =
-  await import("../(auth)/onboarding/actions");
+const { acceptInvitationAction, createOrganizationAction } = await import("./actions");
 const organizationRoute = await import("@/app/api/ui/organization/route");
 const invitations = await import("@/app/api/ui/organization/invitations/route");
 const memberRoute = await import("@/app/api/ui/organization/members/[userId]/route");
@@ -100,7 +99,7 @@ const switchOrganization = (organizationId: string) =>
   callAction(switchRoute.POST, "POST", {}, { organizationId });
 const { GET: listRepositories } = await import("@/app/api/ui/repositories/route");
 const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
-const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
+const { default: OnboardingPage } = await import("./page");
 
 const databaseAvailable = testDatabaseAvailable();
 

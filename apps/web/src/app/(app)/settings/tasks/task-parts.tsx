@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { Badge, Cluster } from "@iamthemcmaster/ui";
 import type { TaskType } from "@omniralph/tasks";
 import { agentHref } from "../agents/agent-parts";

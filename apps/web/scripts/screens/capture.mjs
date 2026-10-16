@@ -9,6 +9,9 @@ import { chromium } from "playwright-core";
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
 const { baseUrl, signInPath, routes, themes, viewports, outDir } = config;
 const NAVIGATION_TIMEOUT_MS = 180_000; // `next dev` compiles each route on its first visit.
+// Pages load their data from `/api/ui` after rendering (skeletons are `aria-busy`), and keep
+// polling it, so the network never goes idle: wait for the skeletons to go instead.
+const LOADED_TIMEOUT_MS = 60_000;
 
 // Hides the `next dev` indicator and overlay; errors are recorded instead.
 const HIDE_DEV_UI = "nextjs-portal { display: none !important; }";
@@ -76,6 +79,8 @@ async function capture(context, route, viewportName, viewport, theme) {
     retiredWording: [],
     themeForced: false,
     consoleErrors: [],
+    notRendered: null,
+    loadErrors: [],
     error: null,
     screenshot: null,
     html: null,
@@ -88,7 +93,22 @@ async function capture(context, route, viewportName, viewport, theme) {
   try {
     const response = await page.goto(route.path, { waitUntil: "load" });
     result.status = response?.status() ?? null;
-    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+    const loaded = await page
+      .waitForFunction(() => !document.querySelector('[aria-busy="true"]'), null, {
+        timeout: LOADED_TIMEOUT_MS,
+      })
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!loaded) result.notRendered = `still loading after ${LOADED_TIMEOUT_MS / 1000}s`;
+    // In-place errors: a failed load (QueryBoundary) or a render error ((app)/error.tsx).
+    result.loadErrors = await page.$$eval(".query-error", (alerts) =>
+      alerts.map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
+    );
+    if (result.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
+      result.notRendered = "the page's error boundary (render error)";
+    }
     await page.addStyleTag({ content: HIDE_DEV_UI });
     for (const step of route.steps ?? []) {
       const target = page.locator(step.selector).first();
@@ -147,6 +167,8 @@ async function capture(context, route, viewportName, viewport, theme) {
   }
   const flags = [
     result.error ? "ERROR" : null,
+    result.notRendered ? `not rendered: ${result.notRendered}` : null,
+    result.loadErrors.length > 0 ? `${result.loadErrors.length} load error(s)` : null,
     result.overflow ? `overflow ${result.scrollWidth}px` : null,
     result.retiredWording.length > 0 ? `shows "Ralph"` : null,
   ].filter(Boolean);

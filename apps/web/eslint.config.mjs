@@ -1,5 +1,6 @@
 import nextVitals from "eslint-config-next/core-web-vitals";
 import baseConfig from "../../eslint.config.js";
+import dataPath from "./eslint-rules/data-path.mjs";
 import designSystem from "./eslint-rules/design-system.mjs";
 
 const config = [
@@ -47,6 +48,37 @@ const config = [
     plugins: { "design-system": designSystem },
     rules: {
       "design-system/no-bare-timestamp": "error",
+    },
+  },
+  {
+    // One data path for the signed-in pages (README "Data fetching", TOOL-522): client views
+    // read and write through /api/ui with TanStack Query. No server actions, no
+    // revalidatePath/revalidateTag and no database imports under (app), tests included; only
+    // the layout's session gate reads the database (the user's organizations for AppShell).
+    files: ["src/app/(app)/**/*.{ts,tsx}"],
+    ignores: ["src/app/(app)/layout.tsx"],
+    plugins: { "data-path": dataPath },
+    rules: {
+      "data-path/no-server-data": "error",
+    },
+  },
+  {
+    // Navigation feedback (TOOL-522): the panel's links show a pending state while their
+    // page loads, through the Link in components/link.tsx (useLinkStatus).
+    files: ["src/app/(app)/**/*.tsx", "src/components/**/*.tsx"],
+    ignores: ["src/components/link.tsx", "src/components/auth-shell.tsx", "src/**/*.test.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/link",
+              message: "Use Link from @/components/link: it shows the pending navigation.",
+            },
+          ],
+        },
+      ],
     },
   },
 ];

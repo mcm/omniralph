@@ -30,6 +30,7 @@ import type { Theme } from "@/lib/theme";
 import { saveThemePreference } from "@/lib/theme-actions";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
+import { Link } from "./link";
 
 /** A breadcrumb; `href` only when the crumb has a page of its own. */
 export interface Crumb {
@@ -175,8 +176,8 @@ function HeaderBreadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
                 {i === last ? (
                   <BreadcrumbPage className="app-crumb-label">{crumb.label}</BreadcrumbPage>
                 ) : crumb.href ? (
-                  <BreadcrumbLink href={crumb.href} className="app-crumb-label">
-                    {crumb.label}
+                  <BreadcrumbLink asChild className="app-crumb-label">
+                    <Link href={crumb.href}>{crumb.label}</Link>
                   </BreadcrumbLink>
                 ) : (
                   <span className="app-crumb-label">{crumb.label}</span>

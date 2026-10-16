@@ -22,8 +22,8 @@ import {
 } from "./task-types";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("@/components/use-action", () => ({
-  useAction: () => ({ pending: false, run: vi.fn() }),
+vi.mock("@/components/use-settings-save", () => ({
+  useSettingsSave: () => ({ pending: false, run: vi.fn() }),
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/settings",

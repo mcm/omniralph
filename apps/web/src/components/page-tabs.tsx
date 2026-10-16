@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "./link";
 import type { ComponentType } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@iamthemcmaster/ui";
 
