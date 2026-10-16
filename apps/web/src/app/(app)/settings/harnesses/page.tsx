@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { renderHarnessSettings } from "./harness-settings-page";
+import { HarnessSettingsView } from "./harness-settings-view";
 
 export const metadata: Metadata = { title: "Harness defaults · Omniralph" };
 
-export default async function HarnessSettingsPage() {
-  return renderHarnessSettings("defaults");
+/** Settings › Harness defaults (admins): the task types, concurrency and version every harness gets. */
+export default function HarnessSettingsPage() {
+  return <HarnessSettingsView tab="defaults" />;
 }

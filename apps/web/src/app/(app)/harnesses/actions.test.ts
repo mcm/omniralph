@@ -34,6 +34,8 @@ import {
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionResult } from "@/lib/action-result";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -77,7 +79,14 @@ const harnessRevoke = await import("@/app/api/ui/harnesses/[id]/revoke/route");
 const harnessInstalls = await import("@/app/api/ui/harnesses/[id]/installs/route");
 const harnessHostTools = await import("@/app/api/ui/harnesses/[id]/host-tools/route");
 const pinnable = await import("@/app/api/ui/harnesses/pinnable-repositories/route");
-const { addHostTool, removeHostTool } = await import("../settings/harnesses/actions");
+const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
+const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
+// Settings › Harness defaults › Host tools requests, under the server actions' old names.
+const addHostTool = async (input: { name: string; description?: string }) =>
+  (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
+    hostToolId?: string;
+  };
+const removeHostTool = (id: string) => callAction(hostToolRoute.DELETE, "DELETE", { id });
 const { harnessRow } = await import("@/lib/harnesses/rows");
 const { enqueueInstall } = await import("@/lib/harnesses/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");

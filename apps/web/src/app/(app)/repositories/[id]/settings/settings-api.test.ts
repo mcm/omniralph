@@ -35,6 +35,7 @@ import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 
@@ -93,7 +94,10 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
-const { updateReviewProfile } = await import("../../../settings/profiles/actions");
+const reviewProfile = await import("@/app/api/ui/review-profiles/[id]/route");
+// Settings › Review profiles' save, under the server action's old name.
+const updateReviewProfile = (id: string, input: unknown) =>
+  callAction(reviewProfile.PUT, "PUT", { id }, input);
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 

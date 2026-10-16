@@ -28,19 +28,27 @@ import { IconPlus, IconTool, IconTrash } from "@tabler/icons-react";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { SettingsSubsection } from "@/components/settings-section";
-import { useAction } from "@/components/use-action";
-import { addHostTool, removeHostTool } from "./actions";
+import { useApiMutation } from "@/components/use-api-mutation";
 import { EmptyValue } from "@/components/empty-value";
+import { api } from "@/lib/api/client";
+import {
+  addedHostToolSchema,
+  type AddHostToolInput,
+  type HostToolCatalogRow,
+} from "@/lib/api/harness-defaults";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { hostToolsChanged } from "./harness-defaults-queries";
 
-/** A host tool of the organization's catalog. */
-export interface HostToolCatalogRow {
-  id: string;
-  name: string;
-  description: string | null;
-}
+export type { HostToolCatalogRow };
 
 function DeleteHostTool({ tool }: { tool: HostToolCatalogRow }) {
-  const { pending, run } = useAction();
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(`/api/ui/host-tools/${tool.id}`, mutationResultSchema, { organizationId }),
+    invalidate: hostToolsChanged,
+    success: `Deleted ${tool.name}`,
+  });
+  const pending = remove.isPending;
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -59,10 +67,7 @@ function DeleteHostTool({ tool }: { tool: HostToolCatalogRow }) {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="danger"
-            onClick={() => run(() => removeHostTool(tool.id), `Deleted ${tool.name}`)}
-          >
+          <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -72,20 +77,24 @@ function DeleteHostTool({ tool }: { tool: HostToolCatalogRow }) {
 }
 
 function AddHostToolForm() {
-  const { pending, run } = useAction();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const add = useApiMutation({
+    mutationFn: (input: AddHostToolInput, { organizationId }) =>
+      api.post("/api/ui/host-tools", addedHostToolSchema, { body: input, organizationId }),
+    invalidate: hostToolsChanged,
+    success: (_, input) =>
+      `Added ${input.name.trim()}. Harnesses report where they find it with their next heartbeats.`,
+    onSuccess: () => {
+      setName("");
+      setDescription("");
+    },
+  });
+  const pending = add.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    run(
-      () => addHostTool({ name, description }),
-      `Added ${name.trim()}. Harnesses report where they find it with their next heartbeats.`,
-      () => {
-        setName("");
-        setDescription("");
-      },
-    );
+    add.mutate({ name, description });
   };
 
   return (

@@ -9,6 +9,10 @@ import {
   closeDb,
   createInvitation,
   getActiveOrganization,
+  getAllowedTaskTypeDefaults,
+  getDesiredHarnessVersion,
+  getReviewProfile,
+  listHostTools,
   getIntegration,
   getMembership,
   listChatChannelTaskSettings,
@@ -189,6 +193,11 @@ const taskList = await import("./tasks/route");
 const taskDetail = await import("./tasks/[id]/route");
 const taskClone = await import("./tasks/[id]/clone/route");
 const taskFormOptions = await import("./tasks/form-options/route");
+const reviewProfiles = await import("./review-profiles/route");
+const reviewProfile = await import("./review-profiles/[id]/route");
+const harnessDefaults = await import("./harness-defaults/route");
+const hostToolCatalog = await import("./host-tools/route");
+const hostTool = await import("./host-tools/[id]/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -1894,6 +1903,106 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(agents).not.toContain(builtinClone.body.id as string);
       expect(tasks).not.toContain(cloneId);
       expect(tasks).toContain(own(b).taskId);
+    });
+  });
+  describe("review profiles and harness defaults", () => {
+    const limits = {
+      model: "claude-haiku-5-5",
+      maxTokensPerReview: 12_345,
+      maxFiles: 3,
+      allowRepoExploration: false,
+    };
+
+    it("shows each organization's own profiles, harness defaults and host tools to its admins only", async () => {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        state.userId = own.memberId;
+        for (const handler of [reviewProfiles.GET, harnessDefaults.GET, hostToolCatalog.GET]) {
+          expect((await call(handler)).status).toBe(403);
+        }
+
+        state.userId = own.adminId;
+        const profiles = await call(reviewProfiles.GET);
+        expect(profiles.status).toBe(200);
+        const rows = profiles.body.profiles as { id: string }[];
+        expect(rows.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
+        expect(profiles.body.choices).toMatchObject({ harnessCount: expect.any(Number) });
+
+        const defaults = await call(harnessDefaults.GET);
+        expect(defaults).toMatchObject({ status: 200, body: { packageName: expect.any(String) } });
+
+        const tools = await call(hostToolCatalog.GET);
+        expect(tools.status).toBe(200);
+        expect((tools.body.hostTools as { id: string }[]).map((t) => t.id)).toContain(
+          own.hostToolId,
+        );
+
+        for (const body of [profiles.body, defaults.body, tools.body]) {
+          const json = JSON.stringify(body);
+          for (const marker of markers(other)) expect(json).not.toContain(marker);
+        }
+      }
+    });
+
+    it("refuses every change outside the active organization, and to members", async () => {
+      state.userId = a.memberId;
+      for (const response of [
+        await call(reviewProfile.PUT, { params: { id: "deep" }, method: "PUT", body: limits }),
+        await call(harnessDefaults.PUT, { method: "PUT", body: { version: "1.4.0" } }),
+        await call(hostToolCatalog.POST, { body: { name: "member-tool" } }),
+        await call(hostTool.DELETE, { params: { id: a.hostToolId }, method: "DELETE" }),
+      ]) {
+        expect(response.status).toBe(403);
+      }
+
+      // The other organization's host tool doesn't exist here.
+      state.userId = a.adminId;
+      expect(
+        await call(hostTool.DELETE, { params: { id: b.hostToolId }, method: "DELETE" }),
+      ).toEqual({ status: 400, body: { error: "That host tool doesn't exist." } });
+      expect((await listHostTools(db, b.orgId)).map((t) => t.id)).toContain(b.hostToolId);
+      expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toContain(a.hostToolId);
+      expect(await getDesiredHarnessVersion(db, a.orgId)).not.toBe("1.4.0");
+    });
+
+    it("changes only the active organization's profiles, harness defaults and host tools", async () => {
+      state.userId = a.adminId;
+      expect(
+        await call(reviewProfile.PUT, { params: { id: "deep" }, method: "PUT", body: limits }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect(
+        await call(harnessDefaults.PUT, {
+          method: "PUT",
+          body: { defaults: { allowedTaskTypes: ["review"], maxConcurrency: 3 }, version: "1.4.0" },
+        }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      const added = await call(hostToolCatalog.POST, { body: { name: "beta-tool" } });
+      // The other organization's tool name is no duplicate here.
+      expect(added).toMatchObject({ status: 200, body: { ok: true } });
+      expect(
+        await call(hostTool.DELETE, {
+          params: { id: added.body.hostToolId as string },
+          method: "DELETE",
+        }),
+      ).toEqual({ status: 200, body: { ok: true } });
+
+      expect(await getReviewProfile(db, a.orgId, "deep")).toMatchObject({
+        maxTokensPerReview: 12_345,
+      });
+      expect(await getReviewProfile(db, b.orgId, "deep")).not.toMatchObject({
+        maxTokensPerReview: 12_345,
+      });
+      expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
+      expect(await getDesiredHarnessVersion(db, b.orgId)).not.toBe("1.4.0");
+      expect(await getAllowedTaskTypeDefaults(db, a.orgId)).toEqual(["review"]);
+      expect(await getAllowedTaskTypeDefaults(db, b.orgId)).toEqual(["query", "review", "coding"]);
+
+      state.userId = b.adminId;
+      expect((await call(harnessDefaults.GET)).body).toMatchObject({
+        defaults: { allowedTaskTypes: ["query", "review", "coding"] },
+      });
     });
   });
 });

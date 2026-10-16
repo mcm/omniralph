@@ -25,7 +25,6 @@ import {
   organizationMembers,
   saveIntegration,
   setActiveOrganization,
-  setDesiredHarnessVersion,
   claimJob,
   upsertScmConnection,
   upsertStories,
@@ -98,8 +97,6 @@ vi.mock("@/lib/scm/github-app", () => ({
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
-vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
-vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -108,8 +105,6 @@ const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
 const { GET: triageRunDetail } = await import("../api/ui/triage/[id]/route");
 const { default: AnalyticsPage } = await import("./analytics/page");
-const { default: ProfilesPage } = await import("./settings/profiles/page");
-const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -237,7 +232,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       name: `${name}-agent`,
       version: "1.0.0",
     }))!;
-    await setDesiredHarnessVersion(db, org.id, `1.0.0-${name}`, user!.id);
 
     const { run } = await createRun(db, {
       organizationId: org.id,
@@ -358,8 +352,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     const pages: Record<string, JSX.Element> = {
       layout: await AppLayout({ children: null }),
       analytics: await AnalyticsPage(search()),
-      profiles: await ProfilesPage(),
-      harnessSettings: await HarnessSettingsPage(),
     };
     return pages;
   }
@@ -384,13 +376,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       }
 
       // Every loader found the organization's own rows (the check above isn't vacuous).
-      const ids = <T extends { id: string }>(rows: T[]) => rows.map((row) => row.id);
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
-      expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
-      expect(pages.profiles!.props.choices.harnessCount).toBe(1);
-      expect(pages.harnessSettings!.props.desiredVersion).toBe(`1.0.0-${own.name}`);
     }
   });
 

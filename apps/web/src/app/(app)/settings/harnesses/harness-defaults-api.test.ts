@@ -1,10 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionResult } from "@/lib/action-result";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   user: null as {
@@ -19,6 +20,7 @@ const state = vi.hoisted(() => ({
   version: null as string | null,
   updatedBy: null as string | null,
   latest: null as { version: string | null; error: string | null } | null,
+  latestCheck: null as { version: string | null; error: string | null; checkedAt: Date } | null,
   allowedTaskTypes: null as string[] | null,
   maxConcurrency: null as number | null,
   hostTools: [] as {
@@ -31,12 +33,31 @@ const state = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
+  requireSignedInUser: async () => assertRole(state.user, "member"),
 }));
 vi.mock("@omniralph/db", async () => {
   const { HOST_TOOL_NAME_PATTERN } = await import("@omniralph/shared");
   const { TASK_TYPES } = await import("@omniralph/tasks");
   return {
     TRACK_LATEST_HARNESS_VERSION: "latest",
+    DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
+    DEFAULT_ALLOWED_TASK_TYPES: ["query", "review", "coding"],
+    DEFAULT_MAX_CONCURRENCY: 5,
+    // Nothing saved: the built-in defaults, as the real getters return them.
+    getAllowedTaskTypeDefaults: async () => state.allowedTaskTypes ?? ["query", "review", "coding"],
+    getDefaultMaxConcurrency: async () => state.maxConcurrency ?? 5,
+    getAppSetting: async () =>
+      state.version === null
+        ? null
+        : {
+            value: state.version,
+            updatedBy: "admin-1",
+            updatedAt: new Date("2026-10-01T00:00:00Z"),
+          },
+    listHostTools: async (_db: unknown, organizationId: string) =>
+      state.hostTools
+        .filter((t) => t.organizationId === organizationId)
+        .map((t) => ({ ...t, createdAt: new Date(), updatedAt: new Date() })),
     MIN_MAX_CONCURRENCY: 1,
     MAX_MAX_CONCURRENCY: 32,
     // The organization-defaults setters, with their validation.
@@ -98,7 +119,7 @@ vi.mock("@omniralph/db", async () => {
       return state.hostTools.length < before;
     },
     getDesiredHarnessVersion: async () => state.version,
-    getLatestHarnessVersionCheck: async () => null,
+    getLatestHarnessVersionCheck: async () => state.latestCheck,
     setLatestHarnessVersionCheck: async (
       _db: unknown,
       _organizationId: string,
@@ -119,13 +140,27 @@ vi.mock("@omniralph/db", async () => {
   };
 });
 
-const {
-  addHostTool,
-  removeHostTool,
-  setGlobalHarnessVersion,
-  setOrganizationDefaults,
-  trackLatestHarnessVersion,
-} = await import("./actions");
+const defaultsRoute = await import("@/app/api/ui/harness-defaults/route");
+const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
+const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
+
+// The Defaults and Host tools tabs' requests, under the names of the server actions they replace.
+const saveDefaults = (body: unknown) => callAction(defaultsRoute.PUT, "PUT", {}, body);
+const setGlobalHarnessVersion = (version: string) => saveDefaults({ version });
+const trackLatestHarnessVersion = () => saveDefaults({ version: "latest" });
+const setOrganizationDefaults = (defaults: unknown) => saveDefaults({ defaults });
+const addHostTool = async (input: { name: string; description?: string }) =>
+  (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
+    hostToolId?: string;
+  };
+const removeHostTool = (id: string) => callAction(hostToolRoute.DELETE, "DELETE", { id });
+
+async function getDefaults() {
+  const response = await defaultsRoute.GET(new Request("http://localhost/api/ui"), {
+    params: Promise.resolve({}),
+  });
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
 
 const REGISTRY = "https://registry.npmjs.org/@omniralph%2fharness";
 const requests: { authorization: string | null; accept: string | null }[] = [];
@@ -151,13 +186,14 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Harness defaults actions", () => {
+describe("Settings › Harness defaults API", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.organizationId = null;
     state.version = null;
     state.updatedBy = null;
     state.latest = null;
+    state.latestCheck = null;
     state.allowedTaskTypes = null;
     state.maxConcurrency = null;
     state.hostTools = [];
@@ -203,7 +239,7 @@ describe("Settings › Harness defaults actions", () => {
   it("tracks the latest version on npm, read at once without a token", async () => {
     process.env.NPM_TOKEN = "npm_secret";
     try {
-      expect(await trackLatestHarnessVersion()).toEqual({ ok: true, version: "1.4.2" });
+      expect(await trackLatestHarnessVersion()).toEqual({ ok: true });
     } finally {
       delete process.env.NPM_TOKEN;
     }
@@ -217,7 +253,7 @@ describe("Settings › Harness defaults actions", () => {
     // Typing it works too.
     state.version = null;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "1.5.0" } });
-    expect(await setGlobalHarnessVersion(" Latest ")).toEqual({ ok: true, version: "1.5.0" });
+    expect(await setGlobalHarnessVersion(" Latest ")).toEqual({ ok: true });
     expect(state.version).toBe("latest");
     expect(state.latest).toEqual({ version: "1.5.0", error: null });
   });
@@ -239,6 +275,90 @@ describe("Settings › Harness defaults actions", () => {
       error: expect.stringContaining("answered 500"),
     });
     expect(state.version).toBeNull();
+  });
+
+  describe("the Defaults tab", () => {
+    it("is for admins only", async () => {
+      state.user = null;
+      expect((await getDefaults()).status).toBe(401);
+      state.user = user("member");
+      expect((await getDefaults()).status).toBe(403);
+    });
+
+    it("shows the organization's version and built-in defaults", async () => {
+      state.version = "1.4.0";
+      expect(await getDefaults()).toEqual({
+        status: 200,
+        body: {
+          desiredVersion: "1.4.0",
+          updatedAt: "2026-10-01T00:00:00.000Z",
+          latest: null,
+          packageName: "@omniralph/harness",
+          defaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+          builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+        },
+      });
+    });
+
+    it("shows the organization's saved defaults", async () => {
+      state.allowedTaskTypes = ["review"];
+      state.maxConcurrency = 2;
+      expect((await getDefaults()).body).toMatchObject({
+        desiredVersion: null,
+        updatedAt: null,
+        defaults: { allowedTaskTypes: ["review"], maxConcurrency: 2 },
+        builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+      });
+    });
+
+    it("shows the version read from npm when the organization tracks latest", async () => {
+      state.version = "latest";
+      state.latestCheck = { version: "1.5.0", error: null, checkedAt: new Date(Date.now() - 1000) };
+      expect((await getDefaults()).body).toMatchObject({
+        desiredVersion: "latest",
+        latest: { version: "1.5.0", error: null, checkedAt: expect.any(String) },
+      });
+      expect(requests).toEqual([]);
+    });
+
+    it("saves the defaults, then the version, in one request; a failure names what isn't saved", async () => {
+      expect(
+        await saveDefaults({
+          defaults: { allowedTaskTypes: ["review"], maxConcurrency: 4 },
+          version: "1.6.0",
+        }),
+      ).toEqual({ ok: true });
+      expect(state).toMatchObject({
+        allowedTaskTypes: ["review"],
+        maxConcurrency: 4,
+        version: "1.6.0",
+      });
+
+      expect(
+        await saveDefaults({
+          defaults: { allowedTaskTypes: ["query"], maxConcurrency: 99 },
+          version: "1.7.0",
+        }),
+      ).toEqual({
+        ok: false,
+        error:
+          "Max concurrency must be 1–32 and task types known ones. Not saved: task types and concurrency and the desired version.",
+      });
+      expect(state).toMatchObject({ allowedTaskTypes: ["review"], version: "1.6.0" });
+
+      // The defaults are saved before a bad version.
+      expect(
+        await saveDefaults({
+          defaults: { allowedTaskTypes: ["coding"], maxConcurrency: 4 },
+          version: "next",
+        }),
+      ).toEqual({
+        ok: false,
+        error:
+          "Enter a version like 1.4.0 or latest, or leave it blank. Not saved: the desired version.",
+      });
+      expect(state).toMatchObject({ allowedTaskTypes: ["coding"], version: "1.6.0" });
+    });
   });
 
   describe("organization defaults", () => {
@@ -306,6 +426,30 @@ describe("Settings › Harness defaults actions", () => {
   });
 
   describe("host tools", () => {
+    it("lists the organization's catalog to its admins only", async () => {
+      state.hostTools.push({
+        id: "00000000-0000-4000-8000-0000000000ee",
+        organizationId: "org-2",
+        name: "theirs",
+        description: null,
+      });
+      await addHostTool({ name: "semgrep", description: "SAST scanner" });
+      const list = async () => {
+        const response = await hostToolsRoute.GET(new Request("http://localhost/api/ui"), {
+          params: Promise.resolve({}),
+        });
+        return { status: response.status, body: await response.json() };
+      };
+      expect(await list()).toEqual({
+        status: 200,
+        body: {
+          hostTools: [{ id: expect.any(String), name: "semgrep", description: "SAST scanner" }],
+        },
+      });
+      state.user = user("member");
+      expect((await list()).status).toBe(403);
+    });
+
     it("adds host tools to the organization's catalog", async () => {
       expect(await addHostTool({ name: " semgrep ", description: "  SAST scanner " })).toEqual({
         ok: true,

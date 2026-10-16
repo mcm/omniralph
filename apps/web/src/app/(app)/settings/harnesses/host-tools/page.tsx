@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { renderHarnessSettings } from "../harness-settings-page";
+import { HarnessSettingsView } from "../harness-settings-view";
 
 export const metadata: Metadata = { title: "Host tools · Harness defaults · Omniralph" };
 
-export default async function HostToolsSettingsPage() {
-  return renderHarnessSettings("host-tools");
+/** Settings › Harness defaults › Host tools (admins): the organization's host tool catalog. */
+export default function HostToolsSettingsPage() {
+  return <HarnessSettingsView tab="host-tools" />;
 }
