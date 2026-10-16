@@ -1,4 +1,4 @@
-// The organization journey end to end, through the real actions and pages: a new user
+// The organization journey end to end, through the real actions, handlers and pages: a new user
 // signs in, creates an organization, connects a repository and enrolls an agent, invites a
 // teammate who gets past the sign-in gate thanks to the invitation, accepts it and sees
 // the shared repositories and harnesses. Roles are per organization.
@@ -23,6 +23,7 @@ import {
 } from "@omniralph/db/testing";
 import type { JSX } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { callAction } from "@/lib/api/test-call";
 import { isEmailAllowed } from "@/lib/auth/allowlist";
 import { assertRole, AuthorizationError, type Role } from "@/lib/auth/roles";
 
@@ -79,20 +80,26 @@ vi.mock("@/lib/scm/github-app", () => ({
   getGitHubInstallUrl: async () => null,
   GITHUB_INSTALL_PATH: "/repositories/github/install",
 }));
-// Views are client components; the tests read the props the pages pass them.
-vi.mock("./settings/organization/organization-settings-view", () => ({
-  OrganizationSettingsView: () => null,
-}));
+// The onboarding view is a client component; the tests read the props the page passes it.
 vi.mock("../(auth)/onboarding/onboarding-view", () => ({ OnboardingView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { acceptInvitationAction, createOrganizationAction, switchOrganization } =
-  await import("@/lib/organizations/actions");
-const { inviteMember, changeMemberRole } = await import("./settings/organization/actions");
+const { acceptInvitationAction, createOrganizationAction } =
+  await import("../(auth)/onboarding/actions");
+const organizationRoute = await import("@/app/api/ui/organization/route");
+const invitations = await import("@/app/api/ui/organization/invitations/route");
+const memberRoute = await import("@/app/api/ui/organization/members/[userId]/route");
+const switchRoute = await import("@/app/api/ui/organizations/switch/route");
+// The panel's requests, under the names of the server actions they replace.
+const inviteMember = (email: string, role: Role) =>
+  callAction(invitations.POST, "POST", {}, { email, role });
+const changeMemberRole = (userId: string, role: Role) =>
+  callAction(memberRoute.PATCH, "PATCH", { userId }, { role });
+const switchOrganization = (organizationId: string) =>
+  callAction(switchRoute.POST, "POST", {}, { organizationId });
 const { GET: listRepositories } = await import("@/app/api/ui/repositories/route");
 const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
-const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -194,7 +201,11 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
       params: Promise.resolve({}),
     });
     expect(await listed.text()).toContain(harnessId);
-    const settings = props(await OrganizationSettingsPage());
+    const settings = await (
+      await organizationRoute.GET(new Request("http://localhost/api/ui/organization"), {
+        params: Promise.resolve({}),
+      })
+    ).text();
     expect(settings).toContain(founder.email!);
     expect(settings).toContain(teammateEmail);
 

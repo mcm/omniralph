@@ -28,8 +28,8 @@ import {
   createOrganizationAction,
   declineInvitationAction,
   joinOrganizationAction,
-  switchOrganization,
-} from "@/lib/organizations/actions";
+  switchOrganizationAction,
+} from "./actions";
 
 export interface InvitationRow {
   id: string;
@@ -64,7 +64,7 @@ function useOrganizationAction() {
   const router = useRouter();
   const { pending, run } = useAction();
   const open = React.useCallback(
-    (action: () => ReturnType<typeof switchOrganization>, success: string) =>
+    (action: () => ReturnType<typeof switchOrganizationAction>, success: string) =>
       run(action, success, () => router.push("/")),
     [run, router],
   );
@@ -185,7 +185,7 @@ function Membership({ organization }: { organization: { id: string; name: string
         size="sm"
         disabled={pending}
         onClick={() =>
-          open(() => switchOrganization(organization.id), `Switched to ${organization.name}`)
+          open(() => switchOrganizationAction(organization.id), `Switched to ${organization.name}`)
         }
       >
         Open

@@ -52,7 +52,7 @@ const {
   createOrganizationAction,
   declineInvitationAction,
   joinOrganizationAction,
-  switchOrganization,
+  switchOrganizationAction,
 } = await import("./actions");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -106,25 +106,25 @@ describe.skipIf(!databaseAvailable)("organization actions", () => {
     const second = await createOrganization(db, { name: "Second", createdBy: other.id });
 
     state.user = { id: other.id };
-    expect(await switchOrganization(theirs.id)).toEqual({ ok: true });
+    expect(await switchOrganizationAction(theirs.id)).toEqual({ ok: true });
     expect((await getActiveOrganization(db, other.id))?.id).toBe(theirs.id);
     expect((await getActiveOrganization(db, other.id))?.id).not.toBe(second.id);
     // This browser picks it, and other devices default to it.
     expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(theirs.id);
 
     state.user = { id: alice.id };
-    expect(await switchOrganization(theirs.id)).toEqual({
+    expect(await switchOrganizationAction(theirs.id)).toEqual({
       ok: false,
       error: "You are not a member of that organization.",
     });
-    expect(await switchOrganization("00000000-0000-4000-8000-000000000000")).toMatchObject({
+    expect(await switchOrganizationAction("00000000-0000-4000-8000-000000000000")).toMatchObject({
       ok: false,
     });
     expect((await getActiveOrganization(db, alice.id))?.id).toBe(mine.id);
     expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(theirs.id);
 
     state.user = null;
-    expect(await switchOrganization(mine.id)).toEqual({
+    expect(await switchOrganizationAction(mine.id)).toEqual({
       ok: false,
       error: "You must be signed in.",
     });

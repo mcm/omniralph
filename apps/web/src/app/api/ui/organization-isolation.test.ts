@@ -4,7 +4,16 @@
 import { randomBytes } from "node:crypto";
 import {
   addMember,
+  addOrganizationDomain,
+  chatIdentities,
   closeDb,
+  createInvitation,
+  getActiveOrganization,
+  getMembership,
+  getOrganization,
+  listChatIdentities,
+  listOrganizationDomains,
+  listPendingInvitationsForOrganization,
   connectRepository,
   createDb,
   createHarnessEnrollment,
@@ -60,6 +69,17 @@ vi.mock("@/lib/harnesses/npm", () => ({
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   userId: null as string | null,
+  cookies: new Map<string, string>(),
+}));
+// This browser's cookies (switching organizations sets one).
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const value = state.cookies.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
+    set: (name: string, value: string) => void state.cookies.set(name, value),
+  }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 // The signed-in user with their real role in their active organization.
@@ -129,6 +149,16 @@ const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
 const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
+const organizationSettings = await import("./organization/route");
+const organizationInvitations = await import("./organization/invitations/route");
+const organizationInvitation = await import("./organization/invitations/[id]/route");
+const organizationMember = await import("./organization/members/[userId]/route");
+const organizationDomains = await import("./organization/domains/route");
+const organizationDomain = await import("./organization/domains/[domain]/route");
+const organizationLeave = await import("./organization/leave/route");
+const organizationSwitch = await import("./organizations/switch/route");
+const chatAccounts = await import("./chat-accounts/route");
+const chatAccountUnlink = await import("./chat-accounts/unlink/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -1187,6 +1217,256 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
       organizationId: b.orgId,
       next: page,
+    });
+  });
+
+  describe("organization settings, the organization switcher and chat accounts", () => {
+    /** Each tenant's pending invitation, email domain and the admin's linked chat account. */
+    const extras = new Map<string, { invitationId: string; domain: string; chatUserId: string }>();
+
+    beforeAll(async () => {
+      for (const own of [a, b]) {
+        const domain = `${own.name}-mail.io`;
+        expect(await addOrganizationDomain(db, own.orgId, domain)).toBe("added");
+        const invited = await createInvitation(db, {
+          organizationId: own.orgId,
+          email: `invitee@${domain}`,
+          role: "member",
+          invitedBy: own.adminId,
+        });
+        if (invited.status !== "created") throw new Error(invited.status);
+        const chatUserId = `${own.name}-slack-user`;
+        await db.insert(chatIdentities).values({
+          organizationId: own.orgId,
+          platform: "slack",
+          externalUserId: chatUserId,
+          userId: own.adminId,
+          source: "manual",
+          displayName: `${own.name} on Slack`,
+        });
+        extras.set(own.name, { invitationId: invited.invitation.id, domain, chatUserId });
+      }
+    });
+
+    const extra = (tenant: Tenant) => extras.get(tenant.name)!;
+    const otherMarkers = (other: Tenant) => [
+      ...markers(other),
+      other.adminId,
+      other.memberId,
+      ...Object.values(extra(other)),
+    ];
+
+    it("shows each organization its own settings, and its invitations only to admins", async () => {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const { status, body } = await call(organizationSettings.GET);
+          expect(status).toBe(200);
+          expect(body).toMatchObject({
+            organization: { id: own.orgId, name: own.name },
+            isAdmin: userId === own.adminId,
+            currentUserId: userId,
+            domains: [extra(own).domain],
+            invitations:
+              userId === own.adminId ? [{ id: extra(own).invitationId, role: "member" }] : [],
+          });
+          const members = body.members as { id: string }[];
+          expect(members.map((m) => m.id)).toEqual(
+            expect.arrayContaining([own.adminId, own.memberId]),
+          );
+          // Users of both organizations (added by earlier tests) are members of both.
+          const json = JSON.stringify({
+            ...body,
+            members: members.filter((m) => !m.id.startsWith("both-")),
+          });
+          for (const marker of otherMarkers(other)) expect(json).not.toContain(marker);
+        }
+      }
+    });
+
+    it("refuses every organization change outside the active organization, and to members", async () => {
+      state.userId = a.adminId;
+      const failed = { status: 400, body: { error: expect.any(String) } };
+      expect(
+        await call(organizationInvitation.DELETE, {
+          method: "DELETE",
+          params: { id: extra(b).invitationId },
+        }),
+      ).toMatchObject(failed);
+      expect(
+        await call(organizationMember.PATCH, {
+          method: "PATCH",
+          params: { userId: b.memberId },
+          body: { role: "admin" },
+        }),
+      ).toMatchObject({ status: 400, body: { error: "That user is no longer a member." } });
+      expect(
+        await call(organizationMember.DELETE, { method: "DELETE", params: { userId: b.adminId } }),
+      ).toMatchObject(failed);
+      expect(
+        await call(organizationDomain.DELETE, {
+          method: "DELETE",
+          params: { domain: extra(b).domain },
+        }),
+      ).toMatchObject(failed);
+      expect(
+        await call(organizationInvitation.DELETE, { method: "DELETE", params: { id: "nope" } }),
+      ).toMatchObject({ status: 404 });
+
+      // Changes of the active organization stay in it.
+      expect(
+        await call(organizationSettings.PATCH, { method: "PATCH", body: { name: "Renamed" } }),
+      ).toMatchObject({ status: 200 });
+      expect(await getOrganization(db, a.orgId)).toMatchObject({ name: "Renamed" });
+      expect(await getOrganization(db, b.orgId)).toMatchObject({ name: b.name });
+      await call(organizationSettings.PATCH, { method: "PATCH", body: { name: a.name } });
+      expect(
+        await call(organizationSettings.PATCH, {
+          method: "PATCH",
+          body: { allowDomainJoin: true },
+        }),
+      ).toMatchObject({ status: 200 });
+      expect(await getOrganization(db, b.orgId)).toMatchObject({ allowDomainJoin: false });
+      await call(organizationSettings.PATCH, { method: "PATCH", body: { allowDomainJoin: false } });
+      expect(
+        await call(organizationDomains.POST, { body: { domain: "added-by-alpha.io" } }),
+      ).toMatchObject({ status: 200 });
+      expect(await listOrganizationDomains(db, b.orgId)).toEqual([extra(b).domain]);
+      await call(organizationDomain.DELETE, {
+        method: "DELETE",
+        params: { domain: "added-by-alpha.io" },
+      });
+
+      // Members change nothing.
+      state.userId = a.memberId;
+      const forbidden = { status: 403 };
+      for (const request of [
+        call(organizationSettings.PATCH, { method: "PATCH", body: { name: "Hijacked" } }),
+        call(organizationSettings.PATCH, { method: "PATCH", body: { allowDomainJoin: true } }),
+        call(organizationInvitations.POST, {
+          body: { email: `x@${extra(a).domain}`, role: "admin" },
+        }),
+        call(organizationInvitation.DELETE, {
+          method: "DELETE",
+          params: { id: extra(a).invitationId },
+        }),
+        call(organizationMember.PATCH, {
+          method: "PATCH",
+          params: { userId: a.memberId },
+          body: { role: "admin" },
+        }),
+        call(organizationMember.DELETE, { method: "DELETE", params: { userId: a.adminId } }),
+        call(organizationDomains.POST, { body: { domain: "evil.io" } }),
+        call(organizationDomain.DELETE, { method: "DELETE", params: { domain: extra(a).domain } }),
+      ]) {
+        expect(await request).toMatchObject(forbidden);
+      }
+
+      for (const own of [a, b]) {
+        expect(await getOrganization(db, own.orgId)).toMatchObject({
+          name: own.name,
+          allowDomainJoin: false,
+        });
+        expect(
+          (await listPendingInvitationsForOrganization(db, own.orgId)).map((i) => i.id),
+        ).toEqual([extra(own).invitationId]);
+        expect(await listOrganizationDomains(db, own.orgId)).toEqual([extra(own).domain]);
+        expect(await getMembership(db, own.orgId, own.adminId)).toMatchObject({ role: "admin" });
+        expect(await getMembership(db, own.orgId, own.memberId)).toMatchObject({ role: "member" });
+      }
+    });
+
+    it("switches only to the user's own organizations", async () => {
+      state.userId = a.adminId;
+      state.cookies.clear();
+      expect(await call(organizationSwitch.POST, { body: { organizationId: b.orgId } })).toEqual({
+        status: 400,
+        body: { error: "You are not a member of that organization." },
+      });
+      expect(await getActiveOrganization(db, a.adminId)).toMatchObject({ id: a.orgId });
+      expect(state.cookies.size).toBe(0);
+
+      const [user] = await db
+        .insert(users)
+        .values({ id: "both-switch-member", email: "both-switch@alpha.io" })
+        .returning();
+      await db.insert(organizationMembers).values([
+        { organizationId: a.orgId, userId: user!.id, role: "member" },
+        { organizationId: b.orgId, userId: user!.id, role: "admin" },
+      ]);
+      await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+      state.userId = user!.id;
+      expect(await call(organizationSwitch.POST, { body: { organizationId: b.orgId } })).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(await getActiveOrganization(db, user!.id)).toMatchObject({
+        id: b.orgId,
+        role: "admin",
+      });
+      expect([...state.cookies.values()]).toEqual([b.orgId]);
+      // The settings follow the active organization.
+      expect((await call(organizationSettings.GET)).body).toMatchObject({
+        organization: { id: b.orgId },
+        isAdmin: true,
+      });
+
+      // Leaving switches to the user's other organization.
+      expect(await call(organizationLeave.POST, { body: {} })).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(await getMembership(db, b.orgId, user!.id)).toBeNull();
+      expect(await getActiveOrganization(db, user!.id)).toMatchObject({ id: a.orgId });
+      expect(await getMembership(db, a.orgId, a.adminId)).toMatchObject({ role: "admin" });
+    });
+
+    it("lists and unlinks only the user's own chat accounts", async () => {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        state.userId = own.adminId;
+        const { status, body } = await call(chatAccounts.GET);
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+          identities: [
+            {
+              organizationId: own.orgId,
+              organizationName: own.name,
+              externalUserId: extra(own).chatUserId,
+            },
+          ],
+        });
+        const json = JSON.stringify(body);
+        for (const marker of otherMarkers(other)) expect(json).not.toContain(marker);
+
+        expect(
+          await call(chatAccountUnlink.POST, {
+            body: {
+              organizationId: other.orgId,
+              platform: "slack",
+              externalUserId: extra(other).chatUserId,
+            },
+          }),
+        ).toEqual({ status: 400, body: { error: "That chat account isn't linked to you." } });
+        expect(await listChatIdentities(db, other.adminId)).toHaveLength(1);
+
+        state.userId = own.memberId;
+        expect((await call(chatAccounts.GET)).body).toEqual({ identities: [] });
+      }
+
+      state.userId = a.adminId;
+      expect(
+        await call(chatAccountUnlink.POST, {
+          body: { organizationId: a.orgId, platform: "slack", externalUserId: extra(a).chatUserId },
+        }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect(await listChatIdentities(db, a.adminId)).toEqual([]);
+      expect(await listChatIdentities(db, b.adminId)).toHaveLength(1);
     });
   });
 });

@@ -101,9 +101,6 @@ vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 vi.mock("./settings/integrations/integrations-view", () => ({ IntegrationsView: () => null }));
-vi.mock("./settings/organization/organization-settings-view", () => ({
-  OrganizationSettingsView: () => null,
-}));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -115,7 +112,6 @@ const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
 const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
 const { default: IntegrationsPage } = await import("./settings/integrations/page");
-const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -367,7 +363,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       profiles: await ProfilesPage(),
       harnessSettings: await HarnessSettingsPage(),
       integrations: await IntegrationsPage(search()),
-      organization: await OrganizationSettingsPage(),
     };
     return pages;
   }
@@ -402,10 +397,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(pages.integrations!.props.linear).toMatchObject({
         workspaceId: `${own.name}-workspace`,
       });
-      expect(pages.organization!.props.organization.name).toBe(own.name);
-      expect(ids(pages.organization!.props.members)).toEqual([own.userId]);
-      expect(ids(pages.organization!.props.invitations)).toEqual([own.invitationId]);
-      expect(pages.organization!.props.domains).toEqual([`${own.name}.io`]);
     }
   });
 

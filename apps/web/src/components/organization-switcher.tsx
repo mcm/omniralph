@@ -11,10 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "@iamthemcmaster/ui";
 import { IconBuilding, IconCheck, IconPlus, IconSelector } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api/client";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { ONBOARDING_PATH } from "@/lib/auth/routes";
-import { switchOrganization } from "@/lib/organizations/actions";
 import { useCurrentUser } from "./current-user";
-import { useAction } from "./use-action";
+import { useExpectOrganizationSwitch } from "./organization-guard";
+import { useApiMutation } from "./use-api-mutation";
 
 export interface OrganizationOption {
   id: string;
@@ -30,20 +33,35 @@ export function OrganizationSwitcher({
   collapsed: boolean;
 }) {
   const router = useRouter();
+  const client = useQueryClient();
   const { organization: active } = useCurrentUser();
-  const { pending, run } = useAction();
+  const expectSwitch = useExpectOrganizationSwitch();
+  const switchTo = useApiMutation({
+    // Not scoped to the active organization: any of the user's may become the active one.
+    mutationFn: async (organization: OrganizationOption) => {
+      const result = await api.post("/api/ui/organizations/switch", mutationResultSchema, {
+        body: { organizationId: organization.id },
+      });
+      // The cookie changed: not another tab's switch.
+      expectSwitch();
+      return result;
+    },
+    invalidate: () => [],
+    success: (_, organization) => `Switched to ${organization.name}`,
+    onSuccess: () => {
+      // Stop the previous organization's queries (they'd be refused now), start over from
+      // the dashboard, and re-render the shell in the new organization: `QueryProvider`
+      // then drops the previous organization's cache and every page loads the new one's.
+      void client.cancelQueries();
+      router.push("/");
+      router.refresh();
+    },
+  });
+  const pending = switchTo.isPending;
 
   const select = (organization: OrganizationOption) => {
     if (organization.id === active.id) return;
-    run(
-      () => switchOrganization(organization.id),
-      `Switched to ${organization.name}`,
-      () => {
-        // Pages show the previous organization's data; start over from the dashboard.
-        router.push("/");
-        router.refresh();
-      },
-    );
+    switchTo.mutate(organization);
   };
 
   return (

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useMutationState, useQuery } from "@tanstack/react-query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,7 @@ import {
   Muted,
   NativeSelect,
   Separator,
+  Skeleton,
   Stack,
   Switch,
 } from "@iamthemcmaster/ui";
@@ -36,50 +38,56 @@ import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useQueryKeys } from "@/components/query-provider";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { useCurrentUser } from "@/components/current-user";
+import { useExpectOrganizationSwitch } from "@/components/organization-guard";
+import { api } from "@/lib/api/client";
+import type { QueryKeys } from "@/lib/api/keys";
+import {
+  organizationSettingsSchema,
+  type InvitationRow,
+  type MemberRow,
+  type OrganizationSettings,
+} from "@/lib/api/organization";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { isRole, type Role } from "@/lib/auth/roles";
 import { MAX_ORGANIZATION_NAME_LENGTH } from "@/lib/organizations/name";
 import { userDisplayName, userInitials } from "@/lib/user-display";
-import {
-  addDomain,
-  changeMemberRole,
-  inviteMember,
-  leaveOrganization,
-  removeDomain,
-  removeMemberAction,
-  renameOrganization,
-  revokeInvitationAction,
-  setAllowDomainJoin,
-} from "./actions";
 
-export interface MemberRow {
-  id: string;
-  name: string | null;
-  email: string | null;
-  image: string | null;
-  role: Role;
-  /** ISO timestamp. */
-  joinedAt: string;
+export type { InvitationRow, MemberRow };
+
+/** The active organization's settings, live (`GET /api/ui/organization`). */
+export function useOrganizationSettings() {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery({
+    queryKey: keys.organization.detail("settings"),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/organization", organizationSettingsSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
 }
 
-export interface InvitationRow {
-  id: string;
-  email: string;
-  role: Role;
-  /** ISO timestamp. */
-  createdAt: string;
-  /** ISO timestamp. */
-  expiresAt: string;
-}
+/** What an organization change affects: this page (the sidebar re-renders from the layout). */
+const organizationChanged = (keys: QueryKeys) => [keys.organization.all];
 
-interface OrganizationSettingsViewProps {
-  isAdmin: boolean;
-  currentUserId: string;
-  organization: { name: string; allowDomainJoin: boolean };
-  domains: string[];
-  members: MemberRow[];
-  /** Pending invitations; empty for members. */
-  invitations: InvitationRow[];
+/** A JSON mutation of `/api/ui/organization/**`. */
+function send(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  organizationId: string,
+  body?: unknown,
+) {
+  const request = { body, organizationId };
+  const full = `/api/ui/organization${path}`;
+  if (method === "POST") return api.post(full, mutationResultSchema, request);
+  if (method === "PATCH") return api.patch(full, mutationResultSchema, request);
+  return api.delete(full, mutationResultSchema, request);
 }
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
@@ -168,14 +176,24 @@ function DangerIconButton({
 // ── General ───────────────────────────────────────────────────────────────────
 
 function GeneralCard({ name, isAdmin }: { name: string; isAdmin: boolean }) {
-  const { pending, run } = useAction();
-  const [value, setValue] = React.useState(name);
+  const router = useRouter();
+  // Follows a rename made elsewhere while the field isn't being edited.
+  const [value, setValue] = useSeededDraft(name);
   const trimmed = value.trim();
+  const rename = useApiMutation({
+    mutationFn: (newName: string, { organizationId }) =>
+      send("PATCH", "", organizationId, { name: newName }),
+    invalidate: organizationChanged,
+    success: (_, newName) => `Renamed to ${newName}`,
+    // The sidebar's organization switcher shows the name too.
+    onSuccess: () => router.refresh(),
+  });
+  const pending = rename.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!trimmed || trimmed === name) return;
-    run(() => renameOrganization(trimmed), `Renamed to ${trimmed}`);
+    rename.mutate(trimmed);
   };
 
   return (
@@ -224,8 +242,25 @@ function Member({
   isSelf: boolean;
   isAdmin: boolean;
 }) {
-  const { pending, run } = useAction();
+  const router = useRouter();
   const name = userDisplayName(member);
+  const change = useApiMutation({
+    mutationFn: (role: Role, { organizationId }) =>
+      send("PATCH", `/members/${encodeURIComponent(member.id)}`, organizationId, { role }),
+    invalidate: organizationChanged,
+    success: (_, role) => `${name} is now ${roleLabel[role].toLowerCase()}`,
+    // A changed own role changes the sidebar.
+    onSuccess: () => {
+      if (isSelf) router.refresh();
+    },
+  });
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      send("DELETE", `/members/${encodeURIComponent(member.id)}`, organizationId),
+    invalidate: organizationChanged,
+    success: `Removed ${name}`,
+  });
+  const pending = change.isPending || remove.isPending;
   return (
     <div className="org-row">
       <Avatar className="org-avatar">
@@ -251,18 +286,13 @@ function Member({
             aria-label={`Role for ${name}`}
             value={member.role}
             disabled={pending}
-            onChange={(role) =>
-              run(
-                () => changeMemberRole(member.id, role),
-                `${name} is now ${roleLabel[role].toLowerCase()}`,
-              )
-            }
+            onChange={(role) => change.mutate(role)}
           />
           <Confirm
             title={`Remove ${name}?`}
             description="They lose access to this organization. Their account and other organizations are kept."
             action="Remove"
-            onConfirm={() => run(() => removeMemberAction(member.id), `Removed ${name}`)}
+            onConfirm={() => remove.mutate()}
             trigger={
               <DangerIconButton label={`Remove ${name}`} disabled={pending || isSelf}>
                 <IconTrash size={14} />
@@ -314,7 +344,13 @@ function MembersCard({
 // ── Invitations ───────────────────────────────────────────────────────────────
 
 function Invitation({ invitation }: { invitation: InvitationRow }) {
-  const { pending, run } = useAction();
+  const revoke = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      send("DELETE", `/invitations/${invitation.id}`, organizationId),
+    invalidate: organizationChanged,
+    success: `Revoked ${invitation.email}`,
+  });
+  const pending = revoke.isPending;
   return (
     <div className="org-row">
       <div className="org-row-text">
@@ -336,9 +372,7 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
           title={`Revoke the invitation for ${invitation.email}?`}
           description="They can no longer accept it. You can invite them again afterwards."
           action="Revoke"
-          onConfirm={() =>
-            run(() => revokeInvitationAction(invitation.id), `Revoked ${invitation.email}`)
-          }
+          onConfirm={() => revoke.mutate()}
           trigger={
             <DangerIconButton
               label={`Revoke invitation for ${invitation.email}`}
@@ -360,22 +394,25 @@ function InvitationsCard({
   invitations: InvitationRow[];
   domains: string[];
 }) {
-  const { pending, run } = useAction();
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<Role>("member");
+  const invite = useApiMutation({
+    mutationFn: (input: { email: string; role: Role }, { organizationId }) =>
+      send("POST", "/invitations", organizationId, input),
+    invalidate: organizationChanged,
+    success: (_, input) => `Invited ${input.email}`,
+    onSuccess: () => {
+      setEmail("");
+      setRole("member");
+    },
+  });
+  const pending = invite.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const value = email.trim();
     if (!value) return;
-    run(
-      () => inviteMember(value, role),
-      `Invited ${value}`,
-      () => {
-        setEmail("");
-        setRole("member");
-      },
-    );
+    invite.mutate({ email: value, role });
   };
 
   return (
@@ -433,7 +470,13 @@ function InvitationsCard({
 // ── Email domains ─────────────────────────────────────────────────────────────
 
 function Domain({ domain, isAdmin }: { domain: string; isAdmin: boolean }) {
-  const { pending, run } = useAction();
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      send("DELETE", `/domains/${encodeURIComponent(domain)}`, organizationId),
+    invalidate: organizationChanged,
+    success: `Removed ${domain}`,
+  });
+  const pending = remove.isPending;
   return (
     <div className="org-row org-row-compact">
       <span className="flex-1 font-mono text-sm">{domain}</span>
@@ -441,13 +484,37 @@ function Domain({ domain, isAdmin }: { domain: string; isAdmin: boolean }) {
         <DangerIconButton
           label={`Remove ${domain}`}
           disabled={pending}
-          onClick={() => run(() => removeDomain(domain), `Removed ${domain}`)}
+          onClick={() => remove.mutate()}
         >
           <IconTrash size={14} />
         </DangerIconButton>
       )}
     </div>
   );
+}
+
+const domainJoinMutationKey = ["organization-allow-domain-join"];
+
+/**
+ * Switches "Allow anyone with a matching email to join" (admins): `pendingEnabled` is the
+ * state shown while the change is in flight (optimistic), and goes away by itself when it
+ * fails (with the server's error as a toast), so the switch moves back. The settings
+ * refetch before the change settles, so it never flickers back on success.
+ */
+export function useDomainJoinSwitch() {
+  const mutation = useApiMutation({
+    mutationKey: domainJoinMutationKey,
+    mutationFn: (enabled: boolean, { organizationId }) =>
+      send("PATCH", "", organizationId, { allowDomainJoin: enabled }),
+    invalidate: organizationChanged,
+    success: (_, enabled) =>
+      enabled ? "Anyone with a matching email can join" : "Joining by email turned off",
+  });
+  const pending = useMutationState({
+    filters: { mutationKey: domainJoinMutationKey, status: "pending" },
+    select: (m) => m.state.variables as boolean | undefined,
+  });
+  return { setEnabled: mutation.mutate, pendingEnabled: pending.at(-1) };
 }
 
 function DomainsCard({
@@ -459,19 +526,22 @@ function DomainsCard({
   allowDomainJoin: boolean;
   isAdmin: boolean;
 }) {
-  const add = useAction();
-  const toggle = useAction();
   const [domain, setDomain] = React.useState("");
+  const add = useApiMutation({
+    mutationFn: (value: string, { organizationId }) =>
+      send("POST", "/domains", organizationId, { domain: value }),
+    invalidate: organizationChanged,
+    success: (_, value) => `Added ${value}`,
+    onSuccess: () => setDomain(""),
+  });
+  const toggle = useDomainJoinSwitch();
+  const shownAllowDomainJoin = toggle.pendingEnabled ?? allowDomainJoin;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const value = domain.trim();
     if (!value) return;
-    add.run(
-      () => addDomain(value),
-      `Added ${value}`,
-      () => setDomain(""),
-    );
+    add.mutate(value);
   };
 
   return (
@@ -507,7 +577,7 @@ function DomainsCard({
                     onChange={(e) => setDomain(e.target.value)}
                   />
                 </Field>
-                <Button type="submit" disabled={add.pending || !domain.trim()}>
+                <Button type="submit" disabled={add.isPending || !domain.trim()}>
                   <IconPlus size={14} />
                   Add domain
                 </Button>
@@ -526,16 +596,17 @@ function DomainsCard({
                 {domains.length === 0 && " Add a domain first."}
               </Muted>
             </div>
+            {/* Held disabled (showing the new state) while its change is in flight, so two
+            changes never race. */}
             <Switch
               id="allow-domain-join"
-              checked={allowDomainJoin}
-              disabled={!isAdmin || toggle.pending || (domains.length === 0 && !allowDomainJoin)}
-              onCheckedChange={(enabled) =>
-                toggle.run(
-                  () => setAllowDomainJoin(enabled),
-                  enabled ? "Anyone with a matching email can join" : "Joining by email turned off",
-                )
+              checked={shownAllowDomainJoin}
+              disabled={
+                !isAdmin ||
+                toggle.pendingEnabled !== undefined ||
+                (domains.length === 0 && !shownAllowDomainJoin)
               }
+              onCheckedChange={(enabled) => toggle.setEnabled(enabled)}
             />
           </Cluster>
         </CardContent>
@@ -548,7 +619,23 @@ function DomainsCard({
 
 function LeaveCard({ organizationName }: { organizationName: string }) {
   const router = useRouter();
-  const { pending, run } = useAction();
+  const expectSwitch = useExpectOrganizationSwitch();
+  const leave = useApiMutation({
+    // Leaving switches to another of the user's organizations, if any.
+    mutationFn: async (_: void, { organizationId }) => {
+      const result = await send("POST", "/leave", organizationId);
+      expectSwitch();
+      return result;
+    },
+    // Nothing to refetch here: the panel starts over in the next organization (or onboarding).
+    invalidate: () => [],
+    success: `Left ${organizationName}`,
+    onSuccess: () => {
+      router.push("/");
+      router.refresh();
+    },
+  });
+  const pending = leave.isPending || leave.isSuccess;
   return (
     <Card>
       <CardHeader>
@@ -563,16 +650,7 @@ function LeaveCard({ organizationName }: { organizationName: string }) {
           title={`Leave ${organizationName}?`}
           description="An admin has to invite you again to rejoin."
           action="Leave"
-          onConfirm={() =>
-            run(
-              () => leaveOrganization(),
-              `Left ${organizationName}`,
-              () => {
-                router.push("/");
-                router.refresh();
-              },
-            )
-          }
+          onConfirm={() => leave.mutate()}
           trigger={
             <Button variant="danger" disabled={pending}>
               <IconDoorExit size={14} />
@@ -587,14 +665,32 @@ function LeaveCard({ organizationName }: { organizationName: string }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export function OrganizationSettingsView({
-  isAdmin,
-  currentUserId,
-  organization,
-  domains,
-  members,
-  invitations,
-}: OrganizationSettingsViewProps) {
+function SettingsSkeleton() {
+  return (
+    <Stack gap={4}>
+      {[2, 4, 3].map((rows, i) => (
+        <Card key={i}>
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-2/3" />
+          </CardHeader>
+          <Stack gap={3} asChild>
+            <CardContent>
+              {Array.from({ length: rows }, (_, row) => (
+                <Skeleton key={row} className="h-9 w-full" />
+              ))}
+            </CardContent>
+          </Stack>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
+/** Settings › Organization, live: member, invitation and domain changes show without a reload. */
+export function OrganizationSettingsView() {
+  const query = useOrganizationSettings();
+  const { organization, role } = useCurrentUser();
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Organization" }]} />
@@ -602,28 +698,43 @@ export function OrganizationSettingsView({
         <PageHeader
           title="Organization"
           description={
-            isAdmin
-              ? `Settings for ${organization.name}: its name, members, invitations and email domains.`
-              : `Settings for ${organization.name}. Only admins can change them.`
+            role === "admin"
+              ? `Settings for ${query.data?.organization.name ?? organization.name}: its name, members, invitations and email domains.`
+              : `Settings for ${query.data?.organization.name ?? organization.name}. Only admins can change them.`
           }
         />
-
-        {/* Keyed by name so a rename elsewhere resets the field. */}
-        <GeneralCard key={organization.name} name={organization.name} isAdmin={isAdmin} />
-        <MembersCard
-          members={members}
-          currentUserId={currentUserId}
-          isAdmin={isAdmin}
-          organizationName={organization.name}
-        />
-        {isAdmin && <InvitationsCard invitations={invitations} domains={domains} />}
-        <DomainsCard
-          domains={domains}
-          allowDomainJoin={organization.allowDomainJoin}
-          isAdmin={isAdmin}
-        />
-        <LeaveCard organizationName={organization.name} />
+        <QueryBoundary query={query} skeleton={<SettingsSkeleton />} what="the organization">
+          {(settings) => <OrganizationSettingsContent {...settings} />}
+        </QueryBoundary>
       </main>
+    </>
+  );
+}
+
+export function OrganizationSettingsContent({
+  isAdmin,
+  currentUserId,
+  organization,
+  domains,
+  members,
+  invitations,
+}: OrganizationSettings) {
+  return (
+    <>
+      <GeneralCard name={organization.name} isAdmin={isAdmin} />
+      <MembersCard
+        members={members}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        organizationName={organization.name}
+      />
+      {isAdmin && <InvitationsCard invitations={invitations} domains={domains} />}
+      <DomainsCard
+        domains={domains}
+        allowDomainJoin={organization.allowDomainJoin}
+        isAdmin={isAdmin}
+      />
+      <LeaveCard organizationName={organization.name} />
     </>
   );
 }
