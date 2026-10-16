@@ -62,6 +62,7 @@ import {
 } from "./repository-selection";
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
 import { describeRoute, routeIssue } from "./routing";
+import { markRalphActive } from "./active";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
@@ -402,6 +403,7 @@ async function askForRepositoryFirst(
     await addStartInstruction(tx, run, start);
     return { run, created: true };
   });
+  await markRalphActive();
   if (!created) {
     if (run.linearAgentSessionId === event.sessionId) await advanceRun(run.id, deps);
     else {
@@ -687,6 +689,7 @@ async function startNewRun(
     await addStartInstruction(tx, run, start);
     return { run, created: true, lane, left: moved.left };
   });
+  await markRalphActive();
   if (!created) {
     // Another delivery started this session's (or this issue's) run first.
     if (run.linearAgentSessionId === sessionId) await advanceRun(run.id, deps);

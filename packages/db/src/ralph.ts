@@ -1053,6 +1053,44 @@ export async function listOpenPullRequestLanes(
   );
 }
 
+/** A lane whose cleanup isn't through (see `listLanesToCleanUp`). */
+function laneNeedsCleanup() {
+  return or(
+    and(
+      isNotNull(ralphLanes.prNumber),
+      eq(ralphLanes.prMerged, true),
+      sql`(${ralphLanes.cleanup} is null
+        or ${ralphLanes.cleanup}->>'status' <> 'done'
+        or ${ralphLanes.cleanup}->>'jobId' is not null
+        or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
+    ),
+    sql`(${ralphLanes.cleanup}->>'keepBranch' is not null
+      and (${ralphLanes.cleanup}->>'status' <> 'done'
+        or ${ralphLanes.cleanup}->>'jobId' is not null))`,
+  );
+}
+
+/**
+ * Whether the reconcile cron may have anything to do, in any organization: an
+ * unfinished run, an open ralph PR/MR or a lane whose cleanup isn't through.
+ */
+export async function hasRalphWork(db: Executor): Promise<boolean> {
+  const unfinished = await db
+    .select({ id: ralphRuns.id })
+    .from(ralphRuns)
+    .where(inArray(ralphRuns.status, ["pending", "running", "waiting"]))
+    .limit(1);
+  if (unfinished.length > 0) return true;
+  const lanes = await db
+    .select({ id: ralphLanes.id })
+    .from(ralphLanes)
+    .where(
+      or(and(isNotNull(ralphLanes.prNumber), eq(ralphLanes.prClosed, false)), laneNeedsCleanup()),
+    )
+    .limit(1);
+  return lanes.length > 0;
+}
+
 /**
  * Merged ralph PRs/MRs of the organization's runs whose cleanup isn't
  * through, each with the lane of its newest run: never cleaned up, waiting,
@@ -1074,19 +1112,7 @@ export async function listLanesToCleanUp(
       and(
         eq(ralphRuns.organizationId, organizationId),
         origin ? eq(ralphRuns.origin, origin) : undefined,
-        or(
-          and(
-            isNotNull(ralphLanes.prNumber),
-            eq(ralphLanes.prMerged, true),
-            sql`(${ralphLanes.cleanup} is null
-              or ${ralphLanes.cleanup}->>'status' <> 'done'
-              or ${ralphLanes.cleanup}->>'jobId' is not null
-              or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
-          ),
-          sql`(${ralphLanes.cleanup}->>'keepBranch' is not null
-            and (${ralphLanes.cleanup}->>'status' <> 'done'
-              or ${ralphLanes.cleanup}->>'jobId' is not null))`,
-        ),
+        laneNeedsCleanup(),
       ),
     )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));

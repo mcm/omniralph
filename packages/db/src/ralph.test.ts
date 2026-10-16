@@ -22,6 +22,7 @@ import {
   getRunByChatThread,
   getRunByIssue,
   getRunBySession,
+  hasRalphWork,
   isLinearRun,
   linearSessionOf,
   listActiveRunJobIds,
@@ -151,6 +152,34 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       ...overrides,
     };
   };
+
+  it("finds ralph work: unfinished runs, open PRs/MRs and lanes to clean up", async () => {
+    expect(await hasRalphWork(db)).toBe(false);
+    const { run } = await createRun(db, runInput());
+    expect(await hasRalphWork(db)).toBe(true);
+    for (const status of ["running", "waiting"] as const) {
+      await updateRun(db, run.id, { status });
+      expect(await hasRalphWork(db)).toBe(true);
+    }
+    await updateRun(db, run.id, { status: "completed" });
+    expect(await hasRalphWork(db)).toBe(false);
+
+    const lane = (await getMainLane(db, run))!;
+    await updateLane(db, lane.id, { prNumber: 7, prUrl: "https://example.com/7" });
+    expect(await hasRalphWork(db)).toBe(true);
+    // Merged: its cleanup isn't through yet.
+    await updateLane(db, lane.id, { prClosed: true, prMerged: true });
+    expect(await hasRalphWork(db)).toBe(true);
+    await updateLane(db, lane.id, {
+      cleanup: {
+        status: "done",
+        at: new Date().toISOString(),
+        mergedSha: "a".repeat(40),
+        questions: [],
+      },
+    });
+    expect(await hasRalphWork(db)).toBe(false);
+  });
 
   it("records hidden refs from story outcomes and selects ended or old ones for deletion", async () => {
     const sha = (n: number) => String(n).repeat(40).slice(0, 40);

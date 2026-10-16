@@ -90,6 +90,11 @@ const ALLOWED: Allowed[] = [
     reason: "prefixes of idempotency and lock keys stored in the database",
   },
   {
+    text: /^(ralph:active|ralph:reconciled|ralph-active)$/g,
+    files: ["apps/web/src/lib/ralph/active.ts"],
+    reason: "the reconcile cron's Redis keys and hot-state rebuilder name",
+  },
+  {
     text: /\(people may also call them ralph runs\)/g,
     files: ["apps/web/src/lib/chat/agent/prompt.ts"],
     reason: "tells the chat assistant the old name, so it understands people who still use it",

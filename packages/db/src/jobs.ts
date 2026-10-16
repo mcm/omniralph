@@ -471,7 +471,7 @@ function textArray(values: readonly string[]) {
 /** What the claim's due set (Redis hot state) keeps of a job: when it can next be claimed. */
 export type JobDueState = Pick<
   Job,
-  "id" | "organizationId" | "status" | "availableAt" | "leaseExpiresAt"
+  "id" | "organizationId" | "status" | "createdAt" | "availableAt" | "leaseExpiresAt"
 >;
 
 /**
@@ -488,6 +488,7 @@ export async function listJobDueStates(
       id: jobs.id,
       organizationId: jobs.organizationId,
       status: jobs.status,
+      createdAt: jobs.createdAt,
       availableAt: jobs.availableAt,
       leaseExpiresAt: jobs.leaseExpiresAt,
     })

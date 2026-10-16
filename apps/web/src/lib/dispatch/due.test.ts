@@ -24,7 +24,8 @@ process.env.CRON_SECRET = "cron-secret";
 
 const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 const { PostgresDispatcher } = await import("./dispatcher");
-const { hasDueJob, jobDueKey, renewJobsDue, skipJobAndClearDue } = await import("./due");
+const { hasDueJob, jobDueKey, renewJobsDue, skipJobAndClearDue, syncJobsDueFromPostgres } =
+  await import("./due");
 const { getTokenSigner } = await import("@/lib/harness-auth/signer");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { POST: claim } = await import("@/app/api/harness/claim/route");
@@ -147,6 +148,30 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     return row!;
   }
 
+  const DAY_MS = 24 * 3600 * 1000;
+
+  /** Makes the job two days old, in Postgres and the queued set. */
+  async function backdate(id: string) {
+    await db
+      .update(jobs)
+      .set({ createdAt: new Date(Date.now() - 2 * DAY_MS) })
+      .where(eq(jobs.id, id));
+    await syncJobsDueFromPostgres(db, [id]);
+  }
+
+  function expireJobsCron() {
+    return expireJobs(
+      new Request("http://localhost/api/cron/expire-jobs", {
+        headers: { authorization: "Bearer cron-secret" },
+      }),
+    );
+  }
+
+  async function queuedSince(jobId: string): Promise<number | null> {
+    const value = await getRedis().zscore("job-queued-since", jobId);
+    return value === null ? null : Number(value);
+  }
+
   it("wakes a waiting claim for a dispatched job, without querying Postgres before", async () => {
     const { organizationId, harness, dispatch } = await newOrg();
     await warm(harness.token);
@@ -267,15 +292,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     expect(await score(organizationId, skipped.id)).toBeNull();
 
     const expired = await dispatch();
-    await db
-      .update(jobs)
-      .set({ createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000) })
-      .where(eq(jobs.id, expired.id));
-    const cron = await expireJobs(
-      new Request("http://localhost/api/cron/expire-jobs", {
-        headers: { authorization: "Bearer cron-secret" },
-      }),
-    );
+    await backdate(expired.id);
+    const cron = await expireJobsCron();
     expect(cron.status).toBe(200);
     expect((await jobRow(expired.id)).status).toBe("expired");
     expect(await score(organizationId, expired.id)).toBeNull();
@@ -293,6 +311,92 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     expect((await claimAs(harness.token, 0)).status).toBe(204);
     expect(await score(organizationId, job.id)).toBeNull();
     expect(await hasDueJob(db, organizationId)).toBe(false);
+  });
+
+  it("skips the expire cron without querying Postgres while no queued job is a day old", async () => {
+    const { harness, dispatch } = await newOrg();
+    await warm(harness.token);
+    const queued = await dispatch();
+    expect(await queuedSince(queued.id)).toBe(queued.createdAt.getTime());
+    // A running job that's old doesn't count: only queued jobs expire.
+    const running = await dispatch();
+    await backdate(running.id);
+    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(running.id);
+    expect(await queuedSince(running.id)).toBeNull();
+
+    postgresCalls = 0;
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 0 });
+    expect(postgresCalls).toBe(0);
+    expect((await jobRow(queued.id)).status).toBe("queued");
+  });
+
+  it("runs the expire cron once a queued job is a day old, even a delayed retry", async () => {
+    const { organizationId, harness, dispatch } = await newOrg();
+    await warm(harness.token);
+    const job = await dispatch();
+    await backdate(job.id);
+    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(job.id);
+    await fail(
+      harnessRequest(`jobs/${job.id}/fail`, harness.token, {
+        retryable: true,
+        retryAfterSeconds: 3600,
+        error: "rate limited",
+      }),
+      ctx(job.id),
+    );
+    // Retried: not due for an hour, but created two days ago.
+    expect(await score(organizationId, job.id)).toBeGreaterThan(Date.now());
+    expect(await queuedSince(job.id)).toBeLessThan(Date.now() - DAY_MS);
+
+    postgresCalls = 0;
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 1 });
+    expect(postgresCalls).toBeGreaterThan(0);
+    expect((await jobRow(job.id)).status).toBe("expired");
+    expect(await queuedSince(job.id)).toBeNull();
+    expect(await score(organizationId, job.id)).toBeNull();
+
+    postgresCalls = 0;
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 0 });
+    expect(postgresCalls).toBe(0);
+  });
+
+  it("drops a queued entry left behind once the expire cron finds nothing for it", async () => {
+    const { harness, dispatch } = await newOrg();
+    await warm(harness.token);
+    const job = await dispatch();
+    await backdate(job.id);
+    // Finished behind the set's back.
+    await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, job.id));
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 0 });
+    expect(await queuedSince(job.id)).toBeNull();
+
+    postgresCalls = 0;
+    await expireJobsCron();
+    expect(postgresCalls).toBe(0);
+  });
+
+  it("rebuilds the queued set of a flushed Redis before skipping the expire cron", async () => {
+    const { dispatch } = await newOrg();
+    const job = await dispatch();
+    await db
+      .update(jobs)
+      .set({ createdAt: new Date(Date.now() - 2 * DAY_MS) })
+      .where(eq(jobs.id, job.id));
+    await getRedis().flushdb();
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 1 });
+    expect(await getRedis().exists(EPOCH_KEY)).toBe(1);
+  });
+
+  it("runs the expire cron from Postgres without Redis", async () => {
+    vi.stubEnv("REDIS_URL", "");
+    await closeRedis();
+    const { dispatch } = await newOrg();
+    const job = await dispatch();
+    await db
+      .update(jobs)
+      .set({ createdAt: new Date(Date.now() - 2 * DAY_MS) })
+      .where(eq(jobs.id, job.id));
+    expect(await (await expireJobsCron()).json()).toEqual({ expired: 1 });
   });
 
   it("claims from Postgres on every look without Redis", async () => {

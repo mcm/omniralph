@@ -3,3 +3,4 @@
 // the rebuilders, not just those its own bundle happens to import.
 import "@/lib/dispatch/due";
 import "@/lib/harness-auth/auth-state";
+import "@/lib/ralph/active";
