@@ -4,7 +4,6 @@ import type { RalphLaneView, RalphRunDetailView, RalphStoryView } from "@/lib/ra
 import { RecommendationsCard, RunFacts, StoriesCard } from "./ralph-run-detail-view";
 
 vi.mock("../actions", () => ({ stopRalphRun: vi.fn() }));
-vi.mock("../../repositories/actions", () => ({}));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
 function lane(id: string, fullPath: string, main: boolean): RalphLaneView {

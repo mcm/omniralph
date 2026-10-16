@@ -2362,6 +2362,18 @@ body {
 .freshness-warning {
   color: var(--warning-fg);
 }
+/* A paginated or filtered list while its next page loads: the previous one stays, dimmed. */
+.list-pending {
+  transition: opacity 150ms ease-out;
+}
+.list-pending[aria-busy="true"] {
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: reduce) {
+  .list-pending {
+    transition: none;
+  }
+}
 
 /* Enroll harness dialog (harnesses/enroll-harness-dialog.tsx): waiting for the harness to
    redeem the token. */

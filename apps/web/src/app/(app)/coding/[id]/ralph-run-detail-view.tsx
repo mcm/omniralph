@@ -66,7 +66,7 @@ import {
   type RalphRunDetailView as RalphRunDetail,
 } from "@/lib/ralph/display";
 import { RALPH_MESSAGE_STATE_VARIANTS, stateLabel } from "@/lib/state-variants";
-import { ProviderIcon } from "../../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { stopRalphRun } from "../actions";
 import {
   AgentName,

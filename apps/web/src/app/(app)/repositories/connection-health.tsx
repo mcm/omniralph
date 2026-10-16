@@ -11,26 +11,13 @@ import {
 } from "@iamthemcmaster/ui";
 import { IconWebhook } from "@tabler/icons-react";
 import { Timestamp } from "@/components/list-table";
-import { useAction } from "@/components/use-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import type { ConnectionHealthRow, ConnectionProblemRow } from "@/lib/api/repositories";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { formatDate } from "@/lib/format-date";
-import { recreateGitLabWebhook } from "./actions";
 
-/** A problem found by the daily GitLab check (`scm_connections.health`). */
-export interface ConnectionProblemRow {
-  code: string;
-  message: string;
-  /** The project the problem is about (webhook problems). */
-  repositoryId?: string;
-}
-
-/** A GitLab connection's last daily check. */
-export interface ConnectionHealthRow {
-  /** ISO timestamp. */
-  checkedAt: string;
-  /** ISO date the bot token expires, when GitLab reports it. */
-  tokenExpiresAt: string | null;
-  problems: ConnectionProblemRow[];
-}
+export type { ConnectionHealthRow, ConnectionProblemRow };
 
 const WEBHOOK_PROBLEMS = new Set(["webhook_missing", "webhook_events_outdated"]);
 
@@ -59,14 +46,18 @@ export function problemText(problem: ConnectionProblemRow, health: ConnectionHea
 }
 
 function RecreateWebhookButton({ repositoryId }: { repositoryId: string }) {
-  const { pending, run } = useAction();
+  const recreate = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.post(`/api/ui/repositories/${repositoryId}/webhook`, mutationResultSchema, {
+        organizationId,
+      }),
+    // The connection's health (on the repositories list) loses the problem.
+    invalidate: (keys) => [keys.repositories.lists],
+    success: "Webhook recreated",
+  });
+  const pending = recreate.isPending;
   return (
-    <Button
-      variant="secondary"
-      size="sm"
-      disabled={pending}
-      onClick={() => run(() => recreateGitLabWebhook(repositoryId), "Webhook recreated")}
-    >
+    <Button variant="secondary" size="sm" disabled={pending} onClick={() => recreate.mutate()}>
       <IconWebhook size={14} />
       {pending ? "Recreating…" : "Recreate webhook"}
     </Button>

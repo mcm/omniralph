@@ -39,7 +39,7 @@ import {
   type ReviewListParams,
   type ReviewRow,
 } from "@/lib/reviews/display";
-import { ProviderIcon } from "../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repositories/[id]/repository-nav";
 import { RerunReviewDialog } from "./rerun-review-dialog";
 import { EmptyValue } from "@/components/empty-value";

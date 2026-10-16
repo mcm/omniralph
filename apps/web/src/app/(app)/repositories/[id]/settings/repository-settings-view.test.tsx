@@ -30,14 +30,6 @@ vi.mock("./actions", () => ({
   updateRepositorySettings: vi.fn(),
   updateRepositoryTaskTypes: vi.fn(),
 }));
-// `ProviderIcon`'s module imports the Repositories page's server actions.
-vi.mock("../../actions", () => ({
-  connectGitLab: vi.fn(),
-  disconnectRepository: vi.fn(),
-  removeScmConnection: vi.fn(),
-  setRepositoryEnabled: vi.fn(),
-  recreateGitLabWebhook: vi.fn(),
-}));
 
 const REVIEW_ID = "11111111-1111-4111-8111-111111111111";
 const CORRELATION_ID = "22222222-2222-4222-8222-222222222222";

@@ -8,8 +8,6 @@ import type { HarnessRow } from "@/lib/harnesses/rows";
 import { HarnessesView } from "./harnesses-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-// Imported through `ProviderIcon` (repositories-view); a server action module.
-vi.mock("../repositories/actions", () => ({}));
 
 const HARNESS_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const ENROLLMENT_ID = "0b6a3c1e-8f4d-4c2a-9e1b-7d5f3a2c1b0e";

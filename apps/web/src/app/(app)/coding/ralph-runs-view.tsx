@@ -44,7 +44,7 @@ import {
   type RalphRunRow,
   runSourceLabel,
 } from "@/lib/ralph/display";
-import { ProviderIcon } from "../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
 

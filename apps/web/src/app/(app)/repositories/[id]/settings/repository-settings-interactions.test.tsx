@@ -21,14 +21,6 @@ vi.mock("./actions", () => ({
   updateRepositorySettings: vi.fn(async () => ({ ok: true })),
   updateRepositoryTaskTypes: vi.fn(async () => ({ ok: true })),
 }));
-// `ProviderIcon`'s module imports the Repositories page's server actions.
-vi.mock("../../actions", () => ({
-  connectGitLab: vi.fn(),
-  disconnectRepository: vi.fn(),
-  removeScmConnection: vi.fn(),
-  setRepositoryEnabled: vi.fn(),
-  recreateGitLabWebhook: vi.fn(),
-}));
 
 const ralph: RalphSettingsValues = {
   linearTeamKeys: [],

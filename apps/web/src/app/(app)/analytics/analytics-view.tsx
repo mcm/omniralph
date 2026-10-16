@@ -55,7 +55,7 @@ import {
 } from "@/lib/analytics/display";
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
 import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
-import { ProviderIcon } from "../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 
 interface AnalyticsViewProps {
   analytics: AnalyticsData;
