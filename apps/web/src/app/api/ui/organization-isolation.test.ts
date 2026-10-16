@@ -175,6 +175,7 @@ const findingDismiss = await import("./findings/[id]/dismiss/route");
 const findingRestore = await import("./findings/[id]/restore/route");
 const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
+const jobRerun = await import("./jobs/[id]/rerun/route");
 const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
 const analytics = await import("./analytics/route");
@@ -1226,6 +1227,21 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       status: 403,
     });
     expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
+  });
+
+  it("refuses to rerun the other organization's job, and members can't rerun jobs", async () => {
+    state.userId = a.adminId;
+    expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
+      status: 400,
+      body: { error: "That job doesn't exist." },
+    });
+    expect(
+      await call(jobRerun.POST, { method: "POST", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+    state.userId = b.memberId;
+    expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
+      status: 403,
+    });
   });
 
   // Last: the triage jobs created here would show on the job lists above.

@@ -32,7 +32,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
@@ -91,6 +91,7 @@ const { harnessRow } = await import("@/lib/harnesses/rows");
 const { enqueueInstall } = await import("@/lib/harnesses/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 const jobCancel = await import("@/app/api/ui/jobs/[id]/cancel/route");
+const jobRerun = await import("@/app/api/ui/jobs/[id]/rerun/route");
 const jobList = await import("@/app/api/ui/jobs/route");
 const { POST: enroll } = await import("@/app/api/harness/enroll/route");
 const { POST: postEnrollment } = await import("@/app/api/ui/harness-enrollments/route");
@@ -181,6 +182,7 @@ const unpinRepository = (id: string, repositoryId: string) =>
 const requestHarnessUpdate = (id: string) => ui(harnessUpdate.POST, id);
 const revokeHarness = (id: string) => ui(harnessRevoke.POST, id);
 const cancelJob = (id: string) => ui(jobCancel.POST, id);
+const rerunJob = (id: string) => ui(jobRerun.POST, id);
 async function listedJob(id: string) {
   const response = await jobList.GET(new Request("http://localhost/api/ui/jobs"), {
     params: Promise.resolve({}),
@@ -1456,6 +1458,49 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         .returning();
       expect(await cancelJob(another!.id)).toMatchObject({ ok: false });
       expect(await jobRow(another!.id)).toMatchObject({ status: "queued" });
+    });
+  });
+
+  describe("rerun job", () => {
+    it("queues a failed install again for its harness, and the Jobs page offers it", async () => {
+      const { harnessId } = await enrolledHarness();
+      const installed = await enqueueInstall(db, new PostgresDispatcher({ db }), {
+        organizationId: orgId,
+        harnessId,
+        name: "@omniralph/rerun-fixture",
+      });
+      if (installed.result !== "enqueued") throw new Error("not enqueued");
+      await db
+        .update(jobs)
+        .set({ status: "failed", error: "npm failed", finishedAt: new Date() })
+        .where(eq(jobs.id, installed.jobId));
+      expect(await listedJob(installed.jobId)).toMatchObject({ rerunnable: true });
+
+      const rerun = await rerunJob(installed.jobId);
+      expect(rerun).toEqual({ ok: true });
+      const copies = await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.targetHarnessId, harnessId), eq(jobs.status, "queued")));
+      expect(copies).toHaveLength(1);
+      const failed = await jobRow(installed.jobId);
+      expect(copies[0]).toMatchObject({
+        type: failed.type,
+        taskType: "system",
+        payload: failed.payload,
+        dedupeKey: failed.dedupeKey,
+      });
+      expect(await listedJob(copies[0]!.id)).toMatchObject({ rerunnable: false });
+      // The failed job stays as it was; a second rerun finds the copy queued.
+      expect(failed).toMatchObject({ status: "failed", error: "npm failed" });
+      expect(await rerunJob(installed.jobId)).toMatchObject({
+        ok: true,
+        warning: expect.any(String),
+      });
+      // A job that didn't fail can't be rerun, and members can't rerun.
+      expect(await rerunJob(copies[0]!.id)).toMatchObject({ ok: false });
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await rerunJob(installed.jobId)).toMatchObject({ ok: false });
     });
   });
 });

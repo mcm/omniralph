@@ -23,12 +23,12 @@ import {
   MAX_OPEN_FINDING_BODY_CHARS,
   REVIEW_TASK_JOB_TYPE,
   ReviewTriggerContext,
-  RunSpecJobPayload,
   type ReviewMode,
 } from "@omniralph/shared";
 import type { TaskDefinition, TriggerKind } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { organizationDefinitions, taskJobInput, type DefinitionSource } from "@/lib/definitions";
+import { reviewIdOfJob } from "./job-review";
 
 export interface EnqueueReviewInput {
   repositoryId: string;
@@ -87,13 +87,7 @@ const TRIGGER_KINDS: Record<Review["trigger"], TriggerKind> = {
   manual: "review.rerun",
 };
 
-/** The review row a review task's job is for (in its trigger context); null for none. */
-export function reviewIdOfJob(payload: unknown): string | null {
-  const run = RunSpecJobPayload.safeParse(payload);
-  if (!run.success) return null;
-  const reviewId = ReviewTriggerContext.shape.reviewId.safeParse(run.data.trigger.context.reviewId);
-  return reviewId.success ? reviewId.data : null;
-}
+export { reviewIdOfJob };
 
 /**
  * Dedupe key prefix of a PR's review jobs; the full key adds the head SHA and

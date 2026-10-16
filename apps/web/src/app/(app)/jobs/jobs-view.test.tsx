@@ -39,6 +39,7 @@ function jobRow(n: number, overrides: Partial<JobRow> = {}): JobRow {
     status: "queued",
     deliveryCount: 0,
     cancelRequested: false,
+    rerunnable: false,
     error: null,
     agent: null,
     target: { label: `acme/api!${n}`, url: null },
@@ -217,11 +218,65 @@ describe("JobsView", () => {
     await waitFor(() => expect(within(row(job)).queryByText("Cancel requested")).toBeNull());
   });
 
+  it("reruns a failed job and shows the new job", async () => {
+    const failed = jobRow(1, {
+      type: "review.task",
+      status: "failed",
+      rerunnable: true,
+      error: "Agent crashed",
+      finishedAt: "2026-10-16T10:01:00.000Z",
+    });
+    const rerun = jobRow(2, { type: "review.task", createdAt: "2026-10-16T10:02:00.000Z" });
+    let jobs = [failed, jobRow(3, { status: "failed", error: "Nope" })];
+    const seen = mockFetch({
+      "GET /api/ui/jobs": () => jsonResponse(list(jobs)),
+      [`POST /api/ui/jobs/${failed.id}/rerun`]: () => {
+        jobs = [rerun, ...jobs];
+        return jsonResponse({ ok: true });
+      },
+    });
+    renderView();
+    await waitFor(() => expect(row(failed)).toBeTruthy());
+    // Only the rerunnable failed job offers it.
+    expect(screen.getAllByRole("button", { name: /^Rerun job / })).toHaveLength(1);
+    await userEvent.click(within(row(failed)).getByRole("button", { name: /^Rerun job / }));
+    expect(await screen.findByText(/runs again on the PR's current head/)).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "Rerun job" }));
+    await waitFor(() => expect(row(rerun)).toBeTruthy());
+    expect(
+      seen.some((r) => r.method === "POST" && r.path === `/api/ui/jobs/${failed.id}/rerun`),
+    ).toBe(true);
+    expect(toast.notify).toHaveBeenCalledWith("Job rerun");
+    expect(within(row(failed)).getAllByText("Failed").length).toBeGreaterThan(0);
+  });
+
+  it("says why a rerun failed", async () => {
+    const failed = jobRow(1, { status: "failed", rerunnable: true });
+    mockFetch({
+      "GET /api/ui/jobs": () => jsonResponse(list([failed])),
+      [`POST /api/ui/jobs/${failed.id}/rerun`]: () =>
+        jsonResponse({ error: "The harness this job ran on is gone." }, 400),
+    });
+    renderView();
+    await waitFor(() => expect(row(failed)).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: /^Rerun job / }));
+    expect(await screen.findByText(/queued again for the harness it ran on/)).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "Rerun job" }));
+    await waitFor(() =>
+      expect(toast.notify).toHaveBeenCalledWith("The harness this job ran on is gone.", {
+        variant: "danger",
+      }),
+    );
+  });
+
   it("offers no cancel to members", async () => {
-    mockFetch({ "GET /api/ui/jobs": list([jobRow(1)]) });
+    mockFetch({
+      "GET /api/ui/jobs": list([jobRow(1), jobRow(2, { status: "failed", rerunnable: true })]),
+    });
     renderView("member");
     await waitFor(() => expect(table()?.textContent).toContain("acme/api!1"));
     expect(screen.queryByRole("button", { name: /^Cancel job / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Rerun job / })).toBeNull();
   });
 
   it("opens the page of a `?job=` link and highlights its job", async () => {

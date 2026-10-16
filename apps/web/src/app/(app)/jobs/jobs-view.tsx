@@ -4,6 +4,7 @@ import * as React from "react";
 import { Link } from "@/components/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutationState } from "@tanstack/react-query";
+import { REVIEW_TASK_JOB_TYPE } from "@omniralph/shared";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@iamthemcmaster/ui";
-import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
+import { IconExternalLink, IconListCheck, IconRefresh, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Freshness } from "@/components/freshness";
@@ -74,12 +75,16 @@ function JobTableRow({
   targeted,
   year,
   onCancel,
+  rerunning,
+  onRerun,
 }: {
   job: JobRow;
   isAdmin: boolean;
   targeted: boolean;
   year: number;
   onCancel: (job: JobRow) => void;
+  rerunning: boolean;
+  onRerun: (job: JobRow) => void;
 }) {
   const errorId = useListErrorId(job.error);
   return (
@@ -213,6 +218,36 @@ function JobTableRow({
                 </AlertDialogContent>
               </AlertDialog>
             )}
+            {job.rerunnable && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Rerun job ${shortJobId(job.id)}`}
+                    title="Rerun job"
+                    disabled={rerunning}
+                  >
+                    <IconRefresh size={14} />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Rerun this {job.type} job?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {job.type === REVIEW_TASK_JOB_TYPE
+                        ? "Its review runs again on the PR's current head, with the repository's default profile."
+                        : "It's queued again for the harness it ran on."}{" "}
+                      This job stays failed; the rerun is a new job.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep it</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onRerun(job)}>Rerun job</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </TableCell>
         )}
       </TableRow>
@@ -277,6 +312,29 @@ function useCancelJob() {
     return job;
   };
   return { cancel: (job: JobRow) => cancel.mutate(job), withPending };
+}
+
+/** Names the rerun mutation, so a job's Rerun is disabled while its rerun is on its way. */
+const RERUN_JOB = ["rerun-job"];
+
+/**
+ * Reruns failed jobs (`POST /api/ui/jobs/{id}/rerun`): the rerun is a new job, which the
+ * refetched list shows at its top; the failed job stays as it was.
+ */
+function useRerunJob() {
+  const rerun = useApiMutation({
+    mutationKey: RERUN_JOB,
+    mutationFn: (job: JobRow, { organizationId }) =>
+      api.post(`/api/ui/jobs/${job.id}/rerun`, mutationResultSchema, { organizationId }),
+    // The new job (Jobs pages), and the review a review job's rerun starts.
+    invalidate: (keys) => [keys.jobs.all, keys.harnesses.all, keys.reviews.all],
+    success: "Job rerun",
+  });
+  const pending = useMutationState({
+    filters: { mutationKey: RERUN_JOB, status: "pending" },
+    select: (mutation) => (mutation.state.variables as JobRow).id,
+  });
+  return { rerun: (job: JobRow) => rerun.mutate(job), rerunning: pending };
 }
 
 /**
@@ -345,6 +403,8 @@ function JobsTable({
   targeted,
   withPending,
   onCancel,
+  rerunning,
+  onRerun,
 }: {
   list: JobList;
   params: JobListParams;
@@ -352,6 +412,9 @@ function JobsTable({
   targeted: string | null;
   withPending: (job: JobRow) => JobRow;
   onCancel: (job: JobRow) => void;
+  /** The jobs whose rerun is on its way. */
+  rerunning: string[];
+  onRerun: (job: JobRow) => void;
 }) {
   const pathname = usePathname();
   const { jobs, total } = list;
@@ -401,6 +464,8 @@ function JobsTable({
                 year={year}
                 targeted={job.id === targeted}
                 onCancel={onCancel}
+                rerunning={rerunning.includes(job.id)}
+                onRerun={onRerun}
               />
             ))}
           </TableBody>
@@ -428,6 +493,7 @@ export function JobsView() {
   const data = list.data;
   const hashJobId = useHashJobId();
   const { cancel, withPending } = useCancelJob();
+  const { rerun, rerunning } = useRerunJob();
   const total = data?.total ?? 0;
   const { first, last } = pageRange(
     data?.page ?? params.page,
@@ -492,6 +558,8 @@ export function JobsView() {
                     targeted={targeted}
                     withPending={withPending}
                     onCancel={cancel}
+                    rerunning={rerunning}
+                    onRerun={rerun}
                   />
                 </div>
               )}
