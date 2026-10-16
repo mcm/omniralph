@@ -141,7 +141,8 @@ code-host or Vercel credentials. Their identity is:
   verifier holding the secret could mint tokens, and the secret would have to
   live in an env var. Only RS256 is accepted, so `alg` confusion attacks don't
   apply.
-- **Rate limits and audit.** Fixed windows in Postgres (`rate_limits`):
+- **Rate limits and audit.** Fixed windows in Postgres (`rate_limits`, or Redis
+  when `REDIS_URL` is set):
   `/enroll` 10/min per IP; `/token` 30/min per harness and 60/min per IP; 20
   failed auth attempts from one IP within 10 minutes lock that IP out of the
   harness API (429) for 10 minutes. `harness_audit` records enroll, token
