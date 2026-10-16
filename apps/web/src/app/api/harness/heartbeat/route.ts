@@ -23,8 +23,18 @@ import { requireHarness } from "@/lib/harness-auth/verify";
 import { heartbeatClaimable } from "@/lib/harness-api/claimable";
 import { signJobTokens } from "@/lib/harness-api/jobs";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
-import { recordHeartbeat } from "@/lib/harnesses/last-seen";
-import { renewJobsDue } from "@/lib/dispatch/due";
+import {
+  cachedHeartbeatResponse,
+  heartbeatRequestKey,
+  readHeartbeatChanges,
+  storeHeartbeatResponse,
+  type CachedHeartbeatResponse,
+  type HeartbeatChanges,
+} from "@/lib/harnesses/heartbeat-cache";
+import { recordHeartbeat, type HeartbeatReport } from "@/lib/harnesses/last-seen";
+import { readHarnessOrganization } from "@/lib/harnesses/organization";
+import { hasDueJob, renewJobsDue } from "@/lib/dispatch/due";
+import { hotStateEnabled } from "@/lib/hot-state";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
@@ -47,6 +57,10 @@ const NPM_TIMEOUT_MS = 5_000;
  * null` when Ably is off), and, when the request carries `claimablePools`,
  * whether a claim for them would find a job right now (`claimable`). The
  * harness's report on those host tools is stored first.
+ *
+ * A heartbeat with no running jobs or acknowledgements is answered from Redis when
+ * nothing its last response was built from changed (`heartbeat-cache`): no Postgres
+ * query, unless it asked about `claimablePools` and its organization has a due job.
  */
 export async function POST(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
@@ -56,7 +70,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const db = getDb();
   const { harnessId } = principal;
-  const agent = await recordHeartbeat(db, harnessId, {
+  const report: HeartbeatReport = {
     version: body.data.version,
     selfUpdate: body.data.selfUpdate,
     update: body.data.update,
@@ -64,7 +78,34 @@ export async function POST(req: Request): Promise<Response> {
     handledUpdateRequestId: body.data.handledUpdateRequestId,
     installables: body.data.installables,
     models: body.data.models,
-  });
+  };
+  // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
+  const cacheable =
+    hotStateEnabled() &&
+    body.data.runningJobIds.length === 0 &&
+    body.data.deliveredMessageIds.length === 0 &&
+    body.data.rejectedMessageIds.length === 0;
+  if (cacheable) {
+    const cached = await cachedHeartbeatResponse(harnessId, report, body.data.hostTools, {
+      timeoutMs: NPM_TIMEOUT_MS,
+    });
+    // A due job may be claimable: Postgres tells (`hasDueJob` is false when none is due).
+    if (
+      cached &&
+      (body.data.claimablePools === undefined || !(await hasDueJob(db, cached.organizationId)))
+    ) {
+      const claimable = body.data.claimablePools === undefined ? undefined : false;
+      return Response.json(await withRequestFields(cached, harnessId, body.data, claimable));
+    }
+  }
+  // Read before anything the response is built from: a change committed meanwhile then
+  // bumps a counter past the one cached, and the next heartbeat takes this path again.
+  let changes: HeartbeatChanges | null = null;
+  if (cacheable) {
+    const organizationId = await readHarnessOrganization(db, harnessId);
+    if (organizationId) changes = await readHeartbeatChanges(harnessId, organizationId);
+  }
+  const agent = await recordHeartbeat(db, harnessId, report);
   if (!agent) return badRequest("unknown_agent");
   await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
   const [pinnedRepoIds, poolNames, running, organizationVersion, hostTools, config] =
@@ -108,20 +149,13 @@ export async function POST(req: Request): Promise<Response> {
     console.error(`Exchanging job messages with agent ${harnessId} failed`, error);
   }
 
-  const [ably, claimable] = await Promise.all([
-    heartbeatAblyToken(getAblyConfig(), {
-      harnessId,
-      organizationId: agent.organizationId,
-      tokenExpiresAt: body.data.ablyTokenExpiresAt,
-    }),
-    heartbeatClaimable(
-      db,
-      { ...agent, acceptedTaskTypes: config.acceptedTaskTypes },
-      body.data.claimablePools,
-    ),
-  ]);
+  const claimable = await heartbeatClaimable(
+    db,
+    { ...agent, acceptedTaskTypes: config.acceptedTaskTypes },
+    body.data.claimablePools,
+  );
 
-  return Response.json({
+  const response: CachedHeartbeatResponse = {
     maxConcurrency: config.maxConcurrency,
     // Legacy fields: old harnesses require them; `topics: []` stops their polling.
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
@@ -143,9 +177,46 @@ export async function POST(req: Request): Promise<Response> {
         ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
         : null,
     hostTools: hostTools.map(({ name, configuredPath }) => ({ name, configuredPath })),
+  };
+  if (changes) {
+    const latest = organizationVersion?.tracksLatest ? organizationVersion : null;
+    await storeHeartbeatResponse(
+      harnessId,
+      {
+        changes,
+        request: heartbeatRequestKey(report, body.data.hostTools),
+        ...(latest && { latestVersion: latest.version }),
+        response,
+      },
+      latest?.latestCheckedAt
+        ? {
+            organizationId: agent.organizationId,
+            version: latest.version,
+            checkedAt: latest.latestCheckedAt,
+          }
+        : undefined,
+    );
+  }
+  return Response.json(await withRequestFields(response, harnessId, body.data, claimable));
+}
+
+/** The response with the fields that depend on the request: `ably` and `claimable`. */
+async function withRequestFields(
+  response: CachedHeartbeatResponse,
+  harnessId: string,
+  request: Pick<Heartbeat, "ablyTokenExpiresAt">,
+  claimable: boolean | undefined,
+): Promise<HeartbeatResponse> {
+  const ably = await heartbeatAblyToken(getAblyConfig(), {
+    harnessId,
+    organizationId: response.organizationId,
+    tokenExpiresAt: request.ablyTokenExpiresAt,
+  });
+  return {
+    ...response,
     // Omitted while the harness's Ably token is good for another hour.
     ...(ably === undefined ? {} : { ably }),
     // Only when the harness asked (`claimablePools`): it then claims on `true`.
     ...(claimable === undefined ? {} : { claimable }),
-  } satisfies HeartbeatResponse);
+  } satisfies HeartbeatResponse;
 }

@@ -100,8 +100,11 @@ export async function freshAttempts(tx: RalphTransaction, run: RalphRun): Promis
 
 /** What happened to a reply for a run with a running job. */
 export type LiveReply =
-  /** Stored for the running job's live session; the agent gets it in its next heartbeat. */
-  | { kind: "live"; note: null }
+  /**
+   * Stored for the running job's live session; the agent (`harnessId`, whose heartbeat
+   * response the caller bumps after the commit) gets it in its next heartbeat.
+   */
+  | { kind: "live"; note: null; harnessId: string | null }
   /** Push/PR text kept away from the story agent: a pending request. */
   | { kind: "request"; note: ActivityContent };
 
@@ -142,7 +145,7 @@ export async function queueLiveReply(
     author: author ?? null,
     trigger,
   });
-  return { kind: "live", note: null };
+  return { kind: "live", note: null, harnessId: job.harnessId };
 }
 
 /** The lane a running job works in, null for the main lane. */
@@ -157,7 +160,9 @@ async function jobLaneId(
 
 /**
  * Hands a message to the run's running live-session job, if it has one: a
- * mention on an issue whose run is working right now. Returns whether it did.
+ * mention on an issue whose run is working right now. Returns the job's harness
+ * (whose heartbeat response the caller bumps after the commit), or null when no
+ * such job runs.
  */
 export async function deliverToRunningJob(
   tx: RalphTransaction,
@@ -165,9 +170,9 @@ export async function deliverToRunningJob(
   text: string,
   author: string | undefined,
   trigger: RalphMessageTrigger,
-): Promise<boolean> {
+): Promise<{ harnessId: string | null } | null> {
   const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
-  if (!job) return false;
+  if (!job) return null;
   await insertMessage(tx, {
     runId: run.id,
     jobId: job.id,
@@ -177,7 +182,7 @@ export async function deliverToRunningJob(
     author: author ?? null,
     trigger,
   });
-  return true;
+  return { harnessId: job.harnessId };
 }
 
 /**

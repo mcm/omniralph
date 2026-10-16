@@ -33,7 +33,7 @@ export function harnessReportKey(harnessId: string): string {
 }
 
 /** Everything a heartbeat writes to the harness row, but its time. */
-function reportFingerprint(report: HeartbeatReport): string {
+export function heartbeatReportFingerprint(report: HeartbeatReport): string {
   const normalized = [
     report.version,
     report.selfUpdate ?? null,
@@ -59,7 +59,7 @@ export async function recordHeartbeat(
   now: Date = new Date(),
 ): Promise<HarnessRow | null> {
   if (!hotStateEnabled()) return recordHarnessHeartbeat(db, harnessId, { ...report, now });
-  const fingerprint = reportFingerprint(report);
+  const fingerprint = heartbeatReportFingerprint(report);
   const reportKey = harnessReportKey(harnessId);
   let redis: Redis;
   try {

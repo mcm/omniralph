@@ -13,7 +13,9 @@ import {
 } from "@omniralph/db";
 import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
+import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
+import { hotStateEnabled } from "@/lib/hot-state";
 import { syncJobsDue, syncJobsDueFromPostgres } from "./due";
 
 export interface DispatchJobInput extends NewJobInput {
@@ -77,6 +79,10 @@ export class PostgresDispatcher implements JobDispatcher {
   async cancel(jobId: string): Promise<CancelJobResult> {
     const result = await requestJobCancel(this.db, jobId);
     if (result === "canceled") await syncJobsDueFromPostgres(this.db, [jobId]);
+    // Its harness's next heartbeat tells it to stop the job.
+    if (result === "cancel_requested" && hotStateEnabled()) {
+      await bumpHarnessHeartbeat((await getJob(this.db, jobId))?.harnessId);
+    }
     return result;
   }
 

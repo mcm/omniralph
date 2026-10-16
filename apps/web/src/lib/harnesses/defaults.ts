@@ -28,6 +28,7 @@ import type {
   HostToolCatalogRow,
 } from "@/lib/api/harness-defaults";
 import { organizationHarnessVersion, recordLatestHarnessVersion } from "./desired-version";
+import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
 import { saveInOrder } from "./manage";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
 
@@ -102,6 +103,7 @@ export async function setGlobalHarnessVersion(
     return { ok: false, error: "Enter a version like 1.4.0 or latest, or leave it blank." };
   }
   await setDesiredHarnessVersion(db, admin.organization.id, parsed?.data ?? null, admin.id);
+  await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };
 }
 
@@ -124,6 +126,7 @@ export async function trackLatestHarnessVersion(
   }
   await recordLatestHarnessVersion(db, admin.organization.id, version);
   await setDesiredHarnessVersion(db, admin.organization.id, TRACK_LATEST_HARNESS_VERSION, admin.id);
+  await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true, version };
 }
 
@@ -155,6 +158,7 @@ export async function setOrganizationDefaults(
     admin.id,
   );
   await setDefaultMaxConcurrency(db, admin.organization.id, parsed.data.maxConcurrency, admin.id);
+  await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };
 }
 
@@ -229,6 +233,7 @@ export async function addHostTool(
           : "Names are the executable's name: lowercase letters, digits, dots, dashes and underscores (up to 64), starting with a letter or digit.",
     };
   }
+  await bumpOrganizationHeartbeat(organizationId);
   return { ok: true, hostToolId: created.hostTool.id };
 }
 
@@ -244,5 +249,6 @@ export async function removeHostTool(
   ) {
     return { ok: false, error: "That host tool doesn't exist." };
   }
+  await bumpOrganizationHeartbeat(organizationId);
   return { ok: true };
 }

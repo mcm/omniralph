@@ -29,6 +29,7 @@ import {
 import type { ActionResult } from "@/lib/action-result";
 import type { SelectableRepositories } from "@/lib/api/repositories";
 import { gitlabWebhookUrl } from "@/lib/app-url";
+import { bumpOrganizationHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
@@ -211,6 +212,8 @@ export async function disconnectRepository(
   }
 
   await disconnectRepositoryRow(db, organizationId, id);
+  // Its pins are gone from the heartbeats of whichever harnesses had it.
+  await bumpOrganizationHeartbeat(organizationId);
   return { ok: true, warning };
 }
 
@@ -292,6 +295,7 @@ export async function removeScmConnection(
   }
 
   await deleteScmConnection(db, organizationId, connection.id);
+  await bumpOrganizationHeartbeat(organizationId);
   if (failed.length > 0) {
     return {
       ok: true,

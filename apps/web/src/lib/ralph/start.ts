@@ -38,6 +38,7 @@ import {
   SHIP_REQUEST_TEXT,
   type Epic,
 } from "@omniralph/ralph";
+import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { blockedLabelsMessage, blockingLabels } from "./blocked-labels";
@@ -519,23 +520,21 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     const handed = await lockRun(deps.db, active.id, async (tx, run) => {
       if (FINISHED_RUN_STATUSES.has(run.status)) return null;
       // The epic is being worked right now: hand the mention to that live agent.
-      if (
-        text &&
-        !wantsLoop &&
-        !ship &&
-        (await deliverToRunningJob(tx, run, text, author ?? undefined, "linear.mention"))
-      ) {
-        return { live: true };
-      }
+      const delivered =
+        text && !wantsLoop && !ship
+          ? await deliverToRunningJob(tx, run, text, author ?? undefined, "linear.mention")
+          : null;
+      if (delivered) return { live: true, harnessId: delivered.harnessId };
       await addInstruction(
         tx,
         run,
         { text, author, wantsLoop, ship, trigger: "linear.mention" },
         applyGuidance,
       );
-      return { live: false };
+      return { live: false, harnessId: null };
     });
     if (handed) {
+      if (handed.live) await bumpHarnessHeartbeat(handed.harnessId);
       await post(deps, event.sessionId, {
         type: "response",
         body: handed.live
