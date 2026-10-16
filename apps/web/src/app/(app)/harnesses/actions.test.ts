@@ -71,7 +71,6 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
 const {
-  createEnrollment,
   deleteHarness,
   installInstallable,
   pinRepository,
@@ -89,6 +88,7 @@ const { enqueueInstall } = await import("@/lib/harnesses/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { cancelJob } = await import("../jobs/actions");
 const { POST: enroll } = await import("@/app/api/harness/enroll/route");
+const { POST: postEnrollment } = await import("@/app/api/ui/harness-enrollments/route");
 const { POST: token } = await import("@/app/api/harness/token/route");
 const { POST: heartbeat } = await import("@/app/api/harness/heartbeat/route");
 const { requireJob } = await import("@/lib/harness-auth/verify");
@@ -112,6 +112,19 @@ function post(path: string, body: unknown, accessToken?: string): Request {
     },
     body: JSON.stringify(body),
   });
+}
+
+/** `POST /api/ui/harness-enrollments`, as the Enroll harness dialog sends it. */
+async function createEnrollment(name: string) {
+  const response = await postEnrollment(
+    new Request("http://localhost/api/ui/harness-enrollments", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+    { params: Promise.resolve({}) },
+  );
+  return { status: response.status, body: await response.json() };
 }
 
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
@@ -174,9 +187,9 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
   });
 
   async function newEnrollment(name = "") {
-    const result = await createEnrollment(name);
-    if (!result.ok) throw new Error(result.error);
-    return result;
+    const { status, body } = await createEnrollment(name);
+    if (status !== 200) throw new Error(body.error);
+    return body as { id: string; token: string; expiresAt: string; command: string };
   }
 
   function redeem(enrollmentToken: string) {
@@ -248,7 +261,10 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
     it("is admin-only", async () => {
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await createEnrollment("x")).toEqual({ ok: false, error: expect.any(String) });
+      expect(await createEnrollment("x")).toMatchObject({
+        status: 403,
+        body: { error: expect.any(String) },
+      });
     });
   });
 

@@ -2,7 +2,12 @@
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createHarnessEnrollment, enrollHarness, revokeHarness } from "./harness-auth.js";
+import {
+  createHarnessEnrollment,
+  enrollHarness,
+  getHarnessEnrollmentStatus,
+  revokeHarness,
+} from "./harness-auth.js";
 import {
   findJobPage,
   getHarnessOverview,
@@ -69,6 +74,25 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const harnessId = await enroll(orgB, "b-agent");
     const [row] = await db.select().from(harnesses);
     expect(row).toMatchObject({ id: harnessId, organizationId: orgB, name: "b-agent" });
+  });
+
+  it("reports which harness redeemed an enrollment, only to its organization", async () => {
+    const enrollment = await createHarnessEnrollment(db, { organizationId: orgB, name: "b-new" });
+    expect(await getHarnessEnrollmentStatus(db, orgB, enrollment.id)).toEqual({
+      id: enrollment.id,
+      expiresAt: enrollment.expiresAt,
+      harness: null,
+    });
+    expect(await getHarnessEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
+    const { harnessId } = (await enrollHarness(db, {
+      enrollmentToken: enrollment.token,
+      name: "host",
+      version: "1.0.0",
+    }))!;
+    expect(await getHarnessEnrollmentStatus(db, orgB, enrollment.id)).toMatchObject({
+      harness: { id: harnessId, name: "b-new" },
+    });
+    expect(await getHarnessEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
   });
 
   it("lists, reads and updates only the organization's harnesses", async () => {

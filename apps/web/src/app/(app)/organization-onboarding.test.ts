@@ -81,7 +81,6 @@ vi.mock("@/lib/scm/github-app", () => ({
 }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("./repositories/repositories-view", () => ({ RepositoriesView: () => null }));
-vi.mock("./harnesses/harnesses-view", () => ({ HarnessesView: () => null }));
 vi.mock("./settings/organization/organization-settings-view", () => ({
   OrganizationSettingsView: () => null,
 }));
@@ -93,7 +92,7 @@ const { acceptInvitationAction, createOrganizationAction, switchOrganization } =
   await import("@/lib/organizations/actions");
 const { inviteMember, changeMemberRole } = await import("./settings/organization/actions");
 const { default: RepositoriesPage } = await import("./repositories/page");
-const { default: HarnessesPage } = await import("./harnesses/page");
+const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
 
@@ -188,7 +187,10 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     const repositories = props(await RepositoriesPage({ searchParams: Promise.resolve({}) }));
     expect(repositories).toContain(repo.id);
     expect(repositories).toContain("journey/shared-app");
-    expect(props(await HarnessesPage())).toContain(harnessId);
+    const listed = await listHarnesses(new Request("http://localhost/api/ui/harnesses"), {
+      params: Promise.resolve({}),
+    });
+    expect(await listed.text()).toContain(harnessId);
     const settings = props(await OrganizationSettingsPage());
     expect(settings).toContain(founder.email!);
     expect(settings).toContain(teammateEmail);

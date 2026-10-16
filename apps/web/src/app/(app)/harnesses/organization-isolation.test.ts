@@ -1,7 +1,6 @@
 // Two organizations, each with a harness and a repository: an admin of one never sees or
 // changes the other's harnesses, gets a 404 on their URLs, and only sets their own harness version.
 import {
-  harnesses,
   closeDb,
   connectRepository,
   createHarnessEnrollment,
@@ -24,7 +23,6 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -70,20 +68,17 @@ vi.mock("@/lib/dispatch", () => ({
   }),
 }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./harnesses-view", () => ({ HarnessesView: () => null }));
 vi.mock("./[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
 vi.mock("../settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
-const { default: HarnessesPage } = await import("./page");
 const { default: HarnessPage } = await import("./[id]/page");
 const { default: HarnessHostToolsPage } = await import("./[id]/host-tools/page");
 const { default: HarnessSettingsPage } = await import("../settings/harnesses/page");
 const { default: HostToolsSettingsPage } = await import("../settings/harnesses/host-tools/page");
 const {
-  createEnrollment,
   deleteHarness,
   pinRepository,
   revokeHarness,
@@ -161,26 +156,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
-  it("lists only the active organization's harnesses and 404s on the other's", async () => {
+  // The list and enrollments are covered by src/app/api/ui/organization-isolation.test.ts.
+  it("404s on the other organization's harness", async () => {
     state.userId = a.userId;
-    const listed = (await HarnessesPage()).props.harnesses as { id: string }[];
-    expect(listed.map((r) => r.id)).toEqual([a.harnessId]);
     const detail = await HarnessPage(params(a.harnessId));
     expect((detail.props.harness as { id: string }).id).toBe(a.harnessId);
     await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
-  });
-
-  it("creates enrollments in the active organization", async () => {
-    state.userId = b.userId;
-    const created = await createEnrollment("beta-2");
-    if (!created.ok) throw new Error(created.error);
-    const { harnessId } = (await enrollHarness(db, {
-      enrollmentToken: created.token,
-      name: "host",
-      version: "1.0.0",
-    }))!;
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-    expect(row!.organizationId).toBe(b.orgId);
   });
 
   it("refuses every harness action on the other organization's harness", async () => {
@@ -215,8 +196,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
     expect(await getDesiredHarnessVersion(db, b.orgId)).toBeNull();
     expect((await HarnessSettingsPage()).props.desiredVersion).toBe("1.4.0");
-    const listed = (await HarnessesPage()).props.harnesses as { desiredVersion: string | null }[];
-    expect(listed.map((r) => r.desiredVersion)).toEqual(["1.4.0"]);
 
     state.userId = b.userId;
     expect((await HarnessSettingsPage()).props.desiredVersion).toBeNull();

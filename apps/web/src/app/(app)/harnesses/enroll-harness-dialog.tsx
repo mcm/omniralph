@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Alert,
   AlertDescription,
@@ -16,19 +17,26 @@ import {
   DialogTrigger,
   Field,
   Input,
+  Muted,
   notify,
+  Spinner,
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/components/current-user";
 import { Timestamp } from "@/components/list-table";
+import { useQueryKeys } from "@/components/query-provider";
+import { useNow } from "@/components/relative-time";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import {
+  createdEnrollmentSchema,
+  ENROLLMENT_NAME_MAX,
+  enrollmentStatusSchema,
+  type CreatedEnrollment,
+} from "@/lib/api/harnesses";
 import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
-import { createEnrollment } from "./actions";
-
-interface Enrollment {
-  token: string;
-  expiresAt: string;
-  command: string;
-}
 
 async function copy(text: string, what: string) {
   try {
@@ -63,12 +71,71 @@ function SecretRow({
   );
 }
 
-/** "Enroll harness": creates a one-time enrollment token and shows it (once) with its command. */
+/**
+ * Polls the enrollment while the dialog shows its token, until a harness redeems it (or it
+ * expires). The harness list is refetched before the harness is reported, so the list behind
+ * the dialog already shows it.
+ */
+function useEnrollmentStatus(enrollment: CreatedEnrollment | null) {
+  const client = useQueryClient();
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery({
+    queryKey: [...keys.harnesses.all, "enrollment", enrollment?.id],
+    enabled: enrollment !== null,
+    queryFn: async ({ signal }) => {
+      const status = await api.get(
+        `/api/ui/harness-enrollments/${enrollment!.id}`,
+        enrollmentStatusSchema,
+        { organizationId: organization.id, signal },
+      );
+      if (status.harness) await client.invalidateQueries({ queryKey: keys.harnesses.lists });
+      return status;
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data;
+      const expired = enrollment !== null && Date.parse(enrollment.expiresAt) <= Date.now();
+      return status?.harness || expired ? false : 3_000;
+    },
+  });
+}
+
+/** Under the token: waiting for the harness to redeem it, or that it expired unused. */
+function EnrollmentWaiting({ enrollment }: { enrollment: CreatedEnrollment }) {
+  const now = useNow();
+  if (Date.parse(enrollment.expiresAt) <= now) {
+    return <Muted>This token expired before a harness used it. Generate a new one.</Muted>;
+  }
+  return (
+    <div className="harness-enroll-waiting" role="status">
+      <Spinner size="sm" variant="neutral" label="Waiting for the harness to enroll" />
+      <Muted>Waiting for the harness to enroll…</Muted>
+    </div>
+  );
+}
+
+/**
+ * "Enroll harness": creates a one-time enrollment token and shows it (once) with its command,
+ * then shows the harness once it has enrolled with the token.
+ */
 export function EnrollHarnessDialog() {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [enrollment, setEnrollment] = React.useState<Enrollment | null>(null);
-  const [pending, startTransition] = React.useTransition();
+  const [enrollment, setEnrollment] = React.useState<CreatedEnrollment | null>(null);
+  const status = useEnrollmentStatus(open ? enrollment : null);
+  const connected = enrollment && status.data?.harness;
+
+  const create = useApiMutation({
+    mutationFn: (harnessName: string, { organizationId }) =>
+      api.post("/api/ui/harness-enrollments", createdEnrollmentSchema, {
+        body: { name: harnessName },
+        organizationId,
+      }),
+    // A token changes no list: the harness appears once it enrolls.
+    invalidate: () => [],
+    success: null,
+    onSuccess: (created) => setEnrollment(created),
+  });
 
   const onOpenChange = (next: boolean) => {
     setOpen(next);
@@ -81,11 +148,7 @@ export function EnrollHarnessDialog() {
 
   const generate = (e: React.FormEvent) => {
     e.preventDefault();
-    startTransition(async () => {
-      const result = await createEnrollment(name);
-      if (result.ok) setEnrollment(result);
-      else notify(result.error, { variant: "danger" });
-    });
+    create.mutate(name);
   };
 
   return (
@@ -97,7 +160,35 @@ export function EnrollHarnessDialog() {
         </Button>
       </DialogTrigger>
       <DialogContent>
-        {enrollment ? (
+        {connected ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{connected.name} connected</DialogTitle>
+              <DialogDescription>
+                It enrolled with the token and is in the fleet. Its task types, concurrency and
+                pinned repositories are on its page.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <Alert variant="success" role="status">
+                <AlertTitle as="h3">Enrolled</AlertTitle>
+                <AlertDescription>
+                  {connected.name} redeemed the token, which can&apos;t be used again.
+                </AlertDescription>
+              </Alert>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
+              <Button asChild variant="primary">
+                <Link href={`/harnesses/${connected.id}`} onClick={() => onOpenChange(false)}>
+                  Open {connected.name}
+                </Link>
+              </Button>
+            </DialogFooter>
+          </>
+        ) : enrollment ? (
           <>
             <DialogHeader>
               <DialogTitle>Enrollment token created</DialogTitle>
@@ -131,6 +222,7 @@ export function EnrollHarnessDialog() {
                   label="Token"
                   value={enrollment.token}
                 />
+                <EnrollmentWaiting enrollment={enrollment} />
               </DialogBody>
             </Stack>
             <DialogFooter>
@@ -156,7 +248,7 @@ export function EnrollHarnessDialog() {
               >
                 <Input
                   id="harness-name"
-                  maxLength={100}
+                  maxLength={ENROLLMENT_NAME_MAX}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. coder-review-1"
@@ -167,9 +259,9 @@ export function EnrollHarnessDialog() {
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={pending}>
+              <Button type="submit" variant="primary" disabled={create.isPending}>
                 <IconKey size={14} />
-                {pending ? "Generating…" : "Generate token"}
+                {create.isPending ? "Generating…" : "Generate token"}
               </Button>
             </DialogFooter>
           </form>
