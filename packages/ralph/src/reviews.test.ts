@@ -125,4 +125,42 @@ describe("buildPullRequestCommentRequest", () => {
     );
     expect(text).toContain("[finding `11111111-1111-4111-8111-111111111111`]");
   });
+
+  it("adds the rest of the finding's review as context", () => {
+    const thread = finding(4, { id: "a", title: "Missing null check" });
+    const text = buildPullRequestCommentRequest({
+      author: "maintainer",
+      text: "fix this one only",
+      finding: thread,
+      review: {
+        summary: "Loader problems.",
+        findings: [thread, finding(9, { id: "b", title: "Unbounded retry" })],
+      },
+      prNumber: 7,
+      prUrl: "https://github.com/acme/app/pull/7",
+      branch: "eng-1",
+    });
+    expect(text).toContain("If @maintainer only asked a question, answer it in your summary");
+    expect(text).toContain("Report each finding you worked on in your structured result's");
+    expect(text).toContain(
+      "The review it's from, for context (work only on what @maintainer asked for):\n\nSummary:\nLoader problems.\n\nIts other open findings (1):\n1. `src/f9.ts:9` (high): **Unbounded retry** [finding `b`]",
+    );
+    expect(text.match(/Missing null check/g)).toHaveLength(1);
+  });
+
+  it("says when the review has no other open findings, and ignores it outside a finding's thread", () => {
+    const thread = finding(4, { id: "a" });
+    const args = {
+      author: "maintainer",
+      text: null,
+      review: { findings: [thread] },
+      prNumber: 7,
+      prUrl: "https://github.com/acme/app/pull/7",
+      branch: "eng-1",
+    };
+    const text = buildPullRequestCommentRequest({ ...args, finding: thread });
+    expect(text).toContain("It has no other open findings.");
+    expect(text).not.toContain("Summary:");
+    expect(buildPullRequestCommentRequest(args)).not.toContain("The review it's from");
+  });
 });

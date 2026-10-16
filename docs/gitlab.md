@@ -154,7 +154,7 @@ protects the run's branch, or only allows Maintainers to push, the Developer-rol
 push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by Developers.
 
 Omniralph's own review findings on a ralph MR, and `@bot fix [text]` (or any other `@bot` request
-outside a finding's thread) from users with at least Developer access, become requests that ralph
+outside a finding's thread, or in one when the run has a Linear agent session) from users with at least Developer access, become requests that ralph
 works on and pushes to the MR's branch ([linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs));
 they use the merge request (note) events the webhook already has.
 

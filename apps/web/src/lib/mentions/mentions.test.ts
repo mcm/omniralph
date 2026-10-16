@@ -14,6 +14,7 @@ import {
   listPendingRequests,
   ralphRuns,
   repositories,
+  reviewRuns,
   reviews,
   setAllowedTaskTypeDefaults,
   updateLane,
@@ -829,9 +830,128 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment[0]!.body).toContain("I passed this to the coding task");
     });
 
-    it("questions in a finding's thread, review, dismiss and help keep their v1 behaviour", async () => {
-      const { number, commentId, finding } = await reviewedPr();
+    /** PR `number`'s review run (with a summary) of one review with three findings: two open, posted as threads. */
+    async function reviewRunPr() {
+      const number = ++prCounter;
+      const [reviewRun] = await db
+        .insert(reviewRuns)
+        .values({
+          organizationId: orgId,
+          repositoryId: repoId,
+          prNumber: number,
+          headSha: SHA(2),
+          baseSha: SHA(1),
+          trigger: "webhook",
+          mode: "incremental",
+          status: "completed",
+          summary: "Two problems in the loader.",
+        })
+        .returning();
+      const review = await createReview(db, {
+        reviewRunId: reviewRun!.id,
+        repositoryId: repoId,
+        prNumber: number,
+        headSha: SHA(2),
+        baseSha: SHA(1),
+        trigger: "webhook",
+        profileId: "standard",
+        model: null,
+        budget: 200_000,
+      });
+      await db.update(reviews).set({ status: "completed" }).where(eq(reviews.id, review.id));
+      const base = {
+        reviewId: review.id,
+        endLine: 4,
+        severity: "high",
+        category: "correctness",
+        body: "Details.",
+        confidence: 0.8,
+      } as const;
+      const rows = await db
+        .insert(findings)
+        .values([
+          {
+            ...base,
+            path: "src/b.ts",
+            startLine: 3,
+            title: "Missing null check",
+            scmCommentId: String(5000 + number),
+          },
+          {
+            ...base,
+            path: "src/a.ts",
+            startLine: 9,
+            title: "Unbounded retry",
+            scmCommentId: String(6000 + number),
+          },
+          {
+            ...base,
+            path: "src/c.ts",
+            startLine: 1,
+            title: "Already dismissed",
+            status: "dismissed" as const,
+          },
+        ])
+        .returning();
+      return { number, commentId: String(5000 + number), findings: rows };
+    }
+
+    it("other @bot text in a finding's thread goes to the Linear session with the whole review", async () => {
+      const { number, commentId, findings: rows } = await reviewRunPr();
       const run = await ralphPr(number);
+      const res = await threadComment(
+        number,
+        commentId,
+        "@omniralph please handle this and the retry one",
+      );
+      expect(res).toEqual({ status: "accepted", command: "question" });
+      expect(
+        (await db.select().from(jobs).where(eq(jobs.type, "review.reply"))).filter(
+          (j) => replyContext(j).threadCommentId === commentId,
+        ),
+      ).toEqual([]);
+      const [request, ...more] = await pending(run.id);
+      expect(more).toEqual([]);
+      expect(request!.trigger).toBe("pr.fix-command");
+      expect(request!.text).toContain(
+        `@maintainer asked on pull request #${number} (https://github.com/acme/app/pull/${number}) in the thread of one of Omniralph's review findings:`,
+      );
+      expect(request!.text).toContain("please handle this and the retry one");
+      expect(request!.text).toContain(
+        `\`src/b.ts:3\` (high): **Missing null check** [finding \`${rows[0]!.id}\`]`,
+      );
+      expect(request!.text).toContain("Summary:\nTwo problems in the loader.");
+      expect(request!.text).toContain("Its other open findings (1):");
+      expect(request!.text).toContain(
+        `1. \`src/a.ts:9\` (high): **Unbounded retry** [finding \`${rows[1]!.id}\`]`,
+      );
+      expect(request!.text).not.toContain("Already dismissed");
+      expect(state.scm.calls.replyToComment).toHaveLength(1);
+      expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId });
+      expect(state.scm.calls.replyToComment[0]!.body).toContain(
+        "I passed this to the coding task of [ENG-1]",
+      );
+      expect(state.linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+        "@maintainer asked for changes on the pull request. I'll work through it as soon as the current step finishes.",
+      ]);
+    });
+
+    it("@bot fix in a finding's thread carries the rest of its review", async () => {
+      const { number, commentId } = await reviewRunPr();
+      const run = await ralphPr(number);
+      await threadComment(number, commentId, "@omniralph fix");
+      const [request] = await pending(run.id);
+      expect(request!.text).toContain("Fix this finding.");
+      expect(request!.text).toContain("**Missing null check**");
+      expect(request!.text).toContain("**Unbounded retry**");
+      expect(request!.text).toContain("Report each finding you worked on");
+    });
+
+    it("questions in a finding's thread are answered when the ralph run is over", async () => {
+      const { number, commentId } = await reviewedPr();
+      const run = await ralphPr(number);
+      await db.update(jobs).set({ status: "canceled" }).where(eq(jobs.ralphRunId, run.id));
+      await db.update(ralphRuns).set({ status: "failed" }).where(eq(ralphRuns.id, run.id));
       await threadComment(number, commentId, "@omniralph is this reachable?");
       const replies = await db.select().from(jobs).where(eq(jobs.type, "review.reply"));
       expect(
@@ -841,6 +961,12 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
             replyContext(j).threadCommentId === commentId,
         ),
       ).toBe(true);
+      expect(await pending(run.id)).toEqual([]);
+    });
+
+    it("review, dismiss and help keep their v1 behaviour", async () => {
+      const { number, commentId, finding } = await reviewedPr();
+      const run = await ralphPr(number);
       await conversationComment(number, "@omniralph review");
       expect(await prReviewJobs(number)).toHaveLength(1);
       await conversationComment(number, "@omniralph help");
