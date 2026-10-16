@@ -1,0 +1,63 @@
+import type { QueryKey } from "@tanstack/react-query";
+
+/**
+ * Areas of the panel with their own queries. A mutation invalidates an area's `all` key
+ * to refetch every list and detail of it.
+ */
+export const QUERY_AREAS = [
+  "analytics",
+  "harnesses",
+  "jobs",
+  "organization",
+  "repositories",
+  "reviews",
+  "runs",
+  "settings",
+  "triage",
+] as const;
+export type QueryArea = (typeof QUERY_AREAS)[number];
+
+/** List filters and pagination, as read from the URL's search params. */
+export type ListParams = Record<string, string | number | boolean | null | undefined>;
+
+export interface AreaKeys {
+  /** Prefix of every key of the area: invalidates its lists and details. */
+  all: QueryKey;
+  /** Prefix of the area's lists: invalidates every filter and page. */
+  lists: QueryKey;
+  /** One list: a filter and page. */
+  list: (params?: ListParams) => QueryKey;
+  /** One entity (a harness, a run, …). */
+  detail: (id: string) => QueryKey;
+  /** A sub-resource of one entity (a harness's runs, a repository's rules tab, …). */
+  part: (id: string, part: string, params?: ListParams) => QueryKey;
+}
+
+export type QueryKeys = { [area in QueryArea]: AreaKeys } & {
+  /** Every query of the organization. */
+  all: QueryKey;
+};
+
+/**
+ * The query-key factory: every key the panel uses comes from here and starts with the
+ * active organization's id, so one organization's data is never served from another's
+ * cache (and `QueryProvider` drops the other organizations' queries on a switch).
+ * Keys nest by prefix: `[org, area]` ⊃ `[org, area, "list"]` ⊃ `[org, area, "list", params]`,
+ * and `[org, area, "detail", id]` ⊃ `[org, area, "detail", id, part, params]`, so
+ * invalidating a shorter key refetches everything under it.
+ */
+export function queryKeys(organizationId: string): QueryKeys {
+  const area = (name: QueryArea): AreaKeys => ({
+    all: [organizationId, name],
+    lists: [organizationId, name, "list"],
+    list: (params = {}) => [organizationId, name, "list", params],
+    detail: (id) => [organizationId, name, "detail", id],
+    part: (id, part, params = {}) => [organizationId, name, "detail", id, part, params],
+  });
+  return {
+    all: [organizationId],
+    ...(Object.fromEntries(QUERY_AREAS.map((name) => [name, area(name)])) as {
+      [name in QueryArea]: AreaKeys;
+    }),
+  };
+}

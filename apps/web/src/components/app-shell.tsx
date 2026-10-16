@@ -4,6 +4,7 @@ import { SidebarProvider, SonnerToaster, TooltipProvider } from "@iamthemcmaster
 import { AppSidebar, type OrganizationOption } from "./app-sidebar";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { OrganizationGuard } from "./organization-guard";
+import { QueryProvider } from "./query-provider";
 import { UnsavedChangesBar, UnsavedChangesProvider } from "./unsaved-changes";
 
 export function AppShell({
@@ -21,28 +22,31 @@ export function AppShell({
 }) {
   return (
     <CurrentUserProvider user={user}>
-      <OrganizationGuard
-        organizationName={user.organization.name}
-        renderedCookie={organizationCookie}
-      >
-        <TooltipProvider>
-          {/* No AuroraField: this shell wraps the data surfaces, which sit on a flat page
-          (DESIGN.md). Below 768px the sidebar is the library's navigation sheet, opened
-          from the trigger in AppHeader. */}
-          <UnsavedChangesProvider>
-            <SidebarProvider>
-              <div className="app-shell flex">
-                <AppSidebar organizations={organizations} />
-                <div className="flex flex-1 flex-col min-w-0">
-                  {children}
-                  <UnsavedChangesBar />
+      {/* Live data for every page (src/lib/api, README "Data fetching"). */}
+      <QueryProvider organizationId={user.organization.id}>
+        <OrganizationGuard
+          organizationName={user.organization.name}
+          renderedCookie={organizationCookie}
+        >
+          <TooltipProvider>
+            {/* No AuroraField: this shell wraps the data surfaces, which sit on a flat page
+            (DESIGN.md). Below 768px the sidebar is the library's navigation sheet, opened
+            from the trigger in AppHeader. */}
+            <UnsavedChangesProvider>
+              <SidebarProvider>
+                <div className="app-shell flex">
+                  <AppSidebar organizations={organizations} />
+                  <div className="flex flex-1 flex-col min-w-0">
+                    {children}
+                    <UnsavedChangesBar />
+                  </div>
                 </div>
-              </div>
-            </SidebarProvider>
-          </UnsavedChangesProvider>
-          <SonnerToaster position="bottom-right" />
-        </TooltipProvider>
-      </OrganizationGuard>
+              </SidebarProvider>
+            </UnsavedChangesProvider>
+            <SonnerToaster position="bottom-right" />
+          </TooltipProvider>
+        </OrganizationGuard>
+      </QueryProvider>
     </CurrentUserProvider>
   );
 }
