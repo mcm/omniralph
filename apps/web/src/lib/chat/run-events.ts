@@ -12,6 +12,7 @@ import {
   type ChatRunEventKind,
   type ThreadRunRef,
 } from "@omniralph/db";
+import { markRunEventsPending } from "@/lib/chat/pending-run-events";
 import type { ChatTarget } from "@/lib/ralph/conversation";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 
@@ -79,7 +80,8 @@ export function scheduleThreadWake(chatThreadId: string): void {
 /**
  * Records an event of a run mapped to `target`'s thread, sanitized for it,
  * once per run and `key`, and wakes the responder for the thread
- * (`scheduleThreadWake`). False when nothing was recorded: already recorded,
+ * (`scheduleThreadWake`), marking it pending for the cron
+ * (`markRunEventsPending`). False when nothing was recorded: already recorded,
  * or the run isn't mapped to a thread of the organization (logged).
  */
 export async function recordChatRunEvent(
@@ -101,6 +103,10 @@ export async function recordChatRunEvent(
     body: sanitizeRunEventBody(input.body, target.allowedHosts),
     idempotencyKey: runEventKey(input.run, input.key),
   });
-  if (created) scheduleThreadWake(target.thread.id);
+  if (created) {
+    // For the cron, in case the wake-up misses it.
+    await markRunEventsPending();
+    scheduleThreadWake(target.thread.id);
+  }
   return created;
 }

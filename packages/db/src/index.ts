@@ -344,6 +344,7 @@ export {
   listThreadRuns,
   listRunEvents,
   listThreadsWithPendingRunEvents,
+  hasPendingRunEvents,
   markRunEventsProcessed,
   recordRunEventAttempt,
   runRequester,

@@ -950,6 +950,23 @@ export async function listThreadsWithPendingRunEvents(
 }
 
 /**
+ * Whether any run event (of any organization, however recent) is still
+ * pending and was tried fewer than `maxAttempts` times: the cron's check
+ * before it lets its Redis marker go.
+ */
+export async function hasPendingRunEvents(
+  db: ChatExecutor,
+  options: { maxAttempts: number },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: chatRunEvents.id })
+    .from(chatRunEvents)
+    .where(and(isNull(chatRunEvents.processedAt), lt(chatRunEvents.attempts, options.maxAttempts)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
  * Who asked for a mapped run: the author of the thread's last user message
  * before the run was mapped (the message the responder answered by starting
  * it), or else whoever started the thread. Null when the mapping isn't the
