@@ -26,6 +26,7 @@ put them in `apps/web/.env.local`.
 | -- | -- | -- | -- |
 | `DATABASE_URL` | yes | — | Pooled Neon Postgres URL, used by the app. Injected by the Neon integration. |
 | `DATABASE_URL_UNPOOLED` | no | falls back to `DATABASE_URL` | Direct (unpooled) Neon URL, preferred by `pnpm --filter @omniralph/db migrate`. Injected by the Neon integration. |
+| `REDIS_URL` | no | — (hot state off: idle paths read Postgres) | Upstash Redis TCP URL (`rediss://default:<password>@<host>:6379`), not the REST URL. Holds hot state for idle agent paths (`apps/web/src/lib/hot-state/`) so Neon can scale to zero: caches, counters and signals rebuilt from Postgres whenever the `hot-state:epoch` key is missing. Postgres stays the source of truth, and every hot-state read falls back to it when this is unset or Redis errors. |
 
 ### Secrets and URLs
 
