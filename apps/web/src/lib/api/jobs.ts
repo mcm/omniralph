@@ -22,6 +22,7 @@ export const jobRowSchema = z.object({
   status: z.enum(JOB_STATUSES),
   deliveryCount: z.number(),
   cancelRequested: z.boolean(),
+  rerunnable: z.boolean(),
   error: z.string().nullable(),
   agent: z.object({ id: z.string(), name: z.string() }).nullable(),
   target: z.object({ label: z.string(), url: z.string().nullable() }).nullable(),

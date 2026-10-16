@@ -5,6 +5,7 @@ import {
   type HarnessUpdateReport,
   type SelfUpdateSupport,
 } from "@omniralph/shared";
+import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { triageJobRun } from "@/lib/triage/view";
 import { isHarnessOnline, jobTarget, type JobTarget } from "./display";
@@ -137,6 +138,8 @@ export interface JobRow {
   status: JobListEntry["status"];
   deliveryCount: number;
   cancelRequested: boolean;
+  /** Whether the Jobs page offers to rerun it (`isRerunnable`). */
+  rerunnable: boolean;
   error: string | null;
   agent: { id: string; name: string } | null;
   target: JobTarget | null;
@@ -154,6 +157,7 @@ export function jobRow(job: JobListEntry): JobRow {
     status: job.status,
     deliveryCount: job.deliveryCount,
     cancelRequested: job.cancelRequested,
+    rerunnable: isRerunnable(job),
     error: job.error,
     agent: job.agent,
     target: jobTarget(job),
