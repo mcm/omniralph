@@ -1,14 +1,32 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+import "@/components/pickers/test-dom";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createTestQueryClient,
+  jsonResponse,
+  mockFetch,
+  queryWrapper,
+  testUser,
+  TEST_ORGANIZATION_ID,
+} from "@/components/query-test-utils";
+import { queryKeys } from "@/lib/api/keys";
 import type { TriageRunDetailView as TriageRunDetail } from "@/lib/triage/display";
 import { TriageRunDetailView } from "./triage-run-detail-view";
 
+const RUN_ID = "11111111-2222-4333-8444-000000000001";
+
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "11111111-2222-4333-8444-000000000001" }),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/triage/11111111-2222-4333-8444-000000000001",
+}));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "member" }) }));
 
 function detail(overrides: Partial<TriageRunDetail> = {}): TriageRunDetail {
   return {
-    id: "run-1",
+    id: RUN_ID,
     status: "completed",
     trigger: "label",
     issue: { identifier: "TOOL-7", title: "Add exports", url: "https://linear.app/a/TOOL-7" },
@@ -69,12 +87,29 @@ function detail(overrides: Partial<TriageRunDetail> = {}): TriageRunDetail {
   };
 }
 
-const render = (run: TriageRunDetail) =>
-  renderToStaticMarkup(<TriageRunDetailView run={run} year={2026} />);
+const DETAIL = `GET /api/ui/triage/${RUN_ID}`;
+
+/** Renders the run's page answering `run`, and resolves to its HTML once it's loaded. */
+async function show(run: TriageRunDetail): Promise<string> {
+  mockFetch({ [DETAIL]: { run } });
+  renderView();
+  await screen.findByLabelText("Triage facts");
+  return document.body.innerHTML;
+}
+
+function renderView(role: "admin" | "member" = "member") {
+  const client = createTestQueryClient();
+  render(<TriageRunDetailView />, { wrapper: queryWrapper(client, { ...testUser, role }) });
+  return client;
+}
+
+beforeEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("TriageRunDetailView", () => {
-  it("shows the issue, the facts, the result and the jobs", () => {
-    const html = render(detail());
+  it("shows the issue, the facts, the result and the jobs", async () => {
+    const html = await show(detail());
     expect(html).toContain("TOOL-7");
     expect(html).toContain("Add exports");
     expect(html).toContain('href="https://linear.app/a/TOOL-7"');
@@ -95,8 +130,8 @@ describe("TriageRunDetailView", () => {
     expect(html).toContain("Grep");
   });
 
-  it("says why a run failed and which reply waits", () => {
-    const html = render(
+  it("says why a run failed and which reply waits", async () => {
+    const html = await show(
       detail({
         status: "failed",
         error: "the triage ended without a result (error)",
@@ -111,8 +146,8 @@ describe("TriageRunDetailView", () => {
     expect(html).not.toContain("Summary");
   });
 
-  it("stands in for a run with no job yet", () => {
-    const html = render(
+  it("stands in for a run with no job yet", async () => {
+    const html = await show(
       detail({
         status: "queued",
         issue: null,
@@ -128,5 +163,57 @@ describe("TriageRunDetailView", () => {
     expect(html).toContain("Triage");
     expect(html).toContain("Not chosen yet");
     expect(html).toContain("Nothing yet");
+  });
+
+  it("shows a skeleton, then the run, and asks with the page it's on", async () => {
+    const seen = mockFetch({
+      [DETAIL]: { run: detail({ updatedAt: new Date(Date.now() - 20_000).toISOString() }) },
+    });
+    renderView();
+    expect(screen.getByLabelText("Loading the triage run")).toBeTruthy();
+    expect(await screen.findByText("Wrote a PRD with two stories.")).toBeTruthy();
+    expect(seen[0]!.query.get("next")).toBe("/");
+    // "Last updated" is relative to the browser's clock.
+    expect(screen.getByText("Last updated").parentElement!.textContent).toMatch(/\d+s ago/);
+    expect(document.querySelector(".freshness")).toBeTruthy();
+  });
+
+  it("shows the result and the job's outcome when the triage finishes", async () => {
+    const running = detail({
+      status: "running",
+      outcome: null,
+      size: null,
+      openQuestions: null,
+      result: null,
+      jobs: [{ ...detail().jobs[0]!, status: "running", finishedAt: null }],
+    });
+    let current = running;
+    mockFetch({ [DETAIL]: () => jsonResponse({ run: current }) });
+    const client = renderView();
+    expect(await screen.findByRole("heading", { name: "Jobs" })).toBeTruthy();
+    expect(screen.queryByText("Summary")).toBeNull();
+    expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
+
+    current = detail();
+    await client.invalidateQueries({ queryKey: queryKeys(TEST_ORGANIZATION_ID).triage.all });
+    expect(await screen.findByText("Wrote a PRD with two stories.")).toBeTruthy();
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
+    expect(screen.getByText("Export CSV")).toBeTruthy();
+  });
+
+  it("says what failed and retries", async () => {
+    let fail = true;
+    mockFetch({
+      [DETAIL]: () =>
+        fail
+          ? jsonResponse({ error: "Database unavailable." }, 500)
+          : jsonResponse({ run: detail() }),
+    });
+    renderView();
+    expect(await screen.findByText("Couldn't load the triage run")).toBeTruthy();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Wrote a PRD with two stories.")).toBeTruthy();
   });
 });

@@ -1,7 +1,8 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Card,
@@ -11,6 +12,7 @@ import {
   CardTitle,
   Empty,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -24,12 +26,16 @@ import { useCurrentUser } from "@/components/current-user";
 import { EmptyValue } from "@/components/empty-value";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
+import { Freshness } from "@/components/freshness";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
 import { TriageRunStatusBadge } from "@/components/ralph-badges";
-import { totalPages } from "@/lib/pagination";
+import type { TriageRunList } from "@/lib/api/triage";
+import { pageRange, totalPages } from "@/lib/pagination";
 import { stateLabel } from "@/lib/state-variants";
 import {
+  parseTriageRunListParams,
   TRIAGE_OUTCOME_DESCRIPTIONS,
   TRIAGE_OUTCOME_LABELS,
   TRIAGE_RUN_STATUSES,
@@ -43,13 +49,7 @@ import {
 } from "@/lib/triage/display";
 import { ProviderIcon } from "@/components/provider-icon";
 import { AgentName } from "../coding/ralph-runs-view";
-
-interface TriageRunsViewProps {
-  runs: TriageRunRow[];
-  params: TriageRunListParams;
-  total: number;
-  pageSize: number;
-}
+import { useTriageRunList } from "./triage-queries";
 
 /** What triage decided: the outcome and size, and how many questions it left open. */
 export function TriageOutcomeSummary({
@@ -134,13 +134,142 @@ function TriageTableRow({ run, isAdmin }: { run: TriageRunRow; isAdmin: boolean 
   );
 }
 
-export function TriageRunsView({ runs, params, total, pageSize }: TriageRunsViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+/** The runs table's skeleton: rows shaped like runs while the first page loads. */
+function TriageRunsSkeleton() {
+  return (
+    <Table className="list-table">
+      <TableBody>
+        {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+          <TableRow key={index}>
+            <TableCell className="list-col-main">
+              <Skeleton width={`${45 + ((index * 17) % 35)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width={`${50 + ((index * 13) % 30)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width="5rem" height="1.25rem" radius="full" />
+            </TableCell>
+            {Array.from({ length: 4 }, (_, column) => (
+              <TableCell key={column} className={WIDE_COLUMN}>
+                <Skeleton width={`${40 + (((index + column) * 13) % 40)}%`} />
+              </TableCell>
+            ))}
+            <TableCell />
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+const SKELETON_ROWS = 5;
+
+function TriageRunsTable({
+  list,
+  params,
+  isAdmin,
+}: {
+  list: TriageRunList;
+  params: TriageRunListParams;
+  isAdmin: boolean;
+}) {
+  const pathname = usePathname();
+  const { runs, total } = list;
+  return (
+    <>
+      {runs.length === 0 ? (
+        <Empty
+          icon={<IconClipboardText size={24} />}
+          title={
+            total > 0
+              ? "No runs on this page"
+              : params.status
+                ? `No ${params.status} triage runs`
+                : "No triage runs yet"
+          }
+          titleAs="h3"
+          description={
+            total > 0
+              ? "The page is past the last one."
+              : "Runs appear here when someone asks @Omniralph to /triage a Linear issue, or adds the triage label to one."
+          }
+        />
+      ) : (
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Issue</TableHead>
+              <TableHead className={WIDE_COLUMN}>Repository</TableHead>
+              <TableHead className={WIDE_COLUMN}>Status</TableHead>
+              <TableHead className={WIDE_COLUMN}>Outcome</TableHead>
+              <TableHead className={WIDE_COLUMN}>Trigger</TableHead>
+              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Updated</TableHead>
+              <TableHead aria-label="Links" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => (
+              <TriageTableRow key={run.id} run={run} isAdmin={isAdmin} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <ListPagination
+        page={params.page}
+        pageCount={totalPages(total, list.pageSize)}
+        hrefFor={(page) => triageRunListHref(pathname, { ...params, page })}
+      />
+    </>
+  );
+}
+
+/**
+ * The list's filter and page from the URL, and a setter. A chosen filter shows at once,
+ * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
+ */
+function useTriageRunListParams(): [
+  TriageRunListParams,
+  (change: Partial<TriageRunListParams>) => void,
+] {
   const router = useRouter();
   const pathname = usePathname();
-  const pageCount = totalPages(total, pageSize);
-  const first = total === 0 ? 0 : (params.page - 1) * pageSize + 1;
-  const last = (params.page - 1) * pageSize + runs.length;
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const fromUrl = parseTriageRunListParams(Object.fromEntries(searchParams));
+  // Chosen on the URL `search`: once the URL changes, it holds the choice.
+  const [chosen, setChosen] = React.useState<{
+    search: string;
+    params: TriageRunListParams;
+  } | null>(null);
+  // Once the URL moves on (the navigation landed, or Back), the choice is spent: a later
+  // return to the same URL shows that URL's filter, not the old choice.
+  if (chosen && chosen.search !== search) setChosen(null);
+  const params = chosen?.search === search ? chosen.params : fromUrl;
+  const setFilter = (change: Partial<TriageRunListParams>) => {
+    const next = { ...params, ...change, page: 1 };
+    setChosen({ search, params: next });
+    router.push(triageRunListHref(pathname, next), { scroll: false });
+  };
+  return [params, setFilter];
+}
+
+/**
+ * The Triage page, live: the runs for the URL's filter and page poll (`GET /api/ui/triage`);
+ * a new filter or page keeps the previous results, dimmed, until its own arrive.
+ */
+export function TriageRunsView() {
+  const isAdmin = useCurrentUser().role === "admin";
+  const [params, setFilter] = useTriageRunListParams();
+  const list = useTriageRunList(params);
+  const data = list.data;
+  const total = data?.total ?? 0;
+  const { first, last } = pageRange(
+    data?.page ?? params.page,
+    data?.pageSize ?? 1,
+    data?.runs.length ?? 0,
+  );
 
   return (
     <>
@@ -149,6 +278,7 @@ export function TriageRunsView({ runs, params, total, pageSize }: TriageRunsView
         <PageHeader
           title="Triage"
           description="Linear issues Omniralph turned into PRDs, and what each triage decided."
+          meta={<Freshness query={list} />}
         />
 
         <Card>
@@ -166,12 +296,7 @@ export function TriageRunsView({ runs, params, total, pageSize }: TriageRunsView
                 aria-label="Filter by status"
                 value={params.status ?? ""}
                 onChange={(e) =>
-                  router.push(
-                    triageRunListHref(pathname, {
-                      status: (e.target.value || null) as TriageRunListParams["status"],
-                      page: 1,
-                    }),
-                  )
+                  setFilter({ status: (e.target.value || null) as TriageRunListParams["status"] })
                 }
               >
                 <option value="">All statuses</option>
@@ -184,49 +309,13 @@ export function TriageRunsView({ runs, params, total, pageSize }: TriageRunsView
             </div>
           </CardHeader>
           <CardContent className="list-card-content">
-            {runs.length === 0 ? (
-              <Empty
-                icon={<IconClipboardText size={24} />}
-                title={
-                  total > 0
-                    ? "No runs on this page"
-                    : params.status
-                      ? `No ${params.status} triage runs`
-                      : "No triage runs yet"
-                }
-                titleAs="h3"
-                description={
-                  total > 0
-                    ? "The page is past the last one."
-                    : "Runs appear here when someone asks @Omniralph to /triage a Linear issue, or adds the triage label to one."
-                }
-              />
-            ) : (
-              <Table className="list-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Issue</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Repository</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Outcome</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Trigger</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Harness</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Updated</TableHead>
-                    <TableHead aria-label="Links" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs.map((run) => (
-                    <TriageTableRow key={run.id} run={run} isAdmin={isAdmin} />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <ListPagination
-              page={params.page}
-              pageCount={pageCount}
-              hrefFor={(page) => triageRunListHref(pathname, { ...params, page })}
-            />
+            <QueryBoundary query={list} skeleton={<TriageRunsSkeleton />} what="triage runs">
+              {(loaded) => (
+                <div className="list-pending" aria-busy={list.isPlaceholderData}>
+                  <TriageRunsTable list={loaded} params={params} isAdmin={isAdmin} />
+                </div>
+              )}
+            </QueryBoundary>
           </CardContent>
         </Card>
       </main>
