@@ -33,6 +33,7 @@ import {
   type SerializedMessage,
   type StateAdapter,
 } from "chat";
+import { MAX_WAKE_ATTEMPTS } from "@/lib/chat/pending-run-events";
 import { chatRunSession } from "@/lib/ralph/chat-reply";
 import { loadChatTarget, type ChatSource, type ChatTarget } from "@/lib/ralph/conversation";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
@@ -55,8 +56,7 @@ import { toAiTools } from "./tools";
 
 /** How long the thread's lock is held without a renewal (as the Chat SDK's). */
 export const WAKE_LOCK_TTL_MS = 30_000;
-/** Failed turns after which an event is left alone (the cron stops retrying it). */
-export const MAX_WAKE_ATTEMPTS = 5;
+export { MAX_WAKE_ATTEMPTS };
 
 export interface WakeDeps extends Omit<ChatAgentDeps, "rateLimits" | "attachmentLimits"> {
   /** The chat bot's adapters and state the thread is posted through. */

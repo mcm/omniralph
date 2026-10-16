@@ -55,6 +55,7 @@ query or write on the next request.
 | `job-queued-since`                                                       | derived          | Sorted set of every queued job, scored by `created_at`                                                                 | The same writers as `job-due:*` (`syncJobsDue`); rebuilt with it                                                                                                                                                                                                                                                                                                                             | `lib/dispatch/due.ts`              |
 | `ralph:active`                                                           | derived (signal) | A random value: there may be ralph work to reconcile                                                                   | Set after `advanceRun` (which also opens PRs/MRs) and after run creation (`start.ts`, `chat-start.ts`); compare-and-deleted by the reconcile cron when it found no work. The rebuild sets it                                                                                                                                                                                                 | `lib/ralph/active.ts`              |
 | `ralph:reconciled`                                                       | own              | The last full reconcile run, 24h TTL                                                                                   | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                           | `lib/ralph/active.ts`              |
+| `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                  | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                      | `lib/chat/pending-run-events.ts`   |
 | `harness-organization:{harnessId}`                                       | own              | The harness's organization, 7-day TTL                                                                                  | Readers on a miss. A harness never changes organization, so there's no writer                                                                                                                                                                                                                                                                                                                | `lib/harnesses/organization.ts`    |
 | `harness-last-seen:{harnessId}`                                          | own              | The last heartbeat (ms), 30-day TTL                                                                                    | Every heartbeat. Read where the UI, chat and pinning show or sort by last heartbeat (`withLastSeen`, `readHarnessLastSeen`): the later of it and the row's `last_heartbeat_at` wins                                                                                                                                                                                                          | `lib/harnesses/last-seen.ts`       |
 | `harness-report:{harnessId}`                                             | own              | Fingerprint of the report last written to the harness row, 24h TTL                                                     | The heartbeat: deleted before it writes the row, set after                                                                                                                                                                                                                                                                                                                                   | `lib/harnesses/last-seen.ts`       |
@@ -83,6 +84,8 @@ What each idle request does with them:
   24h.
 - **`ralph-reconcile` cron**: returns `{ skipped: true }` while `ralph:active` is absent and
   `ralph:reconciled` is present, so it runs fully at least once a day.
+- **`chat-run-events` cron**: returns `{ skipped: true }` while `chat-run-events:pending` is
+  absent, before initialising the chat bot (whose state is in Postgres).
 - **`prune-rate-limits` cron**: prunes nothing in Postgres unless `rate-limit:postgres-fallback-at`
   says rate limiting fell back to it.
 
@@ -95,7 +98,8 @@ stale state until a TTL runs out:
    transaction must not leave a Redis change behind, and a Redis error must not roll back the
    Postgres one.
 2. **Use the module's writer function** (`syncJobsDue`, `removeJobsDue`, `renewJobsDue`,
-   `skipJobAndClearDue`, `cacheHarnessRevoked`, `markRalphActive`, `bumpHarnessHeartbeat`,
+   `skipJobAndClearDue`, `cacheHarnessRevoked`, `markRalphActive`, `markRunEventsPending`,
+   `bumpHarnessHeartbeat`,
    `bumpOrganizationHeartbeat`). They go through `writeHotState`, which deletes the epoch when the
    write fails, so readers rebuild from Postgres rather than trust a key that missed the change.
 3. **A new write that changes what a heartbeat returns** (the harness's config, version, pins,
@@ -105,7 +109,8 @@ stale state until a TTL runs out:
    or SCM connection drops pins.
 4. **A new write that changes a job's status, `available_at` or lease** updates the due set
    (`syncJobsDue`, or `syncJobsDueFromPostgres` when it doesn't have the row).
-5. **A new way to create or advance a ralph run** calls `markRalphActive()`.
+5. **A new way to create or advance a ralph run** calls `markRalphActive()`; **a new way to
+   record a chat run event** calls `markRunEventsPending()`.
 6. **A new derived key** registers a rebuilder with `registerHotStateRebuilder` at module import,
    and its module is added to `lib/hot-state/rebuilders.ts`.
 7. **Read change counters before the Postgres reads a cached value is built from; writers bump
@@ -113,7 +118,7 @@ stale state until a TTL runs out:
    composite value, store the epoch with it rather than registering a rebuilder.
 8. **A marker an idle consumer clears** holds a fresh random value per write, and the consumer
    compare-and-deletes the value it read before checking Postgres, so a write during the check is
-   never lost (`ralph:active`).
+   never lost (`ralph:active`, `chat-run-events:pending`).
 
 Tests prove an idle path makes no Postgres query by passing a `Proxy` around the database that
 counts or throws on any query method.
@@ -126,7 +131,8 @@ whose Redis update failed), the next `readHotState` call:
 1. takes `hot-state:rebuild-lock` (`SET NX PX 30s` with a random token);
 2. runs every registered rebuilder: `job-due` deletes every `job-due:*` and `job-queued-since` and
    reloads them from the queued and running jobs; `harness-auth` deletes every `harness-auth:*`
-   (they refill on the next miss); `ralph-active` sets `ralph:active`;
+   (they refill on the next miss); `ralph-active` sets `ralph:active` and `chat-run-events-pending` sets
+   `chat-run-events:pending`;
 3. sets the epoch and releases the lock (compare-and-delete on its token).
 
 Readers on other instances that find the lock taken read Postgres meanwhile. A failing rebuilder
@@ -137,8 +143,8 @@ import; because Next bundles each route separately, every `readHotState` caller 
 A writer that commits while a rebuild is reading Postgres can have its Redis update overwritten by
 the rebuild's older snapshot. Each derived key tolerates that: a stale due entry costs one Postgres
 claim, which then corrects it (`reconcileDueJobs`, and `reconcileExpiredQueuedJobs` for the expire
-cron); `harness-auth` entries are deleted rather than reloaded; `ralph:active` is set, never
-cleared, by the rebuild. Cached heartbeat responses carry the epoch value they were built under, so
+cron); `harness-auth` entries are deleted rather than reloaded; `ralph:active` and
+`chat-run-events:pending` are set, never cleared, by the rebuild. Cached heartbeat responses carry the epoch value they were built under, so
 a rebuild invalidates all of them.
 
 ### The fallback
@@ -149,7 +155,7 @@ a rebuild invalidates all of them.
   `fromPostgres`, and the own-key paths catch and use Postgres (rate limits count there, the
   heartbeat writes the harness row and builds its response, the claim and the crons query as they
   used to). The checks that gate Postgres work (`hasDueJob`, `hasExpiredQueuedJob`,
-  `checkRalphReconcile`) answer "maybe" so no work is skipped. Rate limiting remembers that it
+  `checkRalphReconcile`, `checkPendingRunEvents`) answer "maybe" so no work is skipped. Rate limiting remembers that it
   fell back so the prune cron cleans up the Postgres counters later.
 - **Redis lost or flushed**: the epoch rebuild restores derived keys; own keys start over (rate
   limit windows reset, the next heartbeat writes the row and misses the cache).
@@ -178,9 +184,6 @@ With every harness idle and no UI or webhook traffic, these still query Postgres
   which reads and rotates its refresh token in Postgres. Out of scope here (token issuance is
   unchanged); with any harness online this alone keeps Neon from suspending for long, and is the
   planned follow-up.
-- **`chat-run-events` cron** (every minute): looks for chat threads with pending run events in
-  Postgres on every run, and initialises the chat bot (whose state is in Postgres,
-  `@chat-adapter/state-pg`).
 - **Cache expiry**, rare per harness: a heartbeat whose cached response is an hour old, a harness
   row write once a day (`harness-report:{id}` expires), `harness-auth:{id}` refilled once an hour,
   `harness-organization:{id}` once a week.
@@ -208,8 +211,8 @@ running jobs renew leases there), the UI, webhooks and chat.
 
 ## Breaking points: revisit this decision when
 
-1. **Token refresh or the chat cron keeps Neon awake** after this epic: move refresh-token
-   rotation off the idle path, and give `chat-run-events` a Redis signal like `ralph:active`.
+1. **Token refresh keeps Neon awake** after this epic: move refresh-token rotation off the idle
+   path.
 2. **A writer misses Redis.** Idle requests acting on stale state (a job not picked up within a
    few seconds, a configuration change taking up to an hour) means a write path doesn't follow the
    rules above; fix the writer rather than shorten TTLs.
@@ -221,7 +224,7 @@ running jobs renew leases there), the UI, webhooks and chat.
 ## Consequences
 
 - With Redis configured and harnesses idle, heartbeats, claims, revocation checks, rate limits and
-  the `expire-jobs` and `ralph-reconcile` crons make no Postgres queries.
+  the `expire-jobs`, `ralph-reconcile` and `chat-run-events` crons make no Postgres queries.
 - Job pickup stays within the claim's 2s look plus a round trip, and revocation takes effect on the
   next request.
 - Every write path that changes cached state must call the matching Redis writer after its commit:

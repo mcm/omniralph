@@ -86,8 +86,8 @@ It prefers `DATABASE_URL_UNPOOLED` when that's set.
 ### Redis (Upstash)
 
 Optional, but without it Neon never suspends while harnesses are online: idle heartbeats, claims,
-revocation checks, rate limits and the `expire-jobs` and `ralph-reconcile` crons all query
-Postgres. With `REDIS_URL` set they use Redis instead, and Postgres is only queried when there's
+revocation checks, rate limits and the `expire-jobs`, `ralph-reconcile` and `chat-run-events`
+crons all query Postgres. With `REDIS_URL` set they use Redis instead, and Postgres is only queried when there's
 work ([ADR 0007](adr/0007-redis-hot-state.md)). Redis only holds state that can be rebuilt from
 Postgres or safely lost, so it needs no backups.
 
@@ -173,7 +173,7 @@ running jobs aren't lost.
 
 | Path | Schedule | Does |
 | -- | -- | -- |
-| `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured |
+| `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured. With `REDIS_URL` set, it returns without querying Postgres or initialising the chat bot until a run event is recorded (the `chat-run-events:pending` marker) |
 | `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old harness API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |

@@ -3,6 +3,8 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { ChatConversation, conversationFor, LinearConversation } from "./conversation";
 import { postActivity } from "./notify";
 
+vi.mock("server-only", () => ({}));
+
 const linearRun = {
   id: "run-1",
   organizationId: "org-1",

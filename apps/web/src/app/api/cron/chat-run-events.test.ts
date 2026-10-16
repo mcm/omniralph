@@ -5,6 +5,8 @@ vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   calls: [] as unknown[],
 }));
+// No REDIS_URL: the cron runs every time, as without Redis.
+vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/chat/agent/wake", () => ({
   defaultWakeDeps: async () => ({ deployment: true }),
   processPendingRunEvents: async (deps: unknown) => {
