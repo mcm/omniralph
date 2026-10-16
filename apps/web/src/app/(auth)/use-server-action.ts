@@ -3,13 +3,15 @@
 import * as React from "react";
 import { notify } from "@iamthemcmaster/ui";
 import type { ActionResult } from "@/lib/action-result";
-import { useIsOrganizationStale } from "./organization-guard";
+import { useIsOrganizationStale } from "@/components/organization-guard";
 
 /**
- * Runs a server action in a transition and reports its result as a toast. Refuses to run
- * once another tab has switched organizations: the action would act on the new one.
+ * Runs one of the sign-in pages' server actions (onboarding, chat account linking: they run
+ * before or outside the signed-in panel, which writes through `/api/ui` instead) in a
+ * transition and reports its result as a toast. Refuses to run once another tab has
+ * switched organizations: the action would act on the new one.
  */
-export function useAction() {
+export function useServerAction() {
   const [pending, startTransition] = React.useTransition();
   const isOrganizationStale = useIsOrganizationStale();
   const run = React.useCallback(

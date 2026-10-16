@@ -11,7 +11,7 @@ import {
   type SettingsSave,
 } from "./settings-card";
 import { useUnsavedChanges } from "./unsaved-changes";
-import { useAction } from "./use-action";
+import { useSettingsSave } from "./use-settings-save";
 
 interface SettingsSectionProps {
   /** The section's anchor id. */
@@ -94,7 +94,7 @@ export function SettingsSection({
   savedStatus,
   children,
 }: SettingsSectionProps) {
-  const { pending, run } = useAction();
+  const { pending, run } = useSettingsSave();
   const [confirming, setConfirming] = React.useState<SettingsSave | null>(null);
   const [invalid, setInvalid] = React.useState(0);
   // The changes a save just saved: "Saved" shows once they are gone, until the next edit.

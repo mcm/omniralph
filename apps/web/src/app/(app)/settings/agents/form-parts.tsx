@@ -1,6 +1,6 @@
 /** Form pieces shared by the agent and task forms. */
 import * as React from "react";
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { Badge, Button, Checkbox, Cluster, Label } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconDeviceFloppy } from "@tabler/icons-react";
 import type { FieldErrors } from "@omniralph/shared";

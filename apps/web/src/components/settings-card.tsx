@@ -27,9 +27,9 @@ import type { ActionResult } from "@/lib/action-result";
 import { changeDiff, isMultiLineChange, type SettingChange } from "@/lib/settings/changes";
 import { unsavedAnchorId } from "@/lib/unsaved-changes";
 import { useUnsavedChanges } from "./unsaved-changes";
-import { useAction } from "./use-action";
+import { useSettingsSave } from "./use-settings-save";
 
-/** A validated save: the server action and what to say when it succeeds. */
+/** A validated save: the request (`useApiAction`) and what to say when it succeeds. */
 export interface SettingsSave {
   action: () => Promise<ActionResult>;
   success: string;
@@ -198,7 +198,7 @@ export function SettingsCard({
   actions,
   contentClassName,
 }: SettingsCardProps) {
-  const { pending, run } = useAction();
+  const { pending, run } = useSettingsSave();
   const [confirming, setConfirming] = React.useState<SettingsSave | null>(null);
   const dirty = changes.length > 0;
   // "Saved" next to Save after a save (DESIGN.md, the No Celebration Rule), until the next edit:

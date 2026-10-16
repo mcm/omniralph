@@ -10,8 +10,9 @@ Run it from the repo root with `pnpm dev`, or from here with `pnpm dev`.
 - All UI uses `@iamthemcmaster/ui` components, `@tabler/icons-react` icons and `sonner` toasts.
   No other component or styling library.
 - Library components need `"use client"`. Pages read and write through the `/api/ui` route handlers
-  with TanStack Query (see [Data fetching](#data-fetching)). Pages not migrated yet (TOOL-502) are
-  still server components that load data and render a `"use client"` view, with server actions.
+  with TanStack Query (see [Data fetching](#data-fetching)).
+- Links use `Link` from `src/components/link.tsx`, not `next/link` (lint-enforced under `(app)` and
+  in `src/components`): it shows a pending state while the page it opens loads (`useLinkStatus`).
 - Custom styling uses design tokens only (`--bg-*`, `--text-*`, `--border-*`, `--space-*`,
   `--radius-*`, `--font-*`, `--spring-*`, `--t-*`).
 - Keep the `AppShell` layering: `AuroraField` paints at `z-0`, so the shell keeps
@@ -23,7 +24,14 @@ Run it from the repo root with `pnpm dev`, or from here with `pnpm dev`.
 Every page under `src/app/(app)` is a thin client entry that renders a client view; the view
 reads and writes through Route Handlers under `src/app/api/ui/**/route.ts` with TanStack Query.
 No page reads the database and there are no server actions: `(app)/layout.tsx` only gates the
-session and hands the user to `AppShell`, which provides the `QueryClient` (`QueryProvider`).
+session and hands the user (and their organizations) to `AppShell`, which provides the
+`QueryClient` (`QueryProvider`). The `data-path/no-server-data` lint rule
+(`eslint-rules/data-path.mjs`) enforces it for every file under `src/app/(app)`, tests included:
+no `"use server"`, no `revalidatePath`/`revalidateTag`, no `@omniralph/db` or `@/lib/db` imports,
+except in the layout. Route handlers that aren't the panel's API (the GitHub App's install and
+callback under `src/app/(oauth)`, OAuth connects under `src/app/api/integrations`) live outside
+`(app)`, and so do tests that need the database (next to the handlers they drive, under
+`src/app/api/ui`).
 
 **Handlers** (`src/lib/api/handler.ts`). Wrap every handler in `apiHandler`:
 
@@ -103,7 +111,7 @@ false`, refreshed by an explicit button; polled handlers never call an external 
 `useSelectableRepositories` in `src/app/(app)/repositories/repo-selection-view.tsx` (its handler
 answers 502 `listing_failed` with the code host's error, which the picker explains).
 
-**Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`, not `useAction`:
+**Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`:
 
 ```ts
 const rename = useApiMutation({
@@ -139,7 +147,7 @@ browser's clock: `<RelativeTime iso>`, `useRelativeTime(iso)` or `useNow()` from
 
 **Forms** seed from query data and re-seed only while not dirty, so a background refetch never
 overwrites an edit: `useSeededDraft(saved)` (`src/components/use-seeded-draft.ts`). A
-`SettingsSection`/`SettingsCard` save (which runs through `useAction`) calls the API with
+`SettingsSection`/`SettingsCard` save (a TanStack mutation, `useSettingsSave`) calls the API with
 `useApiAction()` (`src/components/use-api-action.ts`): one request, then one invalidation, awaited
 before the form leaves its saving state. A save made of several changes is one request whose
 handler stops at the first failure and names the changes it didn't save. Changes a harness picks up
@@ -153,11 +161,19 @@ then "Applied" once the harness's `lastHeartbeatAt` is later (`SettingsSection`'
 organizations and comes back to `next` (the page, sent by the query as `?next=`). **List filters and pagination** live in the URL search params
 (`useSearchParams`) and use `placeholderData: keepPreviousData`.
 
+**Navigation and render errors.** Links show a pending state while their page loads (`Link` in
+`src/components/link.tsx`, and `ListPagination`'s page links, which navigate in a transition);
+the new page's skeleton then shows within a frame, since pages render on the client.
+`src/app/(app)/error.tsx` catches any unexpected render error of a page and shows it in place,
+with Retry, inside the shell.
+
 **Tests** render with `createTestQueryClient()` and `queryWrapper(client)` from
 `src/components/query-test-utils.tsx` (no polling, no retries) and mock `fetch` (`mockFetch`
 there answers routes by `"METHOD /path"` and records the requests); handler tests
-mock `@/lib/auth/session` or use `@omniralph/db/testing`. `@tanstack/react-query-devtools` loads in
-development only.
+mock `@/lib/auth/session` or use `@omniralph/db/testing`. `src/app/api/ui/organization-isolation.test.ts`
+drives every `/api/ui` endpoint (and the signed-in layout, and the enter-organization round
+trip) against two organizations: add each new endpoint there. `@tanstack/react-query-devtools`
+loads in development only.
 
 ## Fixture data and screenshots
 
@@ -184,7 +200,9 @@ the host. It runs unattended:
    browser opens `host.docker.internal` instead, and `next dev` is started with
    `OMNIRALPH_ALLOWED_DEV_ORIGINS=host.docker.internal` so it allows that origin
    (`allowedDevOrigins` in `next.config.ts`; without it the page never hydrates);
-4. signs in with the dev sign-in and captures each route of `scripts/screens/routes.ts`;
+4. signs in with the dev sign-in and captures each route of `scripts/screens/routes.ts`, once its
+   data has loaded: pages poll `/api/ui`, so the network never goes idle, and the capture waits
+   instead until no skeleton (`[aria-busy="true"]`) is left, up to 60s;
 5. runs `impeccable detect --json` on each page's HTML snapshot, if the CLI is available
    (`$IMPECCABLE_CLI`, `impeccable` on `PATH`, or the Claude Code plugin's launcher);
 6. stops the panel and removes the fixture database.
@@ -192,7 +210,8 @@ the host. It runs unattended:
 Output goes to `apps/web/.screens/<timestamp>/` (gitignored), one set per route, viewport and
 theme: `<route>.<desktop|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
 inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP status, final path,
-`scrollWidth`, visible "Ralph" text, console errors). The screenshot paths go to stdout, the summary to stderr.
+`scrollWidth`, visible "Ralph" text, console errors, in-place load errors, and why a page didn't
+render). The screenshot paths go to stdout, the summary to stderr.
 
 | Option              | Effect                                                                |
 | ------------------- | --------------------------------------------------------------------- |
@@ -205,7 +224,9 @@ inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP sta
 Routes wider than their viewport are always reported; failed captures always exit non-zero, and
 so does any page whose visible text (`document.body.innerText`) says "Ralph": the product says
 "Coding" (see `src/user-facing-wording.test.ts` for the source-level check). Job types
-(`ralph.story`) and the `ralph-run` sink are identifiers and don't count.
+(`ralph.story`) and the `ralph-run` sink are identifiers and don't count. A page still loading
+after 60s, or showing its error boundary (`(app)/error.tsx`), exits non-zero too; in-place load
+errors (e.g. the GitHub picker, which can't reach GitHub with fixture credentials) are listed.
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a

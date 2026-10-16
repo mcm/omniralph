@@ -14,7 +14,7 @@ import {
 import { IconLink } from "@tabler/icons-react";
 import type { ChatPlatform } from "@omniralph/db";
 import { AuthBrand } from "@/components/auth-shell";
-import { useAction } from "@/components/use-action";
+import { useServerAction } from "../../use-server-action";
 import { CHAT_ACCOUNTS_PATH } from "@/lib/chat/link-paths";
 import { linkChatAccountAction } from "./actions";
 
@@ -33,7 +33,7 @@ interface ChatLinkViewProps {
 }
 
 export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
-  const { pending, run } = useAction();
+  const { pending, run } = useServerAction();
   const [linked, setLinked] = React.useState(false);
 
   if (!confirmation) {

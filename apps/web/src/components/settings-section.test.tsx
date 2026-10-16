@@ -18,7 +18,7 @@ const run = vi.fn((action: () => unknown, _success: string, onSuccess?: () => vo
   action();
   onSuccess?.();
 });
-vi.mock("./use-action", () => ({ useAction: () => ({ pending: false, run }) }));
+vi.mock("./use-settings-save", () => ({ useSettingsSave: () => ({ pending: false, run }) }));
 
 const CHANGE: SettingChange = { key: "model", label: "Model", from: "opus", to: "sonnet" };
 

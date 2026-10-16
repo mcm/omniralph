@@ -66,10 +66,9 @@ function warningOf(data: unknown): string | undefined {
 }
 
 /**
- * A TanStack mutation with the panel's toasts, the replacement for `useAction` on pages
- * moved to `/api/ui`: a success toast (or the result's `warning`, as a warning toast), a
- * danger toast with the server's message on failure, and invalidation of every affected
- * query. It refuses to run once another tab has switched organizations (the request would
+ * A TanStack mutation with the panel's toasts, for every change made through `/api/ui`: a
+ * success toast (or the result's `warning`, as a warning toast), a danger toast with the
+ * server's message on failure, and invalidation of every affected query. It refuses to run once another tab has switched organizations (the request would
  * act on the new one): `OrganizationGuard` blocks the tab instead, with no toast.
  */
 export function useApiMutation<TData = unknown, TVariables = void, TContext = unknown>(

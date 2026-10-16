@@ -15,9 +15,9 @@ function warningOf(data: unknown): string | undefined {
 }
 
 /**
- * An `/api/ui` request as an `ActionResult`, for forms whose save runs through `useAction`
- * (`SettingsSection`, `SettingsCard`: they show the toast, the pending state and the
- * "Saved" status). It sends the request, then invalidates `invalidate`'s keys once, after
+ * An `/api/ui` request as an `ActionResult`, for forms whose save runs through
+ * `useSettingsSave` (`SettingsSection`, `SettingsCard`: they show the toast, the pending
+ * state and the "Saved" status). It sends the request, then invalidates `invalidate`'s keys once, after
  * success or failure, and awaits their refetch before answering, so the form re-seeds
  * from saved data, never mid-save. `onData` gets the response first.
  */

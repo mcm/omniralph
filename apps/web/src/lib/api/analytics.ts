@@ -24,6 +24,8 @@ const repository = z.object({
   provider: z.enum(["github", "gitlab"]),
   fullPath: z.string(),
 });
+/** A repository the figures name (a chart's link, the filter's choices). */
+export type AnalyticsRepository = z.infer<typeof repository>;
 
 /** `AnalyticsData` on the wire: reviews, findings and jobs over the window. */
 export const analyticsDataSchema = z.object({

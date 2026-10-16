@@ -40,13 +40,18 @@ record lives.
 - Main areas (see `src/lib/navigation.ts`): Ralph runs, Reviews, Jobs, Analytics, Repositories
   (and per-repository settings, rules and reviews), Harnesses, and Settings (organization,
   integrations, chat accounts, profiles, harnesses).
-- Runs are long-lived and asynchronous; most visits happen after the fact, not while watching live.
+- Runs are long-lived and asynchronous; most visits happen after the fact, but every page stays
+  live while open: harnesses, webhooks and crons change runs, reviews, jobs and harnesses
+  behind the user's back, and the page shows it within seconds.
 - Used mostly at a desk; occasionally checked from a phone.
 
 ## Capabilities and Constraints
 
-- Next.js 16 app router; `page.tsx` server components load data and render `"use client"` views;
-  mutations are server actions.
+- Next.js 16 app router hosting a client-rendered panel: each `page.tsx` under `(app)` renders a
+  client view that reads and writes through the panel's own JSON API (`/api/ui/*` route
+  handlers) with TanStack Query, polling every 3s while the tab is visible and on focus; every
+  change invalidates the views it affects. Only the signed-in layout runs on the server (the
+  session gate). No server actions, and no page reads the database (README, Data fetching).
 - All UI uses `@iamthemcmaster/ui` (Precision Aurora), `@tabler/icons-react` and `sonner`. No
   other component or styling library. Custom styling uses the library's design tokens only.
 - Terminology to keep: organization, repository, harness, ralph run, story, lane, review run,

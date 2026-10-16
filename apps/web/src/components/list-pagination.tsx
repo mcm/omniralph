@@ -23,39 +23,54 @@ interface ListPaginationProps {
   onSelect?: (page: number) => void;
 }
 
-/** Previous/next and page-number links; renders nothing for a single page. */
+/**
+ * Previous/next and page-number links; renders nothing for a single page. A navigation
+ * shows the chosen page as current at once, and its link as pending until the page loads
+ * (the list itself dims meanwhile: `.list-pending[aria-busy]`).
+ */
 export function ListPagination({ page, pageCount, hrefFor, onSelect }: ListPaginationProps) {
   const router = useRouter();
+  const [navigating, startNavigation] = React.useTransition();
+  const [target, setTarget] = React.useState<number | null>(null);
   if (pageCount <= 1) return null;
-  const go = (target: number) => (e: React.MouseEvent) => {
+  const pendingPage = navigating ? target : null;
+  const current = pendingPage ?? page;
+  const go = (to: number) => (e: React.MouseEvent) => {
     e.preventDefault();
-    if (onSelect) onSelect(target);
-    else router.push(hrefFor(target));
+    if (onSelect) return onSelect(to);
+    setTarget(to);
+    startNavigation(() => router.push(hrefFor(to)));
   };
+  /** The props of the link to `to`: pending while its page loads. */
+  const link = (to: number) => ({
+    href: hrefFor(to),
+    onClick: go(to),
+    ...(pendingPage === to ? { "data-pending": "", "aria-busy": true } : {}),
+  });
   return (
     <Pagination>
       <PaginationContent>
-        {page > 1 && (
+        {current > 1 && (
           <PaginationItem>
-            <PaginationPrevious href={hrefFor(page - 1)} onClick={go(page - 1)} />
+            <PaginationPrevious {...link(current - 1)} />
           </PaginationItem>
         )}
-        {pageWindow(page, pageCount).map((p, i) =>
+        {pageWindow(current, pageCount).map((p, i) =>
           p === "gap" ? (
             <PaginationItem key={`gap-${i}`}>
               <Muted>…</Muted>
             </PaginationItem>
           ) : (
             <PaginationItem key={p}>
-              <PaginationLink href={hrefFor(p)} isActive={p === page} onClick={go(p)}>
+              <PaginationLink {...link(p)} isActive={p === current}>
                 {p}
               </PaginationLink>
             </PaginationItem>
           ),
         )}
-        {page < pageCount && (
+        {current < pageCount && (
           <PaginationItem>
-            <PaginationNext href={hrefFor(page + 1)} onClick={go(page + 1)} />
+            <PaginationNext {...link(current + 1)} />
           </PaginationItem>
         )}
       </PaginationContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AreaChart,
@@ -27,7 +27,6 @@ import {
   ToggleGroupItem,
 } from "@iamthemcmaster/ui";
 import { IconChartBar, IconRepeat, IconServer, IconThumbDown } from "@tabler/icons-react";
-import type { AnalyticsRepositoryRef } from "@omniralph/db";
 import { AppHeader } from "@/components/app-header";
 import { EmptyValue } from "@/components/empty-value";
 import { useCurrentUser } from "@/components/current-user";
@@ -60,6 +59,7 @@ import {
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
 import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "@/components/provider-icon";
+import type { AnalyticsRepository } from "@/lib/api/analytics";
 import { useAnalytics } from "./analytics-queries";
 
 /**
@@ -91,7 +91,7 @@ function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; coun
   );
 }
 
-function RepositoryLink({ repository }: { repository: AnalyticsRepositoryRef }) {
+function RepositoryLink({ repository }: { repository: AnalyticsRepository }) {
   return (
     <Link href={`/repositories/${repository.id}/reviews`} className="analytics-repo-link">
       <ProviderIcon provider={repository.provider} size={12} />

@@ -2397,3 +2397,26 @@ body {
   align-items: center;
   gap: var(--space-2);
 }
+
+/* Navigation feedback (components/link.tsx, components/list-pagination.tsx): a link whose
+   page is loading dims and pulses, after a short delay so fast navigations don't flicker. */
+.link-status {
+  display: none;
+}
+a:has(> .link-status[data-pending]),
+a[data-pending] {
+  cursor: progress;
+  animation: link-pending 700ms ease-in-out 120ms infinite alternate;
+}
+@keyframes link-pending {
+  to {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  a:has(> .link-status[data-pending]),
+  a[data-pending] {
+    animation: none;
+    opacity: 0.6;
+  }
+}
