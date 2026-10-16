@@ -29,7 +29,6 @@ import { useQueryKeys } from "@/components/query-provider";
 import { useNow } from "@/components/relative-time";
 import { api } from "@/lib/api/client";
 import { harnessListSchema } from "@/lib/api/harnesses";
-import { isHarnessOnline } from "@/lib/harnesses/display";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import {
   HarnessStatusBadge,
@@ -39,6 +38,7 @@ import {
   RepositoryBadges,
   TaskTypeBadges,
   UpdateStatusBadge,
+  withClientOnline,
 } from "./harness-parts";
 import { EnrollHarnessDialog } from "./enroll-harness-dialog";
 
@@ -51,12 +51,6 @@ export function useHarnessList() {
     queryFn: ({ signal }) =>
       api.get("/api/ui/harnesses", harnessListSchema, { organizationId: organization.id, signal }),
   });
-}
-
-/** `harness` with `online` computed against the browser's clock `now`, not the server's. */
-function withClientOnline(harness: HarnessRow, now: number): HarnessRow {
-  const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
-  return { ...harness, online: !harness.revoked && isHarnessOnline(heartbeat, new Date(now)) };
 }
 
 /** The last heartbeat, relative to the browser's ticking clock. */

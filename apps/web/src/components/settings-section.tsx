@@ -33,6 +33,11 @@ interface SettingsSectionProps {
   confirm?: SettingsConfirmation;
   /** Hides the save footer (people who can't change the settings). */
   readOnly?: boolean;
+  /**
+   * Replaces the footer's "Saved" after a save, e.g. while a harness hasn't picked the
+   * change up yet ("Saved — waiting for …", then "Applied").
+   */
+  savedStatus?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -86,6 +91,7 @@ export function SettingsSection({
   onDiscard,
   confirm,
   readOnly = false,
+  savedStatus,
   children,
 }: SettingsSectionProps) {
   const { pending, run } = useAction();
@@ -158,8 +164,14 @@ export function SettingsSection({
               data-state={state}
               role="status"
             >
-              {state === "saved" && <IconCheck size={14} aria-hidden="true" />}
-              {sectionStatus({ changes: changes.length, invalid, saved })}
+              {state === "saved" && savedStatus !== undefined ? (
+                savedStatus
+              ) : (
+                <>
+                  {state === "saved" && <IconCheck size={14} aria-hidden="true" />}
+                  {sectionStatus({ changes: changes.length, invalid, saved })}
+                </>
+              )}
             </span>
             {dirty && (
               <Button

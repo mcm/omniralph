@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -27,22 +27,37 @@ import {
   Input,
   Label,
   Muted,
+  Skeleton,
   Stack,
 } from "@iamthemcmaster/ui";
-import { IconBan, IconCloudDownload, IconTrash } from "@tabler/icons-react";
+import { IconBan, IconCheck, IconClock, IconCloudDownload, IconTrash } from "@tabler/icons-react";
 import { defaultPoolLimit, HarnessVersion } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
+import { useCurrentUser } from "@/components/current-user";
+import { Freshness } from "@/components/freshness";
 import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
 import { MultiSelect, type MultiSelectOption } from "@/components/pickers";
+import { QueryBoundary } from "@/components/query-boundary";
+import { JobStatusBadge } from "@/components/ralph-badges";
+import { useNow } from "@/components/relative-time";
+import { SettingsPanel, SettingsSection, SettingsSubsection } from "@/components/settings-section";
+import { useApiAction } from "@/components/use-api-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
 import {
-  saveInOrder,
-  SettingsPanel,
-  SettingsSection,
-  SettingsSubsection,
-} from "@/components/settings-section";
-import { useAction } from "@/components/use-action";
+  harnessSavedSchema,
+  harnessUpdateRequestedSchema,
+  pinnableRepositoriesSchema,
+  type HarnessConfigForm,
+  type HarnessDetail,
+  type HarnessSettingsSave,
+  type PinnableRepository,
+  type PinSyncJob,
+} from "@/lib/api/harnesses";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import {
   formatSettingValue,
   settingChanges,
@@ -52,26 +67,14 @@ import {
 import { typedNumber } from "@/lib/settings/forms";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import {
-  deleteHarness,
-  pinRepository,
-  requestHarnessUpdate,
-  revokeHarness,
-  searchPinnableRepositories,
-  setHarnessDesiredVersion,
-  setHostToolPath,
-  unpinRepository,
-  updateHarnessConfig,
-  type HarnessConfigForm,
-  type PinnableRepository,
-} from "../actions";
-import {
   formatPoolLimits,
   HarnessStatusBadge,
   JobTargetLink,
   TaskTypeBadges,
   UpdateStatusBadge,
+  withClientOnline,
 } from "../harness-parts";
-import { HarnessAuditLog, TokenTheftAlert, type AuditRow } from "./harness-audit-log";
+import { HarnessAuditLog, TokenTheftAlert } from "./harness-audit-log";
 import { HarnessHostTools, type HostToolRow } from "./harness-host-tools";
 import {
   InstallForm,
@@ -81,22 +84,13 @@ import {
   type InstallableRow,
 } from "./harness-installables";
 import { HarnessNav } from "./harness-nav";
+import {
+  harnessChanged,
+  useHarnessDetail,
+  useHarnessHostTools,
+  useHarnessInstallables,
+} from "./harness-queries";
 import { HARNESS_TAB_LABELS, type HarnessTab } from "./harness-tabs";
-
-interface HarnessDetailViewProps {
-  tab: HarnessTab;
-  harness: HarnessRow;
-  now: number;
-  audit: AuditRow[];
-  /** The installables the harness reported in its last heartbeat. */
-  installables: InstallableRow[];
-  /** `install` jobs targeted at the harness in the last 24 hours, newest first (Installables tab). */
-  installJobs: InstallJobRow[];
-  /** Every host tool of the organization's catalog with this harness's path and report, by name (Host tools tab). */
-  hostTools: HostToolRow[];
-  /** Settings › Harness defaults version ("1.5.0 (latest on npm)" when it tracks npm's latest), used when the harness has no override; null: not set. */
-  globalDesiredVersion: string | null;
-}
 
 /** A status fact. `wide` takes the whole row on phone, where the grid has two columns. */
 function Fact({
@@ -328,11 +322,116 @@ function repositoryOption(repo: PinnableRepository): MultiSelectOption {
   return { value: repo.id, label: repo.fullPath, hint: PROVIDER_LABELS[repo.provider] };
 }
 
-/** The repositories matching a search, for the pins picker; a failed search shows its error. */
-async function searchRepositoryOptions(query: string): Promise<MultiSelectOption[]> {
-  const result = await searchPinnableRepositories(query);
-  if (!result.ok) throw new Error(result.error);
-  return (result.repositories ?? []).map(repositoryOption);
+/** Searches the repositories to pin (not polled: it runs as the person types); a failure shows its error. */
+function useRepositorySearch() {
+  const { organization } = useCurrentUser();
+  return React.useCallback(
+    async (query: string): Promise<MultiSelectOption[]> => {
+      const { repositories } = await api.get(
+        "/api/ui/harnesses/pinnable-repositories",
+        pinnableRepositoriesSchema,
+        { params: { query }, organizationId: organization.id },
+      );
+      return repositories.map(repositoryOption);
+    },
+    [organization.id],
+  );
+}
+
+// ── Heartbeat-deferred changes ───────────────────────────────────────────────
+
+/** A saved change on its way to the harness: `pending` until a heartbeat after the save. */
+export type Pickup = "pending" | "applied";
+
+/**
+ * Whether the harness has picked up a change saved at `savedAt`: a heartbeat after it got the
+ * change in its response. Both times are the server's clock.
+ */
+export function pickupState(savedAt: string | null, lastHeartbeatAt: string | null): Pickup | null {
+  if (savedAt === null) return null;
+  return lastHeartbeatAt !== null && Date.parse(lastHeartbeatAt) > Date.parse(savedAt)
+    ? "applied"
+    : "pending";
+}
+
+/** The save footer's status after a save the harness picks up with its next heartbeat. */
+export function PickupStatus({ state, harnessName }: { state: Pickup; harnessName: string }) {
+  return state === "applied" ? (
+    <>
+      <IconCheck size={14} aria-hidden="true" />
+      Applied
+    </>
+  ) : (
+    <>
+      <IconClock size={14} aria-hidden="true" className="settings-pickup-pending" />
+      Saved — waiting for {harnessName} to pick it up
+    </>
+  );
+}
+
+/** When the harness has picked up the last save: the save's `savedAt`, compared to its heartbeats. */
+function usePickup(harness: Pick<HarnessRow, "name" | "lastHeartbeatAt">) {
+  const [savedAt, setSavedAt] = React.useState<string | null>(null);
+  const state = pickupState(savedAt, harness.lastHeartbeatAt);
+  return {
+    onSaved: setSavedAt,
+    status: state ? <PickupStatus state={state} harnessName={harness.name} /> : undefined,
+  };
+}
+
+/** Where an "Update now" stands, as the harness reports it. */
+export interface UpdateProgress {
+  stage: "requested" | "updating" | "updated" | "failed";
+  text: string;
+}
+
+const UPDATE_STEP_TEXT = {
+  draining: "letting its running jobs finish",
+  installing: "installing it",
+  confirming: "restarting on it",
+} as const;
+
+/** "Update now" to `version`: requested → updating → updated (or failed), from the harness's reports. */
+export function updateProgress(
+  harness: Pick<HarnessRow, "name" | "version" | "update" | "failedVersions" | "updateRequest">,
+  version: string,
+): UpdateProgress {
+  const { name, update } = harness;
+  if (harness.updateRequest?.version === version) {
+    return {
+      stage: "requested",
+      text: `Update to ${version} requested; ${name} starts it with its next heartbeat.`,
+    };
+  }
+  const busy = update !== null && update.state !== "idle";
+  if (!busy && harness.version === version) {
+    return { stage: "updated", text: `${name} updated to ${version}.` };
+  }
+  if (harness.failedVersions.includes(version) || (!busy && update?.error)) {
+    return {
+      stage: "failed",
+      text: `Update to ${version} failed${update?.error ? `: ${update.error}` : "."}`,
+    };
+  }
+  if (busy && update.state !== "idle") {
+    return {
+      stage: "updating",
+      text: `${name} is updating to ${version}: ${UPDATE_STEP_TEXT[update.state]}.`,
+    };
+  }
+  return { stage: "updating", text: `${name} is updating to ${version}.` };
+}
+
+function UpdateProgressNote({ progress }: { progress: UpdateProgress }) {
+  return (
+    <Muted
+      role="status"
+      data-update-stage={progress.stage}
+      className={progress.stage === "failed" ? "harness-update-failed" : undefined}
+    >
+      {progress.text}
+    </Muted>
+  );
 }
 
 /** The organization's desired version as words, for "Inherits N from the organization". */
@@ -413,38 +512,52 @@ function pinsDescription(count: number): string {
 export function HarnessSettingsSection({
   harness,
   globalDesiredVersion,
+  pinSyncJobs = [],
 }: {
   harness: HarnessRow;
   globalDesiredVersion: string | null;
+  /** The latest sync job of each pinned repository. */
+  pinSyncJobs?: readonly PinSyncJob[];
 }) {
-  const { pending, run } = useAction();
-  const saved = React.useMemo(() => configDraft(harness), [harness]);
-  const [draft, setDraft] = React.useState(saved);
-  const savedVersion = React.useMemo(() => versionDraft(harness), [harness]);
-  const [version, setVersion] = React.useState(savedVersion);
+  const apiAction = useApiAction();
+  const pickup = usePickup(harness);
+  // Seeded from the (polled) harness; a refetch re-seeds them only while they aren't edited.
+  const [draft, setDraft] = useSeededDraft(configDraft(harness));
+  const saved = configDraft(harness);
+  const savedVersion = versionDraft(harness);
+  const [version, setVersion] = useSeededDraft(savedVersion);
   const [versionError, setVersionError] = React.useState<string | undefined>();
-  const savedPins = React.useMemo(
-    () => harness.pinnedRepositories.map((repo) => repo.id),
-    [harness.pinnedRepositories],
-  );
-  const [pins, setPins] = React.useState<string[]>(savedPins);
+  // By id: pins are a set, so a refetch in path order doesn't count as an edit.
+  const savedPins = harness.pinnedRepositories.map((repo) => repo.id).sort();
+  const [pins, setPins] = useSeededDraft<string[]>(savedPins);
   const pinnedOptions = React.useMemo(
     () => harness.pinnedRepositories.map(repositoryOption),
     [harness.pinnedRepositories],
   );
   // Repository paths by id, for the change list: the saved pins and every search result.
-  const [labels, setLabels] = React.useState<ReadonlyMap<string, string>>(
-    () => new Map(pinnedOptions.map((option) => [option.value, option.label])),
+  const [searched, setSearched] = React.useState<ReadonlyMap<string, string>>(() => new Map());
+  const labels = React.useMemo(
+    () =>
+      new Map([
+        ...searched,
+        ...pinnedOptions.map((option) => [option.value, option.label] as const),
+      ]),
+    [searched, pinnedOptions],
   );
-  const search = React.useCallback(async (query: string) => {
-    const options = await searchRepositoryOptions(query);
-    setLabels((known) => {
-      const next = new Map(known);
-      for (const option of options) next.set(option.value, option.label);
-      return next;
-    });
-    return options;
-  }, []);
+  const searchRepositories = useRepositorySearch();
+  const search = React.useCallback(
+    async (query: string) => {
+      const options = await searchRepositories(query);
+      setSearched((known) => {
+        const next = new Map(known);
+        for (const option of options) next.set(option.value, option.label);
+        return next;
+      });
+      return options;
+    },
+    [searchRepositories],
+  );
+  const syncJobs = new Map(pinSyncJobs.map((job) => [job.repositoryId, job]));
 
   const { defaults } = harness;
   const readOnly = harness.revoked;
@@ -487,14 +600,24 @@ export function HarnessSettingsSection({
     );
     const added = pins.filter((id) => !savedPins.includes(id));
     const removed = savedPins.filter((id) => !pins.includes(id));
+    const body: HarnessSettingsSave = {
+      ...(configChanged && { config: configInput(draft) }),
+      ...(versionSave && { version: versionSave.version }),
+      unpin: removed,
+      pin: added,
+    };
     return {
+      // One request; the page refetches once, after it.
       action: () =>
-        saveInOrder([
-          ...(configChanged ? [() => updateHarnessConfig(harness.id, configInput(draft))] : []),
-          ...(versionSave ? [() => setHarnessDesiredVersion(harness.id, versionSave.version)] : []),
-          ...removed.map((id) => () => unpinRepository(harness.id, id)),
-          ...added.map((id) => () => pinRepository(harness.id, id)),
-        ]),
+        apiAction(
+          ({ organizationId }) =>
+            api.put(`/api/ui/harnesses/${harness.id}/settings`, harnessSavedSchema, {
+              body,
+              organizationId,
+            }),
+          harnessChanged,
+          (result) => pickup.onSaved(result.savedAt),
+        ),
       success:
         added.length > 0
           ? "Saved. The harness picks it up with its next heartbeat and pre-clones the repositories you pinned."
@@ -521,6 +644,7 @@ export function HarnessSettingsSection({
           "The harness picks these up with its next heartbeat (within 20 seconds). Running jobs aren't cancelled; it takes new jobs by the new limits.",
       }}
       readOnly={readOnly}
+      savedStatus={pickup.status}
     >
       <SettingsSubsection
         id="harness-concurrency"
@@ -630,7 +754,7 @@ export function HarnessSettingsSection({
           <MultiSelect
             id="pinned-repositories"
             value={pins}
-            onChange={setPins}
+            onChange={(next) => setPins([...next].sort())}
             onSearch={search}
             selectedOptions={pinnedOptions}
             disabled={readOnly}
@@ -640,6 +764,9 @@ export function HarnessSettingsSection({
             staleMessage="It was disconnected. It's kept until you remove it."
           />
         </Field>
+        {harness.pinnedRepositories.length > 0 && (
+          <PinSyncList repositories={harness.pinnedRepositories} syncJobs={syncJobs} />
+        )}
       </SettingsSubsection>
 
       <SettingsSubsection
@@ -681,34 +808,72 @@ export function HarnessSettingsSection({
             />
           </Field>
         </InheritableSetting>
-        {harness.selfUpdate === "supported" && !readOnly && (
-          <div>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={pending}
-              title="Update to the saved desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
-              onClick={() =>
-                run(
-                  () => requestHarnessUpdate(harness.id),
-                  `${harness.name} will update with its next heartbeat.`,
-                )
-              }
-            >
-              <IconCloudDownload size={14} />
-              Update now
-            </Button>
-          </div>
-        )}
-        {harness.updateRequest && (
-          <Muted>
-            Update to {harness.updateRequest.version} requested{" "}
-            <Timestamp iso={harness.updateRequest.requestedAt} inline />; the harness starts it with
-            its next heartbeat.
-          </Muted>
-        )}
+        {harness.selfUpdate === "supported" && !readOnly && <UpdateNow harness={harness} />}
       </SettingsSubsection>
     </SettingsSection>
+  );
+}
+
+/** "Update now", then where the update stands as the harness reports it (requested → updating → updated or failed). */
+function UpdateNow({ harness }: { harness: HarnessRow }) {
+  // The version this page asked for; else a pending request made elsewhere.
+  const [requested, setRequested] = React.useState<string | null>(null);
+  const update = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.post(`/api/ui/harnesses/${harness.id}/update`, harnessUpdateRequestedSchema, {
+        organizationId,
+      }),
+    invalidate: harnessChanged,
+    success: `${harness.name} will update with its next heartbeat.`,
+    onSuccess: (result) => setRequested(result.version),
+  });
+  const version = requested ?? harness.updateRequest?.version ?? null;
+  return (
+    <>
+      <div>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={update.isPending}
+          title="Update to the saved desired version (the latest on npm when none is set) with the next heartbeat, even if it failed here before."
+          onClick={() => update.mutate()}
+        >
+          <IconCloudDownload size={14} />
+          {update.isPending ? "Requesting…" : "Update now"}
+        </Button>
+      </div>
+      {version && <UpdateProgressNote progress={updateProgress(harness, version)} />}
+    </>
+  );
+}
+
+/** Each pinned repository's pre-clone (its latest `repo.sync` job), live. */
+function PinSyncList({
+  repositories,
+  syncJobs,
+}: {
+  repositories: HarnessRow["pinnedRepositories"];
+  syncJobs: ReadonlyMap<string, PinSyncJob>;
+}) {
+  return (
+    <ul className="harness-pin-syncs" aria-label="Pre-clones of the pinned repositories">
+      {repositories.map((repo) => {
+        const job = syncJobs.get(repo.id);
+        return (
+          <li key={repo.id} data-pin-sync={repo.fullPath}>
+            <span className="font-mono text-sm">{repo.fullPath}</span>
+            {job ? (
+              <>
+                <JobStatusBadge job={job} />
+                {job.error && <Muted>{job.error}</Muted>}
+              </>
+            ) : (
+              <Muted>No sync in the last 7 days</Muted>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -755,10 +920,37 @@ export function InstallablesSection({
           title="Install or update"
           description="Starts an install job on this harness; it picks it up with its next claim."
         >
-          <InstallForm harnessId={harness.id} />
+          <InstallForm harnessId={harness.id} installJobs={installJobs} />
         </SettingsSubsection>
       )}
     </SettingsPanel>
+  );
+}
+
+/** A table's rows while the tab first loads. */
+function TableSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <Stack gap={3}>
+      {Array.from({ length: rows }, (_, index) => (
+        <Skeleton key={index} width={`${60 + ((index * 17) % 35)}%`} />
+      ))}
+    </Stack>
+  );
+}
+
+/** The Installables tab: its own query (installables and install jobs), live. */
+function InstallablesTab({ harness }: { harness: HarnessRow }) {
+  const query = useHarnessInstallables(harness.id);
+  return (
+    <QueryBoundary query={query} skeleton={<TableSkeleton />} what="installables">
+      {(data) => (
+        <InstallablesSection
+          harness={harness}
+          installables={data.installables}
+          installJobs={data.installJobs}
+        />
+      )}
+    </QueryBoundary>
   );
 }
 
@@ -784,8 +976,10 @@ export function HostToolsSection({
   harness: HarnessRow;
   hostTools: HostToolRow[];
 }) {
-  const saved = React.useMemo(() => hostToolPaths(hostTools), [hostTools]);
-  const [paths, setPaths] = React.useState(saved);
+  const apiAction = useApiAction();
+  const pickup = usePickup(harness);
+  const saved = hostToolPaths(hostTools);
+  const [paths, setPaths] = useSeededDraft(saved);
   const specs = React.useMemo(
     () =>
       hostTools.map((tool): SettingSpec => ({
@@ -814,17 +1008,31 @@ export function HostToolsSection({
         </>
       }
       changes={changes}
-      prepare={() => ({
-        action: () =>
-          saveInOrder(
-            changes.map(
-              (change) => () => setHostToolPath(harness.id, change.key, paths[change.key] ?? ""),
+      prepare={() => {
+        const body = {
+          paths: changes.map((change) => ({
+            hostToolId: change.key,
+            path: paths[change.key] ?? "",
+          })),
+        };
+        return {
+          // One request; the page refetches once, after it.
+          action: () =>
+            apiAction(
+              ({ organizationId }) =>
+                api.put(`/api/ui/harnesses/${harness.id}/host-tools`, harnessSavedSchema, {
+                  body,
+                  organizationId,
+                }),
+              harnessChanged,
+              (result) => pickup.onSaved(result.savedAt),
             ),
-          ),
-        success: "Saved. The harness gets the paths with its next heartbeat.",
-      })}
+          success: "Saved. The harness gets the paths with its next heartbeat.",
+        };
+      }}
       onDiscard={() => setPaths(saved)}
       readOnly={harness.revoked || hostTools.length === 0}
+      savedStatus={pickup.status}
     >
       <SettingsSubsection id="host-tools-paths" className="settings-sub-wide" title="Paths">
         <HarnessHostTools
@@ -838,10 +1046,40 @@ export function HostToolsSection({
   );
 }
 
+/** The Host tools tab: its own query (the catalog with this harness's paths and reports), live. */
+function HostToolsTab({ harness }: { harness: HarnessRow }) {
+  const query = useHarnessHostTools(harness.id);
+  return (
+    <QueryBoundary query={query} skeleton={<TableSkeleton />} what="host tools">
+      {(data) => <HostToolsSection harness={harness} hostTools={data.hostTools} />}
+    </QueryBoundary>
+  );
+}
+
 // ── Danger zone ───────────────────────────────────────────────────────────────
 
+/**
+ * Revoking or deleting the harness. Both leave its pages for the harness list, once the
+ * change succeeded and the list was refetched (`useApiMutation` awaits the invalidation).
+ */
+function useLeaveHarness(harness: HarnessRow, action: "revoke" | "delete") {
+  const router = useRouter();
+  return useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      action === "revoke"
+        ? api.post(`/api/ui/harnesses/${harness.id}/revoke`, mutationResultSchema, {
+            organizationId,
+          })
+        : api.delete(`/api/ui/harnesses/${harness.id}`, mutationResultSchema, { organizationId }),
+    // The list (and the jobs and repositories it touched); this harness's detail goes with the page.
+    invalidate: (keys) => [keys.harnesses.lists, keys.jobs.all, keys.repositories.all],
+    success: `${action === "revoke" ? "Revoked" : "Deleted"} ${harness.name}`,
+    onSuccess: () => router.push("/harnesses"),
+  });
+}
+
 function RevokeSubsection({ harness }: { harness: HarnessRow }) {
-  const { pending, run } = useAction();
+  const revoke = useLeaveHarness(harness, "revoke");
   return (
     <SettingsSubsection
       id="harness-revoke"
@@ -857,9 +1095,9 @@ function RevokeSubsection({ harness }: { harness: HarnessRow }) {
       <div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="danger" disabled={pending}>
+            <Button variant="danger" disabled={revoke.isPending}>
               <IconBan size={14} />
-              Revoke harness
+              {revoke.isPending ? "Revoking…" : "Revoke harness"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -874,10 +1112,7 @@ function RevokeSubsection({ harness }: { harness: HarnessRow }) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="danger"
-                onClick={() => run(() => revokeHarness(harness.id), `Revoked ${harness.name}`)}
-              >
+              <AlertDialogAction variant="danger" onClick={() => revoke.mutate()}>
                 Revoke
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -889,8 +1124,7 @@ function RevokeSubsection({ harness }: { harness: HarnessRow }) {
 }
 
 function DeleteSubsection({ harness }: { harness: HarnessRow }) {
-  const router = useRouter();
-  const { pending, run } = useAction();
+  const remove = useLeaveHarness(harness, "delete");
   return (
     <SettingsSubsection
       id="harness-delete"
@@ -900,9 +1134,9 @@ function DeleteSubsection({ harness }: { harness: HarnessRow }) {
       <div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="danger" disabled={pending}>
+            <Button variant="danger" disabled={remove.isPending}>
               <IconTrash size={14} />
-              Delete harness
+              {remove.isPending ? "Deleting…" : "Delete harness"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -919,16 +1153,7 @@ function DeleteSubsection({ harness }: { harness: HarnessRow }) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="danger"
-                onClick={() =>
-                  run(
-                    () => deleteHarness(harness.id),
-                    `Deleted ${harness.name}`,
-                    () => router.push("/harnesses"),
-                  )
-                }
-              >
+              <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -955,151 +1180,222 @@ function DangerZone({ harness }: { harness: HarnessRow }) {
   );
 }
 
-export function HarnessDetailView({
-  tab,
+/** The Overview tab's status facts, live: heartbeat age (on the browser's clock), version, jobs, pins. */
+function StatusCard({
   harness,
+  pinSyncJobs,
   now,
-  audit,
-  installables,
-  installJobs,
-  hostTools,
-  globalDesiredVersion,
-}: HarnessDetailViewProps) {
+}: {
+  harness: HarnessRow;
+  pinSyncJobs: readonly PinSyncJob[];
+  now: number;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle as="h2">Status</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="harness-status-grid">
+          <Fact label="Last heartbeat">
+            {harness.lastHeartbeatAt ? (
+              <Timestamp iso={harness.lastHeartbeatAt} now={now} inline />
+            ) : (
+              "Never"
+            )}
+          </Fact>
+          <Fact label="Version">
+            {harness.version ? (
+              <span className="text-numeric" data-harness-version>
+                {harness.version}
+              </span>
+            ) : (
+              "Unknown"
+            )}
+          </Fact>
+          <Fact label="Desired version">
+            {harness.desiredVersion ? (
+              <>
+                <span className="text-numeric">{harness.desiredVersion}</span>{" "}
+                <span className="fact-secondary">
+                  {harness.desiredVersionOverride
+                    ? "(override)"
+                    : harness.tracksLatest
+                      ? "(latest on npm)"
+                      : "(organization)"}
+                </span>
+              </>
+            ) : harness.tracksLatest ? (
+              "Latest on npm (not read yet)"
+            ) : (
+              "Not set"
+            )}
+          </Fact>
+          <Fact label="Update status">
+            <Stack gap={1}>
+              <div>
+                <UpdateStatusBadge harness={harness} />
+              </div>
+              {harness.updateRequest && (
+                <UpdateProgressNote
+                  progress={updateProgress(harness, harness.updateRequest.version)}
+                />
+              )}
+              {harness.update?.error && <Muted>{harness.update.error}</Muted>}
+            </Stack>
+          </Fact>
+          <Fact label="Failed versions">
+            {harness.failedVersions.length > 0 ? (
+              <span className="text-numeric">{harness.failedVersions.join(", ")}</span>
+            ) : (
+              "None"
+            )}
+          </Fact>
+          <Fact label="Accepted task types">
+            <Stack gap={1}>
+              <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
+              <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
+            </Stack>
+          </Fact>
+          <Fact label="Running jobs" wide>
+            <Stack gap={1}>
+              <span>
+                {harness.runningJobs.length} / {harness.maxConcurrency}{" "}
+                <ConfigSource override={harness.overrides.maxConcurrency !== null} />
+              </span>
+              {harness.runningJobs.map((job) => (
+                <JobTargetLink key={job.id} job={job} />
+              ))}
+            </Stack>
+          </Fact>
+          <Fact label="Concurrency per pool">{formatPoolLimits(harness.effectivePoolLimits)}</Fact>
+          <Fact label="Pinned repositories" wide>
+            {harness.pinnedRepositories.length > 0 ? (
+              <PinSyncList
+                repositories={harness.pinnedRepositories}
+                syncJobs={new Map(pinSyncJobs.map((job) => [job.repositoryId, job]))}
+              />
+            ) : (
+              "None"
+            )}
+          </Fact>
+          <Fact label="Enrolled">
+            <Timestamp iso={harness.createdAt} inline />
+          </Fact>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A tab's content while the harness first loads: its header line and a card of facts. */
+function DetailSkeleton() {
+  return (
+    <Card>
+      <CardContent>
+        <div className="harness-status-grid">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="fact">
+              <Skeleton width="40%" />
+              <Skeleton width={`${50 + ((index * 13) % 40)}%`} />
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HarnessTabContent({ tab, detail }: { tab: HarnessTab; detail: HarnessDetail }) {
+  const now = useNow();
+  const harness = withClientOnline(detail.harness, now);
+  return (
+    <>
+      <TokenTheftAlert audit={detail.audit} />
+      {harness.revoked && harness.revokedAt && (
+        <Alert variant="warning">
+          <AlertTitle as="h2">Revoked</AlertTitle>
+          <AlertDescription>
+            This harness was revoked <Timestamp iso={harness.revokedAt} inline />. Its configuration
+            can no longer be changed.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="settings-sections">
+        {tab === "overview" && (
+          <>
+            <StatusCard harness={harness} pinSyncJobs={detail.pinSyncJobs} now={now} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2">Audit log</CardTitle>
+                <CardDescription>
+                  The 50 most recent security events for this harness.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HarnessAuditLog audit={detail.audit} />
+              </CardContent>
+            </Card>
+
+            <DangerZone harness={harness} />
+          </>
+        )}
+        {tab === "settings" && (
+          <HarnessSettingsSection
+            harness={harness}
+            globalDesiredVersion={detail.globalDesiredVersion}
+            pinSyncJobs={detail.pinSyncJobs}
+          />
+        )}
+        {tab === "installables" && <InstallablesTab harness={harness} />}
+        {tab === "host-tools" && <HostToolsTab harness={harness} />}
+      </div>
+    </>
+  );
+}
+
+/**
+ * A harness's tab (Overview, Settings, Installables or Host tools), live: the harness polls
+ * (`GET /api/ui/harnesses/{id}`), and the Installables and Host tools tabs poll their own
+ * part. A harness of another of the user's organizations switches to it first.
+ */
+export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
+  const { id } = useParams<{ id: string }>();
+  const detail = useHarnessDetail(id);
+  const name = detail.data?.harness.name;
   return (
     <>
       <AppHeader
         breadcrumbs={[
           { label: "Harnesses", href: "/harnesses" },
-          { label: harness.name },
+          { label: name ?? "Harness" },
           { label: HARNESS_TAB_LABELS[tab] },
         ]}
       />
       <main className="detail-main">
-        <PageHeader title={harness.name} meta={<HarnessStatusBadge harness={harness} />} />
-        <HarnessNav harnessId={harness.id} current={tab} />
-
-        <TokenTheftAlert audit={audit} />
-        {harness.revoked && harness.revokedAt && (
-          <Alert variant="warning">
-            <AlertTitle as="h2">Revoked</AlertTitle>
-            <AlertDescription>
-              This harness was revoked <Timestamp iso={harness.revokedAt} inline />. Its
-              configuration can no longer be changed.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="settings-sections">
-          {tab === "overview" && (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle as="h2">Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="harness-status-grid">
-                    <Fact label="Last heartbeat">
-                      {harness.lastHeartbeatAt ? (
-                        <Timestamp iso={harness.lastHeartbeatAt} now={now} inline />
-                      ) : (
-                        "Never"
-                      )}
-                    </Fact>
-                    <Fact label="Version">
-                      {harness.version ? (
-                        <span className="text-numeric">{harness.version}</span>
-                      ) : (
-                        "Unknown"
-                      )}
-                    </Fact>
-                    <Fact label="Desired version">
-                      {harness.desiredVersion ? (
-                        <>
-                          <span className="text-numeric">{harness.desiredVersion}</span>{" "}
-                          <span className="fact-secondary">
-                            {harness.desiredVersionOverride
-                              ? "(override)"
-                              : harness.tracksLatest
-                                ? "(latest on npm)"
-                                : "(organization)"}
-                          </span>
-                        </>
-                      ) : harness.tracksLatest ? (
-                        "Latest on npm (not read yet)"
-                      ) : (
-                        "Not set"
-                      )}
-                    </Fact>
-                    <Fact label="Update status">
-                      <Stack gap={1}>
-                        <div>
-                          <UpdateStatusBadge harness={harness} />
-                        </div>
-                        {harness.update?.error && <Muted>{harness.update.error}</Muted>}
-                      </Stack>
-                    </Fact>
-                    <Fact label="Failed versions">
-                      {harness.failedVersions.length > 0 ? (
-                        <span className="text-numeric">{harness.failedVersions.join(", ")}</span>
-                      ) : (
-                        "None"
-                      )}
-                    </Fact>
-                    <Fact label="Accepted task types">
-                      <Stack gap={1}>
-                        <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
-                        <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
-                      </Stack>
-                    </Fact>
-                    <Fact label="Running jobs" wide>
-                      <Stack gap={1}>
-                        <span>
-                          {harness.runningJobs.length} / {harness.maxConcurrency}{" "}
-                          <ConfigSource override={harness.overrides.maxConcurrency !== null} />
-                        </span>
-                        {harness.runningJobs.map((job) => (
-                          <JobTargetLink key={job.id} job={job} />
-                        ))}
-                      </Stack>
-                    </Fact>
-                    <Fact label="Concurrency per pool">
-                      {formatPoolLimits(harness.effectivePoolLimits)}
-                    </Fact>
-                    <Fact label="Enrolled">
-                      <Timestamp iso={harness.createdAt} inline />
-                    </Fact>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle as="h2">Audit log</CardTitle>
-                  <CardDescription>
-                    The 50 most recent security events for this harness.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <HarnessAuditLog audit={audit} />
-                </CardContent>
-              </Card>
-
-              <DangerZone harness={harness} />
-            </>
-          )}
-          {tab === "settings" && (
-            <HarnessSettingsSection harness={harness} globalDesiredVersion={globalDesiredVersion} />
-          )}
-          {tab === "installables" && (
-            <InstallablesSection
-              harness={harness}
-              installables={installables}
-              installJobs={installJobs}
-            />
-          )}
-          {tab === "host-tools" && <HostToolsSection harness={harness} hostTools={hostTools} />}
-        </div>
+        <PageHeader
+          title={name ?? <Skeleton width="12rem" height="1.75rem" />}
+          meta={
+            detail.data && (
+              <>
+                <HarnessStatus harness={detail.data.harness} />
+                <Freshness query={detail} />
+              </>
+            )
+          }
+        />
+        <HarnessNav harnessId={id} current={tab} />
+        <QueryBoundary query={detail} skeleton={<DetailSkeleton />} what="the harness">
+          {(data) => <HarnessTabContent tab={tab} detail={data} />}
+        </QueryBoundary>
       </main>
     </>
   );
+}
+
+/** Online or offline against the browser's ticking clock. */
+function HarnessStatus({ harness }: { harness: HarnessRow }) {
+  return <HarnessStatusBadge harness={withClientOnline(harness, useNow())} />;
 }

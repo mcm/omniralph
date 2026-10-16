@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { renderHarnessPage } from "../harness-page";
+import { HarnessDetailView } from "../harness-detail-view";
 
 export const metadata: Metadata = { title: "Harness installables · Omniralph" };
 
-export default async function HarnessInstallablesPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  return renderHarnessPage(params, "installables");
+export default function HarnessInstallablesPage() {
+  return <HarnessDetailView tab="installables" />;
 }

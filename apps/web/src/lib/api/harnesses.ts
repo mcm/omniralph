@@ -1,5 +1,6 @@
 import { HarnessUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
 import { z } from "zod";
+import type { AuditEventName } from "@/lib/harnesses/display";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { isoDate, mutationResultSchema } from "./schemas";
 
@@ -89,3 +90,177 @@ export const enrollmentStatusSchema = z.object({
   harness: z.object({ id: z.string(), name: z.string() }).nullable(),
 });
 export type EnrollmentStatus = z.infer<typeof enrollmentStatusSchema>;
+
+// ── A harness's pages (`/api/ui/harnesses/{id}/…`) ──────────────────────────
+
+/** `jobs.status`, as `@omniralph/db`'s `JobStatus`. */
+export const JOB_STATUSES = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+  "expired",
+  "skipped",
+] as const;
+const jobStatus = z.enum(JOB_STATUSES);
+
+const AUDIT_EVENTS = [
+  "enroll",
+  "token_refresh",
+  "refresh_reuse",
+  "revoke",
+  "delete",
+  "credential_issued",
+  "result_submitted",
+  "auth_failed",
+] as const satisfies readonly AuditEventName[];
+
+/** A `harness_audit` row. */
+export const auditRowSchema = z.object({
+  id: z.string(),
+  event: z.enum(AUDIT_EVENTS),
+  ip: z.string().nullable(),
+  detail: z.record(z.string(), z.unknown()),
+  createdAt: isoDate,
+});
+export type AuditRow = z.infer<typeof auditRowSchema>;
+
+/** The latest `repo.sync` job of a pinned repository (the pre-clone pinning starts). */
+export const pinSyncJobSchema = z.object({
+  repositoryId: z.string(),
+  id: z.string(),
+  status: jobStatus,
+  error: z.string().nullable(),
+  createdAt: isoDate,
+  finishedAt: isoDate.nullable(),
+});
+export type PinSyncJob = z.infer<typeof pinSyncJobSchema>;
+
+/**
+ * `GET /api/ui/harnesses/{id}`: what every tab of a harness shows (the audit log on every
+ * tab, since a token theft warning shows above all of them).
+ */
+export const harnessDetailSchema = z.object({
+  harness: harnessRowSchema,
+  /** Settings › Harness defaults version ("1.5.0 (latest on npm)" when it tracks npm's latest); null: not set. */
+  globalDesiredVersion: z.string().nullable(),
+  /** The 50 most recent audit events, newest first. */
+  audit: z.array(auditRowSchema),
+  /** The latest sync job (last 7 days) of each pinned repository. */
+  pinSyncJobs: z.array(pinSyncJobSchema),
+});
+export type HarnessDetail = z.infer<typeof harnessDetailSchema>;
+
+/** An `install` job targeted at the harness. */
+export const installJobRowSchema = z.object({
+  id: z.string(),
+  status: jobStatus,
+  name: z.string().nullable(),
+  /** The requested version; null: `latest`. */
+  version: z.string().nullable(),
+  installedVersion: z.string().nullable(),
+  error: z.string().nullable(),
+  createdAt: isoDate,
+});
+export type InstallJobRow = z.infer<typeof installJobRowSchema>;
+
+/** `GET /api/ui/harnesses/{id}/installables`: the reported installables and the last day's installs. */
+export const harnessInstallablesSchema = z.object({
+  /** As the harness's last heartbeat reported them. */
+  installables: z.array(z.object({ name: z.string(), version: z.string() })),
+  /** `install` jobs targeted at the harness in the last 24 hours, newest first. */
+  installJobs: z.array(installJobRowSchema),
+});
+export type HarnessInstallables = z.infer<typeof harnessInstallablesSchema>;
+export type InstallableRow = HarnessInstallables["installables"][number];
+
+/** A catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
+export const hostToolRowSchema = z.object({
+  hostToolId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  configuredPath: z.string().nullable(),
+  /** Whether the configured path exists, as last reported; null: not reported on it yet. */
+  configuredPathExists: z.boolean().nullable(),
+  discoveredPath: z.string().nullable(),
+  /** The harness's last report on the tool; null: never. */
+  reportedAt: isoDate.nullable(),
+  /** `effectiveHostToolPath()`: the path the harness runs the tool from; null: unavailable. */
+  effectivePath: z.string().nullable(),
+});
+export type HostToolRow = z.infer<typeof hostToolRowSchema>;
+
+/** `GET /api/ui/harnesses/{id}/host-tools`: every host tool of the catalog on the harness, by name. */
+export const harnessHostToolsSchema = z.object({ hostTools: z.array(hostToolRowSchema) });
+export type HarnessHostTools = z.infer<typeof harnessHostToolsSchema>;
+
+/** A harness's central config, as the Settings tab saves it. */
+export const harnessConfigFormSchema = z.object({
+  /** Null uses the organization's default (Settings › Harnesses). */
+  maxConcurrency: z.number().nullable(),
+  /** Task types the harness may claim jobs of (`query`, `review`, `coding`); null uses the organization's. */
+  acceptedTaskTypes: z.array(z.string()).nullable(),
+  /** Per-pool concurrency limits (1 to the effective max concurrency); left-out pools use the default. */
+  poolLimits: z.record(z.string(), z.number()),
+});
+export type HarnessConfigForm = z.infer<typeof harnessConfigFormSchema>;
+
+/**
+ * `PUT /api/ui/harnesses/{id}/settings`: the Settings tab's changes, saved in one request in
+ * this order (left-out parts aren't changed).
+ */
+export const harnessSettingsSaveSchema = z.object({
+  config: harnessConfigFormSchema.optional(),
+  /** The desired version override; "" clears it. */
+  version: z.string().max(100).optional(),
+  /** Repositories to unpin, then to pin. */
+  unpin: z.array(z.string()).max(500).default([]),
+  pin: z.array(z.string()).max(500).default([]),
+});
+export type HarnessSettingsSave = z.infer<typeof harnessSettingsSaveSchema>;
+
+/** `PUT /api/ui/harnesses/{id}/host-tools`: configured paths to save, in order ("" clears one). */
+export const hostToolPathsSaveSchema = z.object({
+  paths: z
+    .array(z.object({ hostToolId: z.string(), path: z.string().max(4096) }))
+    .min(1)
+    .max(100),
+});
+export type HostToolPathsSave = z.infer<typeof hostToolPathsSaveSchema>;
+
+/**
+ * The response of a save the harness picks up with its next heartbeat: it has once its
+ * `lastHeartbeatAt` is later than `savedAt` (both the server's clock).
+ */
+export const harnessSavedSchema = mutationResultSchema.extend({ savedAt: isoDate });
+export type HarnessSaved = z.infer<typeof harnessSavedSchema>;
+
+/** `POST /api/ui/harnesses/{id}/update` ("Update now") response: the version requested. */
+export const harnessUpdateRequestedSchema = mutationResultSchema.extend({ version: z.string() });
+
+/** `POST /api/ui/harnesses/{id}/installs` body. */
+export const installRequestSchema = z.object({
+  name: z.string().max(214),
+  /** An exact version or a dist-tag; blank for `latest`. */
+  version: z.string().max(64).optional(),
+});
+
+/** `POST /api/ui/harnesses/{id}/installs` response: the install job (deduped while one runs). */
+export const installEnqueuedSchema = mutationResultSchema.extend({ jobId: z.string() });
+
+/** A connected repository a harness can be pinned to. */
+export const pinnableRepositorySchema = z.object({
+  id: z.string(),
+  provider: z.enum(["github", "gitlab"]),
+  fullPath: z.string(),
+});
+export type PinnableRepository = z.infer<typeof pinnableRepositorySchema>;
+
+/** `GET /api/ui/harnesses/pinnable-repositories?query=`: the pins picker's search. */
+export const pinnableRepositoriesSchema = z.object({
+  repositories: z.array(pinnableRepositorySchema),
+});
+export const pinnableRepositoriesQuerySchema = z.object({
+  query: z.string().max(200).default(""),
+});

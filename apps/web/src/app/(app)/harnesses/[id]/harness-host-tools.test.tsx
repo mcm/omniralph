@@ -1,14 +1,21 @@
+import type * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { HostToolsSection } from "./harness-detail-view";
 import type { HostToolRow } from "./harness-host-tools";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("../actions", () => ({}));
 vi.mock("../../jobs/actions", () => ({}));
 vi.mock("../../repositories/actions", () => ({}));
+
+/** Static markup inside the providers the app shell gives (the user, a query client). */
+function markup(ui: React.ReactElement): string {
+  const Wrapper = queryWrapper(createTestQueryClient());
+  return renderToStaticMarkup(<Wrapper>{ui}</Wrapper>);
+}
 
 const harness = { id: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f", revoked: false } as HarnessRow;
 const REPORTED = "2026-10-12T10:00:00.000Z";
@@ -76,7 +83,7 @@ function cells(row: string): string[] {
 
 describe("HostToolsSection", () => {
   it("lists every catalog tool with its configured path, report and effective path", () => {
-    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
+    const html = markup(<HostToolsSection harness={harness} hostTools={tools} />);
     const byName = rows(html);
     expect(Object.keys(byName)).toEqual(tools.map((t) => t.name));
     // Tool, configured path (form), configured path exists, discovered path, effective path.
@@ -126,7 +133,7 @@ describe("HostToolsSection", () => {
   });
 
   it("names each fact in the phone meta, discovered path included", () => {
-    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
+    const html = markup(<HostToolsSection harness={harness} hostTools={tools} />);
     const meta = (name: string) => {
       const dl = rows(html)[name]!.match(/<dl class="host-tool-facts">([\s\S]*?)<\/dl>/)![1]!;
       return dl
@@ -145,14 +152,14 @@ describe("HostToolsSection", () => {
   });
 
   it("saves every changed path with the section's one save", () => {
-    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={tools} />);
+    const html = markup(<HostToolsSection harness={harness} hostTools={tools} />);
     expect(html.match(/<form/g)).toHaveLength(1);
     expect(html.match(/type="submit"/g)).toHaveLength(1);
     expect(html).toContain("Save host tools");
   });
 
   it("shows the configured paths without inputs or a save on a revoked harness", () => {
-    const html = renderToStaticMarkup(
+    const html = markup(
       <HostToolsSection harness={{ ...harness, revoked: true }} hostTools={tools} />,
     );
     expect(html).not.toContain("<input");
@@ -162,7 +169,7 @@ describe("HostToolsSection", () => {
   });
 
   it("points to the catalog when there are no host tools", () => {
-    const html = renderToStaticMarkup(<HostToolsSection harness={harness} hostTools={[]} />);
+    const html = markup(<HostToolsSection harness={harness} hostTools={[]} />);
     expect(html).toContain("No host tools");
     expect(html).toContain("Settings › Harness defaults");
   });

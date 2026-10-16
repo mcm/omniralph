@@ -3,24 +3,10 @@ import "@/components/pickers/test-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { createTestQueryClient, mockFetch, queryWrapper } from "@/components/query-test-utils";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { HarnessSettingsSection } from "./harness-detail-view";
 
-const actions = vi.hoisted(() => ({
-  searchPinnableRepositories: vi.fn(async (query: string) => ({
-    ok: true as const,
-    repositories: [
-      { id: "repo-api", provider: "github" as const, fullPath: "acme/api" },
-      { id: "repo-web", provider: "gitlab" as const, fullPath: "acme/web" },
-    ].filter((repo) => repo.fullPath.includes(query)),
-  })),
-  pinRepository: vi.fn(async () => ({ ok: true }) as const),
-  unpinRepository: vi.fn(async () => ({ ok: true }) as const),
-  updateHarnessConfig: vi.fn(async () => ({ ok: true }) as const),
-  setHarnessDesiredVersion: vi.fn(async () => ({ ok: true }) as const),
-  requestHarnessUpdate: vi.fn(),
-}));
-vi.mock("../actions", () => actions);
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("../../jobs/actions", () => ({}));
 vi.mock("../../repositories/actions", () => ({}));
@@ -46,10 +32,35 @@ const harness = {
 
 describe("HarnessSettingsSection pins", () => {
   it("searches repositories on the server and saves the pin changes with the section", async () => {
-    render(<HarnessSettingsSection harness={harness} globalDesiredVersion={null} />);
+    const repositories = [
+      { id: "repo-api", provider: "github" as const, fullPath: "acme/api" },
+      { id: "repo-web", provider: "gitlab" as const, fullPath: "acme/web" },
+    ];
+    const requests = mockFetch({
+      "GET /api/ui/harnesses/pinnable-repositories": ({ query }) =>
+        new Response(
+          JSON.stringify({
+            repositories: repositories.filter((r) => r.fullPath.includes(query.get("query") ?? "")),
+          }),
+        ),
+      [`PUT /api/ui/harnesses/${harness.id}/settings`]: {
+        ok: true,
+        savedAt: "2026-10-16T10:00:00.000Z",
+      },
+    });
+    render(<HarnessSettingsSection harness={harness} globalDesiredVersion={null} />, {
+      wrapper: queryWrapper(createTestQueryClient()),
+    });
     await userEvent.click(screen.getByRole("combobox", { name: /Pinned repositories/ }));
     await userEvent.type(screen.getByRole("combobox", { name: "Search repositories" }), "web");
-    await waitFor(() => expect(actions.searchPinnableRepositories).toHaveBeenLastCalledWith("web"));
+    await waitFor(() =>
+      expect(
+        requests
+          .filter((r) => r.path.endsWith("/pinnable-repositories"))
+          .at(-1)
+          ?.query.get("query"),
+      ).toBe("web"),
+    );
     await userEvent.click(await screen.findByRole("option", { name: /acme\/web/ }));
     await userEvent.click(screen.getByRole("button", { name: /Remove acme\/old/ }));
     await userEvent.keyboard("{Escape}");
@@ -62,9 +73,11 @@ describe("HarnessSettingsSection pins", () => {
     await userEvent.click(
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
-    await waitFor(() => expect(actions.pinRepository).toHaveBeenCalledWith(harness.id, "repo-web"));
-    expect(actions.unpinRepository).toHaveBeenCalledWith(harness.id, "repo-old");
-    expect(actions.updateHarnessConfig).not.toHaveBeenCalled();
-    expect(actions.setHarnessDesiredVersion).not.toHaveBeenCalled();
+    // The pins alone, in the one request of the save.
+    await waitFor(() =>
+      expect(requests.filter((r) => r.method === "PUT").map((r) => r.body)).toEqual([
+        { unpin: ["repo-old"], pin: ["repo-web"] },
+      ]),
+    );
   });
 });

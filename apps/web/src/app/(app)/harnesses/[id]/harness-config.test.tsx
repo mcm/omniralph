@@ -2,26 +2,26 @@
 import "@/components/pickers/test-dom";
 import { render as renderDom, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createTestQueryClient,
+  mockFetch,
+  queryWrapper,
+  type SeenRequest,
+} from "@/components/query-test-utils";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import {
   configDraft,
   configInput,
   HarnessSettingsSection,
+  pickupState,
+  updateProgress,
   versionDraft,
   versionInput,
 } from "./harness-detail-view";
 
-const actions = vi.hoisted(() => ({
-  searchPinnableRepositories: vi.fn(),
-  pinRepository: vi.fn(),
-  unpinRepository: vi.fn(),
-  updateHarnessConfig: vi.fn(async () => ({ ok: true }) as const),
-  setHarnessDesiredVersion: vi.fn(async () => ({ ok: true }) as const),
-  requestHarnessUpdate: vi.fn(),
-}));
-vi.mock("../actions", () => actions);
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("../../jobs/actions", () => ({}));
@@ -46,6 +46,10 @@ function harness(overrides: HarnessRow["overrides"]): HarnessRow {
     selfUpdate: "supported",
     desiredVersionOverride: null,
     pinnedRepositories: [],
+    version: "1.0.0",
+    update: null,
+    failedVersions: [],
+    lastHeartbeatAt: "2026-10-16T09:59:50.000Z",
   } as unknown as HarnessRow;
 }
 
@@ -57,14 +61,41 @@ function tag(html: string, id: string): string {
   return html.match(new RegExp(`<[^>]*id="${id}"[^>]*>`))?.[0] ?? "";
 }
 
+/** The signed-in user and a query client, as the app shell provides them. */
+function Providers({ children }: { children: React.ReactNode }) {
+  const [Wrapper] = React.useState(() => queryWrapper(createTestQueryClient()));
+  return <Wrapper>{children}</Wrapper>;
+}
+
 function render(harness: HarnessRow): string {
   return renderToStaticMarkup(
-    <HarnessSettingsSection harness={harness} globalDesiredVersion="1.4.0" />,
+    <Providers>
+      <HarnessSettingsSection harness={harness} globalDesiredVersion="1.4.0" />
+    </Providers>,
   );
 }
 
+function renderLive(ui: React.ReactElement) {
+  return renderDom(ui, { wrapper: Providers });
+}
+
+const SAVED_AT = "2026-10-16T10:00:00.000Z";
+let requests: SeenRequest[];
+
+/** The bodies of the settings saves sent so far. */
+function saves(harnessId: string) {
+  return requests
+    .filter((r) => r.method === "PUT" && r.path === `/api/ui/harnesses/${harnessId}/settings`)
+    .map((r) => r.body);
+}
+
 describe("HarnessSettingsSection", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requests = mockFetch({
+      [`PUT /api/ui/harnesses/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
+    });
+  });
 
   it("says what each inherited setting inherits, with an Override button and no controls", () => {
     const html = render(inheriting);
@@ -83,7 +114,9 @@ describe("HarnessSettingsSection", () => {
 
   it("names a version the organization doesn't set", () => {
     const html = renderToStaticMarkup(
-      <HarnessSettingsSection harness={inheriting} globalDesiredVersion={null} />,
+      <Providers>
+        <HarnessSettingsSection harness={inheriting} globalDesiredVersion={null} />
+      </Providers>,
     );
     expect(html).toContain("Inherits no version from the organization.");
   });
@@ -116,7 +149,7 @@ describe("HarnessSettingsSection", () => {
   });
 
   it("overrides from the organization's values and inherits again", async () => {
-    renderDom(<HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />);
+    renderLive(<HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />);
     await userEvent.click(screen.getByRole("button", { name: "Override max concurrency" }));
     const input = screen.getByLabelText("Jobs at once") as HTMLInputElement;
     expect(input.value).toBe("6");
@@ -145,18 +178,20 @@ describe("HarnessSettingsSection", () => {
     await userEvent.click(
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
+    // One request with only the changed parts.
     await waitFor(() =>
-      expect(actions.updateHarnessConfig).toHaveBeenCalledWith(inheriting.id, {
-        maxConcurrency: 3,
-        acceptedTaskTypes: null,
-        poolLimits: {},
-      }),
+      expect(saves(inheriting.id)).toEqual([
+        {
+          config: { maxConcurrency: 3, acceptedTaskTypes: null, poolLimits: {} },
+          unpin: [],
+          pin: [],
+        },
+      ]),
     );
-    expect(actions.setHarnessDesiredVersion).not.toHaveBeenCalled();
   });
 
   it("goes back to inheriting an overridden version, and saves that as no override", async () => {
-    renderDom(
+    renderLive(
       <HarnessSettingsSection
         harness={{ ...overriding, desiredVersionOverride: "1.3.2" } as HarnessRow}
         globalDesiredVersion="1.4.0"
@@ -174,13 +209,12 @@ describe("HarnessSettingsSection", () => {
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
     await waitFor(() =>
-      expect(actions.setHarnessDesiredVersion).toHaveBeenCalledWith(overriding.id, ""),
+      expect(saves(overriding.id)).toEqual([{ version: "", unpin: [], pin: [] }]),
     );
-    expect(actions.updateHarnessConfig).not.toHaveBeenCalled();
   });
 
   it("needs a version to override the organization's", async () => {
-    renderDom(<HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />);
+    renderLive(<HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />);
     await userEvent.click(screen.getByRole("button", { name: "Override desired version" }));
     const input = document.getElementById("desired-version") as HTMLInputElement;
     expect(document.activeElement).toBe(input);
@@ -196,7 +230,7 @@ describe("HarnessSettingsSection", () => {
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
     await waitFor(() =>
-      expect(actions.setHarnessDesiredVersion).toHaveBeenCalledWith(inheriting.id, "1.5.0"),
+      expect(saves(inheriting.id)).toEqual([{ version: "1.5.0", unpin: [], pin: [] }]),
     );
   });
 
@@ -230,6 +264,165 @@ describe("HarnessSettingsSection", () => {
     expect(html).not.toContain("Inherit</button>");
     expect(tag(html, "max-concurrency")).toMatch(/ disabled=""/);
     expect(tag(html, "desired-version")).toMatch(/ disabled=""/);
+  });
+});
+
+/** Confirms the save dialog. */
+async function confirmSave() {
+  const dialog = await screen.findByRole("alertdialog");
+  await userEvent.click(
+    [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
+  );
+}
+
+describe("HarnessSettingsSection, live", () => {
+  beforeEach(() => {
+    requests = mockFetch({
+      [`PUT /api/ui/harnesses/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
+      [`POST /api/ui/harnesses/${inheriting.id}/update`]: { ok: true, version: "2.0.0" },
+    });
+  });
+
+  it("says the save waits for the harness until a heartbeat after it, then that it's applied", async () => {
+    const { rerender } = renderLive(
+      <HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Override max concurrency" }));
+    await userEvent.clear(screen.getByLabelText("Jobs at once"));
+    await userEvent.type(screen.getByLabelText("Jobs at once"), "3");
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await confirmSave();
+
+    // The refetch after the save brings the saved values; the last heartbeat is older.
+    const saved = harness({ acceptedTaskTypes: null, maxConcurrency: 3 });
+    rerender(<HarnessSettingsSection harness={saved} globalDesiredVersion="1.4.0" />);
+    expect(await screen.findByText("Saved — waiting for build-01 to pick it up")).toBeTruthy();
+
+    // A heartbeat after the save picked it up.
+    rerender(
+      <HarnessSettingsSection
+        harness={{ ...saved, lastHeartbeatAt: "2026-10-16T10:00:12.000Z" }}
+        globalDesiredVersion="1.4.0"
+      />,
+    );
+    expect(await screen.findByText("Applied")).toBeTruthy();
+    expect(screen.queryByText(/waiting for build-01/)).toBeNull();
+  });
+
+  it("never overwrites an edited form with a background refetch, and follows one while clean", async () => {
+    const { rerender } = renderLive(
+      <HarnessSettingsSection harness={overriding} globalDesiredVersion="1.4.0" />,
+    );
+    const input = () => screen.getByLabelText("Jobs at once") as HTMLInputElement;
+    expect(input().value).toBe("2");
+
+    // Clean: another tab's change shows up.
+    const changed = harness({ acceptedTaskTypes: ["coding"], maxConcurrency: 4 });
+    rerender(<HarnessSettingsSection harness={changed} globalDesiredVersion="1.4.0" />);
+    expect(input().value).toBe("4");
+
+    // Dirty: a refetch with yet other values leaves the edit alone.
+    await userEvent.clear(input());
+    await userEvent.type(input(), "7");
+    rerender(
+      <HarnessSettingsSection
+        harness={harness({ acceptedTaskTypes: ["coding"], maxConcurrency: 5 })}
+        globalDesiredVersion="1.4.0"
+      />,
+    );
+    expect(input().value).toBe("7");
+    expect(screen.getByText("1 unsaved change")).toBeTruthy();
+  });
+
+  it("shows an Update now through requested, updating and updated as the harness reports it", async () => {
+    const { rerender } = renderLive(
+      <HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Update now" }));
+    const requested = {
+      ...inheriting,
+      updateRequest: { version: "2.0.0", requestedAt: SAVED_AT },
+    } as HarnessRow;
+    rerender(<HarnessSettingsSection harness={requested} globalDesiredVersion="1.4.0" />);
+    expect(
+      await screen.findByText(
+        "Update to 2.0.0 requested; build-01 starts it with its next heartbeat.",
+      ),
+    ).toBeTruthy();
+    const update = {
+      state: "installing",
+      version: "2.0.0",
+      previous: "1.0.0",
+      startsSincePending: 0,
+      error: null,
+    } as const;
+    rerender(
+      <HarnessSettingsSection harness={{ ...inheriting, update }} globalDesiredVersion="1.4.0" />,
+    );
+    expect(screen.getByText("build-01 is updating to 2.0.0: installing it.")).toBeTruthy();
+    rerender(
+      <HarnessSettingsSection
+        harness={{ ...inheriting, version: "2.0.0", update: { ...update, state: "idle" } }}
+        globalDesiredVersion="1.4.0"
+      />,
+    );
+    expect(screen.getByText("build-01 updated to 2.0.0.")).toBeTruthy();
+  });
+});
+
+describe("pickupState", () => {
+  it("is pending until a heartbeat later than the save", () => {
+    expect(pickupState(null, SAVED_AT)).toBeNull();
+    expect(pickupState(SAVED_AT, null)).toBe("pending");
+    expect(pickupState(SAVED_AT, "2026-10-16T09:59:59.000Z")).toBe("pending");
+    expect(pickupState(SAVED_AT, SAVED_AT)).toBe("pending");
+    expect(pickupState(SAVED_AT, "2026-10-16T10:00:01.000Z")).toBe("applied");
+  });
+});
+
+describe("updateProgress", () => {
+  const base = {
+    name: "build-01",
+    version: "1.0.0",
+    update: null,
+    failedVersions: [],
+    updateRequest: null,
+  };
+  it("reports a failed version with the harness's error", () => {
+    expect(
+      updateProgress(
+        {
+          ...base,
+          failedVersions: ["2.0.0"],
+          update: {
+            state: "idle",
+            version: null,
+            previous: "1.0.0",
+            startsSincePending: 3,
+            error: "didn't stay up",
+          },
+        },
+        "2.0.0",
+      ),
+    ).toEqual({ stage: "failed", text: "Update to 2.0.0 failed: didn't stay up" });
+    expect(
+      updateProgress(
+        {
+          ...base,
+          update: {
+            state: "draining",
+            version: "2.0.0",
+            previous: null,
+            startsSincePending: 0,
+            error: null,
+          },
+        },
+        "2.0.0",
+      ),
+    ).toEqual({
+      stage: "updating",
+      text: "build-01 is updating to 2.0.0: letting its running jobs finish.",
+    });
   });
 });
 

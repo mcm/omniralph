@@ -2,7 +2,7 @@
  * Harnesses and Jobs pages: the fleet overview, central harness configuration
  * (returned to the harness in its next heartbeat), the audit log and the job list.
  */
-import { INSTALL_JOB_TYPE } from "@omniralph/shared";
+import { INSTALL_JOB_TYPE, REPO_SYNC_JOB_TYPE } from "@omniralph/shared";
 import {
   and,
   asc,
@@ -575,6 +575,49 @@ export async function listHarnessInstallJobs(
     createdAt: row.createdAt,
     finishedAt: row.finishedAt,
   }));
+}
+
+/** The latest `repo.sync` job of a repository pinned to a harness, for its detail page. */
+export interface HarnessPinSyncJob {
+  repositoryId: string;
+  id: string;
+  status: JobStatus;
+  error: string | null;
+  createdAt: Date;
+  finishedAt: Date | null;
+}
+
+/**
+ * The latest `repo.sync` job targeted at a harness of the organization since `since`, per
+ * repository (the sync pinning enqueues): what the harness's pinned repositories show.
+ */
+export async function listHarnessPinSyncJobs(
+  db: Database,
+  organizationId: string,
+  harnessId: string,
+  since: Date,
+): Promise<HarnessPinSyncJob[]> {
+  const rows = await db
+    .selectDistinctOn([jobs.repositoryId], {
+      repositoryId: jobs.repositoryId,
+      id: jobs.id,
+      status: jobs.status,
+      error: jobs.error,
+      createdAt: jobs.createdAt,
+      finishedAt: jobs.finishedAt,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.targetHarnessId, harnessId),
+        eq(jobs.type, REPO_SYNC_JOB_TYPE),
+        isNotNull(jobs.repositoryId),
+        gte(jobs.createdAt, since),
+      ),
+    )
+    .orderBy(jobs.repositoryId, desc(jobs.createdAt), desc(jobs.id));
+  return rows.map((row) => ({ ...row, repositoryId: row.repositoryId! }));
 }
 
 export interface JobListEntry {

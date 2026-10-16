@@ -17,6 +17,11 @@ export const apiErrorBodySchema = z.object({
   code: z.string().optional(),
   /** Form validation errors by field path (see `fieldErrors` in `@omniralph/shared`), shown inline. */
   fieldErrors: z.record(z.string(), z.string()).optional(),
+  /**
+   * With `code: ENTER_ORGANIZATION`: the resource belongs to another of the user's
+   * organizations, which this (signed) path switches to before opening it.
+   */
+  enterPath: z.string().optional(),
 });
 export type ApiErrorBody = z.infer<typeof apiErrorBodySchema>;
 
@@ -40,3 +45,9 @@ export const ORGANIZATION_HEADER = "x-omniralph-organization";
 
 /** `code` of the refusal above. */
 export const ORGANIZATION_SWITCHED = "organization_switched";
+
+/**
+ * `code` of a 409 for a resource of another of the user's organizations: the client opens
+ * the response's `enterPath`, which switches to it and comes back (like the detail pages did).
+ */
+export const ENTER_ORGANIZATION = "enter_organization";
