@@ -102,8 +102,6 @@ vi.mock("./repositories/[id]/settings/repository-settings-view", () => ({
   RepositorySettingsView: () => null,
 }));
 vi.mock("./repositories/[id]/rules/rules-view", () => ({ RulesView: () => null }));
-vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
-vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
 vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
 vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
@@ -122,9 +120,6 @@ const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
 const { default: RepositorySettingsPage } = await import("./repositories/[id]/settings/page");
 const { default: RepositoryRulesPage } = await import("./repositories/[id]/rules/page");
-const { default: RepositoryReviewsPage } = await import("./repositories/[id]/reviews/page");
-const { default: ReviewsPage } = await import("./reviews/page");
-const { default: ReviewPage } = await import("./reviews/[id]/page");
 const { default: TriageRunsPage } = await import("./triage/page");
 const { default: TriageRunPage } = await import("./triage/[id]/page");
 const { default: JobsPage } = await import("./jobs/page");
@@ -384,9 +379,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       layout: await AppLayout({ children: null }),
       repositorySettings: await RepositorySettingsPage(params(own.repoId)),
       repositoryRules: await RepositoryRulesPage(params(own.repoId)),
-      repositoryReviews: await RepositoryReviewsPage({ ...params(own.repoId), ...search() }),
-      reviews: await ReviewsPage(search()),
-      review: await ReviewPage(params(own.reviewId)),
       triageRuns: await TriageRunsPage(search()),
       triageRun: await TriageRunPage(params(own.triageRunId)),
       jobs: await JobsPage(search()),
@@ -424,10 +416,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(pages.repositorySettings!.props.repository.id).toBe(own.repoId);
       expect(ids(pages.repositorySettings!.props.harnesses)).toEqual([own.harnessId]);
       expect(ids(pages.repositoryRules!.props.rules)).toEqual([own.ruleId]);
-      expect(ids(pages.repositoryReviews!.props.reviews)).toEqual([own.reviewId]);
-      expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
-      expect(pages.review!.props.review.id).toBe(own.reviewId);
-      expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
       expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
       expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
       expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
@@ -467,9 +455,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
   it("ignores another organization's repository in list filters", async () => {
     state.userId = a.userId;
-    expect((await ReviewsPage(search({ repository: b.repoId }))).props.reviews).not.toContainEqual(
-      expect.objectContaining({ id: b.reviewId }),
-    );
     expect((await JobsPage(search({ status: "running" }))).props.jobs).toMatchObject([
       { id: a.jobId },
     ]);
@@ -479,10 +464,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     state.userId = a.userId;
     await expect(RepositorySettingsPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
-    await expect(RepositoryReviewsPage({ ...params(b.repoId), ...search() })).rejects.toMatchObject(
-      notFound,
-    );
-    await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
     await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
@@ -518,7 +499,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     state.userId = user!.id;
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
-      [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
       [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
       [
         `/repositories/${b.repoId}/settings`,
@@ -526,11 +506,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
         b.repoId,
       ],
       [`/repositories/${b.repoId}/rules`, () => RepositoryRulesPage(params(b.repoId)), b.repoId],
-      [
-        `/repositories/${b.repoId}/reviews?status=queued`,
-        () => RepositoryReviewsPage({ ...params(b.repoId), ...search({ status: "queued" }) }),
-        b.repoId,
-      ],
     ];
     for (const [path, open, id] of resources) {
       expect(await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId })).toBe(

@@ -167,6 +167,11 @@ export function reviewDetailView(detail: ReviewDetail): ReviewDetailView {
     skippedFiles: review.skippedFiles.map(({ path, reason }) => ({ path, reason })),
     files: groupFindingsByFile(detail.findings, detail.feedback, detail.supersedingReviewIds),
     findingCount: detail.findings.length,
+    newerReview: detail.newerReview && {
+      id: detail.newerReview.id,
+      status: detail.newerReview.status,
+      createdAt: detail.newerReview.createdAt.toISOString(),
+    },
     createdAt: review.createdAt.toISOString(),
     updatedAt: review.updatedAt.toISOString(),
   };

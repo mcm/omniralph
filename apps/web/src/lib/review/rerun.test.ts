@@ -32,7 +32,6 @@ import type * as Adapters from "@/lib/scm/adapters";
 import type * as Tasks from "@omniralph/tasks";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 // A second review task, as a repository could enable next to builtin:review-pr.
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
@@ -173,7 +172,35 @@ const { enqueueReview } = await import("./enqueue");
 const { onReviewJobCompleted, onReviewJobFailed } = await import("./jobs");
 const { onCorrelationFailed } = await import("./correlate");
 const { getDispatcher } = await import("@/lib/dispatch");
-const { rerunReview } = await import("@/app/(app)/reviews/actions");
+const rerunRoute = await import("@/app/api/ui/reviews/[id]/rerun/route");
+
+type RerunOutcome =
+  { ok: true; reviewId: string } | { ok: false; error: string; activeReviewId?: string };
+
+/**
+ * Re-runs through `POST /api/ui/reviews/{id}/rerun`, answering as the server action did: the
+ * review of the same head already running (`active`) as an error with its ID.
+ */
+async function rerunReview(reviewId: string, input: unknown): Promise<RerunOutcome> {
+  const response = await rerunRoute.POST(
+    new Request("http://localhost/api/ui", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+    { params: Promise.resolve({ id: reviewId }) },
+  );
+  const body = (await response.json()) as {
+    error: string;
+    reviewId: string;
+    active: boolean;
+    message?: string;
+  };
+  if (!response.ok) return { ok: false, error: body.error };
+  return body.active
+    ? { ok: false, error: body.message!, activeReviewId: body.reviewId }
+    : { ok: true, reviewId: body.reviewId };
+}
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -693,7 +720,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
     });
   });
 
-  describe("Re-run server action", () => {
+  describe("Re-run (POST /api/ui/reviews/{id}/rerun)", () => {
     const prJobs = async (number: number) =>
       (
         await db

@@ -24,7 +24,7 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
-import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues, RERUN_MODES } from "@omniralph/shared";
+import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -74,8 +74,6 @@ vi.mock("./[id]/settings/repository-settings-view", () => ({
   RepositorySettingsView: () => null,
 }));
 vi.mock("./[id]/rules/rules-view", () => ({ RulesView: () => null }));
-vi.mock("../reviews/reviews-view", () => ({ ReviewsView: () => null }));
-vi.mock("../reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -84,16 +82,11 @@ const { default: RepositorySettingsPage } = await import("./[id]/settings/page")
 const { default: RepositoryCodingPage } = await import("./[id]/coding/page");
 const { default: RepositoryHarnessesPage } = await import("./[id]/harnesses/page");
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
-const { default: RepositoryReviewsPage } = await import("./[id]/reviews/page");
-const { default: ReviewsPage } = await import("../reviews/page");
-const { default: ReviewPage } = await import("../reviews/[id]/page");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
 const { updateRalphSettings, updateRepositorySettings, updateRepositoryTaskTypes } =
   await import("./[id]/settings/actions");
 const { addCustomRule, deleteRule, editRule, setRuleEnabled } =
   await import("./[id]/rules/actions");
-const { dismissFinding, restoreFinding } = await import("../reviews/[id]/actions");
-const { rerunReview } = await import("../reviews/actions");
 const { updateReviewProfile } = await import("../settings/profiles/actions");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -192,12 +185,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
   });
 
   const params = (id: string) => ({ params: Promise.resolve({ id }) });
-  const noSearch = { searchParams: Promise.resolve({}) };
 
-  it("lists only the active organization's repositories, reviews and profiles", async () => {
+  it("lists only the active organization's repositories and profiles", async () => {
     state.userId = a.userId;
-    const reviews = (await ReviewsPage(noSearch)).props.reviews as { id: string }[];
-    expect(reviews.map((r) => r.id)).toEqual([a.reviewId]);
     const profiles = (await ProfilesPage()).props.profiles as { id: string }[];
     expect(profiles.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
 
@@ -205,9 +195,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect(settings.props.repository.id).toBe(a.repoId);
     const rules = await RepositoryRulesPage(params(a.repoId));
     expect((rules.props.rules as { id: string }[]).map((r) => r.id)).toEqual([a.ruleId]);
-    const repoReviews = await RepositoryReviewsPage({ ...params(a.repoId), ...noSearch });
-    expect((repoReviews.props.reviews as { id: string }[]).map((r) => r.id)).toEqual([a.reviewId]);
-    expect((await ReviewPage(params(a.reviewId))).props.review.id).toBe(a.reviewId);
   });
 
   it("offers the Coding tab the models of its pinned harnesses, else of those accepting coding", async () => {
@@ -286,19 +273,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((await RepositoryCodingPage(params(a.repoId))).props.tab).toBe("coding");
   });
 
-  it("returns 404 for another organization's repository and review pages", async () => {
+  it("returns 404 for another organization's repository pages", async () => {
     state.userId = a.userId;
     await expect(RepositorySettingsPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryCodingPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryHarnessesPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
-    await expect(RepositoryReviewsPage({ ...params(b.repoId), ...noSearch })).rejects.toMatchObject(
-      notFound,
-    );
-    await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
   });
 
-  it("refuses actions on another organization's repositories, rules, findings and reviews", async () => {
+  it("refuses actions on another organization's repositories and rules", async () => {
     state.userId = a.userId;
     const refused = { ok: false, error: expect.any(String) };
     expect(
@@ -340,13 +323,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((await listRepositoryRules(db, b.repoId)).map((r) => [r.text, r.enabled])).toEqual([
       ["beta rule", true],
     ]);
-
-    expect(await dismissFinding(b.findingId, { reason: "wont_fix" })).toEqual(refused);
-    expect(await restoreFinding(b.findingId)).toEqual(refused);
-    expect(await rerunReview(b.reviewId, { mode: RERUN_MODES[0], profileId: null })).toEqual({
-      ok: false,
-      error: "That review doesn't exist.",
-    });
   });
 
   it("edits only the active organization's review profiles", async () => {

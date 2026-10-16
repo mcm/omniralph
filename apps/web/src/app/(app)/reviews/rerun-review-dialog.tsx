@@ -22,9 +22,16 @@ import {
   notify,
 } from "@iamthemcmaster/ui";
 import { IconRefresh } from "@tabler/icons-react";
-import { RERUN_MODES, RERUN_PROFILES, type RerunMode } from "@omniralph/shared";
+import {
+  RERUN_MODES,
+  RERUN_PROFILES,
+  type RerunMode,
+  type RerunReviewInput,
+} from "@omniralph/shared";
 import { useCurrentUser } from "@/components/current-user";
-import { rerunReview } from "./actions";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import { rerunResultSchema } from "@/lib/api/reviews";
 
 const MODE_LABELS: Record<RerunMode, { label: string; hint: string }> = {
   incremental: {
@@ -45,7 +52,8 @@ const PROFILE_LABELS: Record<(typeof RERUN_PROFILES)[number], string> = {
 
 /**
  * Re-run (admins only; hidden for members): a dialog to pick Incremental or
- * Fresh and a profile, then a review of the PR's current head is enqueued.
+ * Fresh and a profile, then a review of the PR's current head is enqueued and
+ * its page opens (or the page of the review of that head already queued or running).
  */
 export function RerunReviewDialog({
   reviewId,
@@ -63,7 +71,25 @@ export function RerunReviewDialog({
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<RerunMode>("incremental");
   const [profile, setProfile] = React.useState("");
-  const [pending, startTransition] = React.useTransition();
+  const rerun = useApiMutation({
+    mutationFn: (input: RerunReviewInput, { organizationId }) =>
+      api.post(`/api/ui/reviews/${reviewId}/rerun`, rerunResultSchema, {
+        body: input,
+        organizationId,
+      }),
+    // The re-run review's page links to the new one; the lists and jobs gain it.
+    invalidate: (keys) => [keys.reviews.all, keys.jobs.all],
+    success: null,
+    onSuccess: (result) => {
+      if (result.active)
+        notify(result.message ?? "A review is already running.", { variant: "info" });
+      else notify(`Re-run of ${changeLabel} queued`);
+      onOpenChange(false);
+      router.push(`/reviews/${result.reviewId}`);
+    },
+  });
+  // Once queued, it stays pending while the new review's page opens.
+  const pending = rerun.isPending || rerun.isSuccess;
   if (!isAdmin) return null;
 
   const onOpenChange = (next: boolean) => {
@@ -74,29 +100,12 @@ export function RerunReviewDialog({
     }
   };
 
-  const view = (id: string) => ({
-    label: "View review",
-    onClick: () => router.push(`/reviews/${id}`),
-  });
-
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const profileId = (RERUN_PROFILES as readonly string[]).includes(profile)
       ? (profile as (typeof RERUN_PROFILES)[number])
       : null;
-    startTransition(async () => {
-      const result = await rerunReview(reviewId, { mode, profileId });
-      if (result.ok) {
-        notify(`Re-run of ${changeLabel} queued`, { action: view(result.reviewId) });
-        onOpenChange(false);
-        router.refresh();
-      } else if (result.activeReviewId) {
-        notify(result.error, { variant: "info", action: view(result.activeReviewId) });
-        onOpenChange(false);
-      } else {
-        notify(result.error, { variant: "danger" });
-      }
-    });
+    rerun.mutate({ mode, profileId });
   };
 
   return (

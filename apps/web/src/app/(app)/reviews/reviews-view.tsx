@@ -1,7 +1,8 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   Card,
@@ -12,6 +13,7 @@ import {
   Empty,
   Muted,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -28,11 +30,15 @@ import { ListPagination } from "@/components/list-pagination";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { MonoPath, MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { totalPages } from "@/lib/pagination";
+import { Freshness } from "@/components/freshness";
+import { QueryBoundary } from "@/components/query-boundary";
+import type { ReviewList } from "@/lib/api/reviews";
+import { pageRange, totalPages } from "@/lib/pagination";
 import {
   FINDING_SEVERITIES,
   formatDuration,
   formatTokens,
+  parseReviewListParams,
   REVIEW_STATUSES,
   REVIEW_TRIGGERS,
   reviewListHref,
@@ -44,24 +50,7 @@ import { RepositoryNav } from "../repositories/[id]/repository-nav";
 import { RerunReviewDialog } from "./rerun-review-dialog";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
-
-interface ReviewsViewProps {
-  /** The repository whose reviews are listed; null lists all repositories. */
-  repository: {
-    id: string;
-    provider: "github" | "gitlab";
-    fullPath: string;
-    webUrl: string;
-    /** False once disconnected: its history stays browsable, its settings don't. */
-    connected: boolean;
-  } | null;
-  reviews: ReviewRow[];
-  params: ReviewListParams;
-  total: number;
-  pageSize: number;
-  /** The current year, dropped from Created times (from the server, so both renders agree). */
-  year: number;
-}
+import { useReviewList } from "./review-queries";
 
 /** Columns in a review row, for the failure reason's row under it. */
 const REVIEW_COLUMNS = 7;
@@ -186,33 +175,156 @@ function ReviewTableRow({
   );
 }
 
-export function ReviewsView({
-  repository,
-  reviews,
+/** The reviews table's skeleton: rows shaped like reviews while the first page loads. */
+function ReviewsSkeleton() {
+  return (
+    <Table className="list-table reviews-table">
+      <TableBody>
+        {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+          <TableRow key={index}>
+            <TableCell className="list-col-main review-col-main">
+              <Skeleton width={`${45 + ((index * 17) % 35)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width="5rem" height="1.25rem" radius="full" />
+            </TableCell>
+            {Array.from({ length: 4 }, (_, column) => (
+              <TableCell key={column} className={WIDE_COLUMN}>
+                <Skeleton width={`${40 + (((index + column) * 13) % 40)}%`} />
+              </TableCell>
+            ))}
+            <TableCell />
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+const SKELETON_ROWS = 5;
+
+function ReviewsTable({
+  list,
   params,
-  total,
-  pageSize,
-  year,
-}: ReviewsViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+  isAdmin,
+}: {
+  list: ReviewList;
+  params: ReviewListParams;
+  isAdmin: boolean;
+}) {
+  const pathname = usePathname();
+  const { reviews, total, repository } = list;
+  const filtered = params.status !== null || params.trigger !== null;
+  // Rows render on the client only (after the first load), so the browser's year is safe.
+  const year = new Date().getFullYear();
+  return (
+    <>
+      {reviews.length === 0 ? (
+        <Empty
+          icon={<IconHistory size={24} />}
+          titleAs="h3"
+          title={
+            total > 0
+              ? "No reviews on this page"
+              : filtered
+                ? "No reviews match these filters"
+                : "No reviews yet"
+          }
+          description={
+            total > 0
+              ? "The page is past the last one."
+              : "Reviews appear here when pull or merge requests are opened or updated, or when the bot is mentioned."
+          }
+        />
+      ) : (
+        <Table className="list-table reviews-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="list-nowrap">
+                {repository ? (repository.provider === "gitlab" ? "MR" : "PR") : "PR / MR"}
+              </TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Status / trigger</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Profile / agent</TableHead>
+              <TableHead className={WIDE_COLUMN}>Findings</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Tokens / duration</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created</TableHead>
+              <TableHead aria-label="Actions" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {reviews.map((review) => (
+              <ReviewTableRow
+                key={review.id}
+                review={review}
+                showRepository={!repository}
+                isAdmin={isAdmin}
+                year={year}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <ListPagination
+        page={params.page}
+        pageCount={totalPages(total, list.pageSize)}
+        hrefFor={(page) => reviewListHref(pathname, { ...params, page })}
+      />
+    </>
+  );
+}
+
+/**
+ * The list's filters and page from the URL, and a setter. A chosen filter shows at once,
+ * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
+ */
+function useReviewListParams(): [ReviewListParams, (change: Partial<ReviewListParams>) => void] {
   const router = useRouter();
   const pathname = usePathname();
-  const pageCount = totalPages(total, pageSize);
-  const filtered = params.status !== null || params.trigger !== null;
-  const first = total === 0 ? 0 : (params.page - 1) * pageSize + 1;
-  const last = (params.page - 1) * pageSize + reviews.length;
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const fromUrl = parseReviewListParams(Object.fromEntries(searchParams));
+  // Chosen on the URL `search`: once the URL changes, it holds the choice.
+  const [chosen, setChosen] = React.useState<{
+    search: string;
+    params: ReviewListParams;
+  } | null>(null);
+  const params = chosen?.search === search ? chosen.params : fromUrl;
+  const setFilter = (change: Partial<ReviewListParams>) => {
+    const next = { ...params, ...change, page: 1 };
+    setChosen({ search, params: next });
+    router.push(reviewListHref(pathname, next), { scroll: false });
+  };
+  return [params, setFilter];
+}
 
-  const setFilter = (change: Partial<ReviewListParams>) =>
-    router.push(reviewListHref(pathname, { ...params, ...change, page: 1 }));
+/**
+ * The Reviews page, live (`GET /api/ui/reviews`), or with `inRepository` Repository ›
+ * Reviews (the route's repository). A new filter or page keeps the previous results,
+ * dimmed, until its own arrive.
+ */
+export function ReviewsView({ inRepository = false }: { inRepository?: boolean }) {
+  const isAdmin = useCurrentUser().role === "admin";
+  const { id } = useParams<{ id?: string }>();
+  const repositoryId = inRepository ? (id ?? null) : null;
+  const [params, setFilter] = useReviewListParams();
+  const list = useReviewList(params, repositoryId);
+  const data = list.data;
+  const repository = data?.repository ?? null;
+  const total = data?.total ?? 0;
+  const { first, last } = pageRange(
+    data?.page ?? params.page,
+    data?.pageSize ?? 1,
+    data?.reviews.length ?? 0,
+  );
 
   return (
     <>
       <AppHeader
         breadcrumbs={
-          repository
+          repositoryId
             ? [
                 { label: "Repositories", href: "/repositories" },
-                { label: repository.fullPath },
+                { label: repository?.fullPath ?? "Repository" },
                 { label: "Reviews" },
               ]
             : [{ label: "Reviews" }]
@@ -221,20 +333,23 @@ export function ReviewsView({
       <main className="detail-main">
         <PageHeader
           title={
-            repository ? (
+            !repositoryId ? (
+              "Reviews"
+            ) : repository ? (
               <>
                 <ProviderIcon provider={repository.provider} size={20} />
                 <MonoPath value={repository.fullPath} />
               </>
             ) : (
-              "Reviews"
+              <Skeleton width="16rem" height="1.75rem" />
             )
           }
           description={
-            repository
+            repositoryId
               ? "Every review of this repository's pull and merge requests."
               : "Every review across connected repositories."
           }
+          meta={<Freshness query={list} />}
           actions={
             repository && (
               <Button asChild variant="ghost" className="page-header-ghost">
@@ -293,58 +408,13 @@ export function ReviewsView({
             </div>
           </CardHeader>
           <CardContent className="list-card-content">
-            {reviews.length === 0 ? (
-              <Empty
-                icon={<IconHistory size={24} />}
-                titleAs="h3"
-                title={
-                  total > 0
-                    ? "No reviews on this page"
-                    : filtered
-                      ? "No reviews match these filters"
-                      : "No reviews yet"
-                }
-                description={
-                  total > 0
-                    ? "The page is past the last one."
-                    : "Reviews appear here when pull or merge requests are opened or updated, or when the bot is mentioned."
-                }
-              />
-            ) : (
-              <Table className="list-table reviews-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="list-nowrap">
-                      {repository ? (repository.provider === "gitlab" ? "MR" : "PR") : "PR / MR"}
-                    </TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Status / trigger</TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Profile / agent</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Findings</TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
-                      Tokens / duration
-                    </TableHead>
-                    <TableHead className={WIDE_COLUMN}>Created</TableHead>
-                    <TableHead aria-label="Actions" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reviews.map((review) => (
-                    <ReviewTableRow
-                      key={review.id}
-                      review={review}
-                      showRepository={!repository}
-                      isAdmin={isAdmin}
-                      year={year}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <ListPagination
-              page={params.page}
-              pageCount={pageCount}
-              hrefFor={(page) => reviewListHref(pathname, { ...params, page })}
-            />
+            <QueryBoundary query={list} skeleton={<ReviewsSkeleton />} what="reviews">
+              {(loaded) => (
+                <div className="list-pending" aria-busy={list.isPlaceholderData}>
+                  <ReviewsTable list={loaded} params={params} isAdmin={isAdmin} />
+                </div>
+              )}
+            </QueryBoundary>
           </CardContent>
         </Card>
       </main>
