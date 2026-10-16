@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { notFound, useParams } from "next/navigation";
 import {
   Badge,
   Button,
@@ -11,6 +12,7 @@ import {
   Muted,
   RadioGroup,
   RadioGroupItem,
+  Skeleton,
   Stack,
   Textarea,
 } from "@iamthemcmaster/ui";
@@ -24,11 +26,20 @@ import {
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Freshness } from "@/components/freshness";
 import { MonoPath, MonoValue } from "@/components/mono-value";
 import { MultiSelect } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useNow } from "@/components/relative-time";
 import { SwitchField } from "@/components/settings-card";
 import { SettingsSection, SettingsSubsection } from "@/components/settings-section";
+import { useApiAction } from "@/components/use-api-action";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import type { RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { isHarnessOnline } from "@/lib/harnesses/display";
 import {
   formatSettingValue,
   settingChanges,
@@ -51,7 +62,12 @@ import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
 import type { ProfileSummary } from "../../../settings/profiles/profile-facts";
-import { updateRepositorySettings } from "./actions";
+import {
+  repositoryChanged,
+  useCodingLinear,
+  useRepositoryCoding,
+  useRepositoryDetail,
+} from "../repository-queries";
 import {
   CodingSettingsSections,
   type CodingChoices,
@@ -76,14 +92,9 @@ const TAB_LABELS: Record<RepositorySettingsTab, string> = {
   harnesses: "Harnesses",
 };
 
-interface RepositorySettingsViewProps {
+interface RepositorySettingsContentProps {
   tab: RepositorySettingsTab;
-  repository: {
-    id: string;
-    provider: "github" | "gitlab";
-    fullPath: string;
-    webUrl: string;
-  };
+  repository: RepositoryDetail["repository"];
   settings: {
     profileId: string;
     triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
@@ -108,6 +119,8 @@ interface RepositorySettingsViewProps {
   codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
   taskTypes: TaskTypesValues;
+  /** Reads the Linear workspace again (Coding tab), when it couldn't be read. */
+  onRetryLinear?: () => void;
 }
 
 /** A harness of the organization, as the Harnesses tab shows it. */
@@ -172,10 +185,12 @@ const onOff = (value: boolean) => formatSettingValue(value);
 const REVIEW_TASK_TYPES = ["review", "query"] as const satisfies readonly TaskTypeSwitch[];
 
 /**
- * Repository › Review settings, Coding or Harnesses: each tab is one section with one save (the
- * Coding tab adds the Danger zone). Coding is for admins only; others see the rest read-only.
+ * The settings of Repository › Review settings, Coding or Harnesses: each tab is one section
+ * with one save (the Coding tab adds the Danger zone). Coding is for admins only; others see
+ * the rest read-only. Forms are seeded from the (polled) data and re-seeded only while they
+ * aren't edited.
  */
-export function RepositorySettingsView({
+export function RepositorySettingsContent({
   tab,
   repository,
   settings,
@@ -187,8 +202,10 @@ export function RepositorySettingsView({
   codingChoices,
   codingTasks,
   taskTypes,
-}: RepositorySettingsViewProps) {
+  onRetryLinear,
+}: RepositorySettingsContentProps) {
   const isAdmin = useCurrentUser().role === "admin";
+  const apiAction = useApiAction();
   const disabled = !isAdmin;
 
   const pinnable = React.useMemo(() => harnesses.filter((h) => !h.revoked), [harnesses]);
@@ -197,8 +214,8 @@ export function RepositorySettingsView({
     [reviewTasks, pinnable],
   );
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
-  const [draft, setDraft] = React.useState(saved);
-  const [typesDraft, setTypesDraft] = React.useState(taskTypes.overrides);
+  const [draft, setDraft] = useSeededDraft(saved);
+  const [typesDraft, setTypesDraft] = useSeededDraft(taskTypes.overrides);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const set = <K extends keyof RepositoryDraft>(key: K, value: RepositoryDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -264,13 +281,25 @@ export function RepositorySettingsView({
           (keys as readonly string[]).includes(change.key),
         );
         return {
-          action: saveWithTaskTypes(
-            repository.id,
-            taskTypes.overrides,
-            parsedTypes.data,
-            types,
-            settingsChanged ? () => updateRepositorySettings(repository.id, parsed.data) : null,
-          ),
+          // The switches, then the settings; the page refetches once, after both.
+          action: () =>
+            apiAction(
+              saveWithTaskTypes(
+                repository.id,
+                taskTypes.overrides,
+                parsedTypes.data,
+                types,
+                settingsChanged
+                  ? ({ organizationId }) =>
+                      api.put(
+                        `/api/ui/repositories/${repository.id}/settings`,
+                        mutationResultSchema,
+                        { body: parsed.data, organizationId },
+                      )
+                  : null,
+              ),
+              repositoryChanged,
+            ),
           success: success(parsed.data),
           onSuccess: () => setErrors((e) => withoutFieldErrors(e, errorKeys)),
           onError: (result: { fieldErrors?: FieldErrors }) =>
@@ -658,54 +687,158 @@ export function RepositorySettingsView({
 
   return (
     <>
+      {!isAdmin && (
+        <Muted>Only admins can change repository settings; they&apos;re shown read-only.</Muted>
+      )}
+
+      <div className="settings-sections">
+        {tab === "settings" && reviewSection}
+        {tab === "coding" && isAdmin && ralph && codingChoices && (
+          <CodingSettingsSections
+            repositoryId={repository.id}
+            settings={ralph}
+            choices={codingChoices}
+            codingTasks={codingTasks}
+            taskTypes={taskTypes}
+            onRetryLinear={onRetryLinear}
+          />
+        )}
+        {tab === "harnesses" && harnessesSection}
+      </div>
+    </>
+  );
+}
+
+/** A settings section's shape while the repository loads. */
+function SettingsSkeleton() {
+  return (
+    <div className="settings-sections">
+      <div className="settings-section-skeleton">
+        <Skeleton width="60%" />
+        {Array.from({ length: 5 }, (_, index) => (
+          <Stack key={index} gap={1}>
+            <Skeleton width={`${25 + ((index * 11) % 20)}%`} />
+            <Skeleton width={`${55 + ((index * 17) % 35)}%`} height="2.25rem" />
+          </Stack>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Repository › Review settings, Coding or Harnesses, live (`GET /api/ui/repositories/{id}`, and
+ * on Coding its settings and the Linear workspace). Harnesses' online state is computed
+ * against the browser's ticking clock. A save invalidates the repository, the repositories
+ * list and the harnesses. Coding is for admins only (others get a 404).
+ */
+export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) {
+  const { id } = useParams<{ id: string }>();
+  const isAdmin = useCurrentUser().role === "admin";
+  if (tab === "coding" && !isAdmin) notFound();
+  const detail = useRepositoryDetail(id);
+  const coding = useRepositoryCoding(id, tab === "coding");
+  const linear = useCodingLinear(id, tab === "coding");
+  const now = useNow();
+  const repository = detail.data?.repository;
+  const skeleton = <SettingsSkeleton />;
+
+  const content = (data: RepositoryDetail, codingData?: { coding: RepositoryCoding }) => (
+    <RepositorySettingsContent
+      tab={tab}
+      repository={data.repository}
+      settings={data.settings}
+      reviewTasks={data.reviewTasks}
+      correlationTasks={data.correlationTasks}
+      profiles={data.profiles}
+      harnesses={data.harnesses.map((harness) => withClientOnline(harness, now))}
+      ralph={codingData?.coding.settings ?? null}
+      codingChoices={
+        codingData
+          ? {
+              linear: linear.data ?? { status: "unavailable" },
+              models: codingData.coding.models,
+              harnessCount: codingData.coding.harnessCount,
+              pinned: codingData.coding.pinned,
+            }
+          : null
+      }
+      codingTasks={codingData?.coding.tasks ?? { story: [], request: [] }}
+      taskTypes={data.taskTypes}
+      onRetryLinear={() => void linear.refetch()}
+    />
+  );
+
+  return (
+    <>
       <AppHeader
         breadcrumbs={[
           { label: "Repositories", href: "/repositories" },
-          { label: repository.fullPath },
+          { label: repository?.fullPath ?? "Repository" },
           { label: TAB_LABELS[tab] },
         ]}
       />
       <main className="detail-main">
         <PageHeader
           title={
-            <>
-              <ProviderIcon provider={repository.provider} size={20} />
-              <MonoPath value={repository.fullPath} />
-            </>
+            repository ? (
+              <>
+                <ProviderIcon provider={repository.provider} size={20} />
+                <MonoPath value={repository.fullPath} />
+              </>
+            ) : (
+              <Skeleton width="14rem" height="1.75rem" />
+            )
           }
           description="How this repository is reviewed and built."
+          meta={detail.data && <Freshness query={detail} />}
           actions={
-            <Button asChild variant="ghost" className="page-header-ghost">
-              <a href={repository.webUrl} target="_blank" rel="noreferrer">
-                <IconExternalLink size={14} />
-                Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
-              </a>
-            </Button>
+            repository && (
+              <Button asChild variant="ghost" className="page-header-ghost">
+                <a href={repository.webUrl} target="_blank" rel="noreferrer">
+                  <IconExternalLink size={14} />
+                  Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
+                </a>
+              </Button>
+            )
           }
         />
 
-        <RepositoryNav repositoryId={repository.id} current={tab} />
+        <RepositoryNav repositoryId={id} current={tab} />
 
-        {!isAdmin && (
-          <Muted>Only admins can change repository settings; they&apos;re shown read-only.</Muted>
-        )}
-
-        <div className="settings-sections">
-          {tab === "settings" && reviewSection}
-          {tab === "coding" && isAdmin && ralph && codingChoices && (
-            <CodingSettingsSections
-              repositoryId={repository.id}
-              settings={ralph}
-              choices={codingChoices}
-              codingTasks={codingTasks}
-              taskTypes={taskTypes}
-            />
-          )}
-          {tab === "harnesses" && harnessesSection}
-        </div>
+        <QueryBoundary query={detail} skeleton={skeleton} what="the repository">
+          {(data) =>
+            tab === "coding" ? (
+              <QueryBoundary query={coding} skeleton={skeleton} what="the coding settings">
+                {(codingData) =>
+                  // The Linear fields wait for the workspace; a failed read shows them read-only.
+                  linear.data || linear.isError ? content(data, { coding: codingData }) : skeleton
+                }
+              </QueryBoundary>
+            ) : (
+              content(data)
+            )
+          }
+        </QueryBoundary>
       </main>
     </>
   );
+}
+
+/** `harness` with `online` computed against the browser's clock `now`, not the server's. */
+function withClientOnline(
+  harness: RepositoryDetail["harnesses"][number],
+  now: number,
+): RepositoryHarness {
+  const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
+  return {
+    id: harness.id,
+    name: harness.name,
+    online: !harness.revoked && isHarnessOnline(heartbeat, new Date(now)),
+    revoked: harness.revoked,
+    updating: harness.updating,
+    acceptedTaskTypes: harness.acceptedTaskTypes,
+  };
 }
 
 /** The pinned harnesses with their status, each removable; or that none is pinned. */

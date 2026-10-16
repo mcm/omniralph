@@ -1,26 +1,30 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
-import { RepositorySettingsView, type RepositorySettingsTab } from "./repository-settings-view";
+import {
+  createTestQueryClient,
+  mockFetch,
+  queryWrapper,
+  type SeenRequest,
+} from "@/components/query-test-utils";
+import { RepositorySettingsContent, type RepositorySettingsTab } from "./repository-settings-view";
 import type { RalphSettingsValues } from "./ralph-settings-section";
-import { updateRalphSettings, updateRepositorySettings } from "./actions";
 
 const run = vi.fn((action: () => unknown) => action());
 vi.mock("@/components/use-action", () => ({ useAction: () => ({ pending: false, run }) }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "admin" }) }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/settings",
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
-vi.mock("./actions", () => ({
-  updateRalphSettings: vi.fn(async () => ({ ok: true })),
-  updateRepositorySettings: vi.fn(async () => ({ ok: true })),
-  updateRepositoryTaskTypes: vi.fn(async () => ({ ok: true })),
-}));
+
+let seen: SeenRequest[] = [];
+/** The saves sent to `PUT /api/ui/repositories/repo-1/<part>`. */
+const saves = (part: string) =>
+  seen.filter((r) => r.method === "PUT" && r.path === `/api/ui/repositories/repo-1/${part}`);
 
 const ralph: RalphSettingsValues = {
   linearTeamKeys: [],
@@ -43,7 +47,7 @@ const PROFILE = { maxTokensPerReview: 200000, maxFiles: 50, allowRepoExploration
 
 function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
   return render(
-    <RepositorySettingsView
+    <RepositorySettingsContent
       tab={tab}
       repository={{
         id: "repo-1",
@@ -95,10 +99,18 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         inherited: { query: true, review: true, coding: true },
       }}
     />,
+    { wrapper: queryWrapper(createTestQueryClient()) },
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  seen = mockFetch({
+    "PUT /api/ui/repositories/repo-1/coding": { ok: true },
+    "PUT /api/ui/repositories/repo-1/settings": { ok: true },
+    "PUT /api/ui/repositories/repo-1/task-types": { ok: true },
+  });
+});
 
 describe("repository settings sections", () => {
   it("selects a review profile by clicking its row, and Discard reverts it", async () => {
@@ -123,9 +135,9 @@ describe("repository settings sections", () => {
     await user.click(screen.getByRole("button", { name: "Save coding" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(/Keep commits small\./)).toBeTruthy();
-    expect(updateRalphSettings).not.toHaveBeenCalled();
+    expect(saves("coding")).toHaveLength(0);
     await user.click(within(dialog).getByRole("button", { name: "Save 1 change" }));
-    expect(updateRalphSettings).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(saves("coding")).toHaveLength(1));
   });
 
   it("confirms the Danger zone's change list before saving", async () => {
@@ -135,9 +147,9 @@ describe("repository settings sections", () => {
     await user.click(screen.getByRole("button", { name: "Save danger zone" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(/Clean up after the merge/)).toBeTruthy();
-    expect(updateRalphSettings).not.toHaveBeenCalled();
+    expect(saves("coding")).toHaveLength(0);
     await user.click(within(dialog).getByRole("button", { name: "Save 1 change" }));
-    expect(updateRalphSettings).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(saves("coding")).toHaveLength(1));
   });
 
   it("adds and removes pinned harnesses, with Discard reverting them", async () => {
@@ -153,6 +165,6 @@ describe("repository settings sections", () => {
     expect(screen.getByRole("button", { name: "Remove build-01" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove build-02" })).toBeNull();
     expect(screen.getByText("No unsaved changes")).toBeTruthy();
-    expect(updateRepositorySettings).not.toHaveBeenCalled();
+    expect(saves("settings")).toHaveLength(0);
   });
 });

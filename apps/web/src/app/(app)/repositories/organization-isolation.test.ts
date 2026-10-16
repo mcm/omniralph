@@ -70,21 +70,46 @@ vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 // No Linear workspace is connected.
 vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./[id]/settings/repository-settings-view", () => ({
-  RepositorySettingsView: () => null,
-}));
 vi.mock("./[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { default: RepositorySettingsPage } = await import("./[id]/settings/page");
-const { default: RepositoryCodingPage } = await import("./[id]/coding/page");
-const { default: RepositoryHarnessesPage } = await import("./[id]/harnesses/page");
+const repositoryDetail = await import("@/app/api/ui/repositories/[id]/route");
+const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
+const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
+const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
+const repositoryLinear = await import("@/app/api/ui/repositories/[id]/coding/linear/route");
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
-const { updateRalphSettings, updateRepositorySettings, updateRepositoryTaskTypes } =
-  await import("./[id]/settings/actions");
+
+type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
+
+/** Calls an `/api/ui` handler of the repository `id`; resolves to the status and JSON body. */
+async function call(handler: Handler, id: string, body?: unknown) {
+  const response = await handler(
+    new Request("http://localhost/api/ui", {
+      method: body === undefined ? "GET" : "PUT",
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
+
+/** A save's answer as the `ActionResult` the form gets. */
+async function save(handler: Handler, id: string, body: unknown) {
+  const { status, body: json } = await call(handler, id, body);
+  return status === 200 ? json : { ok: false, error: json.error as string };
+}
+
+// The settings tabs' requests, under the names of the server actions they replace.
+const updateRepositorySettings = (id: string, input: unknown) =>
+  save(repositorySettings.PUT, id, input);
+const updateRepositoryTaskTypes = (id: string, input: unknown) =>
+  save(repositoryTaskTypes.PUT, id, input);
+const updateRalphSettings = (id: string, input: unknown) => save(repositoryCoding.PUT, id, input);
 const { addCustomRule, deleteRule, editRule, setRuleEnabled } =
   await import("./[id]/rules/actions");
 const { updateReviewProfile } = await import("../settings/profiles/actions");
@@ -191,8 +216,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     const profiles = (await ProfilesPage()).props.profiles as { id: string }[];
     expect(profiles.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
 
-    const settings = await RepositorySettingsPage(params(a.repoId));
-    expect(settings.props.repository.id).toBe(a.repoId);
+    const settings = await call(repositoryDetail.GET, a.repoId);
+    expect(settings).toMatchObject({ status: 200, body: { repository: { id: a.repoId } } });
     const rules = await RepositoryRulesPage(params(a.repoId));
     expect((rules.props.rules as { id: string }[]).map((r) => r.id)).toEqual([a.ruleId]);
   });
@@ -228,16 +253,13 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     }))!;
     await recordHarnessHeartbeat(db, otherId, { version: "1.0.0", models: [haiku] });
 
-    const choices = async () =>
-      (await RepositoryCodingPage(params(a.repoId))).props.codingChoices as {
-        linear: unknown;
-        models: { value: string; harnessIds: string[] }[];
-        harnessCount: number;
-        pinned: boolean;
-      };
+    const choices = async () => (await call(repositoryCoding.GET, a.repoId)).body;
+    expect(await call(repositoryLinear.GET, a.repoId)).toEqual({
+      status: 200,
+      body: { status: "disconnected" },
+    });
     // Unpinned: every harness accepting coding.
-    expect(await choices()).toEqual({
-      linear: { status: "disconnected" },
+    expect(await choices()).toMatchObject({
       models: [
         { ...opus, harnessIds: [coder] },
         { ...sonnet, harnessIds: [coder] },
@@ -252,11 +274,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       harnessCount: 1,
       pinned: true,
     });
-    // Other tabs don't load them.
-    expect((await RepositorySettingsPage(params(a.repoId))).props.codingChoices).toBeNull();
+    // The other tabs' data doesn't carry them.
+    expect((await call(repositoryDetail.GET, a.repoId)).body).not.toHaveProperty("models");
   });
 
-  it("shows the Coding tab to admins only; members get a 404 but see the other tabs", async () => {
+  it("shows the Coding tab to admins only; members get a 403 but see the other tabs", async () => {
     const [member] = await db
       .insert(users)
       .values({ id: "alpha-member", email: "member@alpha.io" })
@@ -266,18 +288,18 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ).toBe("added");
     await setActiveOrganization(db, { userId: member!.id, organizationId: a.orgId });
     state.userId = member!.id;
-    await expect(RepositoryCodingPage(params(a.repoId))).rejects.toMatchObject(notFound);
-    expect((await RepositorySettingsPage(params(a.repoId))).props.tab).toBe("settings");
-    expect((await RepositoryHarnessesPage(params(a.repoId))).props.tab).toBe("harnesses");
+    expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 403 });
+    expect(await call(repositoryLinear.GET, a.repoId)).toMatchObject({ status: 403 });
+    expect(await call(repositoryDetail.GET, a.repoId)).toMatchObject({ status: 200 });
     state.userId = a.userId;
-    expect((await RepositoryCodingPage(params(a.repoId))).props.tab).toBe("coding");
+    expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 200 });
   });
 
   it("returns 404 for another organization's repository pages", async () => {
     state.userId = a.userId;
-    await expect(RepositorySettingsPage(params(b.repoId))).rejects.toMatchObject(notFound);
-    await expect(RepositoryCodingPage(params(b.repoId))).rejects.toMatchObject(notFound);
-    await expect(RepositoryHarnessesPage(params(b.repoId))).rejects.toMatchObject(notFound);
+    for (const handler of [repositoryDetail.GET, repositoryCoding.GET, repositoryLinear.GET]) {
+      expect(await call(handler, b.repoId)).toMatchObject({ status: 404 });
+    }
     await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
   });
 

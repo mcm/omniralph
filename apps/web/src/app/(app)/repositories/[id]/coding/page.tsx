@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { renderRepositorySettings } from "../repository-settings-page";
+import { RepositorySettingsView } from "../settings/repository-settings-view";
 
 export const metadata: Metadata = { title: "Repository coding settings · Omniralph" };
 
-export default async function RepositoryCodingPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  return renderRepositorySettings(params, "coding");
+export default function RepositoryCodingPage() {
+  return <RepositorySettingsView tab="coding" />;
 }

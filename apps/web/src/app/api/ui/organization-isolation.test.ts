@@ -102,7 +102,12 @@ const pinnableRepositories = await import("./harnesses/pinnable-repositories/rou
 const repositoryList = await import("./repositories/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
+const repositoryDetail = repository;
 const repositoryWebhook = await import("./repositories/[id]/webhook/route");
+const repositorySettings = await import("./repositories/[id]/settings/route");
+const repositoryTaskTypes = await import("./repositories/[id]/task-types/route");
+const repositoryCoding = await import("./repositories/[id]/coding/route");
+const repositoryLinear = await import("./repositories/[id]/coding/linear/route");
 const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
 const selectable = await import("./scm-connections/[id]/repositories/route");
@@ -302,7 +307,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         state.userId = userId;
         const { status, body } = await call(harnessList.GET);
         expect(status).toBe(200);
-        expect((body.harnesses as { id: string }[]).map((h) => h.id)).toEqual([own.harnessId]);
+        // Its own harnesses (an earlier test enrolled more), none of the other's (the markers).
+        expect((body.harnesses as { id: string }[]).map((h) => h.id)).toContain(own.harnessId);
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
       }
     }
@@ -571,6 +577,132 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           path: "/api/ui?provider=github",
         }),
       ).toMatchObject({ status: 403 });
+    }
+  });
+
+  it("shows each organization's own repository settings tabs, Coding to admins only, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const { status, body } = await call(repositoryDetail.GET, { params: { id: own.repoId } });
+        expect(status).toBe(200);
+        expect(body).toMatchObject({ repository: { id: own.repoId, fullPath: own.repoPath } });
+        // Its own harnesses (an earlier test enrolled more), none of the other's (the markers).
+        expect((body.harnesses as { id: string }[]).map((h) => h.id)).toContain(own.harnessId);
+        for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        expect(await call(repositoryDetail.GET, { params: { id: other.repoId } })).toMatchObject({
+          status: 404,
+        });
+      }
+      expect(await call(repositoryDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
+        status: 404,
+      });
+
+      state.userId = own.adminId;
+      const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
+      expect(coding).toMatchObject({ status: 200, body: { settings: { codingPath: "legacy" } } });
+      for (const marker of markers(other))
+        expect(JSON.stringify(coding.body)).not.toContain(marker);
+      expect(await call(repositoryLinear.GET, { params: { id: own.repoId } })).toEqual({
+        status: 200,
+        body: { status: "disconnected" },
+      });
+      for (const handler of [repositoryCoding.GET, repositoryLinear.GET]) {
+        expect(await call(handler, { params: { id: other.repoId } })).toMatchObject({
+          status: 404,
+        });
+      }
+      // Members see Review settings and Harnesses read-only; Coding is for admins.
+      state.userId = own.memberId;
+      for (const handler of [repositoryCoding.GET, repositoryLinear.GET]) {
+        expect(await call(handler, { params: { id: own.repoId } })).toMatchObject({
+          status: 403,
+        });
+      }
+    }
+  });
+
+  it("refuses every repository settings save on the other organization's repository", async () => {
+    const reviewSettings = {
+      profileId: "deep",
+      triggers: { onOpen: false, onPush: false, drafts: false },
+      pathExcludes: [],
+      customInstructions: "",
+      pinnedHarnessIds: [],
+      reviewTaskIds: ["builtin:review-pr"],
+      correlationTaskId: "builtin:correlate-findings",
+    };
+    // A valid Coding form: the other organization's own.
+    state.userId = b.adminId;
+    const coding = (await call(repositoryCoding.GET, { params: { id: b.repoId } })).body;
+    const saves = (id: string) => [
+      call(repositorySettings.PUT, { method: "PUT", params: { id }, body: reviewSettings }),
+      call(repositoryTaskTypes.PUT, {
+        method: "PUT",
+        params: { id },
+        body: { query: false, review: false, coding: false },
+      }),
+      call(repositoryCoding.PUT, {
+        method: "PUT",
+        params: { id },
+        body: { ...(coding.settings as object), codingPath: "tasks" },
+      }),
+    ];
+    state.userId = a.adminId;
+    for (const response of await Promise.all(saves(b.repoId))) {
+      expect(response).toMatchObject({
+        status: 400,
+        body: { error: "That repository isn't connected." },
+      });
+    }
+    for (const response of await Promise.all(saves("not-a-uuid"))) {
+      expect(response.status).toBe(404);
+    }
+    // Members change nothing, in their own organization either.
+    state.userId = b.memberId;
+    for (const response of await Promise.all(saves(b.repoId))) expect(response.status).toBe(403);
+    expect(await getRepository(db, b.repoId)).toMatchObject({
+      profileId: "standard",
+      enabled: null,
+      queryEnabled: null,
+      ralphEnabled: null,
+      codingPath: "legacy",
+    });
+  });
+
+  it("sends a member of both organizations to switch to the repository's organization", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-repositories-admin", email: "both-repositories@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "admin" },
+      { organizationId: b.orgId, userId: user!.id, role: "admin" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+
+    for (const [tab, handler] of [
+      ["settings", repositoryDetail.GET],
+      ["harnesses", repositoryDetail.GET],
+      ["coding", repositoryCoding.GET],
+    ] as const) {
+      const page = `/repositories/${b.repoId}/${tab}`;
+      const { status, body } = await call(handler, {
+        params: { id: b.repoId },
+        path: `/api/ui?${new URLSearchParams({ next: page })}`,
+      });
+      expect(status, page).toBe(409);
+      expect(body).toMatchObject({ code: "enter_organization" });
+      expect(JSON.stringify(body)).not.toContain(b.repoPath);
+      const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
+      expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
+        organizationId: b.orgId,
+        next: page,
+      });
     }
   });
 

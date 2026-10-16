@@ -3,18 +3,13 @@ import "@/components/pickers/test-dom";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { RepositorySettingsView, type RepositoryHarness } from "./repository-settings-view";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
+import { RepositorySettingsContent, type RepositoryHarness } from "./repository-settings-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "admin" }) }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/harnesses",
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-}));
-vi.mock("./actions", () => ({
-  updateRalphSettings: vi.fn(),
-  updateRepositorySettings: vi.fn(),
-  updateRepositoryTaskTypes: vi.fn(),
 }));
 
 const harness = (overrides: Partial<RepositoryHarness> & Pick<RepositoryHarness, "id" | "name">) =>
@@ -35,7 +30,7 @@ const HARNESSES: RepositoryHarness[] = [
 
 function renderTab(pinnedHarnessIds: string[] = []) {
   return render(
-    <RepositorySettingsView
+    <RepositorySettingsContent
       tab="harnesses"
       repository={{
         id: "repo-1",
@@ -66,6 +61,7 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         inherited: { query: true, review: true, coding: false },
       }}
     />,
+    { wrapper: queryWrapper(createTestQueryClient()) },
   );
 }
 

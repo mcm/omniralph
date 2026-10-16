@@ -1,0 +1,165 @@
+import "server-only";
+import {
+  getAllowedTaskTypeDefaults,
+  getRepositoryWithConnection,
+  listHarnessOverview,
+  listReportedModels,
+  listRepositoryCodingHarnessIds,
+  listRepositoryPinnedHarnessIds,
+  listReviewProfiles,
+  repositorySwitchOverrides,
+} from "@omniralph/db";
+import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
+import { ApiRouteError } from "@/lib/api/handler";
+import type { CodingLinear, RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
+import { getDb } from "@/lib/db";
+import {
+  CORRELATION_TASKS,
+  listTaskChoices,
+  listTaskDefinitions,
+  REQUEST_TASKS,
+  REVIEW_TASKS,
+  STORY_TASKS,
+} from "@/lib/definitions";
+import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { harnessRow } from "@/lib/harnesses/rows";
+import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
+import { repositoryWebUrl } from "./web-url";
+
+/** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
+const NPM_TIMEOUT_MS = 2_000;
+
+/** The organization's connected repository `id`; a disconnected or missing one is not found. */
+async function connectedRepository(organizationId: string, id: string) {
+  const found = await getRepositoryWithConnection(getDb(), id, organizationId);
+  if (!found || found.repository.disconnectedAt) throw ApiRouteError.notFound();
+  return found;
+}
+
+/** A repository with what its Review settings and Harnesses tabs show (`repositoryDetailSchema`). */
+export async function loadRepositoryDetail(
+  organizationId: string,
+  id: string,
+): Promise<RepositoryDetail> {
+  const db = getDb();
+  const { repository, connection } = await connectedRepository(organizationId, id);
+  const [
+    profiles,
+    harnesses,
+    organizationVersion,
+    pinnedHarnessIds,
+    reviewTasks,
+    correlationTasks,
+    allowedTaskTypes,
+  ] = await Promise.all([
+    listReviewProfiles(db, organizationId),
+    listHarnessOverview(db, organizationId),
+    organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    listRepositoryPinnedHarnessIds(db, id),
+    listTaskDefinitions(db, organizationId, REVIEW_TASKS),
+    listTaskChoices(db, organizationId, CORRELATION_TASKS),
+    getAllowedTaskTypeDefaults(db, organizationId),
+  ]);
+  const now = new Date();
+  return {
+    repository: {
+      id: repository.id,
+      provider: repository.provider,
+      fullPath: repository.fullPath,
+      webUrl: repositoryWebUrl(repository.provider, connection.baseUrl, repository.fullPath),
+    },
+    settings: {
+      profileId: repository.profileId,
+      triggers: repository.triggers,
+      pathExcludes: repository.pathExcludes,
+      customInstructions: repository.customInstructions ?? "",
+      pinnedHarnessIds,
+      reviewTaskIds: repository.reviewTaskIds,
+      correlationTaskId: repository.correlationTaskId,
+    },
+    reviewTasks: reviewTasks.map(({ definition, builtin }) => ({
+      id: definition.id,
+      name: definition.name,
+      description: definition.description,
+      builtin,
+    })),
+    correlationTasks,
+    profiles: profiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      model: p.model,
+      maxTokensPerReview: p.maxTokensPerReview,
+      maxFiles: p.maxFiles,
+      allowRepoExploration: p.allowRepoExploration,
+    })),
+    harnesses: harnesses.map((harness) => {
+      const row = harnessRow(harness, now, organizationVersion.version);
+      return {
+        id: row.id,
+        name: row.name,
+        lastHeartbeatAt: row.lastHeartbeatAt,
+        online: row.online,
+        revoked: row.revoked,
+        updating: row.updateStatus === "updating",
+        acceptedTaskTypes: row.acceptedTaskTypes,
+      };
+    }),
+    taskTypes: {
+      overrides: repositorySwitchOverrides(repository),
+      inherited: {
+        query: allowedTaskTypes.includes("query"),
+        review: allowedTaskTypes.includes("review"),
+        coding: allowedTaskTypes.includes("coding"),
+      },
+    },
+  };
+}
+
+/**
+ * The Coding tab's settings and its pickers' choices from the database: the coding tasks, and
+ * the models of the harnesses that may run the repository's coding jobs (its pinned ones,
+ * else every harness accepting coding).
+ */
+export async function loadRepositoryCoding(
+  organizationId: string,
+  id: string,
+): Promise<RepositoryCoding> {
+  const db = getDb();
+  const { repository } = await connectedRepository(organizationId, id);
+  const [storyTasks, requestTasks, { pinned, harnessIds }] = await Promise.all([
+    listTaskChoices(db, organizationId, STORY_TASKS),
+    listTaskChoices(db, organizationId, REQUEST_TASKS),
+    listRepositoryCodingHarnessIds(db, organizationId, id),
+  ]);
+  const models = await listReportedModels(db, organizationId, { harnessIds });
+  return {
+    settings: {
+      linearTeamKeys: repository.linearTeamKeys,
+      linearProjectNames: repository.linearProjectNames,
+      linearLabels: repository.linearLabels,
+      codingPath: repository.codingPath,
+      storyTaskId: repository.storyTaskId,
+      requestTaskId: repository.requestTaskId,
+      ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
+      manualLabels: repositoryManualLabels(repository),
+    },
+    tasks: { story: storyTasks, request: requestTasks },
+    models,
+    harnessCount: harnessIds.length,
+    pinned,
+  };
+}
+
+/** The organization's Linear workspace the Coding tab's Linear fields pick from (calls Linear). */
+export async function loadCodingLinear(organizationId: string): Promise<CodingLinear> {
+  return getLinearSettingsOptions(organizationId).then(
+    (options): CodingLinear =>
+      options ? { status: "connected", options } : { status: "disconnected" },
+    (error: unknown): CodingLinear => {
+      console.error("Loading the Linear settings options failed", error);
+      return { status: "unavailable" };
+    },
+  );
+}
