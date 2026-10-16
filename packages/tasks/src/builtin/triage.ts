@@ -57,7 +57,7 @@ The description becomes the issue's description, and Omniralph includes it in ev
 1. \`## Introduction\`: what the feature is and the problem it solves.
 2. \`## Goals\`: specific, measurable objectives (bullets).
 3. \`## Quality Gates\`: the commands every story must pass (see below). Always present.
-4. \`## Non-Goals\`: what this will NOT include.
+4. \`## Non-Goals\`: what this will NOT include. Only what is really out of scope: never label part of the requested work "future enhancement", "stretch" or "v2" unless the issue does. If something is genuinely optional, ask about it in an open question so a person decides; never defer it silently.
 5. \`## Design Considerations\` (optional): UI/UX requirements, mockups, components to reuse.
 6. \`## Technical Considerations\` (optional): constraints, dependencies, integration points, file paths.
 7. \`## Success Metrics\`: how you will know it succeeded (bullets, measurable).
@@ -96,7 +96,7 @@ Estimate the size of the entire body of work (every goal and functional requirem
 Mention the size and a one-line rationale in your summary. For \`reformat\` and \`unchanged\`, size the work as planned.
 
 ### 5. Stories (\`stories\`; \`prd\` epics only, L or larger)
-Each story becomes one sub-issue, implemented in one fresh unattended session, so it must be small enough to finish in one session. Order them so earlier ones enable later ones.
+Each story becomes one sub-issue, implemented in one fresh unattended session, so it must be small enough to finish in one session. Order them so earlier ones enable later ones. Split by feature boundary, never by development phase: "Auth system" is one story, not scaffolding, logic, tests and polish as four. Every story is in scope for the goal.
 - \`title\`: the plain story title. No \`US-001:\` prefix or other IDs.
 - \`body\`: exactly this shape, nothing else:
 
@@ -116,7 +116,7 @@ As a [user], I want [feature] so that [benefit].
 - \`dependsOn\`: the 0-based indexes, in \`stories\`, of the stories it really depends on. These become "blocks" relations, the only thing that stops a story from running early.
 - \`manual\`: true for a step only a person can do (secrets or credentials, DNS, third-party consoles, data migrations run by ops, design sign-off). Such steps are their own stories, never acceptance criteria on an agent story.
 - Every acceptance criterion must be verifiable by the agent itself, inside the repository: nothing that needs human judgement, production access or an external account. "Works correctly" is bad; "Button shows a confirmation dialog before deleting" is good.
-- Include stories for tests and documentation as needed.
+- Tests, error handling and basic hardening belong in the acceptance criteria of the story that introduces the code, never in a story of their own. The same goes for documenting that code.
 - The **last** story is the validation sub-issue, titled \`Validate functional requirements\`, depending on every other story, with this body:
 
 \`\`\`

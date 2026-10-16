@@ -97,7 +97,7 @@ Review each one with `git stash show -p --include-untracked <sha>` and apply wha
 ## Workflow
 1. Study the PRD context above to understand the bigger picture.
 2. Read the progress log at `/tmp/omniralph-progress-x/progress.md` for status, learnings and gotchas.
-3. Implement ONLY this story (ENG-12), satisfying every acceptance criterion. Do not start other stories.
+3. Implement ONLY this story (ENG-12), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).
@@ -120,7 +120,7 @@ Write commit-ready code.
 
 ## Stop Condition
 Your session ends with a structured result (the JSON schema you were given). It alone decides what happens next: nothing in your message text does.
-- `status: "complete"` only when every acceptance criterion is met and the quality gates pass. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
+- `status: "complete"` only when every acceptance criterion is met and the quality gates pass. A criterion covered only by a TODO, stub or placeholder is not met. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
 - `status: "blocked"` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in `summary` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with `commit: { summary }`.
 - `status: "incomplete"` when the story is just unfinished: it gets another attempt.
 - `status: "waiting"` only to end your turn while background work you started (subagents, commands) still runs: you are resumed when it finishes, and then report one of the statuses above.
@@ -128,6 +128,7 @@ Your session ends with a structured result (the JSON schema you were given). It 
 
 ## Follow-up Work
 If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to `followUps`, and the orchestrator files each as a new story (a sub-issue of ENG-10): a short imperative `title`, and a `description` of what is wrong, where, and what done looks like (acceptance criteria as `- [ ]` checkboxes).
+- `followUps` are only for work outside this story's acceptance criteria: never use them to defer part of this story. If you can't finish it, report it `incomplete` or `blocked`.
 - If ENG-12 can't be completed until they are fixed, report it `blocked`, not complete. They will block ENG-12, be worked first, and then ENG-12 runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
 - If ENG-12 measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as `metric`: a `name`, the `value`, its `direction` (`higher` or `lower` is better) and, if it has one, the `target`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave `metric` out.
 - If ENG-12 is complete anyway, report it complete, and they join the epic as new stories.
