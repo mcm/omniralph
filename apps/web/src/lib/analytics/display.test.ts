@@ -35,6 +35,10 @@ describe("parseAnalyticsParams", () => {
       });
     }
   });
+
+  it("keeps any repository when it has no repositories to check against", () => {
+    expect(parseAnalyticsParams({ repo: "other" })).toEqual({ days: 30, repositoryId: "other" });
+  });
 });
 
 describe("analyticsHref", () => {

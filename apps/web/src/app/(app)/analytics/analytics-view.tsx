@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AreaChart,
   BarChart,
@@ -16,6 +16,7 @@ import {
   Muted,
   NativeSelect,
   Progress,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -31,7 +32,9 @@ import { AppHeader } from "@/components/app-header";
 import { EmptyValue } from "@/components/empty-value";
 import { useCurrentUser } from "@/components/current-user";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
+import { Freshness } from "@/components/freshness";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
 import { MonoValue } from "@/components/mono-value";
 import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
@@ -44,6 +47,7 @@ import {
   falsePositivesNoun,
   formatRate,
   overallAverageTokens,
+  parseAnalyticsParams,
   RALPH_RUN_OUTCOME_LABELS,
   RALPH_RUN_OUTCOMES,
   RALPH_STORY_OUTCOME_LABELS,
@@ -56,14 +60,7 @@ import {
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
 import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "@/components/provider-icon";
-
-interface AnalyticsViewProps {
-  analytics: AnalyticsData;
-  ralph: RalphAnalyticsData;
-  /** Every repository, for the filter. */
-  repositories: AnalyticsRepositoryRef[];
-  params: AnalyticsParams;
-}
+import { useAnalytics } from "./analytics-queries";
 
 /**
  * Series: the headline in accent; the comparison in neutral through
@@ -288,30 +285,80 @@ function RalphSection({
   );
 }
 
-export function AnalyticsView({ analytics, ralph, repositories, params }: AnalyticsViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+/**
+ * The window and repository from the URL, and a setter. A chosen filter shows at once,
+ * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
+ */
+function useAnalyticsParams(): [AnalyticsParams, (change: Partial<AnalyticsParams>) => void] {
   const router = useRouter();
   const pathname = usePathname();
-  const setFilter = (change: Partial<AnalyticsParams>) =>
-    router.push(analyticsHref(pathname, { ...params, ...change }));
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  // The server checks the repository (another organization's is ignored).
+  const fromUrl = parseAnalyticsParams(Object.fromEntries(searchParams));
+  const [chosen, setChosen] = React.useState<{ search: string; params: AnalyticsParams } | null>(
+    null,
+  );
+  // Once the URL moves on (the navigation landed, or Back), the choice is spent.
+  if (chosen && chosen.search !== search) setChosen(null);
+  const params = chosen?.search === search ? chosen.params : fromUrl;
+  const setFilter = (change: Partial<AnalyticsParams>) => {
+    const next = { ...params, ...change };
+    setChosen({ search, params: next });
+    router.push(analyticsHref(pathname, next), { scroll: false });
+  };
+  return [params, setFilter];
+}
 
-  const { totals } = analytics;
+/** Metric tiles and chart cards shaped like the page while its first load is pending. */
+function AnalyticsSkeleton() {
+  const chartCard = (height: string) => (
+    <Card>
+      <CardHeader>
+        <Skeleton width="45%" height="1.25rem" />
+        <Skeleton width="70%" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton height={height} />
+      </CardContent>
+    </Card>
+  );
+  return (
+    <div className="analytics-body">
+      <Metrics>
+        {Array.from({ length: 4 }, (_, index) => (
+          <Metric
+            key={index}
+            label={<Skeleton width={`${40 + ((index * 17) % 30)}%`} height="0.75rem" />}
+            value={<Skeleton width="4rem" height="1.75rem" />}
+          />
+        ))}
+      </Metrics>
+      <div className="analytics-split">
+        {chartCard("15rem")}
+        {chartCard("15rem")}
+      </div>
+      <div className="analytics-cards">
+        {chartCard("10rem")}
+        {chartCard("10rem")}
+        {chartCard("10rem")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Analytics page, live: the window and repository from the URL poll
+ * (`GET /api/ui/analytics`); a new filter keeps the previous figures, dimmed, until its own
+ * arrive.
+ */
+export function AnalyticsView() {
+  const isAdmin = useCurrentUser().role === "admin";
+  const [params, setFilter] = useAnalyticsParams();
+  const query = useAnalytics(params);
+  const repositories = query.data?.repositories ?? [];
   const repository = repositories.find((r) => r.id === params.repositoryId) ?? null;
   const scope = repository ? repository.fullPath : "all repositories";
-  const period = `Last ${params.days} days`;
-  const daily = analytics.daily.map((d) => ({
-    day: dayLabel(d.date),
-    tokensIn: d.tokensIn,
-    tokensOut: d.tokensOut,
-    reviews: d.reviews,
-  }));
-  const profiles = analytics.byProfile.map((p) => ({
-    profile: p.profileName ?? "Deleted profile",
-    averageTokens: p.averageTokens,
-  }));
-  const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
-  const noReviews = totals.reviews === 0;
-  const averageTokens = overallAverageTokens(analytics.byProfile);
 
   return (
     <>
@@ -320,6 +367,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
         <PageHeader
           title="Analytics"
           description={`Token usage, review quality and coding tasks for ${scope}, last ${params.days} days by UTC day.`}
+          meta={<Freshness query={query} />}
           actions={
             <>
               <ToggleGroup
@@ -340,7 +388,7 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
               </ToggleGroup>
               <NativeSelect
                 aria-label="Filter by repository"
-                value={params.repositoryId ?? ""}
+                value={repository?.id ?? ""}
                 onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
               >
                 <option value="">All repositories</option>
@@ -354,297 +402,335 @@ export function AnalyticsView({ analytics, ralph, repositories, params }: Analyt
           }
         />
 
-        <Metrics>
-          <Metric label="Reviews" value={totals.reviews.toLocaleString()} />
-          <Metric
-            label="Tokens in"
-            value={formatTokens(totals.tokensIn)}
-            title={`${totals.tokensIn.toLocaleString()} tokens`}
-          />
-          <Metric
-            label="Tokens out"
-            value={formatTokens(totals.tokensOut)}
-            title={`${totals.tokensOut.toLocaleString()} tokens`}
-          />
-          <Metric
-            label="Tokens per review"
-            value={formatTokens(averageTokens)}
-            title={`${averageTokens.toLocaleString()} tokens in + out on average, finished reviews`}
-          />
-        </Metrics>
+        <QueryBoundary query={query} skeleton={<AnalyticsSkeleton />} what="analytics">
+          {(loaded) => (
+            <div className="list-pending analytics-body" aria-busy={query.isPlaceholderData}>
+              <AnalyticsContent
+                analytics={loaded.analytics}
+                ralph={loaded.ralph}
+                params={loaded.params}
+                isAdmin={isAdmin}
+              />
+            </div>
+          )}
+        </QueryBoundary>
+      </main>
+    </>
+  );
+}
 
-        <div className="analytics-split">
-          <Card ribbon>
-            <CardHeader>
-              <CardTitle as="h2">Tokens per day</CardTitle>
-              <CardDescription>
-                {period}, input and output each on its own scale (output is far smaller)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="analytics-card-stack">
-              <AreaChart
-                aria-label="Input tokens per day"
-                height={176}
-                data={daily}
-                xKey="day"
-                showLegend
-                tickFormatter={tokenTick}
-                areas={[{ key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES }]}
-              />
-              <AreaChart
-                aria-label="Output tokens per day"
-                height={128}
-                data={daily}
-                xKey="day"
-                showLegend
-                tickFormatter={tokenTick}
-                areas={[{ key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES }]}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Reviews per day</CardTitle>
-              <CardDescription>{period}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BarChart
-                aria-label="Reviews per day"
-                height={240}
-                data={daily}
-                xKey="day"
-                tickFormatter={countTick}
-                bars={[{ key: "reviews", label: "Reviews", ...PRIMARY_SERIES }]}
-              />
-            </CardContent>
-          </Card>
-        </div>
+/** The figures of one window and repository. */
+export function AnalyticsContent({
+  analytics,
+  ralph,
+  params,
+  isAdmin,
+}: {
+  analytics: AnalyticsData;
+  ralph: RalphAnalyticsData;
+  /** The filter `analytics` and `ralph` were computed for. */
+  params: AnalyticsParams;
+  isAdmin: boolean;
+}) {
+  const { totals } = analytics;
+  const period = `Last ${params.days} days`;
+  const daily = analytics.daily.map((d) => ({
+    day: dayLabel(d.date),
+    tokensIn: d.tokensIn,
+    tokensOut: d.tokensOut,
+    reviews: d.reviews,
+  }));
+  const profiles = analytics.byProfile.map((p) => ({
+    profile: p.profileName ?? "Deleted profile",
+    averageTokens: p.averageTokens,
+  }));
+  const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
+  const noReviews = totals.reviews === 0;
+  const averageTokens = overallAverageTokens(analytics.byProfile);
 
-        <div className="analytics-cards">
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Average tokens per review</CardTitle>
-              <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
-            </CardHeader>
-            <CardContent className="analytics-card-stack">
-              {profiles.length === 0 ? (
-                <Empty
-                  size="sm"
-                  icon={<IconChartBar size={20} />}
-                  title="No reviews"
-                  titleAs="h3"
-                />
-              ) : (
-                <>
-                  <BarChart
-                    aria-label="Average tokens per review by profile"
-                    height={160}
-                    data={profiles}
-                    xKey="profile"
-                    tickFormatter={formatTokens}
-                    bars={[
-                      {
-                        key: "averageTokens",
-                        label: "Tokens per review",
-                        ...PRIMARY_SERIES,
-                      },
-                    ]}
-                  />
-                  <Table className="list-table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Profile</TableHead>
-                        <TableHead className="analytics-num">Reviews</TableHead>
-                        <TableHead className="analytics-num">Average</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {analytics.byProfile.map((p) => (
-                        <TableRow key={p.profileId ?? "deleted"}>
-                          <TableCell className="analytics-cell-text">
-                            {p.profileName ?? "Deleted profile"}
-                          </TableCell>
-                          <TableCell className="analytics-num text-numeric">
-                            {p.reviews.toLocaleString()}
-                          </TableCell>
-                          <TableCell
-                            className="analytics-num text-numeric"
-                            title={`${p.averageTokens.toLocaleString()} tokens`}
-                          >
-                            {formatTokens(p.averageTokens)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Reviews by status</CardTitle>
-              <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CountRows
-                rows={REVIEW_STATUSES.map((status) => ({
-                  key: status,
-                  label: <ReviewStatusBadge status={status} />,
-                  count: analytics.reviewsByStatus[status],
-                }))}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2">Findings by severity</CardTitle>
-              <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CountRows
-                rows={FINDING_SEVERITIES.map((severity) => ({
-                  key: severity,
-                  label: <SeverityBadge severity={severity} />,
-                  count: analytics.findingsBySeverity[severity],
-                }))}
-              />
-            </CardContent>
-          </Card>
-        </div>
+  return (
+    <>
+      <Metrics>
+        <Metric label="Reviews" value={totals.reviews.toLocaleString()} />
+        <Metric
+          label="Tokens in"
+          value={formatTokens(totals.tokensIn)}
+          title={`${totals.tokensIn.toLocaleString()} tokens`}
+        />
+        <Metric
+          label="Tokens out"
+          value={formatTokens(totals.tokensOut)}
+          title={`${totals.tokensOut.toLocaleString()} tokens`}
+        />
+        <Metric
+          label="Tokens per review"
+          value={formatTokens(averageTokens)}
+          title={`${averageTokens.toLocaleString()} tokens in + out on average, finished reviews`}
+        />
+      </Metrics>
 
-        <Card>
+      <div className="analytics-split">
+        <Card ribbon>
           <CardHeader>
-            <CardTitle as="h2">Dismissal rate per repository</CardTitle>
+            <CardTitle as="h2">Tokens per day</CardTitle>
             <CardDescription>
-              Dismissed findings out of all findings (superseded ones excluded). A high rate points
-              to a noisy repository: check its learned rules and profile.
+              {period}, input and output each on its own scale (output is far smaller)
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {analytics.dismissalsByRepository.length === 0 ? (
-              <Empty
-                size="sm"
-                icon={<IconThumbDown size={20} />}
-                title="No findings"
-                titleAs="h3"
-                description={noReviews ? "No reviews in this period." : undefined}
-              />
-            ) : (
-              <Table className="list-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="analytics-repo-col">Repository</TableHead>
-                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Findings</TableHead>
-                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Dismissed</TableHead>
-                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>
-                      False positives
-                    </TableHead>
-                    <TableHead className="analytics-rate-col">Rate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {analytics.dismissalsByRepository.map((d) => (
-                    <TableRow key={d.repository.id}>
-                      <TableCell className="analytics-repo-col">
-                        <RepositoryLink repository={d.repository} />
-                        <PhoneMeta>
-                          <span className="analytics-phone-detail">
-                            <span className="text-numeric">{d.dismissed.toLocaleString()}</span> of{" "}
-                            <span className="text-numeric">{d.findings.toLocaleString()}</span>{" "}
-                            dismissed,{" "}
-                            <span className="text-numeric">
-                              {d.falsePositives.toLocaleString()}
-                            </span>{" "}
-                            {falsePositivesNoun(d.falsePositives)}
-                          </span>
-                        </PhoneMeta>
-                      </TableCell>
-                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                        {d.findings.toLocaleString()}
-                      </TableCell>
-                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                        {d.dismissed.toLocaleString()}
-                      </TableCell>
-                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                        {d.falsePositives.toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="analytics-rate">
-                          <Progress
-                            value={d.dismissalRate * 100}
-                            variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
-                          />
-                          <span className="analytics-num text-numeric">
-                            {formatRate(d.dismissalRate)}
-                          </span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+          <CardContent className="analytics-card-stack">
+            <AreaChart
+              aria-label="Input tokens per day"
+              height={176}
+              data={daily}
+              xKey="day"
+              showLegend
+              tickFormatter={tokenTick}
+              areas={[{ key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES }]}
+            />
+            <AreaChart
+              aria-label="Output tokens per day"
+              height={128}
+              data={daily}
+              xKey="day"
+              showLegend
+              tickFormatter={tokenTick}
+              areas={[{ key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES }]}
+            />
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
-            <CardTitle as="h2">Jobs per agent</CardTitle>
-            <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
+            <CardTitle as="h2">Reviews per day</CardTitle>
+            <CardDescription>{period}</CardDescription>
           </CardHeader>
           <CardContent>
-            {analytics.jobsByHarness.length === 0 ? (
-              <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
+            <BarChart
+              aria-label="Reviews per day"
+              height={240}
+              data={daily}
+              xKey="day"
+              tickFormatter={countTick}
+              bars={[{ key: "reviews", label: "Reviews", ...PRIMARY_SERIES }]}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="analytics-cards">
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Average tokens per review</CardTitle>
+            <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
+          </CardHeader>
+          <CardContent className="analytics-card-stack">
+            {profiles.length === 0 ? (
+              <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" titleAs="h3" />
             ) : (
-              <Table className="list-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Harness</TableHead>
-                    <TableHead className="analytics-num">Jobs</TableHead>
-                    <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Completed</TableHead>
-                    <TableHead className="analytics-num">Failed</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {analytics.jobsByHarness.map((a) => (
-                    <TableRow key={a.agent.id}>
-                      <TableCell className="analytics-cell-text">
-                        {isAdmin ? (
-                          <Link href={`/harnesses/${a.agent.id}`} className="analytics-link">
-                            {a.agent.name}
-                          </Link>
-                        ) : (
-                          a.agent.name
-                        )}
-                        <PhoneMeta>
-                          <span className="analytics-phone-detail text-numeric">
-                            {a.completed.toLocaleString()} completed
-                          </span>
-                        </PhoneMeta>
-                      </TableCell>
-                      <TableCell className="analytics-num text-numeric">
-                        {a.total.toLocaleString()}
-                      </TableCell>
-                      <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                        {a.completed.toLocaleString()}
-                      </TableCell>
-                      <TableCell
-                        className="analytics-num text-numeric"
-                        data-failed={a.failed > 0 || undefined}
-                      >
-                        {a.failed.toLocaleString()}
-                      </TableCell>
+              <>
+                <BarChart
+                  aria-label="Average tokens per review by profile"
+                  height={160}
+                  data={profiles}
+                  xKey="profile"
+                  tickFormatter={formatTokens}
+                  bars={[
+                    {
+                      key: "averageTokens",
+                      label: "Tokens per review",
+                      ...PRIMARY_SERIES,
+                    },
+                  ]}
+                />
+                <Table className="list-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Profile</TableHead>
+                      <TableHead className="analytics-num">Reviews</TableHead>
+                      <TableHead className="analytics-num">Average</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {analytics.byProfile.map((p) => (
+                      <TableRow key={p.profileId ?? "deleted"}>
+                        <TableCell className="analytics-cell-text">
+                          {p.profileName ?? "Deleted profile"}
+                        </TableCell>
+                        <TableCell className="analytics-num text-numeric">
+                          {p.reviews.toLocaleString()}
+                        </TableCell>
+                        <TableCell
+                          className="analytics-num text-numeric"
+                          title={`${p.averageTokens.toLocaleString()} tokens`}
+                        >
+                          {formatTokens(p.averageTokens)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
             )}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Reviews by status</CardTitle>
+            <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CountRows
+              rows={REVIEW_STATUSES.map((status) => ({
+                key: status,
+                label: <ReviewStatusBadge status={status} />,
+                count: analytics.reviewsByStatus[status],
+              }))}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle as="h2">Findings by severity</CardTitle>
+            <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CountRows
+              rows={FINDING_SEVERITIES.map((severity) => ({
+                key: severity,
+                label: <SeverityBadge severity={severity} />,
+                count: analytics.findingsBySeverity[severity],
+              }))}
+            />
+          </CardContent>
+        </Card>
+      </div>
 
-        <RalphSection ralph={ralph} analytics={analytics} period={period} />
-      </main>
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">Dismissal rate per repository</CardTitle>
+          <CardDescription>
+            Dismissed findings out of all findings (superseded ones excluded). A high rate points to
+            a noisy repository: check its learned rules and profile.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {analytics.dismissalsByRepository.length === 0 ? (
+            <Empty
+              size="sm"
+              icon={<IconThumbDown size={20} />}
+              title="No findings"
+              titleAs="h3"
+              description={noReviews ? "No reviews in this period." : undefined}
+            />
+          ) : (
+            <Table className="list-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="analytics-repo-col">Repository</TableHead>
+                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Findings</TableHead>
+                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Dismissed</TableHead>
+                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>False positives</TableHead>
+                  <TableHead className="analytics-rate-col">Rate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics.dismissalsByRepository.map((d) => (
+                  <TableRow key={d.repository.id}>
+                    <TableCell className="analytics-repo-col">
+                      <RepositoryLink repository={d.repository} />
+                      <PhoneMeta>
+                        <span className="analytics-phone-detail">
+                          <span className="text-numeric">{d.dismissed.toLocaleString()}</span> of{" "}
+                          <span className="text-numeric">{d.findings.toLocaleString()}</span>{" "}
+                          dismissed,{" "}
+                          <span className="text-numeric">{d.falsePositives.toLocaleString()}</span>{" "}
+                          {falsePositivesNoun(d.falsePositives)}
+                        </span>
+                      </PhoneMeta>
+                    </TableCell>
+                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                      {d.findings.toLocaleString()}
+                    </TableCell>
+                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                      {d.dismissed.toLocaleString()}
+                    </TableCell>
+                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                      {d.falsePositives.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="analytics-rate">
+                        <Progress
+                          value={d.dismissalRate * 100}
+                          variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
+                        />
+                        <span className="analytics-num text-numeric">
+                          {formatRate(d.dismissalRate)}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">Jobs per agent</CardTitle>
+          <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {analytics.jobsByHarness.length === 0 ? (
+            <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
+          ) : (
+            <Table className="list-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Harness</TableHead>
+                  <TableHead className="analytics-num">Jobs</TableHead>
+                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Completed</TableHead>
+                  <TableHead className="analytics-num">Failed</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics.jobsByHarness.map((a) => (
+                  <TableRow key={a.agent.id}>
+                    <TableCell className="analytics-cell-text">
+                      {isAdmin ? (
+                        <Link href={`/harnesses/${a.agent.id}`} className="analytics-link">
+                          {a.agent.name}
+                        </Link>
+                      ) : (
+                        a.agent.name
+                      )}
+                      <PhoneMeta>
+                        <span className="analytics-phone-detail text-numeric">
+                          {a.completed.toLocaleString()} completed
+                        </span>
+                      </PhoneMeta>
+                    </TableCell>
+                    <TableCell className="analytics-num text-numeric">
+                      {a.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
+                      {a.completed.toLocaleString()}
+                    </TableCell>
+                    <TableCell
+                      className="analytics-num text-numeric"
+                      data-failed={a.failed > 0 || undefined}
+                    >
+                      {a.failed.toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <RalphSection ralph={ralph} analytics={analytics} period={period} />
     </>
   );
 }

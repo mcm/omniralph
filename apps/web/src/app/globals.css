@@ -1602,6 +1602,12 @@ body {
 
 /* Analytics (app/(app)/analytics): every grid reflows by a minimum width, never a fixed
    column count, so no KPI, chart or table is clipped from 390px to 1440px. */
+.analytics-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
 .analytics-section {
   display: flex;
   flex-direction: column;

@@ -1,0 +1,108 @@
+import { z } from "zod";
+import {
+  ANALYTICS_RANGES,
+  RALPH_RUN_OUTCOMES,
+  RALPH_STORY_OUTCOMES,
+  type AnalyticsData,
+  type AnalyticsParams,
+  type RalphAnalyticsData,
+} from "@/lib/analytics/display";
+import { FINDING_SEVERITIES, REVIEW_STATUSES } from "@/lib/reviews/display";
+import { isoDate } from "./schemas";
+
+/** Wire format of the Analytics endpoint under `/api/ui`. */
+
+/** A record of counts with exactly `names` as its keys. */
+function counts<const K extends string>(names: readonly K[]) {
+  return z.object(
+    Object.fromEntries(names.map((name) => [name, z.number()])) as Record<K, z.ZodNumber>,
+  );
+}
+
+const repository = z.object({
+  id: z.string(),
+  provider: z.enum(["github", "gitlab"]),
+  fullPath: z.string(),
+});
+
+/** `AnalyticsData` on the wire: reviews, findings and jobs over the window. */
+export const analyticsDataSchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  totals: z.object({ reviews: z.number(), tokensIn: z.number(), tokensOut: z.number() }),
+  daily: z.array(
+    z.object({
+      date: z.string(),
+      reviews: z.number(),
+      tokensIn: z.number(),
+      tokensOut: z.number(),
+    }),
+  ),
+  byProfile: z.array(
+    z.object({
+      profileId: z.string().nullable(),
+      profileName: z.string().nullable(),
+      reviews: z.number(),
+      averageTokens: z.number(),
+    }),
+  ),
+  reviewsByStatus: counts(REVIEW_STATUSES),
+  findingsBySeverity: counts(FINDING_SEVERITIES),
+  dismissalsByRepository: z.array(
+    z.object({
+      repository,
+      findings: z.number(),
+      dismissed: z.number(),
+      falsePositives: z.number(),
+      dismissalRate: z.number(),
+    }),
+  ),
+  jobsByHarness: z.array(
+    z.object({
+      agent: z.object({ id: z.string(), name: z.string() }),
+      total: z.number(),
+      completed: z.number(),
+      failed: z.number(),
+    }),
+  ),
+}) satisfies z.ZodType<AnalyticsData>;
+
+/** `RalphAnalyticsData` on the wire: coding jobs, runs and stories over the window. */
+export const ralphAnalyticsDataSchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  totals: z.object({
+    runs: z.number(),
+    jobs: z.number(),
+    tokensIn: z.number(),
+    tokensOut: z.number(),
+  }),
+  daily: z.array(
+    z.object({
+      date: z.string(),
+      tokensIn: z.number(),
+      tokensOut: z.number(),
+      runs: counts(RALPH_RUN_OUTCOMES),
+      stories: counts(RALPH_STORY_OUTCOMES),
+    }),
+  ),
+  runsByOutcome: counts(RALPH_RUN_OUTCOMES),
+  storyOutcomes: counts(RALPH_STORY_OUTCOMES),
+  averageAttempts: z.number(),
+}) satisfies z.ZodType<RalphAnalyticsData>;
+
+/**
+ * `GET /api/ui/analytics?days=&repo=`: the Analytics page for the window and repository,
+ * with every repository for the filter and the filter as the server applied it (another
+ * organization's or an unknown repository is ignored).
+ */
+export const analyticsResponseSchema = z.object({
+  analytics: analyticsDataSchema,
+  ralph: ralphAnalyticsDataSchema,
+  repositories: z.array(repository),
+  params: z.object({
+    days: z.literal(ANALYTICS_RANGES),
+    repositoryId: z.string().nullable(),
+  }) satisfies z.ZodType<AnalyticsParams>,
+});
+export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;

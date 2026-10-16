@@ -169,6 +169,7 @@ const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
 const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
+const analytics = await import("./analytics/route");
 const organizationSettings = await import("./organization/route");
 const organizationInvitations = await import("./organization/invitations/route");
 const organizationInvitation = await import("./organization/invitations/[id]/route");
@@ -389,6 +390,51 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   /** IDs and names of `tenant`'s rows: none of them may show up in the other's responses. */
   const markers = (tenant: Tenant) =>
     Object.values(tenant).filter((value) => value !== tenant.adminId && value !== tenant.memberId);
+
+  // First: later tests add jobs, reviews and runs that these counts would include.
+  it("counts only each organization's own reviews, findings, jobs and runs in analytics", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const all = await call(analytics.GET);
+        expect(all).toMatchObject({
+          status: 200,
+          body: {
+            repositories: [{ id: own.repoId, fullPath: own.repoPath }],
+            analytics: {
+              totals: { reviews: 1 },
+              findingsBySeverity: { high: 1 },
+              jobsByHarness: [{ agent: { id: own.harnessId }, total: 1 }],
+            },
+            ralph: { totals: { runs: 1 } },
+            params: { days: 30, repositoryId: null },
+          },
+        });
+        const repo = await call(analytics.GET, { path: `/api/ui?days=7&repo=${own.repoId}` });
+        expect(repo).toMatchObject({
+          status: 200,
+          body: {
+            analytics: { totals: { reviews: 1 } },
+            params: { days: 7, repositoryId: own.repoId },
+          },
+        });
+        // The other's repository as the filter is ignored.
+        const theirs = await call(analytics.GET, { path: `/api/ui?repo=${other.repoId}` });
+        expect(theirs).toMatchObject({
+          status: 200,
+          body: { analytics: { totals: { reviews: 1 } }, params: { repositoryId: null } },
+        });
+        for (const { body } of [all, repo, theirs]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+      }
+    }
+    state.userId = null;
+    expect((await call(analytics.GET)).status).toBe(401);
+  });
 
   it("lists each organization's own harnesses to its members, and none of the other's", async () => {
     for (const [own, other] of [
