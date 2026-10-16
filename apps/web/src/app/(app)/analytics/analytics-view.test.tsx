@@ -13,6 +13,7 @@ import {
 } from "@/components/query-test-utils";
 import type { AnalyticsResponse } from "@/lib/api/analytics";
 import { queryKeys } from "@/lib/api/keys";
+import { ANALYTICS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { AnalyticsView } from "./analytics-view";
 
@@ -128,6 +129,17 @@ describe("AnalyticsView", () => {
     await waitFor(() => expect(metrics()).toContain("Reviews4"));
     expect(figures()!.textContent).toContain("Runs started1");
     expect(screen.queryByText("No coding tasks")).toBeNull();
+  });
+
+  it("polls every minute, not at the live pages' 3s", async () => {
+    mockFetch({ "GET /api/ui/analytics": response() });
+    const { client } = renderView();
+    await waitFor(() => expect(metrics()).toContain("Reviews3"));
+    const [query] = client
+      .getQueryCache()
+      .findAll({ queryKey: queryKeys(TEST_ORGANIZATION_ID).analytics.all });
+    expect(ANALYTICS_REFETCH_INTERVAL).toBe(60_000);
+    expect(query?.observers[0]?.options.refetchInterval).toBe(ANALYTICS_REFETCH_INTERVAL);
   });
 
   it("shows the chosen window at once and dims the old figures until the new ones arrive", async () => {

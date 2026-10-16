@@ -90,8 +90,9 @@ same rules: rime focus, the library's states in both themes, and no local colors
   appear here and how to make it happen (e.g. "Delegate a Linear epic to the Omniralph app to
   start a run").
 - **Live data.** Every page reads its data in the browser from the panel's `/api/ui` endpoints
-  and keeps it current: it refetches every 3 seconds while the tab is visible and as soon as the
-  tab is back (README, Data fetching). A page never asks for a reload to show a change.
+  and keeps it current: it refetches every 3 seconds while the tab is visible (settings every
+  30, analytics every 60) and as soon as the tab is back (README, Data fetching). A page never
+  asks for a reload to show a change.
   Pages of in-flight entities show how fresh they are in the header (`Freshness`, "Updated 3s
   ago"), which turns into a warning with a retry when refetching has failed for 30 seconds.
   Relative times tick on the browser's clock.

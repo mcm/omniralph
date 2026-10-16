@@ -49,7 +49,7 @@ record lives.
 
 - Next.js 16 app router hosting a client-rendered panel: each `page.tsx` under `(app)` renders a
   client view that reads and writes through the panel's own JSON API (`/api/ui/*` route
-  handlers) with TanStack Query, polling every 3s while the tab is visible and on focus; every
+  handlers) with TanStack Query, polling every 3s while the tab is visible (settings 30s, analytics 60s) and on focus; every
   change invalidates the views it affects. Only the signed-in layout runs on the server (the
   session gate). No server actions, and no page reads the database (README, Data fetching).
 - All UI uses `@iamthemcmaster/ui` (Precision Aurora), `@tabler/icons-react` and `sonner`. No
