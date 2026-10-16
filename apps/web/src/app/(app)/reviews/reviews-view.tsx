@@ -288,6 +288,9 @@ function useReviewListParams(): [ReviewListParams, (change: Partial<ReviewListPa
     search: string;
     params: ReviewListParams;
   } | null>(null);
+  // Once the URL moves on (the navigation landed, or Back), the choice is spent: a later
+  // return to the same URL shows that URL's filter, not the old choice.
+  if (chosen && chosen.search !== search) setChosen(null);
   const params = chosen?.search === search ? chosen.params : fromUrl;
   const setFilter = (change: Partial<ReviewListParams>) => {
     const next = { ...params, ...change, page: 1 };

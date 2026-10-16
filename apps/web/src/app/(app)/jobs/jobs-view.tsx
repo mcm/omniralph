@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMutationState } from "@tanstack/react-query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,7 @@ import {
   CardTitle,
   Empty,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -32,38 +34,32 @@ import {
 import { IconExternalLink, IconListCheck, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Freshness } from "@/components/freshness";
 import { ListPagination } from "@/components/list-pagination";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import { JOB_STATUSES, type JobList } from "@/lib/api/jobs";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { JobRow } from "@/lib/harnesses/rows";
-import { jobIdFromHash, jobListHref, jobPageHref, shortJobId } from "@/lib/jobs/list";
+import {
+  jobIdFromHash,
+  jobListHref,
+  jobPageHref,
+  parseJobListParams,
+  shortJobId,
+  type JobListParams,
+} from "@/lib/jobs/list";
 import { pageRange, totalPages } from "@/lib/pagination";
 import { JobStatusBadge } from "@/components/ralph-badges";
-import { cancelJob } from "./actions";
+import { useJobList } from "./job-queries";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
 import { triageRunHref } from "@/lib/triage/display";
-
-type JobStatus = JobRow["status"];
-
-interface JobsViewProps {
-  jobs: JobRow[];
-  /** The status filter, or null for all. */
-  status: JobStatus | null;
-  statuses: JobStatus[];
-  /** 1-based. */
-  page: number;
-  pageSize: number;
-  /** Matching jobs across all pages. */
-  total: number;
-  /** The job a `?job=<id>` link opened this page for. */
-  targetJobId: string | null;
-  /** The current year, which created times leave out. */
-  year: number;
-}
 
 export function isCancelable(job: Pick<JobRow, "status" | "cancelRequested">): boolean {
   return job.status === "queued" || (job.status === "running" && !job.cancelRequested);
@@ -77,13 +73,14 @@ function JobTableRow({
   isAdmin,
   targeted,
   year,
+  onCancel,
 }: {
   job: JobRow;
   isAdmin: boolean;
   targeted: boolean;
   year: number;
+  onCancel: (job: JobRow) => void;
 }) {
-  const { pending, run } = useAction();
   const errorId = useListErrorId(job.error);
   return (
     <>
@@ -192,7 +189,6 @@ function JobTableRow({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={pending}
                     aria-label={`Cancel job ${shortJobId(job.id)}`}
                     title="Cancel job"
                   >
@@ -210,10 +206,7 @@ function JobTableRow({
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Keep it</AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="danger"
-                      onClick={() => run(() => cancelJob(job.id), "Job canceled")}
-                    >
+                    <AlertDialogAction variant="danger" onClick={() => onCancel(job)}>
                       Cancel job
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -249,37 +242,219 @@ function useHashJobId(): string | null {
   );
 }
 
-export function JobsView({
-  jobs,
-  status,
-  statuses,
-  page,
-  pageSize,
-  total,
-  targetJobId,
-  year,
-}: JobsViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+/** Names the cancel mutation, so the rows show it before the server answers. */
+const CANCEL_JOB = ["cancel-job"];
+
+/**
+ * Cancels jobs. While a cancel is on its way, its job shows what it will become: a queued
+ * job canceled, a running one "Cancel requested" (until its harness confirms, with its next
+ * heartbeat, and the list's polling shows it canceled). The mutation stays pending until the
+ * refetched list has the server's state, so the overlay hands over without a flicker.
+ */
+function useCancelJob() {
+  const cancel = useApiMutation({
+    mutationKey: CANCEL_JOB,
+    mutationFn: (job: JobRow, { organizationId }) =>
+      api.post(`/api/ui/jobs/${job.id}/cancel`, mutationResultSchema, { organizationId }),
+    // The job (Jobs pages, its run's or triage run's page) and the harness running it.
+    invalidate: (keys) => [
+      keys.jobs.all,
+      keys.harnesses.all,
+      keys.runs.all,
+      keys.triage.all,
+      keys.reviews.all,
+    ],
+    success: "Job canceled",
+  });
+  const pending = useMutationState({
+    filters: { mutationKey: CANCEL_JOB, status: "pending" },
+    select: (mutation) => (mutation.state.variables as JobRow).id,
+  });
+  const withPending = (job: JobRow): JobRow => {
+    if (!pending.includes(job.id)) return job;
+    if (job.status === "queued") return { ...job, status: "canceled", cancelRequested: true };
+    if (job.status === "running") return { ...job, cancelRequested: true };
+    return job;
+  };
+  return { cancel: (job: JobRow) => cancel.mutate(job), withPending };
+}
+
+/**
+ * The list's filter and page from the URL, and a setter. A chosen filter shows at once,
+ * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
+ */
+function useJobListParams(): [JobListParams, (status: string | null) => void] {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const fromUrl = parseJobListParams(Object.fromEntries(searchParams));
+  // Chosen on the URL `search`: once the URL changes, it holds the choice.
+  const [chosen, setChosen] = React.useState<{ search: string; params: JobListParams } | null>(
+    null,
+  );
+  // Once the URL moves on (the navigation landed, or Back), the choice is spent: a later
+  // return to the same URL shows that URL's filter, not the old choice.
+  if (chosen && chosen.search !== search) setChosen(null);
+  const params = chosen?.search === search ? chosen.params : fromUrl;
+  const setStatus = (status: string | null) => {
+    const next = { status, page: 1, jobId: null };
+    setChosen({ search, params: next });
+    router.push(jobListHref(pathname, next), { scroll: false });
+  };
+  return [params, setStatus];
+}
+
+/** The jobs table's skeleton: rows shaped like jobs while the first page loads. */
+function JobsSkeleton() {
+  return (
+    <Table className="list-table jobs-table">
+      <TableBody>
+        {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+          <TableRow key={index}>
+            <TableCell className="jobs-col-job">
+              <Skeleton width="7rem" />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width={`${50 + ((index * 13) % 30)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width={`${45 + ((index * 17) % 35)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width="5rem" height="1.25rem" radius="full" />
+            </TableCell>
+            {Array.from({ length: 3 }, (_, column) => (
+              <TableCell key={column} className={WIDE_COLUMN}>
+                <Skeleton width={`${40 + (((index + column) * 13) % 40)}%`} />
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+const SKELETON_ROWS = 5;
+
+function JobsTable({
+  list,
+  params,
+  isAdmin,
+  targeted,
+  withPending,
+  onCancel,
+}: {
+  list: JobList;
+  params: JobListParams;
+  isAdmin: boolean;
+  targeted: string | null;
+  withPending: (job: JobRow) => JobRow;
+  onCancel: (job: JobRow) => void;
+}) {
+  const pathname = usePathname();
+  const { jobs, total } = list;
+  // Created times leave out the current year, the browser's.
+  const year = new Date().getFullYear();
+  return (
+    <>
+      {jobs.length === 0 ? (
+        <Empty
+          icon={<IconListCheck size={24} />}
+          title={
+            total > 0
+              ? "No jobs on this page"
+              : params.status
+                ? `No ${params.status} jobs`
+                : "No jobs yet"
+          }
+          titleAs="h3"
+          description={
+            total > 0
+              ? "The page is past the last one."
+              : "Jobs appear here when reviews are triggered or repositories are pinned."
+          }
+        />
+      ) : (
+        <Table className="list-table jobs-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="jobs-col-job">Job</TableHead>
+              <TableHead className={WIDE_COLUMN}>Type</TableHead>
+              <TableHead className={`${WIDE_COLUMN} jobs-col-target`}>Target</TableHead>
+              <TableHead className={WIDE_COLUMN}>Status</TableHead>
+              <TableHead className={WIDE_COLUMN} numeric aria-label="Deliveries">
+                <abbr title="Deliveries">Deliv.</abbr>
+              </TableHead>
+              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Created → finished</TableHead>
+              {isAdmin && <TableHead aria-label="Actions" />}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <JobTableRow
+                key={job.id}
+                job={withPending(job)}
+                isAdmin={isAdmin}
+                year={year}
+                targeted={job.id === targeted}
+                onCancel={onCancel}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <ListPagination
+        page={list.page}
+        pageCount={totalPages(total, list.pageSize)}
+        hrefFor={(page) => jobListHref(pathname, { status: params.status, page })}
+      />
+    </>
+  );
+}
+
+/**
+ * The Jobs page, live: the jobs for the URL's filter and page poll (`GET /api/ui/jobs`), so
+ * they move through their states as harnesses run them; a new filter or page keeps the
+ * previous results, dimmed, until its own arrive. `?job=<id>` opens the page holding that job.
+ */
+export function JobsView() {
+  const isAdmin = useCurrentUser().role === "admin";
+  const router = useRouter();
+  const [params, setStatus] = useJobListParams();
+  const list = useJobList(params);
+  const data = list.data;
   const hashJobId = useHashJobId();
-  const pageCount = totalPages(total, pageSize);
-  const { first, last } = pageRange(page, pageSize, jobs.length);
+  const { cancel, withPending } = useCancelJob();
+  const total = data?.total ?? 0;
+  const { first, last } = pageRange(
+    data?.page ?? params.page,
+    data?.pageSize ?? 1,
+    data?.jobs.length ?? 0,
+  );
+  const targetJobId = data?.targetJobId ?? null;
   const targeted = targetJobId ?? hashJobId;
 
   // A bare `/jobs#job-<id>` link (chat replies) whose job isn't on this page:
   // reload with `?job=<id>`, which opens the page that holds it.
   React.useEffect(() => {
-    if (!hashJobId || targetJobId || jobs.some((job) => job.id === hashJobId)) return;
+    if (!data || list.isPlaceholderData) return;
+    if (!hashJobId || targetJobId || data.jobs.some((job) => job.id === hashJobId)) return;
     if (new URLSearchParams(window.location.search).has("job")) return;
     router.replace(jobPageHref(hashJobId));
-  }, [hashJobId, targetJobId, jobs, router]);
+  }, [hashJobId, targetJobId, data, list.isPlaceholderData, router]);
 
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Jobs" }]} />
       <main className="detail-main">
-        <PageHeader title="Jobs" description="Queued, running and finished jobs of every type." />
+        <PageHeader
+          title="Jobs"
+          description="Queued, running and finished jobs of every type."
+          meta={<Freshness query={list} />}
+        />
 
         <Card>
           <CardHeader>
@@ -294,13 +469,11 @@ export function JobsView({
               </div>
               <NativeSelect
                 aria-label="Filter by status"
-                value={status ?? ""}
-                onChange={(e) =>
-                  router.push(jobListHref(pathname, { status: e.target.value || null, page: 1 }))
-                }
+                value={params.status && isJobStatus(params.status) ? params.status : ""}
+                onChange={(e) => setStatus(e.target.value || null)}
               >
                 <option value="">All statuses</option>
-                {statuses.map((s) => (
+                {JOB_STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {stateLabel(s)}
                   </option>
@@ -309,56 +482,27 @@ export function JobsView({
             </div>
           </CardHeader>
           <CardContent className="list-card-content">
-            {jobs.length === 0 ? (
-              <Empty
-                icon={<IconListCheck size={24} />}
-                title={
-                  total > 0 ? "No jobs on this page" : status ? `No ${status} jobs` : "No jobs yet"
-                }
-                titleAs="h3"
-                description={
-                  total > 0
-                    ? "The page is past the last one."
-                    : "Jobs appear here when reviews are triggered or repositories are pinned."
-                }
-              />
-            ) : (
-              <Table className="list-table jobs-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="jobs-col-job">Job</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Type</TableHead>
-                    <TableHead className={`${WIDE_COLUMN} jobs-col-target`}>Target</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
-                    <TableHead className={WIDE_COLUMN} numeric aria-label="Deliveries">
-                      <abbr title="Deliveries">Deliv.</abbr>
-                    </TableHead>
-                    <TableHead className={WIDE_COLUMN}>Harness</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Created → finished</TableHead>
-                    {isAdmin && <TableHead aria-label="Actions" />}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {jobs.map((job) => (
-                    <JobTableRow
-                      key={job.id}
-                      job={job}
-                      isAdmin={isAdmin}
-                      year={year}
-                      targeted={job.id === targeted}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <ListPagination
-              page={page}
-              pageCount={pageCount}
-              hrefFor={(p) => jobListHref(pathname, { status, page: p })}
-            />
+            <QueryBoundary query={list} skeleton={<JobsSkeleton />} what="jobs">
+              {(loaded) => (
+                <div className="list-pending" aria-busy={list.isPlaceholderData}>
+                  <JobsTable
+                    list={loaded}
+                    params={params}
+                    isAdmin={isAdmin}
+                    targeted={targeted}
+                    withPending={withPending}
+                    onCancel={cancel}
+                  />
+                </div>
+              )}
+            </QueryBoundary>
           </CardContent>
         </Card>
       </main>
     </>
   );
+}
+
+function isJobStatus(value: string): value is JobRow["status"] {
+  return (JOB_STATUSES as readonly string[]).includes(value);
 }

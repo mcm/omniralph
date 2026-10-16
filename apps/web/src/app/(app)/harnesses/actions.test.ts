@@ -81,7 +81,8 @@ const { addHostTool, removeHostTool } = await import("../settings/harnesses/acti
 const { harnessRow } = await import("@/lib/harnesses/rows");
 const { enqueueInstall } = await import("@/lib/harnesses/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
-const { cancelJob } = await import("../jobs/actions");
+const jobCancel = await import("@/app/api/ui/jobs/[id]/cancel/route");
+const jobList = await import("@/app/api/ui/jobs/route");
 const { POST: enroll } = await import("@/app/api/harness/enroll/route");
 const { POST: postEnrollment } = await import("@/app/api/ui/harness-enrollments/route");
 const { POST: token } = await import("@/app/api/harness/token/route");
@@ -170,6 +171,14 @@ const unpinRepository = (id: string, repositoryId: string) =>
   ui(harnessSettings.PUT, id, { method: "PUT", body: { unpin: [repositoryId] } });
 const requestHarnessUpdate = (id: string) => ui(harnessUpdate.POST, id);
 const revokeHarness = (id: string) => ui(harnessRevoke.POST, id);
+const cancelJob = (id: string) => ui(jobCancel.POST, id);
+async function listedJob(id: string) {
+  const response = await jobList.GET(new Request("http://localhost/api/ui/jobs"), {
+    params: Promise.resolve({}),
+  });
+  const { jobs } = (await response.json()) as { jobs: { id: string }[] };
+  return jobs.find((job) => job.id === id);
+}
 const deleteHarness = (id: string) => ui(harnessDetail.DELETE, id, { method: "DELETE" });
 const installInstallable = (id: string, body: { name: string; version?: string }) =>
   ui(harnessInstalls.POST, id, { body });
@@ -1413,6 +1422,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await jobRow(queued!.id)).toMatchObject({ status: "canceled" });
 
       expect(await cancelJob(running!.id)).toMatchObject({ ok: true, warning: expect.any(String) });
+      // The Jobs page shows it cancel-requested until its harness confirms.
+      expect(await listedJob(running!.id)).toMatchObject({
+        status: "running",
+        cancelRequested: true,
+      });
       const res = (await (
         await sendHeartbeat(accessToken, { ...HEARTBEAT, runningJobIds: [running!.id] })
       ).json()) as HeartbeatResponse;

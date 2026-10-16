@@ -20,7 +20,6 @@ import {
   ensureLane,
   findings,
   getActiveOrganization,
-  getJob,
   insertJob,
   insertMessage,
   organizationMembers,
@@ -104,7 +103,6 @@ vi.mock("./repositories/[id]/settings/repository-settings-view", () => ({
 vi.mock("./repositories/[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
 vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
-vi.mock("./jobs/jobs-view", () => ({ JobsView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 vi.mock("./settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 vi.mock("./settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
@@ -122,13 +120,11 @@ const { default: RepositorySettingsPage } = await import("./repositories/[id]/se
 const { default: RepositoryRulesPage } = await import("./repositories/[id]/rules/page");
 const { default: TriageRunsPage } = await import("./triage/page");
 const { default: TriageRunPage } = await import("./triage/[id]/page");
-const { default: JobsPage } = await import("./jobs/page");
 const { default: AnalyticsPage } = await import("./analytics/page");
 const { default: ProfilesPage } = await import("./settings/profiles/page");
 const { default: HarnessSettingsPage } = await import("./settings/harnesses/page");
 const { default: IntegrationsPage } = await import("./settings/integrations/page");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
-const { cancelJob } = await import("./jobs/actions");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -381,7 +377,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       repositoryRules: await RepositoryRulesPage(params(own.repoId)),
       triageRuns: await TriageRunsPage(search()),
       triageRun: await TriageRunPage(params(own.triageRunId)),
-      jobs: await JobsPage(search()),
       analytics: await AnalyticsPage(search()),
       profiles: await ProfilesPage(),
       harnessSettings: await HarnessSettingsPage(),
@@ -419,14 +414,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
       expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
       expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
-      expect(ids(pages.jobs!.props.jobs)).toHaveLength(3);
-      expect(ids(pages.jobs!.props.jobs)).toContain(own.jobId);
-      expect(pages.jobs!.props.jobs).toContainEqual(
-        expect.objectContaining({
-          id: own.triageJobId,
-          triageRun: { id: own.triageRunId, label: `${own.name.toUpperCase()}-9` },
-        }),
-      );
       expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
       expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
       expect(ids(pages.profiles!.props.profiles)).toEqual(["quick", "standard", "deep"]);
@@ -451,13 +438,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     // Another organization's repository as the filter is ignored.
     const filtered = (await AnalyticsPage(search({ repo: b.repoId }))).props;
     expect(filtered.params.repositoryId).toBeNull();
-  });
-
-  it("ignores another organization's repository in list filters", async () => {
-    state.userId = a.userId;
-    expect((await JobsPage(search({ status: "running" }))).props.jobs).toMatchObject([
-      { id: a.jobId },
-    ]);
   });
 
   it("returns 404 on another organization's resource URLs for a non-member", async () => {
@@ -522,12 +502,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
       expect(JSON.stringify((await open()).props), path).toContain(id);
     }
-  });
-
-  it("refuses to cancel another organization's job", async () => {
-    state.userId = a.userId;
-    expect(await cancelJob(b.jobId)).toEqual({ ok: false, error: "That job doesn't exist." });
-    expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
   });
 
   it("sends the dashboard to the repositories page", () => {

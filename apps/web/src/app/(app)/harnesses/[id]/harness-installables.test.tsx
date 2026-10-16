@@ -8,7 +8,6 @@ import type { InstallJobRow } from "./harness-installables";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("../../jobs/actions", () => ({}));
 
 /** Static markup inside the providers the app shell gives (the user, a query client). */
 function markup(ui: React.ReactElement): string {

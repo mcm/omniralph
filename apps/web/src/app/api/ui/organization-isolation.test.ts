@@ -16,6 +16,7 @@ import {
   findings,
   getHarnessOverview,
   getRepository,
+  getJob,
   getRun,
   harnesses,
   jobs,
@@ -113,6 +114,8 @@ const reviewDetail = await import("./reviews/[id]/route");
 const reviewRerun = await import("./reviews/[id]/rerun/route");
 const findingDismiss = await import("./findings/[id]/dismiss/route");
 const findingRestore = await import("./findings/[id]/restore/route");
+const jobList = await import("./jobs/route");
+const jobCancel = await import("./jobs/[id]/cancel/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -154,6 +157,7 @@ interface Tenant {
   storyId: string;
   reviewId: string;
   findingId: string;
+  jobId: string;
 }
 
 describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
@@ -242,6 +246,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         confidence: 0.9,
       })
       .returning();
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: org.id,
+        type: "review.run",
+        taskType: "review",
+        pool: "short",
+        status: "running",
+        harnessId,
+      })
+      .returning();
     return {
       name,
       adminId: admin!.id,
@@ -257,6 +272,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       storyId: story!.id,
       reviewId: review.id,
       findingId: finding!.id,
+      jobId: job!.id,
     };
   }
 
@@ -440,7 +456,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       (await listHarnessHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
     ).toEqual([null]);
-    expect(await db.select().from(jobs).where(eq(jobs.organizationId, b.orgId))).toEqual([]);
+    expect(
+      (await db.select().from(jobs).where(eq(jobs.organizationId, b.orgId))).map((j) => j.id),
+    ).toEqual([b.jobId]);
 
     // Its own harness still works.
     expect(
@@ -823,5 +841,45 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         next: page,
       });
     }
+  });
+
+  it("lists each organization's own jobs to its members, and none of the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const list = await call(jobList.GET);
+        expect(list.status).toBe(200);
+        expect((list.body.jobs as { id: string }[]).map((j) => j.id)).toEqual([own.jobId]);
+        const running = await call(jobList.GET, { path: "/api/ui?status=running" });
+        expect((running.body.jobs as { id: string }[]).map((j) => j.id)).toEqual([own.jobId]);
+        // A link to the other's job opens no page for it.
+        const linked = await call(jobList.GET, { path: `/api/ui?job=${other.jobId}` });
+        expect(linked).toMatchObject({ status: 200, body: { targetJobId: null } });
+        const target = await call(jobList.GET, { path: `/api/ui?job=${own.jobId}` });
+        expect(target).toMatchObject({ status: 200, body: { targetJobId: own.jobId } });
+        for (const { body } of [list, running, linked, target]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+      }
+    }
+  });
+
+  it("refuses to cancel the other organization's job, and members can't cancel jobs", async () => {
+    state.userId = a.adminId;
+    expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
+      status: 400,
+      body: { error: "That job doesn't exist." },
+    });
+    expect(
+      await call(jobCancel.POST, { method: "POST", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+    state.userId = b.memberId;
+    expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
+      status: 403,
+    });
+    expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
   });
 });
