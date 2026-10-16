@@ -10,7 +10,7 @@ import {
   HARNESS_UPDATE_STATUS_VARIANTS,
   harnessConnectionState,
 } from "@/lib/state-variants";
-import { ProviderIcon } from "../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { MonoValue } from "@/components/mono-value";
 import { stateLabel } from "@/lib/state-variants";
 

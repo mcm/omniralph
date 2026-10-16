@@ -12,10 +12,12 @@ import {
   createOrganization,
   enrollHarness,
   getHarnessOverview,
+  getRepository,
   harnesses,
   jobs,
   listHarnessHostTools,
   organizationMembers,
+  scmConnections,
   setActiveOrganization,
   upsertScmConnection,
   users,
@@ -90,6 +92,13 @@ const harnessInstallables = await import("./harnesses/[id]/installables/route");
 const harnessInstalls = await import("./harnesses/[id]/installs/route");
 const harnessHostTools = await import("./harnesses/[id]/host-tools/route");
 const pinnableRepositories = await import("./harnesses/pinnable-repositories/route");
+const repositoryList = await import("./repositories/route");
+const repositorySetup = await import("./repositories/setup/route");
+const repository = await import("./repositories/[id]/route");
+const repositoryWebhook = await import("./repositories/[id]/webhook/route");
+const gitlabConnections = await import("./gitlab-connections/route");
+const scmConnection = await import("./scm-connections/[id]/route");
+const selectable = await import("./scm-connections/[id]/repositories/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -123,6 +132,7 @@ interface Tenant {
   orgId: string;
   harnessId: string;
   enrollmentId: string;
+  connectionId: string;
   repoId: string;
   repoPath: string;
   hostToolId: string;
@@ -180,6 +190,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       orgId: org.id,
       harnessId,
       enrollmentId: created.id,
+      connectionId: connection.id,
       repoId: repo.id,
       repoPath,
       hostToolId: tool.hostTool.id,
@@ -424,6 +435,141 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ).searchParams.get("token");
     expect(await readEnterOrganizationToken(elsewhereToken, user!.id)).toMatchObject({
       next: `/harnesses/${b.harnessId}`,
+    });
+  });
+  it("lists each organization's own repositories, and its connections to its admins only", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const { status, body } = await call(repositoryList.GET);
+        expect(status).toBe(200);
+        expect((body.repositories as { id: string }[]).map((r) => r.id)).toEqual([own.repoId]);
+        expect((body.connections as { id: string }[]).map((c) => c.id)).toEqual(
+          userId === own.adminId ? [own.connectionId] : [],
+        );
+        for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+      }
+      // The Connect buttons' setup is for admins.
+      state.userId = own.memberId;
+      expect(await call(repositorySetup.GET)).toMatchObject({ status: 403 });
+    }
+  });
+
+  it("shows each organization's own connections to its admins, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      state.userId = own.adminId;
+      const open = (id: string, provider = "github") =>
+        call(scmConnection.GET, { params: { id }, path: `/api/ui?provider=${provider}` });
+      expect(await open(own.connectionId)).toMatchObject({
+        status: 200,
+        body: { id: own.connectionId, provider: "github", name: own.name },
+      });
+      // The other code host's picker doesn't find it.
+      expect(await open(own.connectionId, "gitlab")).toMatchObject({ status: 404 });
+      expect(await open(other.connectionId)).toMatchObject({ status: 404 });
+      expect(await open("not-a-uuid")).toMatchObject({ status: 404 });
+      // The picker's list never asks the code host for another organization's connection.
+      expect(
+        await call(selectable.GET, {
+          params: { id: other.connectionId },
+          path: "/api/ui?provider=github",
+        }),
+      ).toMatchObject({ status: 404 });
+
+      state.userId = own.memberId;
+      expect(await open(own.connectionId)).toMatchObject({ status: 403 });
+      expect(
+        await call(selectable.GET, {
+          params: { id: own.connectionId },
+          path: "/api/ui?provider=github",
+        }),
+      ).toMatchObject({ status: 403 });
+    }
+  });
+
+  it("refuses every repository and connection change on the other organization's rows", async () => {
+    state.userId = a.adminId;
+    const refused = [
+      await call(repository.DELETE, { method: "DELETE", params: { id: b.repoId } }),
+      await call(repositoryWebhook.POST, { method: "POST", params: { id: b.repoId } }),
+      await call(scmConnection.DELETE, { method: "DELETE", params: { id: b.connectionId } }),
+      await call(selectable.PUT, {
+        method: "PUT",
+        params: { id: b.connectionId },
+        body: { provider: "github", selectedIds: [500] },
+      }),
+    ];
+    for (const response of refused) expect(response.status).toBe(400);
+    expect(await getRepository(db, b.repoId)).toMatchObject({
+      disconnectedAt: null,
+      enabled: null,
+    });
+    expect(
+      await db.select().from(scmConnections).where(eq(scmConnections.id, b.connectionId)),
+    ).toHaveLength(1);
+    expect(
+      await call(repository.DELETE, { method: "DELETE", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+
+    // Members change nothing, in their own organization either.
+    state.userId = a.memberId;
+    for (const response of [
+      await call(repository.DELETE, { method: "DELETE", params: { id: a.repoId } }),
+      await call(repositoryWebhook.POST, { method: "POST", params: { id: a.repoId } }),
+      await call(scmConnection.DELETE, { method: "DELETE", params: { id: a.connectionId } }),
+      await call(selectable.PUT, {
+        method: "PUT",
+        params: { id: a.connectionId },
+        body: { provider: "github", selectedIds: [] },
+      }),
+      await call(gitlabConnections.POST, {
+        body: { baseUrl: "https://gitlab.example.com", token: "glpat-x" },
+      }),
+    ]) {
+      expect(response.status).toBe(403);
+    }
+    expect(await getRepository(db, a.repoId)).toMatchObject({ disconnectedAt: null });
+
+    // An admin's own disconnect works, and the other organization still has its repository.
+    state.userId = a.adminId;
+    expect(
+      await call(repository.DELETE, { method: "DELETE", params: { id: a.repoId } }),
+    ).toMatchObject({ status: 200, body: { ok: true } });
+    state.userId = b.memberId;
+    expect(
+      ((await call(repositoryList.GET)).body.repositories as { id: string }[]).map((r) => r.id),
+    ).toEqual([b.repoId]);
+  });
+
+  it("sends a member of both organizations to switch to the connection's organization", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-connections-admin", email: "both-connections@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "admin" },
+      { organizationId: b.orgId, userId: user!.id, role: "admin" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+
+    const picker = `/repositories/github/${b.connectionId}`;
+    const { status, body } = await call(scmConnection.GET, {
+      params: { id: b.connectionId },
+      path: `/api/ui?${new URLSearchParams({ provider: "github", next: picker })}`,
+    });
+    expect(status).toBe(409);
+    expect(body).toMatchObject({ code: "enter_organization" });
+    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
+    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
+      organizationId: b.orgId,
+      next: picker,
     });
   });
 });

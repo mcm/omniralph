@@ -4,21 +4,7 @@ import { InlineCode } from "@iamthemcmaster/ui";
 import { IconBrandGitlab } from "@tabler/icons-react";
 import { EnvDocsLink } from "@/components/env-docs-link";
 import type { ListingFailure } from "@/lib/scm/listing-error";
-import { saveGitLabProjects } from "../../actions";
-import { RepoSelectionView, type SelectableRepoRow } from "../../repo-selection-view";
-
-export type GitLabProjectRow = SelectableRepoRow;
-
-interface GitLabProjectsViewProps {
-  connectionId: string;
-  /** Connection name, `<bot user> @ <host>`. */
-  name: string;
-  /** `null` while the projects are loading. */
-  projects: GitLabProjectRow[] | null;
-  /** Whether the list was cut off at the most projects listed. */
-  truncated: boolean;
-  error: string | null;
-}
+import { RepoSelectionView } from "../../repo-selection-view";
 
 function describeGitLabError(failure: ListingFailure) {
   switch (failure.kind) {
@@ -54,33 +40,25 @@ function describeGitLabError(failure: ListingFailure) {
   }
 }
 
-export function GitLabProjectsView({
-  connectionId,
-  name,
-  projects,
-  truncated,
-  error,
-}: GitLabProjectsViewProps) {
+/** Picks the projects of a GitLab connection (the route's `connectionId`) that are reviewed. */
+export function GitLabProjectsView() {
   return (
     <RepoSelectionView
-      breadcrumb={`GitLab · ${name}`}
-      title={name}
+      provider="gitlab"
+      breadcrumb={(name) => `GitLab · ${name}`}
       intro="Pick the projects of this GitLab connection that Omniralph reviews. Selecting a project adds a webhook for merge request, comment and pipeline events to it."
-      listedDescription={
+      listedDescription={(listing) => (
         <>
           Projects where the bot token&apos;s user has the Maintainer role (or Owner) are listed;
           archived projects aren&apos;t. To add a project, make the bot a Maintainer of it on
           GitLab.
-          {truncated && projects && ` Only the first ${projects.length} projects are shown.`}
+          {listing?.truncated && ` Only the first ${listing.repos.length} projects are shown.`}
         </>
-      }
+      )}
       emptyIcon={<IconBrandGitlab size={24} />}
       emptyDescription="The bot token's user isn't a Maintainer of any project."
       describeError={describeGitLabError}
-      repos={projects}
-      error={error}
-      save={(selectedIds) => saveGitLabProjects(connectionId, selectedIds)}
-      savedMessage={`Saved projects for ${name}`}
+      savedMessage={(name) => `Saved projects for ${name}`}
     />
   );
 }

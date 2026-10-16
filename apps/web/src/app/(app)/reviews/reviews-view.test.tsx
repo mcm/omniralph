@@ -10,14 +10,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("./actions", () => ({ rerunReview: vi.fn() }));
-// `ProviderIcon`'s module imports the Repositories page's server actions.
-vi.mock("../repositories/actions", () => ({
-  connectGitLab: vi.fn(),
-  disconnectRepository: vi.fn(),
-  removeScmConnection: vi.fn(),
-  setRepositoryEnabled: vi.fn(),
-  recreateGitLabWebhook: vi.fn(),
-}));
 
 const ERROR = "The harness lost its session (exit code 137) while cloning the repository.";
 

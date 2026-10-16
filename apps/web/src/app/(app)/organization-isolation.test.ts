@@ -96,24 +96,12 @@ vi.mock("@/lib/scm/github-app", () => ({
   getGitHubInstallUrl: async () => null,
   GITHUB_INSTALL_PATH: "/repositories/github/install",
 }));
-// The installation's repositories as GitHub lists them (not tenant data).
-vi.mock("@omniralph/scm", async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  getInstallation: async () => ({ account: "github-account", htmlUrl: null }),
-  listInstallationRepos: async () => [
-    { id: 500, fullPath: "github/app", private: true, htmlUrl: "https://github.com/github/app" },
-  ],
-}));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-vi.mock("./repositories/repositories-view", () => ({ RepositoriesView: () => null }));
 vi.mock("./repositories/[id]/settings/repository-settings-view", () => ({
   RepositorySettingsView: () => null,
 }));
 vi.mock("./repositories/[id]/rules/rules-view", () => ({ RulesView: () => null }));
-vi.mock("./repositories/github/[connectionId]/github-repos-view", () => ({
-  GitHubReposView: () => null,
-}));
 vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("./coding/ralph-runs-view", () => ({ RalphRunsView: () => null }));
@@ -134,12 +122,9 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const { GET: enterOrganization } = await import("../api/organizations/enter/route");
 const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
-const { default: RepositoriesPage } = await import("./repositories/page");
 const { default: RepositorySettingsPage } = await import("./repositories/[id]/settings/page");
 const { default: RepositoryRulesPage } = await import("./repositories/[id]/rules/page");
 const { default: RepositoryReviewsPage } = await import("./repositories/[id]/reviews/page");
-const { default: GitHubInstallationPage } =
-  await import("./repositories/github/[connectionId]/page");
 const { default: ReviewsPage } = await import("./reviews/page");
 const { default: ReviewPage } = await import("./reviews/[id]/page");
 const { default: RalphRunsPage } = await import("./coding/page");
@@ -396,26 +381,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     await testDb?.stop();
   });
 
-  /** The content a page streams in behind its Suspense boundary. */
-  async function streamed(page: JSX.Element): Promise<JSX.Element> {
-    const child = page.props.children as JSX.Element;
-    return (child.type as (props: unknown) => Promise<JSX.Element>)(child.props);
-  }
-
   /** What a member of `own` gets from every list and detail loader, by page. */
   async function loadEveryPage(own: Tenant): Promise<Record<string, JSX.Element>> {
     state.userId = own.userId;
     const pages: Record<string, JSX.Element> = {
       layout: await AppLayout({ children: null }),
-      repositories: await RepositoriesPage(search()),
       repositorySettings: await RepositorySettingsPage(params(own.repoId)),
       repositoryRules: await RepositoryRulesPage(params(own.repoId)),
       repositoryReviews: await RepositoryReviewsPage({ ...params(own.repoId), ...search() }),
-      githubInstallation: await streamed(
-        await GitHubInstallationPage({
-          params: Promise.resolve({ connectionId: own.connectionId }),
-        }),
-      ),
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
       ralphRuns: await RalphRunsPage(search()),
@@ -454,13 +427,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       // Every loader found the organization's own rows (the check above isn't vacuous).
       const ids = <T extends { id: string }>(rows: T[]) => rows.map((row) => row.id);
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
-      expect(ids(pages.repositories!.props.repositories)).toEqual([own.repoId]);
       expect(pages.repositorySettings!.props.repository.id).toBe(own.repoId);
       expect(ids(pages.repositorySettings!.props.harnesses)).toEqual([own.harnessId]);
       expect(ids(pages.repositoryRules!.props.rules)).toEqual([own.ruleId]);
       expect(ids(pages.repositoryReviews!.props.reviews)).toEqual([own.reviewId]);
-      expect(pages.githubInstallation!.props.connectionId).toBe(own.connectionId);
-      expect(pages.githubInstallation!.props.repos).toMatchObject([{ id: 500, enabled: true }]);
       expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.review!.props.review.id).toBe(own.reviewId);
       expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
@@ -523,9 +493,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     await expect(RepositoryReviewsPage({ ...params(b.repoId), ...search() })).rejects.toMatchObject(
       notFound,
     );
-    await expect(
-      GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
-    ).rejects.toMatchObject(notFound);
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
@@ -576,11 +543,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
         `/repositories/${b.repoId}/reviews?status=queued`,
         () => RepositoryReviewsPage({ ...params(b.repoId), ...search({ status: "queued" }) }),
         b.repoId,
-      ],
-      [
-        `/repositories/github/${b.connectionId}`,
-        () => GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
-        b.connectionId,
       ],
     ];
     for (const [path, open, id] of resources) {

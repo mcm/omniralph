@@ -6,6 +6,7 @@ import type { QueryKey } from "@tanstack/react-query";
  */
 export const QUERY_AREAS = [
   "analytics",
+  "connections",
   "harnesses",
   "jobs",
   "organization",

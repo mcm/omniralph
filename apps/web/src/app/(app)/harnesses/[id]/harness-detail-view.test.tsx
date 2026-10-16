@@ -26,8 +26,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/harnesses/6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f",
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-// Imported through `ProviderIcon` (repositories-view); a server action module.
-vi.mock("../../repositories/actions", () => ({}));
 
 function harness(overrides: Partial<HarnessRow> = {}): HarnessRow {
   return {

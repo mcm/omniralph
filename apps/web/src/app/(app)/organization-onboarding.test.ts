@@ -80,7 +80,6 @@ vi.mock("@/lib/scm/github-app", () => ({
   GITHUB_INSTALL_PATH: "/repositories/github/install",
 }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./repositories/repositories-view", () => ({ RepositoriesView: () => null }));
 vi.mock("./settings/organization/organization-settings-view", () => ({
   OrganizationSettingsView: () => null,
 }));
@@ -91,7 +90,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const { acceptInvitationAction, createOrganizationAction, switchOrganization } =
   await import("@/lib/organizations/actions");
 const { inviteMember, changeMemberRole } = await import("./settings/organization/actions");
-const { default: RepositoriesPage } = await import("./repositories/page");
+const { GET: listRepositories } = await import("@/app/api/ui/repositories/route");
 const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
 const { default: OrganizationSettingsPage } = await import("./settings/organization/page");
 const { default: OnboardingPage } = await import("../(auth)/onboarding/page");
@@ -184,7 +183,11 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     expect(await hasPendingInvitation(db, teammateEmail)).toBe(false);
 
     // The teammate sees the organization's repositories, harnesses and members.
-    const repositories = props(await RepositoriesPage({ searchParams: Promise.resolve({}) }));
+    const repositories = await (
+      await listRepositories(new Request("http://localhost/api/ui/repositories"), {
+        params: Promise.resolve({}),
+      })
+    ).text();
     expect(repositories).toContain(repo.id);
     expect(repositories).toContain("journey/shared-app");
     const listed = await listHarnesses(new Request("http://localhost/api/ui/harnesses"), {

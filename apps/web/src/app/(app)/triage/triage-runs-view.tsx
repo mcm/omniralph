@@ -41,7 +41,7 @@ import {
   type TriageRunListParams,
   type TriageRunRow,
 } from "@/lib/triage/display";
-import { ProviderIcon } from "../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { AgentName } from "../coding/ralph-runs-view";
 
 interface TriageRunsViewProps {

@@ -70,37 +70,24 @@ vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 // No Linear workspace is connected.
 vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./repositories-view", () => ({ RepositoriesView: () => null }));
 vi.mock("./[id]/settings/repository-settings-view", () => ({
   RepositorySettingsView: () => null,
 }));
 vi.mock("./[id]/rules/rules-view", () => ({ RulesView: () => null }));
-vi.mock("./github/[connectionId]/github-repos-view", () => ({ GitHubReposView: () => null }));
-vi.mock("./gitlab/[connectionId]/gitlab-projects-view", () => ({
-  GitLabProjectsView: () => null,
-}));
 vi.mock("../reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("../reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
 vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
-vi.mock("@/lib/scm/github-app", () => ({
-  getGitHubInstallUrl: async () => null,
-  GITHUB_INSTALL_PATH: "/repositories/github/install",
-}));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { default: RepositoriesPage } = await import("./page");
 const { default: RepositorySettingsPage } = await import("./[id]/settings/page");
 const { default: RepositoryCodingPage } = await import("./[id]/coding/page");
 const { default: RepositoryHarnessesPage } = await import("./[id]/harnesses/page");
 const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
 const { default: RepositoryReviewsPage } = await import("./[id]/reviews/page");
-const { default: GitHubInstallationPage } = await import("./github/[connectionId]/page");
-const { default: GitLabConnectionPage } = await import("./gitlab/[connectionId]/page");
 const { default: ReviewsPage } = await import("../reviews/page");
 const { default: ReviewPage } = await import("../reviews/[id]/page");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
-const { setRepositoryEnabled, disconnectRepository } = await import("./actions");
 const { updateRalphSettings, updateRepositorySettings, updateRepositoryTaskTypes } =
   await import("./[id]/settings/actions");
 const { addCustomRule, deleteRule, editRule, setRuleEnabled } =
@@ -209,8 +196,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
   it("lists only the active organization's repositories, reviews and profiles", async () => {
     state.userId = a.userId;
-    const repos = (await RepositoriesPage(noSearch)).props.repositories as { id: string }[];
-    expect(repos.map((r) => r.id)).toEqual([a.repoId]);
     const reviews = (await ReviewsPage(noSearch)).props.reviews as { id: string }[];
     expect(reviews.map((r) => r.id)).toEqual([a.reviewId]);
     const profiles = (await ProfilesPage()).props.profiles as { id: string }[];
@@ -301,7 +286,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((await RepositoryCodingPage(params(a.repoId))).props.tab).toBe("coding");
   });
 
-  it("returns 404 for another organization's repository, review and installation pages", async () => {
+  it("returns 404 for another organization's repository and review pages", async () => {
     state.userId = a.userId;
     await expect(RepositorySettingsPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(RepositoryCodingPage(params(b.repoId))).rejects.toMatchObject(notFound);
@@ -311,23 +296,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       notFound,
     );
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
-    await expect(
-      GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
-    ).rejects.toMatchObject(notFound);
-    await expect(
-      GitLabConnectionPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
-    ).rejects.toMatchObject(notFound);
   });
 
   it("refuses actions on another organization's repositories, rules, findings and reviews", async () => {
     state.userId = a.userId;
     const refused = { ok: false, error: expect.any(String) };
-    expect(await setRepositoryEnabled(b.repoId, false)).toEqual(refused);
-    expect(await setRepositoryEnabled(b.repoId, null)).toEqual(refused);
     expect(
       await updateRepositoryTaskTypes(b.repoId, { query: false, review: false, coding: false }),
     ).toEqual(refused);
-    expect(await disconnectRepository(b.repoId)).toEqual(refused);
     expect(
       await updateRepositorySettings(b.repoId, {
         profileId: "deep",

@@ -9,7 +9,6 @@ import { HarnessSettingsSection } from "./harness-detail-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("../../jobs/actions", () => ({}));
-vi.mock("../../repositories/actions", () => ({}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 const harness = {

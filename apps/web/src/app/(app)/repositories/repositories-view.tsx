@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -41,6 +41,7 @@ import {
   InlineCode,
   Input,
   Muted,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -62,100 +63,98 @@ import {
   IconTrash,
   IconUnlink,
 } from "@tabler/icons-react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { EnvDocsLink } from "@/components/env-docs-link";
+import { Freshness } from "@/components/freshness";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListPagination } from "@/components/list-pagination";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
-import { pageRange, totalPages } from "@/lib/pagination";
-import { connectGitLab, disconnectRepository, removeScmConnection } from "./actions";
-import { ConnectionHealth, type ConnectionHealthRow } from "./connection-health";
+import { ProviderIcon } from "@/components/provider-icon";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useQueryKeys } from "@/components/query-provider";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import {
+  connectedGitLabSchema,
+  repositoryListSchema,
+  repositorySetupSchema,
+  type ConnectionRow,
+  type RepositoryList,
+  type RepositoryRow,
+} from "@/lib/api/repositories";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { pageRange, parsePage, totalPages } from "@/lib/pagination";
+import { ConnectionHealth } from "./connection-health";
 
-export interface RepositoryRow {
-  id: string;
-  provider: "github" | "gitlab";
-  fullPath: string;
-  webUrl: string;
-  /** Query, Reviews and Coding: effective (on/off) and whether that's the organization's default. */
-  taskTypes: Record<"query" | "review" | "coding", { on: boolean; inherited: boolean }>;
-  profileName: string;
-  pinnedHarnesses: { id: string; name: string }[];
-  /** ISO timestamp. */
-  lastReviewAt: string | null;
-}
-
-export interface ConnectionRow {
-  id: string;
-  provider: "github" | "gitlab";
-  name: string;
-  /** GitLab: the last daily check, or null before the first one. */
-  health: ConnectionHealthRow | null;
-}
+export type { ConnectionRow, RepositoryRow };
 
 export type GitHubNotice =
   "requested" | "invalid" | "invalid_state" | "other_organization" | "error";
 
-interface RepositoriesViewProps {
-  /** The current page of connected repositories. */
-  repositories: RepositoryRow[];
-  /** 1-based. */
-  page: number;
-  pageSize: number;
-  /** Connected repositories across all pages. */
-  total: number;
-  /** Admins only: the organization's GitHub App installations and GitLab connections. */
-  connections: ConnectionRow[];
-  /** Admins only: the app's installation page, or null when the app isn't configured. */
-  githubInstallUrl: string | null;
-  defaultGitLabUrl: string;
-  githubNotice: GitHubNotice | null;
+/** A page of the organization's repositories (and, for admins, its connections), live. */
+export function useRepositoryList(page: number) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery({
+    queryKey: keys.repositories.list({ page }),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/repositories", repositoryListSchema, {
+        params: { page: page > 1 ? page : undefined },
+        organizationId: organization.id,
+        signal,
+      }),
+    // The previous page stays (dimmed) while the next one loads.
+    placeholderData: keepPreviousData,
+  });
 }
 
-export function ProviderIcon({
-  provider,
-  size = 16,
-}: {
-  provider: "github" | "gitlab";
-  size?: number;
-}) {
-  const Icon = provider === "github" ? IconBrandGithub : IconBrandGitlab;
-  return (
-    <Icon
-      size={size}
-      aria-label={provider === "github" ? "GitHub" : "GitLab"}
-      className="shrink-0 text-text-secondary"
-    />
-  );
+/** What the Connect buttons need (admins). It may ask GitHub for the app's slug: loaded once. */
+function useRepositorySetup(enabled: boolean) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery({
+    queryKey: [...keys.connections.all, "setup"],
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/repositories/setup", repositorySetupSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+    enabled,
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+  });
 }
 
 // ── Connect GitLab ───────────────────────────────────────────────────────────
 
 function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
   const router = useRouter();
-  const { pending, run } = useAction();
   const [open, setOpen] = React.useState(false);
   const [baseUrl, setBaseUrl] = React.useState(defaultUrl);
   const [token, setToken] = React.useState("");
+  const connect = useApiMutation({
+    mutationFn: (form: { baseUrl: string; token: string }, { organizationId }) =>
+      api.post("/api/ui/gitlab-connections", connectedGitLabSchema, {
+        body: form,
+        organizationId,
+      }),
+    invalidate: (keys) => [keys.repositories.lists, keys.connections.all],
+    success: "GitLab connected. Pick its projects.",
+    onSuccess: ({ connectionId }) => {
+      setOpen(false);
+      setToken("");
+      router.push(`/repositories/gitlab/${connectionId}`);
+    },
+  });
+  const pending = connect.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    let connectionId: string | undefined;
-    run(
-      async () => {
-        const result = await connectGitLab({ baseUrl, token });
-        connectionId = result.ok ? result.connectionId : undefined;
-        return result;
-      },
-      "GitLab connected. Pick its projects.",
-      () => {
-        setOpen(false);
-        setToken("");
-        if (connectionId) router.push(`/repositories/gitlab/${connectionId}`);
-      },
-    );
+    connect.mutate({ baseUrl, token });
   };
 
   return (
@@ -225,7 +224,14 @@ function ConnectGitLabDialog({ defaultUrl }: { defaultUrl: string }) {
 // ── Repository row ───────────────────────────────────────────────────────────
 
 function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: boolean }) {
-  const { pending, run } = useAction();
+  const disconnect = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(`/api/ui/repositories/${repo.id}`, mutationResultSchema, { organizationId }),
+    // Its pins go too: the harness pages list them.
+    invalidate: (keys) => [keys.repositories.all, keys.harnesses.all],
+    success: `Disconnected ${repo.fullPath}`,
+  });
+  const pending = disconnect.isPending;
   const host = repo.provider === "github" ? "GitHub" : "GitLab";
   const [confirming, setConfirming] = React.useState(false);
   return (
@@ -291,12 +297,7 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="danger"
-                onClick={() =>
-                  run(() => disconnectRepository(repo.id), `Disconnected ${repo.fullPath}`)
-                }
-              >
+              <AlertDialogAction variant="danger" onClick={() => disconnect.mutate()}>
                 Disconnect
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -393,7 +394,16 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
 // ── Connection row ───────────────────────────────────────────────────────────
 
 function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; isAdmin: boolean }) {
-  const { pending, run } = useAction();
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(`/api/ui/scm-connections/${connection.id}`, mutationResultSchema, {
+        organizationId,
+      }),
+    // Its repositories go with it, and their reviews and pins.
+    invalidate: (keys) => [keys.all],
+    success: `Removed ${connection.name}`,
+  });
+  const pending = remove.isPending;
   const kind = connection.provider === "github" ? "GitHub installation" : "GitLab connection";
   return (
     <Stack gap={2} className="repo-panel">
@@ -433,12 +443,7 @@ function ConnectionItem({ connection, isAdmin }: { connection: ConnectionRow; is
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="danger"
-                onClick={() =>
-                  run(() => removeScmConnection(connection.id), `Removed ${connection.name}`)
-                }
-              >
+              <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
                 Remove
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -493,19 +498,171 @@ const githubNotices: Record<
   },
 };
 
-export function RepositoriesView({
-  repositories,
-  page,
-  pageSize,
-  total,
-  connections,
-  githubInstallUrl,
-  defaultGitLabUrl,
-  githubNotice,
-}: RepositoriesViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+const GITHUB_NOTICES = new Set<string>(Object.keys(githubNotices));
+
+const SKELETON_ROWS = 4;
+
+/** The repositories table while it first loads: a name, its task types and the wide columns. */
+function RepositoriesSkeleton() {
+  return (
+    <Table className="list-table">
+      <TableBody>
+        {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+          <TableRow key={index}>
+            <TableCell className="list-col-main">
+              <Skeleton width={`${45 + ((index * 17) % 35)}%`} />
+            </TableCell>
+            <TableCell>
+              <Skeleton width="9rem" height="1.25rem" radius="full" />
+            </TableCell>
+            {Array.from({ length: 3 }, (_, column) => (
+              <TableCell key={column} className={WIDE_COLUMN}>
+                <Skeleton width={`${40 + (((index + column) * 13) % 40)}%`} />
+              </TableCell>
+            ))}
+            <TableCell />
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function RepositoriesTable({
+  list,
+  isAdmin,
+  loadingPage,
+}: {
+  list: RepositoryList;
+  isAdmin: boolean;
+  /** Another page is loading: this one stays, dimmed. */
+  loadingPage: boolean;
+}) {
+  const { repositories, page, pageSize, total } = list;
   const pageCount = totalPages(total, pageSize);
-  const { first, last } = pageRange(page, pageSize, repositories.length);
+  return (
+    <div className="list-pending" aria-busy={loadingPage}>
+      {repositories.length === 0 && total > 0 ? (
+        <Empty
+          icon={<IconGitPullRequest size={24} />}
+          title="No repositories on this page"
+          description="The page is past the last one."
+        />
+      ) : repositories.length === 0 ? (
+        <Empty
+          icon={<IconGitPullRequest size={24} />}
+          title="No repositories yet"
+          description={
+            isAdmin
+              ? "Connect GitHub or GitLab to start reviewing pull and merge requests."
+              : "An admin hasn't connected any repositories yet."
+          }
+        />
+      ) : (
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Repository</TableHead>
+              <TableHead>Task types</TableHead>
+              <TableHead className={WIDE_COLUMN}>Profile</TableHead>
+              <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
+              <TableHead className={WIDE_COLUMN}>Last review</TableHead>
+              <TableHead aria-label="Actions" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {repositories.map((repo) => (
+              <RepositoryTableRow key={repo.id} repo={repo} isAdmin={isAdmin} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <ListPagination page={page} pageCount={pageCount} hrefFor={repositoriesHref} />
+    </div>
+  );
+}
+
+function GitHubNotConfigured() {
+  return (
+    <Alert variant="info">
+      <AlertTitle as="h2">GitHub App not configured</AlertTitle>
+      <AlertDescription>
+        To connect GitHub repositories, set these on the server (see <EnvDocsLink />
+        ):
+        <ul className="env-var-list">
+          <li>
+            <InlineCode>GITHUB_APP_ID</InlineCode>
+          </li>
+          <li>
+            a signing key: <InlineCode>GITHUB_APP_KMS_ISSUER_ID</InlineCode> or{" "}
+            <InlineCode>GITHUB_APP_PRIVATE_KEY</InlineCode>
+          </li>
+          <li>
+            <InlineCode>GITHUB_APP_SLUG</InlineCode> (optional)
+          </li>
+        </ul>
+        The app&apos;s Setup URL must be <InlineCode>/repositories/github/callback</InlineCode> on
+        this control panel.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function ConnectActions({
+  githubInstallPath,
+  defaultGitLabUrl,
+}: {
+  /** `undefined` while it loads. */
+  githubInstallPath: string | null | undefined;
+  defaultGitLabUrl: string | undefined;
+}) {
+  return (
+    <>
+      {githubInstallPath ? (
+        <Button asChild variant="secondary">
+          <a href={githubInstallPath}>
+            <IconBrandGithub size={14} />
+            Connect GitHub
+          </a>
+        </Button>
+      ) : (
+        <Button
+          variant="secondary"
+          disabled
+          title={githubInstallPath === null ? "The GitHub App isn't configured" : undefined}
+        >
+          <IconBrandGithub size={14} />
+          Connect GitHub
+        </Button>
+      )}
+      {defaultGitLabUrl === undefined ? (
+        <Button variant="secondary" disabled>
+          <IconBrandGitlab size={14} />
+          Connect GitLab
+        </Button>
+      ) : (
+        <ConnectGitLabDialog defaultUrl={defaultGitLabUrl} />
+      )}
+    </>
+  );
+}
+
+/** The Repositories page: connected repositories (live, paginated in the URL) and, for admins, the code-host connections. */
+export function RepositoriesView() {
+  const isAdmin = useCurrentUser().role === "admin";
+  const searchParams = useSearchParams();
+  const page = parsePage(searchParams.get("page") ?? undefined);
+  const notice = searchParams.get("github");
+  const githubNotice = notice && GITHUB_NOTICES.has(notice) ? (notice as GitHubNotice) : null;
+  const list = useRepositoryList(page);
+  const setup = useRepositorySetup(isAdmin);
+  const data = list.data;
+  const { first, last } = pageRange(
+    data?.page ?? page,
+    data?.pageSize ?? 1,
+    data?.repositories.length ?? 0,
+  );
+  const githubInstallPath = setup.data?.githubInstallPath;
 
   return (
     <>
@@ -514,24 +671,13 @@ export function RepositoriesView({
         <PageHeader
           title="Repositories"
           description="Pull and merge requests in repositories with reviews on are reviewed automatically when they're opened or pushed to. Set each repository's task types in its settings."
+          meta={<Freshness query={list} />}
           actions={
             isAdmin && (
-              <>
-                {githubInstallUrl ? (
-                  <Button asChild variant="secondary">
-                    <a href={githubInstallUrl}>
-                      <IconBrandGithub size={14} />
-                      Connect GitHub
-                    </a>
-                  </Button>
-                ) : (
-                  <Button variant="secondary" disabled title="The GitHub App isn't configured">
-                    <IconBrandGithub size={14} />
-                    Connect GitHub
-                  </Button>
-                )}
-                <ConnectGitLabDialog defaultUrl={defaultGitLabUrl} />
-              </>
+              <ConnectActions
+                githubInstallPath={githubInstallPath}
+                defaultGitLabUrl={setup.data?.defaultGitLabUrl}
+              />
             )
           }
         />
@@ -542,29 +688,7 @@ export function RepositoriesView({
             <AlertDescription>{githubNotices[githubNotice].description}</AlertDescription>
           </Alert>
         )}
-        {isAdmin && !githubInstallUrl && (
-          <Alert variant="info">
-            <AlertTitle as="h2">GitHub App not configured</AlertTitle>
-            <AlertDescription>
-              To connect GitHub repositories, set these on the server (see <EnvDocsLink />
-              ):
-              <ul className="env-var-list">
-                <li>
-                  <InlineCode>GITHUB_APP_ID</InlineCode>
-                </li>
-                <li>
-                  a signing key: <InlineCode>GITHUB_APP_KMS_ISSUER_ID</InlineCode> or{" "}
-                  <InlineCode>GITHUB_APP_PRIVATE_KEY</InlineCode>
-                </li>
-                <li>
-                  <InlineCode>GITHUB_APP_SLUG</InlineCode> (optional)
-                </li>
-              </ul>
-              The app&apos;s Setup URL must be{" "}
-              <InlineCode>/repositories/github/callback</InlineCode> on this control panel.
-            </AlertDescription>
-          </Alert>
-        )}
+        {isAdmin && githubInstallPath === null && <GitHubNotConfigured />}
 
         <Card>
           <CardHeader>
@@ -573,52 +697,26 @@ export function RepositoriesView({
               {isAdmin
                 ? "Turn reviews on or off per repository. Disconnecting keeps a repository's review history."
                 : "Repositories connected by an admin. Only admins can change them."}
-              {repositories.length > 0 &&
-                total > pageSize &&
-                ` Showing ${first}–${last} of ${total.toLocaleString()}.`}
+              {data &&
+                data.repositories.length > 0 &&
+                data.total > data.pageSize &&
+                ` Showing ${first}–${last} of ${data.total.toLocaleString()}.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {repositories.length === 0 && total > 0 ? (
-              <Empty
-                icon={<IconGitPullRequest size={24} />}
-                title="No repositories on this page"
-                description="The page is past the last one."
-              />
-            ) : repositories.length === 0 ? (
-              <Empty
-                icon={<IconGitPullRequest size={24} />}
-                title="No repositories yet"
-                description={
-                  isAdmin
-                    ? "Connect GitHub or GitLab to start reviewing pull and merge requests."
-                    : "An admin hasn't connected any repositories yet."
-                }
-              />
-            ) : (
-              <Table className="list-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Repository</TableHead>
-                    <TableHead>Task types</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Profile</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Last review</TableHead>
-                    <TableHead aria-label="Actions" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {repositories.map((repo) => (
-                    <RepositoryTableRow key={repo.id} repo={repo} isAdmin={isAdmin} />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <ListPagination page={page} pageCount={pageCount} hrefFor={repositoriesHref} />
+            <QueryBoundary query={list} skeleton={<RepositoriesSkeleton />} what="repositories">
+              {(loaded) => (
+                <RepositoriesTable
+                  list={loaded}
+                  isAdmin={isAdmin}
+                  loadingPage={list.isPlaceholderData}
+                />
+              )}
+            </QueryBoundary>
           </CardContent>
         </Card>
 
-        {isAdmin && connections.length > 0 && (
+        {isAdmin && data && data.connections.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle as="h2">Code-host connections</CardTitle>
@@ -630,10 +728,10 @@ export function RepositoriesView({
             </CardHeader>
             <Stack asChild gap={2}>
               <CardContent>
-                {connections.map((connection) => (
+                {data.connections.map((connection) => (
                   <ConnectionItem key={connection.id} connection={connection} isAdmin={isAdmin} />
                 ))}
-                {githubInstallUrl && connections.some((c) => c.provider === "github") && (
+                {githubInstallPath && data.connections.some((c) => c.provider === "github") && (
                   <Muted className="flex items-center gap-1">
                     <IconExternalLink size={12} />
                     Repositories missing? Add them to the installation on GitHub via Connect GitHub.

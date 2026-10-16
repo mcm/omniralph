@@ -3,7 +3,8 @@
 // shared with verify:screens), bundles the specs with esbuild (workspace packages from source,
 // so specs can use `@omniralph/db`), runs `playwright test` on them in the
 // mcr.microsoft.com/playwright container, copies the failure artifacts out and stops
-// everything. See ../../README.md.
+// everything. A fake GitLab instance (./fake-gitlab.ts) runs alongside for the specs that
+// connect GitLab. See ../../README.md.
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { build } from "esbuild";
@@ -20,6 +21,7 @@ import {
   WEB_DIR,
   type Cleanups,
 } from "../browser/environment";
+import { startFakeGitLab } from "./fake-gitlab";
 import { parseE2eOptions, playwrightArgs, USAGE, type E2eOptions } from "./options";
 
 const SPECS_DIR = join(WEB_DIR, "e2e");
@@ -48,6 +50,8 @@ async function main(cleanups: Cleanups): Promise<number> {
   await copyPlaywright(join(work, "node_modules"));
 
   if (!options.skipBuild) await buildWorkspacePackages();
+  const gitlab = await startFakeGitLab();
+  cleanups.push(() => gitlab.close());
   const panel = await startFixturePanel(cleanups);
 
   const outDir = join(WEB_DIR, ".e2e", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -68,6 +72,8 @@ async function main(cleanups: Cleanups): Promise<number> {
       E2E_BASE_URL: panel.browserBaseUrl,
       DATABASE_URL: containerUrl(panel.fixtureEnv.DATABASE_URL!, panel.host),
       ENCRYPTION_KEY: panel.fixtureEnv.ENCRYPTION_KEY!,
+      // The panel (on this host) calls it; specs type it into Connect GitLab.
+      E2E_FAKE_GITLAB_URL: gitlab.url,
       CI: "1",
     },
     outputs: [{ from: "/work/test-results", to: outDir }],

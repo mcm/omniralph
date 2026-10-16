@@ -15,6 +15,12 @@ import { ENTER_ORGANIZATION } from "./schemas";
 /** Shown while the client switches to the resource's organization. */
 export const ENTER_ORGANIZATION_MESSAGE = "This belongs to another of your organizations.";
 
+/** A resource's `id` from the route: anything but a UUID is not found (before it reaches a query). */
+export function requireUuid(id: string): string {
+  if (!z.uuid().safeParse(id).success) throw ApiRouteError.notFound();
+  return id;
+}
+
 /**
  * For the handlers of a resource's detail: makes sure the resource (by `id`, which must
  * be a UUID) is in the active organization before the handler loads it, scoped to
@@ -30,7 +36,7 @@ export async function requireResourceInActiveOrganization(
   id: string,
   { pathPrefix, next }: { pathPrefix: string; next?: string | null },
 ): Promise<void> {
-  if (!z.uuid().safeParse(id).success) throw ApiRouteError.notFound();
+  requireUuid(id);
   const db = getDb();
   const organizationId = await getResourceOrganizationId(db, resource, id);
   if (!organizationId) throw ApiRouteError.notFound();

@@ -48,7 +48,7 @@ import {
 } from "@/lib/settings/forms";
 import { HARNESS_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
 import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
-import { ProviderIcon } from "../../repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
 import type { ProfileSummary } from "../../../settings/profiles/profile-facts";
 import { updateRepositorySettings } from "./actions";

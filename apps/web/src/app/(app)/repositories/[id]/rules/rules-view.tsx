@@ -57,7 +57,7 @@ import { MonoPath } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
 import { useAction } from "@/components/use-action";
 import type { RuleView } from "@/lib/rules/display";
-import { ProviderIcon } from "../../repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
 import { addCustomRule, deleteRule, editRule, setRuleEnabled } from "./actions";
 

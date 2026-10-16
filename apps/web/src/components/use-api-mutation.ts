@@ -25,6 +25,17 @@ export class OrganizationStaleError extends Error {
   }
 }
 
+/**
+ * A query key prefix to invalidate. Active queries under it refetch; with `refetchType:
+ * "all"`, inactive (cached) ones too: for the page a mutation navigates to, so it renders
+ * fresh data on arrival instead of its cached copy.
+ */
+export type Invalidation = QueryKey | { queryKey: QueryKey; refetchType: "all" };
+
+function isQueryKey(target: Invalidation): target is QueryKey {
+  return Array.isArray(target);
+}
+
 export interface ApiMutationOptions<TData, TVariables, TContext> {
   /** Calls the `/api/ui` handler, sending `organizationId` with the request (`apiRequest`). */
   mutationFn: (variables: TVariables, meta: { organizationId: string }) => Promise<TData>;
@@ -34,7 +45,7 @@ export interface ApiMutationOptions<TData, TVariables, TContext> {
    * there never lands on stale data; after a failure too, so a rolled-back optimistic
    * update settles on the server's state.
    */
-  invalidate: (keys: QueryKeys, variables: TVariables, data: TData | undefined) => QueryKey[];
+  invalidate: (keys: QueryKeys, variables: TVariables, data: TData | undefined) => Invalidation[];
   /** The success toast; `null` for none. A result's `warning` replaces it, as a warning toast. */
   success: string | ((data: TData, variables: TVariables) => string) | null;
   /** Optimistic update: runs first; its return value is `onError`'s `context` (to roll back). */
@@ -74,7 +85,9 @@ export function useApiMutation<TData = unknown, TVariables = void, TContext = un
       Promise.all(
         latest.current
           .invalidate(keys, variables, data)
-          .map((queryKey) => client.invalidateQueries({ queryKey })),
+          .map((target) =>
+            client.invalidateQueries(isQueryKey(target) ? { queryKey: target } : target),
+          ),
       ),
     [client, keys],
   );

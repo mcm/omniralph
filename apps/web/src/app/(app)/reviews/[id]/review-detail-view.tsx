@@ -51,7 +51,7 @@ import {
   type FindingView,
   type ReviewDetailView as ReviewDetail,
 } from "@/lib/reviews/display";
-import { ProviderIcon } from "../../repositories/repositories-view";
+import { ProviderIcon } from "@/components/provider-icon";
 import { RerunReviewDialog } from "../rerun-review-dialog";
 import { DismissFindingDialog, FeedbackHistory, RestoreFindingButton } from "./finding-feedback";
 import { EmptyValue } from "@/components/empty-value";

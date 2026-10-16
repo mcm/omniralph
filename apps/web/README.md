@@ -76,6 +76,10 @@ const jobs = useQuery({
 });
 ```
 
+Paginated lists keep `page` (and filters) in the URL (`useSearchParams`) and use `placeholderData:
+keepPreviousData`; wrap the table in `.list-pending` with `aria-busy={query.isPlaceholderData}`, so
+the previous page stays, dimmed, while the next one loads (`repositories-view.tsx`).
+
 **Polling defaults** (`src/lib/api/query-client.ts`). Every query is live: it refetches every 3s
 while its tab is visible (`refetchInterval: 3000`, `refetchIntervalInBackground: false`), when the
 tab regains focus or the network reconnects, and on every mount (`staleTime: 0`). Network and 5xx
@@ -85,7 +89,9 @@ cheap: paginated, indexed, `getDb()` on the Node runtime.
 
 **External APIs are not polled.** A query that calls Linear, GitHub or GitLab (the repository
 pickers, Linear lookups) is its own query with `refetchInterval: false` and `refetchOnWindowFocus:
-false`, refreshed by an explicit button; polled handlers never call an external API.
+false`, refreshed by an explicit button; polled handlers never call an external API. Example:
+`useSelectableRepositories` in `src/app/(app)/repositories/repo-selection-view.tsx` (its handler
+answers 502 `listing_failed` with the code host's error, which the picker explains).
 
 **Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`, not `useAction`:
 
@@ -100,7 +106,10 @@ const rename = useApiMutation({
 
 `invalidate` is required: list every list and detail the mutation can affect, by key prefix.
 They are invalidated, and their refetch awaited, before `onSuccess` runs, so a `router.push` from
-`onSuccess` never lands on cached-stale data. The hook shows the success toast (or the result's
+`onSuccess` never lands on cached-stale data. Only mounted queries refetch: when `onSuccess`
+navigates to a page whose list isn't mounted (a picker's Save going back to `/repositories`), pass
+`{ queryKey: keys.repositories.lists, refetchType: "all" }` so its cached copy is refetched too and
+the page shows the change on arrival. The hook shows the success toast (or the result's
 `warning` as a warning toast), the server's message as a danger toast on failure (`onError` gets
 the `ApiError`, with `fieldErrors` for inline errors), and refuses to run once another tab has
 switched organizations. Optimistic updates go in `onMutate`; roll back in `onError` with its

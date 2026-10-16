@@ -164,9 +164,11 @@ export async function startFixturePanel(cleanups: Cleanups): Promise<FixturePane
   const port = await freePort();
   const baseUrl = `http://localhost:${port}`;
   log(`Starting the panel on ${baseUrl}…`);
+  // Webhooks created against the fixtures (a fake GitLab's) point back at the panel.
+  const panelEnv = { ...fixtureEnv, APP_URL: baseUrl };
   const server = startPanel(
     port,
-    host === "localhost" ? fixtureEnv : { ...fixtureEnv, [DEV_ORIGINS_ENV]: host },
+    host === "localhost" ? panelEnv : { ...panelEnv, [DEV_ORIGINS_ENV]: host },
   );
   cleanups.push(() => stopPanel(server));
   await waitForPanel(baseUrl, server);

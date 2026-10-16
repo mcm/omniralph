@@ -28,7 +28,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   orgId: "",
@@ -47,15 +46,43 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => state.githubAuth }));
 
-const {
-  connectGitLab,
-  disconnectRepository,
-  recreateGitLabWebhook,
-  removeScmConnection,
-  saveGitHubRepositories,
-  saveGitLabProjects,
-  setRepositoryEnabled,
-} = await import("./actions");
+const gitlabConnections = await import("@/app/api/ui/gitlab-connections/route");
+const repository = await import("@/app/api/ui/repositories/[id]/route");
+const repositoryWebhook = await import("@/app/api/ui/repositories/[id]/webhook/route");
+const scmConnection = await import("@/app/api/ui/scm-connections/[id]/route");
+const selection = await import("@/app/api/ui/scm-connections/[id]/repositories/route");
+
+type Result = { ok: true; warning?: string; connectionId?: string } | { ok: false; error: string };
+
+/** Calls an `/api/ui` handler as the Repositories pages do; answers its result as an `ActionResult`. */
+async function call(
+  handler: (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>,
+  method: string,
+  id: string,
+  body?: unknown,
+): Promise<Result> {
+  const response = await handler(
+    new Request("http://localhost/api/ui", {
+      method,
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  const json = (await response.json()) as Record<string, unknown>;
+  return response.ok ? (json as Result) : { ok: false, error: json.error as string };
+}
+
+// The Repositories pages' requests, under the names of the server actions they replace.
+const connectGitLab = (form: { baseUrl: string; token: string }) =>
+  call(gitlabConnections.POST as Parameters<typeof call>[0], "POST", "", form);
+const disconnectRepository = (id: string) => call(repository.DELETE, "DELETE", id);
+const recreateGitLabWebhook = (id: string) => call(repositoryWebhook.POST, "POST", id);
+const removeScmConnection = (id: string) => call(scmConnection.DELETE, "DELETE", id);
+const saveGitHubRepositories = (id: string, selectedIds: number[]) =>
+  call(selection.PUT, "PUT", id, { provider: "github", selectedIds });
+const saveGitLabProjects = (id: string, selectedIds: number[]) =>
+  call(selection.PUT, "PUT", id, { provider: "gitlab", selectedIds });
 
 const GITLAB = "https://gitlab.example.com";
 const API = `${GITLAB}/api/v4`;
@@ -129,7 +156,7 @@ const server = setupServer(
 
 const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!databaseAvailable)("repository server actions", () => {
+describe.skipIf(!databaseAvailable)("repository and connection handlers", () => {
   let testDb: TestDatabase;
   const adminId = "admin-1";
   let orgId: string;
@@ -464,7 +491,8 @@ describe.skipIf(!databaseAvailable)("repository server actions", () => {
     expect(
       await state.db.select().from(reviews).where(eq(reviews.repositoryId, repo!.id)),
     ).toHaveLength(1);
-    expect(await setRepositoryEnabled(repo!.id, true)).toMatchObject({ ok: false });
+    // It isn't connected any more.
+    expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false });
     await state.db.delete(harnesses);
   });
 
@@ -482,16 +510,6 @@ describe.skipIf(!databaseAvailable)("repository server actions", () => {
     expect(after!.disconnectedAt).not.toBeNull();
   });
 
-  it("sets reviews for a repository on, off or back to the organization's default", async () => {
-    await connectGitLabProjects([101]);
-    const [repo] = await state.db.select().from(repositories);
-    for (const value of [false, true, null]) {
-      expect(await setRepositoryEnabled(repo!.id, value)).toEqual({ ok: true });
-      const [after] = await state.db.select().from(repositories);
-      expect(after!.enabled).toBe(value);
-    }
-  });
-
   it("refuses members", async () => {
     state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
     expect(await connectGitLab(form)).toEqual({
@@ -501,7 +519,7 @@ describe.skipIf(!databaseAvailable)("repository server actions", () => {
     expect(await disconnectRepository("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
     });
-    expect(await setRepositoryEnabled("00000000-0000-0000-0000-000000000000", true)).toMatchObject({
+    expect(await recreateGitLabWebhook("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
       error: expect.stringContaining("admin"),
     });
@@ -602,7 +620,6 @@ describe.skipIf(!databaseAvailable)("repository server actions", () => {
     const [connection] = await state.db.select().from(scmConnections);
     state.orgId = otherOrgId;
     const notConnected = { ok: false, error: "That repository isn't connected." };
-    expect(await setRepositoryEnabled(repo!.id, false)).toEqual(notConnected);
     expect(await disconnectRepository(repo!.id)).toEqual(notConnected);
     expect(await saveGitHubRepositories(connection!.id, [1])).toEqual({
       ok: false,

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { TriageRunDetailView as TriageRunDetail } from "@/lib/triage/display";
 import { TriageRunDetailView } from "./triage-run-detail-view";
 
-vi.mock("../../repositories/actions", () => ({}));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "member" }) }));
 

@@ -1,11 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import { formatDate } from "@/lib/format-date";
 import { ConnectionHealth, type ConnectionHealthRow as Health } from "./connection-health";
 
 const EXPIRY = formatDate("2026-10-09");
-
-vi.mock("./actions", () => ({ recreateGitLabWebhook: vi.fn() }));
 
 function health(
   problems: Health["problems"],
@@ -15,7 +14,12 @@ function health(
 }
 
 function render(value: Health | null, isAdmin = true): string {
-  return renderToStaticMarkup(<ConnectionHealth health={value} isAdmin={isAdmin} />);
+  const Wrapper = queryWrapper(createTestQueryClient());
+  return renderToStaticMarkup(
+    <Wrapper>
+      <ConnectionHealth health={value} isAdmin={isAdmin} />
+    </Wrapper>,
+  );
 }
 
 /** The text of the `<li>` of a problem code. */

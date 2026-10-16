@@ -16,7 +16,6 @@ vi.mock("./actions", () => ({
   updateRepositorySettings: vi.fn(),
   updateRepositoryTaskTypes: vi.fn(),
 }));
-vi.mock("../../actions", () => ({}));
 
 const harness = (overrides: Partial<RepositoryHarness> & Pick<RepositoryHarness, "id" | "name">) =>
   ({
