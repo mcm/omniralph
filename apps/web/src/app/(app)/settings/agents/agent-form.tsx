@@ -23,6 +23,7 @@ import {
   SYSTEM_PROMPT_MODES,
   TASK_TYPES,
   type AgentDefinition,
+  type AgentDefinitionInput,
   type NamedContent,
   type SystemPromptMode,
 } from "@omniralph/tasks";
@@ -31,14 +32,14 @@ import { AppHeader } from "@/components/app-header";
 import { ModelPicker, TagInput } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmChangesDialog } from "@/components/settings-card";
-import { useAction } from "@/components/use-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import { definitionPath, savedDefinitionSchema } from "@/lib/api/definitions";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { withDefault } from "@/lib/settings/changes";
-import {
-  createAgentDefinition,
-  updateAgentDefinition,
-  type AgentDefinitionFields,
-} from "./actions";
+import { definitionsChanged } from "../definition-queries";
 import {
   agentChanges,
   agentDraft,
@@ -47,6 +48,9 @@ import {
 } from "./agent-changes";
 import { agentHref } from "./agent-parts";
 import { Choices, EditorActions, errorFor, mcpServerOptions } from "./form-parts";
+
+/** What the agent form submits: a definition without its ID (the row's). */
+export type AgentDefinitionFields = Omit<AgentDefinitionInput, "id">;
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
@@ -168,34 +172,38 @@ export function agentInput(draft: AgentDraft): AgentDefinitionFields {
 /** The form creating an agent, or editing one of the organization's. */
 export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps) {
   const router = useRouter();
-  const { pending, run } = useAction();
-  const [saved, setSaved] = React.useState(() => agentDraft(agent));
-  const [draft, setDraft] = React.useState(saved);
+  // The saved agent as the query has it now: the draft follows it while it isn't edited.
+  const saved = agentDraft(agent);
+  const [draft, setDraft] = useSeededDraft(saved);
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
   const [confirming, setConfirming] = React.useState(false);
   const set = (change: Partial<AgentDraft>) => setDraft((current) => ({ ...current, ...change }));
   const changes = agentChanges(saved, draft);
   const dirty = changes.length > 0;
 
-  const save = () => {
-    const input = agentInput(draft);
-    let savedId = agent?.id;
-    run(
-      async () => {
-        if (agent) return updateAgentDefinition(agent.id, input);
-        const result = await createAgentDefinition(input);
-        if (result.ok && "id" in result) savedId = result.id;
-        return result;
-      },
-      agent ? `${draft.name} saved` : `${draft.name} created`,
-      () => {
-        setErrors({});
-        setSaved(draft);
-        if (savedId) router.push(agentHref(savedId));
-      },
-      (result) => setErrors(result.fieldErrors ?? {}),
-    );
-  };
+  const mutation = useApiMutation({
+    mutationFn: async ({ input }: { input: AgentDefinitionFields; name: string }, meta) => {
+      if (!agent)
+        return api.post("/api/ui/agents", savedDefinitionSchema, { body: input, ...meta });
+      await api.put(definitionPath("agents", agent.id), mutationResultSchema, {
+        body: input,
+        ...meta,
+      });
+      return { ok: true as const, id: agent.id };
+    },
+    // Every list and detail, so the agent's page shows the saved agent on arrival.
+    invalidate: definitionsChanged,
+    success: (_, { name }) => (agent ? `${name} saved` : `${name} created`),
+    onSuccess: ({ id }) => {
+      setErrors({});
+      router.push(agentHref(id));
+    },
+    onError: (error) => setErrors(error.fieldErrors ?? {}),
+  });
+  // Held until the agent's page opens.
+  const pending = mutation.isPending || mutation.isSuccess;
+
+  const save = () => mutation.mutate({ input: agentInput(draft), name: draft.name });
 
   /** An edit confirms its change list first; a new agent saves straight away. */
   const submit = (e: React.FormEvent) => {

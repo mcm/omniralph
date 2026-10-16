@@ -487,8 +487,8 @@ is [docs/definitions.md](../definitions.md).
   object schema `z.fromJSONSchema` accepts (query tasks only); the sink takes the task type and its
   output (`outputSchemaProblem` compares the task's schema with the sink's); coding settings combine
   and the PR description task outputs `{ title, body }`. Errors are keyed by field path, the format
-  of `fieldErrors`. The server actions (`apps/web/src/app/(app)/settings/agents/actions.ts`,
-  `settings/tasks/actions.ts`) call them through `validateOrganizationTask`
+  of `fieldErrors`. The `/api/ui/agents` and `/api/ui/tasks` handlers
+  (`apps/web/src/lib/definitions/manage.ts`) call them through `validateOrganizationTask`
   (`apps/web/src/lib/definitions/validation.ts`: the organization's agents and tasks, the real
   sinks), admins only. A test runs every built-in (and its clone) through the same validation.
 - **Stored requirements.** A task save derives `TaskRequirements` (`deriveTaskRequirements`: the

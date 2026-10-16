@@ -21,6 +21,7 @@ import {
   type PoolName,
   type SinkKind,
   type TaskDefinition,
+  type TaskDefinitionInput,
   type TaskType,
 } from "@omniralph/tasks";
 import type { FieldErrors } from "@omniralph/shared";
@@ -29,11 +30,15 @@ import { AppHeader } from "@/components/app-header";
 import { ModelPicker, MultiSelect, TagInput } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmChangesDialog } from "@/components/settings-card";
-import { useAction } from "@/components/use-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import { definitionPath, savedDefinitionSchema } from "@/lib/api/definitions";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { NOT_SET, withDefault } from "@/lib/settings/changes";
 import { Choices, EditorActions, errorFor, installableOptions } from "../agents/form-parts";
-import { createTaskDefinition, updateTaskDefinition, type TaskDefinitionFields } from "./actions";
+import { definitionsChanged } from "../definition-queries";
 import {
   defaultPool,
   taskChanges,
@@ -52,6 +57,9 @@ import {
   ToolSettingsFields,
 } from "./task-form-sections";
 import { TASK_TYPE_LABELS, taskHref } from "./task-parts";
+
+/** What the task form submits: a definition without its ID (the row's). */
+export type TaskDefinitionFields = Omit<TaskDefinitionInput, "id">;
 
 /** An agent the form can pick. */
 export interface TaskFormAgent {
@@ -163,9 +171,9 @@ export function TaskForm({
   initialErrors = {},
 }: TaskFormProps) {
   const router = useRouter();
-  const { pending, run } = useAction();
-  const [saved, setSaved] = React.useState(() => taskDraft(task, pools));
-  const [draft, setDraft] = React.useState(saved);
+  // The saved task as the query has it now: the draft follows it while it isn't edited.
+  const saved = taskDraft(task, pools);
+  const [draft, setDraft] = useSeededDraft(saved);
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
   const [confirming, setConfirming] = React.useState(false);
   const set = (change: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...change }));
@@ -203,29 +211,34 @@ export function TaskForm({
           : { ...current.toolSettings, shell: saved.toolSettings.shell },
     }));
 
+  const mutation = useApiMutation({
+    mutationFn: async ({ input }: { input: TaskDefinitionFields; name: string }, meta) => {
+      if (!task) return api.post("/api/ui/tasks", savedDefinitionSchema, { body: input, ...meta });
+      await api.put(definitionPath("tasks", task.id), mutationResultSchema, {
+        body: input,
+        ...meta,
+      });
+      return { ok: true as const, id: task.id };
+    },
+    // Every list and detail, so the task's page shows the saved task on arrival.
+    invalidate: definitionsChanged,
+    success: (_, { name }) => (task ? `${name} saved` : `${name} created`),
+    onSuccess: ({ id }) => {
+      setErrors({});
+      router.push(taskHref(id));
+    },
+    onError: (error) => setErrors(error.fieldErrors ?? {}),
+  });
+  // Held until the task's page opens.
+  const pending = mutation.isPending || mutation.isSuccess;
+
   const save = () => {
     const prepared = taskInput(task, draft);
     if ("error" in prepared) {
       setErrors({ outputSchema: prepared.error });
       return;
     }
-    const { input } = prepared;
-    let savedId = task?.id;
-    run(
-      async () => {
-        if (task) return updateTaskDefinition(task.id, input);
-        const result = await createTaskDefinition(input);
-        if (result.ok && "id" in result) savedId = result.id;
-        return result;
-      },
-      task ? `${draft.name} saved` : `${draft.name} created`,
-      () => {
-        setErrors({});
-        setSaved(draft);
-        if (savedId) router.push(taskHref(savedId));
-      },
-      (result) => setErrors(result.fieldErrors ?? {}),
-    );
+    mutation.mutate({ input: prepared.input, name: draft.name });
   };
 
   /** An edit confirms its change list first; a new task saves straight away. */

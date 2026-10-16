@@ -1,14 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { AgentForm, agentInput, type AgentFormProps } from "./agent-form";
 import { agentDraft } from "./agent-changes";
 
-vi.mock("./actions", () => ({
-  createAgentDefinition: vi.fn(),
-  updateAgentDefinition: vi.fn(),
-}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
@@ -39,7 +36,14 @@ const CHOICES: HarnessChoices = {
 const render = (
   agent: AgentFormProps["agent"],
   props: Partial<Omit<AgentFormProps, "agent">> = {},
-) => renderToStaticMarkup(<AgentForm agent={agent} choices={CHOICES} {...props} />);
+) => {
+  const Wrapper = queryWrapper(createTestQueryClient());
+  return renderToStaticMarkup(
+    <Wrapper>
+      <AgentForm agent={agent} choices={CHOICES} {...props} />
+    </Wrapper>,
+  );
+};
 
 /** The form's submit button, from its tag to its label. */
 const submitButton = (html: string) => {

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinAgent, getBuiltinTask, type TaskDefinitionInput } from "@omniralph/tasks";
+import type { ActionResult } from "@/lib/action-result";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 interface Row {
   id: string;
@@ -153,8 +154,20 @@ vi.mock("@omniralph/db", () => {
   };
 });
 
-const { cloneTaskDefinition, createTaskDefinition, deleteTaskDefinition, updateTaskDefinition } =
-  await import("./actions");
+const collection = await import("@/app/api/ui/tasks/route");
+const one = await import("@/app/api/ui/tasks/[id]/route");
+const clone = await import("@/app/api/ui/tasks/[id]/clone/route");
+
+// The handlers, as the server actions they replaced.
+type Saved = ActionResult | { ok: true; id: string };
+const createTaskDefinition = async (input: unknown) =>
+  (await callAction(collection.POST, "POST", {}, input)) as Saved;
+const updateTaskDefinition = (id: string, input: unknown) =>
+  callAction(one.PUT, "PUT", { id: encodeURIComponent(id) }, input);
+const cloneTaskDefinition = async (id: string) =>
+  (await callAction(clone.POST, "POST", { id: encodeURIComponent(id) })) as Saved;
+const deleteTaskDefinition = (id: string) =>
+  callAction(one.DELETE, "DELETE", { id: encodeURIComponent(id) });
 const { getTaskDefinition, listTaskChoices, PR_DESCRIPTION_TASKS } =
   await import("@/lib/definitions");
 
@@ -276,7 +289,7 @@ const CODER = {
   prDescriptionTaskId: "builtin:describe-pr",
 } satisfies Omit<TaskDefinitionInput, "id">;
 
-describe("Settings › Tasks actions", () => {
+describe("Settings › Tasks API", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.writes = 0;

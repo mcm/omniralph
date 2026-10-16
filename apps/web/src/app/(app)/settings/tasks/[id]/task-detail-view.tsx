@@ -31,34 +31,34 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconCopy, IconPencil, IconTrash } from "@tabler/icons-react";
-import type {
-  SetupCommand,
-  TaskDefinition,
-  TaskRequirements,
-  TeardownCommand,
-  TokenBudget,
-} from "@omniralph/tasks";
+import { useQueryClient } from "@tanstack/react-query";
+import type { SetupCommand, TaskDefinition, TeardownCommand, TokenBudget } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
+import { useQueryKeys } from "@/components/query-provider";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import { definitionPath, savedDefinitionSchema, type TaskDetail } from "@/lib/api/definitions";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { TaskReferrers } from "@/lib/definitions/referrers";
-import { cloneTaskDefinition, deleteTaskDefinition } from "../actions";
-import { repositoryTaskRoles } from "../repository-roles";
+import { repositoryTaskRoles } from "@/lib/definitions/repository-roles";
 import { BuiltinBadge, Fact, NameList } from "../../agents/agent-parts";
+import {
+  DefinitionLoading,
+  notFoundOn404,
+  useDefinitionId,
+  useIsAdmin,
+} from "../../definition-page";
+import {
+  definitionDeleted,
+  definitionKeys,
+  definitionsChanged,
+  useTaskDetail,
+} from "../../definition-queries";
 import { AgentLink, TASK_TYPE_LABELS, taskEditHref, taskHref, TriggerBadges } from "../task-parts";
 
-interface TaskDetailViewProps {
-  task: TaskDefinition;
-  builtin: boolean;
-  /** Null when the agent doesn't resolve. */
-  agentName: string | null;
-  /** Null when the task has no PR description task or it doesn't resolve. */
-  prDescriptionTaskName: string | null;
-  requirements: TaskRequirements;
-  referrers: TaskReferrers;
-  isAdmin: boolean;
-}
+type TaskDetailContentProps = TaskDetail & { isAdmin: boolean };
 
 const CHAT_TASK_LABELS: Record<TaskReferrers["chatTasks"][number], string> = {
   askAboutCode: "Ask about code",
@@ -167,26 +167,33 @@ function AdminActions({
   inUse: boolean;
 }) {
   const router = useRouter();
-  const { pending, run } = useAction();
-
-  const clone = () => {
-    let cloneId: string | undefined;
-    run(
-      async () => {
-        const result = await cloneTaskDefinition(task.id);
-        if (result.ok && "id" in result) cloneId = result.id;
-        return result;
-      },
-      `Cloned ${task.name}`,
-      () => {
-        if (cloneId) router.push(taskEditHref(cloneId));
-      },
-    );
-  };
+  const client = useQueryClient();
+  const keys = useQueryKeys();
+  const clone = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.post(definitionPath("tasks", task.id, "clone"), savedDefinitionSchema, {
+        organizationId,
+      }),
+    invalidate: definitionsChanged,
+    success: `Cloned ${task.name}`,
+    onSuccess: ({ id }) => router.push(taskEditHref(id)),
+  });
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(definitionPath("tasks", task.id), mutationResultSchema, { organizationId }),
+    invalidate: definitionDeleted("tasks"),
+    success: `Deleted ${task.name}`,
+    onSuccess: () => {
+      router.push("/settings/tasks");
+      client.removeQueries({ queryKey: definitionKeys(keys).tasks.detail(task.id) });
+    },
+  });
+  // Held until the page changes: the list or the clone's form is on its way.
+  const pending = clone.isPending || clone.isSuccess || remove.isPending || remove.isSuccess;
 
   return (
     <>
-      <Button variant="outline" disabled={pending} onClick={clone}>
+      <Button variant="outline" disabled={pending} onClick={() => clone.mutate()}>
         <IconCopy size={14} />
         Clone
       </Button>
@@ -202,7 +209,7 @@ function AdminActions({
             <AlertDialogTrigger asChild>
               <Button variant="danger" disabled={pending}>
                 <IconTrash size={14} />
-                Delete
+                {remove.isPending ? "Deleting…" : "Delete"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -216,16 +223,7 @@ function AdminActions({
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="danger"
-                  onClick={() =>
-                    run(
-                      () => deleteTaskDefinition(task.id),
-                      `Deleted ${task.name}`,
-                      () => router.push("/settings/tasks"),
-                    )
-                  }
-                >
+                <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
                   Delete
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -237,7 +235,26 @@ function AdminActions({
   );
 }
 
-export function TaskDetailView({
+/**
+ * One task definition of the organization (a built-in or one of its rows), what its runs
+ * need and what uses it, live. Unknown IDs, another organization's too, are not found.
+ */
+export function TaskDetailView() {
+  const id = useDefinitionId();
+  const isAdmin = useIsAdmin();
+  const query = useTaskDetail(id);
+  if (query.data) return <TaskDetailContent {...query.data} isAdmin={isAdmin} />;
+  notFoundOn404(query.error);
+  return (
+    <DefinitionLoading
+      breadcrumbs={[{ label: "Tasks", href: "/settings/tasks" }, { label: "Task" }]}
+      query={query}
+      what="the task"
+    />
+  );
+}
+
+export function TaskDetailContent({
   task,
   builtin,
   agentName,
@@ -245,7 +262,7 @@ export function TaskDetailView({
   requirements,
   referrers,
   isAdmin,
-}: TaskDetailViewProps) {
+}: TaskDetailContentProps) {
   return (
     <>
       <AppHeader

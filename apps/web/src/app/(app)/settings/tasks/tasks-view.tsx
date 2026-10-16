@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
   Muted,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -19,32 +20,19 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconPlus } from "@tabler/icons-react";
-import { TASK_TYPES, type PoolName, type SinkKind, type TaskType } from "@omniralph/tasks";
+import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
+import type { TaskSummary } from "@/lib/api/definitions";
 import { BuiltinBadge } from "../agents/agent-parts";
+import { useIsAdmin } from "../definition-page";
+import { useTaskList } from "../definition-queries";
 import { AgentLink, TASK_TYPE_LABELS, taskHref, TriggerBadges } from "./task-parts";
 
-export interface TaskSummary {
-  id: string;
-  name: string;
-  description: string;
-  builtin: boolean;
-  taskType: TaskType;
-  agentId: string;
-  /** Null when the agent doesn't resolve. */
-  agentName: string | null;
-  triggers: string[];
-  sink: SinkKind;
-  pool: PoolName;
-}
-
-interface TasksViewProps {
-  tasks: TaskSummary[];
-  isAdmin: boolean;
-}
+export type { TaskSummary };
 
 const TASK_TYPE_DESCRIPTIONS: Record<TaskType, string> = {
   query: "One session that answers or writes something, no code changes.",
@@ -108,7 +96,50 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
   );
 }
 
-export function TasksView({ tasks, isAdmin }: TasksViewProps) {
+/** The task cards while they load, shaped like them. */
+function TasksSkeleton() {
+  return (
+    <Stack gap={6}>
+      {TASK_TYPES.map((taskType) => (
+        <Card key={taskType}>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-2/3" />
+          </CardHeader>
+          <Stack gap={3} asChild>
+            <CardContent>
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </CardContent>
+          </Stack>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
+/** One card per task type, each listing the organization's tasks of the type. */
+export function TaskCards({ tasks }: { tasks: TaskSummary[] }) {
+  return TASK_TYPES.map((taskType) => (
+    <Card key={taskType} aria-label={`${TASK_TYPE_LABELS[taskType]} tasks`}>
+      <CardHeader>
+        <CardTitle as="h2">{TASK_TYPE_LABELS[taskType]}</CardTitle>
+        <CardDescription>{TASK_TYPE_DESCRIPTIONS[taskType]}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <TaskTable tasks={tasks.filter((task) => task.taskType === taskType)} />
+      </CardContent>
+    </Card>
+  ));
+}
+
+/**
+ * The organization's task definitions grouped by task type, live. Every member may look; a
+ * task created, changed or deleted elsewhere shows without a reload.
+ */
+export function TasksView() {
+  const isAdmin = useIsAdmin();
+  const query = useTaskList();
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Tasks" }]} />
@@ -135,17 +166,9 @@ export function TasksView({ tasks, isAdmin }: TasksViewProps) {
             )
           }
         />
-        {TASK_TYPES.map((taskType) => (
-          <Card key={taskType} aria-label={`${TASK_TYPE_LABELS[taskType]} tasks`}>
-            <CardHeader>
-              <CardTitle as="h2">{TASK_TYPE_LABELS[taskType]}</CardTitle>
-              <CardDescription>{TASK_TYPE_DESCRIPTIONS[taskType]}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TaskTable tasks={tasks.filter((task) => task.taskType === taskType)} />
-            </CardContent>
-          </Card>
-        ))}
+        <QueryBoundary query={query} skeleton={<TasksSkeleton />} what="the tasks">
+          {({ tasks }) => <TaskCards tasks={tasks} />}
+        </QueryBoundary>
       </main>
     </>
   );

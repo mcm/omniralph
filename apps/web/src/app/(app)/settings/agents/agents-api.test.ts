@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinAgent, getBuiltinTask, type AgentDefinition } from "@omniralph/tasks";
+import type { ActionResult } from "@/lib/action-result";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 interface Row {
   id: string;
@@ -93,12 +94,20 @@ vi.mock("@omniralph/db", () => {
   };
 });
 
-const {
-  cloneAgentDefinition,
-  createAgentDefinition,
-  deleteAgentDefinition,
-  updateAgentDefinition,
-} = await import("./actions");
+const collection = await import("@/app/api/ui/agents/route");
+const one = await import("@/app/api/ui/agents/[id]/route");
+const clone = await import("@/app/api/ui/agents/[id]/clone/route");
+
+// The handlers, as the server actions they replaced.
+type Saved = ActionResult | { ok: true; id: string };
+const createAgentDefinition = async (input: unknown) =>
+  (await callAction(collection.POST, "POST", {}, input)) as Saved;
+const updateAgentDefinition = (id: string, input: unknown) =>
+  callAction(one.PUT, "PUT", { id: encodeURIComponent(id) }, input);
+const cloneAgentDefinition = async (id: string) =>
+  (await callAction(clone.POST, "POST", { id: encodeURIComponent(id) })) as Saved;
+const deleteAgentDefinition = (id: string) =>
+  callAction(one.DELETE, "DELETE", { id: encodeURIComponent(id) });
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ORG_AGENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -146,7 +155,7 @@ const reviewTask = (name: string, agentId: string, id = TASK_ID) =>
     requirements: { minHarnessVersion: null, installables: [], hostTools: [] },
   });
 
-describe("Settings › Agents actions", () => {
+describe("Settings › Agents API", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.writes = 0;

@@ -6,6 +6,7 @@ import {
   TRIGGERS_BY_TASK_TYPE,
   type TaskDefinition,
 } from "@omniralph/tasks";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { TaskChoice } from "@/lib/definitions";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import {
@@ -18,10 +19,6 @@ import {
 import { taskDraft } from "./task-changes";
 import { parseOutputSchema } from "./task-form-sections";
 
-vi.mock("./actions", () => ({
-  createTaskDefinition: vi.fn(),
-  updateTaskDefinition: vi.fn(),
-}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
@@ -71,19 +68,23 @@ const HOST_TOOLS: TaskFormHostTool[] = [
   { name: "semgrep", description: null },
 ];
 
-const render = (task: TaskDefinition | null, initialErrors = {}) =>
-  renderToStaticMarkup(
-    <TaskForm
-      task={task}
-      agents={AGENTS}
-      sinks={SINKS}
-      pools={["short", "long"]}
-      prDescriptionTasks={PR_DESCRIPTION_TASKS}
-      choices={CHOICES}
-      hostTools={HOST_TOOLS}
-      initialErrors={initialErrors}
-    />,
+const render = (task: TaskDefinition | null, initialErrors = {}) => {
+  const Wrapper = queryWrapper(createTestQueryClient());
+  return renderToStaticMarkup(
+    <Wrapper>
+      <TaskForm
+        task={task}
+        agents={AGENTS}
+        sinks={SINKS}
+        pools={["short", "long"]}
+        prDescriptionTasks={PR_DESCRIPTION_TASKS}
+        choices={CHOICES}
+        hostTools={HOST_TOOLS}
+        initialErrors={initialErrors}
+      />
+    </Wrapper>,
   );
+};
 
 /** A task of `id`'s built-in, as one of the organization's. */
 const custom = (id: string, fields: Partial<TaskDefinition> = {}): TaskDefinition => ({

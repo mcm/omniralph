@@ -1,12 +1,29 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
-import { AgentDetailView } from "./[id]/agent-detail-view";
-import { AgentsView, type AgentSummary } from "./agents-view";
+import type { ReactNode } from "react";
+import {
+  createTestQueryClient,
+  queryWrapper,
+  TEST_ORGANIZATION_ID,
+  testUser,
+} from "@/components/query-test-utils";
+import { queryKeys } from "@/lib/api/keys";
+import { definitionKeys } from "../definition-queries";
+import { AgentDetailContent } from "./[id]/agent-detail-view";
+import { AgentsTable, AgentsView, type AgentSummary } from "./agents-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("./actions", () => ({ cloneAgentDefinition: vi.fn(), deleteAgentDefinition: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
+const client = createTestQueryClient();
+client.setQueryData(definitionKeys(queryKeys(TEST_ORGANIZATION_ID)).agents.list, { agents: [] });
+
+/** The static markup of `node`, rendered for `role` with the query client. */
+const html = (node: ReactNode, role: "admin" | "member" = "member") => {
+  const Wrapper = queryWrapper(client, { ...testUser, role });
+  return renderToStaticMarkup(<Wrapper>{node}</Wrapper>);
+};
 
 const reviewer = BUILTIN_AGENTS.find((agent) => agent.id === "builtin:reviewer") as AgentDefinition;
 
@@ -36,33 +53,33 @@ const row = (html: string, name: string) => {
 
 describe("AgentsView", () => {
   it("lists built-ins and custom agents with ID, task types and model", () => {
-    const html = renderToStaticMarkup(<AgentsView agents={[BUILTIN, CUSTOM]} isAdmin={false} />);
-    expect(html.indexOf(">Reviewer<")).toBeLessThan(html.indexOf(">Security reviewer<"));
+    const markup = html(<AgentsTable agents={[BUILTIN, CUSTOM]} />);
+    expect(markup.indexOf(">Reviewer<")).toBeLessThan(markup.indexOf(">Security reviewer<"));
 
-    const builtin = row(html, "Reviewer");
+    const builtin = row(markup, "Reviewer");
     expect(builtin).toContain("builtin:reviewer");
     expect(builtin).toContain('href="/settings/agents/builtin%3Areviewer"');
     expect(builtin).toContain("Built-in");
     expect(builtin).toContain(">Query<");
     expect(builtin).toContain(">Review<");
 
-    const custom = row(html, "Security reviewer");
+    const custom = row(markup, "Security reviewer");
     expect(custom).toContain(CUSTOM.id);
     expect(custom).toContain(`href="/settings/agents/${CUSTOM.id}"`);
     expect(custom).not.toContain("Built-in");
     expect(custom).toContain(">Review<");
     expect(custom).toContain("claude-opus-5-5");
-    expect(html).not.toContain("New agent");
   });
 
-  it("offers admins a new agent", () => {
-    const html = renderToStaticMarkup(<AgentsView agents={[BUILTIN]} isAdmin />);
-    expect(html).toContain('href="/settings/agents/new"');
-    expect(html).toContain("New agent");
+  it("offers admins a new agent, and members none", () => {
+    const admin = html(<AgentsView />, "admin");
+    expect(admin).toContain('href="/settings/agents/new"');
+    expect(admin).toContain("New agent");
+    expect(html(<AgentsView />, "member")).not.toContain("New agent");
   });
 });
 
-describe("AgentDetailView", () => {
+describe("AgentDetailContent", () => {
   const agent: AgentDefinition = {
     ...reviewer,
     model: "claude-sonnet-5-5",
@@ -79,7 +96,7 @@ describe("AgentDetailView", () => {
     },
   ];
   const render = (isAdmin: boolean) =>
-    renderToStaticMarkup(<AgentDetailView agent={agent} builtin tasks={tasks} isAdmin={isAdmin} />);
+    html(<AgentDetailContent agent={agent} builtin tasks={tasks} isAdmin={isAdmin} />);
 
   it("shows the agent's prompt, tools, documents, models, task types and tasks", () => {
     const html = render(false);
@@ -108,17 +125,15 @@ describe("AgentDetailView", () => {
 
   it("offers admins Clone, Edit and Delete on a custom agent", () => {
     const custom = { ...agent, id: CUSTOM.id, name: CUSTOM.name };
-    const html = renderToStaticMarkup(
-      <AgentDetailView agent={custom} builtin={false} tasks={[]} isAdmin />,
-    );
-    expect(html).not.toContain("Built-in");
-    expect(html).toContain(">Clone<");
-    expect(html).toContain(`href="/settings/agents/${CUSTOM.id}/edit"`);
-    expect(html).toContain(">Edit<");
-    expect(html).toContain(">Delete<");
+    const admin = html(<AgentDetailContent agent={custom} builtin={false} tasks={[]} isAdmin />);
+    expect(admin).not.toContain("Built-in");
+    expect(admin).toContain(">Clone<");
+    expect(admin).toContain(`href="/settings/agents/${CUSTOM.id}/edit"`);
+    expect(admin).toContain(">Edit<");
+    expect(admin).toContain(">Delete<");
 
-    const member = renderToStaticMarkup(
-      <AgentDetailView agent={custom} builtin={false} tasks={[]} isAdmin={false} />,
+    const member = html(
+      <AgentDetailContent agent={custom} builtin={false} tasks={[]} isAdmin={false} />,
     );
     expect(member).not.toContain(">Clone<");
     expect(member).not.toContain(">Edit<");
@@ -135,13 +150,13 @@ describe("AgentDetailView", () => {
 
 describe("AgentsView on phone", () => {
   it("repeats the task types and model under the name and hides their columns", () => {
-    const html = renderToStaticMarkup(<AgentsView agents={[CUSTOM]} isAdmin={false} />);
-    const tr = row(html, "Security reviewer");
+    const markup = html(<AgentsTable agents={[CUSTOM]} />);
+    const tr = row(markup, "Security reviewer");
     const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
     const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));
     expect(meta).toContain(">Review<");
     expect(meta).toContain("claude-opus-5-5");
     expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(3);
-    expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(3);
+    expect(markup.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(3);
   });
 });
