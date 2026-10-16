@@ -31,6 +31,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -69,8 +70,6 @@ vi.mock("@/lib/auth/session", async () => {
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 // No Linear workspace is connected.
 vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
-// Views are client components; the tests read the props the pages pass them.
-vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -81,7 +80,8 @@ const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/rou
 const repositoryLinear = await import("@/app/api/ui/repositories/[id]/coding/linear/route");
 const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
 const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
-const { default: ProfilesPage } = await import("../settings/profiles/page");
+const reviewProfiles = await import("@/app/api/ui/review-profiles/route");
+const reviewProfile = await import("@/app/api/ui/review-profiles/[id]/route");
 
 type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
 
@@ -139,7 +139,9 @@ const setRuleEnabled = (id: string, ruleId: string, enabled: boolean) =>
   ruleRequest(repositoryRule.PATCH, "PATCH", { id, ruleId }, { enabled });
 const deleteRule = (id: string, ruleId: string) =>
   ruleRequest(repositoryRule.DELETE, "DELETE", { id, ruleId });
-const { updateReviewProfile } = await import("../settings/profiles/actions");
+// Settings › Review profiles' save, under the server action's old name.
+const updateReviewProfile = (id: string, input: unknown) =>
+  callAction(reviewProfile.PUT, "PUT", { id }, input);
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -235,8 +237,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
   it("lists only the active organization's repositories and profiles", async () => {
     state.userId = a.userId;
-    const profiles = (await ProfilesPage()).props.profiles as { id: string }[];
-    expect(profiles.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
+    const profiles = await call(reviewProfiles.GET, a.repoId);
+    expect(profiles.status).toBe(200);
+    const rows = profiles.body.profiles as { id: string; repositories: { id: string }[] }[];
+    expect(rows.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
+    // Only this organization's repositories use its profiles.
+    expect(JSON.stringify(profiles.body)).not.toContain(b.repoId);
 
     const settings = await call(repositoryDetail.GET, a.repoId);
     expect(settings).toMatchObject({ status: 200, body: { repository: { id: a.repoId } } });

@@ -145,7 +145,7 @@ function partialFailure(failure: Failure, unsaved: readonly string[]): Failure {
   return { ...failure, error: `${error} Not saved: ${listFormat.format(unsaved)}.` };
 }
 
-interface Step {
+export interface SaveStep {
   /** What the step saves, for the failure message. */
   label: string;
   run: () => Promise<ActionResult>;
@@ -155,7 +155,7 @@ interface Step {
  * Runs `steps` in order and stops at the first failure. When the save holds more than one
  * change, the error names every change it didn't save (the failed one and those after it).
  */
-async function saveInOrder(steps: readonly Step[]): Promise<ActionResult> {
+export async function saveInOrder(steps: readonly SaveStep[]): Promise<ActionResult> {
   const several = new Set(steps.map((step) => step.label)).size > 1;
   for (const [index, step] of steps.entries()) {
     const result = await step.run();

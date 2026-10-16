@@ -1,17 +1,24 @@
 "use client";
 
-import * as React from "react";
-import { Button, Checkbox, Field, InlineCode, Input, Label, Muted } from "@iamthemcmaster/ui";
+import {
+  Button,
+  Checkbox,
+  Field,
+  InlineCode,
+  Input,
+  Label,
+  Muted,
+  Skeleton,
+  Stack,
+} from "@iamthemcmaster/ui";
 import { IconCloudDownload } from "@tabler/icons-react";
 import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
+import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { useCurrentUser } from "@/components/current-user";
 import { PageHeader } from "@/components/page-header";
-import {
-  saveInOrder,
-  SettingsPanel,
-  SettingsSection,
-  SettingsSubsection,
-} from "@/components/settings-section";
+import { QueryBoundary } from "@/components/query-boundary";
+import { SettingsPanel, SettingsSection, SettingsSubsection } from "@/components/settings-section";
 import {
   formatSettingValue,
   settingChanges,
@@ -19,15 +26,31 @@ import {
   type SettingSpec,
   type SettingValue,
 } from "@/lib/settings/changes";
+import { useApiAction } from "@/components/use-api-action";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import type {
+  HarnessDefaults,
+  HarnessDefaultsSave,
+  OrganizationDefaults,
+} from "@/lib/api/harness-defaults";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { ACCESS_DENIED_PATH } from "@/lib/auth/routes";
 import { typedNumber } from "@/lib/settings/forms";
 import { formatDateTime } from "@/lib/format-date";
-import { setGlobalHarnessVersion, setOrganizationDefaults } from "./actions";
+import {
+  harnessDefaultsChanged,
+  useHarnessDefaults,
+  useHostToolCatalog,
+} from "./harness-defaults-queries";
 import {
   HARNESS_SETTINGS_TAB_LABELS,
   HarnessSettingsNav,
   type HarnessSettingsTab,
 } from "./harness-settings-nav";
-import { HostToolsCatalog, type HostToolCatalogRow } from "./host-tools-catalog";
+import { HostToolsCatalog } from "./host-tools-catalog";
+
+export type { OrganizationDefaults };
 
 const TASK_TYPE_LABELS: Record<TaskType, string> = {
   query: "Query",
@@ -59,12 +82,6 @@ const DEFAULTS_SPECS: SettingSpec[] = [
   { key: "maxConcurrency", label: "Max concurrency" },
   { key: "version", label: "Desired version", format: formatSettingValue },
 ];
-
-/** An organization's task types and max concurrency, saved or built in. */
-export interface OrganizationDefaults {
-  allowedTaskTypes: string[];
-  maxConcurrency: number;
-}
 
 interface DefaultsDraft {
   taskTypes: readonly string[];
@@ -101,15 +118,6 @@ function versionSuccess(version: string): string {
     : "Saved. Harnesses keep the version they run.";
 }
 
-interface DefaultsSectionProps {
-  desiredVersion: string | null;
-  updatedAt: string | null;
-  latest: HarnessSettingsViewProps["latest"];
-  packageName: string;
-  defaults: OrganizationDefaults;
-  builtInDefaults: OrganizationDefaults;
-}
-
 /**
  * The organization's harness defaults, saved together: the task types and max concurrency
  * harnesses and repositories use unless they set their own, and the version harnesses run.
@@ -121,12 +129,11 @@ export function DefaultsSection({
   packageName,
   defaults,
   builtInDefaults,
-}: DefaultsSectionProps) {
-  const saved = React.useMemo(
-    () => defaultsDraft(defaults, desiredVersion),
-    [defaults, desiredVersion],
-  );
-  const [draft, setDraft] = React.useState(saved);
+}: HarnessDefaults) {
+  const apiAction = useApiAction();
+  const saved = defaultsDraft(defaults, desiredVersion);
+  // Follows a change saved elsewhere while the section isn't being edited.
+  const [draft, setDraft] = useSeededDraft(saved);
   const values = defaultsValues(draft);
   const changes = settingChanges(DEFAULTS_SPECS, defaultsValues(saved), values);
 
@@ -139,20 +146,27 @@ export function DefaultsSection({
   const prepare = () => {
     const changed = new Set(changes.map((change) => change.key));
     const defaultsChanged = changed.has("allowedTaskTypes") || changed.has("maxConcurrency");
+    const save: HarnessDefaultsSave = {
+      ...(defaultsChanged
+        ? {
+            defaults: {
+              allowedTaskTypes: [...(values.allowedTaskTypes as string[])],
+              maxConcurrency: Number(draft.maxConcurrency),
+            },
+          }
+        : {}),
+      ...(changed.has("version") ? { version: draft.version } : {}),
+    };
     return {
       action: () =>
-        saveInOrder([
-          ...(defaultsChanged
-            ? [
-                () =>
-                  setOrganizationDefaults({
-                    allowedTaskTypes: [...(values.allowedTaskTypes as string[])],
-                    maxConcurrency: Number(draft.maxConcurrency),
-                  }),
-              ]
-            : []),
-          ...(changed.has("version") ? [() => setGlobalHarnessVersion(draft.version)] : []),
-        ]),
+        apiAction(
+          ({ organizationId }) =>
+            api.put("/api/ui/harness-defaults", mutationResultSchema, {
+              body: save,
+              organizationId,
+            }),
+          harnessDefaultsChanged,
+        ),
       success: changed.has("version")
         ? versionSuccess(draft.version)
         : "Saved. Harnesses pick it up with their next heartbeat.",
@@ -265,24 +279,70 @@ export function DefaultsSection({
   );
 }
 
-interface HarnessSettingsViewProps {
-  tab: HarnessSettingsTab;
-  /** A version, `latest` or null. */
-  desiredVersion: string | null;
-  /** ISO timestamp of the last change. */
-  updatedAt: string | null;
-  /** Tracking `latest`: the version last read from npm (`checkedAt` is ISO), or why reading failed. */
-  latest: { version: string | null; error: string | null; checkedAt: string | null } | null;
-  packageName: string;
-  /** The organization's task-type and max concurrency defaults (the built-in ones when not saved). */
-  defaults: OrganizationDefaults;
-  /** The defaults when the organization hasn't saved any. */
-  builtInDefaults: OrganizationDefaults;
-  /** The organization's host tools, by name (Host tools tab). */
-  hostTools: HostToolCatalogRow[];
+function DefaultsSkeleton() {
+  return (
+    <Stack gap={6}>
+      {[3, 1, 2].map((rows, i) => (
+        <Stack key={i} gap={3}>
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-4 w-2/3" />
+          {Array.from({ length: rows }, (_, row) => (
+            <Skeleton key={row} className="h-9 w-full" />
+          ))}
+        </Stack>
+      ))}
+    </Stack>
+  );
 }
 
-export function HarnessSettingsView({ tab, hostTools, ...defaults }: HarnessSettingsViewProps) {
+function HostToolsSkeleton() {
+  return (
+    <Stack gap={3}>
+      {[0, 1, 2].map((row) => (
+        <Skeleton key={row} className="h-9 w-full" />
+      ))}
+    </Stack>
+  );
+}
+
+function DefaultsTab() {
+  const query = useHarnessDefaults();
+  return (
+    <QueryBoundary query={query} skeleton={<DefaultsSkeleton />} what="the harness defaults">
+      {(data) => <DefaultsSection {...data} />}
+    </QueryBoundary>
+  );
+}
+
+function HostToolsTab() {
+  const query = useHostToolCatalog();
+  return (
+    <SettingsPanel
+      id="host-tools"
+      title="Host tools"
+      showTitle={false}
+      description={
+        <>
+          Software harness owners install by hand, such as Semgrep, that tasks can require.
+          Harnesses get this list with their heartbeat and report where they find each tool; set a
+          harness&apos;s path to one on its Host tools tab.
+        </>
+      }
+    >
+      <QueryBoundary query={query} skeleton={<HostToolsSkeleton />} what="the host tools">
+        {({ hostTools }) => <HostToolsCatalog hostTools={hostTools} />}
+      </QueryBoundary>
+    </SettingsPanel>
+  );
+}
+
+/**
+ * Settings › Harness defaults (admins), live: a tab (Defaults or the Host tools catalog);
+ * changes saved in another tab show without a reload.
+ */
+export function HarnessSettingsView({ tab }: { tab: HarnessSettingsTab }) {
+  const { role } = useCurrentUser();
+  if (role !== "admin") redirect(`${ACCESS_DENIED_PATH}?reason=forbidden`);
   return (
     <>
       <AppHeader
@@ -299,23 +359,8 @@ export function HarnessSettingsView({ tab, hostTools, ...defaults }: HarnessSett
         <HarnessSettingsNav current={tab} />
 
         <div className="settings-sections">
-          {tab === "defaults" && <DefaultsSection {...defaults} />}
-          {tab === "host-tools" && (
-            <SettingsPanel
-              id="host-tools"
-              title="Host tools"
-              showTitle={false}
-              description={
-                <>
-                  Software harness owners install by hand, such as Semgrep, that tasks can require.
-                  Harnesses get this list with their heartbeat and report where they find each tool;
-                  set a harness&apos;s path to one on its Host tools tab.
-                </>
-              }
-            >
-              <HostToolsCatalog hostTools={hostTools} />
-            </SettingsPanel>
-          )}
+          {tab === "defaults" && <DefaultsTab />}
+          {tab === "host-tools" && <HostToolsTab />}
         </div>
       </main>
     </>

@@ -1,17 +1,35 @@
 "use client";
 
 import * as React from "react";
-import { Badge, Field, Input } from "@iamthemcmaster/ui";
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  Field,
+  Input,
+  Skeleton,
+  Stack,
+} from "@iamthemcmaster/ui";
 import {
   fieldErrors as toFieldErrors,
   MIN_PROFILE_TOKEN_CAP,
   ReviewProfileInput,
   type FieldErrors,
 } from "@omniralph/shared";
+import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { useCurrentUser } from "@/components/current-user";
 import { PageHeader } from "@/components/page-header";
 import { ModelPicker, type ModelOption } from "@/components/pickers";
+import { QueryBoundary } from "@/components/query-boundary";
 import { SettingsCard, SwitchField } from "@/components/settings-card";
+import { useApiAction } from "@/components/use-api-action";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import type { ReviewProfileRow } from "@/lib/api/review-profiles";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import { ACCESS_DENIED_PATH } from "@/lib/auth/routes";
 import { formatDateTime } from "@/lib/format-date";
 import { formatSettingValue, settingChanges, withDefault } from "@/lib/settings/changes";
 import {
@@ -21,18 +39,9 @@ import {
   regroupTyped,
   type ProfileDraft,
 } from "@/lib/settings/forms";
-import { updateReviewProfile } from "./actions";
-import type { ProfileSummary } from "./profile-facts";
+import { reviewProfileChanged, useReviewProfiles } from "./profiles-queries";
 
-interface ProfileRow extends ProfileSummary {
-  /** ISO timestamp. */
-  updatedAt: string;
-  builtIn: boolean;
-  /** A built-in profile's original limits; null for others. */
-  defaults: ReviewProfileInput | null;
-  /** The connected repositories using the profile, by path. */
-  repositories: { id: string; fullPath: string }[];
-}
+type ProfileRow = ReviewProfileRow;
 
 /** Repositories listed by name in the confirmation; the rest are counted. */
 const AFFECTED_LISTED = 8;
@@ -75,8 +84,10 @@ export interface ProfileModelChoices {
 }
 
 function ProfileCard({ profile, choices }: { profile: ProfileRow; choices: ProfileModelChoices }) {
-  const saved = React.useMemo(() => profileDraft(profile), [profile]);
-  const [draft, setDraft] = React.useState(saved);
+  const apiAction = useApiAction();
+  const saved = profileDraft(profile);
+  // Follows a change saved elsewhere while the card isn't being edited.
+  const [draft, setDraft] = useSeededDraft(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const idPrefix = `profile-${profile.id}`;
   const set = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) =>
@@ -92,7 +103,16 @@ function ProfileCard({ profile, choices }: { profile: ProfileRow; choices: Profi
       return null;
     }
     return {
-      action: () => updateReviewProfile(profile.id, parsed.data),
+      action: () =>
+        apiAction(
+          ({ organizationId }) =>
+            api.put(
+              `/api/ui/review-profiles/${encodeURIComponent(profile.id)}`,
+              mutationResultSchema,
+              { body: parsed.data, organizationId },
+            ),
+          reviewProfileChanged,
+        ),
       success: `${profile.name} profile saved; it applies to the next review`,
       onSuccess: () => setErrors({}),
       onError: (result: { fieldErrors?: FieldErrors }) => setErrors(result.fieldErrors ?? {}),
@@ -191,13 +211,39 @@ function ProfileCard({ profile, choices }: { profile: ProfileRow; choices: Profi
   );
 }
 
-export function ProfilesView({
-  profiles,
-  choices,
-}: {
-  profiles: ProfileRow[];
-  choices: ProfileModelChoices;
-}) {
+function ProfilesSkeleton() {
+  return (
+    <Stack gap={4}>
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-2/3" />
+          </CardHeader>
+          <Stack gap={3} asChild>
+            <CardContent>
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-1/2" />
+            </CardContent>
+          </Stack>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
+/**
+ * Settings › Review profiles (admins), live: a profile saved in another tab, a repository
+ * moved to another profile or a model a harness starts reporting shows without a reload.
+ */
+export function ProfilesView() {
+  const { role } = useCurrentUser();
+  if (role !== "admin") redirect(`${ACCESS_DENIED_PATH}?reason=forbidden`);
+  return <AdminProfilesView />;
+}
+
+function AdminProfilesView() {
+  const query = useReviewProfiles();
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Profiles" }]} />
@@ -206,14 +252,27 @@ export function ProfilesView({
           title="Review profiles"
           description="Each repository uses one of these profiles. Changes apply to the next review of every repository using the profile. Built-in profiles can be edited but not deleted."
         />
-        {profiles.map((profile) => (
-          <ProfileCard
-            key={`${profile.id}-${profile.updatedAt}`}
-            profile={profile}
-            choices={choices}
-          />
-        ))}
+        <QueryBoundary query={query} skeleton={<ProfilesSkeleton />} what="the review profiles">
+          {(data) => <ProfilesContent {...data} />}
+        </QueryBoundary>
       </main>
+    </>
+  );
+}
+
+/** The profiles' cards, from `GET /api/ui/review-profiles`. */
+export function ProfilesContent({
+  profiles,
+  choices,
+}: {
+  profiles: ProfileRow[];
+  choices: ProfileModelChoices;
+}) {
+  return (
+    <>
+      {profiles.map((profile) => (
+        <ProfileCard key={profile.id} profile={profile} choices={choices} />
+      ))}
     </>
   );
 }
