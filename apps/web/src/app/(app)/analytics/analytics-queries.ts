@@ -6,8 +6,12 @@ import { useQueryKeys } from "@/components/query-provider";
 import { DEFAULT_ANALYTICS_RANGE, type AnalyticsParams } from "@/lib/analytics/display";
 import { analyticsResponseSchema } from "@/lib/api/analytics";
 import { api } from "@/lib/api/client";
+import { ANALYTICS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 
-/** The organization's analytics for the page's window and repository, live. */
+/**
+ * The organization's analytics for the page's window and repository: refetched every minute
+ * while the tab is visible, and when it regains focus.
+ */
 export function useAnalytics(params: AnalyticsParams) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
@@ -24,5 +28,6 @@ export function useAnalytics(params: AnalyticsParams) {
       }),
     // The previous window or repository stays (dimmed) while the new one loads.
     placeholderData: keepPreviousData,
+    refetchInterval: ANALYTICS_REFETCH_INTERVAL,
   });
 }

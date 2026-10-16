@@ -102,7 +102,7 @@ query with it, and `router.push` the new URL (`useRunListParams` in `coding/ralp
 while its tab is visible (`refetchInterval: 3000`, `refetchIntervalInBackground: false`), when the
 tab regains focus or the network reconnects, and on every mount (`staleTime: 0`). Network and 5xx
 failures retry with backoff; 4xx answers don't. Settings and definitions may poll at
-`SETTINGS_REFETCH_INTERVAL`. Each poll is a function invocation on Vercel, so polled handlers stay
+`SETTINGS_REFETCH_INTERVAL` (30s), analytics at `ANALYTICS_REFETCH_INTERVAL` (60s). Each poll is a function invocation on Vercel, so polled handlers stay
 cheap: paginated, indexed, `getDb()` on the Node runtime.
 
 **External APIs are not polled.** A query that calls Linear, GitHub or GitLab (the repository

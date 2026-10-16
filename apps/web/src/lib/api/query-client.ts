@@ -5,6 +5,8 @@ import { ApiError } from "./client";
 export const LIVE_REFETCH_INTERVAL = 3_000;
 /** For settings and definitions, which change rarely and only through the panel. */
 export const SETTINGS_REFETCH_INTERVAL = 30_000;
+/** For analytics: aggregates over days don't move in seconds, and each poll scans them. */
+export const ANALYTICS_REFETCH_INTERVAL = 60_000;
 /** Attempts after the first before a query shows its error. */
 const QUERY_RETRIES = 3;
 
