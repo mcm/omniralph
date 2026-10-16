@@ -7,6 +7,7 @@ import {
   readJson,
   unauthorized,
 } from "@/lib/harness-auth/request";
+import { cacheHarnessRevoked } from "@/lib/harness-auth/auth-state";
 import { getTokenSigner } from "@/lib/harness-auth/signer";
 import { getDb } from "@/lib/db";
 import {
@@ -52,6 +53,7 @@ export async function POST(req: Request): Promise<Response> {
         now,
       );
     case "reused":
+      await cacheHarnessRevoked(rotation.harnessId);
       await writeHarnessAudit(db, {
         harnessId: rotation.harnessId,
         event: "refresh_reuse",

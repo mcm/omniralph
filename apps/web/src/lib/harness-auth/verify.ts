@@ -1,5 +1,5 @@
 import "server-only";
-import { getHarnessAuthState, isJobRunningOnHarness, type Database } from "@omniralph/db";
+import { isJobRunningOnHarness, type Database } from "@omniralph/db";
 import {
   HARNESS_TOKEN_AUDIENCE,
   JobTokenScope,
@@ -9,6 +9,7 @@ import {
 import { jwtVerify, type JWTPayload } from "jose";
 import { getDb } from "@/lib/db";
 import { authLockoutRemaining, tooManyRequests } from "@/lib/rate-limit";
+import { readHarnessAuthState } from "./auth-state";
 import { authFailure, clientIp } from "./request";
 import { getVerificationKey } from "./signer";
 
@@ -92,7 +93,7 @@ function uuidClaim(value: unknown): string {
 }
 
 async function checkHarness(db: Database, harnessId: string): Promise<void> {
-  const state = await getHarnessAuthState(db, harnessId);
+  const state = await readHarnessAuthState(db, harnessId);
   if (state === "unknown") throw new AuthError("unknown_agent", null, true);
   if (state === "revoked") throw new AuthError("agent_revoked", harnessId);
 }
@@ -136,7 +137,8 @@ async function guard<T>(
  * if (harness instanceof Response) return harness;
  * ```
  *
- * Revocation takes effect immediately: the harness row is checked on every request.
+ * Revocation takes effect immediately: the harness's auth state is checked on every
+ * request (in Redis, which revocation updates; see `readHarnessAuthState`).
  */
 export async function requireHarness(req: Request): Promise<HarnessPrincipal | Response> {
   return guard(req, async (db, token) => {
