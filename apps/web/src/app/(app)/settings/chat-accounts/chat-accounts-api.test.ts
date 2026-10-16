@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { callAction } from "@/lib/api/test-call";
 import { AuthorizationError } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
@@ -10,9 +10,9 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
-  requireSignedInUser: async () => {
+  requireUser: async () => {
     if (!state.user) throw new AuthorizationError("You must be signed in.", "unauthenticated");
-    return state.user;
+    return { ...state.user, role: "member", organization: { id: "org-a", name: "A" } };
   },
 }));
 vi.mock("@omniralph/db", () => ({
@@ -29,7 +29,10 @@ vi.mock("@omniralph/db", () => ({
   },
 }));
 
-const { unlinkChatAccount } = await import("./actions");
+const unlink = await import("@/app/api/ui/chat-accounts/unlink/route");
+
+/** The Unlink button's request, under the name of the server action it replaces. */
+const unlinkChatAccount = (body: typeof input) => callAction(unlink.POST, "POST", {}, body);
 
 const input = { organizationId: "org-a", platform: "slack", externalUserId: "U1" };
 

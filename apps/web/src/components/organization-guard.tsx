@@ -9,8 +9,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@iamthemcmaster/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as React from "react";
+import { ApiError } from "@/lib/api/client";
+import { ORGANIZATION_SWITCHED } from "@/lib/api/schemas";
 import { ORGANIZATION_COOKIE } from "@/lib/auth/routes";
 
 /** The organization this browser has picked, as the cookie says now. */
@@ -22,12 +25,16 @@ function deviceOrganizationId(): string | null {
 
 /** Checks for (and blocks the tab after) a switch made in another tab. */
 const StaleContext = React.createContext<(() => boolean) | null>(null);
+/** Tells the guard this tab is switching itself (until it re-renders in the new organization). */
+const SwitchingContext = React.createContext<(() => void) | null>(null);
 
 /**
  * Tabs share one active organization per browser (TOOL-210 would make it per tab), so a
  * switch in one tab leaves the others showing the old one while the server acts on the
  * new one. This notices the switch (the cookie changed since the page rendered) when
- * the tab regains focus, and blocks the tab until it starts over from the dashboard.
+ * the tab regains focus, or when a query is refused because the active organization
+ * changed (a visible tab polling next to the one that switched), and blocks the tab until
+ * it starts over from the dashboard.
  */
 export function OrganizationGuard({
   organizationName,
@@ -43,11 +50,31 @@ export function OrganizationGuard({
   // The render found stale; a refreshed layout brings a new cookie, which clears it.
   const [staleRender, setStaleRender] = React.useState<{ cookie: string | null } | null>(null);
   const stale = staleRender !== null && staleRender.cookie === renderedCookie;
+  // This tab switched (the switcher, leaving): the cookie changes before the shell re-renders.
+  const switchingHere = React.useRef(false);
+  React.useEffect(() => {
+    switchingHere.current = false;
+  }, [renderedCookie]);
+  const expectSwitch = React.useCallback(() => {
+    switchingHere.current = true;
+  }, []);
   const check = React.useCallback(() => {
+    if (switchingHere.current) return false;
     const switched = deviceOrganizationId() !== renderedCookie;
     setStaleRender(switched ? { cookie: renderedCookie } : null);
     return switched;
   }, [renderedCookie]);
+
+  const client = useQueryClient();
+  React.useEffect(
+    () =>
+      client.getQueryCache().subscribe((event) => {
+        if (event.type !== "updated" || event.action.type !== "error") return;
+        const { error } = event.action;
+        if (error instanceof ApiError && error.code === ORGANIZATION_SWITCHED) check();
+      }),
+    [client, check],
+  );
 
   React.useEffect(() => {
     // `pageshow`: restored from the back/forward cache.
@@ -60,7 +87,7 @@ export function OrganizationGuard({
 
   return (
     <StaleContext.Provider value={check}>
-      {children}
+      <SwitchingContext.Provider value={expectSwitch}>{children}</SwitchingContext.Provider>
       <AlertDialog open={stale}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -97,3 +124,13 @@ export function useIsOrganizationStale(): () => boolean {
 }
 
 const notStale = () => false;
+
+/**
+ * For a switch made in this tab (call it once the switch succeeded): the guard doesn't take the
+ * changed cookie for another tab's switch while this tab re-renders in the new organization.
+ */
+export function useExpectOrganizationSwitch(): () => void {
+  return React.useContext(SwitchingContext) ?? noop;
+}
+
+const noop = () => {};

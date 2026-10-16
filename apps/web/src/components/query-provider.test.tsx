@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, renderHook } from "@testing-library/react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { queryKeys } from "@/lib/api/keys";
@@ -58,6 +58,50 @@ describe("QueryProvider", () => {
     client.setQueryData(queryKeys(B).harnesses.list(), ["build-02"]);
     shell.switchTo(B);
     expect(client.getQueryData(queryKeys(B).harnesses.list())).toEqual(["build-02"]);
+  });
+});
+
+/** A page's query: answers which organization it was fetched for. */
+function Page({ fetched }: { fetched: string[] }) {
+  const keys = useQueryKeys();
+  const query = useQuery({
+    queryKey: keys.harnesses.list(),
+    queryFn: async () => {
+      const organizationId = keys.all[0] as string;
+      fetched.push(organizationId);
+      return organizationId;
+    },
+  });
+  return <p>{query.data ? `Harnesses of ${query.data}` : "Loading"}</p>;
+}
+
+describe("switching organizations", () => {
+  it("reloads every visible query for the new organization and drops the previous one's", async () => {
+    const fetched: string[] = [];
+    let client: QueryClient | null = null;
+    const onClient = (c: QueryClient) => {
+      client = c;
+    };
+    const shell = (id: string) => (
+      <CurrentUserProvider user={{ ...testUser, organization: { id, name: id } }}>
+        <QueryProvider organizationId={id}>
+          <Capture onClient={onClient} />
+          <Page fetched={fetched} />
+        </QueryProvider>
+      </CurrentUserProvider>
+    );
+    const { rerender } = render(shell(A));
+    await waitFor(() => expect(screen.getByText(`Harnesses of ${A}`)).toBeTruthy());
+
+    // The shell re-renders in the new organization (the switcher's refresh).
+    rerender(shell(B));
+    await waitFor(() => expect(screen.getByText(`Harnesses of ${B}`)).toBeTruthy());
+    expect(fetched).toEqual([A, B]);
+    const cached = client!
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey[0]);
+    expect(cached).toEqual([B]);
   });
 });
 

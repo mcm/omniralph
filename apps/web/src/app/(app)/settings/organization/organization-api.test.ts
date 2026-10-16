@@ -21,10 +21,10 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
@@ -61,23 +61,33 @@ vi.mock("@/lib/auth/session", async () => {
   };
 });
 
-const {
-  addDomain,
-  changeMemberRole,
-  inviteMember,
-  leaveOrganization,
-  removeDomain,
-  removeMemberAction,
-  renameOrganization,
-  revokeInvitationAction,
-  setAllowDomainJoin,
-} = await import("./actions");
+const organization = await import("@/app/api/ui/organization/route");
+const invitations = await import("@/app/api/ui/organization/invitations/route");
+const invitation = await import("@/app/api/ui/organization/invitations/[id]/route");
+const memberRoute = await import("@/app/api/ui/organization/members/[userId]/route");
+const domains = await import("@/app/api/ui/organization/domains/route");
+const domainRoute = await import("@/app/api/ui/organization/domains/[domain]/route");
+const leave = await import("@/app/api/ui/organization/leave/route");
+
+// The settings page's requests, under the names of the server actions they replace.
+const renameOrganization = (name: string) => callAction(organization.PATCH, "PATCH", {}, { name });
+const setAllowDomainJoin = (allowDomainJoin: boolean) =>
+  callAction(organization.PATCH, "PATCH", {}, { allowDomainJoin });
+const inviteMember = (email: string, role: Role) =>
+  callAction(invitations.POST, "POST", {}, { email, role });
+const revokeInvitationAction = (id: string) => callAction(invitation.DELETE, "DELETE", { id });
+const changeMemberRole = (userId: string, role: Role) =>
+  callAction(memberRoute.PATCH, "PATCH", { userId }, { role });
+const removeMemberAction = (userId: string) => callAction(memberRoute.DELETE, "DELETE", { userId });
+const addDomain = (domain: string) => callAction(domains.POST, "POST", {}, { domain });
+const removeDomain = (domain: string) => callAction(domainRoute.DELETE, "DELETE", { domain });
+const leaveOrganization = () => callAction(leave.POST, "POST", {});
 
 const databaseAvailable = testDatabaseAvailable();
 
 const failure = { ok: false, error: expect.any(String) };
 
-describe.skipIf(!databaseAvailable)("organization settings actions", () => {
+describe.skipIf(!databaseAvailable)("organization settings API", () => {
   let testDb: TestDatabase;
   let db: Database;
 
@@ -129,6 +139,44 @@ describe.skipIf(!databaseAvailable)("organization settings actions", () => {
     expect(await renameOrganization("x".repeat(101))).toEqual(failure);
     expect(await renameOrganization(" Renamed ")).toEqual({ ok: true });
     expect(await getOrganization(db, org.id)).toMatchObject({ name: "Renamed" });
+  });
+
+  it("shows every member the organization, its members and domains; only admins its invitations", async () => {
+    const { admin, member, org } = await team("view.io");
+    as(admin.id);
+    await addDomain("view.io");
+    expect(await inviteMember("new@view.io", "member")).toEqual({ ok: true });
+
+    const read = async () => {
+      const response = await organization.GET(new Request("http://localhost/api/ui"), {
+        params: Promise.resolve({}),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    expect(await read()).toEqual({
+      status: 200,
+      body: {
+        organization: { id: org.id, name: "Team", allowDomainJoin: false },
+        isAdmin: true,
+        currentUserId: admin.id,
+        domains: ["view.io"],
+        members: expect.arrayContaining([
+          expect.objectContaining({ id: admin.id, role: "admin", email: "admin@view.io" }),
+          expect.objectContaining({ id: member.id, role: "member" }),
+        ]),
+        invitations: [expect.objectContaining({ email: "new@view.io", role: "member" })],
+      },
+    });
+
+    as(member.id);
+    expect((await read()).body).toMatchObject({
+      isAdmin: false,
+      currentUserId: member.id,
+      domains: ["view.io"],
+      invitations: [],
+    });
+    state.userId = null;
+    expect((await read()).status).toBe(401);
   });
 
   it("invites emails with a role, rejects members and pending invitees, and revokes", async () => {

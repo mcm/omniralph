@@ -61,6 +61,14 @@ components, `useQueryKeys()`) and starts with the active organization's id: `key
 (`keys.jobs.all` ⊃ `keys.jobs.lists` ⊃ `keys.jobs.list(params)`), and switching organizations drops
 the other organizations' queries from the cache.
 
+**Switching organizations.** The switcher (`POST /api/ui/organizations/switch`) and leaving an
+organization change the organization cookie, then `router.refresh()`: the layout re-renders the
+shell in the new organization, `QueryProvider` drops the previous one's cache, and every mounted
+query loads under the new keys. A switch made in this tab calls `useExpectOrganizationSwitch()`
+once it succeeded, so `OrganizationGuard` doesn't take the new cookie for another tab's switch.
+The guard blocks a tab after another tab's switch when it regains focus, or when a query is
+refused with 409 `organization_switched` (a visible tab polling beside the one that switched).
+
 ```ts
 const keys = useQueryKeys();
 const { organization } = useCurrentUser();
