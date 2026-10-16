@@ -113,7 +113,7 @@ queued or running job can next be claimed (`job-due:{organizationId}`,
 `apps/web/src/lib/dispatch/due.ts`) and only claims from Postgres (and re-reads the agent) while
 an entry is due. Idle attempts read the agent's revocation from Redis instead. Dispatch, retry,
 claim, lease renewal and every finish update the set after their commit; a flushed Redis is
-rebuilt from the queued and running jobs.
+rebuilt from the queued and running jobs. See [ADR 0007](0007-redis-hot-state.md).
 
 The agent (`apps/harness/src/daemon.ts`, `claimLoop`) keeps one claim in flight while it has a free
 slot. It starts a claimed job and claims again at once. When nothing is claimable (no free slot, or

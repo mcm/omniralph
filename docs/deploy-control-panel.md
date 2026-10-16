@@ -83,6 +83,34 @@ still live.
 To migrate by hand (e.g. a local database): `DATABASE_URL=… pnpm --filter @omniralph/db migrate`.
 It prefers `DATABASE_URL_UNPOOLED` when that's set.
 
+### Redis (Upstash)
+
+Optional, but without it Neon never suspends while harnesses are online: idle heartbeats, claims,
+revocation checks, rate limits and the `expire-jobs` and `ralph-reconcile` crons all query
+Postgres. With `REDIS_URL` set they use Redis instead, and Postgres is only queried when there's
+work ([ADR 0007](adr/0007-redis-hot-state.md)). Redis only holds state that can be rebuilt from
+Postgres or safely lost, so it needs no backups.
+
+1. **Storage › Upstash › Create** (Vercel Marketplace, *Upstash for Redis*), or create a database
+   in the [Upstash console](https://console.upstash.com). Pick the region closest to the function
+   region (e.g. `us-east-1` for `iad1`). The free plan is enough to start; watch its daily command
+   limit, which grows with the number of harnesses (several commands per heartbeat and claim).
+   Turn eviction on (the hot state is rebuilt when a key is missing).
+2. Use a separate database per environment, as with KMS issuers, so a preview can't change
+   production's hot state. Previews can also go without one.
+3. Set `REDIS_URL` to the **TCP** URL with TLS: `rediss://default:<password>@<host>:6379` (the
+   console's *Connect › ioredis/TCP* string; the Marketplace integration exposes it as `REDIS_URL`
+   or `KV_URL`, so copy it to `REDIS_URL` if needed). Don't use the REST URL and token
+   (`UPSTASH_REDIS_REST_*` / `KV_REST_API_*`): REST calls are billed as Observability Plus external
+   API events.
+4. Redeploy. Nothing needs seeding: the first request finds `hot-state:epoch` missing and rebuilds
+   the hot state from Postgres.
+
+To check it works, watch Neon's compute (**Neon Console › Monitoring**) on a quiet day: it should
+suspend between token refreshes. Removing `REDIS_URL` (or Redis being unreachable) goes back to
+Postgres for everything on the next request; Redis errors are logged as `hot-state: …`. Flushing
+the database is safe at any time.
+
 ## 4. KMS issuer for harness tokens (`KMS_AGENT_ISSUER_ID`)
 
 Harness access tokens and job tokens are RS256 JWTs signed by Vercel KMS, so no signing key sits in an
