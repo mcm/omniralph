@@ -1,7 +1,8 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   AlertDescription,
@@ -14,6 +15,7 @@ import {
   CardTitle,
   Empty,
   NativeSelect,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -32,14 +34,17 @@ import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { ExternalRowLink, PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { ListErrorRow, useListErrorId } from "@/components/list-error";
+import { Freshness } from "@/components/freshness";
 import { ListPagination } from "@/components/list-pagination";
 import { PageHeader } from "@/components/page-header";
+import { QueryBoundary } from "@/components/query-boundary";
 import { RalphRunStatusBadge } from "@/components/ralph-badges";
-import { totalPages } from "@/lib/pagination";
+import type { RunList } from "@/lib/api/runs";
+import { pageRange, totalPages } from "@/lib/pagination";
 import {
+  parseRalphRunListParams,
   RALPH_RUN_STATUSES,
   ralphRunListHref,
-  type RalphRepositoryRef,
   type RalphRunListParams,
   type RalphRunRow,
   runSourceLabel,
@@ -47,17 +52,7 @@ import {
 import { ProviderIcon } from "@/components/provider-icon";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
-
-interface RalphRunsViewProps {
-  runs: RalphRunRow[];
-  /** Repositories to filter by. */
-  repositories: RalphRepositoryRef[];
-  params: RalphRunListParams;
-  total: number;
-  pageSize: number;
-  /** False while no Linear workspace is connected: no runs can start. */
-  linearConnected: boolean;
-}
+import { useRunList } from "./run-queries";
 
 /** The run's Linear issue: identifier and title, linked to Linear when the URL is known. */
 export function LinearIssueLink({
@@ -241,24 +236,159 @@ function RunTableRow({ run, isAdmin }: { run: RalphRunRow; isAdmin: boolean }) {
   );
 }
 
-export function RalphRunsView({
-  runs,
-  repositories,
+/** The runs table's skeleton: rows shaped like runs while the first page loads. */
+function RunsSkeleton() {
+  return (
+    <Table className="list-table">
+      <TableBody>
+        {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+          <TableRow key={index}>
+            <TableCell className="list-col-main">
+              <Skeleton width={`${45 + ((index * 17) % 35)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width={`${50 + ((index * 13) % 30)}%`} />
+            </TableCell>
+            <TableCell className={WIDE_COLUMN}>
+              <Skeleton width="5rem" height="1.25rem" radius="full" />
+            </TableCell>
+            {Array.from({ length: 4 }, (_, column) => (
+              <TableCell key={column} className={WIDE_COLUMN}>
+                <Skeleton width={`${40 + (((index + column) * 13) % 40)}%`} />
+              </TableCell>
+            ))}
+            <TableCell />
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+const SKELETON_ROWS = 5;
+
+function RunsTable({
+  list,
   params,
-  total,
-  pageSize,
-  linearConnected,
-}: RalphRunsViewProps) {
-  const isAdmin = useCurrentUser().role === "admin";
+  isAdmin,
+}: {
+  list: RunList;
+  params: RalphRunListParams;
+  isAdmin: boolean;
+}) {
+  const pathname = usePathname();
+  const { runs, total, linearConnected } = list;
+  const filtered = params.status !== null || params.repositoryId !== null;
+  return (
+    <>
+      {total === 0 && !filtered && !linearConnected ? (
+        <Empty
+          icon={<IconPlugConnected size={24} />}
+          title="Connect Linear to start coding tasks"
+          titleAs="h3"
+          description={
+            isAdmin
+              ? "Runs start when a Linear issue is delegated to the Omniralph app. Connect your Linear workspace first."
+              : "Runs start when a Linear issue is delegated to the Omniralph app. Ask an admin to connect your Linear workspace in Settings › Integrations."
+          }
+          action={
+            isAdmin ? (
+              <Button asChild>
+                <Link href="/settings/integrations">
+                  <IconPlugConnected size={14} />
+                  Settings › Integrations
+                </Link>
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : runs.length === 0 ? (
+        <Empty
+          icon={<IconRepeat size={24} />}
+          title={
+            total > 0
+              ? "No runs on this page"
+              : filtered
+                ? "No runs match these filters"
+                : "No coding tasks yet"
+          }
+          titleAs="h3"
+          description={
+            total > 0
+              ? "The page is past the last one."
+              : "Runs appear here when a Linear epic or issue is delegated to the Omniralph app and routed to a repository with coding enabled."
+          }
+        />
+      ) : (
+        <Table className="list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Run</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Repository / branch</TableHead>
+              <TableHead className={WIDE_COLUMN}>Status</TableHead>
+              <TableHead className={WIDE_COLUMN}>Stories</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>PR / MR</TableHead>
+              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Updated</TableHead>
+              <TableHead aria-label="Links" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => (
+              <RunTableRow key={run.id} run={run} isAdmin={isAdmin} />
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <ListPagination
+        page={params.page}
+        pageCount={totalPages(total, list.pageSize)}
+        hrefFor={(page) => ralphRunListHref(pathname, { ...params, page })}
+      />
+    </>
+  );
+}
+
+/**
+ * The list's filters and page from the URL, and a setter. A chosen filter shows at once,
+ * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
+ */
+function useRunListParams(): [RalphRunListParams, (change: Partial<RalphRunListParams>) => void] {
   const router = useRouter();
   const pathname = usePathname();
-  const pageCount = totalPages(total, pageSize);
-  const filtered = params.status !== null || params.repositoryId !== null;
-  const first = total === 0 ? 0 : (params.page - 1) * pageSize + 1;
-  const last = (params.page - 1) * pageSize + runs.length;
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const fromUrl = parseRalphRunListParams(Object.fromEntries(searchParams));
+  // Chosen on the URL `search`: once the URL changes, it holds the choice.
+  const [chosen, setChosen] = React.useState<{
+    search: string;
+    params: RalphRunListParams;
+  } | null>(null);
+  const params = chosen?.search === search ? chosen.params : fromUrl;
+  const setFilter = (change: Partial<RalphRunListParams>) => {
+    const next = { ...params, ...change, page: 1 };
+    setChosen({ search, params: next });
+    router.push(ralphRunListHref(pathname, next), { scroll: false });
+  };
+  return [params, setFilter];
+}
 
-  const setFilter = (change: Partial<RalphRunListParams>) =>
-    router.push(ralphRunListHref(pathname, { ...params, ...change, page: 1 }));
+/**
+ * The Coding tasks page, live: the runs for the URL's filters and page poll
+ * (`GET /api/ui/runs`); a new filter or page keeps the previous results, dimmed, until its
+ * own arrive.
+ */
+export function RalphRunsView() {
+  const isAdmin = useCurrentUser().role === "admin";
+  const [params, setFilter] = useRunListParams();
+  const list = useRunList(params);
+  const data = list.data;
+  const total = data?.total ?? 0;
+  const { first, last } = pageRange(
+    data?.page ?? params.page,
+    data?.pageSize ?? 1,
+    data?.runs.length ?? 0,
+  );
 
   return (
     <>
@@ -267,9 +397,10 @@ export function RalphRunsView({
         <PageHeader
           title="Coding tasks"
           description="Linear epics and issues delegated to Omniralph, built story by story."
+          meta={<Freshness query={list} />}
         />
 
-        {!linearConnected && total > 0 && <LinearNotConnected isAdmin={isAdmin} />}
+        {data && !data.linearConnected && total > 0 && <LinearNotConnected isAdmin={isAdmin} />}
 
         <Card>
           <CardHeader>
@@ -303,7 +434,9 @@ export function RalphRunsView({
                   onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
                 >
                   <option value="">All repositories</option>
-                  {repositories.map((r) => (
+                  {/* Until the repositories load, the chosen one is still an option. */}
+                  {!data && params.repositoryId && <option value={params.repositoryId} />}
+                  {data?.repositories.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.fullPath}
                     </option>
@@ -313,72 +446,13 @@ export function RalphRunsView({
             </div>
           </CardHeader>
           <CardContent className="list-card-content">
-            {total === 0 && !filtered && !linearConnected ? (
-              <Empty
-                icon={<IconPlugConnected size={24} />}
-                title="Connect Linear to start coding tasks"
-                titleAs="h3"
-                description={
-                  isAdmin
-                    ? "Runs start when a Linear issue is delegated to the Omniralph app. Connect your Linear workspace first."
-                    : "Runs start when a Linear issue is delegated to the Omniralph app. Ask an admin to connect your Linear workspace in Settings › Integrations."
-                }
-                action={
-                  isAdmin ? (
-                    <Button asChild>
-                      <Link href="/settings/integrations">
-                        <IconPlugConnected size={14} />
-                        Settings › Integrations
-                      </Link>
-                    </Button>
-                  ) : undefined
-                }
-              />
-            ) : runs.length === 0 ? (
-              <Empty
-                icon={<IconRepeat size={24} />}
-                title={
-                  total > 0
-                    ? "No runs on this page"
-                    : filtered
-                      ? "No runs match these filters"
-                      : "No coding tasks yet"
-                }
-                titleAs="h3"
-                description={
-                  total > 0
-                    ? "The page is past the last one."
-                    : "Runs appear here when a Linear epic or issue is delegated to the Omniralph app and routed to a repository with coding enabled."
-                }
-              />
-            ) : (
-              <Table className="list-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>
-                      Repository / branch
-                    </TableHead>
-                    <TableHead className={WIDE_COLUMN}>Status</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Stories</TableHead>
-                    <TableHead className={`${WIDE_COLUMN} list-nowrap`}>PR / MR</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Harness</TableHead>
-                    <TableHead className={WIDE_COLUMN}>Updated</TableHead>
-                    <TableHead aria-label="Links" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs.map((run) => (
-                    <RunTableRow key={run.id} run={run} isAdmin={isAdmin} />
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <ListPagination
-              page={params.page}
-              pageCount={pageCount}
-              hrefFor={(page) => ralphRunListHref(pathname, { ...params, page })}
-            />
+            <QueryBoundary query={list} skeleton={<RunsSkeleton />} what="coding tasks">
+              {(loaded) => (
+                <div className="list-pending" aria-busy={list.isPlaceholderData}>
+                  <RunsTable list={loaded} params={params} isAdmin={isAdmin} />
+                </div>
+              )}
+            </QueryBoundary>
           </CardContent>
         </Card>
       </main>

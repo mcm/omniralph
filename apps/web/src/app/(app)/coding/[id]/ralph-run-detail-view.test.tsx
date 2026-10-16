@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { RalphLaneView, RalphRunDetailView, RalphStoryView } from "@/lib/ralph/display";
 import { RecommendationsCard, RunFacts, StoriesCard } from "./ralph-run-detail-view";
 
-vi.mock("../actions", () => ({ stopRalphRun: vi.fn() }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
 function lane(id: string, fullPath: string, main: boolean): RalphLaneView {

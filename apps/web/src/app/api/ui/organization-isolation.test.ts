@@ -10,16 +10,20 @@ import {
   createHarnessEnrollment,
   createHostTool,
   createOrganization,
+  createRun,
   enrollHarness,
   getHarnessOverview,
   getRepository,
+  getRun,
   harnesses,
   jobs,
   listHarnessHostTools,
   organizationMembers,
   scmConnections,
   setActiveOrganization,
+  updateRun,
   upsertScmConnection,
+  upsertStories,
   users,
   type Database,
 } from "@omniralph/db";
@@ -99,6 +103,9 @@ const repositoryWebhook = await import("./repositories/[id]/webhook/route");
 const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
 const selectable = await import("./scm-connections/[id]/repositories/route");
+const runList = await import("./runs/route");
+const runDetail = await import("./runs/[id]/route");
+const runStop = await import("./runs/[id]/stop/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -136,6 +143,8 @@ interface Tenant {
   repoId: string;
   repoPath: string;
   hostToolId: string;
+  runId: string;
+  storyId: string;
 }
 
 describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
@@ -183,6 +192,22 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     const tool = await createHostTool(db, org.id, { name: `${name}-tool` });
     if (!tool.ok) throw new Error("setup");
+    const { run } = await createRun(db, {
+      organizationId: org.id,
+      linearIssueId: `${name}-issue`,
+      linearIdentifier: `${name.toUpperCase()}-1`,
+      linearTitle: `${name} epic`,
+      linearUrl: null,
+      linearAgentSessionId: `${name}-session`,
+      kind: "children",
+      repositoryId: repo.id,
+      branch: `${name}-branch`,
+      baseBranch: "main",
+    });
+    await updateRun(db, run.id, { status: "running" });
+    const [story] = await upsertStories(db, run.id, [
+      { linearIssueId: `${name}-story`, identifier: `${name.toUpperCase()}-2`, title: "Story" },
+    ]);
     return {
       name,
       adminId: admin!.id,
@@ -194,6 +219,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       repoId: repo.id,
       repoPath,
       hostToolId: tool.hostTool.id,
+      runId: run.id,
+      storyId: story!.id,
     };
   }
 
@@ -570,6 +597,83 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
       organizationId: b.orgId,
       next: picker,
+    });
+  });
+
+  it("lists and shows each organization's own coding runs to its members, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const list = await call(runList.GET);
+        expect(list.status).toBe(200);
+        expect((list.body.runs as { id: string }[]).map((r) => r.id)).toEqual([own.runId]);
+        expect(list.body.repositories).toMatchObject([{ id: own.repoId }]);
+        // The other's repository as the filter finds nothing.
+        const filtered = await call(runList.GET, {
+          path: `/api/ui?repository=${other.repoId}`,
+        });
+        expect(filtered).toMatchObject({ status: 200, body: { runs: [], total: 0 } });
+
+        const detail = await call(runDetail.GET, { params: { id: own.runId } });
+        expect(detail).toMatchObject({ status: 200, body: { run: { id: own.runId } } });
+        expect(JSON.stringify(detail.body)).toContain(own.storyId);
+        for (const { body } of [list, detail]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+
+        expect(await call(runDetail.GET, { params: { id: other.runId } })).toMatchObject({
+          status: 404,
+        });
+        expect(await call(runDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
+          status: 404,
+        });
+      }
+    }
+  });
+
+  it("refuses to stop the other organization's run, and members can't stop runs", async () => {
+    state.userId = a.adminId;
+    expect(await call(runStop.POST, { method: "POST", params: { id: b.runId } })).toMatchObject({
+      status: 400,
+      body: { error: "That run doesn't exist." },
+    });
+    expect(
+      await call(runStop.POST, { method: "POST", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+    state.userId = b.memberId;
+    expect(await call(runStop.POST, { method: "POST", params: { id: b.runId } })).toMatchObject({
+      status: 403,
+    });
+    expect((await getRun(db, b.runId))!.status).toBe("running");
+  });
+
+  it("sends a member of both organizations to switch to the run's organization", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-runs-member", email: "both-runs@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+
+    const page = `/coding/${b.runId}`;
+    const { status, body } = await call(runDetail.GET, {
+      params: { id: b.runId },
+      path: `/api/ui?${new URLSearchParams({ next: page })}`,
+    });
+    expect(status).toBe(409);
+    expect(body).toMatchObject({ code: "enter_organization" });
+    expect(JSON.stringify(body)).not.toContain(b.name);
+    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
+    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
+      organizationId: b.orgId,
+      next: page,
     });
   });
 });
