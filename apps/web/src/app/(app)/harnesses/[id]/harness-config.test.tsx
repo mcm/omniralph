@@ -24,7 +24,6 @@ import {
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock("../../jobs/actions", () => ({}));
 
 const defaults = { acceptedTaskTypes: ["query", "review"], maxConcurrency: 6 };
 
