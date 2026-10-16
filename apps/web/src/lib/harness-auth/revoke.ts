@@ -11,6 +11,7 @@ import {
 } from "@omniralph/db";
 import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
+import { cacheHarnessRevoked } from "./auth-state";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks, type JobHooks } from "@/lib/sinks";
@@ -21,7 +22,8 @@ const REVOKED = "Harness revoked";
  * Revokes a harness (Harnesses page): sets `revoked_at`, revokes every refresh-token
  * family, fails its running jobs as retryable, removes its pins and writes a
  * `revoke` audit row. Unexpired access and job tokens are rejected from the next
- * request on, because `requireHarness`/`requireJob` check the harness row.
+ * request on, because `requireHarness`/`requireJob` check the harness's auth state
+ * (written to Redis here, after the Postgres commit).
  *
  * Requeued untargeted jobs are claimed by other harnesses. Queued jobs only the
  * revoked harness may claim (`target_harness_id`) are redispatched: `repo.sync` jobs
@@ -45,6 +47,7 @@ export async function revokeHarness(
     organizationId: options.organizationId,
   });
   if (!revoked) return false;
+  await cacheHarnessRevoked(harnessId);
   await writeHarnessAudit(db, {
     harnessId,
     event: "revoke",
