@@ -1,6 +1,7 @@
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
+import { checkRalphReconcile, finishRalphReconcile } from "@/lib/ralph/active";
 import { reconcileAllOrganizations } from "@/lib/ralph/reconcile-cron";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 
@@ -13,14 +14,20 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
  * never enqueued. Then cleans up merged ralph PRs/MRs (the fallback for merge
  * webhooks; it also deletes kept branches nobody answered about in time) and
  * checks the CI of every open one (the fallback for CI webhooks). The counts
- * are summed over the organizations.
+ * are summed over the organizations. With Redis, it returns without querying
+ * Postgres while nothing marked ralph work since a run that found none (and the
+ * last full run is less than a day old): see `lib/ralph/active`.
  */
 export async function GET(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
+  const db = getDb();
+  const check = await checkRalphReconcile(db);
+  if (!check.run) return Response.json({ skipped: true });
   const totals = await reconcileAllOrganizations({
-    db: getDb(),
+    db,
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   });
+  await finishRalphReconcile(db, check);
   return Response.json(totals);
 }

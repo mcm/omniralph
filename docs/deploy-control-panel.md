@@ -146,10 +146,10 @@ running jobs aren't lost.
 | Path | Schedule | Does |
 | -- | -- | -- |
 | `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured |
-| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them) |
+| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old |
 | `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old harness API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week |
-| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)) |
+| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)). With `REDIS_URL` set, it returns without querying Postgres until a run is created or advanced (the `ralph:active` marker), and does a full run at least once a day |
 
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`). Vercel sends it as `Authorization: Bearer …`;
 the routes reject everything else. Cron jobs only run for the production deployment.

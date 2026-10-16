@@ -119,6 +119,7 @@ import {
   withPullRequestLinks,
   type PublishedLane,
 } from "./publish";
+import { markRalphActive } from "./active";
 import {
   applyRequestJob,
   consumeStoryRequests,
@@ -261,9 +262,18 @@ export type AdvanceResult =
  * relations and states), synced and the plan posted, and the run either
  * enqueues the next ready story as a `ralph.story` job, enqueues the
  * `ralph.describe-pr` job (every story done) or waits (on blockers, manual stories or a person). Nothing is enqueued
- * while one of the run's jobs is queued or running.
+ * while one of the run's jobs is queued or running. Afterwards the reconcile
+ * cron is told there's ralph work (`markRalphActive`).
  */
 export async function advanceRun(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
+  try {
+    return await advance(runId, deps);
+  } finally {
+    await markRalphActive();
+  }
+}
+
+async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
   // Outcomes commit on their own, so a Linear failure while selecting can't undo them.
   const applied = await lockRun(deps.db, runId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };

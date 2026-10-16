@@ -515,6 +515,7 @@ export {
   listRalphRepositories,
   listRunsAffectedByIssue,
   listRunsToReconcile,
+  hasRalphWork,
   listChatRunOrganizationIds,
   listRuns,
   getRunDetail,
