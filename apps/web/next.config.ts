@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   // node_modules at runtime instead.
   serverExternalPackages: ["@chat-adapter/discord", "discord.js"],
   // Extra hosts `next dev` serves its dev resources to, e.g. `host.docker.internal` when
-  // `verify:screens` runs on Docker Desktop (scripts/screens/docker-host.ts).
+  // `verify:screens` or `e2e` runs on Docker Desktop (scripts/browser/environment.ts).
   allowedDevOrigins: process.env.OMNIRALPH_ALLOWED_DEV_ORIGINS?.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),

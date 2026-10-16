@@ -46,3 +46,6 @@ evals/reports/
 
 # verify:screens output
 apps/web/.screens/
+
+# e2e output (traces and screenshots of failed tests)
+apps/web/.e2e/

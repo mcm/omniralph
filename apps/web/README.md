@@ -175,3 +175,53 @@ listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segment
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a
 route with `steps`: `{ action: "fill", selector, value }` or `{ action: "click", selector }`,
 run in order before the screenshot (e.g. `settings-profiles-confirm`).
+
+## End-to-end tests
+
+`e2e` runs the Playwright specs in `e2e/*.spec.ts` against the real panel on the fixture
+database, to check behaviour a person would otherwise click through (live updates, a
+harness enrolling while the dialog is open):
+
+```sh
+pnpm --filter @omniralph/web e2e
+pnpm --filter @omniralph/web e2e --grep "smoke|enroll"
+```
+
+**Prerequisites:** Docker only, like `verify:screens`, with which it shares
+`scripts/browser/environment.ts` (fixture database, `next dev`, the Playwright container,
+`docker cp`, Docker Desktop's `host.docker.internal` and dev origins). It runs unattended:
+
+1. bundles each spec and `e2e/playwright.config.ts` with esbuild (the workspace packages
+   from source), so specs can import `@omniralph/db` and `scripts/fixtures/ids.ts`;
+2. builds the workspace packages the panel imports (`--skip-build` skips it), starts the
+   fixture database (reseeded) and `next dev` on a free port;
+3. runs `playwright test` on the bundles in `mcr.microsoft.com/playwright:v<version>-noble`
+   (the bundles and `@playwright/test` go in with `docker cp`), with `E2E_BASE_URL` (the
+   panel) and `DATABASE_URL` (the fixture database) as the container reaches them;
+4. prints Playwright's list of tests and its pass/fail summary, copies the traces and
+   screenshots of failed tests to `apps/web/.e2e/<timestamp>/` (gitignored), stops the panel
+   and removes the fixture database, also on failure. It exits non-zero when a test fails.
+
+| Option                  | Effect                                                         |
+| ----------------------- | -------------------------------------------------------------- |
+| `--grep <regex>`        | Only tests whose title (file, describe, test) matches          |
+| `--grep-invert <regex>` | Skip tests whose title matches                                 |
+| `--skip-build`          | Don't build the workspace packages first                       |
+
+**Writing a spec:** import `test` and `expect` from `./fixtures` (not `@playwright/test`).
+The fixtures and helpers there:
+
+- `signIn(user?)` signs the test's browser context in as a fixture user (`"admin"`, the
+  default, or `"member"`; `FIXTURE_EMAILS`). `page` and `context.request` then share the
+  session, so `context.request` calls `/api/ui/*` as that user.
+- `db` is the fixture database (`@omniralph/db`): write rows directly to play a harness, a
+  webhook or a cron, and read them back. Name fixture rows with `FIXTURE_IDS`.
+- `request` (Playwright's) calls the panel's HTTP API without a session, e.g. the harness
+  API: `enrollHarness(request, await createEnrollmentToken(db), name)` enrolls a harness
+  through `POST /api/harness/enroll`.
+
+Tests run one at a time (one worker) on one seed, so a spec that changes shared fixture rows
+puts them back, or creates its own rows instead (e.g. a new harness with a unique name).
+Live data polls every 3s: assert with `expect(...).toBeVisible()` and friends, which retry
+for 10s, rather than reloading. The first visit of each route waits for `next dev` to
+compile it (navigation timeout 3 minutes).
