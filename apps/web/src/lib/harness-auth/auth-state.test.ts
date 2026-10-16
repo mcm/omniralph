@@ -101,6 +101,18 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
       expect(await readHarnessAuthState(noPostgres, harnessId)).toBe("active");
     });
 
+    it("authenticates a request on a cache hit without querying Postgres", async () => {
+      const harnessId = await newHarness();
+      expect(await requireHarness(await requestAs(harnessId))).toEqual({ harnessId });
+      // The lockout check and the auth state are both answered from Redis.
+      state.db = noPostgres;
+      try {
+        expect(await requireHarness(await requestAs(harnessId))).toEqual({ harnessId });
+      } finally {
+        state.db = db;
+      }
+    });
+
     it("doesn't cache an unknown harness", async () => {
       const harnessId = crypto.randomUUID();
       expect(await readHarnessAuthState(db, harnessId)).toBe("unknown");
@@ -118,6 +130,17 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
       expect(await readHarnessAuthState(noPostgres, harnessId)).toBe("revoked");
       const res = await requireHarness(await requestAs(harnessId));
       expect((res as Response).status).toBe(401);
+    });
+
+    it("keeps a revoked harness refused after Redis is flushed", async () => {
+      const harnessId = await newHarness();
+      expect(await requireHarness(await requestAs(harnessId))).toEqual({ harnessId });
+      expect(await revokeHarness(harnessId, { db, dispatcher })).toBe(true);
+
+      await getRedis().flushall();
+      const res = await requireHarness(await requestAs(harnessId));
+      expect((res as Response).status).toBe(401);
+      expect(await getRedis().get(harnessAuthKey(harnessId))).toBe("revoked");
     });
 
     it("drops cached states on a rebuild", async () => {
