@@ -97,7 +97,6 @@ vi.mock("@/lib/scm/github-app", () => ({
 }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-vi.mock("./repositories/[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
 vi.mock("./triage/[id]/triage-run-detail-view", () => ({ TriageRunDetailView: () => null }));
 vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
@@ -113,7 +112,6 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const { GET: enterOrganization } = await import("../api/organizations/enter/route");
 const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
-const { default: RepositoryRulesPage } = await import("./repositories/[id]/rules/page");
 const { default: TriageRunsPage } = await import("./triage/page");
 const { default: TriageRunPage } = await import("./triage/[id]/page");
 const { default: AnalyticsPage } = await import("./analytics/page");
@@ -369,7 +367,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     state.userId = own.userId;
     const pages: Record<string, JSX.Element> = {
       layout: await AppLayout({ children: null }),
-      repositoryRules: await RepositoryRulesPage(params(own.repoId)),
       triageRuns: await TriageRunsPage(search()),
       triageRun: await TriageRunPage(params(own.triageRunId)),
       analytics: await AnalyticsPage(search()),
@@ -403,7 +400,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       // Every loader found the organization's own rows (the check above isn't vacuous).
       const ids = <T extends { id: string }>(rows: T[]) => rows.map((row) => row.id);
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
-      expect(ids(pages.repositoryRules!.props.rules)).toEqual([own.ruleId]);
       expect(ids(pages.triageRuns!.props.runs)).toEqual([own.triageRunId]);
       expect(pages.triageRun!.props.run.id).toBe(own.triageRunId);
       expect(ids(pages.triageRun!.props.run.jobs)).toEqual([own.triageJobId]);
@@ -435,7 +431,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
   it("returns 404 on another organization's resource URLs for a non-member", async () => {
     state.userId = a.userId;
-    await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
     await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
     expect((await getActiveOrganization(db, a.userId))?.id).toBe(a.orgId);
@@ -472,7 +467,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
-      [`/repositories/${b.repoId}/rules`, () => RepositoryRulesPage(params(b.repoId)), b.repoId],
     ];
     for (const [path, open, id] of resources) {
       expect(await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId })).toBe(

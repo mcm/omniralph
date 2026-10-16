@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   Empty,
   Field,
   Muted,
+  Skeleton,
   Stack,
   Switch,
   Table,
@@ -50,28 +52,76 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
+import { useMutationState } from "@tanstack/react-query";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
+import { Freshness } from "@/components/freshness";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoPath } from "@/components/mono-value";
 import { PageHeader } from "@/components/page-header";
-import { useAction } from "@/components/use-action";
-import type { RuleView } from "@/lib/rules/display";
 import { ProviderIcon } from "@/components/provider-icon";
+import { QueryBoundary } from "@/components/query-boundary";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import type { QueryKeys } from "@/lib/api/keys";
+import type { RepositoryRules, RuleChange } from "@/lib/api/rules";
+import { mutationResultSchema } from "@/lib/api/schemas";
+import type { RuleView } from "@/lib/rules/display";
 import { RepositoryNav } from "../repository-nav";
-import { addCustomRule, deleteRule, editRule, setRuleEnabled } from "./actions";
+import { useRepositoryRules } from "../repository-queries";
 
-interface RulesViewProps {
-  repository: {
-    id: string;
-    provider: "github" | "gitlab";
-    fullPath: string;
-    webUrl: string;
-  };
-  rules: RuleView[];
+/** What a rule change affects: the repository's Rules tab (rules show nowhere else). */
+const rulesChanged = (repositoryId: string) => (keys: QueryKeys) => [
+  keys.repositories.part(repositoryId, "rules"),
+];
+
+/** Sends a rule's change (`PATCH`): a new text, or switched on or off. */
+function patchRule(
+  repositoryId: string,
+  ruleId: string,
+  change: RuleChange,
+  organizationId: string,
+) {
+  return api.patch(`/api/ui/repositories/${repositoryId}/rules/${ruleId}`, mutationResultSchema, {
+    body: change,
+    organizationId,
+  });
 }
 
-/** Validates a rule's text like the server action does; returns the error message, if any. */
+const ruleSwitchMutationKey = (repositoryId: string) => ["rule-enabled", repositoryId];
+
+/** A rule switched on or off, as sent and as shown before the server answers. */
+interface RuleSwitch {
+  ruleId: string;
+  enabled: boolean;
+}
+
+/**
+ * Switches the repository's rules on and off (admins): `pendingEnabled` holds the state each
+ * rule with a switch in flight shows meanwhile, so the switch moves at once (optimistic) and
+ * goes back by itself when the change fails (with the server's error as a toast). The rules
+ * refetch before a change settles, so it never flickers back on success.
+ */
+export function useRuleSwitch(repositoryId: string) {
+  const mutation = useApiMutation({
+    mutationKey: ruleSwitchMutationKey(repositoryId),
+    mutationFn: ({ ruleId, enabled }: RuleSwitch, { organizationId }) =>
+      patchRule(repositoryId, ruleId, { enabled }, organizationId),
+    invalidate: rulesChanged(repositoryId),
+    success: (_, { enabled }) => (enabled ? "Rule enabled" : "Rule disabled"),
+  });
+  const pending = useMutationState({
+    filters: { mutationKey: ruleSwitchMutationKey(repositoryId), status: "pending" },
+    select: (m) => m.state.variables as RuleSwitch | undefined,
+  });
+  const pendingEnabled = new Map<string, boolean>();
+  for (const change of pending) {
+    if (change) pendingEnabled.set(change.ruleId, change.enabled);
+  }
+  return { setEnabled: mutation.mutate, pendingEnabled };
+}
+
+/** Validates a rule's text like the server does; returns the error message, if any. */
 function ruleTextError(text: string): string | undefined {
   const parsed = RuleInput.safeParse({ text });
   return parsed.success ? undefined : parsed.error.issues[0]?.message;
@@ -112,9 +162,23 @@ function RuleTextField({
 }
 
 function AddRuleCard({ repositoryId }: { repositoryId: string }) {
-  const { pending, run } = useAction();
   const [text, setText] = React.useState("");
   const [error, setError] = React.useState<string | undefined>();
+  const add = useApiMutation({
+    mutationFn: (input: RuleInput, { organizationId }) =>
+      api.post(`/api/ui/repositories/${repositoryId}/rules`, mutationResultSchema, {
+        body: input,
+        organizationId,
+      }),
+    invalidate: rulesChanged(repositoryId),
+    success: "Rule added; it applies to the next review",
+    onSuccess: () => {
+      setText("");
+      setError(undefined);
+    },
+    onError: (failure) => setError(failure.fieldErrors?.text),
+  });
+  const pending = add.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,15 +187,7 @@ function AddRuleCard({ repositoryId }: { repositoryId: string }) {
       setError(invalid);
       return;
     }
-    run(
-      () => addCustomRule(repositoryId, { text }),
-      "Rule added; it applies to the next review",
-      () => {
-        setText("");
-        setError(undefined);
-      },
-      (result) => setError(result.fieldErrors?.text),
-    );
+    add.mutate({ text });
   };
 
   return (
@@ -167,10 +223,18 @@ function AddRuleCard({ repositoryId }: { repositoryId: string }) {
 }
 
 function EditRuleDialog({ repositoryId, rule }: { repositoryId: string; rule: RuleView }) {
-  const { pending, run } = useAction();
   const [open, setOpen] = React.useState(false);
   const [text, setText] = React.useState(rule.text);
   const [error, setError] = React.useState<string | undefined>();
+  const edit = useApiMutation({
+    mutationFn: (input: RuleInput, { organizationId }) =>
+      patchRule(repositoryId, rule.id, input, organizationId),
+    invalidate: rulesChanged(repositoryId),
+    success: "Rule saved",
+    onSuccess: () => setOpen(false),
+    onError: (failure) => setError(failure.fieldErrors?.text),
+  });
+  const pending = edit.isPending;
 
   const onOpenChange = (next: boolean) => {
     setOpen(next);
@@ -187,12 +251,7 @@ function EditRuleDialog({ repositoryId, rule }: { repositoryId: string; rule: Ru
       setError(invalid);
       return;
     }
-    run(
-      () => editRule(repositoryId, rule.id, { text }),
-      "Rule saved",
-      () => setOpen(false),
-      (result) => setError(result.fieldErrors?.text),
-    );
+    edit.mutate({ text });
   };
 
   return (
@@ -228,7 +287,15 @@ function EditRuleDialog({ repositoryId, rule }: { repositoryId: string; rule: Ru
 }
 
 function DeleteRuleButton({ repositoryId, rule }: { repositoryId: string; rule: RuleView }) {
-  const { pending, run } = useAction();
+  const remove = useApiMutation({
+    mutationFn: (_: void, { organizationId }) =>
+      api.delete(`/api/ui/repositories/${repositoryId}/rules/${rule.id}`, mutationResultSchema, {
+        organizationId,
+      }),
+    invalidate: rulesChanged(repositoryId),
+    success: "Rule deleted",
+  });
+  const pending = remove.isPending;
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -248,10 +315,7 @@ function DeleteRuleButton({ repositoryId, rule }: { repositoryId: string; rule: 
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="danger"
-            onClick={() => run(() => deleteRule(repositoryId, rule.id), "Rule deleted")}
-          >
+          <AlertDialogAction variant="danger" onClick={() => remove.mutate()}>
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -260,27 +324,27 @@ function DeleteRuleButton({ repositoryId, rule }: { repositoryId: string; rule: 
   );
 }
 
+/**
+ * A rule's switch: `rule.enabled` already shows a change in flight (`useRuleSwitch`); it is
+ * held (disabled) until the change settles, so two changes of one rule never race.
+ */
 function EnabledSwitch({
-  repositoryId,
   rule,
   isAdmin,
+  switching,
+  onSwitch,
 }: {
-  repositoryId: string;
   rule: RuleView;
   isAdmin: boolean;
+  switching: boolean;
+  onSwitch: (change: RuleSwitch) => void;
 }) {
-  const { pending, run } = useAction();
   return (
     <Switch
       checked={rule.enabled}
-      disabled={!isAdmin || pending}
+      disabled={!isAdmin || switching}
       aria-label={rule.enabled ? "Disable rule" : "Enable rule"}
-      onCheckedChange={(enabled) =>
-        run(
-          () => setRuleEnabled(repositoryId, rule.id, enabled),
-          enabled ? "Rule enabled" : "Rule disabled",
-        )
-      }
+      onCheckedChange={(enabled) => onSwitch({ ruleId: rule.id, enabled })}
     />
   );
 }
@@ -308,11 +372,15 @@ function RulesTable({
   rules,
   kind,
   isAdmin,
+  pendingEnabled,
+  onSwitch,
 }: {
   repositoryId: string;
   rules: RuleView[];
   kind: RuleView["kind"];
   isAdmin: boolean;
+  pendingEnabled: ReadonlyMap<string, boolean>;
+  onSwitch: (change: RuleSwitch) => void;
 }) {
   return (
     <Table className="list-table">
@@ -353,7 +421,12 @@ function RulesTable({
               </PhoneMeta>
             </TableCell>
             <TableCell>
-              <EnabledSwitch repositoryId={repositoryId} rule={rule} isAdmin={isAdmin} />
+              <EnabledSwitch
+                rule={rule}
+                isAdmin={isAdmin}
+                switching={pendingEnabled.has(rule.id)}
+                onSwitch={onSwitch}
+              />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <RuleSource rule={rule} kind={kind} />
@@ -376,103 +449,163 @@ function RulesTable({
   );
 }
 
-export function RulesView({ repository, rules }: RulesViewProps) {
+function RulesSkeleton() {
+  return (
+    <>
+      {[3, 2].map((rows, card) => (
+        <Card key={card}>
+          <CardHeader>
+            <Skeleton width="10rem" height="1.25rem" />
+            <Skeleton width="16rem" />
+          </CardHeader>
+          <CardContent>
+            <Stack gap={3}>
+              {Array.from({ length: rows }, (_, index) => (
+                <Skeleton key={index} width={`${50 + (((index + card) * 17) % 40)}%`} />
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The custom and learned rules of a repository, with an add form and per-rule edit, switch and
+ * delete for admins (members read them). A switch moves at once (`useRuleSwitch`).
+ */
+export function RulesContent({ repositoryId, rules }: { repositoryId: string; rules: RuleView[] }) {
   const isAdmin = useCurrentUser().role === "admin";
-  const custom = rules.filter((r) => r.kind === "custom");
-  const learned = rules.filter((r) => r.kind === "learned");
+  const { setEnabled, pendingEnabled } = useRuleSwitch(repositoryId);
+  const shown = rules.map((rule) => {
+    const enabled = pendingEnabled.get(rule.id);
+    return enabled === undefined ? rule : { ...rule, enabled };
+  });
+  const custom = shown.filter((r) => r.kind === "custom");
+  const learned = shown.filter((r) => r.kind === "learned");
+
+  return (
+    <>
+      {isAdmin && <AddRuleCard repositoryId={repositoryId} />}
+
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">
+            Custom rules <Badge variant="neutral">{custom.length}</Badge>
+          </CardTitle>
+          <CardDescription>Written by admins.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {custom.length === 0 ? (
+            <Empty
+              titleAs="h3"
+              icon={<IconGavel size={24} />}
+              title="No custom rules"
+              description={
+                isAdmin
+                  ? "Add one above to steer the reviewer."
+                  : "An admin hasn't added any custom rules yet."
+              }
+            />
+          ) : (
+            <RulesTable
+              repositoryId={repositoryId}
+              rules={custom}
+              kind="custom"
+              isAdmin={isAdmin}
+              pendingEnabled={pendingEnabled}
+              onSwitch={setEnabled}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">
+            Learned rules <Badge variant="neutral">{learned.length}</Badge>
+          </CardTitle>
+          <CardDescription>
+            Generated from findings dismissed as false positives, in the control panel or with @bot
+            dismiss. Near-duplicates of existing rules aren&apos;t added.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {learned.length === 0 ? (
+            <Empty
+              titleAs="h3"
+              icon={<IconBulb size={24} />}
+              title="No learned rules yet"
+              description="Dismiss a finding as a false positive to teach the reviewer a rule."
+            />
+          ) : (
+            <RulesTable
+              repositoryId={repositoryId}
+              rules={learned}
+              kind="learned"
+              isAdmin={isAdmin}
+              pendingEnabled={pendingEnabled}
+              onSwitch={setEnabled}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {!isAdmin && <Muted>Only admins can add, edit, disable or delete rules.</Muted>}
+    </>
+  );
+}
+
+/**
+ * Repository › Rules, live (`GET /api/ui/repositories/{id}/rules`): rules added, edited,
+ * switched or learned anywhere show up within a poll.
+ */
+export function RulesView() {
+  const { id } = useParams<{ id: string }>();
+  const rules = useRepositoryRules(id);
+  const repository = rules.data?.repository;
 
   return (
     <>
       <AppHeader
         breadcrumbs={[
           { label: "Repositories", href: "/repositories" },
-          { label: repository.fullPath },
+          { label: repository?.fullPath ?? "Repository" },
           { label: "Rules" },
         ]}
       />
       <main className="detail-main">
         <PageHeader
           title={
-            <>
-              <ProviderIcon provider={repository.provider} size={20} />
-              <MonoPath value={repository.fullPath} />
-            </>
+            repository ? (
+              <>
+                <ProviderIcon provider={repository.provider} size={20} />
+                <MonoPath value={repository.fullPath} />
+              </>
+            ) : (
+              <Skeleton width="14rem" height="1.75rem" />
+            )
           }
           description="Enabled rules are added to every review of this repository, after the review rubric. Dismissing a finding as a false positive teaches the reviewer a new rule."
+          meta={rules.data && <Freshness query={rules} />}
           actions={
-            <Button asChild variant="ghost" className="page-header-ghost">
-              <a href={repository.webUrl} target="_blank" rel="noreferrer">
-                <IconExternalLink size={14} />
-                Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
-              </a>
-            </Button>
+            repository && (
+              <Button asChild variant="ghost" className="page-header-ghost">
+                <a href={repository.webUrl} target="_blank" rel="noreferrer">
+                  <IconExternalLink size={14} />
+                  Open on {repository.provider === "github" ? "GitHub" : "GitLab"}
+                </a>
+              </Button>
+            )
           }
         />
 
-        <RepositoryNav repositoryId={repository.id} current="rules" />
+        <RepositoryNav repositoryId={id} current="rules" />
 
-        {isAdmin && <AddRuleCard repositoryId={repository.id} />}
-
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">
-              Custom rules <Badge variant="neutral">{custom.length}</Badge>
-            </CardTitle>
-            <CardDescription>Written by admins.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {custom.length === 0 ? (
-              <Empty
-                titleAs="h3"
-                icon={<IconGavel size={24} />}
-                title="No custom rules"
-                description={
-                  isAdmin
-                    ? "Add one above to steer the reviewer."
-                    : "An admin hasn't added any custom rules yet."
-                }
-              />
-            ) : (
-              <RulesTable
-                repositoryId={repository.id}
-                rules={custom}
-                kind="custom"
-                isAdmin={isAdmin}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">
-              Learned rules <Badge variant="neutral">{learned.length}</Badge>
-            </CardTitle>
-            <CardDescription>
-              Generated from findings dismissed as false positives, in the control panel or with
-              @bot dismiss. Near-duplicates of existing rules aren&apos;t added.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {learned.length === 0 ? (
-              <Empty
-                titleAs="h3"
-                icon={<IconBulb size={24} />}
-                title="No learned rules yet"
-                description="Dismiss a finding as a false positive to teach the reviewer a rule."
-              />
-            ) : (
-              <RulesTable
-                repositoryId={repository.id}
-                rules={learned}
-                kind="learned"
-                isAdmin={isAdmin}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {!isAdmin && <Muted>Only admins can add, edit, disable or delete rules.</Muted>}
+        <QueryBoundary query={rules} skeleton={<RulesSkeleton />} what="the rules">
+          {(data: RepositoryRules) => <RulesContent repositoryId={id} rules={data.rules} />}
+        </QueryBoundary>
       </main>
     </>
   );

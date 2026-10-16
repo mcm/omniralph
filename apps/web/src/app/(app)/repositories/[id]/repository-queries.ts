@@ -11,6 +11,7 @@ import {
   repositoryCodingSchema,
   repositoryDetailSchema,
 } from "@/lib/api/repositories";
+import { repositoryRulesSchema } from "@/lib/api/rules";
 
 /** The page asking, so a repository of another organization switches to it and comes back here. */
 function currentPage(): string | undefined {
@@ -27,6 +28,21 @@ export function useRepositoryDetail(repositoryId: string) {
     queryKey: keys.repositories.detail(repositoryId),
     queryFn: ({ signal }) =>
       api.get(`/api/ui/repositories/${repositoryId}`, repositoryDetailSchema, {
+        params: { next: currentPage() },
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/** Repository › Rules: the repository with its custom and learned rules, live. */
+export function useRepositoryRules(repositoryId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery({
+    queryKey: keys.repositories.part(repositoryId, "rules"),
+    queryFn: ({ signal }) =>
+      api.get(`/api/ui/repositories/${repositoryId}/rules`, repositoryRulesSchema, {
         params: { next: currentPage() },
         organizationId: organization.id,
         signal,
