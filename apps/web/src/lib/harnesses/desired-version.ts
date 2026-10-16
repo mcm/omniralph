@@ -6,6 +6,7 @@ import {
   TRACK_LATEST_HARNESS_VERSION,
   type Database,
 } from "@omniralph/db";
+import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
 
 /** How long a `latest` read from npm is used before it's read again. */
@@ -69,6 +70,8 @@ export async function organizationHarnessVersion(
     );
   }
   await setLatestHarnessVersionCheck(db, organizationId, { version, error });
+  // Heartbeats answered from Redis keep the version they were cached with until then.
+  if (version !== (check?.version ?? null)) await bumpOrganizationHeartbeat(organizationId);
   return { version, tracksLatest: true, latestError: error, latestCheckedAt: now };
 }
 
@@ -79,4 +82,5 @@ export async function recordLatestHarnessVersion(
   version: string,
 ): Promise<void> {
   await setLatestHarnessVersionCheck(db, organizationId, { version, error: null });
+  await bumpOrganizationHeartbeat(organizationId);
 }

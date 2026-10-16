@@ -30,6 +30,7 @@ import {
   revokeHarness as revokeHarnessWithJobs,
 } from "@/lib/harness-auth/revoke";
 import { recordLatestHarnessVersion } from "./desired-version";
+import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
 import { pinRepository as pinRepositoryWithSync } from "./pins";
@@ -79,6 +80,7 @@ export async function updateHarnessConfig(
   if (!(await updateHarnessConfigRow(db, organizationId, harnessId, parsed.data))) {
     return UNKNOWN_HARNESS;
   }
+  await bumpHarnessHeartbeat(harnessId);
   return { ok: true };
 }
 
@@ -100,6 +102,7 @@ export async function setHarnessDesiredVersion(
   if (!(await setHarnessDesiredVersionRow(db, organizationId, harnessId, parsed?.data ?? null))) {
     return UNKNOWN_HARNESS;
   }
+  await bumpHarnessHeartbeat(harnessId);
   return { ok: true };
 }
 
@@ -134,6 +137,7 @@ export async function unpinRepository(
   ) {
     return { ok: false, error: "That repository isn't pinned to this harness." };
   }
+  await bumpHarnessHeartbeat(harnessId);
   return { ok: true };
 }
 
@@ -252,6 +256,7 @@ export async function requestHarnessUpdate(
   if (!(await requestHarnessUpdateRow(db, organizationId, harnessId, target))) {
     return UNKNOWN_HARNESS;
   }
+  await bumpHarnessHeartbeat(harnessId);
   return { ok: true, version: target };
 }
 
@@ -364,6 +369,7 @@ export async function setHostToolPath(
           : "That harness or host tool doesn't exist, or the harness was revoked.",
     };
   }
+  await bumpHarnessHeartbeat(harnessId);
   return { ok: true };
 }
 

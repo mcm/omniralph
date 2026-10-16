@@ -17,6 +17,7 @@ import {
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
+import { bumpOrganizationHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
@@ -123,6 +124,8 @@ async function handleInstallationDeleted(
   }
   for (const connection of connections) {
     await deleteScmConnection(db, connection.organizationId, connection.id);
+    // Its repositories' pins went with it.
+    await bumpOrganizationHeartbeat(connection.organizationId);
   }
   return reply({ status: "removed", connections: connections.length });
 }

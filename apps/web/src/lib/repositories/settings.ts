@@ -24,6 +24,7 @@ import {
   STORY_TASKS,
 } from "@/lib/definitions";
 import { pinRepository } from "@/lib/harnesses/pins";
+import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { unknownLinearValues } from "@/lib/linear/settings-values";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
@@ -99,7 +100,9 @@ export async function saveRepositorySettings(
   }
   const removed = current.filter((id) => !wanted.includes(id));
   for (const harnessId of removed) {
-    await unpinRepositoryFromHarness(db, { harnessId, repositoryId });
+    if (await unpinRepositoryFromHarness(db, { harnessId, repositoryId })) {
+      await bumpHarnessHeartbeat(harnessId);
+    }
   }
   return { status: "saved", pinnedHarnessIds: added, unpinnedHarnessIds: removed, syncJobIds };
 }

@@ -8,6 +8,7 @@ import {
 import { REPO_SYNC_JOB_TYPE, type RepoSyncPayload } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { jobRepository } from "@/lib/scm/adapters";
+import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 
 /**
  * Pins a repository to a harness and enqueues a `repo.sync` system RPC targeted
@@ -22,6 +23,7 @@ export async function pinRepository(
 ): Promise<{ result: PinRepositoryResult; syncJobId?: string }> {
   const result = await pinRepositoryToHarness(db, input);
   if (result !== "pinned" && result !== "already_pinned") return { result };
+  if (result === "pinned") await bumpHarnessHeartbeat(input.harnessId);
   const found = await getRepositoryWithConnection(db, input.repositoryId);
   if (!found) return { result: "unknown_repository" };
   const payload: RepoSyncPayload = {
