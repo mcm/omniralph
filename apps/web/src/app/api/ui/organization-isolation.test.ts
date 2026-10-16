@@ -8,7 +8,9 @@ import {
   connectRepository,
   createDb,
   createHarnessEnrollment,
+  createCustomRule,
   createHostTool,
+  listRepositoryRules,
   createOrganization,
   createReview,
   createRun,
@@ -108,6 +110,8 @@ const repositorySettings = await import("./repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("./repositories/[id]/task-types/route");
 const repositoryCoding = await import("./repositories/[id]/coding/route");
 const repositoryLinear = await import("./repositories/[id]/coding/linear/route");
+const repositoryRules = await import("./repositories/[id]/rules/route");
+const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
 const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
 const selectable = await import("./scm-connections/[id]/repositories/route");
@@ -157,6 +161,7 @@ interface Tenant {
   connectionId: string;
   repoId: string;
   repoPath: string;
+  ruleId: string;
   hostToolId: string;
   runId: string;
   storyId: string;
@@ -207,6 +212,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       provider: "github",
       externalId: `${name}-500`,
       fullPath: repoPath,
+    });
+    const rule = await createCustomRule(db, {
+      repositoryId: repo.id,
+      text: `${name} rule`,
+      createdBy: admin!.id,
     });
     const tool = await createHostTool(db, org.id, { name: `${name}-tool` });
     if (!tool.ok) throw new Error("setup");
@@ -272,6 +282,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       connectionId: connection.id,
       repoId: repo.id,
       repoPath,
+      ruleId: rule.id,
       hostToolId: tool.hostTool.id,
       runId: run.id,
       storyId: story!.id,
@@ -673,6 +684,69 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
   });
 
+  it("shows each organization's own repository rules to its members, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const { status, body } = await call(repositoryRules.GET, { params: { id: own.repoId } });
+        expect(status).toBe(200);
+        expect(body).toMatchObject({
+          repository: { id: own.repoId, fullPath: own.repoPath },
+          rules: [{ id: own.ruleId, kind: "custom", text: `${own.name} rule`, enabled: true }],
+        });
+        for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        expect(await call(repositoryRules.GET, { params: { id: other.repoId } })).toMatchObject({
+          status: 404,
+        });
+      }
+      expect(await call(repositoryRules.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
+        status: 404,
+      });
+    }
+  });
+
+  it("refuses every rule change on the other organization's repository, and members can't change rules", async () => {
+    const ruleChanges = (id: string, ruleId: string) => [
+      call(repositoryRule.PATCH, {
+        method: "PATCH",
+        params: { id, ruleId },
+        body: { text: "Edited" },
+      }),
+      call(repositoryRule.PATCH, {
+        method: "PATCH",
+        params: { id, ruleId },
+        body: { enabled: false },
+      }),
+      call(repositoryRule.DELETE, { method: "DELETE", params: { id, ruleId } }),
+    ];
+    const changes = (id: string, ruleId: string) => [
+      call(repositoryRules.POST, { params: { id }, body: { text: "Sneaky rule" } }),
+      ...ruleChanges(id, ruleId),
+    ];
+    state.userId = a.adminId;
+    for (const response of await Promise.all(changes(b.repoId, b.ruleId))) {
+      expect(response).toMatchObject({ status: 400, body: { error: expect.any(String) } });
+    }
+    // The other organization's rule under the admin's own repository.
+    for (const response of await Promise.all(ruleChanges(a.repoId, b.ruleId))) {
+      expect(response).toMatchObject({ status: 400, body: { error: "That rule doesn't exist." } });
+    }
+    for (const response of await Promise.all(changes("not-a-uuid", b.ruleId))) {
+      expect(response.status).toBe(404);
+    }
+    // Members change nothing, in their own organization either.
+    state.userId = b.memberId;
+    for (const response of await Promise.all(changes(b.repoId, b.ruleId))) {
+      expect(response.status).toBe(403);
+    }
+    expect((await listRepositoryRules(db, b.repoId)).map((r) => [r.text, r.enabled])).toEqual([
+      ["beta rule", true],
+    ]);
+  });
+
   it("sends a member of both organizations to switch to the repository's organization", async () => {
     const [user] = await db
       .insert(users)
@@ -689,6 +763,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ["settings", repositoryDetail.GET],
       ["harnesses", repositoryDetail.GET],
       ["coding", repositoryCoding.GET],
+      ["rules", repositoryRules.GET],
     ] as const) {
       const page = `/repositories/${b.repoId}/${tab}`;
       const { status, body } = await call(handler, {

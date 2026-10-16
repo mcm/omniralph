@@ -70,7 +70,6 @@ vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 // No Linear workspace is connected.
 vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./[id]/rules/rules-view", () => ({ RulesView: () => null }));
 vi.mock("../settings/profiles/profiles-view", () => ({ ProfilesView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -80,7 +79,8 @@ const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings
 const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
 const repositoryLinear = await import("@/app/api/ui/repositories/[id]/coding/linear/route");
-const { default: RepositoryRulesPage } = await import("./[id]/rules/page");
+const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
+const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
 const { default: ProfilesPage } = await import("../settings/profiles/page");
 
 type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -110,8 +110,35 @@ const updateRepositorySettings = (id: string, input: unknown) =>
 const updateRepositoryTaskTypes = (id: string, input: unknown) =>
   save(repositoryTaskTypes.PUT, id, input);
 const updateRalphSettings = (id: string, input: unknown) => save(repositoryCoding.PUT, id, input);
-const { addCustomRule, deleteRule, editRule, setRuleEnabled } =
-  await import("./[id]/rules/actions");
+
+/** A Rules tab request (`method` with a JSON `body`) as the `ActionResult` the tab gets. */
+async function ruleRequest<P extends Record<string, string>>(
+  handler: (request: Request, route: { params: Promise<P> }) => Promise<Response>,
+  method: string,
+  params: P,
+  body?: unknown,
+) {
+  const response = await handler(
+    new Request("http://localhost/api/ui", {
+      method,
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve(params) },
+  );
+  const json = (await response.json()) as Record<string, unknown>;
+  return response.status === 200 ? json : { ok: false, error: json.error as string };
+}
+
+// The Rules tab's requests, under the names of the server actions they replace.
+const addCustomRule = (id: string, input: unknown) =>
+  ruleRequest(repositoryRules.POST, "POST", { id }, input);
+const editRule = (id: string, ruleId: string, input: unknown) =>
+  ruleRequest(repositoryRule.PATCH, "PATCH", { id, ruleId }, input);
+const setRuleEnabled = (id: string, ruleId: string, enabled: boolean) =>
+  ruleRequest(repositoryRule.PATCH, "PATCH", { id, ruleId }, { enabled });
+const deleteRule = (id: string, ruleId: string) =>
+  ruleRequest(repositoryRule.DELETE, "DELETE", { id, ruleId });
 const { updateReviewProfile } = await import("../settings/profiles/actions");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -125,9 +152,6 @@ interface Tenant {
   reviewId: string;
   findingId: string;
 }
-
-/** Next.js `notFound()` throws an error whose digest marks a 404. */
-const notFound = { digest: expect.stringContaining("404") };
 
 describe.skipIf(!databaseAvailable)("organization isolation of repositories and reviews", () => {
   let testDb: TestDatabase;
@@ -209,8 +233,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     await testDb?.stop();
   });
 
-  const params = (id: string) => ({ params: Promise.resolve({ id }) });
-
   it("lists only the active organization's repositories and profiles", async () => {
     state.userId = a.userId;
     const profiles = (await ProfilesPage()).props.profiles as { id: string }[];
@@ -218,8 +240,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
     const settings = await call(repositoryDetail.GET, a.repoId);
     expect(settings).toMatchObject({ status: 200, body: { repository: { id: a.repoId } } });
-    const rules = await RepositoryRulesPage(params(a.repoId));
-    expect((rules.props.rules as { id: string }[]).map((r) => r.id)).toEqual([a.ruleId]);
+    const rules = await call(repositoryRules.GET, a.repoId);
+    expect(rules).toMatchObject({ status: 200, body: { repository: { id: a.repoId } } });
+    expect((rules.body.rules as { id: string }[]).map((r) => r.id)).toEqual([a.ruleId]);
   });
 
   it("offers the Coding tab the models of its pinned harnesses, else of those accepting coding", async () => {
@@ -297,10 +320,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
   it("returns 404 for another organization's repository pages", async () => {
     state.userId = a.userId;
-    for (const handler of [repositoryDetail.GET, repositoryCoding.GET, repositoryLinear.GET]) {
+    for (const handler of [
+      repositoryDetail.GET,
+      repositoryCoding.GET,
+      repositoryLinear.GET,
+      repositoryRules.GET,
+    ]) {
       expect(await call(handler, b.repoId)).toMatchObject({ status: 404 });
     }
-    await expect(RepositoryRulesPage(params(b.repoId))).rejects.toMatchObject(notFound);
   });
 
   it("refuses actions on another organization's repositories and rules", async () => {

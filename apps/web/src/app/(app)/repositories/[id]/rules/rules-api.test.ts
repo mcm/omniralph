@@ -37,7 +37,6 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   orgId: "",
@@ -60,7 +59,8 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { addCustomRule, deleteRule, editRule, setRuleEnabled } = await import("./actions");
+const rulesRoute = await import("@/app/api/ui/repositories/[id]/rules/route");
+const ruleRoute = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
@@ -70,6 +70,40 @@ const { enqueueLearnRule } = await import("@/lib/rules/learn");
 const { ruleView } = await import("@/lib/rules/display");
 
 const databaseAvailable = testDatabaseAvailable();
+
+type Result = { ok: true; warning?: string } | { ok: false; error: string; fieldErrors?: object };
+
+/** Calls an `/api/ui` rules handler as the Rules tab does; answers its `ActionResult`. */
+async function call<P extends Record<string, string>>(
+  handler: (request: Request, route: { params: Promise<P> }) => Promise<Response>,
+  method: string,
+  params: P,
+  body?: unknown,
+): Promise<Result> {
+  const response = await handler(
+    new Request("http://localhost/api/ui", {
+      method,
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve(params) },
+  );
+  const json = (await response.json()) as Record<string, unknown>;
+  if (response.ok) return json as Result;
+  return {
+    ok: false,
+    error: json.error as string,
+    ...(json.fieldErrors ? { fieldErrors: json.fieldErrors as object } : {}),
+  };
+}
+
+// The Rules tab's requests, under the names of the server actions they replace.
+const addCustomRule = (id: string, input: unknown) => call(rulesRoute.POST, "POST", { id }, input);
+const editRule = (id: string, ruleId: string, input: unknown) =>
+  call(ruleRoute.PATCH, "PATCH", { id, ruleId }, input);
+const setRuleEnabled = (id: string, ruleId: string, enabled: boolean) =>
+  call(ruleRoute.PATCH, "PATCH", { id, ruleId }, { enabled });
+const deleteRule = (id: string, ruleId: string) => call(ruleRoute.DELETE, "DELETE", { id, ruleId });
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const admin = { id: "admin-1", role: "admin" as const, name: null, email: null, image: null };
