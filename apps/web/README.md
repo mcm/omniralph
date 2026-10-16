@@ -115,7 +115,11 @@ the page shows the change on arrival. The hook shows the success toast (or the r
 `warning` as a warning toast), the server's message as a danger toast on failure (`onError` gets
 the `ApiError`, with `fieldErrors` for inline errors), and refuses to run once another tab has
 switched organizations. Optimistic updates go in `onMutate`; roll back in `onError` with its
-`context`.
+`context`. On a polled page, where a refetch in flight could overwrite an edited cache, show the
+change from the mutation instead: give it a `mutationKey` and overlay the pending mutations'
+variables (`useMutationState` with `status: "pending"`) on the query data. The overlay goes away
+by itself on failure, and only after the invalidated refetch on success, so it never flickers
+(`useFindingFeedback` in `reviews/[id]/finding-feedback.tsx`).
 
 **Loading, errors and freshness.** Wrap a query's content in `QueryBoundary`
 (`src/components/query-boundary.tsx`) with a `Skeleton` shaped like it: it shows the skeleton while
@@ -226,11 +230,11 @@ pnpm --filter @omniralph/web e2e --grep "smoke|enroll"
    screenshots of failed tests to `apps/web/.e2e/<timestamp>/` (gitignored), stops the panel
    and removes the fixture database, also on failure. It exits non-zero when a test fails.
 
-| Option                  | Effect                                                         |
-| ----------------------- | -------------------------------------------------------------- |
-| `--grep <regex>`        | Only tests whose title (file, describe, test) matches          |
-| `--grep-invert <regex>` | Skip tests whose title matches                                 |
-| `--skip-build`          | Don't build the workspace packages first                       |
+| Option                  | Effect                                                |
+| ----------------------- | ----------------------------------------------------- |
+| `--grep <regex>`        | Only tests whose title (file, describe, test) matches |
+| `--grep-invert <regex>` | Skip tests whose title matches                        |
+| `--skip-build`          | Don't build the workspace packages first              |
 
 **Writing a spec:** import `test` and `expect` from `./fixtures` (not `@playwright/test`).
 The fixtures and helpers there:

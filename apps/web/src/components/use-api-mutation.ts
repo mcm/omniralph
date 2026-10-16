@@ -37,6 +37,11 @@ function isQueryKey(target: Invalidation): target is QueryKey {
 }
 
 export interface ApiMutationOptions<TData, TVariables, TContext> {
+  /**
+   * Names the mutation, so a view can show it before the server answers (optimistic, with
+   * `useMutationState`): the overlay goes away by itself when the mutation fails.
+   */
+  mutationKey?: QueryKey;
   /** Calls the `/api/ui` handler, sending `organizationId` with the request (`apiRequest`). */
   mutationFn: (variables: TVariables, meta: { organizationId: string }) => Promise<TData>;
   /**
@@ -93,6 +98,7 @@ export function useApiMutation<TData = unknown, TVariables = void, TContext = un
   );
 
   return useMutation<TData, Error, TVariables, TContext | undefined>({
+    mutationKey: options.mutationKey,
     onMutate: async (variables) => {
       if (isOrganizationStale()) throw new OrganizationStaleError();
       return latest.current.onMutate?.(variables);

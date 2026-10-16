@@ -224,6 +224,45 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
     });
     expect(detail!.findings.map((f) => f.title)).toEqual(["Finding 1", "Finding 2", "Finding 3"]);
     expect(await getReviewDetail(db, orgId, randomUUID())).toBeNull();
+    expect(detail!.newerReview).toBeNull();
+  });
+
+  it("links a review to the newest later review of the same PR and task", async () => {
+    const base = Date.parse("2026-10-02T00:00:00Z");
+    const review = (over: Partial<typeof reviews.$inferInsert>) => ({
+      id: randomUUID(),
+      repositoryId: repoId,
+      prNumber: 500,
+      headSha: "a".repeat(40),
+      baseSha: "b".repeat(40),
+      trigger: "manual" as const,
+      taskId: "builtin:review-pr",
+      budget: 1,
+      ...over,
+    });
+    const first = review({ createdAt: new Date(base) });
+    const rerun = review({ createdAt: new Date(base + 1000), status: "running" });
+    const latest = review({ createdAt: new Date(base + 2000), status: "queued" });
+    await db.insert(reviews).values([
+      first,
+      rerun,
+      latest,
+      // Not newer reviews of `first`: another task, a summary task, another PR, an older one.
+      review({ createdAt: new Date(base + 3000), taskId: "other-task" }),
+      review({ createdAt: new Date(base + 3000), summaryOnly: true }),
+      review({ createdAt: new Date(base + 3000), prNumber: 501 }),
+      review({ createdAt: new Date(base - 1000) }),
+    ]);
+
+    expect((await getReviewDetail(db, orgId, first.id))!.newerReview).toEqual({
+      id: latest.id,
+      status: "queued",
+      createdAt: new Date(base + 2000),
+    });
+    expect((await getReviewDetail(db, orgId, rerun.id))!.newerReview).toMatchObject({
+      id: latest.id,
+    });
+    expect((await getReviewDetail(db, orgId, latest.id))!.newerReview).toBeNull();
   });
 
   it("hides the reviews from other organizations", async () => {

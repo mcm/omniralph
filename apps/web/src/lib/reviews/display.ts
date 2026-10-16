@@ -142,6 +142,8 @@ export interface ReviewDetailView {
   skippedFiles: { path: string; reason: string }[];
   files: FileFindings[];
   findingCount: number;
+  /** The newest later review of the same PR/MR and task (e.g. its re-run); null for the latest. */
+  newerReview: { id: string; status: ReviewStatus; /** ISO timestamp. */ createdAt: string } | null;
   /** ISO timestamps. */
   createdAt: string;
   updatedAt: string;

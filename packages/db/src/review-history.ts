@@ -3,7 +3,7 @@
  * filterable review lists with per-severity finding counts, and a single
  * review with its repository, profile, agent and findings.
  */
-import { and, asc, count, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { listFindingFeedback, type FeedbackEntry } from "./feedback.js";
 import type { FindingRow, Review } from "./reviews.js";
@@ -188,6 +188,11 @@ export interface ReviewDetail {
   feedback: FeedbackEntry[];
   /** Review ID of each `supersededByFindingId` of the findings (by that finding's ID). */
   supersedingReviewIds: Record<string, string>;
+  /**
+   * The newest later review of the same PR/MR by the same review task (a re-run, or a review
+   * of a newer push); null when this one is the latest.
+   */
+  newerReview: { id: string; status: Review["status"]; createdAt: Date } | null;
 }
 
 /**
@@ -236,6 +241,22 @@ export async function getReviewDetail(
           .select({ id: findings.id, reviewId: findings.reviewId })
           .from(findings)
           .where(inArray(findings.id, supersedingIds));
+  const { review } = row;
+  const [newer] = await db
+    .select({ id: reviews.id, status: reviews.status, createdAt: reviews.createdAt })
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.repositoryId, review.repositoryId),
+        eq(reviews.prNumber, review.prNumber),
+        eq(reviews.summaryOnly, review.summaryOnly),
+        // Reviews from before review tasks have none: any later review of the PR is newer.
+        review.taskId === null ? undefined : eq(reviews.taskId, review.taskId),
+        gt(reviews.createdAt, review.createdAt),
+      ),
+    )
+    .orderBy(desc(reviews.createdAt), desc(reviews.id))
+    .limit(1);
   return {
     review: row.review,
     repository: row.repository,
@@ -247,5 +268,6 @@ export async function getReviewDetail(
       rows.map((f) => f.id),
     ),
     supersedingReviewIds: Object.fromEntries(superseding.map((f) => [f.id, f.reviewId])),
+    newerReview: newer ?? null,
   };
 }

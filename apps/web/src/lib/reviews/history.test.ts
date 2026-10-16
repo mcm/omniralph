@@ -163,6 +163,7 @@ describe("view mapping", () => {
       findings: [finding({})],
       feedback: [],
       supersedingReviewIds: {},
+      newerReview: null,
     };
     expect(reviewDetailView(detail)).toMatchObject({
       prUrl: "https://github.com/group/api/pull/3",

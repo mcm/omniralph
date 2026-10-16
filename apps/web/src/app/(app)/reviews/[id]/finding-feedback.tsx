@@ -29,10 +29,12 @@ import {
   MAX_FEEDBACK_NOTE_LENGTH,
   type FeedbackReasonValue,
 } from "@omniralph/shared";
+import { useMutationState } from "@tanstack/react-query";
 import { Timestamp } from "@/components/list-table";
-import { useAction } from "@/components/use-action";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api } from "@/lib/api/client";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { FeedbackView, FindingView } from "@/lib/reviews/display";
-import { dismissFinding, restoreFinding } from "./actions";
 
 const REASON_HINTS: Record<FeedbackReasonValue, string> = {
   false_positive: "The finding is wrong. The reviewer learns a rule from it.",
@@ -41,18 +43,71 @@ const REASON_HINTS: Record<FeedbackReasonValue, string> = {
   other: "Explain in the note.",
 };
 
+/** A dismissal or restore of a finding, as sent and as shown before the server answers. */
+export type FindingChange =
+  | { action: "dismiss"; findingId: string; input: DismissFindingInput }
+  | { action: "restore"; findingId: string };
+
+/** The status a change gives its finding. */
+const STATUS_AFTER: Record<FindingChange["action"], FindingView["status"]> = {
+  dismiss: "dismissed",
+  restore: "open",
+};
+
+const feedbackMutationKey = (reviewId: string) => ["finding-feedback", reviewId];
+
+/**
+ * Dismisses and restores the review's findings: `change` sends one (members), and
+ * `pendingStatus` holds the status each finding with a change in flight shows meanwhile, so
+ * the finding moves at once (optimistic) and goes back by itself when the change fails (with
+ * the server's error as a toast). The review's queries refetch before a change settles, so it
+ * never flickers back on success.
+ */
+export function useFindingFeedback(reviewId: string) {
+  const mutation = useApiMutation({
+    mutationKey: feedbackMutationKey(reviewId),
+    mutationFn: (change: FindingChange, { organizationId }) =>
+      api.post(`/api/ui/findings/${change.findingId}/${change.action}`, mutationResultSchema, {
+        body: change.action === "dismiss" ? change.input : undefined,
+        organizationId,
+      }),
+    // Finding counts on the lists; a false positive's learned rule shows on the repository and
+    // its job on Jobs.
+    invalidate: (keys) => [keys.reviews.all, keys.repositories.all, keys.jobs.all],
+    success: (_, change) =>
+      change.action === "dismiss" ? "Finding dismissed" : "Finding restored",
+  });
+  const pending = useMutationState({
+    filters: { mutationKey: feedbackMutationKey(reviewId), status: "pending" },
+    select: (m) => m.state.variables as FindingChange | undefined,
+  });
+  const pendingStatus = new Map<string, FindingView["status"]>();
+  for (const change of pending) {
+    if (change) pendingStatus.set(change.findingId, STATUS_AFTER[change.action]);
+  }
+  return { change: mutation.mutate, pendingStatus };
+}
+
 const SOURCE_LABELS: Record<FeedbackView["source"], string> = {
   ui: "control panel",
   scm: "@bot dismiss",
 };
 
-/** "Dismiss": a dialog to pick a reason and add an optional note. */
-export function DismissFindingDialog({ finding }: { finding: FindingView }) {
+/**
+ * "Dismiss": a dialog to pick a reason and add an optional note. It closes on submit: the
+ * finding shows dismissed while `onDismiss` (`useFindingFeedback`) sends it.
+ */
+export function DismissFindingDialog({
+  finding,
+  onDismiss,
+}: {
+  finding: FindingView;
+  onDismiss: (input: DismissFindingInput) => void;
+}) {
   const [open, setOpen] = React.useState(false);
   const [reason, setReason] = React.useState<FeedbackReasonValue>("false_positive");
   const [note, setNote] = React.useState("");
   const [error, setError] = React.useState<string | undefined>();
-  const { pending, run } = useAction();
 
   const onOpenChange = (next: boolean) => {
     setOpen(next);
@@ -70,12 +125,8 @@ export function DismissFindingDialog({ finding }: { finding: FindingView }) {
       setError(parsed.error.issues[0]?.message);
       return;
     }
-    setError(undefined);
-    run(
-      () => dismissFinding(finding.id, parsed.data),
-      "Finding dismissed",
-      () => onOpenChange(false),
-    );
+    onOpenChange(false);
+    onDismiss(parsed.data);
   };
 
   return (
@@ -137,9 +188,9 @@ export function DismissFindingDialog({ finding }: { finding: FindingView }) {
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={pending}>
+            <Button type="submit" variant="primary">
               <IconBan size={14} />
-              {pending ? "Dismissing…" : "Dismiss"}
+              Dismiss
             </Button>
           </DialogFooter>
         </form>
@@ -148,18 +199,12 @@ export function DismissFindingDialog({ finding }: { finding: FindingView }) {
   );
 }
 
-/** "Restore": sets a dismissed finding back to open. */
-export function RestoreFindingButton({ finding }: { finding: FindingView }) {
-  const { pending, run } = useAction();
+/** "Restore": sets a dismissed finding back to open (at once: see `useFindingFeedback`). */
+export function RestoreFindingButton({ onRestore }: { onRestore: () => void }) {
   return (
-    <Button
-      size="sm"
-      variant="ghost"
-      disabled={pending}
-      onClick={() => run(() => restoreFinding(finding.id), "Finding restored")}
-    >
+    <Button size="sm" variant="ghost" onClick={onRestore}>
       <IconArrowBackUp size={14} />
-      {pending ? "Restoring…" : "Restore"}
+      Restore
     </Button>
   );
 }

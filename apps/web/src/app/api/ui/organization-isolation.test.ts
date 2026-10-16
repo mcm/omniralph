@@ -10,8 +10,10 @@ import {
   createHarnessEnrollment,
   createHostTool,
   createOrganization,
+  createReview,
   createRun,
   enrollHarness,
+  findings,
   getHarnessOverview,
   getRepository,
   getRun,
@@ -106,6 +108,11 @@ const selectable = await import("./scm-connections/[id]/repositories/route");
 const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
+const reviewList = await import("./reviews/route");
+const reviewDetail = await import("./reviews/[id]/route");
+const reviewRerun = await import("./reviews/[id]/rerun/route");
+const findingDismiss = await import("./findings/[id]/dismiss/route");
+const findingRestore = await import("./findings/[id]/restore/route");
 const { readEnterOrganizationToken } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
@@ -145,6 +152,8 @@ interface Tenant {
   hostToolId: string;
   runId: string;
   storyId: string;
+  reviewId: string;
+  findingId: string;
 }
 
 describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
@@ -208,6 +217,31 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     const [story] = await upsertStories(db, run.id, [
       { linearIssueId: `${name}-story`, identifier: `${name.toUpperCase()}-2`, title: "Story" },
     ]);
+    const review = await createReview(db, {
+      repositoryId: repo.id,
+      prNumber: 7,
+      prTitle: `${name} change`,
+      headSha: "a".repeat(40),
+      baseSha: "b".repeat(40),
+      trigger: "webhook",
+      profileId: "standard",
+      model: null,
+      budget: 100_000,
+    });
+    const [finding] = await db
+      .insert(findings)
+      .values({
+        reviewId: review.id,
+        path: "src/app.ts",
+        startLine: 1,
+        endLine: 2,
+        severity: "high",
+        category: "bug",
+        title: `${name} finding`,
+        body: "Body",
+        confidence: 0.9,
+      })
+      .returning();
     return {
       name,
       adminId: admin!.id,
@@ -221,6 +255,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       hostToolId: tool.hostTool.id,
       runId: run.id,
       storyId: story!.id,
+      reviewId: review.id,
+      findingId: finding!.id,
     };
   }
 
@@ -675,5 +711,117 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       organizationId: b.orgId,
       next: page,
     });
+  });
+
+  it("lists and shows each organization's own reviews to its members, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const list = await call(reviewList.GET);
+        expect(list).toMatchObject({ status: 200, body: { repository: null, total: 1 } });
+        expect((list.body.reviews as { id: string }[]).map((r) => r.id)).toEqual([own.reviewId]);
+        const repositoryList = await call(reviewList.GET, {
+          path: `/api/ui?repository=${own.repoId}`,
+        });
+        expect(repositoryList).toMatchObject({
+          status: 200,
+          body: { repository: { id: own.repoId }, reviews: [{ id: own.reviewId }] },
+        });
+
+        const detail = await call(reviewDetail.GET, { params: { id: own.reviewId } });
+        expect(detail).toMatchObject({ status: 200, body: { review: { id: own.reviewId } } });
+        expect(JSON.stringify(detail.body)).toContain(own.findingId);
+        for (const { body } of [list, repositoryList, detail]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+
+        expect(await call(reviewDetail.GET, { params: { id: other.reviewId } })).toMatchObject({
+          status: 404,
+        });
+        expect(await call(reviewDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
+          status: 404,
+        });
+        expect(
+          await call(reviewList.GET, { path: `/api/ui?repository=${other.repoId}` }),
+        ).toMatchObject({ status: 404 });
+      }
+    }
+  });
+
+  it("dismisses and restores only the organization's own findings", async () => {
+    state.userId = a.memberId;
+    const dismiss = (id: string) =>
+      call(findingDismiss.POST, { params: { id }, body: { reason: "wont_fix" } });
+    const restore = (id: string) => call(findingRestore.POST, { method: "POST", params: { id } });
+    expect(await dismiss(b.findingId)).toMatchObject({
+      status: 404,
+      body: { error: "That finding doesn't exist." },
+    });
+    expect(await restore(b.findingId)).toMatchObject({ status: 404 });
+    expect(await dismiss("not-a-uuid")).toMatchObject({ status: 404 });
+    const [other] = await db.select().from(findings).where(eq(findings.id, b.findingId));
+    expect(other!.status).toBe("open");
+
+    expect(await dismiss(a.findingId)).toEqual({ status: 200, body: { ok: true } });
+    expect(await restore(a.findingId)).toEqual({ status: 200, body: { ok: true } });
+    const [own] = await db.select().from(findings).where(eq(findings.id, a.findingId));
+    expect(own!.status).toBe("open");
+  });
+
+  it("refuses to re-run the other organization's review, and members can't re-run", async () => {
+    const rerun = (id: string) =>
+      call(reviewRerun.POST, { params: { id }, body: { mode: "fresh", profileId: null } });
+    state.userId = a.adminId;
+    expect(await rerun(b.reviewId)).toMatchObject({
+      status: 404,
+      body: { error: "That review doesn't exist." },
+    });
+    expect(await rerun("not-a-uuid")).toMatchObject({ status: 404 });
+    state.userId = b.memberId;
+    expect(await rerun(b.reviewId)).toMatchObject({ status: 403 });
+  });
+
+  it("sends a member of both organizations to switch to the review's organization", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-reviews-member", email: "both-reviews@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+
+    const pages: [string, Promise<{ status: number; body: Record<string, unknown> }>][] = [];
+    const reviewPage = `/reviews/${b.reviewId}`;
+    pages.push([
+      reviewPage,
+      call(reviewDetail.GET, {
+        params: { id: b.reviewId },
+        path: `/api/ui?${new URLSearchParams({ next: reviewPage })}`,
+      }),
+    ]);
+    const repositoryPage = `/repositories/${b.repoId}/reviews?status=queued`;
+    pages.push([
+      repositoryPage,
+      call(reviewList.GET, {
+        path: `/api/ui?${new URLSearchParams({ repository: b.repoId, next: repositoryPage })}`,
+      }),
+    ]);
+    for (const [page, response] of pages) {
+      const { status, body } = await response;
+      expect(status, page).toBe(409);
+      expect(body).toMatchObject({ code: "enter_organization" });
+      expect(JSON.stringify(body)).not.toContain(b.name);
+      const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
+      expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
+        organizationId: b.orgId,
+        next: page,
+      });
+    }
   });
 });

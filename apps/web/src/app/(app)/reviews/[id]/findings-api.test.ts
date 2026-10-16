@@ -25,7 +25,6 @@ import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const state = vi.hoisted(() => ({
   orgId: "",
@@ -41,6 +40,9 @@ vi.mock("@/lib/auth/session", () => ({
       state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
       role,
     ),
+  requireSignedInUser: async () => {
+    throw new Error("not used");
+  },
 }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
@@ -49,17 +51,41 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { dismissFinding, restoreFinding } = await import("./actions");
+const dismissRoute = await import("@/app/api/ui/findings/[id]/dismiss/route");
+const restoreRoute = await import("@/app/api/ui/findings/[id]/restore/route");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
 const { reviewDetailView } = await import("@/lib/reviews/history");
-const { revalidatePath } = await import("next/cache");
+
+type Result = { ok: true; warning?: string } | { ok: false; error: string };
+
+/** Calls a finding handler; answers like the server actions did (`{ ok: false, error }` on an error status). */
+async function call(
+  handler: (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>,
+  findingId: string,
+  body?: unknown,
+): Promise<Result> {
+  const response = await handler(
+    new Request("http://localhost/api/ui", {
+      method: "POST",
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id: findingId }) },
+  );
+  const json = (await response.json()) as { error: string } & Result;
+  return response.ok ? json : { ok: false, error: json.error };
+}
+
+const dismissFinding = (findingId: string, input: unknown) =>
+  call(dismissRoute.POST, findingId, input);
+const restoreFinding = (findingId: string) => call(restoreRoute.POST, findingId);
 
 const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
 
-describe.skipIf(!databaseAvailable)("finding dismiss and restore: server actions", () => {
+describe.skipIf(!databaseAvailable)("finding dismiss and restore: /api/ui/findings", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
@@ -109,7 +135,6 @@ describe.skipIf(!databaseAvailable)("finding dismiss and restore: server actions
     state.user = member;
     state.resolveThread.mockReset();
     state.resolveThread.mockResolvedValue(undefined);
-    vi.mocked(revalidatePath).mockClear();
     await db.delete(findings);
   });
 
@@ -169,7 +194,6 @@ describe.skipIf(!databaseAvailable)("finding dismiss and restore: server actions
       42,
       "discussion-1",
     );
-    expect(revalidatePath).toHaveBeenCalledWith(`/reviews/${reviewId}`);
   });
 
   it("keeps the dismissal and returns a warning when the SCM thread can't be resolved", async () => {
@@ -224,7 +248,6 @@ describe.skipIf(!databaseAvailable)("finding dismiss and restore: server actions
     const [row] = await feedbackRows(finding.id);
     expect(row).toMatchObject({ userId: "member-1", restoredBy: "member-2" });
     expect(row!.restoredAt).toBeInstanceOf(Date);
-    expect(revalidatePath).toHaveBeenCalledWith(`/reviews/${reviewId}`);
 
     // Restoring again is refused; dismissing again adds a second feedback row.
     expect(await restoreFinding(finding.id)).toEqual({
