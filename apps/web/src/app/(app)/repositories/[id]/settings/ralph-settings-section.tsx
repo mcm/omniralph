@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui";
+import { Button, Field, Input, Muted, NativeSelect, Textarea } from "@iamthemcmaster/ui";
 import {
   CLAUDE_CODE_TOOLS,
   DEFAULT_RALPH_SETTINGS,
@@ -30,6 +30,10 @@ import {
 } from "@/components/pickers";
 import { SwitchField, type SettingsConfirmation } from "@/components/settings-card";
 import { SettingsSection, SettingsSubsection } from "@/components/settings-section";
+import { useApiAction } from "@/components/use-api-action";
+import { useSeededDraft } from "@/components/use-seeded-draft";
+import { api } from "@/lib/api/client";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 import { settingChanges, withDefault, withoutFieldErrors } from "@/lib/settings/changes";
 import {
@@ -44,7 +48,7 @@ import {
   ralphValues,
   type RalphDraft,
 } from "@/lib/settings/forms";
-import { updateRalphSettings } from "./actions";
+import { repositoryChanged } from "../repository-queries";
 import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 import {
   saveWithTaskTypes,
@@ -93,7 +97,14 @@ function withDefaultLabels(labels: readonly string[]): string[] {
 }
 
 /** Why the Linear fields are read-only, with where to fix it. */
-function LinearReadOnlyNote({ linear }: { linear: CodingLinearChoices }) {
+function LinearReadOnlyNote({
+  linear,
+  onRetry,
+}: {
+  linear: CodingLinearChoices;
+  /** Reads the workspace again (after it couldn't be read). */
+  onRetry?: () => void;
+}) {
   if (linear.status === "connected") return null;
   return (
     <Muted className="settings-note">
@@ -105,7 +116,16 @@ function LinearReadOnlyNote({ linear }: { linear: CodingLinearChoices }) {
       ) : (
         <>
           Your Linear workspace couldn&apos;t be read just now, so these show the saved values
-          read-only. Reload the page to try again, or check the connection in{" "}
+          read-only.{" "}
+          {onRetry && (
+            <>
+              <Button type="button" variant="link" size="sm" onClick={onRetry}>
+                Try again
+              </Button>
+              , or check
+            </>
+          )}
+          {!onRetry && "Check"} the connection in{" "}
           <Link href="/settings/integrations">Settings › Integrations</Link>.
         </>
       )}
@@ -148,6 +168,7 @@ export function CodingSettingsSections({
   choices,
   codingTasks,
   taskTypes,
+  onRetryLinear,
 }: {
   repositoryId: string;
   settings: RalphSettingsValues;
@@ -157,10 +178,14 @@ export function CodingSettingsSections({
   codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
   /** The repository's task-type switches; this tab saves Coding's. */
   taskTypes: TaskTypesValues;
+  /** Reads the Linear workspace again, when it couldn't be read. */
+  onRetryLinear?: () => void;
 }) {
+  const apiAction = useApiAction();
   const saved = React.useMemo(() => ralphDraft(settings), [settings]);
-  const [draft, setDraft] = React.useState(saved);
-  const [coding, setCoding] = React.useState(taskTypes.overrides.coding);
+  // Seeded from the (polled) settings; a refetch re-seeds them only while they aren't edited.
+  const [draft, setDraft] = useSeededDraft(saved);
+  const [coding, setCoding] = useSeededDraft(taskTypes.overrides.coding);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const set = <K extends keyof RalphDraft>(key: K, value: RalphDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -219,15 +244,24 @@ export function CodingSettingsSections({
           return null;
         }
         return {
-          action: saveWithTaskTypes(
-            repositoryId,
-            taskTypes.overrides,
-            parsedTypes.data,
-            types,
-            settingsChanges.length > 0
-              ? () => updateRalphSettings(repositoryId, parsed.data)
-              : null,
-          ),
+          // The switches, then the settings; the page refetches once, after both.
+          action: () =>
+            apiAction(
+              saveWithTaskTypes(
+                repositoryId,
+                taskTypes.overrides,
+                parsedTypes.data,
+                types,
+                settingsChanges.length > 0
+                  ? ({ organizationId }) =>
+                      api.put(`/api/ui/repositories/${repositoryId}/coding`, mutationResultSchema, {
+                        body: parsed.data,
+                        organizationId,
+                      })
+                  : null,
+              ),
+              repositoryChanged,
+            ),
           success: "Coding settings saved; they apply to the next job of every run",
           onSuccess: () => setErrors((e) => withoutFieldErrors(e, errorKeys)),
           onError: (result: { fieldErrors?: FieldErrors }) =>
@@ -442,7 +476,7 @@ export function CodingSettingsSections({
             title="Routing"
             description="Which delegated Linear issues build here. Any match routes the issue."
           >
-            <LinearReadOnlyNote linear={linear} />
+            <LinearReadOnlyNote linear={linear} onRetry={onRetryLinear} />
             <div className="settings-row">
               {linearTags(
                 "linearLabels",
@@ -689,7 +723,7 @@ export function CodingSettingsSections({
             title="Linear"
             description="How Omniralph reads and updates the Linear epic."
           >
-            <LinearReadOnlyNote linear={linear} />
+            <LinearReadOnlyNote linear={linear} onRetry={onRetryLinear} />
             {linearTags(
               "manualLabels",
               "ralph-manual-labels",

@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { renderRepositorySettings } from "../repository-settings-page";
+import { RepositorySettingsView } from "../settings/repository-settings-view";
 
 export const metadata: Metadata = { title: "Repository harnesses · Omniralph" };
 
-export default async function RepositoryHarnessesPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  return renderRepositorySettings(params, "harnesses");
+export default function RepositoryHarnessesPage() {
+  return <RepositorySettingsView tab="harnesses" />;
 }

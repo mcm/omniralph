@@ -1,3 +1,8 @@
+import {
+  RALPH_CODING_PATHS,
+  RALPH_HISTORY_REWRITE_POLICIES,
+  type RalphSettingsInput,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, mutationResultSchema } from "./schemas";
 
@@ -117,3 +122,129 @@ export const saveSelectionSchema = z.object({
   selectedIds: z.array(z.number().int()).max(10_000),
 });
 export type SaveSelection = z.infer<typeof saveSelectionSchema>;
+
+const taskChoiceSchema = z.object({ id: z.string(), name: z.string(), builtin: z.boolean() });
+const taskSwitch = z.boolean().nullable();
+
+/** A harness of the organization, as Repository › Harnesses shows (and pins) it. */
+export const repositoryHarnessSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The page computes `online` from it against the browser's clock. */
+  lastHeartbeatAt: isoDate.nullable(),
+  online: z.boolean(),
+  revoked: z.boolean(),
+  /** It is updating itself to its desired version. */
+  updating: z.boolean(),
+  /** Task types it may claim jobs of, the organization's defaults filled in. */
+  acceptedTaskTypes: z.array(z.string()),
+});
+
+/**
+ * `GET /api/ui/repositories/{id}?next=`: a connected repository with what its Review settings
+ * and Harnesses tabs show (and the Coding tab's task types), polled. A repository of another
+ * of the user's organizations answers 409 `enter_organization`.
+ */
+export const repositoryDetailSchema = z.object({
+  repository: z.object({ id: z.string(), provider, fullPath: z.string(), webUrl: z.string() }),
+  settings: z.object({
+    profileId: z.string(),
+    triggers: z.object({ onOpen: z.boolean(), onPush: z.boolean(), drafts: z.boolean() }),
+    pathExcludes: z.array(z.string()),
+    customInstructions: z.string(),
+    pinnedHarnessIds: z.array(z.string()),
+    reviewTaskIds: z.array(z.string()),
+    correlationTaskId: z.string(),
+  }),
+  /** The review tasks the repository can run on its PRs/MRs (built-in and the organization's). */
+  reviewTasks: z.array(taskChoiceSchema.extend({ description: z.string() })),
+  /** The tasks that can correlate its review runs' findings. */
+  correlationTasks: z.array(taskChoiceSchema),
+  profiles: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().nullable(),
+      model: z.string(),
+      maxTokensPerReview: z.number(),
+      maxFiles: z.number(),
+      allowRepoExploration: z.boolean(),
+    }),
+  ),
+  /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
+  harnesses: z.array(repositoryHarnessSchema),
+  /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
+  taskTypes: z.object({
+    overrides: z.object({ query: taskSwitch, review: taskSwitch, coding: taskSwitch }),
+    inherited: z.object({ query: z.boolean(), review: z.boolean(), coding: z.boolean() }),
+  }),
+});
+export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
+
+/** The Coding tab's saved values, as its form edits them (`RalphSettingsInput`). */
+const codingSettingsSchema = z.object({
+  linearTeamKeys: z.array(z.string()),
+  linearProjectNames: z.array(z.string()),
+  linearLabels: z.array(z.string()),
+  codingPath: z.enum(RALPH_CODING_PATHS),
+  storyTaskId: z.string(),
+  requestTaskId: z.string(),
+  verifyCommands: z.array(z.string()),
+  runPrdQualityGates: z.boolean(),
+  setupCommand: z.string(),
+  appendInstruction: z.string(),
+  model: z.string(),
+  fallbackModel: z.string(),
+  allowedTools: z.array(z.string()),
+  disallowedTools: z.array(z.string()),
+  openPullRequestEarly: z.boolean(),
+  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
+  respondToReviews: z.boolean(),
+  maxReviewRounds: z.number(),
+  respondToCiFailures: z.boolean(),
+  maxFixRounds: z.number(),
+  cleanupMergedWorktrees: z.boolean(),
+  unmergedBranchTimeoutMinutes: z.number(),
+  manualLabels: z.array(z.string()),
+  blockedLabels: z.array(z.string()),
+  allowPreparation: z.boolean(),
+  epicCompletedState: z.string(),
+}) satisfies z.ZodType<RalphSettingsInput>;
+
+/**
+ * `GET /api/ui/repositories/{id}/coding` (admins): the Coding tab's settings and its pickers'
+ * choices from the database, polled. The Linear workspace's values are a separate query.
+ */
+export const repositoryCodingSchema = z.object({
+  settings: codingSettingsSchema,
+  /** The coding tasks its story and request runs can use (built-in and the organization's). */
+  tasks: z.object({ story: z.array(taskChoiceSchema), request: z.array(taskChoiceSchema) }),
+  /** The models reported by the harnesses that may run its coding jobs. */
+  models: z.array(
+    z.object({ value: z.string(), displayName: z.string(), harnessIds: z.array(z.string()) }),
+  ),
+  /** How many harnesses may run its coding jobs (its pinned ones, else every one accepting coding). */
+  harnessCount: z.number(),
+  /** Whether those are its pinned harnesses. */
+  pinned: z.boolean(),
+});
+export type RepositoryCoding = z.infer<typeof repositoryCodingSchema>;
+
+/**
+ * `GET /api/ui/repositories/{id}/coding/linear` (admins): the organization's Linear workspace
+ * the Coding tab's Linear fields pick from. An external call: not polled.
+ */
+export const codingLinearSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("connected"),
+    options: z.object({
+      teams: z.array(z.object({ key: z.string(), name: z.string() })),
+      labels: z.array(z.string()),
+      projects: z.array(z.string()),
+      states: z.array(z.string()),
+    }),
+  }),
+  z.object({ status: z.literal("disconnected") }),
+  z.object({ status: z.literal("unavailable") }),
+]);
+export type CodingLinear = z.infer<typeof codingLinearSchema>;

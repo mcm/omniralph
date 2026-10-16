@@ -959,6 +959,15 @@ body {
   gap: var(--space-6);
   min-width: 0;
 }
+/* The section's shape while its repository loads (whiteout skeletons, DESIGN.md). */
+.settings-section-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
 .settings-section {
   /* Clear the sticky app header when a link or a failed validation scrolls here. */
   scroll-margin-top: calc(52px + var(--space-4));

@@ -1,13 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import {
-  RepositorySettingsView,
+  createTestQueryClient,
+  mockFetch,
+  queryWrapper,
+  TEST_ORGANIZATION_ID,
+} from "@/components/query-test-utils";
+import {
+  RepositorySettingsContent,
   type RepositoryHarness,
   type RepositorySettingsTab,
 } from "./repository-settings-view";
 import type { CodingChoices, RalphSettingsValues } from "./ralph-settings-section";
-import { updateRalphSettings, updateRepositoryTaskTypes } from "./actions";
 import {
   inheritLabel,
   saveWithTaskTypes,
@@ -17,18 +22,12 @@ import {
 } from "./task-types";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-vi.mock("@/components/current-user", () => ({ useCurrentUser: () => ({ role: "admin" }) }));
 vi.mock("@/components/use-action", () => ({
   useAction: () => ({ pending: false, run: vi.fn() }),
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repositories/repo-1/settings",
   useRouter: () => ({ push: vi.fn() }),
-}));
-vi.mock("./actions", () => ({
-  updateRalphSettings: vi.fn(),
-  updateRepositorySettings: vi.fn(),
-  updateRepositoryTaskTypes: vi.fn(),
 }));
 
 const REVIEW_ID = "11111111-1111-4111-8111-111111111111";
@@ -109,63 +108,71 @@ function render(
     pinnedHarnessIds?: string[];
   } = {},
 ) {
+  const Wrapper = queryWrapper(createTestQueryClient());
   return renderToStaticMarkup(
-    <RepositorySettingsView
-      tab={tab}
-      repository={{
-        id: "repo-1",
-        provider: "github",
-        fullPath: "acme/app",
-        webUrl: "https://github.com/acme/app",
-      }}
-      settings={{
-        profileId: "standard",
-        triggers: { onOpen: true, onPush: true, drafts: false },
-        pathExcludes: [],
-        customInstructions: "",
-        pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
-        reviewTaskIds: ["builtin:review-pr", REVIEW_ID],
-        correlationTaskId: overrides.correlationTaskId ?? CORRELATION_ID,
-      }}
-      reviewTasks={[
-        {
-          id: "builtin:review-pr",
-          name: "Review PR",
-          description: "Reviews the change.",
-          builtin: true,
-        },
-        { id: REVIEW_ID, name: "Security review", description: "Looks for holes.", builtin: false },
-      ]}
-      correlationTasks={[
-        { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-        { id: CORRELATION_ID, name: "Strict correlation", builtin: false },
-      ]}
-      profiles={[
-        {
-          id: "standard",
-          name: "Standard",
-          description: "Balanced.",
-          model: "claude-sonnet-4-5",
-          maxTokensPerReview: 200000,
-          maxFiles: 50,
-          allowRepoExploration: true,
-        },
-      ]}
-      harnesses={overrides.harnesses ?? HARNESSES}
-      ralph={overrides.ralph ?? ralph}
-      codingChoices={overrides.choices ?? choices}
-      codingTasks={{
-        story: [
-          { id: "builtin:implement-story", name: "Implement story", builtin: true },
-          { id: STORY_ID, name: "Careful story", builtin: false },
-        ],
-        request: [
-          { id: "builtin:handle-request", name: "Handle request", builtin: true },
-          { id: REQUEST_ID, name: "Careful request", builtin: false },
-        ],
-      }}
-      taskTypes={overrides.taskTypes ?? (tab === "coding" ? codingOn : inheritAll)}
-    />,
+    <Wrapper>
+      <RepositorySettingsContent
+        tab={tab}
+        repository={{
+          id: "repo-1",
+          provider: "github",
+          fullPath: "acme/app",
+          webUrl: "https://github.com/acme/app",
+        }}
+        settings={{
+          profileId: "standard",
+          triggers: { onOpen: true, onPush: true, drafts: false },
+          pathExcludes: [],
+          customInstructions: "",
+          pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
+          reviewTaskIds: ["builtin:review-pr", REVIEW_ID],
+          correlationTaskId: overrides.correlationTaskId ?? CORRELATION_ID,
+        }}
+        reviewTasks={[
+          {
+            id: "builtin:review-pr",
+            name: "Review PR",
+            description: "Reviews the change.",
+            builtin: true,
+          },
+          {
+            id: REVIEW_ID,
+            name: "Security review",
+            description: "Looks for holes.",
+            builtin: false,
+          },
+        ]}
+        correlationTasks={[
+          { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
+          { id: CORRELATION_ID, name: "Strict correlation", builtin: false },
+        ]}
+        profiles={[
+          {
+            id: "standard",
+            name: "Standard",
+            description: "Balanced.",
+            model: "claude-sonnet-4-5",
+            maxTokensPerReview: 200000,
+            maxFiles: 50,
+            allowRepoExploration: true,
+          },
+        ]}
+        harnesses={overrides.harnesses ?? HARNESSES}
+        ralph={overrides.ralph ?? ralph}
+        codingChoices={overrides.choices ?? choices}
+        codingTasks={{
+          story: [
+            { id: "builtin:implement-story", name: "Implement story", builtin: true },
+            { id: STORY_ID, name: "Careful story", builtin: false },
+          ],
+          request: [
+            { id: "builtin:handle-request", name: "Handle request", builtin: true },
+            { id: REQUEST_ID, name: "Careful request", builtin: false },
+          ],
+        }}
+        taskTypes={overrides.taskTypes ?? (tab === "coding" ? codingOn : inheritAll)}
+      />
+    </Wrapper>,
   );
 }
 
@@ -572,43 +579,50 @@ describe("RepositorySettingsView pinned harnesses", () => {
 
 describe("saveWithTaskTypes", () => {
   const saved = { query: null, review: null, coding: null };
+  const meta = { organizationId: TEST_ORGANIZATION_ID };
+  const TASK_TYPES = "PUT /api/ui/repositories/repo-1/task-types";
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it("saves only the section's switches, the others as saved, then its settings", async () => {
-    vi.mocked(updateRepositoryTaskTypes).mockResolvedValueOnce({ ok: true });
-    vi.mocked(updateRalphSettings).mockResolvedValueOnce({ ok: true });
+    const seen = mockFetch({ [TASK_TYPES]: { ok: true } });
+    const settingsSave = vi.fn().mockResolvedValue({ ok: true });
     const save = saveWithTaskTypes(
       "repo-1",
       saved,
       { query: false, review: true, coding: true },
       ["coding"],
-      () => updateRalphSettings("repo-1", ralph),
+      settingsSave,
     );
-    await expect(save()).resolves.toEqual({ ok: true });
-    expect(updateRepositoryTaskTypes).toHaveBeenLastCalledWith("repo-1", {
-      query: null,
-      review: null,
-      coding: true,
-    });
-    expect(updateRalphSettings).toHaveBeenCalledTimes(1);
+    await save(meta);
+    expect(seen.map((r) => r.body)).toEqual([{ query: null, review: null, coding: true }]);
+    expect(settingsSave).toHaveBeenCalledWith(meta);
   });
 
   it("skips unchanged switches, and stops at a failed switch save", async () => {
-    vi.mocked(updateRepositoryTaskTypes).mockClear();
+    const seen = mockFetch({
+      [TASK_TYPES]: () =>
+        new Response(JSON.stringify({ error: "Nope" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+    });
     const settingsSave = vi.fn().mockResolvedValue({ ok: true });
-    await saveWithTaskTypes("repo-1", saved, saved, ["coding"], settingsSave)();
-    expect(updateRepositoryTaskTypes).not.toHaveBeenCalled();
+    await saveWithTaskTypes("repo-1", saved, saved, ["coding"], settingsSave)(meta);
+    expect(seen).toHaveLength(0);
     expect(settingsSave).toHaveBeenCalledTimes(1);
 
-    vi.mocked(updateRepositoryTaskTypes).mockResolvedValueOnce({ ok: false, error: "Nope" });
     settingsSave.mockClear();
-    const result = await saveWithTaskTypes(
-      "repo-1",
-      saved,
-      { ...saved, review: false },
-      ["review"],
-      settingsSave,
-    )();
-    expect(result).toEqual({ ok: false, error: "Nope" });
+    await expect(
+      saveWithTaskTypes(
+        "repo-1",
+        saved,
+        { ...saved, review: false },
+        ["review"],
+        settingsSave,
+      )(meta),
+    ).rejects.toThrow("Nope");
+    expect(seen).toHaveLength(1);
     expect(settingsSave).not.toHaveBeenCalled();
   });
 });

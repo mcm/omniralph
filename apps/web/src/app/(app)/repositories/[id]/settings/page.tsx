@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { renderRepositorySettings } from "../repository-settings-page";
+import { RepositorySettingsView } from "./repository-settings-view";
 
 export const metadata: Metadata = { title: "Repository review settings · Omniralph" };
 
-export default async function RepositorySettingsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  return renderRepositorySettings(params, "settings");
+export default function RepositorySettingsPage() {
+  return <RepositorySettingsView tab="settings" />;
 }

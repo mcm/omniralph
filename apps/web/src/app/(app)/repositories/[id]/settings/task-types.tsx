@@ -2,10 +2,10 @@
 
 import { Field, NativeSelect } from "@iamthemcmaster/ui";
 import type { RepositoryTaskTypesInput } from "@omniralph/shared";
-import type { ActionResult } from "@/lib/action-result";
+import { api } from "@/lib/api/client";
+import { mutationResultSchema } from "@/lib/api/schemas";
 import { formatSettingValue, type SettingSpec } from "@/lib/settings/changes";
 import { pickKeys } from "@/lib/settings/forms";
-import { updateRepositoryTaskTypes } from "./actions";
 
 /** A repository's task-type switches. */
 export type TaskTypeSwitch = keyof RepositoryTaskTypesInput;
@@ -126,25 +126,28 @@ export function TaskTypeSelect({
   );
 }
 
+/** A save's request, as `useApiAction` sends it. */
+export type SaveRequest = (meta: { organizationId: string }) => Promise<unknown>;
+
 /**
- * Saves the task-type switches of `keys` (the others as saved), if any changed, then runs `save`
- * if it is given; the first failure stops it.
+ * Saves the task-type switches of `keys` (the others as saved), if any changed
+ * (`PUT /api/ui/repositories/{id}/task-types`), then runs `save` if it is given; the first
+ * failure (an `ApiError`) stops it.
  */
 export function saveWithTaskTypes(
   repositoryId: string,
   saved: RepositoryTaskTypesInput,
   draft: RepositoryTaskTypesInput,
   keys: readonly TaskTypeSwitch[],
-  save: (() => Promise<ActionResult>) | null,
-): () => Promise<ActionResult> {
-  return async () => {
+  save: SaveRequest | null,
+): SaveRequest {
+  return async (meta) => {
     if (keys.some((key) => saved[key] !== draft[key])) {
-      const result = await updateRepositoryTaskTypes(repositoryId, {
-        ...saved,
-        ...pickKeys(draft, keys),
+      await api.put(`/api/ui/repositories/${repositoryId}/task-types`, mutationResultSchema, {
+        body: { ...saved, ...pickKeys(draft, keys) },
+        organizationId: meta.organizationId,
       });
-      if (!result.ok || !save) return result;
     }
-    return save ? save() : { ok: true };
+    return save ? save(meta) : { ok: true };
   };
 }
