@@ -9,13 +9,119 @@ Run it from the repo root with `pnpm dev`, or from here with `pnpm dev`.
 
 - All UI uses `@iamthemcmaster/ui` components, `@tabler/icons-react` icons and `sonner` toasts.
   No other component or styling library.
-- Library components need `"use client"`. `page.tsx` files are server components that load data
-  and render a `"use client"` view component with serializable props; mutations are server actions.
+- Library components need `"use client"`. Pages read and write through the `/api/ui` route handlers
+  with TanStack Query (see [Data fetching](#data-fetching)). Pages not migrated yet (TOOL-502) are
+  still server components that load data and render a `"use client"` view, with server actions.
 - Custom styling uses design tokens only (`--bg-*`, `--text-*`, `--border-*`, `--space-*`,
   `--radius-*`, `--font-*`, `--spring-*`, `--t-*`).
 - Keep the `AppShell` layering: `AuroraField` paints at `z-0`, so the shell keeps
   `position: relative; z-index: 1`.
 - Sidebar navigation lives in `src/lib/navigation.ts`.
+
+## Data fetching
+
+Every page under `src/app/(app)` is a thin client entry that renders a client view; the view
+reads and writes through Route Handlers under `src/app/api/ui/**/route.ts` with TanStack Query.
+No page reads the database and there are no server actions: `(app)/layout.tsx` only gates the
+session and hands the user to `AppShell`, which provides the `QueryClient` (`QueryProvider`).
+
+**Handlers** (`src/lib/api/handler.ts`). Wrap every handler in `apiHandler`:
+
+```ts
+export const PATCH = apiHandler(
+  { access: "admin", body: renameHarnessSchema },
+  async ({ user, body, params }) => renameHarness(user, params.id, body),
+);
+```
+
+It resolves the user with the session helpers (`access`: `member` by default, `admin`, or
+`signed-in` for actions without an organization), validates the body and search params with zod,
+and answers every failure as JSON `{ error, code?, fieldErrors? }`: 401 signed out, 403 without the
+role or an organization, 409 `organization_switched` when the request's organization (the
+`x-omniralph-organization` header the client sends) isn't the active one, 400 for invalid JSON,
+a schema mismatch or a failed `ActionResult`, 404 for `ApiRouteError.notFound()` or `notFound()`,
+500 otherwise. Handlers only parse, authorize and serialize: the logic lives in `src/lib/**`
+(moved out of the old `actions.ts` files) and may keep returning `ActionResult`, whose `error`
+and `warning` wording reaches the UI unchanged. Scope every query to `user.organization.id`.
+
+**Schemas** (`src/lib/api/schemas.ts`, plus one module per area in `src/lib/api/`). Request and
+response bodies are zod schemas imported by both the handler and the client. Dates cross the wire
+as ISO strings (`isoDate`); mutations answer `mutationResultSchema` (`{ ok: true, warning? }`),
+extended when they return more.
+
+**Client** (`src/lib/api/client.ts`). `api.get(path, schema, { params, organizationId, signal })`
+(and `post`/`patch`/`put`/`delete` with `body`) parses the response with the schema and throws an
+`ApiError` (`status`, `code`, `fieldErrors`, and the server's message) on a non-2xx, a response
+that isn't the expected JSON, or a network failure. Pass the query key's organization id, so the
+handler can refuse it after a switch in another tab.
+
+**Query keys** (`src/lib/api/keys.ts`). Every key comes from `queryKeys(organizationId)` (in
+components, `useQueryKeys()`) and starts with the active organization's id: `keys.jobs.list(params)`,
+`keys.jobs.detail(id)`, `keys.harnesses.part(id, "runs", params)`. Keys nest by prefix
+(`keys.jobs.all` ⊃ `keys.jobs.lists` ⊃ `keys.jobs.list(params)`), and switching organizations drops
+the other organizations' queries from the cache.
+
+```ts
+const keys = useQueryKeys();
+const { organization } = useCurrentUser();
+const jobs = useQuery({
+  queryKey: keys.jobs.list({ page }),
+  queryFn: ({ signal }) =>
+    api.get("/api/ui/jobs", jobListSchema, {
+      params: { page },
+      organizationId: organization.id,
+      signal,
+    }),
+  placeholderData: keepPreviousData,
+});
+```
+
+**Polling defaults** (`src/lib/api/query-client.ts`). Every query is live: it refetches every 3s
+while its tab is visible (`refetchInterval: 3000`, `refetchIntervalInBackground: false`), when the
+tab regains focus or the network reconnects, and on every mount (`staleTime: 0`). Network and 5xx
+failures retry with backoff; 4xx answers don't. Settings and definitions may poll at
+`SETTINGS_REFETCH_INTERVAL`. Each poll is a function invocation on Vercel, so polled handlers stay
+cheap: paginated, indexed, `getDb()` on the Node runtime.
+
+**External APIs are not polled.** A query that calls Linear, GitHub or GitLab (the repository
+pickers, Linear lookups) is its own query with `refetchInterval: false` and `refetchOnWindowFocus:
+false`, refreshed by an explicit button; polled handlers never call an external API.
+
+**Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`, not `useAction`:
+
+```ts
+const rename = useApiMutation({
+  mutationFn: (name: string, { organizationId }) =>
+    api.patch(`/api/ui/harnesses/${id}`, mutationResultSchema, { body: { name }, organizationId }),
+  invalidate: (keys) => [keys.harnesses.all, keys.repositories.all],
+  success: "Harness renamed",
+});
+```
+
+`invalidate` is required: list every list and detail the mutation can affect, by key prefix.
+They are invalidated, and their refetch awaited, before `onSuccess` runs, so a `router.push` from
+`onSuccess` never lands on cached-stale data. The hook shows the success toast (or the result's
+`warning` as a warning toast), the server's message as a danger toast on failure (`onError` gets
+the `ApiError`, with `fieldErrors` for inline errors), and refuses to run once another tab has
+switched organizations. Optimistic updates go in `onMutate`; roll back in `onError` with its
+`context`.
+
+**Loading, errors and freshness.** Wrap a query's content in `QueryBoundary`
+(`src/components/query-boundary.tsx`) with a `Skeleton` shaped like it: it shows the skeleton while
+the first load is pending and an in-place error with Retry when it fails. List and detail pages of
+in-flight entities put `Freshness` (`src/components/freshness.tsx`, "Updated 3s ago") in the page
+header; it turns into a warning with Retry after 30s of failed refetches. Relative times tick on the
+browser's clock: `<RelativeTime iso>`, `useRelativeTime(iso)` or `useNow()` from
+`src/components/relative-time.tsx`, never a server render time.
+
+**Forms** seed from query data and re-seed only while not dirty, so a background refetch never
+overwrites an edit. **List filters and pagination** live in the URL search params
+(`useSearchParams`) and use `placeholderData: keepPreviousData`.
+
+**Tests** render with `createTestQueryClient()` and `queryWrapper(client)` from
+`src/components/query-test-utils.tsx` (no polling, no retries) and mock `fetch`; handler tests
+mock `@/lib/auth/session` or use `@omniralph/db/testing`. `@tanstack/react-query-devtools` loads in
+development only.
 
 ## Fixture data and screenshots
 
