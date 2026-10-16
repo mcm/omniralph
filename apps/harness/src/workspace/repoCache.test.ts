@@ -620,12 +620,18 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
   it("serializes concurrent calls on the same branch for the whole of fn", async () => {
     await remote.commit({ "README.md": "base\n" });
     const events: string[] = [];
-    const run = (name: string) =>
-      repos.withBranchWorktree(repo, feature, async (wt) => {
+    // Resolves once fn is running, i.e. the branch lock is held — a fixed head start races on a slow runner.
+    const run = (name: string) => {
+      let started!: () => void;
+      const holding = new Promise<void>((resolve) => (started = resolve));
+      const done = repos.withBranchWorktree(repo, feature, async (wt) => {
         events.push(`start ${name} ${wt.created}`);
+        started();
         await new Promise((resolve) => setTimeout(resolve, 200));
         events.push(`end ${name}`);
       });
+      return { holding, done };
+    };
     // Two caches on one workspace stand in for two agent processes.
     const other = new RepoCache({ workspaceRoot, credentialHelper: "!true", lockRetryMs: 20 });
     const second = () =>
@@ -633,13 +639,14 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
         events.push(`start b ${wt.created}`);
         events.push("end b");
       });
-    await Promise.all([run("a"), new Promise((r) => setTimeout(r, 50)).then(second)]);
+    const a = run("a");
+    await Promise.all([a.done, a.holding.then(second)]);
     expect(events).toEqual(["start a true", "end a", "start b false", "end b"]);
 
     // An abort while waiting for the branch lock rejects.
     const controller = new AbortController();
-    const holding = run("c");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const c = run("c");
+    await c.holding;
     const waiting = other.withBranchWorktree(
       repo,
       { ...feature, signal: controller.signal },
@@ -647,7 +654,7 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     );
     controller.abort(new Error("canceled while waiting"));
     await expect(waiting).rejects.toThrow("canceled while waiting");
-    await holding;
+    await c.done;
     expect(events).not.toContain("never");
   });
 
