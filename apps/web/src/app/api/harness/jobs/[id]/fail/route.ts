@@ -9,6 +9,7 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
+import { syncJobsDue } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
@@ -44,6 +45,8 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     retryAfterSeconds,
   });
   const job = outcome.status === "not_found" ? null : await getJob(db, jobId);
+  // A retry is due at its `available_at`; a failed or canceled job leaves the due set.
+  if (job && outcome.status !== "conflict") await syncJobsDue([job]);
   const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
   if (job && handler) {
     const error = body.data.error ?? null;

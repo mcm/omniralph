@@ -4,11 +4,11 @@ import {
   listQueuedJobsTargetingHarness,
   markHarnessDeleted,
   revokeHarness as revokeHarnessRow,
-  skipJob,
   writeHarnessAudit,
   type Database,
   type Job,
 } from "@omniralph/db";
+import { skipJobAndClearDue, syncJobsDue } from "@/lib/dispatch/due";
 import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { cacheHarnessRevoked } from "./auth-state";
@@ -48,6 +48,8 @@ export async function revokeHarness(
   });
   if (!revoked) return false;
   await cacheHarnessRevoked(harnessId);
+  // Requeued jobs are due again at once; failed and canceled ones leave the due set.
+  await syncJobsDue([...revoked.requeuedJobs, ...revoked.failedJobs, ...revoked.canceledJobs]);
   await writeHarnessAudit(db, {
     harnessId,
     event: "revoke",
@@ -69,7 +71,7 @@ export async function revokeHarness(
   for (const job of await listQueuedJobsTargetingHarness(db, harnessId)) {
     try {
       if (job.taskType === "system") {
-        await skipJob(db, job.id, { reason: REVOKED });
+        await skipJobAndClearDue(db, job, { reason: REVOKED });
       } else {
         await dispatcher.republish(job.id);
       }

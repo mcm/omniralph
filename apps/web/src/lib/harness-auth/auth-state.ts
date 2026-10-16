@@ -1,6 +1,7 @@
 import "server-only";
 import { getHarnessAuthState, type Database } from "@omniralph/db";
 import { readHotState, registerHotStateRebuilder, writeHotState } from "@/lib/hot-state";
+import "@/lib/hot-state/rebuilders";
 
 /**
  * A harness's auth state (`active`/`revoked`), cached in Redis so `requireHarness` and

@@ -9,6 +9,7 @@ import {
   type JobRouteContext,
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
+import { removeJobsDue } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
@@ -44,6 +45,7 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     harnessId: principal.harnessId,
     result: body.data.result,
   });
+  if (outcome.status === "completed" || outcome.status === "canceled") await removeJobsDue([job]);
   switch (outcome.status) {
     case "not_found":
       return notFound();

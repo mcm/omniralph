@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_POOLS,
   Heartbeat,
+  JOB_LEASE_SECONDS,
   LEGACY_POLL_INTERVAL_SECONDS,
   effectivePoolLimits,
   isJobTaskType,
@@ -23,6 +24,7 @@ import { heartbeatClaimable } from "@/lib/harness-api/claimable";
 import { signJobTokens } from "@/lib/harness-api/jobs";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { recordHeartbeat } from "@/lib/harnesses/last-seen";
+import { renewJobsDue } from "@/lib/dispatch/due";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
@@ -79,7 +81,13 @@ export async function POST(req: Request): Promise<Response> {
     ]);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.
-  await renewJobLeases(db, harnessId, keepIds);
+  const renewedAt = new Date();
+  const renewed = await renewJobLeases(db, harnessId, keepIds, renewedAt, JOB_LEASE_SECONDS);
+  await renewJobsDue(
+    agent.organizationId,
+    renewed,
+    new Date(renewedAt.getTime() + JOB_LEASE_SECONDS * 1000),
+  );
   // Both tokens of a run-spec job are refreshed; a legacy job's single token too.
   const jobTokens = (
     await Promise.all(running.keep.map((job) => signJobTokens(job, harnessId)))

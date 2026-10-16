@@ -12,7 +12,10 @@ import {
   type RunSpec,
 } from "@omniralph/shared";
 import { badRequest, readJson, unauthorized } from "@/lib/harness-auth/request";
+import { readHarnessAuthState } from "@/lib/harness-auth/auth-state";
 import { requireHarness } from "@/lib/harness-auth/verify";
+import { readHarnessOrganization } from "@/lib/harnesses/organization";
+import { hasDueJob, reconcileDueJobs, syncJobsDue } from "@/lib/dispatch/due";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
@@ -22,7 +25,7 @@ import { jobHooks } from "@/lib/sinks";
 /** Room above `MAX_CLAIM_WAIT_SECONDS` for the last claim and the response. */
 export const maxDuration = 60;
 
-/** How often a held request looks for a claimable job again. */
+/** How often a held request looks for a due job again. */
 const CLAIM_RETRY_MS = 2_000;
 
 type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
@@ -36,7 +39,8 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
  * `task_id`), its `runSpec` (`resolveRunSpec`), in `JobStartResponse`'s `run`
  * shape. A run spec that can never be resolved fails its job. With nothing to claim
  * it looks again every `CLAIM_RETRY_MS` until `waitSeconds` passes (204) or
- * the harness hangs up. The job's hooks (`jobHooks`: its task's sink, or its
+ * the harness hangs up. Each look asks Redis first (`hasDueJob`): Postgres is only
+ * queried while the harness's organization has a job due (or Redis can't tell). The job's hooks (`jobHooks`: its task's sink, or its
  * type's outcome handler for a legacy job) hear about the start
  * (`onStarted`, whose `skip` moves the claim on to the next job) and about
  * candidates the claim canceled (`onCanceled`) or gave up on (`onFailed`).
@@ -49,15 +53,23 @@ export async function POST(req: Request): Promise<Response> {
 
   const db = getDb();
   const { harnessId } = principal;
+  const organizationId = await readHarnessOrganization(db, harnessId);
+  if (!organizationId) return unauthorized();
   const deadline = Date.now() + body.data.waitSeconds * 1000;
-  for (;;) {
-    // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
-    const agent = await getHarness(db, harnessId);
-    if (!agent || agent.revokedAt) return unauthorized();
-    // Its own accepted task types, else the organization's default (read each time too).
-    const { acceptedTaskTypes } = await resolveHarnessConfig(db, agent);
-    const run = await claimNext(db, { ...agent, acceptedTaskTypes }, body.data.pools);
-    if (run) return Response.json(run satisfies ClaimRun);
+  for (let attempt = 0; ; attempt++) {
+    if (await hasDueJob(db, organizationId)) {
+      // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
+      const agent = await getHarness(db, harnessId);
+      if (!agent || agent.revokedAt) return unauthorized();
+      // Its own accepted task types, else the organization's default (read each time too).
+      const { acceptedTaskTypes } = await resolveHarnessConfig(db, agent);
+      const run = await claimNext(db, { ...agent, acceptedTaskTypes }, body.data.pools);
+      if (run) return Response.json(run satisfies ClaimRun);
+      await reconcileDueJobs(db, organizationId);
+    } else if (attempt > 0 && (await readHarnessAuthState(db, harnessId)) !== "active") {
+      // `requireHarness` checked the first attempt; a revocation still ends a held request.
+      return unauthorized();
+    }
     const left = deadline - Date.now();
     if (left <= 0 || !(await wait(Math.min(CLAIM_RETRY_MS, left), req.signal))) break;
   }
@@ -102,6 +114,7 @@ async function claimNext(
         }
       },
     });
+    await syncJobsDue([...settled.map(({ job }) => job), ...(claim ? [claim.job] : [])]);
     for (const job of settled) await onSettled(db, job);
     if (!claim || !tokens) return null;
 
