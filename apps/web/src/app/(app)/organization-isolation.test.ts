@@ -116,7 +116,6 @@ vi.mock("./repositories/github/[connectionId]/github-repos-view", () => ({
 }));
 vi.mock("./reviews/reviews-view", () => ({ ReviewsView: () => null }));
 vi.mock("./reviews/[id]/review-detail-view", () => ({ ReviewDetailView: () => null }));
-vi.mock("./harnesses/[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
 vi.mock("./coding/ralph-runs-view", () => ({ RalphRunsView: () => null }));
 vi.mock("./coding/[id]/ralph-run-detail-view", () => ({ RalphRunDetailView: () => null }));
 vi.mock("./triage/triage-runs-view", () => ({ TriageRunsView: () => null }));
@@ -143,7 +142,6 @@ const { default: GitHubInstallationPage } =
   await import("./repositories/github/[connectionId]/page");
 const { default: ReviewsPage } = await import("./reviews/page");
 const { default: ReviewPage } = await import("./reviews/[id]/page");
-const { default: HarnessPage } = await import("./harnesses/[id]/page");
 const { default: RalphRunsPage } = await import("./coding/page");
 const { default: RalphRunPage } = await import("./coding/[id]/page");
 const { default: TriageRunsPage } = await import("./triage/page");
@@ -420,7 +418,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       ),
       reviews: await ReviewsPage(search()),
       review: await ReviewPage(params(own.reviewId)),
-      harness: await HarnessPage(params(own.harnessId)),
       ralphRuns: await RalphRunsPage(search()),
       ralphRun: await RalphRunPage(params(own.runId)),
       triageRuns: await TriageRunsPage(search()),
@@ -467,7 +464,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       expect(ids(pages.reviews!.props.reviews)).toEqual([own.reviewId]);
       expect(pages.review!.props.review.id).toBe(own.reviewId);
       expect(JSON.stringify(pages.review!.props.review)).toContain(own.findingId);
-      expect(pages.harness!.props.harness.id).toBe(own.harnessId);
       expect(ids(pages.ralphRuns!.props.runs)).toEqual([own.runId]);
       expect(pages.ralphRuns!.props.linearConnected).toBe(true);
       expect(pages.ralphRun!.props.run.id).toBe(own.runId);
@@ -531,7 +527,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
       GitHubInstallationPage({ params: Promise.resolve({ connectionId: b.connectionId }) }),
     ).rejects.toMatchObject(notFound);
     await expect(ReviewPage(params(b.reviewId))).rejects.toMatchObject(notFound);
-    await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
     await expect(RalphRunPage(params(b.runId))).rejects.toMatchObject(notFound);
     await expect(TriageRunPage(params(b.triageRunId))).rejects.toMatchObject(notFound);
     // Nothing switched, nor can it be.
@@ -569,7 +564,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
     const resources: [string, () => Promise<JSX.Element>, string][] = [
       [`/reviews/${b.reviewId}`, () => ReviewPage(params(b.reviewId)), b.reviewId],
-      [`/harnesses/${b.harnessId}`, () => HarnessPage(params(b.harnessId)), b.harnessId],
       [`/coding/${b.runId}`, () => RalphRunPage(params(b.runId)), b.runId],
       [`/triage/${b.triageRunId}`, () => TriageRunPage(params(b.triageRunId)), b.triageRunId],
       [

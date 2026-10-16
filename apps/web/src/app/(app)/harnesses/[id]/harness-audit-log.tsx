@@ -14,25 +14,13 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconAlertTriangle, IconHistory } from "@tabler/icons-react";
-import {
-  AUDIT_EVENT_LABELS,
-  auditDetailSummary,
-  hasRefreshReuse,
-  type AuditEventName,
-} from "@/lib/harnesses/display";
+import { AUDIT_EVENT_LABELS, auditDetailSummary, hasRefreshReuse } from "@/lib/harnesses/display";
+import type { AuditRow } from "@/lib/api/harnesses";
 import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
 import { EmptyValue } from "@/components/empty-value";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 
-/** Serializable `harness_audit` row. */
-export interface AuditRow {
-  id: string;
-  event: AuditEventName;
-  ip: string | null;
-  detail: Record<string, unknown>;
-  /** ISO timestamp. */
-  createdAt: string;
-}
+export type { AuditRow };
 
 /** Shown above everything else when the audit log contains a `refresh_reuse` event. */
 export function TokenTheftAlert({ audit }: { audit: AuditRow[] }) {

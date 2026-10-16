@@ -16,22 +16,10 @@ import {
 import { IconTool } from "@tabler/icons-react";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
+import type { HostToolRow } from "@/lib/api/harnesses";
 import { HOST_TOOL_PATH_VARIANTS } from "@/lib/state-variants";
 
-/** Serializable catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
-export interface HostToolRow {
-  hostToolId: string;
-  name: string;
-  description: string | null;
-  configuredPath: string | null;
-  /** Whether the configured path exists, as last reported; null: not reported on it yet. */
-  configuredPathExists: boolean | null;
-  discoveredPath: string | null;
-  /** ISO timestamp of the harness's last report on the tool; null: never. */
-  reportedAt: string | null;
-  /** `effectiveHostToolPath()`: the path the harness runs the tool from; null: unavailable. */
-  effectivePath: string | null;
-}
+export type { HostToolRow };
 
 function ConfiguredPathStatus({ tool }: { tool: HostToolRow }) {
   if (tool.configuredPath === null) return <Muted>Not configured</Muted>;

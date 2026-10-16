@@ -2,6 +2,7 @@
 
 import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
+import { isHarnessOnline } from "@/lib/harnesses/display";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
 import {
@@ -12,6 +13,12 @@ import {
 import { ProviderIcon } from "../repositories/repositories-view";
 import { MonoValue } from "@/components/mono-value";
 import { stateLabel } from "@/lib/state-variants";
+
+/** `harness` with `online` computed against the browser's clock `now`, not the server's. */
+export function withClientOnline(harness: HarnessRow, now: number): HarnessRow {
+  const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
+  return { ...harness, online: !harness.revoked && isHarnessOnline(heartbeat, new Date(now)) };
+}
 
 const HARNESS_CONNECTION_LABELS = { online: "Online", offline: "Offline", revoked: "Revoked" };
 

@@ -14,6 +14,7 @@ import {
   resolveHarnessConfig,
   listJobs,
   listHarnessInstallJobs,
+  listHarnessPinSyncJobs,
   listActiveHarnessIds,
   listHarnessOverview,
   listReportedInstallables,
@@ -460,6 +461,62 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       }),
     ]);
     expect(await listHarnessInstallJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
+  });
+
+  it("lists the latest sync job of each repository pinned to a harness", async () => {
+    const a = await enroll(orgA, "a-sync-jobs");
+    const other = await enroll(orgA, "a-sync-other");
+    const [connection] = await db
+      .insert(scmConnections)
+      .values({
+        organizationId: orgA,
+        provider: "github",
+        name: "sync",
+        baseUrl: "https://api.github.com",
+        externalId: "sync-jobs",
+        encryptedCredentials: "x",
+      })
+      .returning();
+    const repo = async (externalId: string) =>
+      (
+        await connectRepository(db, {
+          connectionId: connection!.id,
+          provider: "github",
+          externalId,
+          fullPath: `acme/sync-${externalId}`,
+        })
+      ).id;
+    const [first, second] = [await repo("sync-1"), await repo("sync-2")];
+    const now = new Date("2026-10-12T12:00:00Z");
+    const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+    const job = (values: Partial<typeof jobs.$inferInsert>) => ({
+      organizationId: orgA,
+      type: "repo.sync",
+      taskType: "system" as const,
+      targetHarnessId: a,
+      repositoryId: first,
+      ...values,
+    });
+    const inserted = await db
+      .insert(jobs)
+      .values([
+        job({ status: "failed", error: "clone failed", createdAt: hoursAgo(3) }),
+        job({ status: "running", createdAt: hoursAgo(1) }),
+        job({ repositoryId: second, status: "completed", createdAt: hoursAgo(2) }),
+        job({ repositoryId: second, createdAt: hoursAgo(200) }),
+        job({ targetHarnessId: other, createdAt: hoursAgo(0.5) }),
+        job({ type: "install", createdAt: hoursAgo(0.5) }),
+      ])
+      .returning();
+
+    const listed = await listHarnessPinSyncJobs(db, orgA, a, hoursAgo(24));
+    expect(listed.map((j) => [j.repositoryId, j.id, j.status]).sort()).toEqual(
+      [
+        [first, inserted[1]!.id, "running"],
+        [second, inserted[2]!.id, "completed"],
+      ].sort(),
+    );
+    expect(await listHarnessPinSyncJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
   });
 
   it("pages an organization's jobs and finds the page that shows a job", async () => {

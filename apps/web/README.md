@@ -115,11 +115,24 @@ browser's clock: `<RelativeTime iso>`, `useRelativeTime(iso)` or `useNow()` from
 `src/components/relative-time.tsx`, never a server render time.
 
 **Forms** seed from query data and re-seed only while not dirty, so a background refetch never
-overwrites an edit. **List filters and pagination** live in the URL search params
+overwrites an edit: `useSeededDraft(saved)` (`src/components/use-seeded-draft.ts`). A
+`SettingsSection`/`SettingsCard` save (which runs through `useAction`) calls the API with
+`useApiAction()` (`src/components/use-api-action.ts`): one request, then one invalidation, awaited
+before the form leaves its saving state. A save made of several changes is one request whose
+handler stops at the first failure and names the changes it didn't save. Changes a harness picks up
+with its next heartbeat answer a `savedAt` and show "Saved — waiting for <harness> to pick it up",
+then "Applied" once the harness's `lastHeartbeatAt` is later (`SettingsSection`'s `savedStatus`).
+
+**Resources of another organization.** A detail handler calls
+`requireResourceInActiveOrganization(user, resource, id, { pathPrefix, next })`
+(`src/lib/api/resource.ts`): a resource of another of the user's organizations answers 409
+`enter_organization` with a signed `enterPath`, and `QueryBoundary` opens it, which switches
+organizations and comes back to `next` (the page, sent by the query as `?next=`). **List filters and pagination** live in the URL search params
 (`useSearchParams`) and use `placeholderData: keepPreviousData`.
 
 **Tests** render with `createTestQueryClient()` and `queryWrapper(client)` from
-`src/components/query-test-utils.tsx` (no polling, no retries) and mock `fetch`; handler tests
+`src/components/query-test-utils.tsx` (no polling, no retries) and mock `fetch` (`mockFetch`
+there answers routes by `"METHOD /path"` and records the requests); handler tests
 mock `@/lib/auth/session` or use `@omniralph/db/testing`. `@tanstack/react-query-devtools` loads in
 development only.
 

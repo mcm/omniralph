@@ -1,14 +1,21 @@
+import type * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { InstallablesSection } from "./harness-detail-view";
 import type { InstallJobRow } from "./harness-installables";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("../actions", () => ({}));
 vi.mock("../../jobs/actions", () => ({}));
 vi.mock("../../repositories/actions", () => ({}));
+
+/** Static markup inside the providers the app shell gives (the user, a query client). */
+function markup(ui: React.ReactElement): string {
+  const Wrapper = queryWrapper(createTestQueryClient());
+  return renderToStaticMarkup(<Wrapper>{ui}</Wrapper>);
+}
 
 const harness = { id: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f", revoked: false } as HarnessRow;
 
@@ -35,7 +42,7 @@ const jobs: InstallJobRow[] = [
 
 describe("InstallablesSection", () => {
   it("lists the reported installables and the recent install jobs with status and error", () => {
-    const html = renderToStaticMarkup(
+    const html = markup(
       <InstallablesSection
         harness={harness}
         installables={[
@@ -62,7 +69,7 @@ describe("InstallablesSection", () => {
   });
 
   it("shows empty states when nothing is installed or was installed recently", () => {
-    const html = renderToStaticMarkup(
+    const html = markup(
       <InstallablesSection harness={harness} installables={[]} installJobs={[]} />,
     );
     expect(html).toContain("No installables");
@@ -71,14 +78,14 @@ describe("InstallablesSection", () => {
   });
 
   it("offers an Install form with the version defaulting to latest, unless revoked", () => {
-    const html = renderToStaticMarkup(
+    const html = markup(
       <InstallablesSection harness={harness} installables={[]} installJobs={[]} />,
     );
     expect(html).toMatch(/<input[^>]*id="install-name"/);
     expect(html).toMatch(/<input[^>]*id="install-version"[^>]*value="latest"/);
     expect(html).toContain("Install</button>");
 
-    const revoked = renderToStaticMarkup(
+    const revoked = markup(
       <InstallablesSection
         harness={{ ...harness, revoked: true }}
         installables={[]}

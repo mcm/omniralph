@@ -30,6 +30,7 @@ export class ApiRouteError extends Error {
     message: string,
     readonly code?: string,
     readonly fieldErrors?: Record<string, string>,
+    readonly enterPath?: string,
   ) {
     super(message);
     this.name = "ApiRouteError";
@@ -188,6 +189,7 @@ function errorResponse(error: unknown): Response {
       error: error.message,
       ...(error.code ? { code: error.code } : {}),
       ...(error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}),
+      ...(error.enterPath ? { enterPath: error.enterPath } : {}),
     });
   }
   if (

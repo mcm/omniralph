@@ -19,6 +19,8 @@ export class ApiError extends Error {
     readonly code?: string,
     /** Form validation errors by field path, shown inline. */
     readonly fieldErrors?: Record<string, string>,
+    /** With `code: ENTER_ORGANIZATION`: the path that switches to the resource's organization. */
+    readonly enterPath?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -83,8 +85,8 @@ export async function apiRequest<S extends z.ZodType>(
   if (!response.ok) {
     const parsed = apiErrorBodySchema.safeParse(json);
     if (!parsed.success) throw new ApiError(UNEXPECTED_RESPONSE, response.status);
-    const { error, code, fieldErrors } = parsed.data;
-    throw new ApiError(error, response.status, code, fieldErrors);
+    const { error, code, fieldErrors, enterPath } = parsed.data;
+    throw new ApiError(error, response.status, code, fieldErrors, enterPath);
   }
   const parsed = schema.safeParse(json);
   if (!parsed.success) throw new ApiError(UNEXPECTED_RESPONSE, response.status);

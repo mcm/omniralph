@@ -17,32 +17,19 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconCloudDownload, IconPackage } from "@tabler/icons-react";
-import type { JobStatus } from "@omniralph/db";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
-import { useAction } from "@/components/use-action";
-import { installInstallable } from "../actions";
+import { useApiMutation } from "@/components/use-api-mutation";
 import { JobStatusBadge } from "@/components/ralph-badges";
+import { api } from "@/lib/api/client";
+import {
+  installEnqueuedSchema,
+  type InstallJobRow,
+  type InstallableRow,
+} from "@/lib/api/harnesses";
 import { EmptyValue } from "@/components/empty-value";
 
-/** An installable the harness reported in its last heartbeat. */
-export interface InstallableRow {
-  name: string;
-  version: string;
-}
-
-/** Serializable `install` job targeted at the harness. */
-export interface InstallJobRow {
-  id: string;
-  status: JobStatus;
-  name: string | null;
-  /** The requested version; null: `latest`. */
-  version: string | null;
-  installedVersion: string | null;
-  error: string | null;
-  /** ISO timestamp. */
-  createdAt: string;
-}
+export type { InstallJobRow, InstallableRow };
 
 /** The installables the harness reports, by name. */
 export function InstalledInstallables({ installables }: { installables: InstallableRow[] }) {
@@ -131,23 +118,52 @@ export function InstallJobs({ jobs }: { jobs: InstallJobRow[] }) {
   );
 }
 
-/** Enqueues an `install` job targeted at the harness. */
-export function InstallForm({ harnessId }: { harnessId: string }) {
-  const { pending, run } = useAction();
+/** The install job this form started, live from the polled install jobs (queued → running → done). */
+function StartedInstall({ job }: { job: InstallJobRow | undefined }) {
+  if (!job) return <Muted role="status">Install requested; waiting for its job…</Muted>;
+  return (
+    <div className="harness-started-install" role="status" data-install-status={job.status}>
+      <span className="font-mono text-sm">
+        {job.name}@{job.version ?? "latest"}
+      </span>
+      <JobStatusBadge job={job} />
+      {(job.error || job.installedVersion) && <InstallJobDetails job={job} />}
+    </div>
+  );
+}
+
+/** Enqueues an `install` job targeted at the harness, then shows that job's state as it changes. */
+export function InstallForm({
+  harnessId,
+  installJobs = [],
+}: {
+  harnessId: string;
+  /** The harness's recent install jobs (polled), for the started job's state. */
+  installJobs?: readonly InstallJobRow[];
+}) {
   const [name, setName] = React.useState("");
   const [version, setVersion] = React.useState("latest");
+  const [startedJobId, setStartedJobId] = React.useState<string | null>(null);
+  const install = useApiMutation({
+    mutationFn: (input: { name: string; version: string }, { organizationId }) =>
+      api.post(`/api/ui/harnesses/${harnessId}/installs`, installEnqueuedSchema, {
+        body: input,
+        organizationId,
+      }),
+    invalidate: (keys) => [keys.harnesses.detail(harnessId), keys.jobs.all],
+    success: (_, input) =>
+      `Installing ${input.name}@${input.version}; the harness picks it up with its next claim.`,
+    onSuccess: (result) => {
+      setStartedJobId(result.jobId);
+      setName("");
+      setVersion("latest");
+    },
+  });
+  const pending = install.isPending;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const requested = version.trim() || "latest";
-    run(
-      () => installInstallable(harnessId, { name, version: requested }),
-      `Installing ${name.trim()}@${requested}; the harness picks it up with its next claim.`,
-      () => {
-        setName("");
-        setVersion("latest");
-      },
-    );
+    install.mutate({ name: name.trim(), version: version.trim() || "latest" });
   };
 
   return (
@@ -193,6 +209,9 @@ export function InstallForm({ harnessId }: { harnessId: string }) {
             {pending ? "Installing…" : "Install"}
           </Button>
         </div>
+        {startedJobId && (
+          <StartedInstall job={installJobs.find((job) => job.id === startedJobId)} />
+        )}
       </form>
     </Stack>
   );

@@ -70,18 +70,13 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
-const {
-  deleteHarness,
-  installInstallable,
-  pinRepository,
-  requestHarnessUpdate,
-  revokeHarness,
-  searchPinnableRepositories,
-  setHarnessDesiredVersion,
-  setHostToolPath,
-  unpinRepository,
-  updateHarnessConfig,
-} = await import("./actions");
+const harnessDetail = await import("@/app/api/ui/harnesses/[id]/route");
+const harnessSettings = await import("@/app/api/ui/harnesses/[id]/settings/route");
+const harnessUpdate = await import("@/app/api/ui/harnesses/[id]/update/route");
+const harnessRevoke = await import("@/app/api/ui/harnesses/[id]/revoke/route");
+const harnessInstalls = await import("@/app/api/ui/harnesses/[id]/installs/route");
+const harnessHostTools = await import("@/app/api/ui/harnesses/[id]/host-tools/route");
+const pinnable = await import("@/app/api/ui/harnesses/pinnable-repositories/route");
 const { addHostTool, removeHostTool } = await import("../settings/harnesses/actions");
 const { harnessRow } = await import("@/lib/harnesses/rows");
 const { enqueueInstall } = await import("@/lib/harnesses/installables");
@@ -125,6 +120,70 @@ async function createEnrollment(name: string) {
     { params: Promise.resolve({}) },
   );
   return { status: response.status, body: await response.json() };
+}
+
+/**
+ * Calls a harness page's `/api/ui` handler as the panel does; answers its JSON as an
+ * `ActionResult` (`{ ok: false, error }` for a non-2xx), without the `savedAt` and `jobId`
+ * the pages track.
+ */
+async function ui(
+  handler: (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>,
+  id: string,
+  {
+    method = "POST",
+    body,
+    path = "/api/ui",
+  }: { method?: string; body?: unknown; path?: string } = {},
+) {
+  const response = await handler(
+    new Request(`http://localhost${path}`, {
+      method,
+      headers: {
+        "x-real-ip": "192.0.2.1",
+        ...(body !== undefined && { "content-type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  const json = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) return { ok: false as const, error: json.error as string };
+  const { savedAt: _savedAt, jobId: _jobId, ...result } = json;
+  return result as { ok: true; version?: string };
+}
+
+/** The Settings tab's save of the config alone (the other parts are left as they are). */
+const updateHarnessConfig = (
+  id: string,
+  config: {
+    maxConcurrency: number | null;
+    acceptedTaskTypes: string[] | null;
+    poolLimits: Record<string, number>;
+  },
+) => ui(harnessSettings.PUT, id, { method: "PUT", body: { config } });
+const setHarnessDesiredVersion = (id: string, version: string) =>
+  ui(harnessSettings.PUT, id, { method: "PUT", body: { version } });
+const pinRepository = (id: string, repositoryId: string) =>
+  ui(harnessSettings.PUT, id, { method: "PUT", body: { pin: [repositoryId] } });
+const unpinRepository = (id: string, repositoryId: string) =>
+  ui(harnessSettings.PUT, id, { method: "PUT", body: { unpin: [repositoryId] } });
+const requestHarnessUpdate = (id: string) => ui(harnessUpdate.POST, id);
+const revokeHarness = (id: string) => ui(harnessRevoke.POST, id);
+const deleteHarness = (id: string) => ui(harnessDetail.DELETE, id, { method: "DELETE" });
+const installInstallable = (id: string, body: { name: string; version?: string }) =>
+  ui(harnessInstalls.POST, id, { body });
+const setHostToolPath = (id: string, hostToolId: string, path: string) =>
+  ui(harnessHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
+async function searchPinnableRepositories(query: string) {
+  const response = await pinnable.GET(
+    new Request(`http://localhost/api/ui?${new URLSearchParams({ query })}`),
+    { params: Promise.resolve({}) },
+  );
+  const json = (await response.json()) as Record<string, unknown>;
+  return response.ok
+    ? { ok: true as const, repositories: json.repositories as { fullPath: string }[] }
+    : { ok: false as const, error: json.error as string };
 }
 
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
@@ -691,6 +750,80 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       // Unchanged: still inheriting.
       expect(harness!.maxConcurrency).toBeNull();
+    });
+  });
+
+  describe("settings save", () => {
+    it("saves every change in one request and names the ones it didn't save when one fails", async () => {
+      const { harnessId } = await enrolledHarness();
+      const config = { maxConcurrency: 3, acceptedTaskTypes: ["review"], poolLimits: {} };
+      const save = (body: object) => ui(harnessSettings.PUT, harnessId, { method: "PUT", body });
+
+      expect(await save({ config, version: "nope", pin: [repoA] })).toEqual({
+        ok: false,
+        error:
+          "Enter a version like 1.4.0, or leave it blank. Not saved: the desired version and pinned repositories.",
+      });
+      // What came before the failure is saved; what came after isn't.
+      let harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      expect(harness).toMatchObject({ maxConcurrency: 3, desiredVersion: null });
+      expect(harness.pinnedRepositories).toEqual([]);
+
+      const response = await harnessSettings.PUT(
+        new Request("http://localhost/api/ui", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version: "1.4.0", pin: [repoA, repoB], unpin: [] }),
+        }),
+        { params: Promise.resolve({ id: harnessId }) },
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: boolean; savedAt: string };
+      expect(body.ok).toBe(true);
+      // The harness has picked it up once a heartbeat is later than `savedAt`.
+      expect(Date.parse(body.savedAt)).toBeLessThanOrEqual(Date.now());
+      harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      expect(harness.desiredVersion).toBe("1.4.0");
+      expect(harness.pinnedRepositories.map((repo) => repo.id).sort()).toEqual(
+        [repoA, repoB].sort(),
+      );
+
+      // A single change keeps its own message.
+      expect(await save({ unpin: [randomUUID()] })).toEqual({
+        ok: false,
+        error: "That repository isn't pinned to this harness.",
+      });
+      // Other tests expect the repositories unpinned.
+      expect(await save({ unpin: [repoA, repoB] })).toEqual({ ok: true });
+    });
+
+    it("names the host tool paths it didn't save", async () => {
+      const { harnessId } = await enrolledHarness();
+      const first = await addHostTool({ name: "ui-save-a" });
+      const second = await addHostTool({ name: "ui-save-b" });
+      if (!first.ok || !second.ok) throw new Error("setup");
+      expect(
+        await ui(harnessHostTools.PUT, harnessId, {
+          method: "PUT",
+          body: {
+            paths: [
+              { hostToolId: first.hostToolId, path: "/opt/a" },
+              { hostToolId: second.hostToolId, path: "relative" },
+            ],
+          },
+        }),
+      ).toEqual({
+        ok: false,
+        error:
+          "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank. Not saved: the ui-save-b path.",
+      });
+      const tools = await listHarnessHostTools(db, orgId, harnessId);
+      expect(Object.fromEntries(tools.map((t) => [t.name, t.configuredPath]))).toMatchObject({
+        "ui-save-a": "/opt/a",
+        "ui-save-b": null,
+      });
+      await removeHostTool(first.hostToolId!);
+      await removeHostTool(second.hostToolId!);
     });
   });
 

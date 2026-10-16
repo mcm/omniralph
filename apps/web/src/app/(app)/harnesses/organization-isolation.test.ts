@@ -1,5 +1,6 @@
-// Two organizations, each with a harness and a repository: an admin of one never sees or
-// changes the other's harnesses, gets a 404 on their URLs, and only sets their own harness version.
+// Two organizations, each with a harness: an admin of one only changes their own harness
+// defaults, version and host tool catalog (Settings › Harness defaults). The harness pages
+// moved to `/api/ui`: see src/app/api/ui/organization-isolation.test.ts.
 import {
   closeDb,
   connectRepository,
@@ -8,7 +9,6 @@ import {
   createHostTool,
   createOrganization,
   enrollHarness,
-  getHarnessOverview,
   getDesiredHarnessVersion,
   listHarnessHostTools,
   listHostTools,
@@ -68,26 +68,13 @@ vi.mock("@/lib/dispatch", () => ({
   }),
 }));
 // Views are client components; the tests read the props the pages pass them.
-vi.mock("./[id]/harness-detail-view", () => ({ HarnessDetailView: () => null }));
 vi.mock("../settings/harnesses/harness-settings-view", () => ({ HarnessSettingsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
-const { default: HarnessPage } = await import("./[id]/page");
-const { default: HarnessHostToolsPage } = await import("./[id]/host-tools/page");
 const { default: HarnessSettingsPage } = await import("../settings/harnesses/page");
 const { default: HostToolsSettingsPage } = await import("../settings/harnesses/host-tools/page");
-const {
-  deleteHarness,
-  pinRepository,
-  revokeHarness,
-  searchPinnableRepositories,
-  setHarnessDesiredVersion,
-  setHostToolPath,
-  unpinRepository,
-  updateHarnessConfig,
-} = await import("./actions");
 const { addHostTool, removeHostTool, setGlobalHarnessVersion, setOrganizationDefaults } =
   await import("../settings/harnesses/actions");
 
@@ -99,9 +86,6 @@ interface Tenant {
   harnessId: string;
   repoId: string;
 }
-
-/** Next.js `notFound()` throws an error whose digest marks a 404. */
-const notFound = { digest: expect.stringContaining("404") };
 
 describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () => {
   let testDb: TestDatabase;
@@ -154,42 +138,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     await testDb?.stop();
   });
 
-  const params = (id: string) => ({ params: Promise.resolve({ id }) });
-
-  // The list and enrollments are covered by src/app/api/ui/organization-isolation.test.ts.
-  it("404s on the other organization's harness", async () => {
-    state.userId = a.userId;
-    const detail = await HarnessPage(params(a.harnessId));
-    expect((detail.props.harness as { id: string }).id).toBe(a.harnessId);
-    await expect(HarnessPage(params(b.harnessId))).rejects.toMatchObject(notFound);
-  });
-
-  it("refuses every harness action on the other organization's harness", async () => {
-    state.userId = a.userId;
-    const config = { maxConcurrency: 4, acceptedTaskTypes: ["query", "review"], poolLimits: {} };
-    expect(await updateHarnessConfig(b.harnessId, config)).toMatchObject({ ok: false });
-    expect(await setHarnessDesiredVersion(b.harnessId, "9.9.9")).toMatchObject({ ok: false });
-    expect(await revokeHarness(b.harnessId)).toMatchObject({ ok: false });
-    expect(await deleteHarness(b.harnessId)).toMatchObject({ ok: false });
-    // Neither the other's harness with our repository nor our harness with the other's repository.
-    expect(await pinRepository(b.harnessId, a.repoId)).toMatchObject({ ok: false });
-    expect(await pinRepository(a.harnessId, b.repoId)).toMatchObject({ ok: false });
-    expect(await unpinRepository(b.harnessId, b.repoId)).toMatchObject({ ok: false });
-    // The pins picker only finds the active organization's repositories.
-    expect(await searchPinnableRepositories("shared/app")).toEqual({
-      ok: true,
-      repositories: [{ id: a.repoId, provider: expect.any(String), fullPath: "shared/app" }],
-    });
-
-    const other = (await getHarnessOverview(db, b.orgId, b.harnessId))!;
-    expect(other).toMatchObject({ maxConcurrency: null, desiredVersion: null, revokedAt: null });
-    expect(other.pinnedRepositories).toEqual([]);
-
-    // Its own harness and repository still work.
-    expect(await updateHarnessConfig(a.harnessId, config)).toEqual({ ok: true });
-    expect(await pinRepository(a.harnessId, a.repoId)).toEqual({ ok: true });
-  });
-
   it("keeps the desired harness version per organization", async () => {
     state.userId = a.userId;
     expect(await setGlobalHarnessVersion("1.4.0")).toEqual({ ok: true });
@@ -221,7 +169,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     });
   });
 
-  it("keeps host tools per organization and refuses paths on the other's harnesses and tools", async () => {
+  it("keeps host tools per organization", async () => {
     const theirs = await createHostTool(db, b.orgId, { name: "semgrep" });
     if (!theirs.ok) throw new Error("setup");
     state.userId = a.userId;
@@ -232,32 +180,13 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     expect((await HostToolsSettingsPage()).props.hostTools).toEqual([
       { id: ours.hostToolId, name: "semgrep", description: "ours" },
     ]);
-    const detail = await HarnessHostToolsPage(params(a.harnessId));
-    expect((detail.props.hostTools as { hostToolId: string }[]).map((t) => t.hostToolId)).toEqual([
-      ours.hostToolId,
-    ]);
-
-    // The other's harness, the other's tool, or both.
-    expect(await setHostToolPath(b.harnessId, ours.hostToolId!, "/opt/x")).toMatchObject({
-      ok: false,
-    });
-    expect(await setHostToolPath(a.harnessId, theirs.hostTool.id, "/opt/x")).toMatchObject({
-      ok: false,
-    });
-    expect(await setHostToolPath(b.harnessId, theirs.hostTool.id, "/opt/x")).toMatchObject({
-      ok: false,
-    });
     expect(await removeHostTool(theirs.hostTool.id)).toMatchObject({ ok: false });
     expect(await listHostTools(db, b.orgId)).toHaveLength(1);
     expect(
       (await listHarnessHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
     ).toEqual([null]);
 
-    // Its own harness and tool still work.
-    expect(await setHostToolPath(a.harnessId, ours.hostToolId!, "/opt/x")).toEqual({ ok: true });
-    expect(
-      (await listHarnessHostTools(db, a.orgId, a.harnessId)).map((t) => t.configuredPath),
-    ).toEqual(["/opt/x"]);
+    // Its own tool still works.
     expect(await removeHostTool(ours.hostToolId!)).toEqual({ ok: true });
   });
 });
