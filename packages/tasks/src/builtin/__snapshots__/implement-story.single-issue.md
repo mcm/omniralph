@@ -18,7 +18,7 @@ The date picker shows UTC. It should show local time.
 ## Workflow
 1. Study the PRD context above to understand the bigger picture.
 2. Read the progress log at `/tmp/omniralph-progress-y/progress.md` for status, learnings and gotchas.
-3. Implement ONLY this story (ENG-7), satisfying every acceptance criterion. Do not start other stories.
+3. Implement ONLY this story (ENG-7), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).
@@ -39,7 +39,7 @@ If you discovered a **reusable pattern**, also add it to the `## Codebase Patter
 
 ## Stop Condition
 Your session ends with a structured result (the JSON schema you were given). It alone decides what happens next: nothing in your message text does.
-- `status: "complete"` only when every acceptance criterion is met and the quality gates pass. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
+- `status: "complete"` only when every acceptance criterion is met and the quality gates pass. A criterion covered only by a TODO, stub or placeholder is not met. If the story is already implemented (e.g. by a previous session), verify it meets the acceptance criteria and report it complete straight away.
 - `status: "blocked"` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in `summary` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with `commit: { summary }`.
 - `status: "incomplete"` when the story is just unfinished: it gets another attempt.
 - `status: "waiting"` only to end your turn while background work you started (subagents, commands) still runs: you are resumed when it finishes, and then report one of the statuses above.
