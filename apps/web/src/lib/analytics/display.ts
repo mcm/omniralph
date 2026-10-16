@@ -29,11 +29,12 @@ function single(value: string | string[] | undefined): string | undefined {
 
 /**
  * The window (`?days=7|30|90`, default 30) and repository (`?repo=<id>`) from
- * URL search params. A repository that isn't one of `repositoryIds` is ignored.
+ * URL search params. A repository that isn't one of `repositoryIds` is ignored; without
+ * `repositoryIds` (the page, before the server has checked it) any is kept.
  */
 export function parseAnalyticsParams(
   params: SearchParams,
-  repositoryIds: readonly string[],
+  repositoryIds?: readonly string[],
 ): AnalyticsParams {
   const days = Number(single(params.days));
   const repo = single(params.repo);
@@ -41,7 +42,7 @@ export function parseAnalyticsParams(
     days: (ANALYTICS_RANGES as readonly number[]).includes(days)
       ? (days as AnalyticsRange)
       : DEFAULT_ANALYTICS_RANGE,
-    repositoryId: repo && repositoryIds.includes(repo) ? repo : null,
+    repositoryId: repo && (!repositoryIds || repositoryIds.includes(repo)) ? repo : null,
   };
 }
 

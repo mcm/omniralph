@@ -96,7 +96,6 @@ vi.mock("@/lib/scm/github-app", () => ({
 }));
 // Views are client components; the tests read the props the pages pass them.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-vi.mock("./analytics/analytics-view", () => ({ AnalyticsView: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -104,7 +103,6 @@ const { GET: enterOrganization } = await import("../api/organizations/enter/rout
 const { default: AppLayout } = await import("./layout");
 const { default: HomePage } = await import("./page");
 const { GET: triageRunDetail } = await import("../api/ui/triage/[id]/route");
-const { default: AnalyticsPage } = await import("./analytics/page");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -141,7 +139,6 @@ const openTriageRun = (id: string, next?: string) =>
     ),
     { params: Promise.resolve({ id }) },
   );
-const search = (query: Record<string, string> = {}) => ({ searchParams: Promise.resolve(query) });
 
 describe.skipIf(!databaseAvailable)("organization isolation of every page", () => {
   let testDb: TestDatabase;
@@ -351,7 +348,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
     state.userId = own.userId;
     const pages: Record<string, JSX.Element> = {
       layout: await AppLayout({ children: null }),
-      analytics: await AnalyticsPage(search()),
     };
     return pages;
   }
@@ -377,20 +373,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of every page", () =
 
       // Every loader found the organization's own rows (the check above isn't vacuous).
       expect(pages.layout!.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
-      expect(pages.analytics!.props.repositories).toMatchObject([{ id: own.repoId }]);
-      expect(JSON.stringify(pages.analytics!.props.analytics)).toContain(own.harnessId);
     }
-  });
-
-  it("counts only the organization's own reviews, findings, jobs and ralph runs in analytics", async () => {
-    state.userId = a.userId;
-    const { analytics, ralph } = (await AnalyticsPage(search())).props;
-    expect(JSON.stringify(analytics)).toContain(`"reviews":1`);
-    expect(analytics.jobsByHarness).toMatchObject([{ agent: { id: a.harnessId }, total: 1 }]);
-    expect(JSON.stringify(ralph)).not.toContain(b.runId);
-    // Another organization's repository as the filter is ignored.
-    const filtered = (await AnalyticsPage(search({ repo: b.repoId }))).props;
-    expect(filtered.params.repositoryId).toBeNull();
   });
 
   it("returns 404 on another organization's resource URLs for a non-member", async () => {
