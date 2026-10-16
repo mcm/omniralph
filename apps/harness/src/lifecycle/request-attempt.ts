@@ -177,7 +177,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
   const relay = new ActivityRelay({
     server: ctx.server,
     jobId: args.jobId,
-    jobToken: ctx.jobToken,
+    jobToken: ctx.sessionToken,
     logger: log,
     ...(options.fetch && { fetch: options.fetch }),
   });
@@ -215,7 +215,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
           fetcher: controlPanelFetcher({
             server: ctx.server,
             jobId: args.jobId,
-            jobToken: ctx.jobToken,
+            jobToken: ctx.sessionToken,
             signal: ctx.signal,
             ...(options.fetch && { fetch: options.fetch }),
           }),

@@ -342,11 +342,11 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     });
     expect(Object.keys(call!.options.mcpServers ?? {})).toEqual(["omniralph"]);
 
-    // Activities are relayed with the lifecycle token, for the run's job.
+    // Activities are relayed with the session token (the lifecycle token has no `run:activity`), for the run's job.
     expect(new Set(posted.map((p) => p.url))).toEqual(
       new Set([`https://omniralph.example.com/api/harness/jobs/${run.jobId}/activities`]),
     );
-    expect(posted.every((p) => p.auth === "Bearer lifecycle-token")).toBe(true);
+    expect(posted.every((p) => p.auth === "Bearer session-token")).toBe(true);
   });
 
   it("gives the session the session token only, its git credential helper included", async () => {
@@ -368,7 +368,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(helpers).toEqual(["", "!true"]);
   });
 
-  it("downloads its attachments with the lifecycle token and points the session at them", async () => {
+  it("downloads its attachments with the session token and points the session at them", async () => {
     const id = "a".repeat(32);
     const downloads: { url: string; auth: string | null }[] = [];
     const withUploads = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -394,7 +394,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(downloads).toEqual([
       {
         url: `https://omniralph.example.com/api/harness/jobs/${run.jobId}/attachments/${id}`,
-        auth: "Bearer lifecycle-token",
+        auth: "Bearer session-token",
       },
     ]);
     const dir = path.join(workspaceRoot, ".attachments", "TOOL-32");
