@@ -86,7 +86,12 @@ export function OrganizationSwitcher({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="org-switcher-menu">
+      {/* The picker sits at the foot of the sidebar: open upward, or beside it when collapsed. */}
+      <DropdownMenuContent
+        side={collapsed ? "right" : "top"}
+        align={collapsed ? "end" : "start"}
+        className="org-switcher-menu"
+      >
         <DropdownMenuLabel>Organizations</DropdownMenuLabel>
         {organizations.map((organization) => (
           <DropdownMenuItem key={organization.id} onSelect={() => select(organization)}>
