@@ -6,8 +6,10 @@ import {
   createRun,
   disconnectRepository,
   ensureLane,
+  followUpSources,
   organizations,
   ralphRuns,
+  recordFollowUpSource,
   repositories,
   replaceRoutingRules,
   seedReviewProfiles,
@@ -112,6 +114,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
 
   beforeEach(async () => {
     await db.delete(ralphRuns);
+    await db.delete(followUpSources);
     await rules();
     linear = new FakeLinearGateway();
   });
@@ -274,6 +277,92 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     expect(await resolveRoute(deps(), within)).toMatchObject({ repository: { id: api } });
     const beyond = chain(MAX_ROUTE_HOPS + 1);
     expect(await resolveRoute(deps(), beyond)).toEqual({ ask: true });
+  });
+
+  describe("follow-ups", () => {
+    /** An epic run in `api` with a story ENG-11 in a `web` lane, and a follow-up ENG-12 of it. */
+    const storyInWebLane = async () => {
+      const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
+      const story = linear.add({
+        identifier: "ENG-11",
+        title: "Story",
+        parentId: epic.id,
+        labels: ["frontend"],
+      });
+      const followUp = linear.add({ identifier: "ENG-12", title: "Follow-up", parentId: epic.id });
+      const run = await runOf(epic.id, "ENG-10", api, "rule 1 (Team is ENG)");
+      const lane = await ensureLane(db, {
+        runId: run.id,
+        repositoryId: web,
+        branch: "feat/web",
+        baseBranch: "main",
+      });
+      await upsertStories(db, run.id, [
+        { linearIssueId: story.id, identifier: "ENG-11", title: "Story", laneId: lane.id },
+      ]);
+      return { epic, story, followUp };
+    };
+
+    it("routes a follow-up as its source before as its parent", async () => {
+      const { story, followUp } = await storyInWebLane();
+      await recordFollowUpSource(db, orgId, followUp.id, story.id);
+      // As its parent (the epic) it would go to api: its source's lane wins.
+      expect(await resolveRoute(deps(), followUp.id)).toEqual({
+        repository: expect.objectContaining({ id: web }),
+        by: "follow-up of ENG-11 → story of ENG-10",
+      });
+    });
+
+    it("isn't a follow-up without a record, whatever its description says", async () => {
+      const { followUp } = await storyInWebLane();
+      linear.issues.get(followUp.id)!.description =
+        "Fix it.\n\n_Filed by Omniralph while working on ENG-11._";
+      expect(await resolveRoute(deps(), followUp.id)).toMatchObject({
+        repository: { id: api },
+        by: "sub-issue of ENG-10 → rule 1 (Team is ENG)",
+      });
+    });
+
+    it("tests the source's fields", async () => {
+      await rules([
+        docs,
+        {
+          combinator: "and",
+          rules: [{ field: "source.labels", operator: "containsAny", value: ["Frontend"] }],
+        },
+      ]);
+      const { story, followUp } = await storyInWebLane();
+      await recordFollowUpSource(db, orgId, followUp.id, story.id);
+      expect(await resolveRoute(deps(), followUp.id)).toEqual({
+        manual: expect.objectContaining({ id: docs }),
+        by: "rule 1 (Source › Labels contains any of Frontend)",
+        rule: 1,
+      });
+      // Not for an issue that isn't a follow-up, nor for the source itself.
+      const other = linear.add({ title: "Other", labels: ["frontend"] });
+      expect(await resolveRoute(deps(), other.id)).toEqual({ ask: true });
+    });
+
+    it("falls through to the parent when the source would ask", async () => {
+      const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
+      const source = linear.add({ identifier: "ENG-20", title: "Elsewhere" });
+      const followUp = linear.add({ identifier: "ENG-12", title: "Follow-up", parentId: epic.id });
+      await runOf(epic.id, "ENG-10", api, ROUTED_BY_SELECTION);
+      await recordFollowUpSource(db, orgId, followUp.id, source.id);
+      expect(await resolveRoute(deps(), followUp.id)).toMatchObject({
+        repository: { id: api },
+        by: "sub-issue of ENG-10 → your selection",
+      });
+    });
+
+    it("keeps the first source recorded", async () => {
+      const { story, followUp } = await storyInWebLane();
+      await recordFollowUpSource(db, orgId, followUp.id, story.id);
+      await recordFollowUpSource(db, orgId, followUp.id, "issue-other");
+      expect(await db.select().from(followUpSources)).toEqual([
+        expect.objectContaining({ issueId: followUp.id, sourceIssueId: story.id }),
+      ]);
+    });
   });
 
   it("loads each issue once per router", async () => {

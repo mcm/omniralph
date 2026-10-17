@@ -12,6 +12,7 @@ import {
   getLaneByRepository,
   getMainLane,
   getRepositoryWithConnection,
+  listFollowUps,
   type Database,
   type RalphLane,
   type RalphRun,
@@ -48,7 +49,8 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
 /**
  * Routes each story of a sub-issue epic with the organization's routing rules
  * (`createRouter`), changing `epic`'s stories. A story with no rule of its own
- * routes as its parent, the epic, and stays in the main lane. One that routes to
+ * routes as its parent, the epic, and stays in the main lane; a follow-up routes
+ * as its source story, so it joins that story's lane. One that routes to
  * another repository with coding on gets `repo` and a lane there (created with
  * the main lane's branch and that repository's default branch as its base), and
  * is manual (and prepared) by that repository's manual labels and
@@ -75,12 +77,17 @@ export async function routeStories(
     organizationId: run.organizationId,
     linear: deps.linear,
   });
-  // Without custom rules every story routes as the epic: the main lane.
-  if (!router.hasCustomRules) return lanes;
+  // Without custom rules every story routes as the epic (the main lane) but follow-ups, which
+  // route as their source.
+  const issueIds = epic.stories.flatMap((s) => (s.issueId ? [s.issueId] : []));
+  const toRoute = router.hasCustomRules
+    ? new Set(issueIds)
+    : await listFollowUps(tx, run.organizationId, issueIds);
+  if (toRoute.size === 0) return lanes;
 
   const byRepository = new Map<string, RalphLane | null>();
   for (const [i, s] of epic.stories.entries()) {
-    if (!s.issueId) continue;
+    if (!s.issueId || !toRoute.has(s.issueId)) continue;
     const route = await router.resolve(s.issueId);
     const repository = routedRepository(route);
     // Asking, or the epic's own repository (as its parent, or by a rule): the main lane.

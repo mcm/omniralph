@@ -975,6 +975,25 @@ export const routingRules = pgTable(
   ],
 );
 
+/**
+ * The issue a follow-up was filed from (`fileFollowUps`), by Linear issue ID. A follow-up
+ * routes the same as its source and rules can test its source's fields (`source.*`).
+ */
+export const followUpSources = pgTable(
+  "follow_up_sources",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The follow-up's Linear issue ID. */
+    issueId: text("issue_id").notNull(),
+    /** The Linear issue ID of the story it was filed from. */
+    sourceIssueId: text("source_issue_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.issueId] })],
+);
+
 // ── Harnesses ───────────────────────────────────────────────────────────────
 
 /** A harness's self-update progress (mirrors `HarnessUpdateReport` in @omniralph/shared). */

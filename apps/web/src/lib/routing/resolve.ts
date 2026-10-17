@@ -2,10 +2,13 @@
  * Which repository an issue routes to (`resolveRoute`): the organization's routing rules in
  * order (the first match wins), then the default rules, which aren't stored:
  *
- *   1. sub-issue   route it the same as its parent
- *   2. ask         ask which repository to use (the repository question)
+ *   1. follow-up   route it the same as the issue it was filed from (its source)
+ *   2. sub-issue   route it the same as its parent
+ *   3. ask         ask which repository to use (the repository question)
  *
- * A match on a repository with coding off makes the issue manual: a person does it.
+ * A match on a repository with coding off makes the issue manual: a person does it. An issue
+ * is a follow-up only when Omniralph recorded its source (`recordFollowUpSource`); rules read
+ * the source's fields as `source.*`.
  *
  * "Route the same as" another issue uses the repository Omniralph already uses for it (its
  * run's, including "your selection", else its story lane's), else resolves it the same way.
@@ -14,6 +17,7 @@
  * this issue.
  */
 import {
+  getFollowUpSource,
   getIssueRepository,
   listRoutingRepositories,
   listRoutingRules,
@@ -107,10 +111,23 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     if (seen.has(issue.id) || seen.has(issue.identifier)) return ASK;
     const visited = new Set([...seen, issueId, issue.id, issue.identifier]);
 
-    const matched = matchRules(linearRoutingValues(routing));
+    const sourceId = await getFollowUpSource(deps.db, deps.organizationId, issue.id);
+    const source = sourceId ? await sourceFields(issue.identifier, sourceId) : null;
+
+    const matched = matchRules(linearRoutingValues(routing, source));
     if (matched) return matched;
 
-    // Default rule 1: a sub-issue routes the same as its parent.
+    // Default rule 1: a follow-up routes the same as its source.
+    if (sourceId) {
+      const routed = await routeAs(sourceId, visited, hops + 1);
+      if (!("ask" in routed)) {
+        const by = `follow-up of ${source?.identifier ?? sourceId} → ${routed.by}`;
+        return "repository" in routed
+          ? { repository: routed.repository, by }
+          : { manual: routed.manual, by };
+      }
+    }
+    // Default rule 2: a sub-issue routes the same as its parent.
     if (issue.parentId) {
       const parent = await routeAs(issue.parentId, visited, hops + 1);
       if (!("ask" in parent)) {
@@ -121,8 +138,18 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
           : { manual: parent.manual, by };
       }
     }
-    // Default rule 2: ask.
+    // Default rule 3: ask.
     return ASK;
+  };
+
+  /** A follow-up's source's fields; null (empty `source.*`) when it can't be read, e.g. deleted. */
+  const sourceFields = async (identifier: string, sourceId: string) => {
+    try {
+      return (await deps.linear.getRoutingFields(sourceId)).issue;
+    } catch (error) {
+      console.warn(`${identifier}: could not read its follow-up source ${sourceId}`, error);
+      return null;
+    }
   };
 
   /** Route the same as `issueId`: the repository Omniralph uses for it, else its route. */

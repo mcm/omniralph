@@ -20,6 +20,8 @@ import {
   getJob,
   getMainLane,
   updateLane,
+  followUpSources,
+  getFollowUpSource,
   getRun,
   getRunBySession,
   getRunDetail,
@@ -217,6 +219,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
+    // The fake gateway's issue IDs repeat from test to test.
+    await db.delete(followUpSources);
     await db.delete(harnessRepoPins);
     await db.delete(harnesses);
     [{ id: agentA }, { id: agentB }] = (await db
@@ -1854,12 +1858,19 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("files follow-ups as sub-issues; an unfinished story's follow-ups block it", async () => {
-    const epic = linear.add({ identifier: "ENG-50", title: "Epic", projectName: "Platform" });
+    const epic = linear.add({ identifier: "ENG-50", title: "Epic", projectName: "Epics" });
     const first = linear.add({
       identifier: "ENG-51",
       title: "First",
       parentId: epic.id,
       priority: 1,
+      projectName: "Platform",
+      labels: ["backend", "db"],
+    });
+    linear.routingFields.set(first.id, {
+      projectId: "project-platform",
+      projectMilestoneId: "milestone-beta",
+      cycle: "cycle-7",
     });
     const second = linear.add({
       identifier: "ENG-52",
@@ -1873,13 +1884,24 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       followUps: [{ title: "Add an index", description: "Queries are slow.", manual: false }],
     });
     const index = [...linear.issues.values()].find((i) => i.title === "Add an index")!;
+    // The story's team, project, milestone, cycle, priority and labels.
+    expect(linear.created.find((c) => c.title === "Add an index")).toMatchObject({
+      teamId: first.teamId,
+      parentId: epic.id,
+      priority: 1,
+      projectId: "project-platform",
+      projectMilestoneId: "milestone-beta",
+      cycleId: "cycle-7",
+      labels: ["backend", "db"],
+    });
     expect(index).toMatchObject({
       parentId: epic.id,
       priority: 1,
       projectName: "Platform",
-      labels: [],
+      labels: ["backend", "db"],
     });
     expect(index.description).toContain(`${FOLLOW_UP_MARK} ENG-51.`);
+    expect(await getFollowUpSource(db, orgId, index.id)).toBe(first.id);
     expect(linear.blocks.get(first.id)).toBeUndefined();
     expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-50**.`,
@@ -1895,6 +1917,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(unfinished.story.identifier).toBe("ENG-52");
     const grant = [...linear.issues.values()].find((i) => i.title === "Grant database access")!;
     expect(grant.labels).toEqual(["manual"]);
+    expect(await getFollowUpSource(db, orgId, grant.id)).toBe(second.id);
     expect(linear.blocks.get(second.id)).toEqual([grant.id]);
     expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
       `blocking **ENG-52**`,
@@ -2156,7 +2179,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       });
       expect(unfinished.story.identifier).toBe("ENG-152");
       const key = [...linear.issues.values()].find((i) => i.title === "Create the API key")!;
-      expect(key.labels).toEqual(["by hand"]);
+      // The story's labels, and the manual label.
+      expect(key.labels).toEqual(["manual", "by hand"]);
 
       // The labels are read again on every advance: a label added in Linear counts.
       await withLabels(["by hand", "ops"]);
@@ -2608,7 +2632,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       });
     });
 
-    it("files the follow-ups of a story routed by team or label with its team and routing label", async () => {
+    it("files the follow-ups of a story routed by team or label with its team and labels", async () => {
       const update = (linearLabels: string[]) =>
         updateRepositoryRalphSettings(db, gitlabRepoId, {
           ralphEnabled: true,
@@ -2674,17 +2698,77 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           ).story.identifier,
         ).toBe("ENG-3");
         const byLabel = [...linear.issues.values()].find((i) => i.title === "Label follow-up")!;
-        // Only the label that routes it, as on the story.
+        // All of the story's labels.
         expect(byLabel).toMatchObject({
           teamId: "team-1",
           projectName: "API",
-          labels: ["Frontend"],
+          labels: ["Frontend", "bug"],
         });
         expect((await work(run.id)).story.identifier).toBe(byLabel.identifier);
         expect(await laneOf(byLabel.identifier)).toBe(web.id);
       } finally {
         await rules();
         await update([]);
+      }
+    });
+
+    it("routes a follow-up as its source story, to that story's lane", async () => {
+      // Nothing routes the follow-ups but the follow-up default rule.
+      await setRoutingRules(
+        db,
+        orgId,
+        [
+          gitlabRepoId,
+          { combinator: "and", rules: [{ field: "title", operator: "contains", value: "badge" }] },
+        ],
+        [
+          repoId,
+          { combinator: "and", rules: [{ field: "identifier", operator: "=", value: "ENG-1" }] },
+        ],
+      );
+      try {
+        const t = crossRepo("API");
+        const tidy = linear.add({
+          identifier: "ENG-5",
+          title: "Tidy up",
+          parentId: t.epic.id,
+          priority: 4,
+        });
+        const run = await delegate(t.epic.id);
+        const web = (await listLanes(db, run.id)).find((l) => l.repositoryId === gitlabRepoId)!;
+        const story = async (identifier: string) =>
+          (await listStories(db, run.id)).find((s) => s.identifier === identifier);
+        expect((await story("ENG-3"))?.laneId).toBe(web.id);
+
+        expect((await work(run.id, { commitSha: sha(71) })).story.identifier).toBe("ENG-2");
+        expect(
+          (
+            await work(run.id, {
+              commitSha: sha(72),
+              followUps: [
+                { title: "Style it", description: "Use the theme.", manual: false },
+                { title: "tidy up", description: "Again.", manual: false },
+              ],
+            })
+          ).story.identifier,
+        ).toBe("ENG-3");
+        const style = [...linear.issues.values()].find((i) => i.title === "Style it")!;
+        expect(await getFollowUpSource(db, orgId, style.id)).toBe(t.s2.id);
+        // A reused open sub-issue is recorded too.
+        expect(await getFollowUpSource(db, orgId, tidy.id)).toBe(t.s2.id);
+        expect((await story(style.identifier))?.laneId).toBe(web.id);
+        expect(await activeJob(run.id)).toMatchObject({ repositoryId: gitlabRepoId });
+        expect((await work(run.id, { commitSha: sha(73) })).story.identifier).toBe(
+          style.identifier,
+        );
+      } finally {
+        await setRoutingRules(
+          db,
+          orgId,
+          [gitlabRepoId, projectIs("Web")],
+          [repoId, teamIs("ENG")],
+          [gitlabRepoId, teamIs("GL")],
+        );
       }
     });
 
