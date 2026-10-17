@@ -113,6 +113,42 @@ export interface Viewer {
   name: string;
 }
 
+/**
+ * An issue's values of the routing fields (`LINEAR_ROUTING_FIELDS`), under Linear's names:
+ * the team by key, the cycle and people by ID, the parent by identifier, the rest by name.
+ * Null where the issue has none.
+ */
+export interface RoutingIssueFields {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string;
+  team: string | null;
+  project: string | null;
+  projectMilestone: string | null;
+  cycle: string | null;
+  state: string | null;
+  stateType: string | null;
+  /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+  priority: number;
+  assignee: string | null;
+  creator: string | null;
+  /** The parent's identifier (`ENG-10`). */
+  parent: string | null;
+  /** The parent's ID. */
+  parentId: string | null;
+  labels: string[];
+  estimate: number | null;
+  /** `YYYY-MM-DD`. */
+  dueDate: string | null;
+}
+
+/** An issue's routing fields and its parent's (`getRoutingFields`). */
+export interface RoutingIssue {
+  issue: RoutingIssueFields;
+  parent: RoutingIssueFields | null;
+}
+
 export interface CreateIssueInput {
   teamId: string;
   title: string;
@@ -184,6 +220,8 @@ export interface LinearGateway {
   /** The user the token acts as (the app user for the app's token). */
   getViewer(): Promise<Viewer>;
   getIssue(idOrIdentifier: string): Promise<IssueSummary>;
+  /** An issue's routing field values and its parent's, in one query. */
+  getRoutingFields(idOrIdentifier: string): Promise<RoutingIssue>;
   /** Every sub-issue (all pages). */
   getChildren(issueId: string): Promise<IssueSummary[]>;
   /** Comments on an issue, oldest first. */
@@ -312,6 +350,90 @@ interface IssueNode {
   state?: { name: string; type: string } | null;
   labels?: { nodes: Array<{ name: string }> } | null;
   project?: { name: string } | null;
+}
+
+/** The routing fields of an issue (`routingFieldsOf`). */
+const ROUTING_SELECTION = /* GraphQL */ `
+    id
+    identifier
+    title
+    description
+    priority
+    estimate
+    dueDate
+    parent {
+      id
+      identifier
+    }
+    assignee {
+      id
+    }
+    creator {
+      id
+    }
+    team {
+      key
+    }
+    state {
+      name
+      type
+    }
+    labels(first: 250) {
+      nodes {
+        name
+      }
+    }
+    project {
+      name
+    }
+    projectMilestone {
+      name
+    }
+    cycle {
+      id
+    }
+  `;
+
+interface RoutingNode {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string | null;
+  priority?: number | null;
+  estimate?: number | null;
+  dueDate?: string | null;
+  parent?: { id: string; identifier: string } | null;
+  assignee?: { id: string } | null;
+  creator?: { id: string } | null;
+  team?: { key: string } | null;
+  state?: { name: string; type: string } | null;
+  labels?: { nodes: Array<{ name: string }> } | null;
+  project?: { name: string } | null;
+  projectMilestone?: { name: string } | null;
+  cycle?: { id: string } | null;
+}
+
+function routingFieldsOf(issue: RoutingNode): RoutingIssueFields {
+  return {
+    id: issue.id,
+    identifier: issue.identifier,
+    title: issue.title,
+    description: issue.description ?? "",
+    team: issue.team?.key ?? null,
+    project: issue.project?.name ?? null,
+    projectMilestone: issue.projectMilestone?.name ?? null,
+    cycle: issue.cycle?.id ?? null,
+    state: issue.state?.name ?? null,
+    stateType: issue.state?.type ?? null,
+    priority: issue.priority ?? 0,
+    assignee: issue.assignee?.id ?? null,
+    creator: issue.creator?.id ?? null,
+    parent: issue.parent?.identifier ?? null,
+    parentId: issue.parent?.id ?? null,
+    labels: issue.labels?.nodes.map((l) => l.name) ?? [],
+    estimate: issue.estimate ?? null,
+    dueDate: issue.dueDate ?? null,
+  };
 }
 
 interface PageInfo {
@@ -473,6 +595,32 @@ export class SdkLinearGateway implements LinearGateway {
       { id: idOrIdentifier },
     );
     return summarize(data.issue);
+  }
+
+  async getRoutingFields(idOrIdentifier: string): Promise<RoutingIssue> {
+    const data = await this.request<{
+      issue: RoutingNode & { parentIssue?: RoutingNode | null };
+    }>(
+      /* GraphQL */ `
+        query IssueRoutingFields($id: String!) {
+          issue(id: $id) {
+            ...RoutingFields
+            parentIssue: parent {
+              ...RoutingFields
+            }
+          }
+        }
+        fragment RoutingFields on Issue {
+          ${ROUTING_SELECTION}
+        }
+      `,
+      { id: idOrIdentifier },
+    );
+    const { parentIssue, ...issue } = data.issue;
+    return {
+      issue: routingFieldsOf(issue),
+      parent: parentIssue ? routingFieldsOf(parentIssue) : null,
+    };
   }
 
   async getChildren(issueId: string): Promise<IssueSummary[]> {

@@ -18,6 +18,8 @@ import type {
   LinearGateway,
   PlanStep,
   Project,
+  RoutingIssue,
+  RoutingIssueFields,
   ProjectMilestone,
   Team,
   UpdateIssueInput,
@@ -99,6 +101,13 @@ export class FakeLinearGateway implements LinearGateway {
   documents = new Map<string, LinearDocument>();
   /** Every `searchIssues` call, in order. */
   searches: Array<{ query: string; first?: number }> = [];
+  /**
+   * Issue ID -> its routing fields `IssueSummary` doesn't carry (milestone, cycle, estimate,
+   * due date) or overrides of those it does, for `getRoutingFields`.
+   */
+  routingFields = new Map<string, Partial<RoutingIssueFields>>();
+  /** Every `getRoutingFields` call, in order. */
+  routingLoads: string[] = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
   failures = new Map<string, Error>();
 
@@ -156,6 +165,40 @@ export class FakeLinearGateway implements LinearGateway {
   async getIssue(idOrIdentifier: string) {
     this.fail("getIssue");
     return { ...this.find(idOrIdentifier) };
+  }
+  private routingFieldsOf(issue: IssueSummary): RoutingIssueFields {
+    const parent = issue.parentId ? this.issues.get(issue.parentId) : undefined;
+    return {
+      id: issue.id,
+      identifier: issue.identifier,
+      title: issue.title,
+      description: issue.description,
+      team: issue.teamKey || null,
+      project: issue.projectName ?? null,
+      projectMilestone: null,
+      cycle: null,
+      state: issue.stateName || null,
+      stateType: issue.stateType || null,
+      priority: issue.priority,
+      assignee: issue.assigneeId ?? null,
+      creator: issue.creator?.id ?? null,
+      parent: parent?.identifier ?? null,
+      parentId: issue.parentId ?? null,
+      labels: [...issue.labels],
+      estimate: null,
+      dueDate: null,
+      ...this.routingFields.get(issue.id),
+    };
+  }
+  async getRoutingFields(idOrIdentifier: string): Promise<RoutingIssue> {
+    this.fail("getRoutingFields");
+    const issue = this.find(idOrIdentifier);
+    this.routingLoads.push(issue.id);
+    const parent = issue.parentId ? this.issues.get(issue.parentId) : undefined;
+    return {
+      issue: this.routingFieldsOf(issue),
+      parent: parent ? this.routingFieldsOf(parent) : null,
+    };
   }
   async getChildren(issueId: string) {
     return [...this.issues.values()].filter((i) => i.parentId === issueId).map((i) => ({ ...i }));

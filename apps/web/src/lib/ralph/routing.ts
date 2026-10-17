@@ -1,16 +1,10 @@
 /**
- * Which repository a delegated Linear issue builds in. Only repositories with
- * coding effectively enabled (their own switch, else the organization's
- * allowed task types) are candidates; the rules are tried in order and the first
- * one that matches wins:
- *
- *   1. label    one of the issue's labels is in the repository's `linear_labels`
- *   2. project  the issue's project is in its `linear_project_names`
- *   3. team     the issue's team key is in its `linear_team_keys`
- *
- * Matching ignores case. When several repositories match the same rule, the
- * one with the first `full_path` wins. Routing comes only from these settings,
- * never from the issue's description.
+ * Which repository a story of an epic builds in (`routeStory`), and matching a
+ * reply to the repository question (`matchSelection`). Delegated issues route
+ * with the organization's rules (`@/lib/routing/resolve`). Only repositories
+ * with coding effectively enabled (their own switch, else the organization's
+ * allowed task types) are candidates; matching ignores case, and when several
+ * repositories match, the one with the first `full_path` wins.
  */
 import { normalizeRepoPath } from "@omniralph/ralph";
 
@@ -53,38 +47,6 @@ export function describeRoute(
 }
 
 const lower = (values: readonly string[]) => values.map((v) => v.trim().toLowerCase());
-
-/** The repository `issue` routes to and the rule that matched, or null when none does. */
-export function routeIssue<R extends RoutableRepository>(
-  issue: RoutableIssue,
-  repositories: readonly R[],
-): RouteMatch<R> | null {
-  const candidates = repositories
-    .filter((r) => r.effective.coding)
-    .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
-
-  for (const repository of candidates) {
-    const routed = lower(repository.linearLabels);
-    const label = issue.labels.find((l) => routed.includes(l.trim().toLowerCase()));
-    if (label !== undefined) return { repository, rule: "label", value: label };
-  }
-
-  const project = issue.projectName?.trim();
-  if (project) {
-    const repository = candidates.find((r) =>
-      lower(r.linearProjectNames).includes(project.toLowerCase()),
-    );
-    if (repository) return { repository, rule: "project", value: project };
-  }
-
-  const team = issue.teamKey?.trim();
-  if (team) {
-    const repository = candidates.find((r) => lower(r.linearTeamKeys).includes(team.toLowerCase()));
-    if (repository) return { repository, rule: "team", value: team };
-  }
-
-  return null;
-}
 
 /** Where one story of an epic goes, judged by the routing signals it doesn't share with the epic. */
 export type StoryRoute<R extends RoutableRepository> =

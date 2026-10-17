@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  matchSelection,
-  routeIssue,
-  routeStory,
-  type RoutableIssue,
-  type RoutableRepository,
-} from "./routing";
+import { matchSelection, routeStory, type RoutableRepository } from "./routing";
 
 const repo = (fullPath: string, routing: Partial<RoutableRepository> = {}): RoutableRepository => ({
   fullPath,
@@ -14,91 +8,6 @@ const repo = (fullPath: string, routing: Partial<RoutableRepository> = {}): Rout
   linearProjectNames: [],
   linearLabels: [],
   ...routing,
-});
-
-const issue = (overrides: Partial<RoutableIssue> = {}): RoutableIssue => ({
-  labels: [],
-  projectName: null,
-  teamKey: null,
-  ...overrides,
-});
-
-describe("routeIssue", () => {
-  const api = repo("acme/api", {
-    linearTeamKeys: ["ENG"],
-    linearProjectNames: ["Platform"],
-    linearLabels: ["backend"],
-  });
-  const web = repo("acme/web", {
-    linearTeamKeys: ["WEB"],
-    linearProjectNames: ["Storefront"],
-    linearLabels: ["frontend"],
-  });
-  const repos = [web, api];
-
-  it("ignores [repo=…] tags in the description", () => {
-    const tagged = { description: "Do it.\n\n[repo=acme/web]", teamKey: "ENG" };
-    expect(routeIssue({ ...issue(), ...tagged }, repos)).toMatchObject({
-      repository: api,
-      rule: "team",
-    });
-    const tagOnly = { ...issue(), description: "[repo=acme/web]" };
-    expect(routeIssue(tagOnly, repos)).toBeNull();
-  });
-
-  it("routes by label", () => {
-    expect(routeIssue(issue({ labels: ["Bug", "Frontend"] }), repos)).toEqual({
-      repository: web,
-      rule: "label",
-      value: "Frontend",
-    });
-  });
-
-  it("routes by project name", () => {
-    expect(routeIssue(issue({ labels: ["Bug"], projectName: "platform" }), repos)).toEqual({
-      repository: api,
-      rule: "project",
-      value: "platform",
-    });
-  });
-
-  it("routes by team key", () => {
-    expect(routeIssue(issue({ projectName: "Unrelated", teamKey: "web" }), repos)).toEqual({
-      repository: web,
-      rule: "team",
-      value: "web",
-    });
-  });
-
-  it("applies the rules in order: label, project, team", () => {
-    // Label beats project and team.
-    expect(
-      routeIssue(issue({ labels: ["frontend"], projectName: "Platform", teamKey: "ENG" }), repos),
-    ).toMatchObject({ repository: web, rule: "label" });
-    // Project beats team.
-    expect(routeIssue(issue({ projectName: "Storefront", teamKey: "ENG" }), repos)).toMatchObject({
-      repository: web,
-      rule: "project",
-    });
-  });
-
-  it("breaks ties by full path", () => {
-    const zeta = repo("zeta/app", { linearTeamKeys: ["ENG"], linearLabels: ["shared"] });
-    const alpha = repo("alpha/app", { linearTeamKeys: ["ENG"], linearLabels: ["shared"] });
-    expect(routeIssue(issue({ teamKey: "ENG" }), [zeta, alpha])?.repository).toBe(alpha);
-    expect(routeIssue(issue({ labels: ["shared"] }), [zeta, alpha])?.repository).toBe(alpha);
-  });
-
-  it("considers only ralph-enabled repositories", () => {
-    const disabled = repo("aaa/first", { effective: { coding: false }, linearTeamKeys: ["ENG"] });
-    expect(routeIssue(issue({ teamKey: "ENG" }), [disabled, api])?.repository).toBe(api);
-    expect(routeIssue(issue({ teamKey: "ENG" }), [disabled])).toBeNull();
-  });
-
-  it("returns null when nothing matches", () => {
-    expect(routeIssue(issue({ labels: ["x"], projectName: "y", teamKey: "Z" }), repos)).toBeNull();
-    expect(routeIssue(issue({ teamKey: "ENG" }), [])).toBeNull();
-  });
 });
 
 describe("matchSelection", () => {

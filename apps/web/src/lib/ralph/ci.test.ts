@@ -25,6 +25,7 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
+import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import type { CiFailedJob, CiStatus } from "@omniralph/scm";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
@@ -131,6 +132,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
         fullPath: "acme/web",
       })
     ).id;
+    await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 
   afterAll(async () => {

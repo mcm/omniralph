@@ -191,8 +191,11 @@ export {
   type SetHarnessHostToolPathResult,
 } from "./host-tools.js";
 export {
+  getIssueRepository,
+  listRoutingRepositories,
   listRoutingRules,
   replaceRoutingRules,
+  type IssueRepository,
   type ReplaceRoutingRulesResult,
   type RoutingRule,
 } from "./routing-rules.js";

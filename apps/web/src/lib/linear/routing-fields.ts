@@ -4,6 +4,8 @@ import {
   type RoutingFieldType,
   type RoutingOperator,
 } from "@omniralph/shared";
+import type { RoutingFieldValues, RoutingIssueValue } from "@/lib/routing/evaluate";
+import type { RoutingIssue, RoutingIssueFields } from "./gateway";
 
 /**
  * The Linear issue fields routing rules test (Settings › Routing), under Linear's own names.
@@ -115,3 +117,40 @@ export const linearRoutingRulesSchema = routingRulesSchema(
       : {}),
   })),
 );
+
+/** Each catalog field's type, by ID, for the evaluator. */
+export const LINEAR_ROUTING_FIELD_TYPES: ReadonlyMap<string, RoutingFieldType> = new Map(
+  LINEAR_ROUTING_FIELDS.map((field) => [field.id, field.type]),
+);
+
+/** One issue's fields as the evaluator reads them, under `prefix` (`parent.`) when given. */
+function issueValues(
+  fields: RoutingIssueFields | null,
+  prefix = "",
+): Record<string, RoutingIssueValue> {
+  const values: Record<string, RoutingIssueValue> = {};
+  for (const field of ISSUE_FIELDS) {
+    const id = field.id as keyof RoutingIssueFields & string;
+    const value = fields ? fields[id] : null;
+    values[`${prefix}${field.id}`] =
+      // `priority` is one of fixed values "0"–"4".
+      typeof value === "number" && field.type === "one-of" ? String(value) : (value ?? null);
+  }
+  return values;
+}
+
+/**
+ * The values rules test for an issue: its own fields, its parent's (`parent.*`) and, for a
+ * follow-up, those of the issue it was filed from (`source.*`). Missing issues' fields are
+ * empty.
+ */
+export function linearRoutingValues(
+  routing: RoutingIssue,
+  source: RoutingIssueFields | null = null,
+): RoutingFieldValues {
+  return {
+    ...issueValues(routing.issue),
+    ...issueValues(routing.parent, "parent."),
+    ...issueValues(source, "source."),
+  };
+}

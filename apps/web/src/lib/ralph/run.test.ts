@@ -43,6 +43,7 @@ import {
   setAllowedTaskTypeDefaults,
   type LinearRun,
 } from "@omniralph/db";
+import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
@@ -198,6 +199,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
+    await setRoutingRules(
+      db,
+      orgId,
+      [gitlabRepoId, projectIs("Web")],
+      [repoId, teamIs("ENG")],
+      [gitlabRepoId, teamIs("GL")],
+    );
   }, 180_000);
 
   afterAll(async () => {

@@ -220,6 +220,100 @@ describe("SdkLinearGateway reads", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("reads an issue's routing fields and its parent's in one request", async () => {
+    const routingNode = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      identifier: `TOOL-${id}`,
+      title: `Issue ${id}`,
+      description: `Body ${id}`,
+      priority: 2,
+      estimate: 3,
+      dueDate: "2026-11-01",
+      parent: { id: "10", identifier: "TOOL-10" },
+      assignee: { id: "user-1" },
+      creator: { id: "user-2" },
+      team: { key: "TOOL" },
+      state: { name: "Todo", type: "unstarted" },
+      labels: { nodes: [{ name: "backend" }] },
+      project: { name: "Omniralph" },
+      projectMilestone: { name: "Beta" },
+      cycle: { id: "cycle-1" },
+      ...overrides,
+    });
+    resolvers.IssueRoutingFields = (v) => ({
+      issue: {
+        ...routingNode(String(v.id)),
+        parentIssue: routingNode("10", {
+          parent: null,
+          estimate: null,
+          dueDate: null,
+          projectMilestone: null,
+          cycle: null,
+          assignee: null,
+          creator: null,
+          state: null,
+          project: null,
+          description: null,
+          priority: null,
+          labels: { nodes: [] },
+        }),
+      },
+    });
+    expect(await gateway().getRoutingFields("42")).toEqual({
+      issue: {
+        id: "42",
+        identifier: "TOOL-42",
+        title: "Issue 42",
+        description: "Body 42",
+        team: "TOOL",
+        project: "Omniralph",
+        projectMilestone: "Beta",
+        cycle: "cycle-1",
+        state: "Todo",
+        stateType: "unstarted",
+        priority: 2,
+        assignee: "user-1",
+        creator: "user-2",
+        parent: "TOOL-10",
+        parentId: "10",
+        labels: ["backend"],
+        estimate: 3,
+        dueDate: "2026-11-01",
+      },
+      parent: {
+        id: "10",
+        identifier: "TOOL-10",
+        title: "Issue 10",
+        description: "",
+        team: "TOOL",
+        project: null,
+        projectMilestone: null,
+        cycle: null,
+        state: null,
+        stateType: null,
+        priority: 0,
+        assignee: null,
+        creator: null,
+        parent: null,
+        parentId: null,
+        labels: [],
+        estimate: null,
+        dueDate: null,
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.variables).toEqual({ id: "42" });
+  });
+
+  it("reads routing fields without a parent", async () => {
+    resolvers.IssueRoutingFields = () => ({
+      issue: { ...issueNode("1", { parent: null }), parentIssue: null },
+    });
+    const { issue, parent } = await gateway().getRoutingFields("TOOL-1");
+    expect(parent).toBeNull();
+    expect(issue).toMatchObject({ parent: null, parentId: null, estimate: null, dueDate: null });
+  });
+
   it("fills defaults for missing optional fields", async () => {
     resolvers.Issue = () => ({
       issue: issueNode("1", {
