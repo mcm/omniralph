@@ -9,6 +9,9 @@ const options: LinearSettingsOptions = {
   labels: ["backend", "Manual", "ralph"],
   projects: ["Omniralph"],
   states: ["Done", "In Review"],
+  projectMilestones: [],
+  cycles: [],
+  users: [],
 };
 
 describe("unknownLinearValues", () => {
@@ -61,7 +64,15 @@ describe("unknownLinearValues", () => {
   it.each(["started", "completed", "Completed", "", "  ", null, undefined])(
     "always accepts the epic state %j",
     (epicCompletedState) => {
-      const empty = { teams: [], labels: [], projects: [], states: [] };
+      const empty = {
+        teams: [],
+        labels: [],
+        projects: [],
+        states: [],
+        projectMilestones: [],
+        cycles: [],
+        users: [],
+      };
       expect(unknownLinearValues(empty, { epicCompletedState }).epicCompletedState).toBeNull();
     },
   );

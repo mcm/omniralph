@@ -10,7 +10,8 @@ export function fixtureLinearEnabled(env: NodeJS.ProcessEnv = process.env): bool
   return env.NODE_ENV !== "production" && env.OMNIRALPH_FIXTURE_LINEAR === "1";
 }
 
-/** The fixture organization's Linear workspace: its teams, labels, projects and states. */
+/** The fixture organization's Linear workspace: its teams, labels, projects, states,
+ * milestones, cycles and users. */
 export function fixtureLinearGateway(): FakeLinearGateway {
   const linear = new FakeLinearGateway();
   linear.teams = [
@@ -30,6 +31,18 @@ export function fixtureLinearGateway(): FakeLinearGateway {
     { id: "fixture-project-1", name: "Control panel" },
     { id: "fixture-project-2", name: "Harness" },
     { id: "fixture-project-3", name: "Platform API" },
+  ];
+  linear.projectMilestones = [
+    { id: "fixture-milestone-1", name: "Beta", projectName: "Control panel" },
+    { id: "fixture-milestone-2", name: "GA", projectName: "Control panel" },
+  ];
+  linear.cycles = [
+    { id: "fixture-cycle-1", number: 12, name: null, teamKey: "FIX" },
+    { id: "fixture-cycle-2", number: 13, name: "Hardening", teamKey: "FIX" },
+  ];
+  linear.users = [
+    { id: "fixture-user-1", name: "Ada Lovelace" },
+    { id: "fixture-user-2", name: "Grace Hopper" },
   ];
   linear.workflowStates = [
     ["Backlog", "backlog"],

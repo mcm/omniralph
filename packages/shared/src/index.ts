@@ -16,3 +16,4 @@ export * from "./run-linear.js";
 export * from "./correlation.js";
 export * from "./claude-code-tools.js";
 export * from "./text.js";
+export * from "./routing.js";

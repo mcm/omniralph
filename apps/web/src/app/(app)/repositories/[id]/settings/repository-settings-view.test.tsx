@@ -62,6 +62,9 @@ const choices: CodingChoices = {
       labels: ["backend", "manual"],
       projects: ["Omniralph"],
       states: ["In Review", "Done"],
+      projectMilestones: [],
+      cycles: [],
+      users: [],
     },
   },
   models: [

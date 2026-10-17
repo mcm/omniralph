@@ -191,6 +191,12 @@ export {
   type SetHarnessHostToolPathResult,
 } from "./host-tools.js";
 export {
+  listRoutingRules,
+  replaceRoutingRules,
+  type ReplaceRoutingRulesResult,
+  type RoutingRule,
+} from "./routing-rules.js";
+export {
   CHAT_TASKS_KEY,
   DEFAULT_CHAT_TASKS,
   DESIRED_HARNESS_VERSION_KEY,

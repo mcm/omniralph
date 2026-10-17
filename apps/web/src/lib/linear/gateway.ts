@@ -86,6 +86,27 @@ export interface Team {
   name: string;
 }
 
+export interface ProjectMilestone {
+  id: string;
+  name: string;
+  /** The project's name. */
+  projectName: string;
+}
+
+export interface Cycle {
+  id: string;
+  number: number;
+  /** Null when the cycle has no name of its own ("Cycle 12"). */
+  name: string | null;
+  teamKey: string;
+}
+
+/** A workspace member (not a deactivated one). */
+export interface User {
+  id: string;
+  name: string;
+}
+
 /** The user the gateway's token acts as: for the app's OAuth token, the app user. */
 export interface Viewer {
   id: string;
@@ -182,6 +203,12 @@ export interface LinearGateway {
   listIssueLabels(): Promise<IssueLabel[]>;
   /** Every project in the workspace (all pages). */
   listProjects(): Promise<Project[]>;
+  /** Every project's milestones (every page). */
+  listProjectMilestones(): Promise<ProjectMilestone[]>;
+  /** Every team's current and upcoming cycles (every page). */
+  listCycles(): Promise<Cycle[]>;
+  /** The workspace's active users (every page). */
+  listUsers(): Promise<User[]>;
   createIssue(input: CreateIssueInput): Promise<IssueSummary>;
   /** `blockerId` blocks `blockedId`. */
   createBlocksRelation(blockerId: string, blockedId: string): Promise<void>;
@@ -746,6 +773,96 @@ export class SdkLinearGateway implements LinearGateway {
         { first: PAGE_SIZE, after },
       );
       return data.projects;
+    });
+  }
+
+  async listProjectMilestones(): Promise<ProjectMilestone[]> {
+    type MilestoneNode = { id: string; name: string; project?: { name: string } | null };
+    const nodes = await this.paginate(async (after) => {
+      const data = await this.request<{ projectMilestones: Connection<MilestoneNode> }>(
+        /* GraphQL */ `
+          query ProjectMilestones($first: Int!, $after: String) {
+            projectMilestones(first: $first, after: $after) {
+              nodes {
+                id
+                name
+                project {
+                  name
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.projectMilestones;
+    });
+    return nodes.map((m) => ({ id: m.id, name: m.name, projectName: m.project?.name ?? "" }));
+  }
+
+  async listCycles(): Promise<Cycle[]> {
+    type CycleNode = {
+      id: string;
+      number: number;
+      name?: string | null;
+      team?: { key: string } | null;
+    };
+    const nodes = await this.paginate(async (after) => {
+      const data = await this.request<{ cycles: Connection<CycleNode> }>(
+        /* GraphQL */ `
+          query Cycles($first: Int!, $after: String) {
+            cycles(first: $first, after: $after, filter: { isPast: { eq: false } }) {
+              nodes {
+                id
+                number
+                name
+                team {
+                  key
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.cycles;
+    });
+    return nodes.map((c) => ({
+      id: c.id,
+      number: c.number,
+      name: c.name || null,
+      teamKey: c.team?.key ?? "",
+    }));
+  }
+
+  async listUsers(): Promise<User[]> {
+    return this.paginate(async (after) => {
+      const data = await this.request<{ users: Connection<User> }>(
+        /* GraphQL */ `
+          query Users($first: Int!, $after: String) {
+            users(first: $first, after: $after) {
+              nodes {
+                id
+                name
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { first: PAGE_SIZE, after },
+      );
+      return data.users;
     });
   }
 

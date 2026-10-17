@@ -10,6 +10,7 @@ import type {
   ActivityOptions,
   Blocker,
   CreateIssueInput,
+  Cycle,
   IssueComment,
   IssueLabel,
   IssueSummary,
@@ -17,10 +18,12 @@ import type {
   LinearGateway,
   PlanStep,
   Project,
+  ProjectMilestone,
   Team,
   UpdateIssueInput,
   UploadDownload,
   UploadFileInput,
+  User,
   Viewer,
   WorkflowState,
 } from "./gateway";
@@ -44,8 +47,14 @@ export class FakeLinearGateway implements LinearGateway {
   labels: IssueLabel[] = [];
   /** What `listProjects` returns. */
   projects: Project[] = [];
+  /** What `listProjectMilestones` returns. */
+  projectMilestones: ProjectMilestone[] = [];
+  /** What `listCycles` returns. */
+  cycles: Cycle[] = [];
+  /** What `listUsers` returns. */
+  users: User[] = [];
   /**
-   * Page size of `listIssueLabels` and `listProjects`: they read every page,
+   * Page size of the workspace lists (`listIssueLabels`, `listProjects`, ...): they read every page,
    * one `pageRequests` entry per page, like the SDK gateway.
    */
   pageSize = 50;
@@ -218,6 +227,18 @@ export class FakeLinearGateway implements LinearGateway {
   async listProjects(): Promise<Project[]> {
     this.fail("listProjects");
     return this.allPages("listProjects", this.projects).map((p) => ({ ...p }));
+  }
+  async listProjectMilestones(): Promise<ProjectMilestone[]> {
+    this.fail("listProjectMilestones");
+    return this.allPages("listProjectMilestones", this.projectMilestones).map((m) => ({ ...m }));
+  }
+  async listCycles(): Promise<Cycle[]> {
+    this.fail("listCycles");
+    return this.allPages("listCycles", this.cycles).map((c) => ({ ...c }));
+  }
+  async listUsers(): Promise<User[]> {
+    this.fail("listUsers");
+    return this.allPages("listUsers", this.users).map((u) => ({ ...u }));
   }
   async createIssue(input: CreateIssueInput) {
     this.fail("createIssue");

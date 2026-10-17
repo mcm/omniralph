@@ -5,6 +5,7 @@
  * After changing this file run `pnpm --filter db generate` to emit a migration
  * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
  */
+import type { RoutingQuery } from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -940,6 +941,37 @@ export const repositories = pgTable(
       columns: [t.organizationId, t.profileId],
       foreignColumns: [reviewProfiles.organizationId, reviewProfiles.id],
     }),
+  ],
+);
+
+// ── Routing ──────────────────────────────────────────────────────────────────
+
+/**
+ * An organization's routing rules, evaluated in `position` order (the first match wins):
+ * a condition over an issue's fields (`RoutingQuery`, validated against the tracker's field
+ * catalog in `@omniralph/shared`) and the repository a matching issue builds in. Saving
+ * replaces the whole list (`replaceRoutingRules`).
+ */
+export const routingRules = pgTable(
+  "routing_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** 0-based evaluation order. */
+    position: integer("position").notNull(),
+    /** A repository of the same organization; deleting it deletes its rules. */
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    query: jsonb("query").$type<RoutingQuery>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("routing_rules_organization_position_uq").on(t.organizationId, t.position),
+    index("routing_rules_repository_id_idx").on(t.repositoryId),
   ],
 );
 
