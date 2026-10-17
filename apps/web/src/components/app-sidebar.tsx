@@ -77,10 +77,6 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
       <SidebarContent>
         {collapsed && <SidebarTrigger className="mx-auto my-2" />}
 
-        <div className={collapsed ? "sidebar-org sidebar-org-collapsed" : "sidebar-org"}>
-          <OrganizationSwitcher organizations={organizations} collapsed={collapsed} />
-        </div>
-
         {navGroupsForRole(user.role).map((group) => (
           <SidebarGroup key={group.label} label={group.label}>
             {group.items.map(({ href, label, icon }) => {
@@ -100,19 +96,26 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="sidebar-footer">
-        <Avatar className="sidebar-avatar">
-          {user.image && <AvatarImage src={user.image} alt="" />}
-          <AvatarFallback className="sidebar-avatar-fallback">{userInitials(user)}</AvatarFallback>
-        </Avatar>
-        {!collapsed && (
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <div className="truncate text-sm text-text-primary">{userDisplayName(user)}</div>
-            <div className="truncate text-xs text-text-tertiary">
-              {user.role === "admin" ? "Admin" : "Member"}
+      <SidebarFooter
+        className={collapsed ? "sidebar-footer sidebar-footer-collapsed" : "sidebar-footer"}
+      >
+        <OrganizationSwitcher organizations={organizations} collapsed={collapsed} />
+        <div className="sidebar-user">
+          <Avatar className="sidebar-avatar">
+            {user.image && <AvatarImage src={user.image} alt="" />}
+            <AvatarFallback className="sidebar-avatar-fallback">
+              {userInitials(user)}
+            </AvatarFallback>
+          </Avatar>
+          {!collapsed && (
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="truncate text-sm text-text-primary">{userDisplayName(user)}</div>
+              <div className="truncate text-xs text-text-tertiary">
+                {user.role === "admin" ? "Admin" : "Member"}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </SidebarFooter>
     </SidebarRoot>
   );
