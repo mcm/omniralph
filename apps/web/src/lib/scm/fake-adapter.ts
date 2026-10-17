@@ -1,4 +1,5 @@
 import {
+  type ChangeRequest,
   ChangeRequestNotFoundError,
   type ChangeRequestStatus,
   type ChangeRequestUpdate,
@@ -97,6 +98,24 @@ export class FakeScmAdapter {
 
   async hasWriteAccess(_repo: RepoRef, username: string): Promise<boolean> {
     return this.members.has(username);
+  }
+
+  async getChangeRequest(repo: RepoRef, number: number): Promise<ChangeRequest> {
+    this.call("getChangeRequest");
+    const request = this.find(repo, number);
+    return {
+      number,
+      title: request.title,
+      description: request.body,
+      author: "omniralph",
+      draft: request.draft,
+      state: request.state,
+      baseSha: "base",
+      headSha: request.headSha ?? "head",
+      baseRef: request.targetBranch,
+      headRef: request.sourceBranch,
+      url: request.url,
+    };
   }
 
   async findOpenChangeRequest(

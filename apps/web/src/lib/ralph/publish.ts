@@ -35,7 +35,13 @@ import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@o
 import { organizationDefinitions } from "@/lib/definitions";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
-import { describePrPayload, describePrText, opensPullRequestEarly, pushResult } from "./coding";
+import {
+  describePrPayload,
+  describePrText,
+  opensPullRequestEarly,
+  pushResult,
+  pushTimingFor,
+} from "./coding";
 import { conversationFor, runCompletedEvent } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -94,6 +100,27 @@ export function templatedPullRequest(
       ...stories.map((s) => `- [${done(s) ? "x" : " "}] ${s.identifier}: ${s.title}`),
     ].join("\n"),
   };
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * `body` with every unchecked task (`- [ ]`) line naming one of `identifiers`
+ * checked (as a whole word: `TOOL-1` isn't `TOOL-12`). Every other byte stays
+ * as it was, line endings included.
+ */
+export function tickStories(body: string, identifiers: readonly string[]): string {
+  if (identifiers.length === 0) return body;
+  const named = new RegExp(`(?<![\\w-])(?:${identifiers.map(escapeRegExp).join("|")})(?![\\w-])`);
+  return body
+    .split("\n")
+    .map((line) => {
+      const task = /^(\s*- )\[ \]/.exec(line);
+      return task && named.test(line.slice(task[0].length))
+        ? `${task[1]}[x]${line.slice(task[0].length)}`
+        : line;
+    })
+    .join("\n");
 }
 
 export interface LaneRepository {
@@ -309,6 +336,57 @@ async function openEarlyLanePullRequest(
     type: "thought",
     body: `${pr.created ? "Opened a draft" : "Found the open"} ${term} for \`${lane.branch}\`${where}: ${pr.url}`,
   });
+}
+
+/**
+ * Ticks the stories whose commits reached a lane's branch in the task list
+ * of its open PR/MR (`tickStories`): after each story when its repository
+ * pushes per story, all at once after the lane's `ralph.push` otherwise;
+ * canceled stories too. A lane being (or already) described is left alone:
+ * the describe job rewrites its body. The body is written only when a
+ * checkbox changed. A
+ * failure is reported as a thought: the next story's outcome tries again.
+ */
+export async function tickPushedStories(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { rows: readonly RalphStory[] },
+): Promise<void> {
+  const lanes = await listLanes(tx, run.id);
+  const main = lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
+  for (const lane of lanes) {
+    const status = lane.publish?.status;
+    if (lane.prNumber === null || status === "describing" || status === "published") continue;
+    const rows = laneRows(input.rows, lane, main);
+    if (!rows.some((r) => r.status === "completed" || r.status === "canceled")) continue;
+    let term = "pull/merge request";
+    try {
+      const target = await laneRepository(deps, lane);
+      term = changeRequestTerm(target.repository.provider);
+      const timing = await pushTimingFor(
+        target.repository,
+        organizationDefinitions(deps.db, run.organizationId),
+      );
+      const pushed = timing !== "end" || status === "pushed";
+      const ticked = rows
+        .filter((r) => r.status === "canceled" || (pushed && r.status === "completed"))
+        .map((r) => r.identifier);
+      if (ticked.length === 0) continue;
+      const pr = await target.adapter.getChangeRequest(target.repo, lane.prNumber);
+      if (pr.state !== "open") continue;
+      const body = tickStories(pr.description, ticked);
+      if (body !== pr.description) {
+        await target.adapter.updateChangeRequest(target.repo, lane.prNumber, { body });
+      }
+    } catch (error) {
+      const where = lane === main ? "" : ` for \`${lane.branch}\``;
+      await postActivity(conversationFor(run, deps), {
+        type: "thought",
+        body: `I couldn't tick the pushed stories in the ${term}${where} yet (I'll try again after the next story): ${tail(errorMessage(error), 1500)}`,
+      });
+    }
+  }
 }
 
 /**

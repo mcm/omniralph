@@ -116,6 +116,7 @@ import {
   lanesToPublish,
   moveCompletedEpic,
   openEarlyPullRequest,
+  tickPushedStories,
   withPullRequestLinks,
   type PublishedLane,
 } from "./publish";
@@ -352,6 +353,8 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const allDone = isEpicComplete(stories);
   // A draft PR/MR once the first story is pushed (`opensPullRequestEarly`).
   if (!allDone) run = await openEarlyPullRequest(deps, tx, run, { epic, rows });
+  // Its task list shows the stories pushed so far.
+  await tickPushedStories(deps, tx, run, { rows });
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
     ? []
