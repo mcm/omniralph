@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { matchSelection, routeStory, type RoutableRepository } from "./routing";
+import { matchSelection, type RoutableRepository } from "./routing";
 
-const repo = (fullPath: string, routing: Partial<RoutableRepository> = {}): RoutableRepository => ({
-  fullPath,
-  effective: { coding: true },
-  linearTeamKeys: [],
-  linearProjectNames: [],
-  linearLabels: [],
-  ...routing,
-});
+const repo = (fullPath: string): RoutableRepository => ({ fullPath });
 
 describe("matchSelection", () => {
   const api = repo("platform/api");
@@ -46,56 +39,5 @@ describe("matchSelection", () => {
     const numbered = repo("acme/2");
     expect(matchSelection("2", [numbered, api])).toBe(api);
     expect(matchSelection("acme/2", [numbered, api])).toBe(numbered);
-  });
-});
-
-describe("routeStory (a story of an epic)", () => {
-  const repos = [
-    repo("platform/api", { linearProjectNames: ["API"], linearTeamKeys: ["BE"] }),
-    repo("platform/web", {
-      linearProjectNames: ["Web"],
-      linearLabels: ["frontend"],
-      linearTeamKeys: ["FE"],
-    }),
-  ];
-  const epic = { projectName: "API", teamKey: "BE" };
-  const routed = (story: Parameters<typeof routeStory>[1], repositories = repos) => {
-    const r = routeStory(repositories, story, epic);
-    return r.type === "selected"
-      ? `${r.repository.fullPath} by ${r.rule}`
-      : r.type === "unroutable"
-        ? `unroutable: ${r.reason}`
-        : "epic";
-  };
-
-  it("stays with the epic without signals of its own", () => {
-    expect(routed({})).toBe("epic");
-    expect(routed({ projectName: "API", teamKey: "BE", labels: ["bug"] })).toBe("epic");
-    expect(routed({ projectName: "api" })).toBe("epic");
-  });
-
-  it("follows its own label, project or team, in that order", () => {
-    expect(routed({ labels: ["Frontend"], projectName: "Docs" })).toBe("platform/web by label");
-    expect(routed({ projectName: "Web", teamKey: "BE" })).toBe("platform/web by project");
-    expect(routed({ teamKey: "FE" })).toBe("platform/web by team");
-  });
-
-  it("ignores [repo=…] tags in its description", () => {
-    const story = { description: "[repo=platform/web]" } as Parameters<typeof routeStory>[1];
-    expect(routed(story)).toBe("epic");
-  });
-
-  it("is unroutable when its own project matches no repository here", () => {
-    expect(routed({ projectName: "Docs" })).toBe(
-      "unroutable: it's in project Docs, which no repository here is set up for",
-    );
-    // Teams and labels span repositories, so an unknown one isn't a reason to give the story away.
-    expect(routed({ teamKey: "OPS", labels: ["infra"] })).toBe("epic");
-  });
-
-  it("ignores repositories without ralph enabled", () => {
-    expect(
-      routed({ projectName: "Web" }, [repos[0]!, { ...repos[1]!, effective: { coding: false } }]),
-    ).toBe("unroutable: it's in project Web, which no repository here is set up for");
   });
 });

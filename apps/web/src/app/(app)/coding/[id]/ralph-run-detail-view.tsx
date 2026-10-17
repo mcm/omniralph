@@ -329,14 +329,14 @@ function LaneCard({ run, lane }: { run: RalphRunDetail; lane: RalphLane }) {
   );
 }
 
-/** Stories that belong in a repository Omniralph doesn't have: manual steps for a person. */
+/** Stories that route to a repository with coding off: manual steps for a person. */
 function ElsewhereCard({ run }: { run: RalphRunDetail }) {
   const stories = run.stories.filter((s) => s.elsewhere);
   if (stories.length === 0) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle as="h2">Not in a repository here</CardTitle>
+        <CardTitle as="h2">Not built here</CardTitle>
         <CardDescription>
           Treated like manual steps: nothing is run for them, and stories that depend on them wait
           until a person finishes them.

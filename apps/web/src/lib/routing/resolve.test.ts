@@ -119,6 +119,9 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
   it("asks when there are no rules", async () => {
     const issue = linear.add({ title: "Anything", labels: ["backend"] });
     expect(await resolveRoute(deps(), issue.id)).toEqual({ ask: true });
+    expect((await createRouter(deps())).hasCustomRules).toBe(false);
+    await rules([api, labels("backend")]);
+    expect((await createRouter(deps())).hasCustomRules).toBe(true);
   });
 
   it("takes the first rule that matches, in order", async () => {

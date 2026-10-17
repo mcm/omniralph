@@ -1,10 +1,10 @@
 /**
  * The lanes of a ralph run (cyralph's `RepoLane`): one per repository the run
  * works in, each with its own branch and PR/MR. The lane of the run's
- * repository is its main lane; stories of a sub-issue epic whose own routing
- * signals send them elsewhere get a lane in that repository (cyralph's
- * `routeStories`), and stories that belong in a repository Omniralph doesn't
- * have are treated as manual.
+ * repository is its main lane; stories of a sub-issue epic that the routing
+ * rules send elsewhere get a lane in that repository (cyralph's
+ * `routeStories`), and stories that route to a repository with coding off are
+ * treated as manual.
  */
 import {
   ensureLane,
@@ -12,7 +12,6 @@ import {
   getLaneByRepository,
   getMainLane,
   getRepositoryWithConnection,
-  listRalphRepositories,
   type Database,
   type RalphLane,
   type RalphRun,
@@ -20,8 +19,8 @@ import {
   type RalphTransaction,
 } from "@omniralph/db";
 import { withManualOptions, type Epic } from "@omniralph/ralph";
+import { createRouter, routedRepository } from "@/lib/routing/resolve";
 import { repositoryAllowsPreparation, repositoryManualLabels } from "./epic-loader";
-import { describeRoute, routeStory } from "./routing";
 import type { RalphDeps } from "./run";
 
 type Executor = Database | RalphTransaction;
@@ -47,17 +46,19 @@ export async function storyLane(
 export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string | null }>;
 
 /**
- * Routes each story of a sub-issue epic on its own signals (`routeStory`),
- * changing `epic`'s stories: one that belongs in another ralph-enabled
- * repository gets `repo` and a lane there (created with the main lane's branch
- * and that repository's default branch as its base), and is manual (and
- * prepared) by that repository's manual labels and `allowPreparation` instead
- * of the main repository's; one that belongs in a repository Omniralph doesn't
- * have becomes manual with `elsewhere` set (and no preparation). Other epics'
- * stories stay in the main lane. Returns every story's lane.
+ * Routes each story of a sub-issue epic with the organization's routing rules
+ * (`createRouter`), changing `epic`'s stories. A story with no rule of its own
+ * routes as its parent, the epic, and stays in the main lane. One that routes to
+ * another repository with coding on gets `repo` and a lane there (created with
+ * the main lane's branch and that repository's default branch as its base), and
+ * is manual (and prepared) by that repository's manual labels and
+ * `allowPreparation` instead of the main repository's. One that routes to a
+ * repository with coding off becomes manual with `elsewhere` set (and no
+ * preparation), like a manual-labelled story. Other epics' stories stay in the
+ * main lane. Returns every story's lane.
  */
 export async function routeStories(
-  deps: Pick<RalphDeps, "db" | "adapterFor">,
+  deps: Pick<RalphDeps, "db" | "adapterFor" | "linear">,
   tx: RalphTransaction,
   run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "linearIdentifier">,
   epic: Epic,
@@ -68,42 +69,42 @@ export async function routeStories(
   for (const s of epic.stories) lanes.set(key(s), { laneId: main?.id ?? null, elsewhere: null });
   if (epic.kind !== "children" || !main) return lanes;
 
-  const repositories = await listRalphRepositories(tx, run.organizationId);
+  // In the transaction, so the epic routes to this run's repository even before it commits.
+  const router = await createRouter({
+    db: tx,
+    organizationId: run.organizationId,
+    linear: deps.linear,
+  });
+  // Without custom rules every story routes as the epic: the main lane.
+  if (!router.hasCustomRules) return lanes;
+
   const byRepository = new Map<string, RalphLane | null>();
   for (const [i, s] of epic.stories.entries()) {
-    const route = routeStory(
-      repositories,
-      {
-        labels: s.labels ?? [],
-        projectName: s.projectName ?? null,
-        teamKey: s.teamKey ?? null,
-      },
-      epic,
-    );
-    if (route.type === "unroutable") {
+    if (!s.issueId) continue;
+    const route = await router.resolve(s.issueId);
+    const repository = routedRepository(route);
+    // Asking, or the epic's own repository (as its parent, or by a rule): the main lane.
+    if (!repository || "ask" in route || repository.id === main.repositoryId) continue;
+    if ("manual" in route) {
+      const reason = `it routes to \`${repository.fullPath}\` by ${route.by}, and coding is off there`;
       s.manual = true;
-      s.elsewhere = route.reason;
-      // No repository here to prepare it in.
+      s.elsewhere = reason;
+      // Nothing is built for it there, so there's nothing to prepare.
       delete s.preparation;
-      lanes.set(key(s), { laneId: null, elsewhere: route.reason });
-    } else if (route.type === "selected" && route.repository.id !== main.repositoryId) {
-      const { repository } = route;
-      // Its repository's manual labels and preparation setting apply, not the main one's.
-      const routed = withManualOptions(s, {
-        manualLabels: repositoryManualLabels(repository),
-        allowPreparation: repositoryAllowsPreparation(repository),
-      });
-      routed.repo = {
-        id: repository.id,
-        name: repository.fullPath,
-        routedBy: describeRoute(route),
-      };
-      epic.stories[i] = routed;
-      if (!byRepository.has(repository.id)) {
-        byRepository.set(repository.id, await laneIn(deps, tx, run, main, repository.id));
-      }
-      lanes.set(key(s), { laneId: byRepository.get(repository.id)?.id ?? null, elsewhere: null });
+      lanes.set(key(s), { laneId: null, elsewhere: reason });
+      continue;
     }
+    // Its repository's manual labels and preparation setting apply, not the main one's.
+    const routed = withManualOptions(s, {
+      manualLabels: repositoryManualLabels(repository),
+      allowPreparation: repositoryAllowsPreparation(repository),
+    });
+    routed.repo = { id: repository.id, name: repository.fullPath, routedBy: route.by };
+    epic.stories[i] = routed;
+    if (!byRepository.has(repository.id)) {
+      byRepository.set(repository.id, await laneIn(deps, tx, run, main, repository.id));
+    }
+    lanes.set(key(s), { laneId: byRepository.get(repository.id)?.id ?? null, elsewhere: null });
   }
   return lanes;
 }

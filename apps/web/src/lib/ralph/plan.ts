@@ -15,10 +15,10 @@ const PLAN_STATUS: Record<RalphStoryStatus, PlanStep["status"]> = {
   canceled: "canceled",
 };
 
-/** How a step marks a manual story: one that belongs in a repository Omniralph doesn't have says so. */
+/** How a step marks a manual story: one that routes to a repository with coding off says so. */
 function manualNote(story: Pick<RalphStory, "status"> & { elsewhere?: string | null }): string {
   if (story.status !== "manual") return "";
-  return story.elsewhere ? " (manual: no repository here)" : " (manual)";
+  return story.elsewhere ? " (manual: coding off)" : " (manual)";
 }
 
 /** Every story of the run with its status, in order. */

@@ -105,7 +105,7 @@ describe("run detail stories-done counts", () => {
     // The Stories card lists the four in the repository but doesn't count them again.
     expect(stories).not.toMatch(/\d+ of \d+/);
     expect(stories).not.toMatch(/stor(y|ies) done/);
-    expect(stories).toContain("Not in a repository here");
+    expect(stories).toContain("Not built here");
   });
 
   it("doesn't mention outside stories when every story is in the repository", () => {

@@ -43,7 +43,7 @@ import {
   setAllowedTaskTypeDefaults,
   type LinearRun,
 } from "@omniralph/db";
-import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
+import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
@@ -59,6 +59,7 @@ import {
   type RalphDescribePrResult,
   type RalphRequestResult,
   type RalphStoryResult,
+  type RoutingQuery,
 } from "@omniralph/shared";
 import {
   createTestDatabase,
@@ -2278,53 +2279,76 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       return { epic, s1, s2, s3 };
     }
 
-    it("treats a story whose project no repository here covers like a manual step", async () => {
-      const t = crossRepo("Docs");
-      await linear.createBlocksRelation(t.s2.id, t.s3.id); // ENG-4 needs ENG-3
-      const run = await delegate(t.epic.id);
+    it("treats a story whose rule routes to a repository with coding off like a manual step", async () => {
+      const setCoding = (ralphEnabled: boolean) =>
+        updateRepositoryRalphSettings(db, gitlabRepoId, {
+          ralphEnabled,
+          linearTeamKeys: ["GL"],
+          linearProjectNames: ["Web"],
+          linearLabels: [],
+          ralphSettings: DEFAULT_RALPH_SETTINGS,
+        });
+      await setCoding(false);
+      try {
+        const t = crossRepo("Web");
+        await linear.createBlocksRelation(t.s2.id, t.s3.id); // ENG-4 needs ENG-3
+        const run = await delegate(t.epic.id);
 
-      expect((await work(run.id)).story.identifier).toBe("ENG-2");
-      expect(await activeJobs(run.id)).toEqual([]);
-      expect(await getRun(db, run.id)).toMatchObject({
-        status: "waiting",
-        waitingOn: { blockers: [], manual: [expect.objectContaining({ identifier: "ENG-3" })] },
-      });
-      // Only the main lane: nothing is built for the story that belongs elsewhere.
-      const lanes = await listLanes(db, run.id);
-      expect(lanes.map((l) => l.repositoryId)).toEqual([repoId]);
-      expect(
-        (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId, s.elsewhere]),
-      ).toEqual([
-        ["ENG-2", "completed", lanes[0]!.id, null],
-        ["ENG-3", "manual", null, "it's in project Docs, which no repository here is set up for"],
-        ["ENG-4", "pending", lanes[0]!.id, null],
-      ]);
-      expect(linear.issues.get(t.s2.id)?.stateType).toBe("unstarted");
-      expect(
-        linear
-          .bodies(run.linearAgentSessionId, "thought")
-          .some((b) =>
-            b.includes(
-              "**ENG-3** isn't in a repository I have (it's in project Docs, which no repository here is set up for), so I'll treat it like a manual step: I won't work it, and stories that depend on it wait until it's done.",
+        expect((await work(run.id)).story.identifier).toBe("ENG-2");
+        expect(await activeJobs(run.id)).toEqual([]);
+        expect(await getRun(db, run.id)).toMatchObject({
+          status: "waiting",
+          waitingOn: { blockers: [], manual: [expect.objectContaining({ identifier: "ENG-3" })] },
+        });
+        // Only the main lane: nothing is built for the story that routes to coding off.
+        const lanes = await listLanes(db, run.id);
+        expect(lanes.map((l) => l.repositoryId)).toEqual([repoId]);
+        expect(
+          (await listStories(db, run.id)).map((s) => [
+            s.identifier,
+            s.status,
+            s.laneId,
+            s.elsewhere,
+          ]),
+        ).toEqual([
+          ["ENG-2", "completed", lanes[0]!.id, null],
+          [
+            "ENG-3",
+            "manual",
+            null,
+            "it routes to `group/app` by rule 1 (Project is Web), and coding is off there",
+          ],
+          ["ENG-4", "pending", lanes[0]!.id, null],
+        ]);
+        expect(linear.issues.get(t.s2.id)?.stateType).toBe("unstarted");
+        expect(
+          linear
+            .bodies(run.linearAgentSessionId, "thought")
+            .some((b) =>
+              b.includes(
+                "**ENG-3** isn't built here (it routes to `group/app` by rule 1 (Project is Web), and coding is off there), so I'll treat it like a manual step: I won't work it, and stories that depend on it wait until it's done.",
+              ),
             ),
-          ),
-      ).toBe(true);
-      expect(linear.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
-        "ENG-3: Show badge (manual: no repository here)",
-      );
-      expect(scm.changeRequests).toEqual([]);
+        ).toBe(true);
+        expect(linear.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
+          "ENG-3: Show badge (manual: coding off)",
+        );
+        expect(scm.changeRequests).toEqual([]);
 
-      // Someone does ENG-3 elsewhere: its dependent runs and the epic finishes.
-      await linear.setIssueState(t.s2.id, { type: "completed" });
-      await handleLinearEvent(
-        { kind: "issue_state", issueId: t.s2.id, removed: false },
-        { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher },
-      );
-      expect((await work(run.id, { commitSha: sha(4) })).story.identifier).toBe("ENG-4");
-      await describePr(run.id);
-      expect((await getRun(db, run.id))?.status).toBe("completed");
-      expect(scm.changeRequests).toHaveLength(1);
+        // Someone does ENG-3 by hand: its dependent runs and the epic finishes.
+        await linear.setIssueState(t.s2.id, { type: "completed" });
+        await handleLinearEvent(
+          { kind: "issue_state", issueId: t.s2.id, removed: false },
+          { db, organizationId: orgId, workspaceId: "org-1" },
+          { linear, dispatcher },
+        );
+        expect((await work(run.id, { commitSha: sha(4) })).story.identifier).toBe("ENG-4");
+        await describePr(run.id);
+        expect((await getRun(db, run.id))?.status).toBe("completed");
+        expect(scm.changeRequests).toHaveLength(1);
+      } finally {
+        await setCoding(true);
+      }
     });
 
     it("records the harness that starts a job on the job's lane, and on the run for the main lane", async () => {
@@ -2422,7 +2446,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           .bodies(run.linearAgentSessionId, "thought")
           .some((b) =>
             b.includes(
-              "**ENG-3** belongs in `group/app` (routed by project `Web`), so I'll work it there, on its own branch",
+              "**ENG-3** belongs in `group/app` (routed by rule 1 (Project is Web)), so I'll work it there, on its own branch",
             ),
           ),
       ).toBe(true);
@@ -2441,6 +2465,30 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ["acme/api", true],
         ["group/app", false],
       ]);
+    });
+
+    it("keeps a story no rule routes in the epic's repository, as a sub-issue of the epic", async () => {
+      const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
+      // No rule matches team OPS: the story routes as its parent, the epic.
+      const ops = linear.add({
+        identifier: "OPS-2",
+        title: "Infra",
+        parentId: epic.id,
+        teamId: "team-ops",
+        teamKey: "OPS",
+      });
+      const run = await delegate(epic.id);
+
+      const lanes = await listLanes(db, run.id);
+      expect(lanes.map((l) => l.repositoryId)).toEqual([repoId]);
+      expect(
+        (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId, s.elsewhere]),
+      ).toEqual([["OPS-2", "running", lanes[0]!.id, null]]);
+      expect(await activeJob(run.id)).toMatchObject({ repositoryId: repoId });
+      expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).not.toContain(
+        "belongs in",
+      );
+      expect(linear.routingLoads).toContain(ops.id);
     });
 
     it("sends each lane's jobs to its own harness when its repository is pinned to another", async () => {
@@ -2569,7 +2617,17 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           linearLabels,
           ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
+      const rules = (...first: Array<[string, RoutingQuery]>) =>
+        setRoutingRules(
+          db,
+          orgId,
+          ...first,
+          [gitlabRepoId, projectIs("Web")],
+          [repoId, teamIs("ENG")],
+          [gitlabRepoId, teamIs("GL")],
+        );
       await update(["frontend"]);
+      await rules([gitlabRepoId, labelsInclude("frontend")]);
       try {
         const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
         linear.add({
@@ -2625,6 +2683,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect((await work(run.id)).story.identifier).toBe(byLabel.identifier);
         expect(await laneOf(byLabel.identifier)).toBe(web.id);
       } finally {
+        await rules();
         await update([]);
       }
     });

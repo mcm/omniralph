@@ -317,7 +317,7 @@ export function describeRun(
   }
   for (const s of open.filter((x) => x.elsewhere)) {
     lines.push(
-      `**${s.storyId}** isn't in a repository I have (${s.elsewhere}), so I'll treat it like a ` +
+      `**${s.storyId}** isn't built here (${s.elsewhere}), so I'll treat it like a ` +
         "manual step: I won't work it, and stories that depend on it wait until it's done.",
     );
   }
