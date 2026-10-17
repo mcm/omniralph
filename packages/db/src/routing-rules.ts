@@ -9,6 +9,7 @@ import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import type { Database } from "./client.js";
 import { effectiveRepositorySwitches, type RepositoryWithSwitches } from "./repositories.js";
 import {
+  followUpSources,
   organizations,
   ralphLanes,
   ralphRuns,
@@ -166,4 +167,54 @@ export async function getIssueRepository(
     via: "lane",
     ...(story.runIdentifier && { runIdentifier: story.runIdentifier }),
   };
+}
+
+/**
+ * Records that the follow-up `issueId` was filed from `sourceIssueId` (Linear issue IDs).
+ * An issue already recorded keeps its first source.
+ */
+export async function recordFollowUpSource(
+  db: Pick<Database, "insert">,
+  organizationId: string,
+  issueId: string,
+  sourceIssueId: string,
+): Promise<void> {
+  await db
+    .insert(followUpSources)
+    .values({ organizationId, issueId, sourceIssueId })
+    .onConflictDoNothing();
+}
+
+/** The Linear issue ID a follow-up was filed from; null when `issueId` isn't a follow-up. */
+export async function getFollowUpSource(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  issueId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ sourceIssueId: followUpSources.sourceIssueId })
+    .from(followUpSources)
+    .where(
+      and(eq(followUpSources.organizationId, organizationId), eq(followUpSources.issueId, issueId)),
+    );
+  return row?.sourceIssueId ?? null;
+}
+
+/** Which of `issueIds` are follow-ups (have a recorded source). */
+export async function listFollowUps(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  issueIds: readonly string[],
+): Promise<Set<string>> {
+  if (issueIds.length === 0) return new Set();
+  const rows = await db
+    .select({ issueId: followUpSources.issueId })
+    .from(followUpSources)
+    .where(
+      and(
+        eq(followUpSources.organizationId, organizationId),
+        inArray(followUpSources.issueId, [...issueIds]),
+      ),
+    );
+  return new Set(rows.map((r) => r.issueId));
 }

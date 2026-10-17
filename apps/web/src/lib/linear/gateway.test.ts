@@ -232,11 +232,11 @@ describe("SdkLinearGateway reads", () => {
       parent: { id: "10", identifier: "TOOL-10" },
       assignee: { id: "user-1" },
       creator: { id: "user-2" },
-      team: { key: "TOOL" },
+      team: { id: "team-1", key: "TOOL" },
       state: { name: "Todo", type: "unstarted" },
       labels: { nodes: [{ name: "backend" }] },
-      project: { name: "Omniralph" },
-      projectMilestone: { name: "Beta" },
+      project: { id: "project-1", name: "Omniralph" },
+      projectMilestone: { id: "milestone-1", name: "Beta" },
       cycle: { id: "cycle-1" },
       ...overrides,
     });
@@ -279,6 +279,9 @@ describe("SdkLinearGateway reads", () => {
         labels: ["backend"],
         estimate: 3,
         dueDate: "2026-11-01",
+        teamId: "team-1",
+        projectId: "project-1",
+        projectMilestoneId: "milestone-1",
       },
       parent: {
         id: "10",
@@ -299,6 +302,9 @@ describe("SdkLinearGateway reads", () => {
         labels: [],
         estimate: null,
         dueDate: null,
+        teamId: "team-1",
+        projectId: null,
+        projectMilestoneId: null,
       },
     });
     expect(calls).toHaveLength(1);
@@ -574,6 +580,30 @@ describe("SdkLinearGateway writes", () => {
     expect(calls.map((c) => c.operation)).toEqual(["CreateIssue"]);
     expect(calls[0]?.variables).toEqual({
       input: { teamId: "team-1", title: "T", description: "D" },
+    });
+  });
+
+  it("creates an issue in a project, milestone and cycle by ID", async () => {
+    resolvers.CreateIssue = () => ({ issueCreate: { success: true, issue: issueNode("7") } });
+    await gateway().createIssue({
+      teamId: "team-1",
+      title: "T",
+      description: "D",
+      projectId: "project-1",
+      projectMilestoneId: "milestone-1",
+      cycleId: "cycle-1",
+    });
+    // No project lookup by name.
+    expect(calls.map((c) => c.operation)).toEqual(["CreateIssue"]);
+    expect(calls[0]?.variables).toEqual({
+      input: {
+        teamId: "team-1",
+        title: "T",
+        description: "D",
+        projectId: "project-1",
+        projectMilestoneId: "milestone-1",
+        cycleId: "cycle-1",
+      },
     });
   });
 

@@ -8,6 +8,7 @@ import {
   getJob,
   getRepository,
   listStories,
+  recordFollowUpSource,
   updateRun,
   updateStory,
   type Job,
@@ -326,10 +327,11 @@ export async function recordRound(
 }
 
 /**
- * Files the follow-ups a story turned up as sub-issues of the epic (manual
- * ones with the manual label), routed to the story's lane: a story of another
- * repository's lane files them with its own team, project and routing labels
- * (and that repository's manual label), so they're worked there too; `blocking` makes them block the story, else
+ * Files the follow-ups a story turned up as sub-issues of the epic, with the
+ * story's team, project, milestone, cycle, priority and labels (manual ones also
+ * with the manual label of the story's repository), and records the story as
+ * each one's source (`recordFollowUpSource`), so they route as the story does
+ * (to its lane's repository); `blocking` makes them block the story, else
  * they block the story's open dependents (the stories it blocks, such as the
  * epic's validation story) so those still wait for the follow-up work. A
  * follow-up with the title of an open sub-issue reuses it, so a retry that
@@ -361,7 +363,6 @@ export async function fileFollowUps(
     siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
   );
   const own = siblings.find((s) => s.id === story.linearIssueId);
-  const priority = own?.priority ?? 0;
   const target = await followUpTarget(ctx, story, parent, own);
   const { manualLabel } = target;
   // A blocking follow-up holds the story, so its dependents wait for it already.
@@ -387,13 +388,18 @@ export async function fileFollowUps(
           parentId: parent.id,
           title: followUp.title,
           description: `${followUp.description}\n\n_${FOLLOW_UP_MARK} ${story.identifier}._`.trim(),
-          priority,
+          priority: target.priority,
+          ...(target.projectId && { projectId: target.projectId }),
           ...(target.projectName && { projectName: target.projectName }),
+          ...(target.projectMilestoneId && { projectMilestoneId: target.projectMilestoneId }),
+          ...(target.cycleId && { cycleId: target.cycleId }),
           ...(labels.length > 0 && { labels }),
         }));
       open.set(followUp.title.toLowerCase(), issue);
-      if (options.blocking && issue.id !== story.linearIssueId) {
-        await linear.createBlocksRelation(issue.id, story.linearIssueId);
+      // A reused open sub-issue too (unless it's the story itself).
+      if (issue.id !== story.linearIssueId) {
+        await recordFollowUpSource(ctx.tx, run.organizationId, issue.id, story.linearIssueId);
+        if (options.blocking) await linear.createBlocksRelation(issue.id, story.linearIssueId);
       }
       for (const dependent of dependents) {
         // A reused follow-up may already block it, or be one of the dependents itself.
@@ -434,11 +440,16 @@ export async function fileFollowUps(
   }
 }
 
-/** Where a story's follow-ups are filed (`followUpTarget`). */
+/** What a story's follow-ups are filed with (`followUpTarget`). */
 interface FollowUpTarget {
   teamId: string;
+  /** The project: by ID when known (else by name). */
+  projectId?: string;
   projectName?: string;
-  /** Labels every follow-up gets (the story's routing labels in another lane). */
+  projectMilestoneId?: string;
+  cycleId?: string;
+  priority: number;
+  /** Labels every follow-up gets: all of the story's. */
   labels: string[];
   manualLabel: string;
   /** The full path of the story's repository when it isn't the main lane's. */
@@ -446,10 +457,10 @@ interface FollowUpTarget {
 }
 
 /**
- * Where a story's follow-ups go: the epic's team and project for a story of
- * the main lane; for one of another repository's lane, the story's own team,
- * project and the labels that route it there, so the follow-ups route (as
- * `routeStories` judges them) to the same repository.
+ * What a story's follow-ups copy: its team, project, milestone, cycle, priority
+ * and labels (read from Linear; when that fails, what the epic's children say,
+ * else the epic's team and project). The manual label is the story's lane's
+ * repository's.
  */
 async function followUpTarget(
   ctx: OutcomeContext,
@@ -460,27 +471,46 @@ async function followUpTarget(
   const { run } = ctx;
   const lane = await storyLane(ctx.tx, run, story);
   const repository =
-    own && lane && lane.repositoryId !== run.repositoryId
+    lane && lane.repositoryId !== run.repositoryId
       ? await getRepository(ctx.db, lane.repositoryId)
       : null;
-  if (!own || !repository) {
-    const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
-    return { teamId: parent.teamId, projectName: parent.projectName, labels: [], manualLabel };
+  const [manualLabel = "manual"] = repository
+    ? repositoryManualLabels(repository)
+    : await runManualLabels(ctx.db, run);
+  const where = { manualLabel, ...(repository && { repository: repository.fullPath }) };
+  const source = await ctx.linear.getRoutingFields(story.linearIssueId).then(
+    (fields) => fields.issue,
+    (error: unknown) => {
+      console.warn(`${run.linearIdentifier}: could not read ${story.identifier}'s fields`, error);
+      return null;
+    },
+  );
+  if (source) {
+    return {
+      teamId: source.teamId ?? own?.teamId ?? parent.teamId,
+      ...(source.projectId && { projectId: source.projectId }),
+      ...(source.project && { projectName: source.project }),
+      ...(source.projectMilestoneId && { projectMilestoneId: source.projectMilestoneId }),
+      ...(source.cycle && { cycleId: source.cycle }),
+      priority: source.priority,
+      labels: source.labels,
+      ...where,
+    };
   }
-  const routing = new Set(repository.linearLabels.map((l) => l.trim().toLowerCase()));
-  const [manualLabel = "manual"] = repositoryManualLabels(repository);
+  const from = own ?? parent;
   return {
-    teamId: own.teamId,
-    projectName: own.projectName,
-    labels: own.labels.filter((l) => routing.has(l.trim().toLowerCase())),
-    manualLabel,
-    repository: repository.fullPath,
+    teamId: from.teamId,
+    ...(from.projectName && { projectName: from.projectName }),
+    priority: own?.priority ?? 0,
+    labels: own?.labels ?? [],
+    ...where,
   };
 }
 
 /** A follow-up's labels: the target's, and the manual label for a manual one. */
 function labelsFor(target: FollowUpTarget, manual: boolean): string[] {
-  return manual ? [...target.labels, target.manualLabel] : target.labels;
+  const has = target.labels.some((l) => l.toLowerCase() === target.manualLabel.toLowerCase());
+  return manual && !has ? [...target.labels, target.manualLabel] : target.labels;
 }
 
 /** The open sibling stories `story` blocks, with the IDs of their blockers. */

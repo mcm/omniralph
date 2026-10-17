@@ -156,14 +156,20 @@ first one that matches wins. Text and names match ignoring case (a **matches reg
 
 After your rules come default rules that aren't stored and can't be edited:
 
-1. If the issue is a sub-issue, route it the same as its parent: the repository Omniralph
-   already uses for the parent (its run's, including one a person picked, else the repository of
-   the story lane it's in), else the parent's own route. If the parent would ask, this rule
-   doesn't apply. More than 5 such steps, or a loop, count as no route.
-2. Otherwise, ask which repository to use (below).
+1. If the issue is a follow-up, route it the same as its source: the story it was filed from.
+   An issue is a follow-up only when Omniralph filed it (or reused it) as one and recorded its
+   source; the "Filed by Omniralph while working on …" line in a description doesn't count.
+2. If the issue is a sub-issue, route it the same as its parent.
+3. Otherwise, ask which repository to use (below).
+
+"The same as" another issue means the repository Omniralph already uses for it (its run's,
+including one a person picked, else the repository of the story lane it's in), else that issue's
+own route. If the other issue would ask, the rule doesn't apply and the next one is tried; if it's
+manual (coding off), so is this issue. More than 5 such steps, or a loop, count as no route.
 
 The run's **Routed by** says how: `rule 3 (Labels contains any of backend)`,
-`sub-issue of ENG-10 → rule 1 (Team is ENG)`, or `your selection`.
+`follow-up of ENG-12 → story of ENG-1`, `sub-issue of ENG-10 → rule 1 (Team is ENG)`, or
+`your selection`.
 
 **Coding off.** A rule may name a repository with coding off. An issue it matches is for a
 person: a delegation or mention gets "This routes to `x` (rule N), which has coding off, so it's
@@ -201,8 +207,8 @@ routes to (the epic's repository when it stays there), and its preparation is of
 that repository has **Offer to run preparation** on. A story a rule routes to a repository with
 coding off is treated like a manual step ("isn't built here"), shown as "(manual: coding off)" in
 the plan: nothing is built for it, and stories that depend on it wait until a person completes it.
-Follow-ups a story files carry its team, project and routing labels, so they route to its
-repository too. The run detail page shows one section per repository with its branch,
+Follow-ups a story files route as their source story (the "follow-up" default), so they join
+its lane unless a rule of yours routes them elsewhere. The run detail page shows one section per repository with its branch,
 PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
@@ -284,10 +290,10 @@ How the run behaves:
 - **Waiting.** When no story is ready the run waits and says on what. It resumes by itself when a
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
-  **Manual label** of the story's repository when they need a person). They're filed in the
-  story's lane: with the epic's team and project for a story of the epic's repository, and with
-  the story's own team, project and routing labels for a story in another repository, so they're
-  worked there too. An unfinished story's follow-ups block it; when it
+  **Manual label** of the story's repository when they need a person), with the story's team,
+  project, milestone, cycle, priority and labels. Omniralph records the story as each one's
+  source, so they route as the story does (to its lane) and rules can test the story's fields as
+  **Source › …**. An unfinished story's follow-ups block it; when it
   reported blocked, that's a round (above), not a used attempt. A completed story's follow-ups
   block the stories it blocks.
 - **The end.** When every story is done, an agent writes the PR/MR title and body, the control panel

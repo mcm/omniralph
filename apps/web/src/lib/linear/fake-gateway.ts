@@ -106,6 +106,8 @@ export class FakeLinearGateway implements LinearGateway {
    * due date) or overrides of those it does, for `getRoutingFields`.
    */
   routingFields = new Map<string, Partial<RoutingIssueFields>>();
+  /** Every `createIssue` input, in order. */
+  created: CreateIssueInput[] = [];
   /** Every `getRoutingFields` call, in order. */
   routingLoads: string[] = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
@@ -187,6 +189,9 @@ export class FakeLinearGateway implements LinearGateway {
       labels: [...issue.labels],
       estimate: null,
       dueDate: null,
+      teamId: issue.teamId || null,
+      projectId: null,
+      projectMilestoneId: null,
       ...this.routingFields.get(issue.id),
     };
   }
@@ -297,6 +302,14 @@ export class FakeLinearGateway implements LinearGateway {
       labels: input.labels ?? [],
       projectName: input.projectName,
     });
+    this.created.push({ ...input });
+    if (input.projectId || input.projectMilestoneId || input.cycleId) {
+      this.routingFields.set(issue.id, {
+        ...(input.projectId && { projectId: input.projectId }),
+        ...(input.projectMilestoneId && { projectMilestoneId: input.projectMilestoneId }),
+        ...(input.cycleId && { cycle: input.cycleId }),
+      });
+    }
     if (input.delegateId !== undefined) {
       this.delegations.push({ issueId: issue.id, delegateId: input.delegateId });
     }

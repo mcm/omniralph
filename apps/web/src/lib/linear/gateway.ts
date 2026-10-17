@@ -141,6 +141,10 @@ export interface RoutingIssueFields {
   estimate: number | null;
   /** `YYYY-MM-DD`. */
   dueDate: string | null;
+  /** The team's, project's and milestone's IDs (not routing fields: a follow-up copies them). */
+  teamId: string | null;
+  projectId: string | null;
+  projectMilestoneId: string | null;
 }
 
 /** An issue's routing fields and its parent's (`getRoutingFields`). */
@@ -157,6 +161,10 @@ export interface CreateIssueInput {
   priority?: number;
   subIssueSortOrder?: number;
   projectName?: string;
+  /** The project by ID (`projectName` is then ignored). */
+  projectId?: string;
+  projectMilestoneId?: string;
+  cycleId?: string;
   /** Label names (case-insensitive); a label the team doesn't have yet is created for it. */
   labels?: string[];
   /** The (agent) user to delegate the issue to, e.g. the app user from `getViewer`. */
@@ -372,6 +380,7 @@ const ROUTING_SELECTION = /* GraphQL */ `
       id
     }
     team {
+      id
       key
     }
     state {
@@ -384,9 +393,11 @@ const ROUTING_SELECTION = /* GraphQL */ `
       }
     }
     project {
+      id
       name
     }
     projectMilestone {
+      id
       name
     }
     cycle {
@@ -405,11 +416,11 @@ interface RoutingNode {
   parent?: { id: string; identifier: string } | null;
   assignee?: { id: string } | null;
   creator?: { id: string } | null;
-  team?: { key: string } | null;
+  team?: { id?: string; key: string } | null;
   state?: { name: string; type: string } | null;
   labels?: { nodes: Array<{ name: string }> } | null;
-  project?: { name: string } | null;
-  projectMilestone?: { name: string } | null;
+  project?: { id?: string; name: string } | null;
+  projectMilestone?: { id?: string; name: string } | null;
   cycle?: { id: string } | null;
 }
 
@@ -433,6 +444,9 @@ function routingFieldsOf(issue: RoutingNode): RoutingIssueFields {
     labels: issue.labels?.nodes.map((l) => l.name) ?? [],
     estimate: issue.estimate ?? null,
     dueDate: issue.dueDate ?? null,
+    teamId: issue.team?.id ?? null,
+    projectId: issue.project?.id ?? null,
+    projectMilestoneId: issue.projectMilestone?.id ?? null,
   };
 }
 
@@ -1031,7 +1045,8 @@ export class SdkLinearGateway implements LinearGateway {
   }
 
   async createIssue(input: CreateIssueInput): Promise<IssueSummary> {
-    const projectId = input.projectName ? await this.projectId(input.projectName) : undefined;
+    const projectId =
+      input.projectId ?? (input.projectName ? await this.projectId(input.projectName) : undefined);
     const labelIds = input.labels?.length
       ? await Promise.all(
           input.labels.map(
@@ -1067,6 +1082,8 @@ export class SdkLinearGateway implements LinearGateway {
             subIssueSortOrder: input.subIssueSortOrder,
           }),
           ...(projectId && { projectId }),
+          ...(input.projectMilestoneId && { projectMilestoneId: input.projectMilestoneId }),
+          ...(input.cycleId && { cycleId: input.cycleId }),
           ...(labelIds && { labelIds }),
           ...(input.delegateId !== undefined && { delegateId: input.delegateId }),
         },
