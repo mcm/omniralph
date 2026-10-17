@@ -28,6 +28,7 @@ import {
   seedReviewProfiles,
   type LinearRun,
 } from "@omniralph/db";
+import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import { preparationHash } from "@omniralph/ralph";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
@@ -133,6 +134,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
+    await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 
   afterAll(async () => {

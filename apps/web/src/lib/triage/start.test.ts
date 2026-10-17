@@ -8,6 +8,7 @@ import {
   jobs,
   organizations,
   ralphRuns,
+  createRun,
   repositories,
   seedReviewProfiles,
   setAllowedTaskTypeDefaults,
@@ -15,6 +16,7 @@ import {
   updateRepositoryRalphSettings,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
+  replaceRoutingRules,
   type Database,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
@@ -104,9 +106,18 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       ralphEnabled: true,
       linearTeamKeys: [],
       linearProjectNames: [],
-      linearLabels: ["backend"],
+      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
+    await replaceRoutingRules(db, orgId, [
+      {
+        repositoryId: repoId,
+        query: {
+          combinator: "and",
+          rules: [{ field: "labels", operator: "containsAny", value: ["backend"] }],
+        },
+      },
+    ]);
   }, 180_000);
 
   afterAll(async () => {
@@ -227,7 +238,9 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     });
 
     const [thought] = linear.bodies(event.sessionId, "thought");
-    expect(thought).toContain("`acme/api` (routed by label `Backend`) at `develop`");
+    expect(thought).toContain(
+      "`acme/api` (routed by rule 1 (Labels contains any of backend)) at `develop`",
+    );
     expect(linear.bodies(event.sessionId, "error")).toEqual([]);
     // Starting triage changes nothing in Linear.
     expect(linear.issueUpdates).toEqual([]);
@@ -295,6 +308,51 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       await setQuery(null);
       await setAllowedTaskTypeDefaults(db, orgId, null, null);
     }
+  });
+
+  it("reads the routed repository even when its coding is off", async () => {
+    const setCoding = (ralphEnabled: boolean | null) =>
+      db.update(repositories).set({ ralphEnabled }).where(eq(repositories.id, repoId));
+    const issue = linear.add({ identifier: "ENG-41", title: "Manual", labels: ["backend"] });
+    try {
+      await setCoding(false);
+      const event = mention(issue.id);
+      const outcome = await startTriage(event, deps());
+      expect(outcome).toMatchObject({
+        status: "queued",
+        repository: { repositoryId: repoId, defaultBranch: "develop" },
+      });
+      expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
+        "`acme/api` (routed by rule 1 (Labels contains any of backend))",
+      );
+    } finally {
+      await setCoding(true);
+    }
+  });
+
+  it("triages a sub-issue in its epic's run repository", async () => {
+    const epic = linear.add({ identifier: "OPS-50", title: "Epic", teamKey: "OPS" });
+    const story = linear.add({ identifier: "OPS-51", title: "Story", parentId: epic.id });
+    await createRun(db, {
+      organizationId: orgId,
+      linearIssueId: epic.id,
+      linearIdentifier: "OPS-50",
+      linearAgentSessionId: "session-epic",
+      kind: "children",
+      mode: "epic",
+      repositoryId: repoId,
+      routedBy: "your selection",
+      branch: "feat/ops",
+      baseBranch: "main",
+    });
+    const event = mention(story.id);
+    expect(await startTriage(event, deps())).toMatchObject({
+      status: "queued",
+      repository: { repositoryId: repoId },
+    });
+    expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
+      "(routed by sub-issue of OPS-50 → your selection)",
+    );
   });
 
   it("changes nothing for an issue in progress", async () => {

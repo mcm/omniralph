@@ -31,6 +31,7 @@ import {
   organizations,
   seedReviewProfiles,
 } from "@omniralph/db";
+import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
@@ -129,6 +130,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
         fullPath: "acme/other",
       })
     ).id;
+    await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 
   afterAll(async () => {

@@ -4,9 +4,18 @@
  * by the caller (`routingRulesSchema` in `@omniralph/shared`, against the tracker's catalog).
  */
 import type { RoutingRuleInput } from "@omniralph/shared";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import type { Database } from "./client.js";
-import { organizations, repositories, routingRules } from "./schema.js";
+import { effectiveRepositorySwitches, type RepositoryWithSwitches } from "./repositories.js";
+import {
+  organizations,
+  ralphLanes,
+  ralphRuns,
+  ralphStories,
+  repositories,
+  routingRules,
+} from "./schema.js";
 
 export type RoutingRule = typeof routingRules.$inferSelect;
 
@@ -75,4 +84,86 @@ export async function replaceRoutingRules(
       .returning();
     return { ok: true, rules: saved.sort((a, b) => a.position - b.position) };
   });
+}
+
+/**
+ * The repositories rules can route to: the organization's connected ones, coding on or off,
+ * with their effective switches, by full path.
+ */
+export async function listRoutingRepositories(
+  db: Database,
+  organizationId: string,
+): Promise<RepositoryWithSwitches[]> {
+  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
+  const rows = await db
+    .select()
+    .from(repositories)
+    .where(
+      and(eq(repositories.organizationId, organizationId), isNull(repositories.disconnectedAt)),
+    )
+    .orderBy(asc(repositories.fullPath), asc(repositories.id));
+  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
+}
+
+/** The repository Omniralph already uses for an issue, and how it was chosen. */
+export interface IssueRepository {
+  repositoryId: string;
+  /** The run's `routed_by` (null when it has none, or for a story lane). */
+  routedBy: string | null;
+  /** `lane`: the issue is a story of another issue's run, in this lane's repository. */
+  via: "run" | "lane";
+  /** For `lane`: the identifier of the run's issue. */
+  runIdentifier?: string;
+}
+
+/**
+ * The repository of an issue's latest run that has one, else of the latest story (of any
+ * run) for that issue that has a lane. Null when Omniralph has neither.
+ */
+export async function getIssueRepository(
+  db: Database,
+  organizationId: string,
+  linearIssueId: string,
+): Promise<IssueRepository | null> {
+  const [run] = await db
+    .select({ repositoryId: ralphRuns.repositoryId, routedBy: ralphRuns.routedBy })
+    .from(ralphRuns)
+    .where(
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        eq(ralphRuns.linearIssueId, linearIssueId),
+        isNotNull(ralphRuns.repositoryId),
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id))
+    .limit(1);
+  if (run?.repositoryId) {
+    return { repositoryId: run.repositoryId, routedBy: run.routedBy, via: "run" };
+  }
+  const [story] = await db
+    .select({
+      repositoryId: ralphLanes.repositoryId,
+      runRepositoryId: ralphRuns.repositoryId,
+      routedBy: ralphRuns.routedBy,
+      runIdentifier: ralphRuns.linearIdentifier,
+    })
+    .from(ralphStories)
+    .innerJoin(ralphLanes, eq(ralphLanes.id, ralphStories.laneId))
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphStories.runId))
+    .where(
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        eq(ralphStories.linearIssueId, linearIssueId),
+      ),
+    )
+    .orderBy(desc(ralphStories.createdAt), desc(ralphStories.id))
+    .limit(1);
+  if (!story) return null;
+  return {
+    repositoryId: story.repositoryId,
+    // A story in its run's own repository is routed the way the run is.
+    routedBy: story.repositoryId === story.runRepositoryId ? story.routedBy : null,
+    via: "lane",
+    ...(story.runIdentifier && { runIdentifier: story.runIdentifier }),
+  };
 }

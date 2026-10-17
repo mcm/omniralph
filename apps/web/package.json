@@ -39,6 +39,7 @@
     "next-auth": "5.0.0-beta.32",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-querybuilder": "^8.25.0",
     "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },

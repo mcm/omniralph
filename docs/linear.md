@@ -108,11 +108,13 @@ expires) and from the same browser.
 
 ## 4. Configure routing
 
-Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Routing is on **Repository › Settings › Coding**:
+Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Its coding settings are on **Repository › Settings › Coding**. Delegated issues are routed by the
+organization's [routing rules](#routing-rules); the **Linear** lists below only route an epic's
+stories ([Stories in other repositories](#stories-in-other-repositories)):
 
 | Setting | What it does |
 | -- | -- |
-| **Linear labels** | Comma-separated label names. Issues with any of them route here. |
+| **Linear labels** | Comma-separated label names. Stories with any of them route here. |
 | **Linear projects** | Comma-separated project names. |
 | **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. On the **Coding tasks** path the story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
@@ -142,18 +144,34 @@ config), with the same names and defaults, grouped as on the page:
 Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
 also changes running epics from their next story on (for example which stories are manual).
 
-A delegated issue is routed to the first repository that matches, trying these rules in order:
+### Routing rules
 
-1. one of the issue's labels in a repository's **Linear labels**
-2. the issue's project in a repository's **Linear projects**
-3. the issue's team key in a repository's **Linear team keys**
+A delegated issue (and a mention, and triage) is routed by the organization's routing rules,
+**Settings › Routing** (`/api/ui/routing-rules`). Each rule is a condition over the issue's Linear
+fields (identifier, title, description, team, project, milestone, cycle, state, state type,
+priority, assignee, creator, parent, labels, estimate, due date), its parent's fields
+(**Parent › …**) and, for a follow-up, its source issue's fields (**Source › …**), combined with
+AND/OR groups and NOT. Each rule names a repository. The rules are tried top to bottom and the
+first one that matches wins. Text and names match ignoring case (a **matches regex** pattern too).
 
-Routing comes only from these settings: text in the issue's description (such as a
-`[repo=…]` tag) is ignored.
+After your rules come default rules that aren't stored and can't be edited:
 
-Matching ignores case, and only repositories with coding on are candidates. When several
-repositories match the same rule, the one whose path sorts first wins, so avoid overlapping routes:
-use labels for the exceptions and a team key for the default.
+1. If the issue is a sub-issue, route it the same as its parent: the repository Omniralph
+   already uses for the parent (its run's, including one a person picked, else the repository of
+   the story lane it's in), else the parent's own route. If the parent would ask, this rule
+   doesn't apply. More than 5 such steps, or a loop, count as no route.
+2. Otherwise, ask which repository to use (below).
+
+The run's **Routed by** says how: `rule 3 (Labels contains any of backend)`,
+`sub-issue of ENG-10 → rule 1 (Team is ENG)`, or `your selection`.
+
+**Coding off.** A rule may name a repository with coding off. An issue it matches is for a
+person: a delegation or mention gets "This routes to `x` (rule N), which has coding off, so it's
+for a person." and nothing is built, created or moved in Linear. Triage still reads that
+repository.
+
+Routing comes only from the rules: text in the issue's description (such as a `[repo=…]` tag)
+only matters when a rule tests the description.
 
 An issue that routes nowhere gets a question in its agent session: "Which repository should I work
 in for this issue?", with every ralph-enabled repository as an option. Nothing is built until you
@@ -171,8 +189,10 @@ Routing runs again whenever the issue is delegated again:
 
 If no repository has coding on at all, the session gets an error explaining how to enable one.
 
-**Stories in other repositories.** In an epic with sub-issues, each story is also routed on the
-signals it doesn't share with the epic, in the same order: its own routing label, a project
+### Stories in other repositories
+
+In an epic with sub-issues, each story is also routed on the signals it doesn't share with the
+epic, in this order: its own label in a repository's **Linear labels**, a project
 other than the epic's, a team other than the epic's. A story without any stays in the epic's
 repository. A story routed to another ralph-enabled repository gets a lane there:
 its own branch (the epic's branch name, based on that repository's default branch) and its own
@@ -477,8 +497,8 @@ status set and the open questions).
 
 ### Repository and session
 
-The issue is routed with ralph's rules ([4. Configure routing](#4-configure-routing): labels,
-project, team; only ralph-enabled repositories). With a repository, the agent checks
+The issue is routed with the routing rules ([4. Configure routing](#4-configure-routing)),
+whatever the routed repository's coding switch: triage only reads it. With a repository, the agent checks
 out its default branch and the PRD's quality gates and file paths come from the source (CI config
 first, and the repository's `LINEAR.md` if it has one). Without one, triage still runs from Linear
 alone and adds an open question asking which repository the issue belongs in; it never asks the
@@ -596,7 +616,7 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
-  issue: add its label, project or team to a repository's routing.
+  issue: add a rule that matches it under **Settings › Routing**.
 - **"No repository has coding on".** Turn coding on for a repository under
   **Repository › Settings › Task types**.
 - **Stories fail to push.** The code host credentials lack write access: see

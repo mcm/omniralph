@@ -162,6 +162,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.3.0(react@19.3.0)
+      react-querybuilder:
+        specifier: ^8.25.0
+        version: 8.25.0(@types/react@19.3.0)(drizzle-orm@0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1))(react@19.3.0)(redux@5.0.1)
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -2519,6 +2522,35 @@ packages:
   '@radix-ui/rect@1.1.3':
     resolution: {integrity: sha512-JtyZR+mqgBibTo8xea3B6ZRmzZiM/YeVBtUkas6zMuXjAlfIFIW2FgqeM9eLyvEaYX66vr6DJMK+4U6LV0KhNw==}
 
+  '@react-querybuilder/core@8.25.0':
+    resolution: {integrity: sha512-2k/J2MaQKtcxVOhWUUjgmivh0QlyEzWsobYCC27uqQ0XzW6a8d6N9wLMN13AB/EMwcbL3aJu2lLtU7FLI257Zw==}
+    peerDependencies:
+      '@tanstack/db': '>=0.6.9'
+      '@traqula/parser-sparql-1-2': '>=0.1.0'
+      chevrotain: '>=11'
+      drizzle-orm: '>=0.38.0'
+      json-logic-js: '>=2'
+      jsonata: '>=2'
+      sequelize: '>=6'
+      spel2js: '>=0.2.0'
+    peerDependenciesMeta:
+      '@tanstack/db':
+        optional: true
+      '@traqula/parser-sparql-1-2':
+        optional: true
+      chevrotain:
+        optional: true
+      drizzle-orm:
+        optional: true
+      json-logic-js:
+        optional: true
+      jsonata:
+        optional: true
+      sequelize:
+        optional: true
+      spel2js:
+        optional: true
+
   '@reduxjs/toolkit@2.13.0':
     resolution: {integrity: sha512-f6jwVRfwW30+tnllz4YcsHHpPYYOE7abcHkyUCovD+P7DyhdAI5prz2Fh/8TLhakjpN+7aIEion1s5L/tvlYlA==}
     peerDependencies:
@@ -2945,6 +2977,15 @@ packages:
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
 
+  '@ts-jison/common@0.4.1-alpha.4':
+    resolution: {integrity: sha512-3P2x2i/sIh8mVeAY+lu9/NqpuLm4V+McGPce3k/1Zf5pw6fQPa/ideqNu5A5331UEEdMYlQFpP8fJDdAytY/9g==}
+
+  '@ts-jison/lexer@0.4.1-alpha.4':
+    resolution: {integrity: sha512-OkmxoZJIAmU6wTQfEeqey+4C62cehwfhV9gx4Hbge2dhdNtZkUbNkrYyuSdUbsIx3E4w6bwVOp+8kQAFblpVrQ==}
+
+  '@ts-jison/parser@0.4.1-alpha.4':
+    resolution: {integrity: sha512-GD+AGlG/Nc7zF/rLtsM695G7Pff6UFBLYuMRC4KD4K9pDGGNMKjCE0/+XGh/1lyo89eb9bLcN7pezRk/JENmPw==}
+
   '@turbo/darwin-64@2.11.7':
     resolution: {integrity: sha512-Z2LFOxwbiJueD1miByXJS/BrW21vv6YaQXZustty5jEX4vQYw6zyh101Sz1QO7WG0mqBzKagZ/DoAeeujI0/Sw==}
     cpu: [x64]
@@ -3034,6 +3075,9 @@ packages:
 
   '@types/jsdom@30.0.0':
     resolution: {integrity: sha512-uAHGxujGE0cDaKGdK28zgDotFtNA7MKq5DXl8LrfdxdCI8VHcg15oJz+amHTChPNI5JpgEPQWc2xFdrw3em/nQ==}
+
+  '@types/json-logic-js@2.0.8':
+    resolution: {integrity: sha512-WgNsDPuTPKYXl0Jh0IfoCoJoAGGYZt5qzpmjuLSEg7r0cKp/kWtWp0HAsVepyPSPyXiHo6uXp/B/kW/2J1fa2Q==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -5419,6 +5463,10 @@ packages:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
     engines: {node: '>=8'}
 
+  numeric-quantity@3.3.3:
+    resolution: {integrity: sha512-XICjnIs8Q8vUlOvVOFI8Xe3kte8fknfpzASHjwy4R2GtRm4Q5lI+d62JqFe54X4kqj/xdsucWxYe8G+OD9O8Uw==}
+    engines: {node: '>=16'}
+
   oauth4webapi@3.8.8:
     resolution: {integrity: sha512-8N28E+a/oxfXWBgOMt+ZP/JUf/XR+IFbvkAEPP3gznXOMv9BpAAwiIj0TFNz3tGTPc0ZQ8zmWBNgN1nAys0gng==}
 
@@ -5791,6 +5839,11 @@ packages:
 
   react-is@17.0.2:
     resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
+
+  react-querybuilder@8.25.0:
+    resolution: {integrity: sha512-3Vub1J/NPHdwxXWT79vIwNaUy9HLaweg/nEwvDXXa1j7PFla6wg1KXx62kQgknMAAwOlLGNyCynwWOo5iSc/KA==}
+    peerDependencies:
+      react: '>=18'
 
   react-redux@9.3.0:
     resolution: {integrity: sha512-KQopgqFo/p/fgmAs5qz6p5RWaNAzq40WAu7fJIXnQpYxFPbJYtsJPWvGeF2rOBaY/kEuV77AVsX8TsQzKm+A/g==}
@@ -8828,6 +8881,16 @@ snapshots:
 
   '@radix-ui/rect@1.1.3': {}
 
+  '@react-querybuilder/core@8.25.0(drizzle-orm@0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1))':
+    dependencies:
+      '@ts-jison/lexer': 0.4.1-alpha.4
+      '@ts-jison/parser': 0.4.1-alpha.4
+      '@types/json-logic-js': 2.0.8
+      immer: 11.1.21
+      numeric-quantity: 3.3.3
+    optionalDependencies:
+      drizzle-orm: 0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1)
+
   '@reduxjs/toolkit@2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.3.0)(redux@5.0.1))(react@19.3.0)':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -9174,6 +9237,17 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.2
 
+  '@ts-jison/common@0.4.1-alpha.4': {}
+
+  '@ts-jison/lexer@0.4.1-alpha.4':
+    dependencies:
+      '@ts-jison/common': 0.4.1-alpha.4
+
+  '@ts-jison/parser@0.4.1-alpha.4':
+    dependencies:
+      '@ts-jison/common': 0.4.1-alpha.4
+      '@ts-jison/lexer': 0.4.1-alpha.4
+
   '@turbo/darwin-64@2.11.7':
     optional: true
 
@@ -9262,6 +9336,8 @@ snapshots:
       '@types/tough-cookie': 4.0.5
       parse5: 8.0.1
       undici-types: 8.11.2
+
+  '@types/json-logic-js@2.0.8': {}
 
   '@types/json-schema@7.0.15': {}
 
@@ -11949,6 +12025,8 @@ snapshots:
     dependencies:
       path-key: 3.1.1
 
+  numeric-quantity@3.3.3: {}
+
   oauth4webapi@3.8.8: {}
 
   object-assign@4.1.1: {}
@@ -12363,6 +12441,24 @@ snapshots:
   react-is@16.13.1: {}
 
   react-is@17.0.2: {}
+
+  react-querybuilder@8.25.0(@types/react@19.3.0)(drizzle-orm@0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1))(react@19.3.0)(redux@5.0.1):
+    dependencies:
+      '@react-querybuilder/core': 8.25.0(drizzle-orm@0.45.3(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(pg@8.23.1))
+      '@reduxjs/toolkit': 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.3.0)(redux@5.0.1))(react@19.3.0)
+      react: 19.3.0
+      react-redux: 9.3.0(@types/react@19.3.0)(react@19.3.0)(redux@5.0.1)
+    transitivePeerDependencies:
+      - '@tanstack/db'
+      - '@traqula/parser-sparql-1-2'
+      - '@types/react'
+      - chevrotain
+      - drizzle-orm
+      - json-logic-js
+      - jsonata
+      - redux
+      - sequelize
+      - spel2js
 
   react-redux@9.3.0(@types/react@19.3.0)(react@19.3.0)(redux@5.0.1):
     dependencies:

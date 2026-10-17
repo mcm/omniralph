@@ -35,8 +35,8 @@ export const ROUTED_BY_SELECTION = "your selection";
 /** cyralph's question, with Omniralph's routing settings in the hint. */
 export const REPOSITORY_QUESTION =
   "Which repository should I work in for this issue?\n\n" +
-  "(Add this issue's label, project or team to a repository's routing under " +
-  "**Repository › Settings › Coding** to skip this next time.)";
+  "(Add a rule that routes issues like this one to a repository under " +
+  "**Settings › Routing** to skip this next time.)";
 
 /** The repositories a run asks to choose from, or null when it isn't asking. */
 export function repositorySelectionOf(run: Pick<RalphRun, "pendingElicitation">): string[] | null {

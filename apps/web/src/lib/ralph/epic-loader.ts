@@ -46,12 +46,13 @@ export interface LoadEpicOptions {
    * Labels marking a story as a manual step; the first one labels materialized
    * manual stories. A function gets the epic's root issue (to route it first).
    */
-  manualLabels?: readonly string[] | ((root: IssueSummary) => readonly string[]);
+  manualLabels?:
+    readonly string[] | ((root: IssueSummary) => readonly string[] | Promise<readonly string[]>);
   /**
    * Read manual stories' ```cyralph-prepare blocks (default); off, they're
    * plain text. A function gets the epic's root issue.
    */
-  allowPreparation?: boolean | ((root: IssueSummary) => boolean);
+  allowPreparation?: boolean | ((root: IssueSummary) => boolean | Promise<boolean>);
   /**
    * Create the PRD stories a PRD issue with sub-issues is missing. Only for an
    * issue that was never run: a run's epic is what people curate afterwards.
@@ -105,12 +106,17 @@ export async function runEpicOptions(
   };
 }
 
-function epicOptionsFor(options: LoadEpicOptions, root: IssueSummary): Required<EpicOptions> {
+async function epicOptionsFor(
+  options: LoadEpicOptions,
+  root: IssueSummary,
+): Promise<Required<EpicOptions>> {
   const labels =
-    typeof options.manualLabels === "function" ? options.manualLabels(root) : options.manualLabels;
+    typeof options.manualLabels === "function"
+      ? await options.manualLabels(root)
+      : options.manualLabels;
   const allowPreparation =
     typeof options.allowPreparation === "function"
-      ? options.allowPreparation(root)
+      ? await options.allowPreparation(root)
       : options.allowPreparation;
   return {
     manualLabels: labels?.length ? labels : DEFAULT_MANUAL_LABELS,
@@ -205,7 +211,7 @@ export async function loadEpic(
 
   const children = await linear.getChildren(issue.id);
   if (children.some((child) => child.stateType !== "canceled")) {
-    const epicOptions = epicOptionsFor(options, issue);
+    const epicOptions = await epicOptionsFor(options, issue);
     const prd = options.completePrd ? parsePrd(issue.description) : null;
     const created = prd
       ? await materializePrd(linear, issue, prd, epicOptions.manualLabels[0] ?? "manual", children)
@@ -223,7 +229,12 @@ export async function loadEpic(
   if (issue.parentId) {
     const parent = await linear.getIssue(issue.parentId);
     const siblings = await linear.getChildren(parent.id);
-    const epic = await loadChildrenEpic(linear, parent, siblings, epicOptionsFor(options, parent));
+    const epic = await loadChildrenEpic(
+      linear,
+      parent,
+      siblings,
+      await epicOptionsFor(options, parent),
+    );
     return { epic, root: parent, kind: "children", focusStoryId: issue.id, materialized: 0 };
   }
 
@@ -232,7 +243,7 @@ export async function loadEpic(
     return { epic: prdEpic(issue, prd), root: issue, kind: "prd", materialized: 0 };
   }
   if (prd) {
-    const epicOptions = epicOptionsFor(options, issue);
+    const epicOptions = await epicOptionsFor(options, issue);
     const created = await materializePrd(
       linear,
       issue,
@@ -267,5 +278,5 @@ export async function reloadEpic(
   // A mention's PRD whose stories were never created: its PRD stories, for context.
   const prd = run.mode === "request" && children.length === 0 ? parsePrd(issue.description) : null;
   if (prd) return prdEpic(issue, prd);
-  return loadChildrenEpic(linear, issue, children, epicOptionsFor(options, issue));
+  return loadChildrenEpic(linear, issue, children, await epicOptionsFor(options, issue));
 }

@@ -26,6 +26,7 @@ import {
   type LinearRun,
   ralphLanes,
 } from "@omniralph/db";
+import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
   MAX_JOB_DELIVERIES,
@@ -133,6 +134,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
         fullPath: "acme/web",
       })
     ).id;
+    await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 
   afterAll(async () => {

@@ -41,6 +41,7 @@ import {
 import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { createRouter, routedRepository, type Router } from "@/lib/routing/resolve";
 import { blockedLabelsMessage, blockingLabels } from "./blocked-labels";
 import { notifyRunThread } from "./chat-notify";
 import { linearConversation } from "./conversation";
@@ -61,7 +62,6 @@ import {
   ROUTED_BY_SELECTION,
 } from "./repository-selection";
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
-import { describeRoute, routeIssue } from "./routing";
 import { markRalphActive } from "./active";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 
@@ -97,6 +97,8 @@ export type StartOutcome =
   | { status: "blocked_labels"; labels: string[] }
   /** No ralph-enabled repository at all. */
   | { status: "unroutable" }
+  /** The issue routes to a repository with coding off: it's for a person, so no run. */
+  | { status: "manual"; repository: string }
   /** Routing found no repository: the run waits for a person to pick one. */
   | { status: "selecting"; run: RalphRun }
   | { status: "already_running"; run: RalphRun }
@@ -114,10 +116,15 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   return [
     `I can't build **${epic.identifier}**: no repository has coding on.`,
-    "Turn coding on for a repository under **Repository › Settings › Task types** (and add this " +
-      "issue's label, project or team to its Linear routing under **Repository › Settings › Coding**). " +
-      "Then delegate it to me again.",
+    "Turn coding on for a repository under **Repository › Settings › Task types** (and add a " +
+      "rule that routes this issue to it under **Settings › Routing**). Then delegate it to me again.",
   ].join("\n\n");
+}
+
+/** The response refusing to build an issue that routes to a repository with coding off. */
+export function manualRouteMessage(route: ManualRoute): string {
+  const how = route.rule !== undefined ? `rule ${route.rule}` : route.by;
+  return `This routes to \`${route.manual.fullPath}\` (${how}), which has coding off, so it's for a person.`;
 }
 
 /** The response refusing to build an issue whose PRD still has open questions. */
@@ -181,23 +188,26 @@ async function refuseOpenQuestions(
 }
 
 /**
- * Refuses a new run of an issue that carries (itself, or through its epic) a
- * blocked label of the repository it routes to (posting why). Unrouted, the
- * repositories that don't block it are the ones a person may pick, and it's
- * refused when every one does. Throws when Linear can't be read.
+ * Refuses a new run of an issue that routes to a repository with coding off,
+ * or that carries (itself, or through its epic) a blocked label of the
+ * repository it routes to (posting why). Unrouted, the repositories that don't
+ * block it are the ones a person may pick, and it's refused when every one
+ * does. Throws when Linear can't be read.
  */
-async function refuseBlockedLabels(
+async function refuseUnbuildable(
   deps: RalphDeps,
   event: SessionCreatedEvent,
   repositories: readonly RepositoryWithSwitches[],
+  router: Router,
 ): Promise<{ refused: StartOutcome } | { candidates: RepositoryWithSwitches[] }> {
-  if (repositories.length === 0) return { candidates: [] };
   const issue = await deps.linear.getIssue(event.issueId);
   const parent = issue.parentId ? await deps.linear.getIssue(issue.parentId) : null;
   const root = parent ?? issue;
   const issues = parent ? [issue, parent] : [issue];
   const previous = await getRunByIssue(deps.db, deps.organizationId, root.id);
-  const chosen = chooseRepository(root, repositories, previous);
+  const chosen = await chooseRepository(root, repositories, previous, router);
+  if (chosen && "manual" in chosen) return { refused: await refuseManual(deps, event, chosen) };
+  if (repositories.length === 0) return { candidates: [] };
   const refuse = async (labels: string[], repositoryPath?: string) => {
     await post(deps, event.sessionId, {
       type: "response",
@@ -216,31 +226,51 @@ async function refuseBlockedLabels(
   return refuse(blockingLabels(issues, repositories[0]!));
 }
 
+/** Posts why an issue that routes to a repository with coding off isn't built. */
+async function refuseManual(
+  deps: RalphDeps,
+  event: SessionCreatedEvent,
+  route: ManualRoute,
+): Promise<StartOutcome> {
+  await post(deps, event.sessionId, { type: "response", body: manualRouteMessage(route) });
+  return { status: "manual", repository: route.manual.fullPath };
+}
+
 /** The repository a run works in and how it was chosen. */
 export interface ChosenRepository {
   repository: Repository;
   routedBy: string;
 }
 
+/** The issue routes to a repository with coding off (`rule`: the custom rule that matched). */
+export interface ManualRoute {
+  manual: Repository;
+  by: string;
+  rule?: number;
+}
+
 /**
  * The repository for a (re-)delegated issue (cyralph's `resolveRepo`): one a
  * person picked for the previous run stays while it has ralph enabled; else
- * routing decides; else (routing would have to ask) the previous run's
- * repository stays. Null: nothing decides, so a person is asked.
+ * routing decides (`resolveRoute`), possibly that it's manual; else (routing
+ * would have to ask) the previous run's repository stays. Null: nothing
+ * decides, so a person is asked.
  */
-export function chooseRepository(
-  root: IssueSummary,
+export async function chooseRepository(
+  root: Pick<IssueSummary, "id">,
   repositories: readonly RepositoryWithSwitches[],
   previous: Pick<RalphRun, "repositoryId" | "routedBy"> | null,
-): ChosenRepository | null {
+  router: Router,
+): Promise<ChosenRepository | ManualRoute | null> {
   const current = previous?.repositoryId
     ? repositories.find((r) => r.id === previous.repositoryId)
     : undefined;
   if (current && previous?.routedBy === ROUTED_BY_SELECTION) {
     return { repository: current, routedBy: ROUTED_BY_SELECTION };
   }
-  const route = routeIssue(root, repositories);
-  if (route) return { repository: route.repository, routedBy: describeRoute(route) };
+  const route = await router.resolve(root.id);
+  if ("repository" in route) return { repository: route.repository, routedBy: route.by };
+  if ("manual" in route) return route;
   if (current) return { repository: current, routedBy: previous?.routedBy ?? "the previous run" };
   return null;
 }
@@ -570,11 +600,14 @@ async function startNewRun(
   const sessionId = event.sessionId;
   const epicMode = start.mode === "epic";
 
-  const repositories = await listRalphRepositories(db, deps.organizationId);
+  const [repositories, router] = await Promise.all([
+    listRalphRepositories(db, deps.organizationId),
+    createRouter(deps),
+  ]);
   // Before loading: loading a PRD epic creates its story issues.
   let candidates: RepositoryWithSwitches[];
   try {
-    const blocked = await refuseBlockedLabels(deps, event, repositories);
+    const blocked = await refuseUnbuildable(deps, event, repositories, router);
     if ("refused" in blocked) return blocked.refused;
     candidates = blocked.candidates;
   } catch (error) {
@@ -589,13 +622,13 @@ async function startNewRun(
     // An issue that was never run may hold a PRD whose materialization stopped half way.
     const completePrd = epicMode && !(await getRunByIssue(db, deps.organizationId, event.issueId));
     // Which stories are manual depends on the repository the epic routes to.
-    const manualLabels = (root: IssueSummary) => {
-      const route = routeIssue(root, repositories);
-      return route ? repositoryManualLabels(route.repository) : [];
+    const manualLabels = async (root: IssueSummary) => {
+      const repository = routedRepository(await router.resolve(root.id));
+      return repository ? repositoryManualLabels(repository) : [];
     };
-    const allowPreparation = (root: IssueSummary) => {
-      const route = routeIssue(root, repositories);
-      return route ? repositoryAllowsPreparation(route.repository) : true;
+    const allowPreparation = async (root: IssueSummary) => {
+      const repository = routedRepository(await router.resolve(root.id));
+      return repository ? repositoryAllowsPreparation(repository) : true;
     };
     loaded = await loadEpic(linear, event.issueId, {
       completePrd,
@@ -631,7 +664,8 @@ async function startNewRun(
     await supersede(deps, previous, sessionId);
   }
 
-  const chosen = chooseRepository(root, repositories, previous);
+  const chosen = await chooseRepository(root, repositories, previous, router);
+  if (chosen && "manual" in chosen) return refuseManual(deps, event, chosen);
   if (!chosen) {
     // Only the repositories whose blocked labels let it in are offered.
     return askForRepositoryFirst(deps, {

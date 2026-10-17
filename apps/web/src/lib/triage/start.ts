@@ -12,7 +12,6 @@ import {
   createTriageRun,
   getRepositoryWithConnection,
   getTriageRunBySession,
-  listRalphRepositories,
   resolveRepositorySwitches,
   setTriageRunJob,
   setTriageRunStatus,
@@ -30,7 +29,7 @@ import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
-import { describeRoute, routeIssue } from "@/lib/ralph/routing";
+import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import { jobRepository } from "@/lib/scm/adapters";
@@ -136,8 +135,9 @@ async function loadBlockers(
 }
 
 /**
- * The routed repository at its default branch, null when no repository routes the issue, or
- * `query_disabled` when the routed repository's query tasks are turned off.
+ * The routed repository at its default branch (whatever its coding switch: triage only reads
+ * it), null when routing would ask, or `query_disabled` when the routed repository's query
+ * tasks are turned off.
  */
 async function resolveRepository(
   deps: TriageDeps,
@@ -147,10 +147,11 @@ async function resolveRepository(
   | { status: "query_disabled"; repository: string }
   | null
 > {
-  const route = routeIssue(issue, await listRalphRepositories(deps.db, deps.organizationId));
-  if (!route) return null;
-  const found = await getRepositoryWithConnection(deps.db, route.repository.id);
-  if (!found) throw new Error(`repository ${route.repository.fullPath} is gone`);
+  const route = await resolveRoute(deps, issue.id);
+  if ("ask" in route) return null;
+  const routed = routedRepository(route)!;
+  const found = await getRepositoryWithConnection(deps.db, routed.id);
+  if (!found) throw new Error(`repository ${routed.fullPath} is gone`);
   if (!(await resolveRepositorySwitches(deps.db, found.repository)).query) {
     return { status: "query_disabled", repository: found.repository.fullPath };
   }
@@ -165,7 +166,7 @@ async function resolveRepository(
       defaultBranch,
     },
     fullPath: found.repository.fullPath,
-    routedBy: describeRoute(route),
+    routedBy: route.by,
   };
 }
 
