@@ -33,10 +33,13 @@ function uniqueNames(names: string[]): string[] {
 }
 
 async function load(linear: LinearGateway): Promise<LinearSettingsOptions> {
-  const [teams, labels, projects] = await Promise.all([
+  const [teams, labels, projects, milestones, cycles, users] = await Promise.all([
     linear.listTeams(),
     linear.listIssueLabels(),
     linear.listProjects(),
+    linear.listProjectMilestones(),
+    linear.listCycles(),
+    linear.listUsers(),
   ]);
   const states = await Promise.all(teams.map((t) => linear.getWorkflowStates(t.id)));
   return {
@@ -46,12 +49,19 @@ async function load(linear: LinearGateway): Promise<LinearSettingsOptions> {
     labels: uniqueNames(labels.map((l) => l.name)),
     projects: uniqueNames(projects.map((p) => p.name)),
     states: uniqueNames(states.flat().map((s) => s.name)),
+    projectMilestones: uniqueNames(milestones.map((m) => m.name)),
+    cycles: cycles
+      .map((c) => ({ id: c.id, number: c.number, name: c.name, teamKey: c.teamKey }))
+      .sort((a, b) => a.teamKey.localeCompare(b.teamKey) || a.number - b.number),
+    users: users
+      .map((u) => ({ id: u.id, name: u.name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
 /**
- * The organization's connected Linear teams, labels, projects and workflow
- * states for the settings pickers, or null when no workspace is connected.
+ * The organization's connected Linear teams, labels, projects, workflow
+ * states, project milestones, cycles and users for the settings pickers, or null when no workspace is connected.
  * Reused for 5 minutes per organization; a disconnected workspace or a failed
  * load isn't cached.
  */

@@ -218,7 +218,15 @@ describe("RepositorySettingsView", () => {
     expect(await screen.findAllByText(/couldn.t be read just now/)).not.toHaveLength(0);
     linear = {
       status: "connected",
-      options: { teams: [], labels: [], projects: [], states: [] },
+      options: {
+        teams: [],
+        labels: [],
+        projects: [],
+        states: [],
+        projectMilestones: [],
+        cycles: [],
+        users: [],
+      },
     };
     await user.click(screen.getAllByRole("button", { name: "Try again" })[0]!);
     await waitFor(() => expect(screen.queryByText(/couldn.t be read just now/)).toBeNull());

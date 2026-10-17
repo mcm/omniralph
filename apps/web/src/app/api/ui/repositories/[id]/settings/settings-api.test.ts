@@ -885,6 +885,9 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       labels: ["backend", "manual", "Needs Human"],
       projects: ["Omniralph"],
       states: ["In Review"],
+      projectMilestones: [],
+      cycles: [],
+      users: [],
     };
 
     beforeEach(async () => {

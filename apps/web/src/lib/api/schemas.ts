@@ -51,3 +51,24 @@ export const ORGANIZATION_SWITCHED = "organization_switched";
  * the response's `enterPath`, which switches to it and comes back (like the detail pages did).
  */
 export const ENTER_ORGANIZATION = "enter_organization";
+
+/**
+ * The connected Linear workspace's values the settings pickers offer (`LinearSettingsOptions`):
+ * a repository's Coding tab and Settings › Routing.
+ */
+export const linearSettingsOptionsSchema = z.object({
+  teams: z.array(z.object({ key: z.string(), name: z.string() })),
+  labels: z.array(z.string()),
+  projects: z.array(z.string()),
+  states: z.array(z.string()),
+  projectMilestones: z.array(z.string()),
+  cycles: z.array(
+    z.object({
+      id: z.string(),
+      number: z.number(),
+      name: z.string().nullable(),
+      teamKey: z.string(),
+    }),
+  ),
+  users: z.array(z.object({ id: z.string(), name: z.string() })),
+});

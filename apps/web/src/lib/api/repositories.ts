@@ -4,7 +4,7 @@ import {
   type RalphSettingsInput,
 } from "@omniralph/shared";
 import { z } from "zod";
-import { isoDate, mutationResultSchema } from "./schemas";
+import { isoDate, linearSettingsOptionsSchema, mutationResultSchema } from "./schemas";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
@@ -237,12 +237,7 @@ export type RepositoryCoding = z.infer<typeof repositoryCodingSchema>;
 export const codingLinearSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("connected"),
-    options: z.object({
-      teams: z.array(z.object({ key: z.string(), name: z.string() })),
-      labels: z.array(z.string()),
-      projects: z.array(z.string()),
-      states: z.array(z.string()),
-    }),
+    options: linearSettingsOptionsSchema,
   }),
   z.object({ status: z.literal("disconnected") }),
   z.object({ status: z.literal("unavailable") }),

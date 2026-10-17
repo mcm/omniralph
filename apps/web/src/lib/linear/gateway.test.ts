@@ -138,6 +138,58 @@ describe("SdkLinearGateway reads", () => {
     expect(calls.map((c) => c.operation)).toEqual(["Projects", "Projects"]);
   });
 
+  it("lists every page of project milestones, with their project", async () => {
+    resolvers.ProjectMilestones = (v) => ({
+      projectMilestones: v.after
+        ? {
+            nodes: [{ id: "m2", name: "GA", project: null }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          }
+        : {
+            nodes: [{ id: "m1", name: "Beta", project: { name: "Omniralph" } }],
+            pageInfo: { hasNextPage: true, endCursor: "c1" },
+          },
+    });
+    expect(await gateway().listProjectMilestones()).toEqual([
+      { id: "m1", name: "Beta", projectName: "Omniralph" },
+      { id: "m2", name: "GA", projectName: "" },
+    ]);
+    expect(calls.map((c) => c.operation)).toEqual(["ProjectMilestones", "ProjectMilestones"]);
+  });
+
+  it("lists the current and upcoming cycles of every team", async () => {
+    resolvers.Cycles = () => ({
+      cycles: {
+        nodes: [
+          { id: "cy1", number: 12, name: null, team: { key: "ENG" } },
+          { id: "cy2", number: 3, name: "Launch", team: { key: "OPS" } },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    });
+    expect(await gateway().listCycles()).toEqual([
+      { id: "cy1", number: 12, name: null, teamKey: "ENG" },
+      { id: "cy2", number: 3, name: "Launch", teamKey: "OPS" },
+    ]);
+    expect(calls[0]?.query).toContain("isPast: { eq: false }");
+  });
+
+  it("lists every page of users", async () => {
+    resolvers.Users = (v) => ({
+      users: v.after
+        ? {
+            nodes: [{ id: "u2", name: "Grace" }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          }
+        : { nodes: [{ id: "u1", name: "Ada" }], pageInfo: { hasNextPage: true, endCursor: "c1" } },
+    });
+    expect(await gateway().listUsers()).toEqual([
+      { id: "u1", name: "Ada" },
+      { id: "u2", name: "Grace" },
+    ]);
+    expect(calls.map((c) => c.operation)).toEqual(["Users", "Users"]);
+  });
+
   it("reads the viewer (the app user)", async () => {
     resolvers.Viewer = () => ({ viewer: { id: "app-user", name: "Omniralph" } });
     expect(await gateway().getViewer()).toEqual({ id: "app-user", name: "Omniralph" });

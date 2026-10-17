@@ -27,6 +27,20 @@ function workspace(): InstanceType<typeof FakeLinearGateway> {
     { id: "p1", name: "Omniralph" },
     { id: "p2", name: "Cyralph" },
   ];
+  linear.projectMilestones = [
+    { id: "m1", name: "GA", projectName: "Omniralph" },
+    { id: "m2", name: "Beta", projectName: "Omniralph" },
+    { id: "m3", name: "beta", projectName: "Cyralph" },
+  ];
+  linear.cycles = [
+    { id: "cy3", number: 4, name: null, teamKey: "ENG" },
+    { id: "cy2", number: 3, name: "Launch", teamKey: "ENG" },
+    { id: "cy1", number: 9, name: null, teamKey: "DES" },
+  ];
+  linear.users = [
+    { id: "u2", name: "Grace" },
+    { id: "u1", name: "Ada" },
+  ];
   return linear;
 }
 
@@ -37,7 +51,7 @@ describe("getLinearSettingsOptions", () => {
     now = 1_000_000;
   });
 
-  it("returns teams, de-duplicated labels, projects and state names", async () => {
+  it("returns teams, de-duplicated labels, projects, state and milestone names, cycles and users", async () => {
     const linear = workspace();
     linear.getWorkflowStates = async (teamId) =>
       teamId === "team-1"
@@ -58,6 +72,16 @@ describe("getLinearSettingsOptions", () => {
       labels: ["Backend", "manual", "ralph"],
       projects: ["Cyralph", "Omniralph"],
       states: ["Done", "Shipped", "Todo"],
+      projectMilestones: ["Beta", "GA"],
+      cycles: [
+        { id: "cy1", number: 9, name: null, teamKey: "DES" },
+        { id: "cy2", number: 3, name: "Launch", teamKey: "ENG" },
+        { id: "cy3", number: 4, name: null, teamKey: "ENG" },
+      ],
+      users: [
+        { id: "u1", name: "Ada" },
+        { id: "u2", name: "Grace" },
+      ],
     });
   });
 
