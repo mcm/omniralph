@@ -19,6 +19,7 @@ import {
   failJob,
   getJob,
   getMainLane,
+  updateLane,
   getRun,
   getRunBySession,
   getRunDetail,
@@ -1340,6 +1341,46 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const onHiddenRef = (runId: string, commit: string) => ({
       commitSha: commit,
       hiddenRef: { ref: ralphHiddenRef(runId), sha: commit },
+    });
+
+    it("ticks the stories in the lane's open pull request all at once, after the push", async () => {
+      storyTaskWith({ pushTiming: "end" });
+      const epic = linear.add({
+        identifier: "ENG-175",
+        title: "Sprockets",
+        description: `${EPIC_DESCRIPTION}\n> Branch: feat/sprockets`,
+      });
+      linear.add({ identifier: "ENG-176", title: "First", parentId: epic.id, priority: 1 });
+      linear.add({ identifier: "ENG-177", title: "Second", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+      // A pull request a previous run opened for the branch, still on the lane.
+      const body = "Sprockets.\n\n- [ ] ENG-176: First\n- [ ] ENG-177: Second";
+      scm.changeRequests.push({
+        number: 9,
+        url: "https://github.com/acme/api/pull/9",
+        fullPath: "acme/api",
+        sourceBranch: "feat/sprockets",
+        targetBranch: "develop",
+        title: "Sprockets",
+        body,
+        draft: true,
+        state: "open",
+      });
+      const lane = (await getMainLane(db, (await getRun(db, run.id))!))!;
+      await updateLane(db, lane.id, { prNumber: 9, prUrl: "https://github.com/acme/api/pull/9" });
+
+      // The first story's commit is only on the hidden ref: nothing is ticked.
+      await work(run.id, onHiddenRef(run.id, sha(176)));
+      expect(scm.changeRequests[0]!.body).toBe(body);
+      expect(scm.calls).not.toContain("getChangeRequest");
+      await work(run.id, onHiddenRef(run.id, sha(177)));
+      expect(scm.changeRequests[0]!.body).toBe(body);
+
+      await push(run.id, { sha: sha(177) });
+      expect(scm.changeRequests[0]!.body).toBe(
+        "Sprockets.\n\n- [x] ENG-176: First\n- [x] ENG-177: Second",
+      );
+      expect((await activeJob(run.id)).type).toBe("ralph.describe-pr");
     });
 
     it("pushes the branch once, after the last story and before describing, and opens no early draft", async () => {
@@ -2760,6 +2801,49 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect(scm.changeRequests).toHaveLength(1);
       });
     });
+
+    it("ticks pushed stories in each lane's own draft", async () => {
+      await updateRepositoryRalphSettings(db, repoId, {
+        ralphEnabled: true,
+        linearTeamKeys: ["ENG"],
+        linearProjectNames: [],
+        linearLabels: [],
+        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
+      });
+      try {
+        await withAppSettings({ openPullRequestEarly: true }, async () => {
+          const t = crossRepo("Web");
+          const run = await delegate(t.epic.id);
+          await work(run.id, { commitSha: sha(51) });
+          await work(run.id, { commitSha: sha(52) });
+          const [api, app] = scm.changeRequests;
+          expect(api).toMatchObject({ fullPath: "acme/api", draft: true });
+          expect(api!.body).toContain(
+            "- [x] ENG-2: Add priority field\n- [ ] ENG-4: Sort by priority",
+          );
+          expect(app).toMatchObject({ fullPath: "group/app", draft: true });
+          // Each lane's body names the other lane's stories too: only its own are ticked.
+          api!.body += "\n- [ ] ENG-3 lands in group/app";
+          app!.body += "\n- [ ] ENG-4 lands in acme/api";
+          const appBody = app!.body;
+
+          await work(run.id, { commitSha: sha(53) });
+          expect(api!.body).toContain(
+            "- [x] ENG-2: Add priority field\n- [x] ENG-4: Sort by priority",
+          );
+          expect(api!.body).toContain("- [ ] ENG-3 lands in group/app");
+          expect(app!.body).toBe(appBody);
+        });
+      } finally {
+        await updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+        });
+      }
+    });
   });
 
   describe("the pull/merge request", () => {
@@ -2975,6 +3059,97 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
         });
       }
+    });
+
+    /** Runs `body` with early drafts on the GitHub repository. */
+    async function withEarlyDrafts(body: () => Promise<void>) {
+      const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
+        updateRepositoryRalphSettings(db, repoId, {
+          ralphEnabled: true,
+          linearTeamKeys: ["ENG"],
+          linearProjectNames: [],
+          linearLabels: [],
+          ralphSettings,
+        });
+      await settings({ ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true });
+      try {
+        await body();
+      } finally {
+        await settings({ ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" });
+      }
+    }
+
+    it("ticks each pushed (or canceled) story in the draft's task list, leaving the rest of an edited body alone", async () => {
+      await withEarlyDrafts(async () => {
+        const epic = linear.add({ identifier: "ENG-120", title: "Thingamajigs" });
+        linear.add({ identifier: "ENG-121", title: "First", parentId: epic.id, priority: 1 });
+        linear.add({ identifier: "ENG-12", title: "Second", parentId: epic.id, priority: 2 });
+        const third = linear.add({
+          identifier: "ENG-1",
+          title: "Third",
+          parentId: epic.id,
+          priority: 3,
+        });
+        linear.add({ identifier: "ENG-122", title: "Fourth", parentId: epic.id, priority: 4 });
+        const run = await delegate(epic.id);
+
+        await work(run.id, { commitSha: sha(31) });
+        const [draft] = scm.changeRequests;
+        expect(draft!.body).toContain(
+          "- [x] ENG-121: First\n- [ ] ENG-12: Second\n- [ ] ENG-1: Third\n- [ ] ENG-122: Fourth",
+        );
+        // A person edits the description.
+        draft!.body = `Notes about ENG-12.\r\n\r\n${draft!.body}\n- [ ] Docs for ENG-12 too\n- [ ] ENG-1 follow-up`;
+        const edited = draft!.body;
+        // Nothing new is pushed until the next story: the body isn't written again.
+        const updates = () => scm.calls.filter((c) => c === "updateChangeRequest").length;
+        expect(updates()).toBe(0);
+
+        third.stateType = "canceled";
+        await work(run.id, { commitSha: sha(32) });
+        expect(draft!.body).toBe(
+          edited
+            .replace("- [ ] ENG-12: Second", "- [x] ENG-12: Second")
+            .replace("- [ ] Docs for ENG-12 too", "- [x] Docs for ENG-12 too")
+            .replace("- [ ] ENG-1: Third", "- [x] ENG-1: Third")
+            .replace("- [ ] ENG-1 follow-up", "- [x] ENG-1 follow-up"),
+        );
+        expect(draft!.body).toContain("- [ ] ENG-122: Fourth");
+        expect(updates()).toBe(1);
+        expect((await activeJob(run.id)).type).toBe("ralph.story");
+
+        await work(run.id, { commitSha: sha(33) });
+        expect(draft!.body).toContain("- [x] ENG-122: Fourth");
+        expect(updates()).toBe(2);
+        await describePr(run.id, { title: "Add thingamajigs", body: "Adds them." });
+        expect(draft!.body).toMatch(/^Adds them\.\n\n---\nLinear: /);
+      });
+    });
+
+    it("retries ticking pushed stories that failed after the next story", async () => {
+      await withEarlyDrafts(async () => {
+        const epic = linear.add({ identifier: "ENG-125", title: "Whatsits" });
+        linear.add({ identifier: "ENG-126", title: "First", parentId: epic.id, priority: 1 });
+        linear.add({ identifier: "ENG-127", title: "Second", parentId: epic.id, priority: 2 });
+        linear.add({ identifier: "ENG-128", title: "Third", parentId: epic.id, priority: 3 });
+        const run = await delegate(epic.id);
+        await work(run.id, { commitSha: sha(34) });
+        const [draft] = scm.changeRequests;
+
+        scm.failures.set("updateChangeRequest", "Bad gateway");
+        await work(run.id, { commitSha: sha(35) });
+        expect(draft!.body).toContain("- [ ] ENG-127: Second");
+        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+          "I couldn't tick the pushed stories in the pull request yet (I'll try again after the next story): Bad gateway",
+        );
+        expect((await activeJob(run.id)).type).toBe("ralph.story");
+
+        scm.failures.delete("updateChangeRequest");
+        await work(run.id, { commitSha: sha(36) });
+        expect(draft!.body).toContain(
+          "- [x] ENG-126: First\n- [x] ENG-127: Second\n- [x] ENG-128: Third",
+        );
+      });
     });
 
     describe("epicCompletedState", () => {
