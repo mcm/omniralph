@@ -2089,7 +2089,7 @@ export const ralphStories = pgTable(
     laneId: uuid("lane_id").references(() => ralphLanes.id, { onDelete: "set null" }),
     /**
      * Why the story is treated as manual although it isn't labelled so: it
-     * belongs in a repository Omniralph doesn't have (cyralph's `elsewhere`).
+     * routes to a repository with coding off (cyralph's `elsewhere`).
      */
     elsewhere: text("elsewhere"),
     createdAt: createdAt(),

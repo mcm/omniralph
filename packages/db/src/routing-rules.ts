@@ -21,7 +21,7 @@ export type RoutingRule = typeof routingRules.$inferSelect;
 
 /** The organization's rules in evaluation order. */
 export async function listRoutingRules(
-  db: Database,
+  db: Pick<Database, "select">,
   organizationId: string,
 ): Promise<RoutingRule[]> {
   return db
@@ -91,7 +91,7 @@ export async function replaceRoutingRules(
  * with their effective switches, by full path.
  */
 export async function listRoutingRepositories(
-  db: Database,
+  db: Pick<Database, "select">,
   organizationId: string,
 ): Promise<RepositoryWithSwitches[]> {
   const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
@@ -121,7 +121,7 @@ export interface IssueRepository {
  * run) for that issue that has a lane. Null when Omniralph has neither.
  */
 export async function getIssueRepository(
-  db: Database,
+  db: Pick<Database, "select">,
   organizationId: string,
   linearIssueId: string,
 ): Promise<IssueRepository | null> {

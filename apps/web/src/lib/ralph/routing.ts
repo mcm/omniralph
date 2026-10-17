@@ -1,108 +1,19 @@
 /**
- * Which repository a story of an epic builds in (`routeStory`), and matching a
- * reply to the repository question (`matchSelection`). Delegated issues route
- * with the organization's rules (`@/lib/routing/resolve`). Only repositories
- * with coding effectively enabled (their own switch, else the organization's
- * allowed task types) are candidates; matching ignores case, and when several
- * repositories match, the one with the first `full_path` wins.
+ * Matching a reply to the repository question (`matchSelection`). Issues and
+ * the stories of epics route with the organization's rules
+ * (`@/lib/routing/resolve`). Matching ignores case.
  */
 import { normalizeRepoPath } from "@omniralph/ralph";
 
-export interface RoutableIssue {
-  /** Label names. */
-  labels: readonly string[];
-  projectName?: string | null;
-  teamKey?: string | null;
-}
-
+/** A repository the question offers: matched by its full path. */
 export interface RoutableRepository {
   fullPath: string;
-  /** Its effective switches; only `coding` matters here (`effectiveRepositorySwitches`). */
-  effective: { coding: boolean };
-  linearTeamKeys: readonly string[];
-  linearProjectNames: readonly string[];
-  linearLabels: readonly string[];
-}
-
-export type RoutingRule = "label" | "project" | "team";
-
-export interface RouteMatch<R extends RoutableRepository> {
-  repository: R;
-  rule: RoutingRule;
-  /** What matched: the label, the project name or the team key (as on the issue). */
-  value: string;
-}
-
-const RULE_LABEL: Record<RoutingRule, string> = {
-  label: "label",
-  project: "project",
-  team: "team",
-};
-
-/** How a route chose its repository, as `routed_by` stores it (e.g. "team `ENG`"). */
-export function describeRoute(
-  route: Pick<RouteMatch<RoutableRepository>, "rule" | "value">,
-): string {
-  return `${RULE_LABEL[route.rule]} \`${route.value}\``;
-}
-
-const lower = (values: readonly string[]) => values.map((v) => v.trim().toLowerCase());
-
-/** Where one story of an epic goes, judged by the routing signals it doesn't share with the epic. */
-export type StoryRoute<R extends RoutableRepository> =
-  | { type: "epic" }
-  | ({ type: "selected" } & RouteMatch<R>)
-  | { type: "unroutable"; reason: string };
-
-/**
- * Routes a story of an epic (cyralph's `routeStory`). Only the story's own
- * signals count, in the usual order: a routing label, a project other than
- * the epic's, a team other than the epic's. A story without any stays in the
- * epic's repository. A different project that no
- * repository here matches means the story belongs to a repository Omniralph
- * doesn't have (teams and labels often span repositories, so they never make a
- * story unroutable).
- */
-export function routeStory<R extends RoutableRepository>(
-  repositories: readonly R[],
-  story: Partial<RoutableIssue>,
-  epic: { projectName?: string | null; teamKey?: string | null },
-): StoryRoute<R> {
-  const candidates = repositories
-    .filter((r) => r.effective.coding)
-    .sort((a, b) => (a.fullPath < b.fullPath ? -1 : a.fullPath > b.fullPath ? 1 : 0));
-
-  const labels = story.labels ?? [];
-  for (const repository of candidates) {
-    const routed = lower(repository.linearLabels);
-    const label = labels.find((l) => routed.includes(l.trim().toLowerCase()));
-    if (label !== undefined) return { type: "selected", repository, rule: "label", value: label };
-  }
-
-  const project = story.projectName?.trim();
-  if (project && project.toLowerCase() !== epic.projectName?.trim().toLowerCase()) {
-    const repository = candidates.find((r) =>
-      lower(r.linearProjectNames).includes(project.toLowerCase()),
-    );
-    if (repository) return { type: "selected", repository, rule: "project", value: project };
-    return {
-      type: "unroutable",
-      reason: `it's in project ${project}, which no repository here is set up for`,
-    };
-  }
-
-  const team = story.teamKey?.trim();
-  if (team && team.toLowerCase() !== epic.teamKey?.trim().toLowerCase()) {
-    const repository = candidates.find((r) => lower(r.linearTeamKeys).includes(team.toLowerCase()));
-    if (repository) return { type: "selected", repository, rule: "team", value: team };
-  }
-  return { type: "epic" };
 }
 
 const lastSegment = (path: string) => normalizeRepoPath(path).split("/").pop() ?? "";
 
 /** Whether `name` names the repository: its full path or the last segment of it. */
-function namesRepository(name: string, repository: Pick<RoutableRepository, "fullPath">): boolean {
+function namesRepository(name: string, repository: RoutableRepository): boolean {
   const t = normalizeRepoPath(name);
   return t === normalizeRepoPath(repository.fullPath) || t === lastSegment(repository.fullPath);
 }
@@ -113,7 +24,7 @@ function namesRepository(name: string, repository: Pick<RoutableRepository, "ful
  * repository name (the full path or its last segment), then a reply that
  * contains a repository's full path.
  */
-export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
+export function matchSelection<R extends RoutableRepository>(
   reply: string,
   candidates: readonly R[],
 ): R | undefined {
@@ -133,7 +44,7 @@ export function matchSelection<R extends Pick<RoutableRepository, "fullPath">>(
  * path: `platform/api` doesn't match `platform/api-v2`, and the longest path
  * wins, so the URL of `group/platform/api` picks it over `platform/api`.
  */
-function mentionedRepository<R extends Pick<RoutableRepository, "fullPath">>(
+function mentionedRepository<R extends RoutableRepository>(
   said: string,
   candidates: readonly R[],
 ): R | undefined {

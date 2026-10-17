@@ -52,12 +52,15 @@ export function routedRepository<R>(outcome: RouteOutcome<R>): R | null {
 }
 
 export interface RouteDeps {
-  db: Database;
+  /** The database, or a transaction whose writes the routes should see. */
+  db: Pick<Database, "select">;
   organizationId: string;
   linear: Pick<LinearGateway, "getRoutingFields">;
 }
 
 export interface Router {
+  /** Whether the organization has custom rules (without any, only the default rules route). */
+  readonly hasCustomRules: boolean;
   /** The route of an issue (by ID or identifier), memoized for the router's lifetime. */
   resolve(issueId: string): Promise<RouteOutcome>;
 }
@@ -146,6 +149,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     describeRule(index + 1, rule.query, LINEAR_ROUTING_FIELDS);
 
   return {
+    hasCustomRules: rules.length > 0,
     resolve(issueId) {
       let route = memo.get(issueId);
       if (!route) {

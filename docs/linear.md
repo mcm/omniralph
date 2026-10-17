@@ -191,20 +191,18 @@ If no repository has coding on at all, the session gets an error explaining how 
 
 ### Stories in other repositories
 
-In an epic with sub-issues, each story is also routed on the signals it doesn't share with the
-epic, in this order: its own label in a repository's **Linear labels**, a project
-other than the epic's, a team other than the epic's. A story without any stays in the epic's
-repository. A story routed to another ralph-enabled repository gets a lane there:
-its own branch (the epic's branch name, based on that repository's default branch) and its own
-PR/MR, and the run's start message says so. Stories are routed before ralph decides which are
-manual: a story is manual when it carries one of the **Manual labels** of the repository it routes
-to (the epic's repository when it stays there), and its preparation is offered only when that
-repository has **Offer to run preparation** on. A story whose project matches no
-ralph-enabled repository is treated like a manual step ("isn't in a repository I have"), shown as
-"(manual: no repository here)" in the plan: nothing is built for it, and stories that depend on it
-wait until a person completes it. Teams and labels often span repositories, so an unknown one
-never makes a story manual. Follow-ups a story files carry its team, project and routing
-labels, so they route to its repository too. The run detail page shows one section per repository with its branch,
+In an epic with sub-issues, each story is routed with the same [routing rules](#routing-rules)
+as delegated issues. A story that matches no rule of its own falls to the "sub-issue" default and
+stays in the epic's repository. A story a rule routes to another repository with coding on gets a
+lane there: its own branch (the epic's branch name, based on that repository's default branch) and
+its own PR/MR, and the run's start message says so. Stories are routed before ralph decides which
+are manual: a story is manual when it carries one of the **Manual labels** of the repository it
+routes to (the epic's repository when it stays there), and its preparation is offered only when
+that repository has **Offer to run preparation** on. A story a rule routes to a repository with
+coding off is treated like a manual step ("isn't built here"), shown as "(manual: coding off)" in
+the plan: nothing is built for it, and stories that depend on it wait until a person completes it.
+Follow-ups a story files carry its team, project and routing labels, so they route to its
+repository too. The run detail page shows one section per repository with its branch,
 PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
