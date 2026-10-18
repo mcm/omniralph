@@ -317,6 +317,18 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       });
     });
 
+    it("propagates a source's manual route", async () => {
+      await rules([docs, labels("docs")]);
+      const source = linear.add({ identifier: "ENG-20", title: "Docs story", labels: ["docs"] });
+      const followUp = linear.add({ identifier: "ENG-21", title: "More docs" });
+      await recordFollowUpSource(db, orgId, followUp.id, source.id);
+      expect(await resolveRoute(deps(), followUp.id)).toEqual({
+        manual: expect.objectContaining({ id: docs }),
+        by: "follow-up of ENG-20 → rule 1 (Labels contains any of docs)",
+        defaultRule: 1,
+      });
+    });
+
     it("isn't a follow-up without a record, whatever its description says", async () => {
       const { followUp } = await storyInWebLane();
       linear.issues.get(followUp.id)!.description =

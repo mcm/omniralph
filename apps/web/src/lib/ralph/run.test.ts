@@ -2774,6 +2774,58 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       }
     });
 
+    it("without custom rules, asks, then builds the stories and their follow-ups in the epic's repository", async () => {
+      await setRoutingRules(db, orgId);
+      try {
+        // The project would have routed ENG-3 elsewhere, but no rule says so any more.
+        const t = crossRepo("Web");
+        const run = await delegate(t.epic.id);
+        expect(await getRun(db, run.id)).toMatchObject({
+          status: "waiting",
+          repositoryId: null,
+          pendingElicitation: { kind: "repository" },
+        });
+        expect(linear.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+          "Which repository should I work in for this issue?",
+        );
+
+        await handleLinearEvent(
+          { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "group/app" },
+          { db, organizationId: orgId, workspaceId: "org-1" },
+          { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+        );
+        expect(await getRun(db, run.id)).toMatchObject({
+          repositoryId: gitlabRepoId,
+          routedBy: "your selection",
+        });
+        const lanes = await listLanes(db, run.id);
+        expect(lanes.map((l) => l.repositoryId)).toEqual([gitlabRepoId]);
+        const laneOf = async (identifier: string) =>
+          (await listStories(db, run.id)).find((s) => s.identifier === identifier)?.laneId;
+        expect(await laneOf("ENG-3")).toBe(lanes[0]!.id);
+
+        expect(
+          (
+            await work(run.id, {
+              followUps: [{ title: "Follow it up", description: "More.", manual: false }],
+            })
+          ).story.identifier,
+        ).toBe("ENG-2");
+        const followUp = [...linear.issues.values()].find((i) => i.title === "Follow it up")!;
+        expect(await getFollowUpSource(db, orgId, followUp.id)).toBe(t.s1.id);
+        expect(await laneOf(followUp.identifier)).toBe(lanes[0]!.id);
+        expect(await activeJob(run.id)).toMatchObject({ repositoryId: gitlabRepoId });
+      } finally {
+        await setRoutingRules(
+          db,
+          orgId,
+          [gitlabRepoId, projectIs("Web")],
+          [repoId, teamIs("ENG")],
+          [gitlabRepoId, teamIs("GL")],
+        );
+      }
+    });
+
     it("works a story whose project routes to another repository there, on its own branch and PR", async () => {
       await withAppSettings({ verifyCommands: ["npm run check"], model: "sonnet" }, async () => {
         const t = crossRepo("Web");

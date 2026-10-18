@@ -201,7 +201,7 @@ Routing runs again whenever the issue is delegated again:
 
 - A repository someone picked stays, even when routing would now choose another one.
 - When routing would have to ask, the previous run's repository stays.
-- When routing now chooses another repository (for example, a new routing label), the new run
+- When routing now chooses another repository (for example, after a routing rule changed), the new run
   works there on a new branch, and the agent session says that the earlier branch and PR/MR stay
   as they are.
 
