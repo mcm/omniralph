@@ -1936,6 +1936,39 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(await storyStates(run.id)).toContainEqual([grant.identifier, "manual", 0]);
   });
 
+  it("files follow-ups without the story's cycle when Linear refuses it", async () => {
+    const epic = linear.add({ identifier: "ENG-150", title: "Epic" });
+    const story = linear.add({ identifier: "ENG-151", title: "Story", parentId: epic.id });
+    linear.routingFields.set(story.id, { cycle: "cycle-done" });
+    linear.closedCycles.add("cycle-done");
+    const run = await delegate(epic.id);
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await work(run.id, {
+        followUps: [
+          { title: "Add a cache", description: "Reads are slow.", manual: false },
+          { title: "Add metrics", description: "Measure it.", manual: false },
+        ],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('"Add a cache" in cycle cycle-done, retrying without it'),
+        expect.any(Error),
+      );
+      // Only the first follow-up tries the cycle.
+      expect(warn.mock.calls.filter(([m]) => String(m).includes("retrying"))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+    const created = linear.created.filter((c) => c.parentId === epic.id);
+    expect(created.map((c) => c.title)).toEqual(["Add a cache", "Add metrics"]);
+    expect(created.every((c) => c.cycleId === undefined)).toBe(true);
+    const cache = [...linear.issues.values()].find((i) => i.title === "Add a cache")!;
+    expect(await getFollowUpSource(db, orgId, cache.id)).toBe(story.id);
+    const thoughts = linear.bodies(run.linearAgentSessionId, "thought").join("\n");
+    expect(thoughts).not.toContain("I couldn't file");
+  });
+
   it("keeps recommendations on the story without filing them or holding it up", async () => {
     const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
     linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id, priority: 1 });

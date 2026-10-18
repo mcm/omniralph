@@ -297,7 +297,8 @@ How the run behaves:
   blocking issue or manual story is completed in Linear.
 - **Follow-ups** reported by a story are filed as sub-issues of the epic (labelled with the first
   **Manual label** of the story's repository when they need a person), with the story's team,
-  project, milestone, cycle, priority and labels. Omniralph records the story as each one's
+  project, milestone, cycle, priority and labels (without the cycle when Linear refuses it, e.g.
+  once it's completed). Omniralph records the story as each one's
   source, so they route as the story does (to its lane) and rules can test the story's fields as
   **Source › …**. An unfinished story's follow-ups block it; when it
   reported blocked, that's a round (above), not a used attempt. A completed story's follow-ups
