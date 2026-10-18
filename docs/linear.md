@@ -154,6 +154,12 @@ priority, assignee, creator, parent, labels, estimate, due date), its parent's f
 AND/OR groups and NOT. Each rule names a repository. The rules are tried top to bottom and the
 first one that matches wins. Text and names match ignoring case (a **matches regex** pattern too).
 
+Every member can see the rules; admins edit them. **Add rule** appends a rule above the default
+rules, the handle drags it (or moves it with the arrow keys), and **Save** saves the whole list
+at once (**Discard** drops the changes). Value pickers offer your Linear workspace's teams,
+projects, milestones, cycles, states, labels and people; a value that isn't in the workspace any
+more shows a warning and is still saved. A rule with no conditions matches every issue.
+
 After your rules come default rules that aren't stored and can't be edited:
 
 1. If the issue is a follow-up, route it the same as its source: the story it was filed from.
