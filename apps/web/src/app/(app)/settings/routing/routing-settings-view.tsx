@@ -48,6 +48,7 @@ import {
   type RoutingRepository,
 } from "./rule-editor";
 import { RoutingQueryBuilder } from "./routing-query-builder";
+import { RoutingTest } from "./routing-test";
 
 /** The built-in rules, always after the custom ones, in this order. */
 export const DEFAULT_RULES = [
@@ -396,106 +397,114 @@ export function RoutingRulesEditor({ data, canEdit }: { data: RoutingRules; canE
   const invalid = errorCount(errors);
 
   return (
-    <SettingsCard
-      title="Rules"
-      description={
-        canEdit
-          ? "Checked top to bottom: the first rule an issue matches picks its repository. Drag rules to reorder them. The default rules always come last."
-          : "Checked top to bottom: the first rule an issue matches picks its repository. The default rules always come last. Only admins can change them."
-      }
-      changes={canEdit ? changes : []}
-      prepare={prepare}
-      onDiscard={discard}
-      readOnly={!canEdit}
-      contentClassName="routing-rules-content"
-      actions={
-        canEdit ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={add}
-            disabled={rules.length >= MAX_ROUTING_RULES}
-            className="routing-add-rule"
-          >
-            <IconPlus size={14} />
-            Add rule
-          </Button>
-        ) : undefined
-      }
-    >
-      <LinearNote linear={data.linear} />
-      {invalid > 0 && (
-        <Alert variant="danger" role="alert">
-          <AlertDescription>
-            {errors.rules.size > 0 &&
-              (errors.rules.size === 1
-                ? "1 rule needs attention. "
-                : `${errors.rules.size} rules need attention. `)}
-            {errors.list.join(" ")}
-          </AlertDescription>
-        </Alert>
-      )}
-      {repositories.length === 0 && (
-        <Muted>
-          Connect a repository first: every rule names the repository its issues build in.
-        </Muted>
-      )}
-      <ol aria-label="Routing rules" className="routing-rules">
-        {rules.map((rule, index) => (
-          <RuleRow
-            key={rule.key}
-            rule={rule}
-            index={index}
-            count={rules.length}
-            fields={fields}
-            linear={data.linear}
-            repositories={repositories}
-            errors={errors}
-            canEdit={canEdit}
-            dragging={dragging === index}
-            dropTarget={dropTarget === index && dragging !== index}
-            handleRef={(element) => {
-              if (element) handles.current.set(rule.key, element);
-              else handles.current.delete(rule.key);
-            }}
-            onChange={(next) => change(index, next)}
-            onDelete={() => remove(index)}
-            onMove={(to) => move(index, to)}
-            onDragStart={(event) => {
-              setDragging(index);
-              if (event.dataTransfer) {
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", rule.key);
-                const row = event.currentTarget.closest("li");
-                if (row) event.dataTransfer.setDragImage(row, 16, 16);
-              }
-            }}
-            onDragOver={(event) => {
-              if (dragging === null) return;
-              event.preventDefault();
-              if (dropTarget !== index) setDropTarget(index);
-            }}
-            onDrop={(event) => {
-              if (dragging === null) return;
-              event.preventDefault();
-              move(dragging, index);
-              setDragging(null);
-              setDropTarget(null);
-            }}
-            onDragEnd={() => {
-              setDragging(null);
-              setDropTarget(null);
-            }}
-          />
-        ))}
-        {DEFAULT_RULES.map((label) => (
-          <DefaultRow key={label} label={label} />
-        ))}
-      </ol>
-      <p role="status" className="sr-only">
-        {announcement}
-      </p>
-    </SettingsCard>
+    <>
+      <SettingsCard
+        title="Rules"
+        description={
+          canEdit
+            ? "Checked top to bottom: the first rule an issue matches picks its repository. Drag rules to reorder them. The default rules always come last."
+            : "Checked top to bottom: the first rule an issue matches picks its repository. The default rules always come last. Only admins can change them."
+        }
+        changes={canEdit ? changes : []}
+        prepare={prepare}
+        onDiscard={discard}
+        readOnly={!canEdit}
+        contentClassName="routing-rules-content"
+        actions={
+          canEdit ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={add}
+              disabled={rules.length >= MAX_ROUTING_RULES}
+              className="routing-add-rule"
+            >
+              <IconPlus size={14} />
+              Add rule
+            </Button>
+          ) : undefined
+        }
+      >
+        <LinearNote linear={data.linear} />
+        {invalid > 0 && (
+          <Alert variant="danger" role="alert">
+            <AlertDescription>
+              {errors.rules.size > 0 &&
+                (errors.rules.size === 1
+                  ? "1 rule needs attention. "
+                  : `${errors.rules.size} rules need attention. `)}
+              {errors.list.join(" ")}
+            </AlertDescription>
+          </Alert>
+        )}
+        {repositories.length === 0 && (
+          <Muted>
+            Connect a repository first: every rule names the repository its issues build in.
+          </Muted>
+        )}
+        <ol aria-label="Routing rules" className="routing-rules">
+          {rules.map((rule, index) => (
+            <RuleRow
+              key={rule.key}
+              rule={rule}
+              index={index}
+              count={rules.length}
+              fields={fields}
+              linear={data.linear}
+              repositories={repositories}
+              errors={errors}
+              canEdit={canEdit}
+              dragging={dragging === index}
+              dropTarget={dropTarget === index && dragging !== index}
+              handleRef={(element) => {
+                if (element) handles.current.set(rule.key, element);
+                else handles.current.delete(rule.key);
+              }}
+              onChange={(next) => change(index, next)}
+              onDelete={() => remove(index)}
+              onMove={(to) => move(index, to)}
+              onDragStart={(event) => {
+                setDragging(index);
+                if (event.dataTransfer) {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", rule.key);
+                  const row = event.currentTarget.closest("li");
+                  if (row) event.dataTransfer.setDragImage(row, 16, 16);
+                }
+              }}
+              onDragOver={(event) => {
+                if (dragging === null) return;
+                event.preventDefault();
+                if (dropTarget !== index) setDropTarget(index);
+              }}
+              onDrop={(event) => {
+                if (dragging === null) return;
+                event.preventDefault();
+                move(dragging, index);
+                setDragging(null);
+                setDropTarget(null);
+              }}
+              onDragEnd={() => {
+                setDragging(null);
+                setDropTarget(null);
+              }}
+            />
+          ))}
+          {DEFAULT_RULES.map((label) => (
+            <DefaultRow key={label} label={label} />
+          ))}
+        </ol>
+        <p role="status" className="sr-only">
+          {announcement}
+        </p>
+      </SettingsCard>
+      <RoutingTest
+        rules={rules}
+        fields={data.fields}
+        defaults={DEFAULT_RULES}
+        onInvalid={setErrors}
+      />
+    </>
   );
 }
 

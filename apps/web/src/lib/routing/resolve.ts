@@ -39,11 +39,21 @@ export const MAX_ROUTE_HOPS = 5;
 
 export type RouteOutcome<R = RepositoryWithSwitches> =
   /** The issue builds in `repository` (coding on). `by` is its `routed_by`. */
-  | { repository: R; by: string; rule?: number }
+  | ({ repository: R } & RouteMatch)
   /** The issue routes to `manual`, whose coding is off: it's for a person. */
-  | { manual: R; by: string; rule?: number }
+  | ({ manual: R } & RouteMatch)
   /** Nothing routes it: ask which repository to use. */
   | { ask: true };
+
+/** How an issue's own rules routed it. */
+export interface RouteMatch {
+  /** `routed_by`, the whole chain: `sub-issue of ENG-10 → rule 2 (Team is ENG)`. */
+  by: string;
+  /** The custom rule (1-based) the issue itself matched. */
+  rule?: number;
+  /** The default rule the issue itself matched: 1 follow-up, 2 sub-issue (3 asks). */
+  defaultRule?: 1 | 2;
+}
 
 /** A route to a repository (coding on or off), with `rule` set for a direct custom-rule match. */
 export type RoutedOutcome<R = RepositoryWithSwitches> = Exclude<RouteOutcome<R>, { ask: true }>;
@@ -60,6 +70,8 @@ export interface RouteDeps {
   db: Pick<Database, "select">;
   organizationId: string;
   linear: Pick<LinearGateway, "getRoutingFields">;
+  /** Rules to route by instead of the saved ones, in order (Settings › Routing's unsaved list). */
+  rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
 }
 
 export interface Router {
@@ -77,7 +89,7 @@ const ASK = { ask: true } as const;
  */
 export async function createRouter(deps: RouteDeps): Promise<Router> {
   const [rules, repositories] = await Promise.all([
-    listRoutingRules(deps.db, deps.organizationId),
+    deps.rules ?? listRoutingRules(deps.db, deps.organizationId),
     listRoutingRepositories(deps.db, deps.organizationId),
   ]);
   const byId = new Map(repositories.map((r) => [r.id, r]));
@@ -123,8 +135,8 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
       if (!("ask" in routed)) {
         const by = `follow-up of ${source?.identifier ?? sourceId} → ${routed.by}`;
         return "repository" in routed
-          ? { repository: routed.repository, by }
-          : { manual: routed.manual, by };
+          ? { repository: routed.repository, by, defaultRule: 1 }
+          : { manual: routed.manual, by, defaultRule: 1 };
       }
     }
     // Default rule 2: a sub-issue routes the same as its parent.
@@ -134,8 +146,8 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
         const name = routing.parent?.identifier ?? issue.parent ?? issue.parentId;
         const by = `sub-issue of ${name} → ${parent.by}`;
         return "repository" in parent
-          ? { repository: parent.repository, by }
-          : { manual: parent.manual, by };
+          ? { repository: parent.repository, by, defaultRule: 2 }
+          : { manual: parent.manual, by, defaultRule: 2 };
       }
     }
     // Default rule 3: ask.
@@ -172,7 +184,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     return resolveIssue(issueId, seen, hops);
   };
 
-  const describe = (index: number, rule: RoutingRule) =>
+  const describe = (index: number, rule: Pick<RoutingRule, "query">) =>
     describeRule(index + 1, rule.query, LINEAR_ROUTING_FIELDS);
 
   return {
