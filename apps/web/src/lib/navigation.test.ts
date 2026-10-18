@@ -15,6 +15,7 @@ describe("navGroups", () => {
       "Organization",
       "Agents",
       "Tasks",
+      "Routing",
       "Profiles",
       "Integrations",
       "Harness defaults",
@@ -72,6 +73,7 @@ describe("navGroupsForRole", () => {
           "Organization",
           "Agents",
           "Tasks",
+          "Routing",
           "Profiles",
           "Integrations",
           "Harness defaults",
@@ -87,7 +89,7 @@ describe("navGroupsForRole", () => {
         "Operations",
         ["Repositories", "Reviews", "Coding tasks", "Triage", "Harnesses", "Jobs", "Analytics"],
       ],
-      ["Settings", ["Organization", "Agents", "Tasks", "Chat accounts"]],
+      ["Settings", ["Organization", "Agents", "Tasks", "Routing", "Chat accounts"]],
     ]);
   });
 });

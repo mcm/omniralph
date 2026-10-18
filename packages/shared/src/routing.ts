@@ -31,7 +31,7 @@ export interface RoutingOperator {
 }
 
 /** The value an operator takes. */
-type ValueKind =
+export type RoutingValueKind =
   | "none"
   | "text"
   | "regex"
@@ -95,7 +95,8 @@ export const ROUTING_OPERATORS = {
 export type RoutingOperatorName<T extends RoutingFieldType = RoutingFieldType> =
   (typeof ROUTING_OPERATORS)[T][number]["name"];
 
-function valueKind(type: RoutingFieldType, operator: string): ValueKind {
+/** The value `operator` takes on a field of `type` (what the builder's value editor shows). */
+export function routingValueKind(type: RoutingFieldType, operator: string): RoutingValueKind {
   if (operator === "null" || operator === "notNull") return "none";
   switch (type) {
     case "text":
@@ -191,7 +192,7 @@ function conditionValue(
   const at = [...path, "value"];
   const fixed = field.values;
   const allowed = (v: string) => !fixed || fixed.includes(v);
-  switch (valueKind(field.type, operator)) {
+  switch (routingValueKind(field.type, operator)) {
     case "none":
       if (value === undefined || value === null || value === "") return null;
       report("This operator takes no value.", at);

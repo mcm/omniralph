@@ -510,6 +510,29 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
+    name: "settings-routing",
+    path: "/settings/routing",
+    page: "(app)/settings/routing/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "settings-routing-edit",
+    path: "/settings/routing",
+    page: "(app)/settings/routing/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "click", selector: ".routing-add-rule" },
+      { action: "click", selector: ".routing-add-rule" },
+      { action: "click", selector: "li[aria-label='Rule 1'] .routing-add-condition" },
+      { action: "click", selector: "li[aria-label='Rule 1'] .routing-add-group" },
+      {
+        action: "fill",
+        selector: "li[aria-label='Rule 1'] input[aria-label='Value']",
+        value: "docs",
+      },
+    ],
+  },
+  {
     name: "settings-profiles",
     path: "/settings/profiles",
     page: "(app)/settings/profiles/page.tsx",
