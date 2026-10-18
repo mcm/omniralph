@@ -303,9 +303,6 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     const saved = await saveChatConnection(

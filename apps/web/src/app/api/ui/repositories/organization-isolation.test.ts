@@ -6,6 +6,7 @@ import {
   setActiveOrganization,
   closeDb,
   connectRepository,
+  disconnectRepository,
   createCustomRule,
   createHarnessEnrollment,
   enrollHarness,
@@ -32,6 +33,7 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callAction } from "@/lib/api/test-call";
+import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -307,6 +309,39 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((await call(repositoryDetail.GET, a.repoId)).body).not.toHaveProperty("models");
   });
 
+  it("lists the organization's routing rules that target the repository on the Coding tab", async () => {
+    state.userId = a.userId;
+    const web = await connectRepository(db, {
+      connectionId: a.connectionId,
+      provider: "github",
+      externalId: "501",
+      fullPath: "shared/web",
+    });
+    await setRoutingRules(
+      db,
+      a.orgId,
+      [a.repoId, teamIs("ENG")],
+      [web.id, labelsInclude("backend")],
+      [a.repoId, projectIs("App")],
+    );
+    try {
+      expect((await call(repositoryCoding.GET, a.repoId)).body.routingRules).toEqual([
+        { number: 1, summary: "Team is ENG" },
+        { number: 3, summary: "Project is App" },
+      ]);
+      expect((await call(repositoryCoding.GET, web.id)).body.routingRules).toEqual([
+        { number: 2, summary: "Labels contains any of backend" },
+      ]);
+      // Another organization's rules never show.
+      state.userId = b.userId;
+      expect((await call(repositoryCoding.GET, b.repoId)).body.routingRules).toEqual([]);
+    } finally {
+      state.userId = a.userId;
+      await setRoutingRules(db, a.orgId);
+      await disconnectRepository(db, a.orgId, web.id);
+    }
+  });
+
   it("shows the Coding tab to admins only; members get a 403 but see the other tabs", async () => {
     const [member] = await db
       .insert(users)
@@ -355,9 +390,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ).toEqual(refused);
     expect(
       await updateRalphSettings(b.repoId, {
-        linearTeamKeys: [],
-        linearProjectNames: [],
-        linearLabels: [],
         codingPath: "legacy",
         storyTaskId: "builtin:implement-story",
         requestTaskId: "builtin:handle-request",

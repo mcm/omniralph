@@ -131,11 +131,8 @@ export async function ralphTaskErrors(
   };
 }
 
-/** The Linear routing values a repository has saved, as the Coding tab shows them. */
-type SavedLinearValues = Pick<
-  Repository,
-  "linearTeamKeys" | "linearProjectNames" | "linearLabels" | "ralphSettings"
->;
+/** The Linear values a repository has saved, as the Coding tab shows them. */
+type SavedLinearValues = Pick<Repository, "ralphSettings">;
 
 /** `values` not in `saved`, ignoring case. */
 function newValues(values: readonly string[], saved: readonly string[]): string[] {
@@ -151,8 +148,7 @@ function notInWorkspace(values: readonly string[], what: string): string {
 }
 
 /**
- * Field errors of a Coding form's Linear values: each label, project, team key, manual and
- * blocked label and the epic completed state must exist in the organization's connected Linear workspace.
+ * Field errors of a Coding form's Linear values: each manual and blocked label and the epic completed state must exist in the organization's connected Linear workspace.
  * Values the repository already has saved are kept even when they went stale (a renamed label
  * stays until a person removes it); only new ones are checked. Without a connected workspace
  * nothing is checked. `"unavailable"` when the workspace couldn't be read.
@@ -160,23 +156,12 @@ function notInWorkspace(values: readonly string[], what: string): string {
 export async function ralphLinearErrors(
   organizationId: string,
   saved: SavedLinearValues,
-  input: Pick<
-    RalphSettingsInput,
-    | "linearTeamKeys"
-    | "linearProjectNames"
-    | "linearLabels"
-    | "manualLabels"
-    | "blockedLabels"
-    | "epicCompletedState"
-  >,
+  input: Pick<RalphSettingsInput, "manualLabels" | "blockedLabels" | "epicCompletedState">,
 ): Promise<FieldErrors | "unavailable"> {
   const savedSettings = parseRalphSettings(saved.ralphSettings);
   const savedEpicState = savedSettings.epicCompletedState ?? "";
   const epicState = input.epicCompletedState.trim();
   const added = {
-    labels: newValues(input.linearLabels, saved.linearLabels),
-    projects: newValues(input.linearProjectNames, saved.linearProjectNames),
-    teamKeys: newValues(input.linearTeamKeys, saved.linearTeamKeys),
     manualLabels: newValues(input.manualLabels, repositoryManualLabels(saved)),
     // The default blocked labels are always accepted: one missing from the workspace never matches.
     blockedLabels: newValues(input.blockedLabels, [
@@ -187,9 +172,7 @@ export async function ralphLinearErrors(
       epicState.toLowerCase() === savedEpicState.trim().toLowerCase() ? null : epicState,
   };
   const anyAdded =
-    added.labels.length + added.projects.length + added.teamKeys.length > 0 ||
-    added.manualLabels.length + added.blockedLabels.length > 0 ||
-    Boolean(added.epicCompletedState);
+    added.manualLabels.length + added.blockedLabels.length > 0 || Boolean(added.epicCompletedState);
   if (!anyAdded) return {};
   let options;
   try {
@@ -200,13 +183,6 @@ export async function ralphLinearErrors(
   if (!options) return {};
   const unknown = unknownLinearValues(options, added);
   return {
-    ...(unknown.labels.length > 0 && { linearLabels: notInWorkspace(unknown.labels, "label") }),
-    ...(unknown.projects.length > 0 && {
-      linearProjectNames: notInWorkspace(unknown.projects, "project"),
-    }),
-    ...(unknown.teamKeys.length > 0 && {
-      linearTeamKeys: notInWorkspace(unknown.teamKeys, "team key"),
-    }),
     ...(unknown.manualLabels.length > 0 && {
       manualLabels: notInWorkspace(unknown.manualLabels, "label"),
     }),

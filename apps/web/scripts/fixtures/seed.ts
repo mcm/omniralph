@@ -32,6 +32,7 @@ import {
   ralphStories,
   repositories,
   reviewProfiles,
+  routingRules,
   reviewRuns,
   reviews,
   rules,
@@ -225,9 +226,6 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         id: R.controlPanel,
         profileId: "standard",
         ralphEnabled: true,
-        linearTeamKeys: ["FIX"],
-        // "legacy-api" isn't in the fixture Linear workspace: the Coding tab shows it as stale.
-        linearLabels: ["backend", "legacy-api"],
         pathExcludes: ["**/*.snap", "pnpm-lock.yaml"],
         customInstructions: "Prefer server components; flag any client-side secret.",
         ralphSettings: {
@@ -241,7 +239,6 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         id: R.harness,
         profileId: "deep",
         ralphEnabled: true,
-        linearProjectNames: ["Harness"],
         triggers: { onOpen: true, onPush: false, drafts: false },
       },
       {
@@ -261,6 +258,34 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         id: R.legacy,
         enabled: false,
         disconnectedAt: ago(20 * DAY),
+      },
+    ]);
+    // Settings › Routing: labels, then project, then team. "legacy-api" isn't in the fixture
+    // Linear workspace: the Routing page shows it as stale.
+    await tx.insert(routingRules).values([
+      {
+        organizationId: O.main,
+        position: 0,
+        repositoryId: R.controlPanel,
+        query: {
+          combinator: "and",
+          rules: [{ field: "labels", operator: "containsAny", value: ["backend", "legacy-api"] }],
+        },
+      },
+      {
+        organizationId: O.main,
+        position: 1,
+        repositoryId: R.harness,
+        query: {
+          combinator: "and",
+          rules: [{ field: "project", operator: "=", value: "Harness" }],
+        },
+      },
+      {
+        organizationId: O.main,
+        position: 2,
+        repositoryId: R.controlPanel,
+        query: { combinator: "and", rules: [{ field: "team", operator: "=", value: "FIX" }] },
       },
     ]);
     await tx.insert(integrations).values({

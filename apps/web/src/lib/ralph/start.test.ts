@@ -130,9 +130,6 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     overrides: Partial<RepositoryRalphSettingsUpdate> = {},
   ): RepositoryRalphSettingsUpdate => ({
     ralphEnabled: true,
-    linearTeamKeys: [],
-    linearProjectNames: [],
-    linearLabels: [],
     ralphSettings: DEFAULT_RALPH_SETTINGS,
     ...overrides,
   });

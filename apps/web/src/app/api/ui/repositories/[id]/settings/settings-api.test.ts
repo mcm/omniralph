@@ -149,9 +149,6 @@ const baseSettings: RepositorySettingsInput = {
 };
 
 const baseRalph: RalphSettingsInput = {
-  linearTeamKeys: [],
-  linearProjectNames: [],
-  linearLabels: [],
   codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -618,10 +615,9 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     await updateRepositorySettings(repoId, baseSettings);
   });
 
-  it("saves the Ralph section: Linear routing, openPullRequestEarly, setup command, model and manual labels", async () => {
+  it("saves the Ralph section: openPullRequestEarly, setup command, model and manual labels", async () => {
     expect(await getRepository(db, repoId)).toMatchObject({
       ralphEnabled: null,
-      linearTeamKeys: [],
       ralphSettings: {
         openPullRequestEarly: false,
         setupCommand: null,
@@ -632,9 +628,6 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     expect(
       await updateRalphSettings(repoId, {
         ...baseRalph,
-        linearTeamKeys: ["tool", "ENG"],
-        linearProjectNames: ["Omniralph"],
-        linearLabels: ["backend", "api"],
         openPullRequestEarly: true,
         setupCommand: "  pnpm install --frozen-lockfile  ",
         model: "claude-opus-5-5",
@@ -644,9 +637,6 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     expect(await getRepository(db, repoId)).toMatchObject({
       // Coding is switched under Task types, not by the Ralph section.
       ralphEnabled: null,
-      linearTeamKeys: ["TOOL", "ENG"],
-      linearProjectNames: ["Omniralph"],
-      linearLabels: ["backend", "api"],
       ralphSettings: {
         openPullRequestEarly: true,
         setupCommand: "pnpm install --frozen-lockfile",
@@ -656,14 +646,11 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     });
     // Saving the review settings leaves the Ralph section alone, and the other way round.
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.linearTeamKeys).toEqual(["TOOL", "ENG"]);
+    expect((await getRepository(db, repoId))!.ralphSettings.model).toBe("claude-opus-5-5");
 
     expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
       ralphEnabled: null,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: {
         openPullRequestEarly: false,
         setupCommand: null,
@@ -841,19 +828,17 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     expect(
       await updateRalphSettings(repoId, {
         ...baseRalph,
-        linearTeamKeys: ["E N G"],
-        linearLabels: ["a,b"],
         model: "",
         manualLabels: [],
+        blockedLabels: ["a,b"],
       }),
     ).toEqual({
       ok: false,
       error: "Fix the highlighted fields.",
       fieldErrors: {
-        "linearTeamKeys.0": "Team keys are letters and digits, e.g. ENG.",
-        "linearLabels.0": "Names can't contain commas or control characters.",
         model: "Enter a model.",
         manualLabels: "Enter at least one manual label.",
+        "blockedLabels.0": "Names can't contain commas or control characters.",
       },
     });
     // Not a valid input shape at all.
@@ -871,12 +856,12 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       ok: false,
       error: "That repository isn't connected.",
     });
-    const before = (await getRepository(db, repoId))!.linearLabels;
+    const before = (await getRepository(db, repoId))!.ralphSettings;
     state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
     expect(
-      await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["members"] }),
+      await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["members"] }),
     ).toMatchObject({ ok: false });
-    expect((await getRepository(db, repoId))!.linearLabels).toEqual(before);
+    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(before);
   });
 
   describe("Linear values", () => {
@@ -906,17 +891,13 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRalphSettings(repoId, {
           ...baseRalph,
-          linearTeamKeys: ["eng"],
-          linearLabels: ["Backend"],
-          linearProjectNames: ["Omniralph"],
           manualLabels: ["needs human", "manual"],
           blockedLabels: ["blocked", "BACKEND"],
           epicCompletedState: "in review",
         }),
       ).toEqual({ ok: true });
       expect(await getRepository(db, repoId)).toMatchObject({
-        linearTeamKeys: ["ENG"],
-        linearLabels: ["Backend"],
+        ralphSettings: { manualLabels: ["needs human", "manual"], epicCompletedState: "in review" },
       });
       expect(
         await updateRalphSettings(repoId, { ...baseRalph, epicCompletedState: "completed" }),
@@ -928,9 +909,6 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRalphSettings(repoId, {
           ...baseRalph,
-          linearTeamKeys: ["ENG", "OPS"],
-          linearLabels: ["backend", "frontend", "api"],
-          linearProjectNames: ["Cyralph"],
           manualLabels: ["by-hand"],
           // The default "under-review" is already saved, so only "on-hold" is checked.
           blockedLabels: ["under-review", "on-hold"],
@@ -940,43 +918,39 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
         ok: false,
         error: "Fix the highlighted fields.",
         fieldErrors: {
-          linearTeamKeys: "“OPS” isn't a team key in your Linear workspace.",
-          linearLabels: "“frontend”, “api” aren't labels in your Linear workspace.",
-          linearProjectNames: "“Cyralph” isn't a project in your Linear workspace.",
           manualLabels: "“by-hand” isn't a label in your Linear workspace.",
           blockedLabels: "“on-hold” isn't a label in your Linear workspace.",
           epicCompletedState: "“Shipped” isn't a workflow state in your Linear workspace.",
         },
       });
       expect(await getRepository(db, repoId)).toMatchObject({
-        linearTeamKeys: [],
-        linearLabels: [],
+        ralphSettings: { manualLabels: ["manual"], epicCompletedState: null },
       });
     });
 
     it("keeps saved values that went stale, rejecting only new ones", async () => {
       // Saved while the workspace still had them.
       state.linear = { ...workspace, labels: [...workspace.labels, "old-name"] };
-      const saved = { ...baseRalph, linearLabels: ["old-name"] };
+      const saved = { ...baseRalph, manualLabels: ["old-name"] };
       expect(await updateRalphSettings(repoId, saved)).toEqual({ ok: true });
       // Renamed in Linear since: other changes still save, and the stale label stays.
       state.linear = workspace;
       expect(await updateRalphSettings(repoId, { ...saved, maxFixRounds: 2 })).toEqual({
         ok: true,
       });
-      expect((await getRepository(db, repoId))!.linearLabels).toEqual(["old-name"]);
+      expect((await getRepository(db, repoId))!.ralphSettings.manualLabels).toEqual(["old-name"]);
       expect(
-        await updateRalphSettings(repoId, { ...saved, linearLabels: ["old-name", "new-one"] }),
+        await updateRalphSettings(repoId, { ...saved, manualLabels: ["old-name", "new-one"] }),
       ).toMatchObject({
         ok: false,
-        fieldErrors: { linearLabels: "“new-one” isn't a label in your Linear workspace." },
+        fieldErrors: { manualLabels: "“new-one” isn't a label in your Linear workspace." },
       });
     });
 
     it("doesn't check the values without a connected workspace", async () => {
       state.linear = null;
       expect(
-        await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["anything"] }),
+        await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["anything"] }),
       ).toEqual({ ok: true });
       expect(state.linearLoads).toBe(1);
     });
@@ -988,12 +962,12 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       });
       expect(state.linearLoads).toBe(0);
       expect(
-        await updateRalphSettings(repoId, { ...baseRalph, linearLabels: ["backend"] }),
+        await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["backend"] }),
       ).toEqual({
         ok: false,
         error: "Couldn't check the Linear values against your workspace. Try again in a moment.",
       });
-      expect((await getRepository(db, repoId))!.linearLabels).toEqual([]);
+      expect((await getRepository(db, repoId))!.ralphSettings.manualLabels).toEqual(["manual"]);
     });
   });
 

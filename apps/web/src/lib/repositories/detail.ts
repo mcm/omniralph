@@ -7,6 +7,7 @@ import {
   listRepositoryCodingHarnessIds,
   listRepositoryPinnedHarnessIds,
   listReviewProfiles,
+  listRoutingRules,
   repositorySwitchOverrides,
 } from "@omniralph/db";
 import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
@@ -24,8 +25,10 @@ import {
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
+import { describeQuery } from "@/lib/routing/describe";
 import { repositoryWebUrl } from "./web-url";
 
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
@@ -119,9 +122,9 @@ export async function loadRepositoryDetail(
 }
 
 /**
- * The Coding tab's settings and its pickers' choices from the database: the coding tasks, and
- * the models of the harnesses that may run the repository's coding jobs (its pinned ones,
- * else every harness accepting coding).
+ * The Coding tab's settings and its pickers' choices from the database: the coding tasks, the
+ * models of the harnesses that may run the repository's coding jobs (its pinned ones, else
+ * every harness accepting coding), and the organization's routing rules that target it.
  */
 export async function loadRepositoryCoding(
   organizationId: string,
@@ -129,17 +132,15 @@ export async function loadRepositoryCoding(
 ): Promise<RepositoryCoding> {
   const db = getDb();
   const { repository } = await connectedRepository(organizationId, id);
-  const [storyTasks, requestTasks, { pinned, harnessIds }] = await Promise.all([
+  const [storyTasks, requestTasks, { pinned, harnessIds }, rules] = await Promise.all([
     listTaskChoices(db, organizationId, STORY_TASKS),
     listTaskChoices(db, organizationId, REQUEST_TASKS),
     listRepositoryCodingHarnessIds(db, organizationId, id),
+    listRoutingRules(db, organizationId),
   ]);
   const models = await listReportedModels(db, organizationId, { harnessIds });
   return {
     settings: {
-      linearTeamKeys: repository.linearTeamKeys,
-      linearProjectNames: repository.linearProjectNames,
-      linearLabels: repository.linearLabels,
       codingPath: repository.codingPath,
       storyTaskId: repository.storyTaskId,
       requestTaskId: repository.requestTaskId,
@@ -150,6 +151,11 @@ export async function loadRepositoryCoding(
     models,
     harnessCount: harnessIds.length,
     pinned,
+    routingRules: rules.flatMap((rule, index) =>
+      rule.repositoryId === id
+        ? [{ number: index + 1, summary: describeQuery(rule.query, LINEAR_ROUTING_FIELDS) }]
+        : [],
+    ),
   };
 }
 

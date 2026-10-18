@@ -760,6 +760,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
               models: codingData.coding.models,
               harnessCount: codingData.coding.harnessCount,
               pinned: codingData.coding.pinned,
+              routingRules: codingData.coding.routingRules,
             }
           : null
       }

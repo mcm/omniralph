@@ -774,6 +774,20 @@ body {
   flex-shrink: 0;
   margin-top: 2px;
 }
+/* Repository › Coding › Routing: the organization's rules that target the repository. */
+.settings-routing-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+.settings-routing-rule-number {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
 /* Settings › Routing (settings/routing/): one row per rule in evaluation order (handle,
    number, condition builder, target, delete), then the read-only default rules. */
 .routing-rules {

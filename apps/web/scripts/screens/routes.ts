@@ -282,21 +282,12 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   {
-    // Linear labels picked from the fixture workspace; "legacy-api" is no longer in it.
+    // Manual labels picked from the fixture workspace.
     name: "repository-coding-labels",
     path: `/repositories/${ids.repositories.controlPanel}/coding`,
     page: "(app)/repositories/[id]/coding/page.tsx",
     auth: "signed-in",
-    steps: [{ action: "click", selector: "#ralph-labels" }],
-    viewportOnly: true,
-  },
-  {
-    // Teams show as "KEY · Team name".
-    name: "repository-coding-teams",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#ralph-teams" }],
+    steps: [{ action: "click", selector: "#ralph-manual-labels" }],
     viewportOnly: true,
   },
   {
@@ -523,11 +514,11 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     steps: [
       { action: "click", selector: ".routing-add-rule" },
       { action: "click", selector: ".routing-add-rule" },
-      { action: "click", selector: "li[aria-label='Rule 1'] .routing-add-condition" },
-      { action: "click", selector: "li[aria-label='Rule 1'] .routing-add-group" },
+      { action: "click", selector: "li[aria-label='Rule 4'] .routing-add-condition" },
+      { action: "click", selector: "li[aria-label='Rule 4'] .routing-add-group" },
       {
         action: "fill",
-        selector: "li[aria-label='Rule 1'] input[aria-label='Value']",
+        selector: "li[aria-label='Rule 4'] input[aria-label='Value']",
         value: "docs",
       },
     ],

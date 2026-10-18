@@ -94,9 +94,6 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   const ralphOn = (settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
     updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
     });
 

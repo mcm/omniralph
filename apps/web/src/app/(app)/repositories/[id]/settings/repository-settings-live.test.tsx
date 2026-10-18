@@ -93,9 +93,6 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
 
 const coding: RepositoryCoding = {
   settings: {
-    linearTeamKeys: [],
-    linearProjectNames: [],
-    linearLabels: [],
     codingPath: "tasks",
     storyTaskId: "builtin:implement-story",
     requestTaskId: "builtin:handle-request",
@@ -108,6 +105,7 @@ const coding: RepositoryCoding = {
   models: [],
   harnessCount: 1,
   pinned: true,
+  routingRules: [],
 };
 
 let served: RepositoryDetail;

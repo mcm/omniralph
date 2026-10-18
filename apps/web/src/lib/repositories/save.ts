@@ -93,8 +93,7 @@ export async function updateRepositoryTaskTypes(
 }
 
 /**
- * Saves a repository's Coding tab: which Linear issues route to it, whether its runs use the legacy jobs or
- * coding tasks (`coding_path`) and which story and request tasks (built-in
+ * Saves a repository's Coding tab: whether its runs use the legacy jobs or coding tasks (`coding_path`) and which story and request tasks (built-in
  * or the organization's own), and how its runs work (cyralph's
  * per-repository settings). New Linear values must exist in the connected workspace
  * (`ralphLinearErrors`). The next job and decision of every run pick it up.
@@ -106,14 +105,7 @@ export async function updateRepositoryCodingSettings(
 ): Promise<ActionResult> {
   const parsed = RalphSettingsInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
-  const {
-    linearTeamKeys,
-    linearProjectNames,
-    linearLabels,
-    codingPath,
-    storyTaskId,
-    requestTaskId,
-  } = parsed.data;
+  const { codingPath, storyTaskId, requestTaskId } = parsed.data;
   const db = getDb();
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return NOT_CONNECTED;
@@ -132,9 +124,6 @@ export async function updateRepositoryCodingSettings(
     return { ok: false, error: "Fix the highlighted fields.", fieldErrors: errors };
   }
   const saved = await updateRepositoryRalphSettings(db, repositoryId, {
-    linearTeamKeys: linearTeamKeys.map((key) => key.toUpperCase()),
-    linearProjectNames,
-    linearLabels,
     ralphSettings: ralphSettingsFromInput(parsed.data),
     codingPath,
     storyTaskId,

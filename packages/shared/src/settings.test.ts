@@ -3,7 +3,6 @@ import {
   DEFAULT_RALPH_SETTINGS,
   epicCompletedTarget,
   fieldErrors,
-  parseCommaList,
   parseLines,
   parseRalphSettings,
   RalphSettings,
@@ -182,9 +181,6 @@ describe("RepositoryTaskTypesInput", () => {
 });
 
 const validRalph: RalphSettingsInput = {
-  linearTeamKeys: ["TOOL", "eng_2"],
-  linearProjectNames: ["Omniralph v2"],
-  linearLabels: ["backend", "needs: api"],
   codingPath: "tasks",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -210,13 +206,6 @@ const validRalph: RalphSettingsInput = {
   epicCompletedState: "",
 };
 
-describe("parseCommaList", () => {
-  it("trims, drops blanks and removes duplicates ignoring case", () => {
-    expect(parseCommaList(" TOOL, eng,,tool , ENG ,Ops ")).toEqual(["TOOL", "eng", "Ops"]);
-    expect(parseCommaList("  ")).toEqual([]);
-  });
-});
-
 describe("RalphSettingsInput", () => {
   it("accepts valid settings", () => {
     expect(RalphSettingsInput.parse(validRalph)).toEqual(validRalph);
@@ -228,30 +217,28 @@ describe("RalphSettingsInput", () => {
     });
   });
 
-  it("rejects bad team keys, names with commas, bad models and long setup commands", () => {
+  it("rejects bad labels, bad models and long setup commands", () => {
     const result = RalphSettingsInput.safeParse({
       ...validRalph,
-      linearTeamKeys: ["TOOL", "EN G"],
-      linearProjectNames: ["a,b"],
-      linearLabels: [" "],
+      manualLabels: ["a,b"],
+      blockedLabels: [" "],
       setupCommand: "x".repeat(4001),
       model: "opus; rm -rf /",
     });
     expect(fieldErrors(result.error!)).toEqual({
-      "linearTeamKeys.1": "Team keys are letters and digits, e.g. ENG.",
-      "linearProjectNames.0": "Names can't contain commas or control characters.",
-      "linearLabels.0": "Enter a name.",
+      "manualLabels.0": "Names can't contain commas or control characters.",
+      "blockedLabels.0": "Enter a name.",
       setupCommand: "The setup command can be at most 4,000 characters.",
       model: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
     });
   });
 
-  it("caps the number of routing values", () => {
+  it("caps the number of labels", () => {
     const result = RalphSettingsInput.safeParse({
       ...validRalph,
-      linearLabels: Array.from({ length: 51 }, (_, i) => `l${i}`),
+      blockedLabels: Array.from({ length: 51 }, (_, i) => `l${i}`),
     });
-    expect(fieldErrors(result.error!)).toEqual({ linearLabels: "At most 50 labels." });
+    expect(fieldErrors(result.error!)).toEqual({ blockedLabels: "At most 50 blocked labels." });
   });
 
   it("needs at least one valid manual label", () => {

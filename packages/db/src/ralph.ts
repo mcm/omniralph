@@ -111,9 +111,6 @@ export const ACTIVE_RALPH_RUN_STATUSES = [
 export interface RepositoryRalphSettingsUpdate {
   /** Null inherits the organization's allowed task types (`coding`); omitted: unchanged. */
   ralphEnabled?: boolean | null;
-  linearTeamKeys: string[];
-  linearProjectNames: string[];
-  linearLabels: string[];
   ralphSettings: RalphSettings;
   /** Omitted: unchanged. */
   codingPath?: RepositoryCodingPath;
@@ -124,7 +121,7 @@ export interface RepositoryRalphSettingsUpdate {
 }
 
 /**
- * Saves a connected repository's ralph settings and Linear routing. Returns
+ * Saves a connected repository's ralph settings. Returns
  * null if the repository is unknown or disconnected.
  */
 export async function updateRepositoryRalphSettings(
@@ -136,9 +133,6 @@ export async function updateRepositoryRalphSettings(
     .update(repositories)
     .set({
       ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
-      linearTeamKeys: input.linearTeamKeys,
-      linearProjectNames: input.linearProjectNames,
-      linearLabels: input.linearLabels,
       ralphSettings: input.ralphSettings,
       ...(input.codingPath && { codingPath: input.codingPath }),
       ...(input.storyTaskId && { storyTaskId: input.storyTaskId }),
