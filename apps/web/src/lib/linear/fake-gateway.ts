@@ -108,6 +108,8 @@ export class FakeLinearGateway implements LinearGateway {
   routingFields = new Map<string, Partial<RoutingIssueFields>>();
   /** Every `createIssue` input, in order. */
   created: CreateIssueInput[] = [];
+  /** Cycle IDs `createIssue` refuses, as Linear may a completed cycle. */
+  closedCycles = new Set<string>();
   /** Every `getRoutingFields` call, in order. */
   routingLoads: string[] = [];
   /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
@@ -290,6 +292,9 @@ export class FakeLinearGateway implements LinearGateway {
   }
   async createIssue(input: CreateIssueInput) {
     this.fail("createIssue");
+    if (input.cycleId && this.closedCycles.has(input.cycleId)) {
+      throw new InvalidInputLinearError({ message: `cycle ${input.cycleId} is completed` });
+    }
     const issue = this.add({
       title: input.title,
       description: input.description,

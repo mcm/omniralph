@@ -27,7 +27,7 @@ import {
   type RalphStoryMetric,
 } from "@omniralph/shared";
 import { organizationDefinitions } from "@/lib/definitions";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import type { CreateIssueInput, IssueSummary } from "@/lib/linear/gateway";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
 import { repositoryManualLabels, runManualLabels } from "./epic-loader";
@@ -383,7 +383,7 @@ export async function fileFollowUps(
     try {
       const issue =
         open.get(followUp.title.toLowerCase()) ??
-        (await linear.createIssue({
+        (await createFollowUp(ctx, target, {
           teamId: target.teamId,
           parentId: parent.id,
           title: followUp.title,
@@ -437,6 +437,30 @@ export async function fileFollowUps(
       type: "thought",
       body: lines.join(" "),
     });
+  }
+}
+
+/**
+ * Creates a follow-up. Linear may refuse the story's cycle (e.g. once it's
+ * completed): then it retries once without it, and later follow-ups skip it.
+ */
+async function createFollowUp(
+  ctx: OutcomeContext,
+  target: FollowUpTarget,
+  input: CreateIssueInput,
+): Promise<IssueSummary> {
+  try {
+    return await ctx.linear.createIssue(input);
+  } catch (error) {
+    if (!input.cycleId) throw error;
+    console.warn(
+      `${ctx.run.linearIdentifier}: could not file follow-up "${input.title}" in cycle ${input.cycleId}, retrying without it`,
+      error,
+    );
+    const { cycleId: _cycleId, ...withoutCycle } = input;
+    const issue = await ctx.linear.createIssue(withoutCycle);
+    target.cycleId = undefined;
+    return issue;
   }
 }
 
