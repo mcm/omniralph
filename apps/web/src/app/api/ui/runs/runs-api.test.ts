@@ -176,9 +176,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     ).id;
     await updateRepositoryRalphSettings(db, repoA, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     [{ id: harnessId }] = (await db
@@ -497,9 +494,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     // acme/web turned CI fixes off and allows 5 review rounds.
     await updateRepositoryRalphSettings(db, repoB, {
       ralphEnabled: true,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, maxReviewRounds: 5, respondToCiFailures: false },
     });
     const run = await newRun();
@@ -725,9 +719,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     ).id;
     await updateRepositoryRalphSettings(db, otherRepo, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await saveIntegration(db, {

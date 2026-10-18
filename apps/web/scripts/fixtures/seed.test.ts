@@ -9,6 +9,7 @@ import {
   harnessRepoPins,
   integrations,
   jobs,
+  listRoutingRules,
   listTriageRuns,
   organizationMembers,
   ralphRuns,
@@ -27,6 +28,7 @@ import { AgentDefinition, TaskDefinition, TaskRequirements } from "@omniralph/ta
 import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
 
@@ -144,6 +146,19 @@ describe("seedFixtures", () => {
       .from(reviewProfiles)
       .where(eq(reviewProfiles.organizationId, FIXTURE_IDS.organizations.main));
     expect(profiles.some((p) => !p.builtIn)).toBe(true);
+  });
+
+  it("routes by valid rules: labels, then project, then team", async () => {
+    const saved = await listRoutingRules(db, FIXTURE_IDS.organizations.main);
+    expect(saved.map((r) => [r.repositoryId, r.query.rules[0]])).toEqual([
+      [FIXTURE_IDS.repositories.controlPanel, expect.objectContaining({ field: "labels" })],
+      [FIXTURE_IDS.repositories.harness, expect.objectContaining({ field: "project" })],
+      [FIXTURE_IDS.repositories.controlPanel, expect.objectContaining({ field: "team" })],
+    ]);
+    const parsed = linearRoutingRulesSchema.safeParse({
+      rules: saved.map((r) => ({ repositoryId: r.repositoryId, query: r.query })),
+    });
+    expect(parsed.error).toBeUndefined();
   });
 
   it("has a custom agent and task that resolve like the panel's", async () => {

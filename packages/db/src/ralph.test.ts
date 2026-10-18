@@ -251,12 +251,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     );
   });
 
-  it("adds ralph settings and Linear routing to repositories, with defaults", async () => {
+  it("adds ralph settings to repositories, with defaults", async () => {
     expect(await getRepository(db, repoA)).toMatchObject({
       ralphEnabled: null,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     // Inheriting: coding is on while the organization allows it (the built-in default), by path.
@@ -282,12 +279,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       expect(
         await updateRepositoryRalphSettings(db, id, {
           ralphEnabled: true,
-          linearTeamKeys: ["TOOL"],
-          linearProjectNames: ["Omniralph"],
-          linearLabels: ["backend"],
           ralphSettings: settings,
         }),
-      ).toMatchObject({ ralphEnabled: true, linearTeamKeys: ["TOOL"], ralphSettings: settings });
+      ).toMatchObject({ ralphEnabled: true, ralphSettings: settings });
     }
     // An explicit true wins over the organization's default; by path.
     expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
@@ -305,9 +299,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(
       await updateRepositoryRalphSettings(db, repoB, {
         ralphEnabled: true,
-        linearTeamKeys: [],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: DEFAULT_RALPH_SETTINGS,
       }),
     ).toBeNull();
@@ -1143,9 +1134,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   it("lists the repositories runs can be filtered by: ralph enabled or with runs", async () => {
     const off = {
       ralphEnabled: false,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     };
     await updateRepositoryRalphSettings(db, repoA, off);
@@ -1188,9 +1176,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     ).id;
     await updateRepositoryRalphSettings(db, otherRepo, {
       ralphEnabled: true,
-      linearTeamKeys: ["TOOL"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     const otherInput = runInput({ organizationId: other!.id, repositoryId: otherRepo });

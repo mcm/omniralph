@@ -108,15 +108,13 @@ expires) and from the same browser.
 
 ## 4. Configure routing
 
-Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Its coding settings are on **Repository › Settings › Coding**. Delegated issues are routed by the
-organization's [routing rules](#routing-rules); the **Linear** lists below only route an epic's
-stories ([Stories in other repositories](#stories-in-other-repositories)):
+Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Its coding settings are on **Repository › Settings › Coding**. Which issues build where is
+decided by the organization's [routing rules](#routing-rules), not by the repository: its
+**Routing** subsection lists the rules that target it (number and conditions) and links to
+**Settings › Routing**.
 
 | Setting | What it does |
 | -- | -- |
-| **Linear labels** | Comma-separated label names. Stories with any of them route here. |
-| **Linear projects** | Comma-separated project names. |
-| **Linear team keys** | Comma-separated team keys, e.g. `ENG`. |
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. On the **Coding tasks** path the story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
 | **Coding path** (`codingPath`) | `legacy` (**Legacy jobs**, the default) or `tasks` (**Coding tasks**): whether stories and requests run as the legacy ralph jobs or as coding runs of `builtin:implement-story` and `builtin:handle-request`. Applies from a run's next job. On **Coding tasks**, the story task's `pushTiming` says when the branch is pushed: `per-story` (the default, today's behaviour) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
 

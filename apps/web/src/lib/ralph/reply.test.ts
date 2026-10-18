@@ -129,9 +129,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
@@ -459,9 +456,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
 
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, cleanupMergedWorktrees: false },
       });
       try {
@@ -474,9 +468,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       } finally {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
       }
@@ -874,9 +865,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const settings = (allowPreparation: boolean) =>
         updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, allowPreparation },
         });
       await settings(false);
@@ -994,9 +982,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       ): Promise<string> {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...api },
         });
         const webId = (
@@ -1009,9 +994,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         ).id;
         await updateRepositoryRalphSettings(db, webId, {
           ralphEnabled: true,
-          linearTeamKeys: [],
-          linearProjectNames: ["Web"],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...web },
         });
         await setRoutingRules(db, orgId, [webId, projectIs("Web")], [repoId, teamIs("ENG")]);
@@ -1022,16 +1004,10 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
         await updateRepositoryRalphSettings(db, webId, {
           ralphEnabled: false,
-          linearTeamKeys: [],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
       }
@@ -1145,9 +1121,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const codingPath = (path: "legacy" | "tasks") =>
         updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: DEFAULT_RALPH_SETTINGS,
           codingPath: path,
         });

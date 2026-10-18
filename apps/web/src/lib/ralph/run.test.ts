@@ -170,9 +170,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
     });
     const gitlab = (await upsertScmConnection(
@@ -197,9 +194,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     ).id;
     await updateRepositoryRalphSettings(db, gitlabRepoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["GL"],
-      linearProjectNames: ["Web"],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(
@@ -1219,9 +1213,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const setEarly = (openPullRequestEarly: boolean) =>
       updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: {
           ...DEFAULT_RALPH_SETTINGS,
           setupCommand: "pnpm install",
@@ -2173,9 +2164,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const withLabels = (manualLabels: string[]) =>
       updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...settings, manualLabels },
       });
     await withLabels(["by hand"]);
@@ -2237,9 +2225,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     } finally {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: settings,
       });
     }
@@ -2340,9 +2325,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const setCoding = (ralphEnabled: boolean) =>
         updateRepositoryRalphSettings(db, gitlabRepoId, {
           ralphEnabled,
-          linearTeamKeys: ["GL"],
-          linearProjectNames: ["Web"],
-          linearLabels: [],
           ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
       await setCoding(false);
@@ -2601,9 +2583,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const update = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
         updateRepositoryRalphSettings(db, gitlabRepoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["GL"],
-          linearProjectNames: ["Web"],
-          linearLabels: [],
           ralphSettings,
         });
       await update({ ...DEFAULT_RALPH_SETTINGS, ...settings });
@@ -2666,14 +2645,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("files the follow-ups of a story routed by team or label with its team and labels", async () => {
-      const update = (linearLabels: string[]) =>
-        updateRepositoryRalphSettings(db, gitlabRepoId, {
-          ralphEnabled: true,
-          linearTeamKeys: ["GL"],
-          linearProjectNames: ["Web"],
-          linearLabels,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
-        });
       const rules = (...first: Array<[string, RoutingQuery]>) =>
         setRoutingRules(
           db,
@@ -2683,7 +2654,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           [repoId, teamIs("ENG")],
           [gitlabRepoId, teamIs("GL")],
         );
-      await update(["frontend"]);
       await rules([gitlabRepoId, labelsInclude("frontend")]);
       try {
         const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
@@ -2741,7 +2711,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect(await laneOf(byLabel.identifier)).toBe(web.id);
       } finally {
         await rules();
-        await update([]);
       }
     });
 
@@ -2989,9 +2958,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("ticks pushed stories in each lane's own draft", async () => {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
       });
       try {
@@ -3021,9 +2987,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       } finally {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
         });
       }
@@ -3136,9 +3099,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("opens a draft with a templated body after the first story with openPullRequestEarly", async () => {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
       });
       try {
@@ -3195,9 +3155,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       } finally {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
         });
       }
@@ -3206,9 +3163,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("retries an early draft that failed to open after the next story", async () => {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
       });
       try {
@@ -3237,9 +3191,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       } finally {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
         });
       }
@@ -3250,9 +3201,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
         updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings,
         });
       await settings({ ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true });
@@ -3342,9 +3290,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
           updateRepositoryRalphSettings(db, repoId, {
             ralphEnabled: true,
-            linearTeamKeys: ["ENG"],
-            linearProjectNames: [],
-            linearLabels: [],
             ralphSettings,
           });
         await settings({
@@ -3593,9 +3538,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await delegateFromChat(issue.id);
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: false,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
       });
       try {
@@ -3603,9 +3545,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       } finally {
         await updateRepositoryRalphSettings(db, repoId, {
           ralphEnabled: true,
-          linearTeamKeys: ["ENG"],
-          linearProjectNames: [],
-          linearLabels: [],
           ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
         });
       }

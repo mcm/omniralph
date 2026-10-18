@@ -94,9 +94,6 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     const saved = await saveChatConnection(

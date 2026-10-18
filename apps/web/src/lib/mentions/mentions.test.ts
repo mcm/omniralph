@@ -741,9 +741,6 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
     async function ralphPr(number: number) {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
       runSeq += 1;

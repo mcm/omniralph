@@ -152,35 +152,20 @@ export const ReviewProfileInput = z.object({
 });
 export type ReviewProfileInput = z.infer<typeof ReviewProfileInput>;
 
-export const MAX_LINEAR_ROUTING_VALUES = 50;
+export const MAX_LINEAR_LABELS = 50;
 export const MAX_SETUP_COMMAND_LENGTH = 4000;
 export const DEFAULT_RALPH_MODEL = "opus";
 
-/**
- * Splits a comma-separated input (team keys, project names, labels) into
- * values: trimmed, blanks dropped, duplicates (ignoring case) removed.
- */
-export function parseCommaList(text: string): string[] {
-  const seen = new Set<string>();
-  const values: string[] = [];
-  for (const value of text.split(",").map((v) => v.trim())) {
-    if (!value || seen.has(value.toLowerCase())) continue;
-    seen.add(value.toLowerCase());
-    values.push(value);
-  }
-  return values;
-}
-
-const routingValues = (item: z.ZodString, what: string) =>
-  z.array(item).max(MAX_LINEAR_ROUTING_VALUES, `At most ${MAX_LINEAR_ROUTING_VALUES} ${what}.`);
-
-const RoutingName = z
+const LinearName = z
   .string()
   .trim()
   .min(1, "Enter a name.")
   .max(255, "Names can be at most 255 characters.")
   // eslint-disable-next-line no-control-regex
   .regex(/^[^,\u0000-\u001f\u007f]+$/, "Names can't contain commas or control characters.");
+
+const labelList = (what: string) =>
+  z.array(LinearName).max(MAX_LINEAR_LABELS, `At most ${MAX_LINEAR_LABELS} ${what}.`);
 
 /** Longest `appendInstruction` (text appended to every story and request prompt). */
 export const MAX_APPEND_INSTRUCTION_LENGTH = 10_000;
@@ -251,7 +236,7 @@ const AppendInstruction = z
   );
 
 /** `started`, `completed` or a Linear state name, e.g. `In Review`. */
-const EpicState = RoutingName;
+const EpicState = LinearName;
 
 const SetupCommand = z
   .string()
@@ -260,13 +245,12 @@ const SetupCommand = z
     `The setup command can be at most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString("en-US")} characters.`,
   );
 
-const manualLabels = () =>
-  routingValues(RoutingName, "manual labels").min(1, "Enter at least one manual label.");
+const manualLabels = () => labelList("manual labels").min(1, "Enter at least one manual label.");
 
 /** Linear labels that keep Omniralph off an issue unless the repository sets its own. */
 export const DEFAULT_BLOCKED_LABELS = ["under-review", "blocked"];
 
-const blockedLabels = () => routingValues(RoutingName, "blocked labels");
+const blockedLabels = () => labelList("blocked labels");
 
 /**
  * Per-repository settings of ralph as stored
@@ -358,16 +342,6 @@ const optionalText = (schema: z.ZodType) =>
 
 /** The Ralph section of Repository › Settings (`repositories.ralph_*`). */
 export const RalphSettingsInput = z.object({
-  /** Linear team keys routed here, e.g. `ENG`. */
-  linearTeamKeys: routingValues(
-    z
-      .string()
-      .trim()
-      .regex(/^[A-Za-z0-9_]{1,32}$/, "Team keys are letters and digits, e.g. ENG."),
-    "team keys",
-  ),
-  linearProjectNames: routingValues(RoutingName, "project names"),
-  linearLabels: routingValues(RoutingName, "labels"),
   /** Legacy `ralph.*` jobs, or coding tasks (`repositories.coding_path`). */
   codingPath: z.enum(RALPH_CODING_PATHS, { error: "Choose a path." }),
   /** The coding task of its story runs (`story_task_id`); the server checks it accepts `linear.delegated`. */
@@ -446,15 +420,7 @@ export function ralphSettingsFromInput(input: RalphSettingsInput): RalphSettings
 /** The Ralph form's values of stored settings (none becomes empty text or lists). */
 export function ralphSettingsFormValues(
   settings: RalphSettings,
-): Omit<
-  RalphSettingsInput,
-  | "linearTeamKeys"
-  | "linearProjectNames"
-  | "linearLabels"
-  | "codingPath"
-  | "storyTaskId"
-  | "requestTaskId"
-> {
+): Omit<RalphSettingsInput, "codingPath" | "storyTaskId" | "requestTaskId"> {
   return {
     verifyCommands: [...settings.verifyCommands],
     runPrdQualityGates: settings.runPrdQualityGates,

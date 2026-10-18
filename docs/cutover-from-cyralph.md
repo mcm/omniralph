@@ -114,10 +114,8 @@ unless noted.
 | `repositoryPath` | Not needed | Harnesses clone into their own cache (`workspaceRoot`) with brokered credentials. |
 | `baseBranch` | The repository's default branch on the code host | Read when a run starts. There's no override; a PR/MR always targets the default branch. |
 | `workspaceBaseDir` | Not needed | Branch worktrees live under `<workspaceRoot>/.branches/` on the harness. |
-| `teamKeys` | **Linear team keys** | |
-| `routingLabels` | **Linear labels** | |
-| `projectKeys`, `projectNames` | **Linear projects** | One field for both. |
-| `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues by label, project or team instead. |
+| `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Routing** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
+| `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead. |
 | `isActive` | **Task types › Coding** | On by default (the organization's default): only repositories that opted in are routed to, offered in the repository question or pushed to. |
 | `verifyCommands` | **Verify commands** | One per line. |
 | `runPrdQualityGates` | **Run the PRD's quality gates** | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
@@ -188,8 +186,8 @@ For every entry in cyralph's `repositories[]`:
    (verify commands, setup command, model, tools, appended instruction, follow-up settings, manual
    labels, epic completed state, and **Run the PRD's quality gates** off if cyralph had
    `runPrdQualityGates` unset).
-3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but leave **Linear team keys**, **Linear labels** and **Linear projects**
-   **empty** for now: routing moves in step 4.
+3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but add no
+   rule targeting it on **Settings › Routing** for now: routing moves in step 4.
 4. Leave **Coding path** on **Legacy jobs** (the default), which behaves like cyralph. **Coding
    tasks** runs the same loop as coding runs of built-in tasks, where sessions can't push by
    themselves ([deploy-harness.md](deploy-harness.md#coding-path-legacy-jobs-or-coding-tasks));
@@ -222,8 +220,8 @@ Integrations** ([linear.md](linear.md#1-create-the-linear-oauth-app), steps 1 to
 cyralph's OAuth app: its webhook points at cyralph.
 
 **Verify:** **Settings › Integrations** shows the workspace. In Linear, the Omniralph app can be
-picked as an issue's delegate and @mentioned. Delegate a throwaway issue with a label routed to a
-ralph-enabled repository (its **Linear labels**): its
+picked as an issue's delegate and @mentioned. Delegate a throwaway issue that a routing rule (**Settings ›
+Routing**) sends to a ralph-enabled repository: its
 session acknowledges within seconds, the run shows up under **Coding tasks**, a job runs on a
 ralph-enabled harness, and the run ends with a PR/MR. Close that PR/MR afterwards. Also @mention the
 app on an issue with a small request and check that it answers in request mode.
@@ -235,8 +233,8 @@ For each Linear team (and each project or label cyralph routes on its own):
 1. **Stop routing it in cyralph first:** remove the team key, label or project from cyralph's
    `config.json` (`teamKeys`, `routingLabels`, `projectKeys`/`projectNames`). cyralph applies the
    edit without a restart; check its log for the reload (an invalid file is ignored and logged).
-2. **Then route it in Omniralph:** add it to the repository's **Linear team keys**, **Linear
-   labels** or **Linear projects**.
+2. **Then route it in Omniralph:** add a rule on **Settings › Routing** (**Team is**, **Labels
+   contains any of** or **Project is**) that targets the repository.
 3. Tell the team to delegate (and @mention) the **Omniralph** app from now on.
 
 **Verify:** delegate a small issue of that team to Omniralph: it routes to

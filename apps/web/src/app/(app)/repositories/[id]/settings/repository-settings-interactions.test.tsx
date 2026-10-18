@@ -29,9 +29,6 @@ const saves = (part: string) =>
   seen.filter((r) => r.method === "PUT" && r.path === `/api/ui/repositories/repo-1/${part}`);
 
 const ralph: RalphSettingsValues = {
-  linearTeamKeys: [],
-  linearProjectNames: [],
-  linearLabels: [],
   codingPath: "tasks",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -91,6 +88,7 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         models: [],
         harnessCount: 0,
         pinned: false,
+        routingRules: [],
       }}
       codingTasks={{
         story: [{ id: "builtin:implement-story", name: "Implement story", builtin: true }],

@@ -92,9 +92,6 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
   const ralphOn = (id: string, settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
     updateRepositoryRalphSettings(db, id, {
       ralphEnabled: true,
-      linearTeamKeys: id === repoId ? ["ENG"] : [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
     });
 

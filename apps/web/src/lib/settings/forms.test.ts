@@ -33,9 +33,6 @@ import {
 const STORY = "33333333-3333-4333-8333-333333333333";
 
 const ralph: RalphInput = {
-  linearTeamKeys: ["ENG"],
-  linearProjectNames: [],
-  linearLabels: [],
   codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
@@ -95,8 +92,8 @@ describe("Ralph change lists", () => {
     ]);
   });
 
-  it("ignores edits that save the same values (case of team keys, numbers as typed)", () => {
-    expect(ralphCardChanges("ralph", { linearTeamKeys: ["eng"] })).toEqual([]);
+  it("ignores edits that save the same values (text trimmed, numbers as typed)", () => {
+    expect(ralphCardChanges("prompt", { model: " opus " })).toEqual([]);
     expect(ralphCardChanges("followUp", { maxReviewRounds: "3" })).toEqual([]);
   });
 

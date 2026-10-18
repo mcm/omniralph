@@ -183,9 +183,6 @@ export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 
 /** The Coding tab's saved values, as its form edits them (`RalphSettingsInput`). */
 const codingSettingsSchema = z.object({
-  linearTeamKeys: z.array(z.string()),
-  linearProjectNames: z.array(z.string()),
-  linearLabels: z.array(z.string()),
   codingPath: z.enum(RALPH_CODING_PATHS),
   storyTaskId: z.string(),
   requestTaskId: z.string(),
@@ -227,6 +224,8 @@ export const repositoryCodingSchema = z.object({
   harnessCount: z.number(),
   /** Whether those are its pinned harnesses. */
   pinned: z.boolean(),
+  /** The organization's routing rules that target it: number (1-based, in order) and condition in words. */
+  routingRules: z.array(z.object({ number: z.number(), summary: z.string() })),
 });
 export type RepositoryCoding = z.infer<typeof repositoryCodingSchema>;
 

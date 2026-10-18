@@ -900,19 +900,6 @@ export const repositories = pgTable(
      * allowed task types (`query`).
      */
     queryEnabled: boolean("query_enabled"),
-    /** Linear routing: team keys (e.g. `ENG`), project names and labels routed here. */
-    linearTeamKeys: text("linear_team_keys")
-      .array()
-      .notNull()
-      .default(sql`'{}'::text[]`),
-    linearProjectNames: text("linear_project_names")
-      .array()
-      .notNull()
-      .default(sql`'{}'::text[]`),
-    linearLabels: text("linear_labels")
-      .array()
-      .notNull()
-      .default(sql`'{}'::text[]`),
     ralphSettings: jsonb("ralph_settings")
       .$type<RalphSettings>()
       .notNull()

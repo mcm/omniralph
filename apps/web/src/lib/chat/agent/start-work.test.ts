@@ -310,9 +310,6 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       if (fullPath === "acme/app") appRepoId = repository.id;
       await updateRepositoryRalphSettings(db, repository.id, {
         ralphEnabled,
-        linearTeamKeys: [],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
     }

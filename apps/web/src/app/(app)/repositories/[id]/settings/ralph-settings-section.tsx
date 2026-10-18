@@ -81,14 +81,15 @@ export interface CodingChoices {
   harnessCount: number;
   /** Whether they're the repository's pinned harnesses (else every harness accepting coding). */
   pinned: boolean;
+  /** The organization's routing rules that target the repository: number and condition in words. */
+  routingRules: ReadonlyArray<{ number: number; summary: string }>;
 }
 
 /** Built-in Claude Code tools, suggested by the tool fields (rules can still be typed). */
 const TOOL_OPTIONS: readonly string[] = CLAUDE_CODE_TOOLS;
 
 /** The Linear list fields, picked from the workspace. */
-type LinearListKey =
-  "linearLabels" | "linearProjectNames" | "linearTeamKeys" | "manualLabels" | "blockedLabels";
+type LinearListKey = "manualLabels" | "blockedLabels";
 
 /** The workspace's labels and any default blocked label it doesn't have (ignoring case). */
 function withDefaultLabels(labels: readonly string[]): string[] {
@@ -133,7 +134,7 @@ function LinearReadOnlyNote({
   );
 }
 
-/** The first error of a list field (`linearLabels` or `linearLabels.2`). */
+/** The first error of a list field (`manualLabels` or `manualLabels.2`). */
 function listError(errors: FieldErrors, field: string): string | undefined {
   return errors[field] ?? Object.entries(errors).find(([key]) => key.startsWith(`${field}.`))?.[1];
 }
@@ -157,9 +158,9 @@ const CODING_TASK_TYPES = ["coding"] as const satisfies readonly TaskTypeSwitch[
 
 /**
  * Repository › Coding (admin-only): whether coding runs here (the task-type switch beside the
- * description), which Linear issues route to the repository and how its runs work (cyralph's
- * per-repository settings). One section with one save, in subsections (Routing, Agent,
- * Verification, Pull requests, Linear), and a separate Danger zone for the settings that
+ * description), the routing rules that target it (edited on Settings › Routing) and how its runs
+ * work (cyralph's per-repository settings). One section with one save, in subsections (Routing,
+ * Agent, Verification, Pull requests, Linear), and a separate Danger zone for the settings that
  * force-push or delete branches. Both confirm their change list.
  */
 export function CodingSettingsSections({
@@ -303,10 +304,6 @@ export function CodingSettingsSections({
   const linear = choices.linear;
   const linearOptions = linear.status === "connected" ? linear.options : null;
   const linearListOptions: Record<LinearListKey, readonly (string | TagOption)[]> = {
-    linearLabels: linearOptions?.labels ?? [],
-    linearProjectNames: linearOptions?.projects ?? [],
-    linearTeamKeys:
-      linearOptions?.teams.map((t) => ({ value: t.key, label: `${t.key} · ${t.name}` })) ?? [],
     manualLabels: linearOptions?.labels ?? [],
     // The defaults are always offered (and accepted), so they aren't drawn as stale.
     blockedLabels: linearOptions ? withDefaultLabels(linearOptions.labels) : [],
@@ -444,9 +441,8 @@ export function CodingSettingsSections({
         showTitle={false}
         description={
           <>
-            Build Linear issues delegated to the Omniralph app in this repository, story by story. A
-            delegation goes to the first repository with coding on that matches its labels, then its
-            project, then its team.
+            Build Linear issues delegated to the Omniralph app in this repository, story by story.
+            The organization&apos;s routing rules decide which issues build here.
           </>
         }
         headerControl={
@@ -465,41 +461,37 @@ export function CodingSettingsSections({
       >
         {!codingOn && (
           <Muted className="settings-section-off">
-            Coding is off: delegated Linear issues don&apos;t build here. Turn it on to choose which
-            issues route to this repository and how they&apos;re built. The settings below are kept
-            while it&apos;s off.
+            Coding is off: delegated Linear issues don&apos;t build here. Issues the routing rules
+            send here are treated as manual until it&apos;s on. The settings below are kept while
+            it&apos;s off.
           </Muted>
         )}
         <div hidden={!codingOn}>
           <SettingsSubsection
             id="coding-routing"
             title="Routing"
-            description="Which delegated Linear issues build here. Any match routes the issue."
+            description={
+              <>
+                The organization&apos;s rules that route issues here. The first rule an issue
+                matches wins; edit them in <Link href="/settings/routing">Settings › Routing</Link>.
+              </>
+            }
           >
-            <LinearReadOnlyNote linear={linear} onRetry={onRetryLinear} />
-            <div className="settings-row">
-              {linearTags(
-                "linearLabels",
-                "ralph-labels",
-                "Linear labels",
-                withDefault("Issues with any of these labels route here."),
-                "Choose labels…",
-              )}
-              {linearTags(
-                "linearProjectNames",
-                "ralph-projects",
-                "Linear projects",
-                withDefault("Issues in any of these projects route here."),
-                "Choose projects…",
-              )}
-              {linearTags(
-                "linearTeamKeys",
-                "ralph-teams",
-                "Linear teams",
-                withDefault("Issues of any of these teams route here."),
-                "Choose teams…",
-              )}
-            </div>
+            {choices.routingRules.length > 0 ? (
+              <ol className="settings-routing-rules" aria-label="Routing rules for this repository">
+                {choices.routingRules.map((rule) => (
+                  <li key={rule.number}>
+                    <span className="settings-routing-rule-number">Rule {rule.number}</span>{" "}
+                    {rule.summary}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Muted className="settings-note">
+                No routing rule targets this repository. Issues still build here when you choose it
+                for them, or as sub-issues and follow-ups of issues built here.
+              </Muted>
+            )}
           </SettingsSubsection>
 
           <SettingsSubsection

@@ -120,9 +120,6 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     gitlabRepoId = (
@@ -135,9 +132,6 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     ).id;
     await updateRepositoryRalphSettings(db, gitlabRepoId, {
       ralphEnabled: true,
-      linearTeamKeys: [],
-      linearProjectNames: ["Web"],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(db, orgId, [gitlabRepoId, projectIs("Web")], [repoId, teamIs("ENG")]);
@@ -169,9 +163,6 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: ["ENG"],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     linear = new FakeLinearGateway();
@@ -835,9 +826,6 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     it("follows the repository's historyRewrite setting", async () => {
       await updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
-        linearTeamKeys: ["ENG"],
-        linearProjectNames: [],
-        linearLabels: [],
         ralphSettings: { ...DEFAULT_RALPH_SETTINGS, historyRewrite: "never" },
       });
       const { epic } = threeStoryEpic();

@@ -104,9 +104,6 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     ).id;
     await updateRepositoryRalphSettings(db, repoId, {
       ralphEnabled: true,
-      linearTeamKeys: [],
-      linearProjectNames: [],
-      linearLabels: [],
       ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await replaceRoutingRules(db, orgId, [

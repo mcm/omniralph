@@ -19,18 +19,12 @@ export interface LinearSettingsOptions {
 
 /** Saved Linear values to check against the workspace. */
 export interface LinearSettingsValues {
-  labels?: readonly string[];
-  projects?: readonly string[];
-  teamKeys?: readonly string[];
   manualLabels?: readonly string[];
   blockedLabels?: readonly string[];
   epicCompletedState?: string | null;
 }
 
 export interface UnknownLinearValues {
-  labels: string[];
-  projects: string[];
-  teamKeys: string[];
   manualLabels: string[];
   blockedLabels: string[];
   /** The epic state when it is neither empty, a state type nor a state name; else null. */
@@ -57,12 +51,6 @@ export function unknownLinearValues(
     epicState === "" ||
     missing([epicState], [...RALPH_EPIC_STATE_TYPES, ...options.states]).length === 0;
   return {
-    labels: missing(values.labels, options.labels),
-    projects: missing(values.projects, options.projects),
-    teamKeys: missing(
-      values.teamKeys,
-      options.teams.map((t) => t.key),
-    ),
     manualLabels: missing(values.manualLabels, options.labels),
     blockedLabels: missing(values.blockedLabels, options.labels),
     epicCompletedState: knownEpicState ? null : epicState,

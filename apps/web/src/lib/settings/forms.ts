@@ -221,9 +221,6 @@ export const RALPH_REPOSITORY_DEFAULTS = {
 
 /** The Ralph form: picked lists as chips, commands one per line, numbers as typed. */
 export interface RalphDraft {
-  linearTeamKeys: string[];
-  linearProjectNames: string[];
-  linearLabels: string[];
   codingPath: RalphCodingPath;
   storyTaskId: string;
   requestTaskId: string;
@@ -252,9 +249,6 @@ export interface RalphDraft {
 export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
   return {
     ...settings,
-    linearTeamKeys: [...settings.linearTeamKeys],
-    linearProjectNames: [...settings.linearProjectNames],
-    linearLabels: [...settings.linearLabels],
     verifyCommands: settings.verifyCommands.join("\n"),
     allowedTools: [...settings.allowedTools],
     disallowedTools: [...settings.disallowedTools],
@@ -266,11 +260,10 @@ export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
   };
 }
 
-/** The draft's values as the server saves them (team keys upper-cased, text trimmed). */
+/** The draft's values as the server saves them (text trimmed). */
 export function ralphValues(draft: RalphDraft): RalphSettingsInput {
   return {
     ...draft,
-    linearTeamKeys: draft.linearTeamKeys.map((key) => key.toUpperCase()),
     verifyCommands: parseLines(draft.verifyCommands),
     setupCommand: draft.setupCommand.trim(),
     appendInstruction: draft.appendInstruction.trim(),
@@ -287,14 +280,7 @@ export function ralphValues(draft: RalphDraft): RalphSettingsInput {
 
 /** The Ralph section's cards and the settings each one saves. */
 export const RALPH_CARDS = {
-  ralph: [
-    "codingPath",
-    "storyTaskId",
-    "requestTaskId",
-    "linearLabels",
-    "linearProjectNames",
-    "linearTeamKeys",
-  ],
+  ralph: ["codingPath", "storyTaskId", "requestTaskId"],
   verification: ["verifyCommands", "runPrdQualityGates", "setupCommand"],
   prompt: ["appendInstruction", "model", "fallbackModel"],
   tools: ["allowedTools", "disallowedTools"],
@@ -346,9 +332,6 @@ const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
   codingPath: "Coding path",
   storyTaskId: "Story task",
   requestTaskId: "Request task",
-  linearLabels: "Linear labels",
-  linearProjectNames: "Linear projects",
-  linearTeamKeys: "Linear team keys",
   verifyCommands: "Verify commands",
   runPrdQualityGates: "Run the PRD's quality gates",
   setupCommand: "Setup command",
