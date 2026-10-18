@@ -900,6 +900,29 @@ body {
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
+/* "Test an issue": the identifier form, then where it routes as a term list. */
+.routing-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.routing-test-field {
+  flex: 0 1 16rem;
+}
+.routing-test-result {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.routing-test-result dt {
+  color: var(--text-secondary);
+}
+.routing-test-result dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 48rem) {
   .routing-rule {
     grid-template-columns: auto 1.5rem minmax(0, 1fr) auto;

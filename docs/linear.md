@@ -182,6 +182,14 @@ person: a delegation or mention gets "This routes to `x` (rule N), which has cod
 for a person." and nothing is built, created or moved in Linear. Triage still reads that
 repository.
 
+**Test an issue.** Below the rules, enter an issue identifier (`ENG-12`) and **Test** to see
+where it would route under the rules as they are on the page, unsaved changes included
+(`POST /api/ui/routing-rules/test`; every member, at most 30 tests a minute each). It shows the
+rule the issue matched (its number and conditions, or the default rule), the chain, such as
+`sub-issue of ENG-10 → rule 2 (Team is ENG) → acme/web`, and the result: the repository,
+"manual (coding off)", or "Would ask which repository to use". It uses the same routing as a
+delegation, and nothing is saved or changed in Linear.
+
 Routing comes only from the rules: text in the issue's description (such as a `[repo=…]` tag)
 only matters when a rule tests the description.
 

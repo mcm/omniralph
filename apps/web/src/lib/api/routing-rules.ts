@@ -72,3 +72,29 @@ export const savedRoutingRulesSchema = z.object({
   rules: z.array(routingRuleRowSchema),
 });
 export type SavedRoutingRules = z.infer<typeof savedRoutingRulesSchema>;
+
+/** `POST /api/ui/routing-rules/test`'s body: an issue and the rules to route it by (unsaved). */
+export const routingTestRequestSchema = z.object({
+  identifier: z.string(),
+  rules: z.array(z.object({ repositoryId: z.string(), query: z.custom<RoutingQuery>() })),
+});
+export type RoutingTestRequest = z.infer<typeof routingTestRequestSchema>;
+
+/** Where `POST /api/ui/routing-rules/test`'s issue routes under the rules it was sent. */
+export const routingTestResultSchema = z.object({
+  issue: z.object({ identifier: z.string(), title: z.string() }),
+  /** `repository` builds there (coding on), `manual` is for a person (coding off), `ask` asks. */
+  outcome: z.enum(["repository", "manual", "ask"]),
+  repository: z.object({ id: z.string(), fullPath: z.string() }).nullable(),
+  /** The rule the issue itself matched: a custom one (1-based) or a default one (1–3). */
+  rule: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("custom"), number: z.number(), summary: z.string() }),
+    z.object({
+      kind: z.literal("default"),
+      number: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    }),
+  ]),
+  /** The route's `routed_by`, e.g. `sub-issue of ENG-10 → rule 2 (Team is ENG)`; null when it asks. */
+  by: z.string().nullable(),
+});
+export type RoutingTestResult = z.infer<typeof routingTestResultSchema>;

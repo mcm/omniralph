@@ -12,9 +12,10 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
-import type { RoutingRuleRow, RoutingRules } from "@/lib/api/routing-rules";
+import type { RoutingRuleRow, RoutingRules, RoutingTestResult } from "@/lib/api/routing-rules";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { DEFAULT_RULES, RoutingSettingsView } from "./routing-settings-view";
+import { INVALID_RULES_MESSAGE } from "./routing-test";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 const toast = vi.hoisted(() => ({ notify: vi.fn() }));
@@ -399,5 +400,116 @@ describe("RoutingSettingsView", () => {
     // Still shows what the rules do.
     expect(ruleRow(2).textContent).toContain("Coding is off for mcm/web");
     expect(rows()).toHaveLength(5);
+  });
+});
+
+describe("Test an issue", () => {
+  const ask: RoutingTestResult = {
+    issue: { identifier: "OPS-1", title: "Infra" },
+    outcome: "ask",
+    repository: null,
+    rule: { kind: "default", number: 3 },
+    by: null,
+  };
+
+  /** Serves `rules`, and answers tests with `answer`. */
+  function serveTests(rules: RoutingRuleRow[], answer: (request: SeenRequest) => Response) {
+    return mockFetch({
+      "GET /api/ui/routing-rules": () => jsonResponse(routing(rules)),
+      "POST /api/ui/routing-rules/test": answer,
+    });
+  }
+
+  const testIssue = async (identifier: string) => {
+    const input = screen.getByRole("textbox", { name: "Issue" });
+    await userEvent.clear(input);
+    await userEvent.type(input, identifier);
+    await userEvent.click(screen.getByRole("button", { name: "Test" }));
+  };
+  const posts = (seen: SeenRequest[]) =>
+    seen
+      .filter((r) => r.method === "POST")
+      .map((r) => r.body as { identifier: string; rules: unknown[] });
+
+  it("tests the unsaved rules and shows the matched rule, the chain and the repository", async () => {
+    const seen = serveTests([labelsRule, teamRule], () =>
+      jsonResponse({
+        issue: { identifier: "ENG-11", title: "Story" },
+        outcome: "repository",
+        repository: { id: API, fullPath: "mcm/api" },
+        rule: { kind: "default", number: 2 },
+        by: "sub-issue of ENG-10 → rule 1 (Team is ENG)",
+      } satisfies RoutingTestResult),
+    );
+    renderView({ ...testUser, role: "member" });
+    await screen.findByRole("listitem", { name: "Rule 2" });
+    // Members can test too; admins test their unsaved draft.
+    expect(screen.getByRole("button", { name: "Test" })).toBeTruthy();
+    await testIssue(" ENG-11 ");
+    const route = await screen.findByLabelText("Route of ENG-11");
+    expect(route.textContent).toContain("Default rule: Sub-issue → route as parent");
+    expect(route.textContent).toContain("sub-issue of ENG-10 → rule 1 (Team is ENG) → mcm/api");
+    expect(posts(seen)).toEqual([{ identifier: "ENG-11", rules: expect.any(Array) }]);
+    expect(summary(posts(seen)[0]!)).toEqual([
+      [API, [{ field: "labels", operator: "containsAny", value: ["Backend"] }]],
+      [WEB, [{ field: "team", operator: "=", value: "ENG" }]],
+    ]);
+  });
+
+  it("sends the draft, not the saved rules, and says when it changed since", async () => {
+    const seen = serveTests([labelsRule, teamRule], () =>
+      jsonResponse({
+        issue: { identifier: "ENG-1", title: "Docs" },
+        outcome: "manual",
+        repository: { id: WEB, fullPath: "mcm/web" },
+        rule: { kind: "custom", number: 1, summary: "Team is ENG" },
+        by: "rule 1 (Team is ENG)",
+      } satisfies RoutingTestResult),
+    );
+    renderView();
+    await screen.findByRole("listitem", { name: "Rule 2" });
+    await userEvent.click(screen.getByRole("button", { name: "Delete rule 1" }));
+    await testIssue("ENG-1");
+    const route = await screen.findByLabelText("Route of ENG-1");
+    expect(route.textContent).toContain("Rule 1: Team is ENG");
+    expect(route.textContent).toContain("mcm/web: manual (coding off)");
+    expect(summary(posts(seen)[0]!)).toEqual([
+      [WEB, [{ field: "team", operator: "=", value: "ENG" }]],
+    ]);
+    expect(screen.queryByText(/The rules changed since this test/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Delete rule 1" }));
+    expect(screen.getByText(/The rules changed since this test/)).toBeTruthy();
+  });
+
+  it("shows when it would ask, and an unknown issue's error", async () => {
+    serveTests([], (request) =>
+      (request.body as { identifier: string }).identifier === "OPS-1"
+        ? jsonResponse(ask)
+        : jsonResponse({ error: "There's no issue ENG-404.", code: "not_found" }, 404),
+    );
+    renderView();
+    await screen.findByRole("list", { name: "Routing rules" });
+    await testIssue("OPS-1");
+    const route = await screen.findByLabelText("Route of OPS-1");
+    expect(route.textContent).toContain("Default rule: Ask which repository to use");
+    expect(route.textContent).toContain("Would ask which repository to use");
+
+    await testIssue("ENG-404");
+    expect(await screen.findByText("There's no issue ENG-404.")).toBeTruthy();
+    expect(screen.queryByLabelText("Route of OPS-1")).toBeNull();
+  });
+
+  it("checks the identifier and the rules before testing", async () => {
+    const seen = serveTests([], () => jsonResponse(ask));
+    renderView();
+    await screen.findByRole("list", { name: "Routing rules" });
+    await userEvent.click(screen.getByRole("button", { name: "Test" }));
+    expect(screen.getByText("Enter an issue identifier, e.g. ENG-12.")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Add rule" }));
+    await testIssue("ENG-1");
+    expect(screen.getByText(INVALID_RULES_MESSAGE)).toBeTruthy();
+    expect(within(ruleRow(1)).getByRole("alert").textContent).toBe("Pick a repository.");
+    expect(posts(seen)).toEqual([]);
   });
 });

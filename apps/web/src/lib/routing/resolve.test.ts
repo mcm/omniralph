@@ -189,6 +189,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     expect(await resolveRoute(deps(), story.id)).toEqual({
       repository: expect.objectContaining({ id: api }),
       by: "sub-issue of ENG-10 → rule 4 (Team is ENG)",
+      defaultRule: 2,
     });
   });
 
@@ -229,6 +230,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     expect(await resolveRoute(deps(), story.id)).toEqual({
       repository: expect.objectContaining({ id: web }),
       by: "sub-issue of ENG-10 → rule 1 (Labels contains any of ui)",
+      defaultRule: 2,
     });
   });
 
@@ -239,6 +241,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     expect(await resolveRoute(deps(), story.id)).toEqual({
       manual: expect.objectContaining({ id: docs }),
       by: "sub-issue of ENG-10 → rule 1 (Labels contains any of docs)",
+      defaultRule: 2,
     });
   });
 
@@ -310,6 +313,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       expect(await resolveRoute(deps(), followUp.id)).toEqual({
         repository: expect.objectContaining({ id: web }),
         by: "follow-up of ENG-11 → story of ENG-10",
+        defaultRule: 1,
       });
     });
 
