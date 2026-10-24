@@ -362,7 +362,9 @@ export class RepoCache {
    * `origin/<baseBranch>` (an empty repository first gets an initial commit on
    * `baseBranch`, pushed to `origin`); `setupCommand` then runs once, and a
    * failure removes the worktree again. A reused worktree is fast-forwarded
-   * to `origin/<branch>` when the remote is ahead; a diverged branch throws
+   * to `origin/<branch>` when the remote is ahead, and rebased onto it when
+   * the remote branch was rewritten (e.g. rebased in the GitLab UI); a branch
+   * that diverged otherwise (or whose rebase conflicts) throws
    * `BranchDivergedError`. Calls for the same branch are serialized for the
    * whole of `fn` (in-process and through a file lock).
    */
@@ -1122,9 +1124,58 @@ export class RepoCache {
     const counts = await git(["rev-list", "--left-right", "--count", `HEAD...${remote}`]);
     const [ahead = 0, behind = 0] = counts.trim().split(/\s+/).map(Number);
     if (behind === 0) return;
-    if (ahead > 0) throw new BranchDivergedError(branch, ahead, behind);
-    this.logger?.info({ path: worktreePath, branch, behind }, "fast-forwarding branch worktree");
-    await git(["merge", "--ff-only", "--quiet", remote]);
+    if (ahead === 0) {
+      this.logger?.info({ path: worktreePath, branch, behind }, "fast-forwarding branch worktree");
+      await git(["merge", "--ff-only", "--quiet", remote]);
+      return;
+    }
+    const upstream = await this.rewrittenUpstream(worktreePath, remote, options);
+    if (!upstream) throw new BranchDivergedError(branch, ahead, behind);
+    // The remote was rewritten (e.g. an MR rebased in the GitLab UI): carry on from it, replaying
+    // the local commits it never had. Uncommitted changes are stashed around the rebase.
+    this.logger?.info(
+      { path: worktreePath, branch, ahead, behind, upstream },
+      "rebasing branch worktree onto the rewritten remote branch",
+    );
+    const identity = await git(["config", "--get", "user.email"]).then(
+      (email) => (email.trim() ? [] : FALLBACK_IDENTITY),
+      () => FALLBACK_IDENTITY,
+    );
+    try {
+      await git([...identity, "rebase", "--quiet", "--autostash", "--onto", remote, upstream]);
+    } catch (error) {
+      if (!(error instanceof GitError)) throw error;
+      await git(["rebase", "--abort"]).catch(() => undefined);
+      throw new BranchDivergedError(branch, ahead, behind);
+    }
+  }
+
+  /**
+   * When `origin/<branch>` was rewritten under a worktree that diverged from
+   * it, the commit to replay the worktree's commits from (onto the remote);
+   * null when the remote has commits the worktree never saw (someone pushed),
+   * which isn't for the harness to reconcile.
+   *
+   * The remote-tracking ref's reflog tells: the last remote tip the worktree's
+   * branch has (its fork point) was dropped by the remote. Without a reflog (a
+   * cache from before reflogs were kept), the worktree's commits must all be on
+   * the remote already, rewritten into equivalent patches (`git cherry`).
+   */
+  private async rewrittenUpstream(
+    worktreePath: string,
+    remote: string,
+    options: GitJobOptions,
+  ): Promise<string | null> {
+    const git = (args: string[]) =>
+      this.runGit(args, { ...options, cwd: worktreePath }).then((out) => out.trim());
+    const forkPoint = await git(["merge-base", "--fork-point", remote, "HEAD"]).catch(() => "");
+    if (SHA.test(forkPoint)) {
+      return (await this.isAncestor(worktreePath, forkPoint, remote, options)) ? null : forkPoint;
+    }
+    const cherry = await git(["cherry", remote, "HEAD"]);
+    const lines = cherry.split("\n").filter(Boolean);
+    if (lines.length === 0 || lines.some((line) => !line.startsWith("-"))) return null;
+    return git(["rev-parse", "HEAD"]);
   }
 
   /** Called with the worktree lock (but not the repo lock) held. */
@@ -1277,6 +1328,9 @@ export class RepoCache {
       // checked out in a branch worktree is never overwritten by a fetch.
       await this.runGit(["config", "remote.origin.fetch", FETCH_REFSPEC], { ...options, cwd: tmp });
       await this.runGit(["config", HOST_CONFIG, hostDir(repo.cloneUrl)], { ...options, cwd: tmp });
+      // Bare repositories keep no reflogs by default: a branch worktree tells a remote branch that
+      // was rewritten from the remote-tracking ref's (see `rewrittenUpstream`).
+      await this.runGit(["config", "core.logAllRefUpdates", "true"], { ...options, cwd: tmp });
       await this.runGit(["fetch", "--quiet", "--filter=blob:none", "--no-tags", "origin"], {
         ...options,
         cwd: tmp,
@@ -1298,6 +1352,7 @@ export class RepoCache {
     const base = ["fetch", "--quiet", "--filter=blob:none", "--no-tags", "origin"];
     // Caches cloned before branch worktrees fetched into refs/heads/*.
     await git(["config", "--replace-all", "remote.origin.fetch", FETCH_REFSPEC]);
+    await git(["config", "core.logAllRefUpdates", "true"]);
     if (shas.length === 0) {
       await git([...base, "--prune"]);
       return;
