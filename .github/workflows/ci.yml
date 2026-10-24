@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history, so the changeset check can diff against the base branch.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -32,6 +35,15 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # A pull request that changes the harness, or a workspace package it bundles, must add a
+      # changeset for @omniralph/harness (or an empty one). Not for the Version Packages pull
+      # request, which consumes the changesets. See apps/harness/README.md › Releasing.
+      - name: Check for a harness changeset
+        if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+        run: pnpm exec tsx scripts/check-harness-changeset.ts "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
 
       # One turbo run, so typechecking and linting overlap the (database-bound) tests
       # rather than running one after the other.

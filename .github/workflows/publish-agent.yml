@@ -1,14 +1,22 @@
 name: Publish agent
 
-# Publishes @omniralph/harness through npm trusted publishing (OIDC).
+# Releases @omniralph/harness with changesets (see apps/harness/README.md › Releasing):
+# - while changesets are pending on main, opens or updates the "Version Packages" pull request
+#   (branch changeset-release/main), which bumps the version and writes CHANGELOG.md;
+# - once that pull request is merged, publishes the new version through npm trusted publishing
+#   (OIDC), tags the commit agent-v<version> and creates a GitHub Release.
+# Any other push to main finds the version already on npm and stops there.
 # The trusted publisher on npmjs.com is registered against this filename: don't rename it.
 on:
   push:
-    tags: ["agent-v*.*.*"]
+    branches: [main]
+  # Re-runs a failed publish of the version on main.
+  workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write # the version branch, tags and releases
+  pull-requests: write # the Version Packages pull request
+  id-token: write # npm trusted publishing
 
 concurrency:
   group: publish-agent
@@ -16,6 +24,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -28,37 +37,68 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
-      - name: Upgrade npm
-        run: npm install -g npm@^11.5.1 && npm --version
-
-      - name: Check the tag matches the package version
-        run: |
-          tag_version="${GITHUB_REF_NAME#agent-v}"
-          package_version="$(node -p 'require("./apps/harness/package.json").version')"
-          if [ "$tag_version" != "$package_version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME doesn't match apps/harness/package.json version $package_version"
-            exit 1
-          fi
-
-      # Only the agent and the workspace packages it bundles (plus the root's tooling) are
-      # installed and checked: the web app, db and their Testcontainers suites aren't part of
-      # the published package, and CI already covers them on main. This also skips the web
-      # app's private @iamthemcmaster/ui dependency, so no npm token is needed to install.
+      # Only the agent and the workspace packages it bundles (plus the root's tooling, which
+      # includes changesets) are installed and checked: the web app, db and their Testcontainers
+      # suites aren't part of the published package, and CI already covers them on main. This
+      # also skips the web app's private @iamthemcmaster/ui dependency, so no npm token is needed.
       - name: Install
         run: pnpm install --frozen-lockfile --filter='@omniralph/harness...' --filter=omniralph
 
+      # Creates or updates the Version Packages pull request while changesets are pending; does
+      # nothing otherwise (no publish-script: this workflow publishes and tags itself, below).
+      # CHANGESETS_GITHUB_TOKEN (a fine-grained PAT or GitHub App token with Contents and Pull
+      # requests read/write) makes the commits and the pull request, so ci.yml runs on them;
+      # GitHub runs no workflows for ones made with the default token, which is the fallback.
+      # The action also hands this token to the version script, for @changesets/changelog-github.
+      - name: Version Packages pull request
+        uses: changesets/action@v2
+        with:
+          version-script: pnpm changeset version
+          github-token: ${{ secrets.CHANGESETS_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # publish=true when no changeset is pending (empty ones aside) and this version isn't on
+      # npm yet, i.e. right after the Version Packages pull request is merged.
+      - name: Check whether to release
+        id: release
+        run: pnpm exec tsx scripts/harness-release.ts status
+
       - name: Typecheck, lint and test
+        if: steps.release.outputs.publish == 'true'
         run: pnpm turbo run typecheck lint test --filter='@omniralph/harness...'
+
+      # Fails before publishing when CHANGELOG.md has no entry for the version.
+      - name: Release notes
+        if: steps.release.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: pnpm exec tsx scripts/harness-release.ts notes "$VERSION" "$RUNNER_TEMP/release-notes.md"
 
       # Builds (tsup, bundling the workspace packages from source), packs and smoke-tests the
       # package, keeping the tested tarball for the publish step.
       - name: Build, pack and smoke-test
+        if: steps.release.outputs.publish == 'true'
         id: pack
         run: |
           ./scripts/smoke-agent-package.sh "$RUNNER_TEMP/pack"
           echo "tarball=$(ls "$RUNNER_TEMP"/pack/*.tgz)" >> "$GITHUB_OUTPUT"
 
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Upgrade npm
+        if: steps.release.outputs.publish == 'true'
+        run: npm install -g npm@^11.5.1 && npm --version
+
       # No NODE_AUTH_TOKEN/NPM_TOKEN here: npm exchanges the job's OIDC token for a short-lived one.
       - name: Publish
+        if: steps.release.outputs.publish == 'true'
         run: npm publish "${{ steps.pack.outputs.tarball }}" --access public
+
+      # The default token is enough here: the tag is meant to trigger nothing.
+      - name: Tag and create the GitHub Release
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

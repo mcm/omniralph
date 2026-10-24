@@ -90,7 +90,8 @@ Node), skip the `prefix` line.
 
 To upgrade by hand: stop the harness, run `npm install -g @omniralph/harness@latest`,
 then start it again. Harnesses run under pm2 can update themselves instead (see
-[Self-update](#self-update-pm2)). See [apps/harness/README.md](../apps/harness/README.md) for the release procedure.
+[Self-update](#self-update-pm2)). Releases are made with changesets and a "Version Packages" pull
+request: see [apps/harness/README.md › Releasing](../apps/harness/README.md#releasing).
 
 Hosts that run 0.8.0 or earlier were installed under the old "agent" names and can't self-update
 across the rename: reinstall them once as in
