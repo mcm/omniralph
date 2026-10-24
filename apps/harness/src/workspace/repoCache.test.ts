@@ -686,6 +686,91 @@ describe("RepoCache branch worktrees", { timeout: 30_000 }, () => {
     expect(git(wt, "rev-parse", `${local}^`)).toBe(pushed);
   });
 
+  /** Rebases `branch` on the remote onto `main` and force-pushes it, like a GitLab UI rebase; returns the new tip. */
+  function rebaseRemoteBranch(branch: string, edit?: { file: string; content: string }): string {
+    const clone = path.join(root, `rebase-${Math.random().toString(36).slice(2)}`);
+    execFileSync("git", ["clone", "--quiet", "--branch", branch, remote.bare, clone], { env: ENV });
+    git(clone, "rebase", "--quiet", "origin/main");
+    if (edit) {
+      execFileSync("sh", ["-c", `printf '%s\\n' "${edit.content}" > ${edit.file}`], { cwd: clone });
+      git(clone, "commit", "--quiet", "-a", "--amend", "--no-edit");
+    }
+    git(clone, "push", "--quiet", "--force", "origin", branch);
+    return git(clone, "rev-parse", "HEAD");
+  }
+
+  it("rebases the worktree onto a remote branch that was rebased, keeping unpushed work", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    await repos.withBranchWorktree(repo, feature, (wt) =>
+      commitAndPush(wt.path, { "story1.txt": "one\n" }, "feat/TOOL-1"),
+    );
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      await writeFile(path.join(wt.path, "story2.txt"), "two\n");
+      git(wt.path, "add", "-A");
+      git(wt.path, "commit", "--quiet", "-m", "unpushed story 2");
+      await writeFile(path.join(wt.path, "scratch.txt"), "uncommitted\n");
+    });
+    await remote.commit({ "main.txt": "main moved on\n" }, "main");
+    // Rebased with a conflict resolution: the rewritten commit isn't patch-equivalent.
+    const rebased = rebaseRemoteBranch("feat/TOOL-1", {
+      file: "story1.txt",
+      content: "one, resolved",
+    });
+
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD^")).toBe(rebased);
+      expect(git(wt.path, "log", "-1", "--format=%s")).toBe("unpushed story 2");
+      expect(await readFile(path.join(wt.path, "story1.txt"), "utf8")).toBe("one, resolved\n");
+      expect(await readFile(path.join(wt.path, "story2.txt"), "utf8")).toBe("two\n");
+      expect(await readFile(path.join(wt.path, "main.txt"), "utf8")).toBe("main moved on\n");
+      expect(await readFile(path.join(wt.path, "scratch.txt"), "utf8")).toBe("uncommitted\n");
+      expect(git(wt.path, "status", "--porcelain")).toBe("?? scratch.txt");
+    });
+  });
+
+  it("resets to a rebased remote branch whose commits match the local ones without a reflog", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    await repos.withBranchWorktree(repo, feature, (wt) =>
+      commitAndPush(wt.path, { "story1.txt": "one\n" }, "feat/TOOL-1"),
+    );
+    // A cache from before reflogs were kept.
+    const dir = repos.repoDir(repo);
+    git(dir, "config", "core.logAllRefUpdates", "false");
+    await rm(path.join(dir, "logs"), { recursive: true, force: true });
+    await remote.commit({ "main.txt": "main moved on\n" }, "main");
+    const rebased = rebaseRemoteBranch("feat/TOOL-1");
+    // Fetched before reflogs were kept: the remote's old tip is in no reflog.
+    git(dir, "fetch", "--quiet", "origin");
+    await rm(path.join(dir, "logs"), { recursive: true, force: true });
+
+    await repos.withBranchWorktree(repo, feature, async (wt) => {
+      expect(git(wt.path, "rev-parse", "HEAD")).toBe(rebased);
+      expect(git(wt.path, "status", "--porcelain")).toBe("");
+    });
+  });
+
+  it("throws BranchDivergedError when replaying local commits onto a rebased remote conflicts", async () => {
+    await remote.commit({ "README.md": "base\n" });
+    await repos.withBranchWorktree(repo, feature, (wt) =>
+      commitAndPush(wt.path, { "story1.txt": "one\n" }, "feat/TOOL-1"),
+    );
+    const local = await repos.withBranchWorktree(repo, feature, async (wt) => {
+      await writeFile(path.join(wt.path, "story1.txt"), "one, locally\n");
+      git(wt.path, "commit", "--quiet", "-am", "unpushed edit");
+      return git(wt.path, "rev-parse", "HEAD");
+    });
+    await remote.commit({ "main.txt": "main moved on\n" }, "main");
+    rebaseRemoteBranch("feat/TOOL-1", { file: "story1.txt", content: "one, resolved" });
+
+    const error = await repos
+      .withBranchWorktree(repo, feature, async () => {})
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BranchDivergedError);
+    const wt = repos.branchWorktreePath(repo, "feat/TOOL-1");
+    expect(git(wt, "rev-parse", "HEAD")).toBe(local);
+    expect(git(wt, "status", "--porcelain")).toBe("");
+  });
+
   it("runs the setup command only when the worktree is created, and removes it when setup fails", async () => {
     await remote.commit({ "README.md": "base\n" });
     const setupCommand = 'echo "$PWD" >> ../setup.log && touch .setup-done';
