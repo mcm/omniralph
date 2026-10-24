@@ -57,10 +57,14 @@ jobs:
           github-token: ${{ secrets.CHANGESETS_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
 
       # publish=true when no changeset is pending (empty ones aside) and this version isn't on
-      # npm yet, i.e. right after the Version Packages pull request is merged.
+      # npm yet, i.e. right after the Version Packages pull request is merged. The action leaves the
+      # version branch checked out (bumped, changesets consumed), so go back to the pushed commit
+      # first; the later steps then build, publish and tag that commit too.
       - name: Check whether to release
         id: release
-        run: pnpm exec tsx scripts/harness-release.ts status
+        run: |
+          git checkout --force "$GITHUB_SHA"
+          pnpm exec tsx scripts/harness-release.ts status
 
       - name: Typecheck, lint and test
         if: steps.release.outputs.publish == 'true'
