@@ -6,8 +6,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { connectRepository, deleteScmConnection, upsertScmConnection } from "./repositories.js";
-import { listRoutingRules, replaceRoutingRules } from "./routing-rules.js";
-import { organizations, repositories, routingRules } from "./schema.js";
+import { listLatestIssueRuns, listRoutingRules, replaceRoutingRules } from "./routing-rules.js";
+import { organizations, ralphRuns, repositories, routingRules } from "./schema.js";
 import { seedReviewProfiles } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
@@ -187,5 +187,44 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
     expect(
       await db.select().from(routingRules).where(eq(routingRules.organizationId, orgId)),
     ).toEqual([]);
+  });
+
+  it("lists the latest run of each issue, in the organization only", async () => {
+    const orgId = await organization("Runs");
+    const otherId = await organization("Other runs");
+    const run = async (
+      organizationId: string,
+      issueId: string,
+      createdAt: string,
+      by: string | null,
+    ) => {
+      const [row] = await db
+        .insert(ralphRuns)
+        .values({
+          organizationId,
+          linearIssueId: issueId,
+          linearIdentifier: issueId.toUpperCase(),
+          linearAgentSessionId: randomUUID(),
+          kind: "children",
+          // Finished, so one issue can have several.
+          status: "completed",
+          routedBy: by,
+          createdAt: new Date(createdAt),
+        })
+        .returning();
+      return row!.id;
+    };
+    await run(orgId, "issue-1", "2026-10-01T00:00:00Z", "rule 1 (Team is ENG)");
+    const latest = await run(orgId, "issue-1", "2026-10-02T00:00:00Z", "your selection");
+    const unrouted = await run(orgId, "issue-2", "2026-10-01T00:00:00Z", null);
+    await run(otherId, "issue-3", "2026-10-01T00:00:00Z", "rule 1 (Team is ENG)");
+
+    expect(await listLatestIssueRuns(db, orgId, ["issue-1", "issue-2", "issue-3"])).toEqual(
+      new Map([
+        ["issue-1", { id: latest, routedBy: "your selection" }],
+        ["issue-2", { id: unrouted, routedBy: null }],
+      ]),
+    );
+    expect(await listLatestIssueRuns(db, orgId, [])).toEqual(new Map());
   });
 });

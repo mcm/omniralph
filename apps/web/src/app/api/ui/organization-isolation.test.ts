@@ -66,6 +66,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { ENTER_ORGANIZATION_PATH, ORGANIZATION_COOKIE } from "@/lib/auth/routes";
+import type { RoutingPreview } from "@/lib/api/routing-rules";
+import type * as LinearClient from "@/lib/linear/client";
+import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/dispatch", () => ({
@@ -94,6 +97,8 @@ const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   userId: null as string | null,
   cookies: new Map<string, string>(),
+  /** Each organization's Linear workspace, by organization ID (else none is connected). */
+  linear: new Map<string, FakeLinearGateway>(),
 }));
 // This browser's cookies (switching organizations sets one).
 vi.mock("next/headers", () => ({
@@ -106,6 +111,14 @@ vi.mock("next/headers", () => ({
   }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/linear/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof LinearClient>();
+  return {
+    ...actual,
+    getLinearGateway: async (options: LinearClient.LinearGatewayOptions) =>
+      state.linear.get(options.organizationId) ?? actual.getLinearGateway(options),
+  };
+});
 // The signed-in user with their real role in their active organization.
 vi.mock("@/lib/auth/session", async () => {
   const { getActiveOrganization } = await import("@omniralph/db");
@@ -168,6 +181,7 @@ const selectable = await import("./scm-connections/[id]/repositories/route");
 const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
+const routingPreview = await import("./routing/preview/route");
 const reviewList = await import("./reviews/route");
 const reviewDetail = await import("./reviews/[id]/route");
 const reviewRerun = await import("./reviews/[id]/rerun/route");
@@ -1073,6 +1087,34 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       status: 403,
     });
     expect((await getRun(db, b.runId))!.status).toBe("running");
+  });
+
+  it("previews routing with only the organization's own runs and repositories", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      // A workspace that also has the other organization's issues: they still aren't its runs.
+      const linear = new FakeLinearGateway();
+      linear.add({ id: `${own.name}-issue`, identifier: "OWN-1", title: "Own" });
+      linear.add({ id: `${other.name}-issue`, identifier: "SHARED-1", title: "Shared" });
+      linear.add({ identifier: "SHARED-2", title: "Sub", parentId: `${other.name}-issue` });
+      state.linear.set(own.orgId, linear);
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const { status, body } = await call(routingPreview.POST, {
+          body: { identifiers: ["OWN-1", "SHARED-1", "SHARED-2"] },
+        });
+        expect(status).toBe(200);
+        const [mine, shared, sub] = (body as unknown as RoutingPreview).results;
+        expect(mine).toMatchObject({ outcome: "ask", run: { id: own.runId } });
+        // The other's run doesn't route its sub-issue here either.
+        expect(shared).toMatchObject({ outcome: "ask", run: null });
+        expect(sub).toMatchObject({ outcome: "ask", run: null });
+        for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+      }
+    }
+    state.linear.clear();
   });
 
   it("sends a member of both organizations to switch to the run's organization", async () => {

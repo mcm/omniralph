@@ -98,3 +98,50 @@ export const routingTestResultSchema = z.object({
   by: z.string().nullable(),
 });
 export type RoutingTestResult = z.infer<typeof routingTestResultSchema>;
+
+/** Most work items one `POST /api/ui/routing/preview` routes. */
+export const ROUTING_PREVIEW_MAX = 50;
+
+/** `POST /api/ui/routing/preview`'s body: the work items to route by the saved rules. */
+export const routingPreviewRequestSchema = z.object({
+  identifiers: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, "Enter an issue identifier, e.g. ENG-12.")
+        .max(100, "That's too long for an issue identifier."),
+    )
+    .min(1, "Enter at least one issue identifier.")
+    .max(ROUTING_PREVIEW_MAX, `Preview at most ${ROUTING_PREVIEW_MAX} work items at once.`),
+});
+export type RoutingPreviewRequest = z.infer<typeof routingPreviewRequestSchema>;
+
+/** Where one work item routes under the saved rules, or that Linear doesn't know it. */
+export const routingPreviewItemSchema = z.union([
+  routingTestResultSchema.extend({
+    /** The identifier as it was sent. */
+    identifier: z.string(),
+    repository: z
+      .object({
+        id: z.string(),
+        fullPath: z.string(),
+        /** The repo's coding switch: off makes the work item manual. */
+        codingEnabled: z.boolean(),
+      })
+      .nullable(),
+    /** The work item's latest run, when Om already started one, and how it was routed. */
+    run: z.object({ id: z.string(), routedBy: z.string().nullable() }).nullable(),
+  }),
+  z.object({
+    identifier: z.string(),
+    outcome: z.literal("not_found"),
+    /** Why there's no result, in plain language. */
+    message: z.string(),
+  }),
+]);
+export type RoutingPreviewItem = z.infer<typeof routingPreviewItemSchema>;
+
+/** `POST /api/ui/routing/preview`: one result per identifier, in the order sent. */
+export const routingPreviewSchema = z.object({ results: z.array(routingPreviewItemSchema) });
+export type RoutingPreview = z.infer<typeof routingPreviewSchema>;
