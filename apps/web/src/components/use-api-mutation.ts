@@ -200,11 +200,12 @@ export function useApiMutation<TData = unknown, TVariables = void, TContext = un
       const snapshots: CacheSnapshot[] = [];
       try {
         await latest.current.optimistic?.(variables, mutationCache(client, keys, snapshots));
+        return { context: await latest.current.onMutate?.(variables), snapshots };
       } catch (error) {
+        // `onError` gets no context when `onMutate` throws, so roll back here.
         restore(client, snapshots);
         throw error;
       }
-      return { context: await latest.current.onMutate?.(variables), snapshots };
     },
     mutationFn: (variables) =>
       latest.current.mutationFn(variables, { organizationId: organization.id }),
