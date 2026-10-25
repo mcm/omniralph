@@ -202,6 +202,8 @@ const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
 const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
+const inboxFeed = await import("./inbox/route");
+const inboxCounts = await import("./inbox/counts/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
 const trackerStateMapping = await import("./trackers/[integrationId]/state-mapping/route");
@@ -507,6 +509,48 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
     state.userId = null;
     expect((await call(runAnalytics.GET)).status).toBe(401);
+  });
+
+  it("lists only each organization's own Inbox items and counts, and 404s on the other's", async () => {
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const responses = [];
+        for (const tab of ["needs-you", "problems", "running"]) {
+          for (const organization of [undefined, "all", own.orgId]) {
+            const query = new URLSearchParams({ tab, ...(organization && { organization }) });
+            const response = await call(inboxFeed.GET, { path: `/api/ui?${query}` });
+            expect(response.status).toBe(200);
+            for (const item of response.body.items as { organization: { id: string } }[]) {
+              expect(item.organization.id).toBe(own.orgId);
+            }
+            responses.push(response);
+          }
+        }
+        const running = await call(inboxFeed.GET, { path: "/api/ui?tab=running&organization=all" });
+        expect((running.body.items as { run: { id: string } }[]).map((i) => i.run.id)).toContain(
+          own.triageRunId,
+        );
+        const count = await call(inboxCounts.GET, { path: "/api/ui?organization=all" });
+        expect(count).toMatchObject({ status: 200 });
+        expect(count.body.running).toBe((running.body.items as unknown[]).length);
+        for (const { body } of [...responses, count]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+        expect(
+          await call(inboxFeed.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
+        expect(
+          await call(inboxCounts.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
+      }
+    }
+    state.userId = null;
+    expect((await call(inboxFeed.GET)).status).toBe(401);
+    expect((await call(inboxCounts.GET)).status).toBe(401);
   });
 
   it("lists and shows each organization's webhook deliveries to its members, and 404s on the other's", async () => {

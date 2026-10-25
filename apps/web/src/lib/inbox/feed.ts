@@ -1,0 +1,338 @@
+/**
+ * The Inbox on the wire: `listInboxItems` (`@omniralph/db`) derives the items, this module
+ * gives each its references, a plain-language reason and the actions a person can take.
+ */
+import "server-only";
+import {
+  countInboxItems,
+  getRunIndexEntries,
+  listInboxItems,
+  loadInboxReferences,
+  loadRunListEntries,
+  type Database,
+  type InboxCandidate,
+  type InboxReferences,
+  type InboxTab,
+  type RunListEntry,
+  type RunRepository,
+} from "@omniralph/db";
+import type { InboxAction, InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
+import type { RunRow } from "@/lib/api/runs";
+import type { ScopedOrganization } from "@/lib/api/scope";
+import { HARNESS_ONLINE_WINDOW_MS } from "@/lib/harnesses/display";
+import { isRerunnable } from "@/lib/jobs/rerun-kind";
+import { truncate } from "@/lib/ralph/display";
+import { changeRequestWebUrl } from "@/lib/repositories/web-url";
+import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
+import { storyIssueUrl } from "@/lib/runs/detail";
+import { runRow } from "@/lib/runs/list";
+
+const TAB_OF_PARAM: Record<InboxTabParam, InboxTab> = {
+  "needs-you": "needs_you",
+  problems: "problems",
+  running: "running",
+};
+const PARAM_OF_TAB: Record<InboxTab, InboxTabParam> = {
+  needs_you: "needs-you",
+  problems: "problems",
+  running: "running",
+};
+
+/** Longest error a reason quotes. */
+const REASON_ERROR_MAX_LENGTH = 300;
+
+const ACTIONS: Record<InboxCandidate["facts"]["kind"], InboxAction[]> = {
+  manual_story: ["done", "skip", "snooze"],
+  blocked_epic: ["start_anyway", "done", "snooze"],
+  question: ["answer", "done", "snooze"],
+  stopped_epic: ["resume", "done", "snooze"],
+  prd_ready: ["done", "snooze"],
+  pr_waiting: ["done", "snooze"],
+  failed_run: ["retry", "done", "snooze"],
+  failed_system: ["retry", "done", "snooze"],
+  agent_offline: ["done", "snooze"],
+  agent_update_failed: ["done", "snooze"],
+  run: [],
+};
+
+/** "pull request #42" on GitHub, "merge request !7" on GitLab. */
+function changeRequestName(provider: "github" | "gitlab" | undefined, number: number): string {
+  return provider === "gitlab" ? `merge request !${number}` : `pull request #${number}`;
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A sentence ending in the error, when there is one. */
+function withError(sentence: string, error: string | null): string {
+  const message = error?.trim().replace(/\s+/g, " ");
+  return message ? `${sentence} ${truncate(message, REASON_ERROR_MAX_LENGTH)}` : sentence;
+}
+
+function pullRequestRef(
+  repository: RunRepository,
+  number: number,
+  url: string | null,
+): NonNullable<InboxItem["pullRequest"]> {
+  return {
+    provider: repository.provider,
+    number,
+    url:
+      url && /^https?:\/\//i.test(url)
+        ? url
+        : changeRequestWebUrl(repository.provider, repository.baseUrl, repository.fullPath, number),
+  };
+}
+
+const repositoryRef = (repository: RunRepository): NonNullable<InboxItem["repository"]> => ({
+  id: repository.id,
+  provider: repository.provider,
+  fullPath: repository.fullPath,
+});
+
+interface Context {
+  organization: ScopedOrganization;
+  /** The run's list row and its entry, when the item is about a run. */
+  row: RunRow | null;
+  entry: RunListEntry | null;
+  references: InboxReferences;
+}
+
+const QUESTION_REASONS = {
+  repository: () => "Om needs to know which repo to work in.",
+  preparation: (story: string | null) =>
+    `Om asks whether to run the preparation of ${story ?? "a manual story"}.`,
+  cleanup: (pr: string) => `Om asks what to do with what's left of the merged ${pr}.`,
+  permission: (tool: string | null) =>
+    tool ? `Om asks to use ${tool}.` : "Om asks to use a tool.",
+} as const;
+
+const REVIEW_STATE_REASONS = {
+  none: (pr: string) => `${capitalize(pr)} is waiting for a review.`,
+  review_requested: (pr: string) => `A review of ${pr} was requested.`,
+  commented: (pr: string) => `${capitalize(pr)} has review comments.`,
+  changes_requested: (pr: string) => `A reviewer asked for changes to ${pr}.`,
+  approved: (pr: string) => `${capitalize(pr)} is approved and ready to merge.`,
+} as const;
+
+/** The item's own fields: what differs from the run's row. */
+function itemFields(
+  item: InboxCandidate,
+  { row, entry, references }: Context,
+): Pick<
+  InboxItem,
+  | "title"
+  | "workItem"
+  | "repository"
+  | "pullRequest"
+  | "agent"
+  | "reason"
+  | "actions"
+  | "question"
+  | "reviewState"
+  | "review"
+> {
+  const { facts } = item;
+  const base = {
+    title: row?.title ?? "Run",
+    workItem: row?.workItem ?? null,
+    repository: row?.repository ?? null,
+    pullRequest: row?.pullRequest ?? null,
+    agent: row?.agent ?? null,
+    actions: ACTIONS[facts.kind],
+    question: null,
+    reviewState: null,
+    review: null,
+  };
+  const prName = row?.pullRequest
+    ? changeRequestName(row.pullRequest.provider, row.pullRequest.number)
+    : "pull request";
+  switch (facts.kind) {
+    case "manual_story": {
+      const { story } = facts;
+      return {
+        ...base,
+        title: story.title,
+        workItem: {
+          tracker: "linear",
+          identifier: story.identifier,
+          url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),
+        },
+        reason: facts.elsewhere
+          ? `${story.identifier} routes to a repo with coding off, so a person has to do it.`
+          : `${story.identifier} is a manual story: a person has to do it before the epic goes on.`,
+      };
+    }
+    case "blocked_epic": {
+      const names = facts.blockers.map((b) => b.identifier).join(", ");
+      return {
+        ...base,
+        reason:
+          facts.blockers.length === 1
+            ? `Waiting on ${names}, which is outside the epic.`
+            : `Waiting on ${names}, which are outside the epic.`,
+      };
+    }
+    case "question": {
+      const { question } = facts;
+      const reason =
+        question.kind === "repository"
+          ? QUESTION_REASONS.repository()
+          : question.kind === "preparation"
+            ? QUESTION_REASONS.preparation(question.story)
+            : question.kind === "cleanup"
+              ? QUESTION_REASONS.cleanup(prName)
+              : QUESTION_REASONS.permission(question.tool);
+      return {
+        ...base,
+        reason,
+        question: {
+          kind: question.kind,
+          askedAt: new Date(question.askedAt).toISOString(),
+          expiresAt: question.expiresAt ? new Date(question.expiresAt).toISOString() : null,
+        },
+      };
+    }
+    case "stopped_epic":
+      return {
+        ...base,
+        reason: withError(
+          item.run?.kind === "epic" ? "The epic was stopped." : "The request was stopped.",
+          facts.error,
+        ),
+      };
+    case "prd_ready": {
+      const identifier = row?.workItem?.identifier ?? "The work item";
+      return {
+        ...base,
+        reason:
+          facts.outcome === "prd"
+            ? `Triage wrote a PRD for ${identifier}. It's ready for a person to start.`
+            : `Triage reformatted the PRD of ${identifier}. It's ready for a person to start.`,
+      };
+    }
+    case "pr_waiting": {
+      const { lane, review } = facts;
+      const repository = references.repositories.get(lane.repositoryId) ?? null;
+      const pullRequest = repository ? pullRequestRef(repository, lane.prNumber, lane.prUrl) : null;
+      const name = changeRequestName(repository?.provider, lane.prNumber);
+      return {
+        ...base,
+        repository: repository ? repositoryRef(repository) : base.repository,
+        pullRequest: pullRequest ?? base.pullRequest,
+        reason: REVIEW_STATE_REASONS[lane.reviewState](name),
+        reviewState: lane.reviewState,
+        review: review && {
+          runId: review.runId,
+          status: review.status,
+          openFindings: review.openFindings,
+        },
+      };
+    }
+    case "failed_run":
+      return { ...base, reason: withError("The run failed.", facts.error) };
+    case "failed_system": {
+      const { job } = facts;
+      const repository = job.repositoryId
+        ? (references.repositories.get(job.repositoryId) ?? null)
+        : null;
+      const agent = job.harnessId ? (references.agents.get(job.harnessId) ?? null) : null;
+      const payloadName = job.payload.name;
+      const context: AttemptLabelContext = {
+        repository: repository?.fullPath ?? null,
+        provider: repository?.provider ?? null,
+        workItem: entry?.workItem?.identifier ?? null,
+        packageName: typeof payloadName === "string" ? payloadName : null,
+        agent: agent?.name ?? null,
+      };
+      const label = describeAttempt({ type: job.type, status: "failed", context });
+      return {
+        ...base,
+        title: label,
+        repository: repository ? repositoryRef(repository) : base.repository,
+        agent: agent ?? base.agent,
+        reason: withError(`${label}.`, job.error ?? "It failed without saying why."),
+        actions: isRerunnable(job) ? ACTIONS.failed_system : ["done", "snooze"],
+      };
+    }
+    case "agent_offline":
+      return {
+        ...base,
+        title: facts.agent.name,
+        agent: facts.agent,
+        reason: `${facts.agent.name} stopped checking in, so it can't take work.`,
+      };
+    case "agent_update_failed":
+      return {
+        ...base,
+        title: facts.agent.name,
+        agent: facts.agent,
+        reason: withError(`${facts.agent.name} couldn't update to ${facts.version}.`, facts.error),
+      };
+    case "run":
+      return {
+        ...base,
+        reason: facts.status === "queued" ? "Waiting for an agent." : "Om is working on it.",
+      };
+  }
+}
+
+function inboxItem(item: InboxCandidate, context: Context): InboxItem {
+  const { organization, entry } = context;
+  return {
+    key: item.key,
+    tab: PARAM_OF_TAB[item.tab],
+    kind: item.facts.kind,
+    organization: { id: organization.id, name: organization.name, role: organization.role },
+    run: item.run && entry && { id: item.run.id, kind: item.run.kind, status: entry.status },
+    since: item.since.toISOString(),
+    ...itemFields(item, context),
+  };
+}
+
+export interface InboxScope {
+  organizations: readonly ScopedOrganization[];
+  userId: string;
+}
+
+/** The tab's items for the user, newest first, with their references. */
+export async function loadInboxFeed(
+  db: Database,
+  scope: InboxScope,
+  tab: InboxTabParam,
+): Promise<InboxItem[]> {
+  const items = await listInboxItems(db, {
+    organizationIds: scope.organizations.map((o) => o.id),
+    userId: scope.userId,
+    tab: TAB_OF_PARAM[tab],
+    onlineWindowMs: HARNESS_ONLINE_WINDOW_MS,
+  });
+  const runIds = [...new Set(items.flatMap((i) => (i.run ? [i.run.id] : [])))];
+  const [entries, references] = await Promise.all([
+    getRunIndexEntries(db, runIds).then((found) => loadRunListEntries(db, found)),
+    loadInboxReferences(db, items),
+  ]);
+  const organizationById = new Map(scope.organizations.map((o) => [o.id, o]));
+  const entryById = new Map(entries.map((e) => [e.id, e]));
+  return items.flatMap((item) => {
+    const organization = organizationById.get(item.organizationId);
+    if (!organization) return [];
+    const entry = (item.run && entryById.get(item.run.id)) || null;
+    // A run that went away between the queries: nothing to show.
+    if (item.run && !entry) return [];
+    const row = entry && runRow(entry, organization);
+    return [inboxItem(item, { organization, row, entry, references })];
+  });
+}
+
+/** Each tab's item count for the user. */
+export async function loadInboxCounts(
+  db: Database,
+  scope: InboxScope,
+): Promise<InboxCountsResponse> {
+  const counts = await countInboxItems(db, {
+    organizationIds: scope.organizations.map((o) => o.id),
+    userId: scope.userId,
+    onlineWindowMs: HARNESS_ONLINE_WINDOW_MS,
+  });
+  return { needsYou: counts.needs_you, problems: counts.problems, running: counts.running };
+}

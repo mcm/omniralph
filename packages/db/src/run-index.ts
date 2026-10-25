@@ -173,7 +173,7 @@ const iso = (column: string) => sql.raw(`to_char(${column} at time zone 'UTC', $
  * The read model: one row per run with the columns of `RunIndexEntry` (snake_case).
  * Statuses and origins are mapped by `RUN_STATUS_MAP` and `RUN_ORIGIN_MAP`.
  */
-function runIndexSql(): SQL {
+export function runIndexSql(): SQL {
   const ralphKind = sql.raw(`(case r.mode when 'epic' then 'epic' else 'request' end)`);
   const ralphStatus = sql.raw(`r.status::text`);
   return sql`
@@ -217,7 +217,7 @@ function runIndexSql(): SQL {
     where c.kind = 'query'`;
 }
 
-interface RunIndexRow extends Record<string, unknown> {
+export interface RunIndexRow extends Record<string, unknown> {
   id: string;
   kind: RunKind;
   organization_id: string;
@@ -230,11 +230,11 @@ interface RunIndexRow extends Record<string, unknown> {
   created_key: string;
 }
 
-const indexColumns = sql`runs.id, runs.kind, runs.organization_id, runs.status, runs.origin,
+export const indexColumns = sql`runs.id, runs.kind, runs.organization_id, runs.status, runs.origin,
   runs.repository_id, runs.harness_id, ${iso("runs.created_at")} as created_at,
   ${iso("runs.updated_at")} as updated_at, ${iso("runs.created_at")} as created_key`;
 
-function indexEntry(row: RunIndexRow): RunIndexEntry {
+export function indexEntry(row: RunIndexRow): RunIndexEntry {
   return {
     id: row.id,
     kind: row.kind,
@@ -316,6 +316,21 @@ export async function getRunIndexEntry(db: Queryable, id: string): Promise<RunIn
     select ${indexColumns} from (${runIndexSql()}) runs where runs.id = ${id}::uuid limit 1`);
   const row = result.rows[0];
   return row ? indexEntry(row) : null;
+}
+
+/** The runs with these IDs (any organization), in no particular order. */
+export async function getRunIndexEntries(
+  db: Queryable,
+  ids: readonly string[],
+): Promise<RunIndexEntry[]> {
+  if (ids.length === 0) return [];
+  const result = await db.execute<RunIndexRow>(sql`
+    select ${indexColumns} from (${runIndexSql()}) runs
+    where runs.id in (${sql.join(
+      ids.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})`);
+  return result.rows.map(indexEntry);
 }
 
 // ── List rows ────────────────────────────────────────────────────────────────
