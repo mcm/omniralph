@@ -146,3 +146,13 @@ describe("toast", () => {
     ]);
   });
 });
+
+describe("package root", () => {
+  it("exports the one Toaster, toast and LiveNotice", async () => {
+    const root = await import("../index.js");
+    const { LiveNotice } = await import("./live-notice.js");
+    expect(root.Toaster).toBe(Toaster);
+    expect(root.toast).toBe(toast);
+    expect(root.LiveNotice).toBe(LiveNotice);
+  });
+});

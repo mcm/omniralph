@@ -143,6 +143,13 @@ export function AppFrame({
   children,
 }: AppFrameProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Any navigation closes the drawer, including ones its link click didn't make (a route
+  // change after a confirm dialog, the browser's back button).
+  const [drawerPath, setDrawerPath] = useState(currentPath);
+  if (drawerPath !== currentPath) {
+    setDrawerPath(currentPath);
+    setDrawerOpen(false);
+  }
   useEffect(() => {
     if (!drawerOpen || typeof window.matchMedia !== "function") return;
     const query = window.matchMedia(DRAWER_CLOSE_QUERY);

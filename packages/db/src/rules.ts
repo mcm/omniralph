@@ -4,12 +4,29 @@
  * review config resolved at enqueue time (`getRepositoryReviewSettings`).
  */
 import { and, asc, eq, sql } from "drizzle-orm";
+import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { Rule } from "./reviews.js";
 import type { ruleKind } from "./schema.js";
-import { feedback, findings, reviews, rules, users } from "./schema.js";
+import { feedback, findings, repositories, reviews, rules, users } from "./schema.js";
 
 export type RuleKind = (typeof ruleKind.enumValues)[number];
+
+/** Records a live `repository` change for a change to the repository's rules. */
+async function recordRulesChange(db: Database, repositoryId: string): Promise<void> {
+  if (!currentChangeCollector()) return;
+  const [repository] = await db
+    .select({ organizationId: repositories.organizationId })
+    .from(repositories)
+    .where(eq(repositories.id, repositoryId))
+    .limit(1);
+  if (!repository) return;
+  recordChange(db, {
+    resource: "repository",
+    ids: [repositoryId],
+    organizationId: repository.organizationId,
+  });
+}
 
 export interface RuleEntry {
   id: string;
@@ -73,6 +90,7 @@ export async function createCustomRule(
       createdBy: input.createdBy,
     })
     .returning();
+  await recordRulesChange(db, input.repositoryId);
   return row!;
 }
 
@@ -97,6 +115,7 @@ export async function updateRule(
     .set(changes)
     .where(and(eq(rules.id, input.ruleId), eq(rules.repositoryId, input.repositoryId)))
     .returning();
+  if (row) await recordRulesChange(db, input.repositoryId);
   return row ?? null;
 }
 
@@ -109,6 +128,7 @@ export async function deleteRule(
     .delete(rules)
     .where(and(eq(rules.id, input.ruleId), eq(rules.repositoryId, input.repositoryId)))
     .returning({ id: rules.id });
+  if (deleted.length > 0) await recordRulesChange(db, input.repositoryId);
   return deleted.length > 0;
 }
 
@@ -152,6 +172,7 @@ export async function insertLearnedRule(
         createdBy: null,
       })
       .returning();
+    await recordRulesChange(tx as unknown as Database, input.repositoryId);
     return { status: "inserted", rule: row! };
   });
 }

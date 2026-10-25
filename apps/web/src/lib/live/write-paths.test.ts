@@ -20,12 +20,15 @@ import {
   createHarnessEnrollment,
   createHostTool,
   createInvitation,
+  createCustomRule,
   createReview,
   createReviewRun,
   createRun,
   createTriageRun,
   createUser,
   deleteAgentDefinition,
+  deleteRule,
+  dismissFinding,
   deleteScmConnection,
   deleteTaskDefinition,
   enrollHarness,
@@ -33,9 +36,11 @@ import {
   ensureLane,
   expireQueuedJobs,
   failJob,
+  findings,
   harnesses,
   insertAgentDefinition,
   insertJob,
+  insertLearnedRule,
   insertRunActivity,
   insertTaskDefinition,
   jobs,
@@ -48,6 +53,8 @@ import {
   recordHarnessHeartbeat,
   replaceRoutingRules,
   requestJobCancel,
+  resolveOpenFindings,
+  restoreFinding,
   revokeHarness,
   saveChatConnection,
   saveIntegration,
@@ -61,6 +68,7 @@ import {
   updateMemberRole,
   updateAgentDefinition,
   updateOrganization,
+  updateRule,
   updateRepositoryRalphSettings,
   updateRepositorySettings,
   updateReviewProfile,
@@ -271,6 +279,62 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ]);
       // Already running: nothing changed, nothing is published.
       expect(await published(() => markReviewRunRunning(db, reviewRunId))).toEqual([]);
+    });
+
+    it("dismissing, restoring and resolving a finding publish its review run", async () => {
+      const reviewRun = await createReviewRun(db, {
+        organizationId: orgId,
+        repositoryId: repoId,
+        prNumber: 4,
+        headSha: "c".repeat(40),
+        baseSha: "d".repeat(40),
+        trigger: "mention",
+        mode: "full",
+        profileId: "standard",
+      });
+      const review = await createReview(db, {
+        reviewRunId: reviewRun.id,
+        repositoryId: repoId,
+        prNumber: 4,
+        prTitle: "Change",
+        headSha: "c".repeat(40),
+        baseSha: "d".repeat(40),
+        trigger: "mention",
+        profileId: "standard",
+        model: null,
+        budget: 100_000,
+      });
+      const finding = {
+        reviewId: review.id,
+        path: "a.ts",
+        startLine: 1,
+        endLine: 1,
+        severity: "high" as const,
+        category: "bug",
+        title: "t",
+        body: "b",
+        confidence: 0.9,
+      };
+      const [first, second] = await db.insert(findings).values([finding, finding]).returning();
+      expect(
+        await published(() =>
+          dismissFinding(db, {
+            findingId: first!.id,
+            source: "ui",
+            reason: "false_positive",
+            userId,
+          }),
+        ),
+      ).toEqual([runEvent(reviewRun.id)]);
+      expect(
+        await published(() => restoreFinding(db, { findingId: first!.id, userId })),
+      ).toEqual([runEvent(reviewRun.id)]);
+      expect(await published(() => resolveOpenFindings(db, [first!.id, second!.id]))).toEqual([
+        runEvent(reviewRun.id),
+      ]);
+      // Nothing left to change: nothing is published.
+      expect(await published(() => restoreFinding(db, { findingId: first!.id }))).toEqual([]);
+      expect(await published(() => resolveOpenFindings(db, [first!.id]))).toEqual([]);
     });
 
     it("triage run updates publish the triage run", async () => {
@@ -812,6 +876,52 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(
         await published(() => removeOrganizationDomain(db, orgId, "removed.example.com")),
       ).toEqual([orgEvent]);
+    });
+  });
+
+  describe("repository rules", () => {
+    it("adding, editing, deleting and learning a rule publish the repository", async () => {
+      const event = {
+        channel: orgChannel,
+        v: 1,
+        resource: "repository",
+        ids: [repoId],
+        organizationId: orgId,
+      };
+      let ruleId = "";
+      expect(
+        await published(async () => {
+          const rule = await createCustomRule(db, {
+            repositoryId: repoId,
+            text: "No",
+            createdBy: userId,
+          });
+          ruleId = rule.id;
+        }),
+      ).toEqual([event]);
+      expect(
+        await published(() => updateRule(db, { repositoryId: repoId, ruleId, enabled: false })),
+      ).toEqual([event]);
+      expect(await published(() => deleteRule(db, { repositoryId: repoId, ruleId }))).toEqual([
+        event,
+      ]);
+      // No such rule: nothing is published.
+      expect(
+        await published(() => updateRule(db, { repositoryId: repoId, ruleId, enabled: true })),
+      ).toEqual([]);
+      expect(await published(() => deleteRule(db, { repositoryId: repoId, ruleId }))).toEqual([]);
+
+      const [finding] = await db.select({ id: findings.id }).from(findings).limit(1);
+      const learn = () =>
+        insertLearnedRule(db, {
+          repositoryId: repoId,
+          text: "Learned",
+          sourceFindingId: finding!.id,
+          findDuplicate: (text, existing) => existing.find((rule) => rule.text === text),
+        });
+      expect(await published(learn)).toEqual([event]);
+      // A duplicate isn't stored: nothing is published.
+      expect(await published(learn)).toEqual([]);
     });
   });
 

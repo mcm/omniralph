@@ -350,6 +350,26 @@ describe("AppFrame", () => {
       await expectClosed(hamburger);
     });
 
+    it("closes when the current path changes without a drawer link click", async () => {
+      const { hamburger, rerender } = await openDrawer();
+      const frame = (currentPath: string) => (
+        <UiProvider linkComponent={RouterLink}>
+          <AppFrame
+            currentPath={currentPath}
+            brandHref="/"
+            nav={NAV}
+            user={{ name: "Ada Lovelace", initials: "AL" }}
+            userMenu={(trigger) => trigger}
+          />
+        </UiProvider>
+      );
+      // The same path again (a re-render) leaves it open.
+      rerender(frame("/reviews/42"));
+      expect(screen.getByRole("dialog", { name: "Menu" })).toBeTruthy();
+      rerender(frame("/harnesses"));
+      await expectClosed(hamburger);
+    });
+
     it("stays open on a modified (new tab) link click", async () => {
       const { user, dialog } = await openDrawer();
       await user.keyboard("{Control>}");

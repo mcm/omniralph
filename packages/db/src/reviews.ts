@@ -84,7 +84,7 @@ function recordReviewRunChange(db: unknown, run: { id: string; organizationId: s
 }
 
 /** Records a live `run` change for the review runs of reviews (their passes). */
-async function recordReviewChanges(db: Database, reviewIds: readonly string[]): Promise<void> {
+export async function recordReviewChanges(db: Database, reviewIds: readonly string[]): Promise<void> {
   if (!currentChangeCollector() || reviewIds.length === 0) return;
   const rows = await db
     .select({ id: reviewRuns.id, organizationId: reviewRuns.organizationId })
@@ -509,11 +509,13 @@ export async function resolveOpenFindings(
   findingIds: readonly string[],
 ): Promise<FindingRow[]> {
   if (findingIds.length === 0) return [];
-  return db
+  const resolved = await db
     .update(findings)
     .set({ status: "resolved" })
     .where(and(inArray(findings.id, [...findingIds]), eq(findings.status, "open")))
     .returning();
+  await recordReviewChanges(db, [...new Set(resolved.map((f) => f.reviewId))]);
+  return resolved;
 }
 
 export async function listReviewFindings(db: Database, reviewId: string): Promise<FindingRow[]> {

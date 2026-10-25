@@ -76,6 +76,15 @@ describe("SaveBar", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("disables Discard while saving", async () => {
+    const user = userEvent.setup();
+    const { onDiscard } = setup({ saving: true });
+    const discard = screen.getByRole("button", { name: "Discard" }) as HTMLButtonElement;
+    expect(discard.disabled).toBe(true);
+    await user.click(discard);
+    expect(onDiscard).not.toHaveBeenCalled();
+  });
+
   it("shows the error in an alert", () => {
     setup({ error: "The repository is read-only." });
     expect(screen.getByRole("alert").textContent).toBe("The repository is read-only.");

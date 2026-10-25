@@ -33,6 +33,14 @@ describe("surfaces.css", () => {
     );
   });
 
+  it("aligns the card actions to the right of the header", () => {
+    expect(declarations(".or-card__head")).toMatchObject({
+      display: "flex",
+      "justify-content": "space-between",
+    });
+    expect(declarations(".or-card__actions")["margin-left"]).toBe("auto");
+  });
+
   it("colors each progress segment by its step state", () => {
     const background = (state: string) => declarations(`.or-progress__seg--${state}`).background;
     expect(background("done")).toBe("var(--or-sec)");
