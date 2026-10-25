@@ -84,6 +84,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const runList = await import("@/app/api/ui/runs/route");
 const runDetail = await import("@/app/api/ui/runs/[id]/route");
 const runStop = await import("@/app/api/ui/runs/[id]/stop/route");
+const runRetry = await import("@/app/api/ui/runs/[id]/retry/route");
 const transcriptRoute =
   await import("@/app/api/ui/runs/[id]/attempts/[attemptId]/transcript/route");
 const { disconnectedLinearGateway } = await import("@/lib/linear/client");
@@ -146,6 +147,27 @@ type Result = { ok: true } | { ok: false; error: string };
 async function stopRalphRun(id: string): Promise<Result> {
   const { status, body } = await call<Result>(runStop.POST, { id, method: "POST" });
   return status === 200 ? body : { ok: false, error: body.error! };
+}
+
+/** `POST /api/ui/runs/{id}/retry` with `body` as is (a string) or as JSON; no body when omitted. */
+async function retryRequest(
+  id: string,
+  body?: unknown,
+): Promise<{ status: number; body: RunDetail & { error?: string } }> {
+  const response = await runRetry.POST(
+    new Request("http://localhost/api/ui", {
+      method: "POST",
+      ...(body !== undefined && {
+        headers: { "content-type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  return {
+    status: response.status,
+    body: (await response.json()) as RunDetail & { error?: string },
+  };
 }
 
 describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
@@ -854,7 +876,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       error: "A story ran out of attempts.",
       waitingOn: null,
       actions: {
-        // Members can't stop runs yet; a failed run doesn't stop anyway.
+        // A failed run doesn't stop.
         stop: false,
         retry: {
           run: true,
@@ -873,7 +895,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       storyIds: [built!.id],
       attemptIds: [],
     });
-    // A running one can be stopped (by an admin), and retries nothing.
+    // A running one can be stopped (by any member), and retries nothing.
     await updateRun(db, run.id, { status: "running" });
     expect((await detailPage(run.id)).details.actions).toEqual({
       stop: true,
@@ -881,7 +903,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
     state.user = member;
     state.orgId = orgId;
-    expect((await detailPage(run.id)).details.actions.stop).toBe(false);
+    expect((await detailPage(run.id)).details.actions.stop).toBe(true);
   });
 
   it("shows what a waiting epic waits for", async () => {
@@ -1261,17 +1283,20 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect(view.attempts).toMatchObject([{ id: jobId, status: "running", cancelRequested: true }]);
   });
 
-  it("only lets admins stop a run", async () => {
+  it("lets members stop a run, but not a signed-out user", async () => {
     const { run, jobId } = await runningRun();
-    state.user = member;
-    const result = await stopRalphRun(run.id);
-    expect(result.ok).toBe(false);
     state.user = null;
     expect((await stopRalphRun(run.id)).ok).toBe(false);
-
     expect((await getRun(db, run.id))!.status).toBe("running");
-    expect((await getJob(db, jobId))!.status).toBe("queued");
     expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+
+    state.user = { ...member, name: "Mo Member" };
+    expect(await stopRalphRun(run.id)).toEqual({ ok: true });
+    expect((await getRun(db, run.id))!.status).toBe("stopped");
+    expect((await getJob(db, jobId))!.status).toBe("canceled");
+    expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      "Stopped (requested by Mo Member).",
+    );
   });
 
   it("stops a run while Linear isn't connected, and rejects unknown or finished runs", async () => {
@@ -1291,6 +1316,196 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       error: "That run doesn't exist.",
     });
     expect((await stopRalphRun("nope")).ok).toBe(false);
+  });
+
+  describe("retry", () => {
+    /** A stopped epic of two Linear stories (ENG-41 built, ENG-42 not). */
+    async function stoppedEpic() {
+      const epic = linear.add({ identifier: "ENG-40", title: "Epic", description: "Build it." });
+      const built = linear.add({ identifier: "ENG-41", title: "Built", parentId: epic.id });
+      const open = linear.add({ identifier: "ENG-42", title: "Open", parentId: epic.id });
+      await linear.setIssueState(built.id, { type: "completed" });
+      const run = await newRun({
+        linearIssueId: epic.id,
+        linearIdentifier: "ENG-40",
+        linearUrl: "https://linear.app/acme/issue/ENG-40/epic",
+      });
+      const [builtRow, openRow] = await upsertStories(db, run.id, [
+        { linearIssueId: built.id, identifier: "ENG-41", title: "Built" },
+        { linearIssueId: open.id, identifier: "ENG-42", title: "Open" },
+      ]);
+      await updateStory(db, builtRow!.id, {
+        status: "completed",
+        attempts: 1,
+        commitSha: "1".repeat(40),
+      });
+      await updateStory(db, openRow!.id, { status: "exhausted", attempts: 3 });
+      await updateRun(db, run.id, { status: "stopped", iterations: 9 });
+      return { run, built: builtRow!, open: openRow!, openIssue: open };
+    }
+
+    const queuedStoryJobs = (runId: string) =>
+      db
+        .select()
+        .from(jobs)
+        .where(sql`${jobs.ralphRunId} = ${runId} and ${jobs.status} = 'queued'`);
+
+    it("lets a member retry a stopped epic: it resumes and the session says who retried it", async () => {
+      const { run, open } = await stoppedEpic();
+      state.user = { ...member, name: "Mo Member" };
+      const { status, body } = await retryRequest(run.id);
+      expect(status).toBe(200);
+      const view = runDetailSchema.parse(body);
+      expect(view).toMatchObject({ id: run.id, status: "running" });
+      expect(await getRun(db, run.id)).toMatchObject({ status: "running", iterations: 1 });
+      const [job, ...more] = await queuedStoryJobs(run.id);
+      expect(more).toEqual([]);
+      expect(job).toMatchObject({ type: "ralph.story", ralphStoryId: open.id });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+        "Retried from Omniralph by Mo Member.",
+      );
+      expect((await listStories(db, run.id)).find((s) => s.id === open.id)).toMatchObject({
+        status: "running",
+        attempts: 0,
+      });
+    });
+
+    it("retries one story, and an attempt of a story, by focusing it", async () => {
+      const { run, open, openIssue } = await stoppedEpic();
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: open.id } }),
+      ).toMatchObject({ status: 200, body: { status: "running" } });
+      expect(await getRun(db, run.id)).toMatchObject({ focusStoryId: openIssue.id });
+      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+        "Retried **ENG-42** from Omniralph by Ada Admin.",
+      );
+
+      // Its attempt fails; retrying that attempt retries the story.
+      const [job] = await queuedStoryJobs(run.id);
+      await db
+        .update(jobs)
+        .set({ status: "failed", finishedAt: new Date(), error: "Tests failed." })
+        .where(eq(jobs.id, job!.id));
+      await updateRun(db, run.id, { status: "stopped" });
+      expect(
+        await retryRequest(run.id, { target: { kind: "attempt", attemptId: job!.id } }),
+      ).toMatchObject({ status: 200, body: { status: "running" } });
+      const [again] = await queuedStoryJobs(run.id);
+      expect(again).toMatchObject({ type: "ralph.story", ralphStoryId: open.id });
+    });
+
+    it("re-runs a completed story of a finished epic, but not the finished epic as a whole", async () => {
+      const { run, built } = await stoppedEpic();
+      await updateStory(db, (await listStories(db, run.id))[1]!.id, { status: "completed" });
+      await updateRun(db, run.id, { status: "completed" });
+      expect(await retryRequest(run.id, { target: { kind: "run" } })).toMatchObject({
+        status: 400,
+        body: { error: "This epic is finished: re-run one of its stories instead." },
+      });
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: built.id } }),
+      ).toMatchObject({ status: 200, body: { status: "running" } });
+      const [job] = await queuedStoryJobs(run.id);
+      expect(job).toMatchObject({ type: "ralph.story", ralphStoryId: built.id });
+    });
+
+    it("refuses a story whose pull request is merged or closed", async () => {
+      const { run, open } = await stoppedEpic();
+      const lane = (await getMainLane(db, run))!;
+      await updateLane(db, lane.id, {
+        prNumber: 5,
+        prUrl: "https://github.com/acme/api/pull/5",
+        prMerged: true,
+        prClosed: true,
+      });
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: open.id } }),
+      ).toMatchObject({
+        status: 400,
+        body: { error: "The pull request for this story is already merged." },
+      });
+      await updateLane(db, lane.id, { prMerged: false });
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: open.id } }),
+      ).toMatchObject({
+        status: 400,
+        body: { error: "The pull request for this story is already closed." },
+      });
+      expect((await getRun(db, run.id))!.status).toBe("stopped");
+      expect(await queuedStoryJobs(run.id)).toEqual([]);
+    });
+
+    it("answers 409 while Om works on the run", async () => {
+      const { run } = await runningRun();
+      expect(await retryRequest(run.id)).toMatchObject({
+        status: 409,
+        body: { error: "Om is already working on this run." },
+      });
+      // A stopped run whose canceled job hasn't confirmed yet is still busy.
+      await updateRun(db, run.id, { status: "stopped" });
+      expect((await retryRequest(run.id)).status).toBe(409);
+    });
+
+    it("retries a request run whose request attempt failed", async () => {
+      const issue = linear.add({ identifier: "ENG-50", title: "A request" });
+      const run = await newRun({
+        mode: "request",
+        kind: "single",
+        linearIssueId: issue.id,
+        linearIdentifier: "ENG-50",
+      });
+      const message = await insertMessage(db, {
+        runId: run.id,
+        kind: "request",
+        text: "Fix the README typo.",
+      });
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "ralph.request",
+        taskType: "coding",
+        pool: "long",
+        ralphRunId: run.id,
+        payload: { requests: [{ id: message.id, text: message.text }] },
+      });
+      await db
+        .update(jobs)
+        .set({ status: "failed", finishedAt: new Date(), error: "Crashed." })
+        .where(eq(jobs.id, job.id));
+      await db.execute(sql`update ralph_messages set consumed_at = now() where id = ${message.id}`);
+      await updateRun(db, run.id, { status: "completed" });
+      expect((await detailPage(run.id)).details.actions.retry.run).toBe(true);
+
+      expect(await retryRequest(run.id)).toMatchObject({ status: 200 });
+      const [again] = await queuedStoryJobs(run.id);
+      expect(again).toMatchObject({ type: "ralph.request" });
+      expect(JSON.stringify(again!.payload)).toContain("Fix the README typo.");
+    });
+
+    it("validates the target and the run kind", async () => {
+      const { run } = await stoppedEpic();
+      expect(await retryRequest(run.id, "{")).toMatchObject({ status: 400 });
+      expect(await retryRequest(run.id, { target: { kind: "lane" } })).toMatchObject({
+        status: 400,
+      });
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: randomUUID() } }),
+      ).toMatchObject({ status: 404, body: { error: "That story doesn't exist." } });
+      expect(
+        await retryRequest(run.id, { target: { kind: "attempt", attemptId: randomUUID() } }),
+      ).toMatchObject({ status: 404, body: { error: "That attempt doesn't exist." } });
+      expect(await retryRequest(randomUUID())).toMatchObject({
+        status: 404,
+        body: { error: "That run doesn't exist." },
+      });
+      expect((await retryRequest("nope")).status).toBe(404);
+      const { triage } = await runOfEachKind();
+      expect(await retryRequest(triage.id)).toMatchObject({
+        status: 400,
+        body: { error: "Only epic and request runs can be retried." },
+      });
+      state.user = null;
+      expect((await retryRequest(run.id)).status).toBe(401);
+    });
   });
 
   it("keeps another organization's runs out: not listed, 404 and can't be stopped", async () => {

@@ -13,10 +13,36 @@ describe("runActions", () => {
     }
   });
 
-  it("stops unfinished epics and requests, for admins only", () => {
+  it("retries a request run whose newest request attempt didn't succeed, even once it completed", () => {
+    const attempt = (id: string, status: string) => ({
+      id,
+      type: "ralph.request",
+      status,
+      step: id,
+    });
+    for (const status of ["failed", "canceled", "expired"]) {
+      const attempts = [attempt("r2", status), attempt("r1", "completed")];
+      expect(
+        runActions({ kind: "request", status: "completed" }, "member", { attempts }).retry.run,
+      ).toBe(true);
+    }
+    const succeeded = [attempt("r2", "completed"), attempt("r1", "failed")];
+    expect(
+      runActions({ kind: "request", status: "completed" }, "member", { attempts: succeeded }).retry
+        .run,
+    ).toBe(false);
+    // An epic isn't retried as a whole once it completed.
+    expect(
+      runActions({ kind: "epic", status: "completed" }, "member", {
+        attempts: [attempt("r2", "failed")],
+      }).retry.run,
+    ).toBe(false);
+  });
+
+  it("stops unfinished epics and requests, for any member", () => {
     expect(runActions({ kind: "epic", status: "running" }, "admin", {}).stop).toBe(true);
     expect(runActions({ kind: "request", status: "waiting" }, "admin", {}).stop).toBe(true);
-    expect(runActions({ kind: "epic", status: "running" }, "member", {}).stop).toBe(false);
+    expect(runActions({ kind: "epic", status: "running" }, "member", {}).stop).toBe(true);
     expect(runActions({ kind: "epic", status: "completed" }, "admin", {}).stop).toBe(false);
     expect(runActions({ kind: "triage", status: "running" }, "admin", {}).stop).toBe(false);
   });

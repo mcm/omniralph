@@ -7,13 +7,13 @@ import { getDispatcher } from "@/lib/dispatch";
 import { REVIEW_NOT_FOUND, rerunOrganizationReview } from "@/lib/reviews/manage";
 
 /**
- * Re-runs the review on its PR's current head (admins; body `RerunReviewInput`) and answers
+ * Re-runs the review on its PR's current head (members; body `RerunReviewInput`) and answers
  * the review to open: the new one, or the one of the same head already queued or running
  * (`active`). A closed or merged PR, a disabled repository or a code-host failure is a 400
  * with the reason; another organization's review is a 404.
  */
-export const POST = apiHandler<"admin", typeof RerunReviewInput, undefined, { id: string }>(
-  { access: "admin", body: RerunReviewInput },
+export const POST = apiHandler<"member", typeof RerunReviewInput, undefined, { id: string }>(
+  { access: "member", body: RerunReviewInput },
   async ({ user, params, body }): Promise<RerunResult | { ok: false; error: string }> => {
     const result = await rerunOrganizationReview(
       getDb(),

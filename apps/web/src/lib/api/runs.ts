@@ -314,3 +314,17 @@ export const transcriptPageSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type TranscriptPageView = z.infer<typeof transcriptPageSchema>;
+
+/** What `POST /api/ui/runs/{id}/retry` retries (the run by default). */
+export const runRetryTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("run") }),
+  z.object({ kind: z.literal("story"), storyId: z.uuid("Choose a story of this run.") }),
+  z.object({ kind: z.literal("attempt"), attemptId: z.uuid("Choose an attempt of this run.") }),
+]);
+export type RunRetryTarget = z.infer<typeof runRetryTargetSchema>;
+
+/** `POST /api/ui/runs/{id}/retry` body; an empty body retries the run. */
+export const runRetryRequestSchema = z.object({
+  target: runRetryTargetSchema.default({ kind: "run" }),
+});
+export type RunRetryRequest = z.input<typeof runRetryRequestSchema>;

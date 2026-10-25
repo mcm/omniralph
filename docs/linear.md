@@ -345,6 +345,16 @@ Reply in the agent session to steer a run:
 | `/ship [notes]` | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
 | `Allow` / `Deny` (or `yes` / `no`) | Answers a request session's permission question (below). |
 
+**Retry from Omniralph.** Any member of the run's organization can retry an epic or request run
+without replying in Linear (`POST /api/ui/runs/{id}/retry`), unless Om is working on it (409). The
+run (a stopped, failed or waiting one) does what a bare `/continue` does (the same code): it
+resumes, the iteration cap starts over and unfinished stories get fresh attempts. A request run
+whose last request attempt failed, was canceled or expired gets that request back. One story can be
+retried too: its attempts start over and it runs next; on a finished epic, a completed story is
+re-run (its issue goes back to In Progress), and the PR/MR description is written again afterwards.
+A story whose PR/MR is merged or closed can't be retried. The session gets "Retried from Omniralph
+by {name}". Stop is open to members as well.
+
 **Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls
 a repository's own Claude Code settings `ask` about (for example `"ask": ["Bash(git commit:*)"]` in
 a committed `.claude/settings.json`). Such a call is asked about in the agent session as an
