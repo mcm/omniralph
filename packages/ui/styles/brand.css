@@ -1,0 +1,41 @@
+/* Brand: the Cursor glyph, the wordmark and the lockup. */
+.or-glyph {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+
+.or-wordmark {
+  font-family: var(--or-font-sans);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--or-text);
+}
+
+/*
+ * Inline layout, so the glyph and the wordmark share a baseline: the 24 px glyph
+ * drops 6.5 px below it, which puts the cursor's bottom edge on the wordmark's
+ * baseline (small master: the cursor ends at y 17.5 of 24).
+ */
+.or-lockup {
+  display: inline-block;
+  white-space: nowrap;
+  line-height: 24px;
+  color: var(--or-text);
+  text-decoration: none;
+}
+
+.or-lockup .or-glyph {
+  margin-right: 8px;
+  vertical-align: -6.5px;
+}
+
+a.or-lockup {
+  border-radius: var(--or-radius-sm);
+}
+
+a.or-lockup:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}

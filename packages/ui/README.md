@@ -123,6 +123,22 @@ it in the accent with the halo.
   shown under the box, linked by `aria-describedby`, and blocks the add. Focus stays in the
   text input.
 
+## Brand
+
+- `Glyph`: the Cursor mark without a tile, `size` px (default 24). The ring takes
+  `currentColor` and the cursor `--or-acc`. Sizes up to 32 px use the small master
+  (`CURSOR_SMALL`), larger ones the large master (`CURSOR_LARGE`). Decorative
+  (`aria-hidden`) unless given a `label`, which makes it `role="img"`.
+- `Wordmark`: lowercase "omniralph", 17 px, weight 600.
+- `BrandLockup`: the 24 px glyph and the wordmark on one baseline. With `href` it is a link
+  named "Omniralph home", rendered through the `UiProvider` link component.
+- `tileSvg({ size, master, shape })`: tile A (violet `#6236D6`, white mark) as an SVG
+  string, `rounded` (rx 5.5) or full-bleed `square`. Never theme-swapped.
+
+`pnpm --filter @omniralph/ui brand-assets` regenerates the favicon set in
+`apps/web/public` (`favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`) with `sharp`;
+commit the outputs. `src/brand/assets.test.ts` fails when they drift from `tileSvg`.
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
