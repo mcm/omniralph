@@ -201,6 +201,35 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
 - `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
   and decorative `icon`. There is no hint prop (rule 3).
 
+## Shell
+
+- `AppFrame`: the app layout. Props: `currentPath`, `brandHref`, `nav` (`NavItem[]`),
+  `orgPicker?` (node), `user` (`{ name, image?, initials }`), `userMenu(trigger)` (wrap
+  the trigger in a menu, e.g. `<Menu trigger={trigger} …/>`; called for the sidebar
+  footer, the phone avatar and the drawer footer) and `children` (in the `main`
+  landmark). It knows nothing about routes or sessions.
+  - 1200 px and wider: a 232 px `nav` "Primary" sidebar: `BrandLockup`, `orgPicker`, the
+    `placement: "main"` entries, a flexible gap, the `bottom` entries and the user
+    footer button (avatar and name).
+  - 769–1199 px: a 64 px icon rail. Labels, the wordmark and the footer name are hidden
+    with clip (still read by assistive tech); each entry shows its label as a tooltip and
+    counts move to the icon's corner. Give the picker's own label the `or-rail-hidden`
+    class so it hides on the rail too.
+  - 768 px and narrower: a 52 px sticky top bar (`header`: hamburger "Open menu", with
+    ", N alerts" and an alert dot when drawer entries have indicators, the lockup and the
+    avatar), a fixed bottom tab bar (`nav` "Primary", the `phone: "tab"` entries) and a
+    300 px left drawer (Radix dialog "Menu": lockup, "Close menu", picker, the
+    `phone: "drawer"` entries and the user footer). Escape, the close button, a scrim
+    click or following a link closes it, and focus returns to the hamburger.
+- `NavItem`: `{ id, label, href, icon, placement: "main" | "bottom", phone: "tab" |
+  "drawer", activeFor?, indicator? }`. `indicator` is `{ kind: "count", value, label }`
+  (the accent pill) or `{ kind: "dot", tone: "run" | "fail", label }` (a `StatusDot`
+  pip); its `label` joins the entry's accessible name ("Inbox, 4 need you").
+- `isNavActive(currentPath, item)`: true when the path equals the `href` or an
+  `activeFor` prefix, or starts with one followed by `/` (`/settings` never matches
+  `/settingsx`; `/` only matches itself). The active entry gets `aria-current="page"`.
+- There is no search control (a non-goal of the 2.0 shell).
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
