@@ -10,6 +10,7 @@ import {
   findings,
   getJob,
   getMainLane,
+  getReviewDetail,
   jobs,
   listPendingRequests,
   ralphRuns,
@@ -20,6 +21,7 @@ import {
   updateLane,
   updateRepositoryRalphSettings,
   upsertScmConnection,
+  users,
   DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
@@ -42,6 +44,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
+import { reviewDetailView } from "@/lib/reviews/history";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
@@ -449,6 +452,50 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(await db.select().from(jobs).where(eq(jobs.type, "review.learn-rule"))).toHaveLength(
         0,
       );
+    });
+
+    it("shows the dismissal in the review's history, beside older control panel feedback", async () => {
+      const { number, finding, commentId } = await reviewedPr();
+      // History from before dismissing moved to the PR: a `ui` dismissal, since restored.
+      await db
+        .insert(users)
+        .values({ id: "history-user", name: "Mia Member", email: "mia@example.com" })
+        .onConflictDoNothing();
+      await db.insert(feedback).values({
+        findingId: finding.id,
+        source: "ui",
+        reason: "false_positive",
+        note: "safe",
+        userId: "history-user",
+        createdAt: new Date("2026-10-01T09:00:00Z"),
+        restoredAt: new Date("2026-10-01T10:00:00Z"),
+        restoredBy: "history-user",
+      });
+      await threadComment(number, commentId, "@omniralph dismiss not relevant");
+
+      const view = reviewDetailView((await getReviewDetail(db, orgId, finding.reviewId))!);
+      const shown = view.files.flatMap((f) => f.findings).find((f) => f.id === finding.id);
+      expect(shown).toMatchObject({
+        status: "dismissed",
+        feedback: [
+          {
+            source: "ui",
+            reason: "false_positive",
+            note: "safe",
+            actor: "Mia Member",
+            restoredBy: "Mia Member",
+            restoredAt: expect.any(String),
+          },
+          {
+            source: "scm",
+            reason: "not_relevant",
+            note: null,
+            actor: "@maintainer",
+            restoredAt: null,
+            restoredBy: null,
+          },
+        ],
+      });
     });
 
     it("defaults to false_positive, which enqueues rule generation", async () => {

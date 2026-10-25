@@ -29,7 +29,7 @@ export const DEFAULT_BOT_HANDLE = "omniralph";
 /** Built-in profiles a `review` command may name (their `review_profiles.id`). */
 export const COMMAND_PROFILES = ["quick", "standard", "deep"] as const;
 export type CommandProfile = (typeof COMMAND_PROFILES)[number];
-/** Longest dismissal note kept from `@bot dismiss` (the control panel's limit). */
+/** Longest dismissal note kept from `@bot dismiss`. */
 export const MAX_DISMISS_NOTE_LENGTH = 1000;
 /** Longest request kept from `@bot fix [text]`. */
 export const MAX_FIX_TEXT_LENGTH = 4000;

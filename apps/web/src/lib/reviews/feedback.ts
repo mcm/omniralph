@@ -2,7 +2,6 @@ import "server-only";
 import {
   dismissFinding,
   getRepositoryWithConnection,
-  restoreFinding,
   type Database,
   type DismissFindingInput,
   type FindingRow,
@@ -51,12 +50,12 @@ async function resolveFindingThread(
 }
 
 /**
- * Dismisses an open finding: sets it to `dismissed`, records the feedback
- * (with its source and author) and resolves the SCM thread. A false-positive
+ * Dismisses an open finding (`@bot dismiss` in its thread): sets it to
+ * `dismissed`, records `scm` feedback by the code-host login and resolves the
+ * SCM thread. A false-positive
  * dismissal also enqueues a `review.learn-rule` job. A failure to resolve the
  * thread doesn't undo the dismissal; it comes back as a warning. A failure to
  * enqueue rule generation is only logged.
- * Used by the control panel (`ui`) and `@bot dismiss` (`scm`).
  */
 export async function dismissFindingWithFeedback(
   db: Database,
@@ -83,15 +82,4 @@ export async function dismissFindingWithFeedback(
     ...(scmWarning ? { scmWarning } : {}),
     ...(learnRuleJobId ? { learnRuleJobId } : {}),
   };
-}
-
-/** Restores a dismissed finding to `open`; its feedback is kept and marked restored. */
-export async function restoreDismissedFinding(
-  db: Database,
-  input: { findingId: string; userId: string | null },
-): Promise<FindingFeedbackResult> {
-  const result = await restoreFinding(db, input);
-  if (result.status === "not_found") return result;
-  if (result.status === "not_dismissed") return { status: "conflict", finding: result.finding };
-  return { status: "ok", finding: result.finding };
 }

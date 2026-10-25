@@ -302,7 +302,6 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         db,
         {
           findingId: found.finding.id,
-          source: "scm",
           reason: command.reason,
           note: command.note,
           scmUsername: author,

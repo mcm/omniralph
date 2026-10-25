@@ -13,8 +13,8 @@ import type { JobDispatcher } from "@/lib/dispatch";
 import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 
 /**
- * Learned rules: a `false_positive` dismissal (from the control panel or
- * `@bot dismiss`) enqueues a run of the built-in query task
+ * Learned rules: a `false_positive` dismissal (`@bot dismiss` in the
+ * finding's thread) enqueues a run of the built-in query task
  * `builtin:learn-rule`; its `learned-rule` sink (`lib/sinks/learned-rule.ts`)
  * dedupes the result against the repository's rules and stores it as an
  * enabled `learned` rule. Nothing is enqueued when the repository's query

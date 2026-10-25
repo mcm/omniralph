@@ -466,21 +466,6 @@ export async function getReview(db: Database, reviewId: string): Promise<Review 
   return row ?? null;
 }
 
-/** The organization of a finding (through its review's repository), or null if it doesn't exist. */
-export async function getFindingOrganizationId(
-  db: Database,
-  findingId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ organizationId: repositories.organizationId })
-    .from(findings)
-    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
-    .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
-    .where(eq(findings.id, findingId))
-    .limit(1);
-  return row?.organizationId ?? null;
-}
-
 /** The open findings with these IDs of the reviews of one PR/MR, oldest first. */
 export async function listOpenPullRequestFindings(
   db: Database,

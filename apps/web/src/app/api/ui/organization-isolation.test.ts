@@ -219,8 +219,6 @@ const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
 const reviewDetail = await import("./reviews/[id]/route");
 const reviewRerun = await import("./reviews/[id]/rerun/route");
-const findingDismiss = await import("./findings/[id]/dismiss/route");
-const findingRestore = await import("./findings/[id]/restore/route");
 const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
 const jobRerun = await import("./jobs/[id]/rerun/route");
@@ -2019,26 +2017,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         ).toMatchObject({ status: 404 });
       }
     }
-  });
-
-  it("dismisses and restores only the organization's own findings", async () => {
-    state.userId = a.memberId;
-    const dismiss = (id: string) =>
-      call(findingDismiss.POST, { params: { id }, body: { reason: "wont_fix" } });
-    const restore = (id: string) => call(findingRestore.POST, { method: "POST", params: { id } });
-    expect(await dismiss(b.findingId)).toMatchObject({
-      status: 404,
-      body: { error: "That finding doesn't exist." },
-    });
-    expect(await restore(b.findingId)).toMatchObject({ status: 404 });
-    expect(await dismiss("not-a-uuid")).toMatchObject({ status: 404 });
-    const [other] = await db.select().from(findings).where(eq(findings.id, b.findingId));
-    expect(other!.status).toBe("open");
-
-    expect(await dismiss(a.findingId)).toEqual({ status: 200, body: { ok: true } });
-    expect(await restore(a.findingId)).toEqual({ status: 200, body: { ok: true } });
-    const [own] = await db.select().from(findings).where(eq(findings.id, a.findingId));
-    expect(own!.status).toBe("open");
   });
 
   it("refuses to re-run the other organization's review, and its own members reach it", async () => {

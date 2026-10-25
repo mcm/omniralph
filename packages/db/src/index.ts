@@ -311,7 +311,6 @@ export {
   type StartCorrelation,
   findCompletedReview,
   finishReview,
-  getFindingOrganizationId,
   getRepositoryReviewSettings,
   getReview,
   listOpenPullRequestFindings,
@@ -497,7 +496,6 @@ export {
   dismissFinding,
   findFindingByScmComment,
   listFindingFeedback,
-  restoreFinding,
   type DismissFindingInput,
   type DismissFindingResult,
   type Feedback,
@@ -505,7 +503,6 @@ export {
   type FeedbackReason,
   type FeedbackSource,
   type FeedbackUserRef,
-  type RestoreFindingResult,
 } from "./feedback.js";
 export {
   createCustomRule,

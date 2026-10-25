@@ -1,9 +1,10 @@
 /**
- * Finding feedback: dismissing a finding (from the control panel or with
- * `@bot dismiss` in its thread) records a `feedback` row with its source and
- * author; restoring the finding keeps that row and marks it restored.
+ * Finding feedback: dismissing a finding with `@bot dismiss` in its thread on
+ * the PR/MR records a `feedback` row (source `scm`) with the code-host login of
+ * its author. `ui` rows (dismissed from the control panel) and restored rows
+ * are history only: nothing writes either any more.
  */
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { recordReviewChanges, type FindingRow, type Review } from "./reviews.js";
@@ -16,12 +17,9 @@ export type FeedbackSource = (typeof feedbackSource.enumValues)[number];
 
 export interface DismissFindingInput {
   findingId: string;
-  source: FeedbackSource;
   reason: FeedbackReason;
   note?: string | null;
-  /** The control panel user who dismissed it (`ui`), if known. */
-  userId?: string | null;
-  /** The code-host login of whoever dismissed it in the thread (`scm`). */
+  /** The code-host login of whoever dismissed it in the thread. */
   scmUsername?: string | null;
 }
 
@@ -30,11 +28,6 @@ export type DismissFindingResult =
   | { status: "not_found" }
   /** The finding isn't `open` (already dismissed, or resolved). */
   | { status: "not_open"; finding: FindingRow };
-
-export type RestoreFindingResult =
-  | { status: "restored"; finding: FindingRow; review: Review }
-  | { status: "not_found" }
-  | { status: "not_dismissed"; finding: FindingRow };
 
 async function findingWithReview(db: Pick<Database, "select">, findingId: string) {
   const [row] = await db
@@ -46,7 +39,7 @@ async function findingWithReview(db: Pick<Database, "select">, findingId: string
   return row ?? null;
 }
 
-/** Sets an open finding to `dismissed` and records the feedback, atomically. */
+/** Sets an open finding to `dismissed` and records its `scm` feedback, atomically. */
 export async function dismissFinding(
   db: Database,
   input: DismissFindingInput,
@@ -64,41 +57,14 @@ export async function dismissFinding(
       .insert(feedback)
       .values({
         findingId: finding.id,
-        source: input.source,
+        source: "scm",
         reason: input.reason,
         note: input.note?.trim() || null,
-        userId: input.userId ?? null,
         scmUsername: input.scmUsername ?? null,
       })
       .returning();
     await recordReviewChanges(tx as unknown as Database, [found.review.id]);
     return { status: "dismissed", finding, review: found.review, feedback: row! };
-  });
-}
-
-/**
- * Sets a dismissed finding back to `open`. Its feedback rows are kept and
- * marked restored (by `userId`), so they stay in the finding's history.
- */
-export async function restoreFinding(
-  db: Database,
-  input: { findingId: string; userId?: string | null },
-): Promise<RestoreFindingResult> {
-  return db.transaction(async (tx) => {
-    const found = await findingWithReview(tx, input.findingId);
-    if (!found) return { status: "not_found" };
-    const [finding] = await tx
-      .update(findings)
-      .set({ status: "open" })
-      .where(and(eq(findings.id, input.findingId), eq(findings.status, "dismissed")))
-      .returning();
-    if (!finding) return { status: "not_dismissed", finding: found.finding };
-    await tx
-      .update(feedback)
-      .set({ restoredAt: new Date(), restoredBy: input.userId ?? null })
-      .where(and(eq(feedback.findingId, finding.id), isNull(feedback.restoredAt)));
-    await recordReviewChanges(tx as unknown as Database, [found.review.id]);
-    return { status: "restored", finding, review: found.review };
   });
 }
 

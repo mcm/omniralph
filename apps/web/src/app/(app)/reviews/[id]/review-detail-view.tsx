@@ -14,11 +14,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Cluster,
   Empty,
   InlineCode,
   Muted,
   Progress,
   Skeleton,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +36,7 @@ import {
   IconHistory,
   IconRefresh,
 } from "@tabler/icons-react";
+import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
@@ -52,19 +55,13 @@ import {
   FINDING_SEVERITIES,
   formatDuration,
   formatTokens,
+  type FeedbackView,
   type FileFindings,
   type FindingView,
   type ReviewDetailView as ReviewDetail,
 } from "@/lib/reviews/display";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RerunReviewDialog } from "../rerun-review-dialog";
-import {
-  DismissFindingDialog,
-  FeedbackHistory,
-  type FindingChange,
-  RestoreFindingButton,
-  useFindingFeedback,
-} from "./finding-feedback";
 import { useReviewDetail } from "../review-queries";
 import { EmptyValue } from "@/components/empty-value";
 import { REVIEW_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
@@ -73,23 +70,56 @@ function lineRange(f: Pick<FindingView, "startLine" | "endLine">): string {
   return f.startLine === f.endLine ? `L${f.startLine}` : `L${f.startLine}–${f.endLine}`;
 }
 
-/** Dismisses and restores findings, and the status shown while a change is in flight. */
-interface FindingFeedback {
-  change: (change: FindingChange) => void;
-  pendingStatus: Map<string, FindingView["status"]>;
+const SOURCE_LABELS: Record<FeedbackView["source"], string> = {
+  ui: "control panel",
+  scm: "@bot dismiss",
+};
+
+/**
+ * The finding's dismissals, oldest first, read-only: findings are dismissed with `@bot dismiss`
+ * in their thread on the PR/MR. Older ones may come from the control panel, or be restored.
+ */
+function FeedbackHistory({ feedback }: { feedback: FeedbackView[] }) {
+  if (feedback.length === 0) return null;
+  return (
+    <div className="review-feedback">
+      <Muted className="text-xs">Feedback</Muted>
+      <Stack asChild gap={2} className="m-0 list-none p-0">
+        <ul>
+          {feedback.map((entry) => (
+            <Stack asChild gap={1} key={entry.id} className="text-sm text-text-secondary">
+              <li>
+                <Cluster gap={2}>
+                  <Badge variant="neutral" size="sm">
+                    {FEEDBACK_REASON_LABELS[entry.reason]}
+                  </Badge>
+                  <span>
+                    Dismissed by <span className="text-text-primary">{entry.actor}</span> via{" "}
+                    {SOURCE_LABELS[entry.source]} · <Timestamp iso={entry.createdAt} inline />
+                  </span>
+                  {entry.restoredAt && (
+                    <Badge variant="neutral" size="sm">
+                      Restored
+                    </Badge>
+                  )}
+                </Cluster>
+                {entry.note && <span className="review-pre-wrap">&ldquo;{entry.note}&rdquo;</span>}
+                {entry.restoredAt && (
+                  <Muted className="text-xs">
+                    Restored by {entry.restoredBy} · <Timestamp iso={entry.restoredAt} inline />
+                  </Muted>
+                )}
+              </li>
+            </Stack>
+          ))}
+        </ul>
+      </Stack>
+    </div>
+  );
 }
 
-function FindingItem({
-  finding: saved,
-  feedback,
-}: {
-  finding: FindingView;
-  feedback: FindingFeedback;
-}) {
-  // A dismissal or restore in flight shows at once.
-  const finding = { ...saved, status: feedback.pendingStatus.get(saved.id) ?? saved.status };
-  // Dismissed and resolved findings are marked by their status badge and a secondary title,
-  // never by opacity: dimming the item would also dim its Restore control.
+function FindingItem({ finding }: { finding: FindingView }) {
+  // Dismissed and resolved findings are marked by their status badge and a secondary title.
   const inactive = finding.status !== "open";
   return (
     <li
@@ -103,19 +133,6 @@ function FindingItem({
         <h4 className="review-finding-title">{finding.title}</h4>
         <div className="review-finding-actions">
           <FindingStatusBadge status={finding.status} />
-          {finding.status === "open" && (
-            <DismissFindingDialog
-              finding={finding}
-              onDismiss={(input) =>
-                feedback.change({ action: "dismiss", findingId: finding.id, input })
-              }
-            />
-          )}
-          {finding.status === "dismissed" && (
-            <RestoreFindingButton
-              onRestore={() => feedback.change({ action: "restore", findingId: finding.id })}
-            />
-          )}
         </div>
       </div>
       <div className="review-finding-meta">
@@ -150,13 +167,7 @@ function FindingItem({
 }
 
 /** A file's findings under its path: one section of the Findings card, no card of its own. */
-function FileFindingsSection({
-  file,
-  feedback,
-}: {
-  file: FileFindings;
-  feedback: FindingFeedback;
-}) {
+function FileFindingsSection({ file }: { file: FileFindings }) {
   return (
     <section className="review-file">
       <h3 className="review-file-header">
@@ -168,7 +179,7 @@ function FileFindingsSection({
       </h3>
       <ul className="review-findings">
         {file.findings.map((finding) => (
-          <FindingItem key={finding.id} finding={finding} feedback={feedback} />
+          <FindingItem key={finding.id} finding={finding} />
         ))}
       </ul>
     </section>
@@ -226,7 +237,6 @@ function changeLabelOf(review: ReviewDetail): string {
 }
 
 function ReviewContent({ review, isAdmin }: { review: ReviewDetail; isAdmin: boolean }) {
-  const feedback = useFindingFeedback(review.id);
   const tokensUsed = review.tokensIn + review.tokensOut;
   const budgetShare = review.budget > 0 ? Math.min(100, (tokensUsed / review.budget) * 100) : 0;
   const severityCounts = FINDING_SEVERITIES.map((severity) => ({
@@ -387,9 +397,7 @@ function ReviewContent({ review, isAdmin }: { review: ReviewDetail; isAdmin: boo
               }
             />
           ) : (
-            review.files.map((file) => (
-              <FileFindingsSection key={file.path} file={file} feedback={feedback} />
-            ))
+            review.files.map((file) => <FileFindingsSection key={file.path} file={file} />)
           )}
         </CardContent>
       </Card>
