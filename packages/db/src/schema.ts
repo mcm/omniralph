@@ -1298,7 +1298,10 @@ export const reviewRuns = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("review_runs_repository_pr_idx").on(t.repositoryId, t.prNumber)],
+  (t) => [
+    index("review_runs_repository_pr_idx").on(t.repositoryId, t.prNumber),
+    index("review_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
+  ],
 );
 
 export const reviews = pgTable(
@@ -1856,6 +1859,7 @@ export const chatThreadRuns = pgTable(
     uniqueIndex("chat_thread_runs_job_id_uq").on(t.jobId),
     uniqueIndex("chat_thread_runs_ralph_run_id_uq").on(t.ralphRunId),
     index("chat_thread_runs_chat_thread_id_created_at_idx").on(t.chatThreadId, t.createdAt),
+    index("chat_thread_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
     check(
       "chat_thread_runs_kind_check",
       sql`(kind = 'query' and job_id is not null and ralph_run_id is null)

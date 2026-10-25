@@ -149,25 +149,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     ],
     viewportOnly: true,
   },
-  { name: "ralph", path: "/coding", page: "(app)/coding/page.tsx", auth: "signed-in" },
-  {
-    name: "ralph-run-running",
-    path: `/coding/${ids.ralphRuns.running}`,
-    page: "(app)/coding/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "ralph-run-waiting",
-    path: `/coding/${ids.ralphRuns.waitingOnManual}`,
-    page: "(app)/coding/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "ralph-run-failed",
-    path: `/coding/${ids.ralphRuns.failed}`,
-    page: "(app)/coding/[id]/page.tsx",
-    auth: "signed-in",
-  },
   { name: "triage", path: "/triage", page: "(app)/triage/page.tsx", auth: "signed-in" },
   {
     name: "triage-run-completed",

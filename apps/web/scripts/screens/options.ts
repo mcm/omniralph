@@ -29,7 +29,7 @@ database, at 1440px and 390px, in the dark and light themes.
 Options:
   --routes <glob>     Only routes whose name or path matches (comma-separated;
                       * within a path segment, ** across), e.g. "settings-*"
-                      or "/coding/**"
+                      or "/triage/**"
   --theme <themes>    dark, light or both (comma-separated; default both)
   --viewport <names>  desktop (1440px), phone (390px) or both (comma-separated;
                       1440 and 390 also work; default both)
