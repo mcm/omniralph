@@ -6,6 +6,7 @@
  * payload for replay protection.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { WebhookIgnoreReason } from "@/lib/webhooks/reasons";
 
 export const SIGNATURE_HEADER = "linear-signature";
 export const DELIVERY_HEADER = "linear-delivery";
@@ -94,7 +95,23 @@ export type LinearWebhookEvent =
       identifier?: string;
       labelId: string;
     }
-  | { kind: "ignored"; reason: string };
+  | {
+      kind: "ignored";
+      /** The delivery log's reason code. */
+      code: LinearIgnoreReason;
+      /** What the webhook answers. */
+      reason: string;
+    };
+
+/** Why `classifyWebhook` ignores an event (each has a sentence in `lib/webhooks/reasons.ts`). */
+export type LinearIgnoreReason = Extract<
+  WebhookIgnoreReason,
+  | "issue_without_id"
+  | "issue_unchanged"
+  | "unsupported_event"
+  | "no_agent_session"
+  | "agent_session_without_issue"
+>;
 
 /** The label that asks for triage (matched ignoring case). */
 export const TRIAGE_LABEL = "coding:triage";
@@ -142,7 +159,8 @@ function addedTriageLabel(payload: Record<string, unknown>): string | undefined 
 function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEvent {
   const data = obj(payload.data);
   const issueId = str(data.id);
-  if (!issueId) return { kind: "ignored", reason: "issue webhook without id" };
+  if (!issueId)
+    return { kind: "ignored", code: "issue_without_id", reason: "issue webhook without id" };
   const removed = payload.action === "remove";
   const stateChanged = payload.action === "update" && "stateId" in obj(payload.updatedFrom);
   if (!removed && !stateChanged) {
@@ -150,7 +168,11 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
     if (labelId) {
       return { kind: "triage_label_added", issueId, identifier: str(data.identifier), labelId };
     }
-    return { kind: "ignored", reason: "issue update without state change" };
+    return {
+      kind: "ignored",
+      code: "issue_unchanged",
+      reason: "issue update without state change",
+    };
   }
   const triageLabelId = removed ? undefined : addedTriageLabel(payload);
   return {
@@ -166,16 +188,22 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
 export function classifyWebhook(payload: Record<string, unknown>): LinearWebhookEvent {
   if (payload.type === "Issue") return classifyIssueWebhook(payload);
   if (payload.type !== "AgentSessionEvent") {
-    return { kind: "ignored", reason: `type ${String(payload.type)}` };
+    return { kind: "ignored", code: "unsupported_event", reason: `type ${String(payload.type)}` };
   }
   const session = obj(payload.agentSession);
   const sessionId = str(session.id);
-  if (!sessionId) return { kind: "ignored", reason: "no agent session id" };
+  if (!sessionId)
+    return { kind: "ignored", code: "no_agent_session", reason: "no agent session id" };
   const issue = obj(session.issue);
   const issueId = str(session.issueId) ?? str(issue.id);
 
   if (payload.action === "created") {
-    if (!issueId) return { kind: "ignored", reason: "agent session without an issue" };
+    if (!issueId)
+      return {
+        kind: "ignored",
+        code: "agent_session_without_issue",
+        reason: "agent session without an issue",
+      };
     return {
       kind: "session_created",
       sessionId,
@@ -197,5 +225,5 @@ export function classifyWebhook(payload: Record<string, unknown>): LinearWebhook
       authorName: str(obj(activity.user).name),
     };
   }
-  return { kind: "ignored", reason: `action ${String(payload.action)}` };
+  return { kind: "ignored", code: "unsupported_event", reason: `action ${String(payload.action)}` };
 }

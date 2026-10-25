@@ -14,13 +14,15 @@ import {
   type ScmConnection,
   type ScmProvider,
   type WebhookDeliveryRef,
+  type WebhookEventRun,
+  getRun,
   resolveRepositorySwitches,
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { bumpOrganizationHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
-import { runBotCommand } from "@/lib/mentions/handle";
+import { runBotCommand, type BotCommandOutcome } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { respondToCiEvent } from "@/lib/ralph/ci";
@@ -48,6 +50,8 @@ import {
   type ClosedEvent,
   type PullRequestStateEvent,
 } from "./events";
+import { DeliveryLog, type DeliveryResult } from "./delivery-log";
+import type { WebhookIgnoreReason } from "./reasons";
 
 /** Code-host lookups a handler may make stay well inside the 3s webhook budget. */
 export const WEBHOOK_LOOKUP_TIMEOUT_MS = 2_000;
@@ -107,10 +111,55 @@ type Outcome =
   | { status: "accepted"; command: string }
   | { status: "accepted"; event: "ci_failure" | "merged" | "closed" | "pull_request_state" }
   | { status: "removed"; connections: number }
-  | { status: "ignored"; reason: string };
+  | { status: "ignored"; reason: WebhookIgnoreReason };
 
 const reply = (outcome: Outcome) => Response.json(outcome);
-const ignored = (reason: string) => reply({ status: "ignored", reason });
+const ignored = (reason: WebhookIgnoreReason) => reply({ status: "ignored", reason });
+
+/** A verified delivery's response, and what it did for the delivery log. */
+interface Handled {
+  response: Response;
+  result: DeliveryResult;
+}
+
+const handled = (outcome: Outcome, result: DeliveryResult): Handled => ({
+  response: reply(outcome),
+  result,
+});
+const skipped = (reason: WebhookIgnoreReason, run?: WebhookEventRun | null): Handled =>
+  handled({ status: "ignored", reason }, { outcome: "ignored", reasonCode: reason, run });
+const internalError = (error: unknown): Handled => ({
+  response: Response.json({ error: "internal_error" }, { status: 500 }),
+  result: { outcome: "failed", error },
+});
+
+/** A ralph run as the log links it. */
+const ralphRun = (run: { id: string; mode: "epic" | "request" }): WebhookEventRun => ({
+  id: run.id,
+  kind: run.mode,
+});
+
+/**
+ * The delivery's event as the log names it: the event header and the body's action
+ * (`pull_request.synchronize`, `Merge Request Hook.update`).
+ */
+export function webhookEventName(
+  provider: ScmProvider,
+  eventName: string | null,
+  body: unknown,
+): string {
+  const payload =
+    typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  const attributes = payload.object_attributes;
+  const action =
+    provider === "github"
+      ? payload.action
+      : typeof attributes === "object" && attributes !== null
+        ? (attributes as Record<string, unknown>).action
+        : undefined;
+  const event = eventName?.trim() || "unknown";
+  return typeof action === "string" && action ? `${event}.${action}` : event;
+}
 
 /**
  * A GitHub App uninstall: verifies the delivery (signed with the app's webhook secret) and
@@ -140,8 +189,9 @@ async function handleInstallationDeleted(
 /**
  * Handles a GitHub/GitLab webhook delivery: finds the connected repository,
  * verifies the signature with its connection's adapter (401 if invalid), which
- * resolves the organization (the connection's),
- * applies the repo's triggers and enqueues a review. It only writes and
+ * resolves the organization (the connection's), hands it to
+ * `processVerifiedDelivery` (which applies the repo's triggers and enqueues a
+ * review) and records what it did in the delivery log (`webhook_events`). It only writes and
  * publishes (no review work), so it answers well within the code host's
  * timeout. Unknown, disabled or disconnected repos and irrelevant events get
  * 200 without side effects; a delivery ID that was already acted on is a no-op.
@@ -153,7 +203,7 @@ export async function handleWebhook(
   req: Request,
   deps: WebhookDeps,
 ): Promise<Response> {
-  const { db, dispatcher, adapterFor = scmAdapterFor } = deps;
+  const { db, adapterFor = scmAdapterFor } = deps;
   const spec = PROVIDERS[provider];
   const rawBody = await req.text();
   let body: unknown;
@@ -189,7 +239,7 @@ export async function handleWebhook(
     }
   }
   if (!match) return Response.json({ error: "invalid_signature" }, { status: 401 });
-  const { repository, connection, adapter } = match;
+  const { repository, connection } = match;
   // The delivery belongs to the organization of the connection that verified it: the
   // reviews and jobs it creates hang off `repository`, which is in that organization.
   if (repository.organizationId !== connection.organizationId) {
@@ -198,46 +248,84 @@ export async function handleWebhook(
 
   const eventName = req.headers.get(spec.eventHeader);
   const deliveryId = req.headers.get(spec.deliveryHeader)?.trim();
+  const log = new DeliveryLog(db, {
+    organizationId: connection.organizationId,
+    provider,
+    source: { scmConnectionId: connection.id },
+    repositoryId: repository.id,
+    deliveryId: deliveryId || null,
+    event: webhookEventName(provider, eventName, body),
+    rawBody,
+  });
+  const { response, result } = await processVerifiedDelivery({
+    ...deps,
+    ...match,
+    provider,
+    eventName,
+    deliveryId: deliveryId || null,
+    body,
+    log,
+  });
+  await log.record(result);
+  return response;
+}
+
+/**
+ * A verified delivery of a connected repository: applies the repo's triggers and
+ * switches, enqueues a review, records a PR/MR's state, hands a CI failure or a
+ * closed PR/MR to its ralph run, or runs a `@bot` command. Returns the response and
+ * what it did; deferred work settles its outcome on `log`.
+ */
+export async function processVerifiedDelivery(
+  input: WebhookDeps & {
+    repository: Repository;
+    connection: ScmConnection;
+    adapter: ScmAdapter;
+    provider: ScmProvider;
+    eventName: string | null;
+    deliveryId: string | null;
+    body: unknown;
+    log: DeliveryLog;
+  },
+): Promise<Handled> {
+  const { db, dispatcher, repository, adapter, provider, eventName, deliveryId, body } = input;
+  const spec = PROVIDERS[provider];
   const delivery = deliveryId ? { provider, deliveryId } : null;
   const ci = spec.parseCi(eventName, body);
-  if (ci) return handleCi({ ...deps, ...match, provider, delivery, ci });
+  if (ci) return handleCi({ ...input, delivery, ci });
   const closed = spec.parseClosed(eventName, body);
-  if (closed) return handleClosed({ ...deps, ...match, provider, delivery, closed });
+  if (closed) return handleClosed({ ...input, delivery, closed });
   const reviewsOff = async () =>
     !!repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).review;
   const event = spec.parse(eventName, body);
   const prState = spec.parseState(eventName, body);
   if (prState) {
     // Opening, reopening and ready-for-review also trigger reviews, which go on as before.
-    const stateOutcome = await applyPullRequestState({ ...deps, ...match }, prState).catch(
-      (error: unknown) => {
-        console.error(
-          `${provider} webhook ${deliveryId ?? "(no delivery ID)"} failed to record the state of ${repository.fullPath}#${prState.number}`,
-          error,
-        );
-        return null;
-      },
-    );
-    if (!event) {
-      return stateOutcome
-        ? reply(stateOutcome)
-        : Response.json({ error: "internal_error" }, { status: 500 });
-    }
+    let failure: unknown;
+    const stateOutcome = await applyPullRequestState(input, prState).catch((error: unknown) => {
+      console.error(
+        `${provider} webhook ${deliveryId ?? "(no delivery ID)"} failed to record the state of ${repository.fullPath}#${prState.number}`,
+        error,
+      );
+      failure = error;
+      return null;
+    });
+    if (!event) return stateOutcome ?? internalError(failure);
   }
   if (!event) {
     const comment = spec.parseComment(eventName, body);
-    if (!comment) return ignored("unsupported_event");
-    if (await reviewsOff()) return ignored("repository_disabled");
-    return handleComment({ ...deps, ...match, provider, delivery, comment });
+    if (!comment) return skipped("unsupported_event");
+    if (await reviewsOff()) return skipped("repository_disabled");
+    return handleComment({ ...input, delivery, comment });
   }
-  if (await reviewsOff()) return ignored("repository_disabled");
+  if (await reviewsOff()) return skipped("repository_disabled");
   const { triggers } = repository;
-  if (event.kind === "open" && !triggers.onOpen) return ignored("trigger_disabled");
-  if (event.kind === "push" && !triggers.onPush) return ignored("trigger_disabled");
-  if (event.draft && !triggers.drafts) return ignored("draft");
+  if (event.kind === "open" && !triggers.onOpen) return skipped("trigger_disabled");
+  if (event.kind === "push" && !triggers.onPush) return skipped("trigger_disabled");
+  if (event.draft && !triggers.drafts) return skipped("draft");
 
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
-    return reply({ status: "duplicate" });
+    return handled({ status: "duplicate" }, { outcome: "duplicate" });
   }
 
   try {
@@ -253,17 +341,23 @@ export async function handleWebhook(
       trigger: "webhook",
     });
     if (result.status === "repository_unavailable" || result.status === "profile_not_found") {
-      return ignored("repository_disabled");
+      return skipped("repository_disabled");
     }
-    if (result.status === "no_review_tasks") return ignored("no_review_tasks");
+    if (result.status === "no_review_tasks") return skipped("no_review_tasks");
     if (delivery) await setWebhookDeliveryJob(db, delivery, result.jobId);
-    if (result.status === "duplicate") return reply({ status: "duplicate", jobId: result.jobId });
-    return reply({ status: "enqueued", reviewId: result.reviewId, jobId: result.jobId });
+    const run: WebhookEventRun = { id: result.reviewRunId, kind: "review" };
+    if (result.status === "duplicate") {
+      return handled({ status: "duplicate", jobId: result.jobId }, { outcome: "duplicate", run });
+    }
+    return handled(
+      { status: "enqueued", reviewId: result.reviewId, jobId: result.jobId },
+      { outcome: "started_run", run },
+    );
   } catch (error) {
     // Let the code host's redelivery try again.
     if (delivery) await releaseWebhookDelivery(db, delivery).catch(() => undefined);
     console.error(`${provider} webhook ${deliveryId ?? "(no delivery ID)"} failed`, error);
-    return Response.json({ error: "internal_error" }, { status: 500 });
+    return internalError(error);
   }
 }
 
@@ -282,29 +376,67 @@ async function handleComment(
     provider: ScmProvider;
     delivery: WebhookDeliveryRef | null;
     comment: CommentEvent;
+    log: DeliveryLog;
   },
-): Promise<Response> {
-  const { db, repository, delivery, comment } = input;
+): Promise<Handled> {
+  const { db, repository, delivery, comment, log } = input;
   const handle = connectionBotHandle(input.connection, input.handle);
-  if (isOwnComment(comment.author, handle)) return ignored("own_comment");
+  if (isOwnComment(comment.author, handle)) return skipped("own_comment");
   const command = parseBotCommand(comment.body, handle);
-  if (!command) return ignored("no_mention");
+  if (!command) return skipped("no_mention");
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
-    return reply({ status: "duplicate" });
+    return handled({ status: "duplicate" }, { outcome: "duplicate" });
   }
   const task = async () => {
+    let result: DeliveryResult;
     try {
-      await runBotCommand({ ...input, handle, command });
+      result = await commandResult(db, await runBotCommand({ ...input, handle, command }));
     } catch (error) {
       console.error(
         `${input.provider} @${handle} ${command.kind} on ${repository.fullPath}#${comment.number} failed`,
         error,
       );
+      result = { outcome: "failed", error };
     }
+    await log.settle(result);
   };
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
-  return reply({ status: "accepted", command: command.kind });
+  return handled({ status: "accepted", command: command.kind }, { outcome: "updated_run" });
+}
+
+/** What a `@bot` command did, for the delivery log. */
+async function commandResult(db: Database, outcome: BotCommandOutcome): Promise<DeliveryResult> {
+  switch (outcome.status) {
+    case "review_enqueued":
+      return { outcome: "started_run", run: { id: outcome.reviewRunId, kind: "review" } };
+    case "review_duplicate":
+      return { outcome: "duplicate", run: { id: outcome.reviewRunId, kind: "review" } };
+    case "ralph_request":
+    case "ralph_unavailable": {
+      const run = await getRun(db, outcome.runId);
+      const linked = run && ralphRun(run);
+      return outcome.status === "ralph_request"
+        ? { outcome: "updated_run", run: linked }
+        : { outcome: "ignored", reasonCode: "run_finished", run: linked };
+    }
+    case "refused":
+      return { outcome: "ignored", reasonCode: "command_refused" };
+    case "review_unavailable":
+      return { outcome: "ignored", reasonCode: "repository_disabled" };
+    case "query_disabled":
+      return { outcome: "ignored", reasonCode: "query_disabled" };
+    case "not_in_finding_thread":
+      return { outcome: "ignored", reasonCode: "not_in_finding_thread" };
+    case "not_ralph":
+      return { outcome: "ignored", reasonCode: "not_ralph" };
+    case "help":
+      return { outcome: "ignored", reasonCode: "help" };
+    case "dismissed":
+    case "dismiss_conflict":
+    case "reply_enqueued":
+      return { outcome: "updated_run" };
+  }
 }
 
 /**
@@ -321,12 +453,13 @@ async function handleCi(
     provider: ScmProvider;
     delivery: WebhookDeliveryRef | null;
     ci: CiEvent;
+    log: DeliveryLog;
   },
-): Promise<Response> {
-  const { db, repository, delivery, ci } = input;
-  if (!ci.failed) return ignored("ci_not_failed");
+): Promise<Handled> {
+  const { db, repository, delivery, ci, log } = input;
+  if (!ci.failed) return skipped("ci_not_failed");
   if (repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).coding) {
-    return ignored("ralph_disabled");
+    return skipped("ralph_disabled");
   }
   const lanes = await Promise.all([
     ...ci.prNumbers.map((n) => findLaneByPullRequest(db, repository.id, n)),
@@ -334,9 +467,11 @@ async function handleCi(
       ? findLaneByBranch(db, repository.id, ci.branch)
       : Promise.resolve(null),
   ]);
-  if (!lanes.some(Boolean)) return ignored("not_ralph");
+  const found = lanes.find(Boolean);
+  if (!found) return skipped("not_ralph");
+  const run = ralphRun(found.run);
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
-    return reply({ status: "duplicate" });
+    return handled({ status: "duplicate" }, { outcome: "duplicate", run });
   }
   const task = async () => {
     try {
@@ -361,11 +496,12 @@ async function handleCi(
         `${input.provider} CI failure on ${repository.fullPath} (${ci.headSha}) failed`,
         error,
       );
+      await log.settle({ outcome: "failed", error });
     }
   };
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
-  return reply({ status: "accepted", event: "ci_failure" });
+  return handled({ status: "accepted", event: "ci_failure" }, { outcome: "updated_run", run });
 }
 
 /**
@@ -382,13 +518,15 @@ async function handleClosed(
     provider: ScmProvider;
     delivery: WebhookDeliveryRef | null;
     closed: ClosedEvent;
+    log: DeliveryLog;
   },
-): Promise<Response> {
-  const { db, repository, delivery, closed } = input;
+): Promise<Handled> {
+  const { db, repository, delivery, closed, log } = input;
   const found = await findLaneByPullRequest(db, repository.id, closed.number);
-  if (!found) return ignored("not_ralph");
+  if (!found) return skipped("not_ralph");
+  const run = ralphRun(found.run);
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
-    return reply({ status: "duplicate" });
+    return handled({ status: "duplicate" }, { outcome: "duplicate", run });
   }
   const task = async () => {
     try {
@@ -412,11 +550,15 @@ async function handleClosed(
         `${input.provider} ${closed.merged ? "merge" : "closing"} of ${repository.fullPath}#${closed.number} failed to clean up`,
         error,
       );
+      await log.settle({ outcome: "failed", error });
     }
   };
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
-  return reply({ status: "accepted", event: closed.merged ? "merged" : "closed" });
+  return handled(
+    { status: "accepted", event: closed.merged ? "merged" : "closed" },
+    { outcome: "updated_run", run },
+  );
 }
 
 /**
@@ -429,22 +571,24 @@ async function handleClosed(
 async function applyPullRequestState(
   input: WebhookDeps & { repository: Repository; connection: ScmConnection },
   event: PullRequestStateEvent,
-): Promise<Outcome> {
+): Promise<Handled> {
   const { db, repository } = input;
   if (
     event.reviewer &&
     isOwnComment(event.reviewer, connectionBotHandle(input.connection, input.handle))
   ) {
-    return { status: "ignored", reason: "own_review" };
+    return skipped("own_review");
   }
-  if (!(await findLaneByPullRequest(db, repository.id, event.number))) {
-    return { status: "ignored", reason: "not_ralph" };
-  }
+  const found = await findLaneByPullRequest(db, repository.id, event.number);
+  if (!found) return skipped("not_ralph");
   await updatePullRequestState(db, repository.id, event.number, {
     draft: event.draft,
     reviewState: event.reviewState,
   });
-  return { status: "accepted", event: "pull_request_state" };
+  return handled(
+    { status: "accepted", event: "pull_request_state" },
+    { outcome: "updated_run", run: ralphRun(found.run) },
+  );
 }
 
 /**
