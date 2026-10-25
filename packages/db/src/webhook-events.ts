@@ -107,9 +107,10 @@ export async function recordWebhookEvent(db: Executor, input: NewWebhookEvent): 
       replayedBy: input.replayedBy ?? null,
     })
     .returning({ id: webhookEvents.id });
+  // A replay changes the original's detail too (its list of replays).
   recordChange(db, {
     resource: "webhook_event",
-    ids: [row!.id, sourceId(input.source)],
+    ids: [row!.id, ...(input.replayOfId ? [input.replayOfId] : []), sourceId(input.source)],
     organizationId: input.organizationId,
     runId: input.run?.id ?? null,
   });
@@ -311,6 +312,21 @@ export async function getWebhookEvent(
     payload: row.payload,
     replayedBy: row.replayedById ? { id: row.replayedById, name: row.replayedByName } : null,
   };
+}
+
+/** A delivery's replays, newest first. */
+export async function listWebhookEventReplays(
+  db: Executor,
+  id: string,
+): Promise<WebhookEventSummary[]> {
+  const rows = await db
+    .select(summaryColumns)
+    .from(webhookEvents)
+    .innerJoin(organizations, eq(organizations.id, webhookEvents.organizationId))
+    .leftJoin(repositories, eq(repositories.id, webhookEvents.repositoryId))
+    .where(eq(webhookEvents.replayOfId, id))
+    .orderBy(desc(webhookEvents.receivedAt), desc(webhookEvents.id));
+  return rows.map(summary);
 }
 
 /**

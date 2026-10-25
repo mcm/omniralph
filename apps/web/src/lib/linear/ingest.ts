@@ -11,7 +11,13 @@ import {
 } from "@omniralph/db";
 import { DeliveryLog, type DeliveryResult } from "@/lib/webhooks/delivery-log";
 import type { HandledLinearEvent, LinearEventContext } from "./events";
-import { classifyWebhook, DELIVERY_HEADER, SIGNATURE_HEADER, verifyWebhook } from "./webhook";
+import {
+  classifyWebhook,
+  DELIVERY_HEADER,
+  SIGNATURE_HEADER,
+  verifyWebhook,
+  type LinearWebhookEvent,
+} from "./webhook";
 
 export interface LinearWebhookDeps {
   db: Database;
@@ -120,10 +126,50 @@ export function linearEventName(payload: Record<string, unknown>): string {
 }
 
 /**
+ * Replays a stored Linear delivery through `processVerifiedLinearDelivery`, as a live
+ * delivery runs, without its signature check (verified on receipt) or the delivery-ID
+ * claim. `event` is the stored payload's event, which the caller may have moved to a new
+ * agent session. The handler runs before it returns (no `defer`). Records a new delivery
+ * log row with `replayOfId` and `replayedBy`; returns its ID (null when writing it failed).
+ */
+export async function replayLinearDelivery(
+  deps: Omit<LinearWebhookDeps, "secret" | "defer">,
+  input: {
+    integration: { id: string; organizationId: string; externalId: string };
+    payload: Record<string, unknown>;
+    event: LinearWebhookEvent;
+    deliveryId: string | null;
+    replayOfId: string;
+    replayedBy: string;
+  },
+): Promise<string | null> {
+  const { integration, payload, event } = input;
+  const log = new DeliveryLog(deps.db, {
+    organizationId: integration.organizationId,
+    provider: "linear",
+    source: { integrationId: integration.id },
+    deliveryId: input.deliveryId,
+    event: linearEventName(payload),
+    rawBody: JSON.stringify(payload),
+    replayOfId: input.replayOfId,
+    replayedBy: input.replayedBy,
+  });
+  if (event.kind === "ignored") {
+    await log.record({ outcome: "ignored", reasonCode: event.code });
+  } else {
+    await processVerifiedLinearDelivery(
+      { ...deps, secret: undefined },
+      { event, integration, deliveryId: input.deliveryId ?? "(replay)", log, replay: true },
+    );
+  }
+  return log.id();
+}
+
+/**
  * A verified, classified Linear event of a connected workspace: claims the delivery (a
- * redelivery is a no-op), runs `acknowledge` (within `ACKNOWLEDGE_TIMEOUT_MS`) and hands
- * the event to `handle` via `defer`. The delivery log gets the run the handler started or
- * reached, or its failure, once the handler is done.
+ * redelivery is a no-op; a `replay` claims nothing), runs `acknowledge` (within
+ * `ACKNOWLEDGE_TIMEOUT_MS`) and hands the event to `handle` via `defer`. The delivery log
+ * gets the run the handler started or reached, or its failure, once the handler is done.
  */
 export async function processVerifiedLinearDelivery(
   deps: LinearWebhookDeps,
@@ -132,13 +178,14 @@ export async function processVerifiedLinearDelivery(
     integration: { organizationId: string; externalId: string };
     deliveryId: string;
     log: DeliveryLog;
+    replay?: boolean;
   },
 ): Promise<Response> {
   const { db } = deps;
-  const { event, integration, deliveryId, log } = input;
+  const { event, integration, deliveryId, log, replay = false } = input;
   const delivery = { provider: "linear" as const, deliveryId };
   try {
-    if (!(await claimWebhookDelivery(db, delivery))) {
+    if (!replay && !(await claimWebhookDelivery(db, delivery))) {
       await log.record({ outcome: "duplicate" });
       return reply({ status: "duplicate" });
     }
@@ -180,7 +227,7 @@ export async function processVerifiedLinearDelivery(
     } catch (error) {
       console.error(`Linear ${event.kind} webhook ${deliveryId} failed`, error);
       // Let a redelivery of the same event try again.
-      await releaseWebhookDelivery(db, delivery).catch(() => undefined);
+      if (!replay) await releaseWebhookDelivery(db, delivery).catch(() => undefined);
       await log.settle({ outcome: "failed", error });
       return;
     }

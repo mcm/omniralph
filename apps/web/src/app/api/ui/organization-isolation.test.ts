@@ -211,6 +211,7 @@ const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
+const deliveryReplay = await import("./deliveries/[id]/replay/route");
 const trackerStateMapping = await import("./trackers/[integrationId]/state-mapping/route");
 const organizationSettings = await import("./organization/route");
 const organizationInvitations = await import("./organization/invitations/route");
@@ -763,8 +764,28 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             expect(await call(deliveryDetail.GET, { params: { id } })).toMatchObject({
               status: 404,
             });
+            expect(
+              await call(deliveryReplay.POST, { params: { id }, method: "POST" }),
+            ).toMatchObject({ status: 404 });
           }
         }
+        // A member replays their own organization's delivery.
+        state.userId = own.memberId;
+        const replayed = await call(deliveryReplay.POST, {
+          params: { id: ownDeliveries.linear },
+          method: "POST",
+        });
+        expect(replayed).toMatchObject({
+          status: 200,
+          body: {
+            replayOfId: ownDeliveries.linear,
+            organization: { id: own.orgId },
+            replayedBy: { id: own.memberId },
+          },
+        });
+        expect(
+          (await call(deliveryDetail.GET, { params: { id: ownDeliveries.linear } })).body.replays,
+        ).toEqual([expect.objectContaining({ id: replayed.body.id })]);
       }
       state.userId = null;
       expect(

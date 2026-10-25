@@ -80,13 +80,15 @@ export function deliveryRow(
   };
 }
 
-/** A delivery's detail on the wire. */
+/** A delivery's detail on the wire, with its replays. */
 export function deliveryDetail(
   event: WebhookEventDetail,
   organization: ScopedOrganization,
+  replays: readonly WebhookEventSummary[],
 ): DeliveryDetail {
   return {
     ...deliveryRow(event, organization),
+    replays: replays.map((replay) => deliveryRow(replay, organization)),
     payload: event.payload,
     replayedBy: event.replayedBy && {
       id: event.replayedBy.id,

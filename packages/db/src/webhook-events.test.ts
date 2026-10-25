@@ -7,6 +7,7 @@ import { organizations, scmConnections, webhookEvents } from "./schema.js";
 import {
   getWebhookEvent,
   getWebhookEventSourceOrganizationId,
+  listWebhookEventReplays,
   listWebhookEvents,
   pruneWebhookEvents,
   recordWebhookEvent,
@@ -163,6 +164,32 @@ describe.skipIf(!databaseAvailable)("webhook event queries", () => {
       run: { id: runId, kind: "review" },
       reasonCode: null,
     });
+  });
+
+  it("lists a delivery's replays newest first, and a replay's change names the original", async () => {
+    const original = await record("r0");
+    const replay = (deliveryId: string) =>
+      recordWebhookEvent(db, {
+        organizationId,
+        provider: "github",
+        source: { scmConnectionId: connectionId },
+        deliveryId,
+        event: "pull_request.opened",
+        rawBody: "{}",
+        outcome: "ignored",
+        replayOfId: original,
+      });
+    const { result: first, changes } = await captureChanges(() => replay("r0"));
+    expect(changes).toEqual([
+      expect.objectContaining({
+        resource: "webhook_event",
+        ids: [first, original, connectionId],
+      }),
+    ]);
+    const second = await replay("r0");
+    await record("other");
+    expect((await listWebhookEventReplays(db, original)).map((e) => e.id)).toEqual([second, first]);
+    expect(await listWebhookEventReplays(db, second)).toEqual([]);
   });
 
   it("finds the organization of a connection", async () => {

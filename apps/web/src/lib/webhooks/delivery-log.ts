@@ -76,6 +76,11 @@ export class DeliveryLog {
     await this.written;
   }
 
+  /** The written row's ID: null before `record`, or when writing it failed. */
+  async id(): Promise<string | null> {
+    return this.written ? await this.written : null;
+  }
+
   /** Sets the outcome once deferred work has finished. */
   async settle(result: DeliveryResult): Promise<void> {
     const outcome = deliveryOutcome(this.base.provider, result);

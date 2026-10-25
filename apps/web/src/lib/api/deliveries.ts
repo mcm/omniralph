@@ -4,8 +4,8 @@ import { RUN_KINDS, organizationRefSchema, repositoryRefSchema } from "./runs";
 import { isoDate } from "./schemas";
 
 /**
- * Wire formats of the webhook delivery log: `GET /api/ui/connections/{scm|linear}/{id}/deliveries`
- * and `GET /api/ui/deliveries/{id}`.
+ * Wire formats of the webhook delivery log: `GET /api/ui/connections/{scm|linear}/{id}/deliveries`,
+ * `GET /api/ui/deliveries/{id}` and `POST /api/ui/deliveries/{id}/replay` (the replay's detail).
  */
 
 /** Client-safe copy of `webhook_event_outcome`. */
@@ -55,9 +55,10 @@ export const deliveryListSchema = z.object({
 });
 export type DeliveryList = z.infer<typeof deliveryListSchema>;
 
-/** A delivery with its stored payload and who replayed it. */
+/** A delivery with its stored payload, who replayed it, and its own replays (newest first). */
 export const deliveryDetailSchema = deliveryRowSchema.extend({
   payload: z.unknown(),
   replayedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  replays: z.array(deliveryRowSchema),
 });
 export type DeliveryDetail = z.infer<typeof deliveryDetailSchema>;

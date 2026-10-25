@@ -271,10 +271,75 @@ export async function handleWebhook(
 }
 
 /**
+ * The event header a delivery was sent with, from the name the log stored
+ * (`webhookEventName`'s inverse): `pull_request.synchronize` → `pull_request`.
+ */
+export function webhookHeaderEvent(
+  provider: ScmProvider,
+  event: string,
+  body: unknown,
+): string | null {
+  // `.synchronize`, or nothing when the body has no action.
+  const action = webhookEventName(provider, "x", body).slice(1);
+  const name = action && event.endsWith(action) ? event.slice(0, -action.length) : event;
+  return name === "unknown" || name === "" ? null : name;
+}
+
+/**
+ * Replays a stored delivery of a connected repository through `processVerifiedDelivery`,
+ * as a live delivery runs, with today's settings. Its signature was verified on receipt,
+ * and it skips the delivery-ID claim (the original claimed it). Deferred work runs
+ * before it returns. Records a new delivery log row with `replayOfId` and `replayedBy`;
+ * returns its ID (null when writing it failed).
+ */
+export async function replayWebhookDelivery(
+  deps: WebhookDeps,
+  input: {
+    provider: ScmProvider;
+    repository: Repository;
+    connection: ScmConnection;
+    event: string;
+    deliveryId: string | null;
+    body: unknown;
+    replayOfId: string;
+    replayedBy: string;
+  },
+): Promise<string | null> {
+  const { db, adapterFor = scmAdapterFor } = deps;
+  const { provider, repository, connection, body } = input;
+  const log = new DeliveryLog(db, {
+    organizationId: connection.organizationId,
+    provider,
+    source: { scmConnectionId: connection.id },
+    repositoryId: repository.id,
+    deliveryId: input.deliveryId,
+    event: input.event,
+    rawBody: JSON.stringify(body),
+    replayOfId: input.replayOfId,
+    replayedBy: input.replayedBy,
+  });
+  const { result } = await processVerifiedDelivery({
+    ...deps,
+    defer: undefined,
+    repository,
+    connection,
+    adapter: adapterFor(db, connection),
+    provider,
+    eventName: webhookHeaderEvent(provider, input.event, body),
+    deliveryId: null,
+    body,
+    log,
+  });
+  await log.record(result);
+  return log.id();
+}
+
+/**
  * A verified delivery of a connected repository: applies the repo's triggers and
  * switches, enqueues a review, records a PR/MR's state, hands a CI failure or a
  * closed PR/MR to its ralph run, or runs a `@bot` command. Returns the response and
- * what it did; deferred work settles its outcome on `log`.
+ * what it did; deferred work settles its outcome on `log`. Without a `deliveryId`
+ * (none sent, or a replay) nothing is claimed, so it never counts as a duplicate.
  */
 export async function processVerifiedDelivery(
   input: WebhookDeps & {
