@@ -15,21 +15,14 @@ import {
   taskListSchema,
 } from "@/lib/api/definitions";
 import type { QueryKeys } from "@/lib/api/keys";
-import { SETTINGS_REFETCH_INTERVAL } from "@/lib/api/query-client";
+import { definitionKeys } from "@/lib/api/settings-keys";
 
 /**
- * Settings › Agents and Settings › Tasks, live. Every query of one kind shares a prefix
- * (`definitionKeys(keys).agents`), so a change refetches its lists, details and form options.
+ * Settings › Agents and Settings › Tasks, live: saves publish `settings` change events
+ * (sections `agent_definitions`, `task_definitions`), and so do the agents' reported
+ * models and installables the form options show (`@/lib/live/invalidations`).
  */
-export function definitionKeys(keys: QueryKeys) {
-  const kind = (name: "agents" | "tasks") => ({
-    all: keys.settings.detail(name),
-    list: keys.settings.part(name, "list"),
-    detail: (id: string) => keys.settings.part(name, "detail", { id }),
-    formOptions: keys.settings.part(name, "form-options"),
-  });
-  return { agents: kind("agents"), tasks: kind("tasks") };
-}
+export { definitionKeys };
 
 /**
  * What creating, changing or cloning an agent or a task affects: every agent and task query
@@ -101,7 +94,6 @@ export function useAgentFormOptions({ enabled = true } = {}) {
         organizationId: organization.id,
         signal,
       }),
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
     enabled,
   });
 }
@@ -143,7 +135,6 @@ export function useTaskFormOptions({ enabled = true } = {}) {
         organizationId: organization.id,
         signal,
       }),
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
     enabled,
   });
 }

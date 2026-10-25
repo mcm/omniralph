@@ -3,6 +3,7 @@
  * and the organization's review profiles. Reviews read both when they're enqueued.
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { recordRepositorySettingsChange, type Repository } from "./repositories.js";
 import type { ReviewProfile } from "./reviews.js";
@@ -112,6 +113,14 @@ export async function updateReviewProfile(
     })
     .where(and(eq(reviewProfiles.organizationId, organizationId), eq(reviewProfiles.id, id)))
     .returning();
+  if (row) {
+    recordChange(db, {
+      resource: "settings",
+      section: "review_profiles",
+      ids: [organizationId],
+      organizationId,
+    });
+  }
   return row ?? null;
 }
 

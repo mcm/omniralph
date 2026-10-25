@@ -48,6 +48,18 @@ export const SETTINGS_SECTIONS = [
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 /**
+ * Organization settings sections a `settings` event names that keep no change history (not
+ * part of `SETTINGS_SECTIONS` or the settings history API): the organization's agent and
+ * task definitions (Settings › Agents, Settings › Tasks) and its review profiles.
+ */
+export const UNTRACKED_SETTINGS_SECTIONS = [
+  "agent_definitions",
+  "task_definitions",
+  "review_profiles",
+] as const;
+export type UntrackedSettingsSection = (typeof UNTRACKED_SETTINGS_SECTIONS)[number];
+
+/**
  * Sections of the user's own record a `settings` event names, only on the user's own
  * channel and not part of the settings history: `profile` (their theme).
  */
@@ -76,8 +88,9 @@ const base = {
  * - `inbox_state`: the user marked Inbox items Done, Skipped, Snoozed or Restored
  *   (`ids` = item keys); only on the user's own channel.
  * - `webhook_event`: a delivery was recorded or replayed (`ids` = webhook event IDs).
- * - `settings`: a tracked settings `section` was saved, for `subjectId` (e.g. the
- *   repository) when the section has one (`ids` = the subject, else the organization).
+ * - `settings`: a settings `section` was saved, for `subjectId` (e.g. the repository) when
+ *   the section has one (`ids` = the subject, else the organization). Agent and task
+ *   definitions and review profiles are sections without a subject.
  *   Section `profile` is the user's own record (`ids` = the user), on the user's channel.
  * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its
  *   settings, pins, update state or installs changed (`ids` = agent IDs).
@@ -112,7 +125,11 @@ export const changeEventSchemas = {
   settings: z.strictObject({
     ...base,
     resource: z.literal("settings"),
-    section: z.enum([...SETTINGS_SECTIONS, ...USER_SETTINGS_SECTIONS]),
+    section: z.enum([
+      ...SETTINGS_SECTIONS,
+      ...UNTRACKED_SETTINGS_SECTIONS,
+      ...USER_SETTINGS_SECTIONS,
+    ]),
     subjectId: id.optional(),
   }),
   agent: z.strictObject({ ...base, resource: z.literal("agent") }),

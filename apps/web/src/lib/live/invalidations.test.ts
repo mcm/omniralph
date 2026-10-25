@@ -2,6 +2,7 @@ import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import { queryKeys } from "@/lib/api/keys";
+import { definitionKeys, reviewProfilesKey } from "@/lib/api/settings-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
   changesUserRecord,
@@ -16,6 +17,7 @@ const RUN = "44444444-4444-4444-8444-444444444444";
 const OTHER_RUN = "55555555-5555-4555-8555-555555555555";
 const ID = "33333333-3333-4333-8333-333333333333";
 const keys = queryKeys(ORG);
+const definitions = definitionKeys(keys);
 
 const event = (fields: Partial<ChangeEvent> & { resource: ChangeEvent["resource"] }) =>
   changeEvent(ORG, fields);
@@ -94,6 +96,7 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.reviews", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
+      reviewProfilesKey(keys),
     ]);
     expect(settings("repository.coding", ID)).toEqual([
       keys.repositories.lists,
@@ -113,23 +116,50 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.settings.detail("host-tools"),
       keys.harnesses.all,
       keys.repositories.all,
+      definitions.tasks.formOptions,
     ]);
     expect(settings("profile")).toEqual([]);
   });
 
-  it("agent: the agents list and each agent", () => {
+  it("settings: agent and task definitions refetch every agent and task query", () => {
+    const definitionsChanged = [
+      definitions.agents.all,
+      definitions.tasks.all,
+      keys.repositories.all,
+      keys.connections.detail("integrations"),
+    ];
+    expect(
+      liveInvalidations(event({ resource: "settings", section: "agent_definitions" })),
+    ).toEqual(definitionsChanged);
+    expect(liveInvalidations(event({ resource: "settings", section: "task_definitions" }))).toEqual(
+      definitionsChanged,
+    );
+  });
+
+  it("settings: review profiles refetch the profiles and the repositories showing them", () => {
+    expect(liveInvalidations(event({ resource: "settings", section: "review_profiles" }))).toEqual([
+      reviewProfilesKey(keys),
+      keys.repositories.all,
+    ]);
+  });
+
+  it("agent: the agents list, each agent, and the forms offering what agents report", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.harnesses.lists,
       keys.harnesses.detail(ID),
       keys.harnesses.detail(RUN),
+      definitions.agents.formOptions,
+      definitions.tasks.formOptions,
+      reviewProfilesKey(keys),
     ]);
   });
 
-  it("repository: the list, each repository and the connections showing them", () => {
+  it("repository: the list, each repository and the connections and profiles showing them", () => {
     expect(liveInvalidations(event({ resource: "repository" }))).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.connections.all,
+      reviewProfilesKey(keys),
     ]);
   });
 
@@ -207,6 +237,29 @@ describe("createLiveInvalidator", () => {
       keys.transcripts.part(RUN, "attempt", { id: ID }),
       keys.harnesses.list(),
     ]);
+  });
+
+  it("a definition save refetches agent and task queries, not review profiles", () => {
+    seed(
+      definitions.agents.list,
+      definitions.agents.detail(ID),
+      definitions.agents.formOptions,
+      definitions.tasks.list,
+      definitions.tasks.formOptions,
+      reviewProfilesKey(keys),
+    );
+    const invalidator = createLiveInvalidator(client);
+    invalidator.apply(event({ resource: "settings", section: "task_definitions" }), scope);
+    expect(invalidated()).toEqual([
+      definitions.agents.list,
+      definitions.agents.detail(ID),
+      definitions.agents.formOptions,
+      definitions.tasks.list,
+      definitions.tasks.formOptions,
+    ]);
+
+    invalidator.apply(event({ resource: "settings", section: "review_profiles" }), scope);
+    expect(invalidated()).toContainEqual(reviewProfilesKey(keys));
   });
 
   it("ignores an event for an organization outside the scope", () => {

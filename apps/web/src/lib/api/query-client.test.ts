@@ -70,7 +70,7 @@ describe("fallback polling", () => {
     setFallbackPolling(client, false);
     const queryFn = vi.fn(async () => "data");
     const observer = new QueryObserver(client, {
-      queryKey: ["org", "definitions"],
+      queryKey: ["org", "own-interval"],
       queryFn,
       refetchInterval: 30_000,
     });
