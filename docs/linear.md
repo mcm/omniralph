@@ -188,6 +188,13 @@ rule the issue matched (its number and conditions, or the default rule), the cha
 "manual (coding off)", or "Would ask which repository to use". It uses the same routing as a
 delegation, and nothing is saved or changed in Linear.
 
+**Routing preview.** `POST /api/ui/routing/preview` with `{ "identifiers": ["ENG-12", …] }`
+(1–50, every member) answers the same result for each work item under the saved rules, in the
+order sent, plus the repository's coding switch and, when Om already started a run of the
+issue, that run's ID and how it was routed (`routed_by`), so the two can be compared. An issue
+Linear doesn't know is a `not_found` result rather than a failed request. Each request counts
+once against the "Test an issue" limit.
+
 Routing comes only from the rules: text in the issue's description (such as a `[repo=…]` tag)
 only matters when a rule tests the description.
 

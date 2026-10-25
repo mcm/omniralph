@@ -169,6 +169,37 @@ export async function getIssueRepository(
   };
 }
 
+/** An issue's latest run (`listLatestIssueRuns`). */
+export interface IssueRun {
+  id: string;
+  /** How the run was routed; null when it has none (e.g. the repository was selected). */
+  routedBy: string | null;
+}
+
+/** The latest run (by creation) of each of `linearIssueIds` that has one, by issue ID. */
+export async function listLatestIssueRuns(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  linearIssueIds: readonly string[],
+): Promise<Map<string, IssueRun>> {
+  if (linearIssueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ issueId: ralphRuns.linearIssueId, id: ralphRuns.id, routedBy: ralphRuns.routedBy })
+    .from(ralphRuns)
+    .where(
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        inArray(ralphRuns.linearIssueId, [...linearIssueIds]),
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
+  const latest = new Map<string, IssueRun>();
+  for (const { issueId, id, routedBy } of rows) {
+    if (issueId && !latest.has(issueId)) latest.set(issueId, { id, routedBy });
+  }
+  return latest;
+}
+
 /**
  * Records that the follow-up `issueId` was filed from `sourceIssueId` (Linear issue IDs).
  * An issue already recorded keeps its first source.

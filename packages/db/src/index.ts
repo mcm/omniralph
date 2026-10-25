@@ -194,11 +194,13 @@ export {
   getFollowUpSource,
   getIssueRepository,
   listFollowUps,
+  listLatestIssueRuns,
   listRoutingRepositories,
   listRoutingRules,
   recordFollowUpSource,
   replaceRoutingRules,
   type IssueRepository,
+  type IssueRun,
   type ReplaceRoutingRulesResult,
   type RoutingRule,
 } from "./routing-rules.js";
