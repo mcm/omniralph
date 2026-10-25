@@ -402,20 +402,13 @@ export function TaskDetailContent({
           <Card>
             <CardHeader>
               <CardTitle as="h2">Coding</CardTitle>
-              <CardDescription>How a coding run pushes, opens its PR and retries.</CardDescription>
+              <CardDescription>
+                How a coding run pushes, describes its PR and retries.
+              </CardDescription>
             </CardHeader>
             <CardContent className="definition-grid">
               <Fact label="Push">
                 {task.pushTiming === "end" ? "Once, when every story is done" : "After each story"}
-              </Fact>
-              <Fact label="Draft PR">
-                {task.draftPullRequest === undefined ? (
-                  <Muted>Repository setting</Muted>
-                ) : task.draftPullRequest === "early" ? (
-                  "After the first story"
-                ) : (
-                  "When every story is done"
-                )}
               </Fact>
               <Fact label="PR description task">
                 {task.prDescriptionTaskId ? (

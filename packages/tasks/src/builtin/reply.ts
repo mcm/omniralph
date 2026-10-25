@@ -6,8 +6,8 @@
  * runs without the hunk and without file tools. The `finding-thread` sink
  * posts the answer in the thread.
  */
-import type { TaskDefinitionInput } from "../definitions.js";
-import { REVIEWER_AGENT } from "./reviewer.js";
+import type { PlaybookInput } from "../playbooks.js";
+import { REVIEWER_PERSONA } from "./reviewer.js";
 
 const REPLY_SYSTEM_APPEND = `Someone replied to one of your review findings with a question or a comment.
 
@@ -42,17 +42,15 @@ Body:
 Answer the question about the finding.
 `;
 
-export const REPLY_TASK: TaskDefinitionInput = {
+export const REPLY_PLAYBOOK: PlaybookInput = {
   id: "builtin:reply-to-finding",
   name: "Reply in a finding thread",
   description: "Answers a question asked by mentioning the bot in a review finding's thread.",
-  taskType: "query",
-  agentId: REVIEWER_AGENT.id,
-  triggers: ["finding.mention"],
+  role: "reply-to-finding",
+  ...REVIEWER_PERSONA,
   promptTemplate: REPLY_TEMPLATE,
   systemAppend: REPLY_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
-  sink: "finding-thread",
   // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
   model: "claude-sonnet-5-5",
   // A tenth of the Standard depth's 200,000, as before the precedence fix.

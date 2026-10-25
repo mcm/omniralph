@@ -63,7 +63,6 @@ export type TaskDefinitionFields = Omit<TaskDefinitionInput, "id">;
 export interface TaskFormAgent {
   id: string;
   name: string;
-  taskTypes: readonly TaskType[];
   builtin: boolean;
 }
 
@@ -179,7 +178,6 @@ export function TaskForm({
   const changes = taskChanges(saved, draft, names);
   const dirty = changes.length > 0;
 
-  const typeAgents = agents.filter((agent) => agent.taskTypes.includes(taskType));
   const typeSinks = sinks.filter((option) => option.taskType === taskType);
   const typeTriggers = TRIGGERS_BY_TASK_TYPE[taskType];
 
@@ -189,11 +187,6 @@ export function TaskForm({
       ...current,
       taskType: next,
       triggers: current.triggers.filter((trigger) => TRIGGERS_BY_TASK_TYPE[next].includes(trigger)),
-      agentId: agents.some(
-        (agent) => agent.id === current.agentId && agent.taskTypes.includes(next),
-      )
-        ? current.agentId
-        : "",
       sink: sinks.some((option) => option.kind === current.sink && option.taskType === next)
         ? current.sink
         : "",
@@ -313,13 +306,7 @@ export function TaskForm({
                       ))}
                     </NativeSelect>
                   </Field>
-                  <Field
-                    label="Agent"
-                    htmlFor="task-agent"
-                    description="Agents suited to the task type."
-                    error={errors.agentId}
-                    required
-                  >
+                  <Field label="Agent" htmlFor="task-agent" error={errors.agentId} required>
                     <NativeSelect
                       id="task-agent"
                       disabled={pending}
@@ -328,7 +315,7 @@ export function TaskForm({
                       onChange={(e) => set({ agentId: e.target.value })}
                     >
                       <option value="">Choose an agent</option>
-                      {typeAgents.map((agent) => (
+                      {agents.map((agent) => (
                         <option key={agent.id} value={agent.id}>
                           {agent.builtin ? `${agent.name} (built-in)` : agent.name}
                         </option>

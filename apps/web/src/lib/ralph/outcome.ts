@@ -26,7 +26,7 @@ import {
   type RalphFollowUp,
   type RalphStoryMetric,
 } from "@omniralph/shared";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import type { CreateIssueInput, IssueSummary } from "@/lib/linear/gateway";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
@@ -120,7 +120,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
     // A coding run's story gets its task's attempts and rounds.
-    const caps = await jobStoryCaps(job, organizationDefinitions(ctx.db, ctx.run.organizationId));
+    const caps = await jobStoryCaps(job, organizationPlaybooks(ctx.db, ctx.run.organizationId));
     if (parsed?.success && parsed.data.hiddenRef) {
       // The story commits sit on the run's hidden ref: deleted once the run is over.
       const repositoryId = (await storyLane(ctx.tx, ctx.run, story))?.repositoryId;

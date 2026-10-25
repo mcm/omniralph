@@ -8,23 +8,18 @@
  * The output schema is fixed; the control panel fits the title to
  * `MAX_PULL_REQUEST_TITLE_LENGTH` (`fitTitle`).
  */
-import type { AgentDefinitionInput, TaskDefinitionInput } from "../definitions.js";
+import type { PlaybookInput, PlaybookPersona } from "../playbooks.js";
 
 /** Longest title the prompt asks for (`PR_TITLE_MAX_LENGTH` in `@omniralph/ralph`). */
 const PR_TITLE_MAX_LENGTH = 72;
 
 /** Writes PR titles and descriptions; a copy of ralph's `PR_DESCRIPTION_SYSTEM_APPEND`. */
-export const PR_WRITER_AGENT: AgentDefinitionInput = {
-  id: "builtin:pr-writer",
-  name: "PR writer",
-  description:
-    "Writes the title and description of a pull/merge request from the branch's commits and diff. Read-only.",
+export const PR_WRITER_PERSONA = {
   systemPrompt: `You are "Omniralph", writing the title and description of a pull/merge request for work that is already committed.
 - Only read: inspect the repository and git history (\`git log\`, \`git diff\`, \`git show\`). Don't edit files, commit, push, or run gh/glab.
 - Report the title and description in your structured result (\`title\`, \`body\`).`,
   tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
-  taskTypes: ["query"],
-};
+} satisfies PlaybookPersona;
 
 const DESCRIBE_PR_TEMPLATE = `The branch \`{{branch}}\` in this git worktree is ready for a {{prTerm}} into \`{{baseBranch}}\`. It implements "{{epic.title}}" ({{epic.identifier}}).
 
@@ -71,14 +66,13 @@ Notes from the sessions that did the work (decisions, gotchas):
 
 Report them as the \`title\` and the markdown \`body\` of your structured result.`;
 
-export const DESCRIBE_PR_TASK: TaskDefinitionInput = {
+export const DESCRIBE_PR_PLAYBOOK: PlaybookInput = {
   id: "builtin:describe-pr",
   name: "Describe a PR",
   description:
     "Writes the title and description of a coding run's pull/merge request once every story is done.",
-  taskType: "query",
-  agentId: PR_WRITER_AGENT.id,
-  triggers: ["run.invoked"],
+  role: "pr-description",
+  ...PR_WRITER_PERSONA,
   promptTemplate: DESCRIBE_PR_TEMPLATE,
   // The title isn't capped here: the control panel fits it (`fitTitle`).
   outputSchema: {
@@ -93,7 +87,6 @@ export const DESCRIBE_PR_TASK: TaskDefinitionInput = {
     required: ["title", "body"],
     additionalProperties: false,
   },
-  sink: "run-result",
   // Ralph's story model (`DEFAULT_STORY_MODEL`).
   model: "opus",
   tokenBudget: null,

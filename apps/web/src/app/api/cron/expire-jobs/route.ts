@@ -7,7 +7,7 @@ import {
   reconcileExpiredQueuedJobs,
   syncJobsDueFromPostgres,
 } from "@/lib/dispatch/due";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -30,7 +30,7 @@ async function get(req: Request): Promise<Response> {
   for (const jobId of expired) {
     try {
       const job = await getJob(db, jobId);
-      const handler = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
+      const handler = job && (await jobHooks(job, organizationPlaybooks(db, job.organizationId)));
       if (job && handler?.onFailed) {
         await handler.onFailed(db, job, "No agent picked up the job within 24 hours");
       }

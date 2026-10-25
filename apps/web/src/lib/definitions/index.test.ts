@@ -15,11 +15,12 @@ import {
 } from "@omniralph/db";
 import { REVIEW_TASKS_MIN_HARNESS_VERSION } from "@omniralph/shared";
 import {
-  BUILTIN_AGENTS,
+  BUILTIN_PLAYBOOKS,
   BUILTIN_TASKS,
-  getBuiltinAgent,
+  getBuiltinPlaybook,
+  getBuiltinRunSpec,
   getBuiltinTask,
-  type AgentDefinitionInput,
+  type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
 import {
@@ -35,11 +36,12 @@ vi.mock("server-only", () => ({}));
 const {
   CORRELATION_TASKS,
   getAgentDefinition,
+  getPlaybookTask,
   getTaskChoice,
   getTaskDefinition,
   listAgentDefinitions,
   listTaskDefinitions,
-  organizationDefinitions,
+  organizationPlaybooks,
   REQUEST_TASKS,
   REVIEW_TASKS,
   STORY_TASKS,
@@ -50,8 +52,8 @@ const { PostgresDispatcher } = await import("@/lib/dispatch");
 
 const databaseAvailable = testDatabaseAvailable();
 
-const securityAgent: AgentDefinitionInput = {
-  ...getBuiltinAgent("builtin:reviewer")!,
+const securityAgent: RunSpecAgentInput = {
+  ...getBuiltinRunSpec("builtin:review-pr")!.agent,
   systemPrompt: "You review code for security problems only.",
 };
 
@@ -61,7 +63,7 @@ const securityReview: TaskDefinitionInput = { ...getBuiltinTask("builtin:review-
 /** A higher minimum harness version than any task type needs. */
 const STORED_MIN_VERSION = "99.1.0";
 
-describe.skipIf(!databaseAvailable)("definition resolver", () => {
+describe.skipIf(!databaseAvailable)("playbook resolver", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
@@ -111,8 +113,9 @@ describe.skipIf(!databaseAvailable)("definition resolver", () => {
         builtin: true,
         requirements: null,
       });
-      expect(await getAgentDefinition(db, orgId, "builtin:reviewer")).toEqual({
-        definition: getBuiltinAgent("builtin:reviewer"),
+      // A built-in playbook's persona shows as an agent of its ID.
+      expect(await getAgentDefinition(db, orgId, "builtin:review-pr")).toEqual({
+        definition: getBuiltinRunSpec("builtin:review-pr")!.agent,
         builtin: true,
       });
       expect(await getTaskDefinition(db, orgId, "builtin:gone")).toBeNull();
@@ -148,7 +151,7 @@ describe.skipIf(!databaseAvailable)("definition resolver", () => {
 
     it("reports a stored definition that fails its schema as unresolvable", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const agent = await customAgent(orgId, { ...securityAgent, taskTypes: [] });
+      const agent = await customAgent(orgId, { ...securityAgent, systemPromptMode: "prepend" });
       const task = await customTask(orgId, { ...securityReview, sink: "nowhere" });
       const badRequirements = await customTask(orgId, securityReview, { minHarnessVersion: 7 });
       expect(await getAgentDefinition(db, orgId, agent.id)).toBeNull();
@@ -170,7 +173,7 @@ describe.skipIf(!databaseAvailable)("definition resolver", () => {
 
       const agents = await listAgentDefinitions(db, org!.id);
       expect(agents.map((a) => [a.definition.id, a.builtin])).toEqual([
-        ...BUILTIN_AGENTS.map((a) => [a.id, true]),
+        ...BUILTIN_PLAYBOOKS.map((p) => [p.id, true]),
         [agent.id, false],
       ]);
       const tasks = await listTaskDefinitions(db, org!.id);
@@ -234,37 +237,79 @@ describe.skipIf(!databaseAvailable)("definition resolver", () => {
     });
   });
 
-  describe("organizationDefinitions", () => {
-    it("looks tasks and agents up for one organization only", async () => {
+  describe("organizationPlaybooks", () => {
+    it("resolves built-in playbooks from code and custom ones from the organization's rows", async () => {
       const agent = await customAgent();
       const task = await customTask(orgId, { ...securityReview, agentId: agent.id });
-      const mine = organizationDefinitions(db, orgId);
-      expect((await mine.getTask(task.id))?.agentId).toBe(agent.id);
-      expect((await mine.getAgent(agent.id))?.id).toBe(agent.id);
-      expect(await mine.getTaskRequirements!(task.id)).toMatchObject({
+      const mine = organizationPlaybooks(db, orgId);
+      expect(await mine.getPlaybook(task.id)).toMatchObject({
+        id: task.id,
+        name: "Security review",
+        role: "review",
+        systemPrompt: securityAgent.systemPrompt,
+        promptTemplate: securityReview.promptTemplate,
+        model: null,
+      });
+      expect(await mine.getPlaybookRequirements!(task.id)).toMatchObject({
         minHarnessVersion: STORED_MIN_VERSION,
       });
-      expect(await mine.getTask("builtin:review-pr")).toBe(getBuiltinTask("builtin:review-pr"));
-      expect(await mine.getTaskRequirements!("builtin:review-pr")).toBeNull();
+      expect(await mine.getPlaybook("builtin:review-pr")).toBe(
+        getBuiltinPlaybook("builtin:review-pr"),
+      );
+      expect(await mine.getPlaybookRequirements!("builtin:review-pr")).toBeNull();
+      expect(await getPlaybookTask(mine, task.id)).toMatchObject({
+        taskType: "review",
+        agentId: task.id,
+        sink: "review",
+      });
 
-      const theirs = organizationDefinitions(db, otherOrgId);
-      expect(await theirs.getTask(task.id)).toBeNull();
-      expect(await theirs.getAgent(agent.id)).toBeNull();
+      const theirs = organizationPlaybooks(db, otherOrgId);
+      expect(await theirs.getPlaybook(task.id)).toBeNull();
+    });
+
+    it("leaves a custom task unresolved when it fits no playbook", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const agent = await customAgent();
+      // Replying in a finding thread is a built-in-only role.
+      const reply = await customTask(orgId, {
+        ...getBuiltinTask("builtin:reply-to-finding")!,
+        agentId: agent.id,
+      });
+      const unknownAgent = await customTask(orgId, {
+        ...securityReview,
+        agentId: "5b0b7b4e-3f4c-4d1e-9a2b-7c6d5e4f3a2b",
+      });
+      const playbooks = organizationPlaybooks(db, orgId);
+      expect(await playbooks.getPlaybook(reply.id)).toBeNull();
+      expect(await playbooks.getPlaybook(unknownAgent.id)).toBeNull();
+      expect(warn).toHaveBeenCalledWith("unresolvable custom playbook", {
+        organizationId: orgId,
+        taskId: reply.id,
+      });
+      warn.mockRestore();
     });
 
     it("gives a custom task's job its stored minimum harness version", async () => {
       const task = await customTask();
-      const definitions = organizationDefinitions(db, orgId);
-      const input = await taskJobInput(definitions, (await definitions.getTask(task.id))!, {
-        trigger: { kind: "pr.updated", context: {} },
-      });
+      const definitions = organizationPlaybooks(db, orgId);
+      const input = await taskJobInput(
+        definitions,
+        (await getPlaybookTask(definitions, task.id))!,
+        {
+          trigger: { kind: "pr.updated", context: {} },
+        },
+      );
       expect(input).toMatchObject({ taskId: task.id, minHarnessVersion: STORED_MIN_VERSION });
 
       // A stored minimum below the task type's never lowers it.
       const low = await customTask(orgId, securityReview, { minHarnessVersion: "0.0.1" });
-      const lowInput = await taskJobInput(definitions, (await definitions.getTask(low.id))!, {
-        trigger: { kind: "pr.updated", context: {} },
-      });
+      const lowInput = await taskJobInput(
+        definitions,
+        (await getPlaybookTask(definitions, low.id))!,
+        {
+          trigger: { kind: "pr.updated", context: {} },
+        },
+      );
       expect(lowInput.minHarnessVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
     });
   });

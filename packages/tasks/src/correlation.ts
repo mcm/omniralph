@@ -2,7 +2,7 @@
  * Which tasks a repository can pick as its review runs' correlation task: the
  * review run applies the correlation's output, so its shape is fixed.
  */
-import { CORRELATE_FINDINGS_TASK } from "./builtin/correlate-findings.js";
+import { CORRELATE_FINDINGS_PLAYBOOK } from "./builtin/correlate-findings.js";
 import type { TaskDefinition } from "./definitions.js";
 import { outputSchemaProblem, type JsonSchema } from "./output-schema.js";
 
@@ -10,7 +10,7 @@ import { outputSchemaProblem, type JsonSchema } from "./output-schema.js";
  * The output a review run reads from its correlation task (`builtin:correlate-findings`'s
  * output schema; `CorrelationOutput` in `@omniralph/shared`).
  */
-export const CORRELATION_OUTPUT_SCHEMA: JsonSchema = CORRELATE_FINDINGS_TASK.outputSchema!;
+export const CORRELATION_OUTPUT_SCHEMA: JsonSchema = CORRELATE_FINDINGS_PLAYBOOK.outputSchema!;
 
 /** A task a review run may invoke as its correlation, as `correlationProblem` sees it. */
 export type CorrelationTaskFields = Pick<

@@ -10,12 +10,12 @@
 import { randomUUID } from "node:crypto";
 import { buildCiFailureRequest, buildReviewRequest } from "@omniralph/ralph";
 import { RalphRequestPayload, RunSpec } from "@omniralph/shared";
-import { getBuiltinAgent, getBuiltinTask, type REQUEST_TRIGGERS } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask, type REQUEST_TRIGGERS } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import { requestRunPrompt } from "./coding.js";
 import { querySystemPrompt } from "./query.js";
 
-const engineer = getBuiltinAgent("builtin:engineer")!;
+const engineer = getBuiltinRunSpec("builtin:implement-story")!.agent;
 const requestTask = getBuiltinTask("builtin:handle-request")!;
 
 type RequestTrigger = (typeof REQUEST_TRIGGERS)[number];

@@ -20,13 +20,13 @@ import {
   type RunSpec as RunSpecType,
 } from "@omniralph/shared";
 import {
-  AgentDefinition,
+  RunSpecAgent,
   fence,
-  getBuiltinAgent,
+  getBuiltinRunSpec,
   getBuiltinTask,
   TaskDefinition,
   TRUNCATION_MARKER,
-  type AgentDefinitionInput,
+  type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
 import { TRIAGE_SYSTEM_APPEND, triageTemplateContext } from "@omniralph/ralph";
@@ -62,8 +62,8 @@ Conventions:
 const ANSWER =
   "`last()` in `src/list.ts:1-3` reads one past the end; see also `src/missing.ts:4` and README.md.";
 
-function agentFixture(overrides: Partial<AgentDefinitionInput> = {}): AgentDefinition {
-  return AgentDefinition.parse({
+function agentFixture(overrides: Partial<RunSpecAgentInput> = {}): RunSpecAgent {
+  return RunSpecAgent.parse({
     id: "builtin:test-answerer",
     name: "Test answerer",
     systemPrompt: "You answer questions about code.",
@@ -420,7 +420,7 @@ describe("runQueryTask", () => {
         "feature",
       );
       const task = getBuiltinTask("builtin:learn-rule")!;
-      const agent = getBuiltinAgent(task.agentId)!;
+      const agent = getBuiltinRunSpec(task.id)!.agent;
       const { result, calls } = await run(
         spec({
           agent,
@@ -486,7 +486,7 @@ describe("runQueryTask", () => {
     function replySpec(head: string): RunSpecType {
       const task = getBuiltinTask("builtin:reply-to-finding")!;
       return spec({
-        agent: getBuiltinAgent(task.agentId)!,
+        agent: getBuiltinRunSpec(task.id)!.agent,
         task,
         ref: head,
         tokenBudget: 20_000,
@@ -521,7 +521,7 @@ describe("runQueryTask", () => {
 
     it("answers in a worktree at the review's head with Read/Grep/Glob, from the finding's hunk", async () => {
       const task = getBuiltinTask("builtin:reply-to-finding")!;
-      const agent = getBuiltinAgent(task.agentId)!;
+      const agent = getBuiltinRunSpec(task.id)!.agent;
       const { result, calls } = await run(replySpec(headSha));
       expect(QueryRunResult.parse(result)).toMatchObject({
         outcome: "answered",
@@ -557,7 +557,7 @@ describe("runQueryTask", () => {
     function askSpec(branch: string): RunSpecType {
       const task = getBuiltinTask("builtin:ask-about-code")!;
       return spec({
-        agent: getBuiltinAgent(task.agentId)!,
+        agent: getBuiltinRunSpec(task.id)!.agent,
         task,
         ref: branch,
         requireCheckout: true,
@@ -578,7 +578,7 @@ describe("runQueryTask", () => {
 
     it("answers from a worktree of the default branch with CLAUDE.md as conventions and file references", async () => {
       const task = getBuiltinTask("builtin:ask-about-code")!;
-      const agent = getBuiltinAgent(task.agentId)!;
+      const agent = getBuiltinRunSpec(task.id)!.agent;
       const { result, calls } = await run(askSpec("main"));
       expect(QueryRunResult.parse(result)).toMatchObject({
         outcome: "answered",
@@ -615,7 +615,7 @@ describe("runQueryTask", () => {
 
   describe("builtin:triage", () => {
     const task = getBuiltinTask("builtin:triage")!;
-    const agent = getBuiltinAgent(task.agentId)!;
+    const agent = getBuiltinRunSpec(task.id)!.agent;
     const TRIAGE = {
       outcome: "prd",
       title: "Fix last()",

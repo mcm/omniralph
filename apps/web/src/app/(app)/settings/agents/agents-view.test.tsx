@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
+import { getBuiltinRunSpec } from "@omniralph/tasks";
+import type { CustomAgent } from "@/lib/api/definitions";
 import type { ReactNode } from "react";
 import {
   createTestQueryClient,
@@ -25,14 +26,13 @@ const html = (node: ReactNode, role: "admin" | "member" = "member") => {
   return renderToStaticMarkup(<Wrapper>{node}</Wrapper>);
 };
 
-const reviewer = BUILTIN_AGENTS.find((agent) => agent.id === "builtin:reviewer") as AgentDefinition;
+const reviewer: CustomAgent = getBuiltinRunSpec("builtin:review-pr")!.agent;
 
 const BUILTIN: AgentSummary = {
   id: reviewer.id,
   name: reviewer.name,
   description: reviewer.description,
   builtin: true,
-  taskTypes: reviewer.taskTypes,
   model: reviewer.model,
 };
 
@@ -41,7 +41,6 @@ const CUSTOM: AgentSummary = {
   name: "Security reviewer",
   description: "Looks for vulnerabilities.",
   builtin: false,
-  taskTypes: ["review"],
   model: "claude-opus-5-5",
 };
 
@@ -52,22 +51,22 @@ const row = (html: string, name: string) => {
 };
 
 describe("AgentsView", () => {
-  it("lists built-ins and custom agents with ID, task types and model", () => {
+  it("lists built-ins and custom agents with ID and model", () => {
     const markup = html(<AgentsTable agents={[BUILTIN, CUSTOM]} />);
-    expect(markup.indexOf(">Reviewer<")).toBeLessThan(markup.indexOf(">Security reviewer<"));
+    expect(markup.indexOf(">Review a pull request<")).toBeLessThan(
+      markup.indexOf(">Security reviewer<"),
+    );
+    expect(markup).not.toContain("Task types");
 
-    const builtin = row(markup, "Reviewer");
-    expect(builtin).toContain("builtin:reviewer");
-    expect(builtin).toContain('href="/settings/agents/builtin%3Areviewer"');
+    const builtin = row(markup, "Review a pull request");
+    expect(builtin).toContain("builtin:review-pr");
+    expect(builtin).toContain('href="/settings/agents/builtin%3Areview-pr"');
     expect(builtin).toContain("Built-in");
-    expect(builtin).toContain(">Query<");
-    expect(builtin).toContain(">Review<");
 
     const custom = row(markup, "Security reviewer");
     expect(custom).toContain(CUSTOM.id);
     expect(custom).toContain(`href="/settings/agents/${CUSTOM.id}"`);
     expect(custom).not.toContain("Built-in");
-    expect(custom).toContain(">Review<");
     expect(custom).toContain("claude-opus-5-5");
   });
 
@@ -80,11 +79,10 @@ describe("AgentsView", () => {
 });
 
 describe("AgentDetailContent", () => {
-  const agent: AgentDefinition = {
+  const agent: CustomAgent = {
     ...reviewer,
     model: "claude-sonnet-5-5",
     fallbackModel: "claude-haiku-5-5",
-    skills: [{ name: "triage-findings", content: "How to rank findings." }],
     referenceDocs: [{ name: "style-guide", content: "Our style guide." }],
   };
   const tasks = [
@@ -98,7 +96,7 @@ describe("AgentDetailContent", () => {
   const render = (isAdmin: boolean) =>
     html(<AgentDetailContent agent={agent} builtin tasks={tasks} isAdmin={isAdmin} />);
 
-  it("shows the agent's prompt, tools, documents, models, task types and tasks", () => {
+  it("shows the agent's prompt, tools, documents, models and tasks", () => {
     const html = render(false);
     expect(html).toContain("Built-in");
     expect(html).toContain(">System prompt<");
@@ -106,12 +104,11 @@ describe("AgentDetailContent", () => {
       agent.systemPrompt.slice(0, 40).replaceAll("&", "&amp;").replaceAll("'", "&#x27;"),
     );
     for (const tool of agent.tools.builtin) expect(html).toContain(`>${tool}<`);
-    expect(html).toContain("triage-findings");
-    expect(html).toContain("How to rank findings.");
     expect(html).toContain("style-guide");
     expect(html).toContain("claude-sonnet-5-5");
     expect(html).toContain("claude-haiku-5-5");
-    expect(html).toContain(">Query<");
+    expect(html).not.toContain("Task types");
+    expect(html).not.toContain(">Skills<");
     expect(html).toContain("Review a pull request");
     expect(html).toContain("builtin:review-pr");
   });
@@ -149,14 +146,13 @@ describe("AgentDetailContent", () => {
 });
 
 describe("AgentsView on phone", () => {
-  it("repeats the task types and model under the name and hides their columns", () => {
+  it("repeats the model under the name and hides its columns", () => {
     const markup = html(<AgentsTable agents={[CUSTOM]} />);
     const tr = row(markup, "Security reviewer");
     const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
     const meta = firstCell.slice(firstCell.indexOf('class="list-phone-meta"'));
-    expect(meta).toContain(">Review<");
     expect(meta).toContain("claude-opus-5-5");
-    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(3);
-    expect(markup.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(3);
+    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(2);
+    expect(markup.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(2);
   });
 });

@@ -10,7 +10,7 @@ import {
 } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { removeJobsDue } from "@/lib/dispatch/due";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -38,7 +38,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+  const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {

@@ -62,7 +62,7 @@ const { pinRepository } = await import("@/lib/harnesses/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
 const { codingJobInput } = await import("@/lib/ralph/coding");
-const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("@/lib/runs/job");
 const { signJobTokens } = await import("@/lib/harness-api/jobs");
 
@@ -512,12 +512,12 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
               ? await codingJobInput(
                   { taskId: "builtin:implement-story", trigger: "linear.delegated" },
                   storyPayload(runId),
-                  BUILTIN_DEFINITIONS,
+                  BUILTIN_PLAYBOOK_SOURCE,
                 )
               : await codingJobInput(
                   { taskId: "builtin:handle-request", trigger: "linear.mention" },
                   requestPayload(runId),
-                  BUILTIN_DEFINITIONS,
+                  BUILTIN_PLAYBOOK_SOURCE,
                 );
           if (!routed) throw new Error("expected a coding task");
           return claimEnqueued({

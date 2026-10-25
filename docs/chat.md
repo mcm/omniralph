@@ -391,7 +391,7 @@ checkout of it:
 ### The read-only sandbox
 
 A code question is a run of the channel's query task, by default the built-in
-`builtin:ask-about-code` (agent `builtin:code-explainer`, job type `chat.ask`, pool `short`); its
+`builtin:ask-about-code` (role `chat-ask`, job type `chat.ask`, pool `short`); its
 `chat-thread` sink records the answer (or the failure) as a run event, which the bot relays. The
 built-in runs in a read-only sandbox:
 

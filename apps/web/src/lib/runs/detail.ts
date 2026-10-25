@@ -17,7 +17,7 @@ import {
 } from "@omniralph/db";
 import type { RunAttempt, RunDetail, RunDetails, RunLane, RunRow, RunStep } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { reviewTaskNames } from "@/lib/review/post";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
@@ -194,7 +194,7 @@ async function reviewKindFacts(
   base: AttemptLabelContext,
 ): Promise<KindFacts> {
   const taskName = await reviewTaskNames(
-    organizationDefinitions(db, run.organizationId),
+    organizationPlaybooks(db, run.organizationId),
     facts.passes.flatMap((p) => p.taskId ?? []),
   );
   // A legacy pass has no task: its step reads "Review", its attempt "Reviewed pull request #12".

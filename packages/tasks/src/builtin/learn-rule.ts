@@ -5,20 +5,16 @@
  * none. The session gets no tools and no Claude Code preset; the
  * `learned-rule` sink dedupes and stores the rule.
  */
-import type { AgentDefinitionInput, TaskDefinitionInput } from "../definitions.js";
+import type { PlaybookInput, PlaybookPersona } from "../playbooks.js";
 
 /** Longest rule the sink accepts (`MAX_LEARNED_RULE_LENGTH` in `@omniralph/shared`). */
 const MAX_RULE_LENGTH = 300;
 
-export const RULE_WRITER_AGENT: AgentDefinitionInput = {
-  id: "builtin:rule-writer",
-  name: "Rule writer",
-  description: "Writes review rules from dismissed findings. No tools.",
+export const RULE_WRITER_PERSONA = {
   systemPrompt: "You maintain the review rules of Omniralph, an automated code reviewer.",
   systemPromptMode: "replace",
   tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
-  taskTypes: ["query"],
-};
+} satisfies PlaybookPersona;
 
 const LEARN_RULE_SYSTEM_APPEND = `A reviewer finding was dismissed as a false positive. Write one generalized rule that stops the reviewer from raising the same kind of false positive again in this repository, or decide that no rule should be written.
 
@@ -54,13 +50,12 @@ Body:
 Answer with {"rule": string} or {"rule": null}.
 `;
 
-export const LEARN_RULE_TASK: TaskDefinitionInput = {
+export const LEARN_RULE_PLAYBOOK: PlaybookInput = {
   id: "builtin:learn-rule",
   name: "Learn a rule",
   description: "Writes a review rule when a finding is dismissed as a false positive.",
-  taskType: "query",
-  agentId: RULE_WRITER_AGENT.id,
-  triggers: ["finding.dismissed"],
+  role: "learn-rule",
+  ...RULE_WRITER_PERSONA,
   promptTemplate: LEARN_RULE_TEMPLATE,
   systemAppend: LEARN_RULE_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
@@ -71,7 +66,6 @@ export const LEARN_RULE_TASK: TaskDefinitionInput = {
     required: ["rule"],
     additionalProperties: false,
   },
-  sink: "learned-rule",
   // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
   model: "claude-sonnet-5-5",
   tokenBudget: { tokens: 5000 },

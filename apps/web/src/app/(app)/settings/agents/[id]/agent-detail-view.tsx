@@ -52,14 +52,7 @@ import {
   definitionsChanged,
   useAgentDetail,
 } from "../../definition-queries";
-import {
-  agentEditHref,
-  BuiltinBadge,
-  Fact,
-  ModelName,
-  NameList,
-  TaskTypeBadges,
-} from "../agent-parts";
+import { agentEditHref, BuiltinBadge, Fact, ModelName, NameList } from "../agent-parts";
 
 export type { AgentTask };
 
@@ -193,9 +186,6 @@ export function AgentDetailContent({ agent, builtin, tasks, isAdmin }: AgentDeta
             <CardTitle as="h2">Overview</CardTitle>
           </CardHeader>
           <CardContent className="definition-grid">
-            <Fact label="Task types">
-              <TaskTypeBadges taskTypes={agent.taskTypes} />
-            </Fact>
             <Fact label="Model">
               <ModelName model={agent.model} />
             </Fact>
@@ -247,15 +237,6 @@ export function AgentDetailContent({ agent, builtin, tasks, isAdmin }: AgentDeta
             <Fact label="MCP servers">
               <NameList names={agent.tools.mcpServers} />
             </Fact>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Skills</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Documents documents={agent.skills} empty="No skills." />
           </CardContent>
         </Card>
 

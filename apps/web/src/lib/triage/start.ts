@@ -31,7 +31,7 @@ import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
-import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
 
@@ -282,8 +282,8 @@ export async function enqueueTriage(
   const { issue, children, repository } = context;
   const sessionId = run.linearAgentSessionId;
   const reply = options.reply?.trim();
-  const definitions = organizationDefinitions(db, deps.organizationId);
-  const task = await definitions.getTask(TRIAGE_TASK_ID);
+  const definitions = organizationPlaybooks(db, deps.organizationId);
+  const task = await getPlaybookTask(definitions, TRIAGE_TASK_ID);
   if (!task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
   const trigger = {
     triageRunId: run.id,

@@ -42,7 +42,7 @@ export const CHAT_TASK_LABELS: Record<ChatTaskRole, string> = {
   startWork: "Start work",
 };
 
-/** Looks a task definition up by ID (e.g. `organizationDefinitions(…).getTask`). */
+/** Looks a task definition up by ID (e.g. `organizationPlaybooks(…).getTask`). */
 export type TaskLookup = (id: string) => TaskDefinition | null | Promise<TaskDefinition | null>;
 
 export type ChatTaskChoiceResult =

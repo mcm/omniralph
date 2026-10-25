@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, VARIABLES } from "../variables.js";
 
@@ -32,23 +32,22 @@ function context({ repository, branch, question, context, conventions }: Fixture
 }
 
 const task = getBuiltinTask("builtin:ask-about-code")!;
-const agent = getBuiltinAgent("builtin:code-explainer")!;
+const agent = getBuiltinRunSpec("builtin:ask-about-code")!.agent;
 
 function render(fixture: Fixture): string {
   return renderTemplate(task.promptTemplate, context(fixture), VARIABLES, task.variableLimits);
 }
 
 describe("builtin:ask-about-code", () => {
-  it("runs on builtin:code-explainer as a query task with read-only file tools and no preset", () => {
+  it("runs with the code explainer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      taskTypes: ["query"],
       tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
-      model: null,
+      model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
       taskType: "query",
-      agentId: "builtin:code-explainer",
+      agentId: "builtin:ask-about-code",
       triggers: ["chat.request"],
       sink: "chat-thread",
       model: "claude-sonnet-5-5",

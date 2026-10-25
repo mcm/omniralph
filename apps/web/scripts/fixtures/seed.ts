@@ -42,7 +42,7 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
-import { deriveTaskRequirements, getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { deriveTaskRequirements, getBuiltinRunSpec } from "@omniralph/tasks";
 import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
 import { inArray, sql } from "drizzle-orm";
 import { FIXTURE_EMAILS, FIXTURE_IDS, fixtureId } from "./ids";
@@ -126,9 +126,11 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       expiresAt: new Date(now.getTime() + 6 * DAY),
       createdAt: ago(DAY),
     });
-    // A custom agent and a task on it (built-ins can't be edited), copied from built-ins.
-    const { id: _agentId, name: _agentName, ...agent } = getBuiltinAgent("builtin:reviewer")!;
-    const { id: _taskId, name: _taskName, ...task } = getBuiltinTask("builtin:review-pr")!;
+    // A custom agent and a task on it (built-ins can't be edited), copied from the built-in
+    // review playbook's run spec.
+    const reviewPr = getBuiltinRunSpec("builtin:review-pr")!;
+    const { id: _agentId, name: _agentName, ...agent } = reviewPr.agent;
+    const { id: _taskId, name: _taskName, ...task } = reviewPr.task;
     const customTask = { ...task, agentId: FIXTURE_IDS.definitions.agent };
     await tx.insert(agentDefinitions).values({
       id: FIXTURE_IDS.definitions.agent,

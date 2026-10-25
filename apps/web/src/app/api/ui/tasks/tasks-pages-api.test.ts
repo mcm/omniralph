@@ -133,8 +133,8 @@ describe("Settings › Tasks pages' API", () => {
       description: expect.any(String),
       builtin: false,
       taskType: "review",
-      agentId: "builtin:reviewer",
-      agentName: "Reviewer",
+      agentId: "builtin:review-pr",
+      agentName: "Review a pull request",
       triggers: expect.arrayContaining(["pr.updated"]),
       sink: "review",
     });
@@ -171,7 +171,7 @@ describe("Settings › Tasks pages' API", () => {
     const { body } = await get<TaskDetail>(detail.GET, CUSTOM_ID);
     expect(body.builtin).toBe(false);
     expect(body.task).toMatchObject({ id: CUSTOM_ID, name: "Security review" });
-    expect(body.agentName).toBe("Reviewer");
+    expect(body.agentName).toBe("Review a pull request");
     expect(body.requirements).toEqual({
       minHarnessVersion: "0.40.0",
       installables: [],
@@ -209,9 +209,8 @@ describe("Settings › Tasks pages' API", () => {
     const { status, body } = await get<TaskFormOptions>(formOptions.GET);
     expect(status).toBe(200);
     expect(body.agents).toContainEqual({
-      id: "builtin:reviewer",
-      name: "Reviewer",
-      taskTypes: ["query", "review"],
+      id: "builtin:review-pr",
+      name: "Review a pull request",
       builtin: true,
     });
     expect(body.sinks).toContainEqual({ kind: "review", taskType: "review" });

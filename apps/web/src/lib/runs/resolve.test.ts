@@ -12,11 +12,13 @@ import {
   type RunSpecJobPayload,
 } from "@omniralph/shared";
 import {
-  AgentDefinition,
-  BUILTIN_TASKS,
-  getBuiltinTask,
+  BUILTIN_PLAYBOOKS,
+  getBuiltinPlaybook,
+  Playbook,
+  playbookTaskType,
+  PLAYBOOK_ROLES,
   TaskDefinition,
-  type AgentDefinitionInput,
+  type PlaybookInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +38,7 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
 
 const { RunSpecError, narrowByReviewDepth, narrowTools, resolveRunSpec, runTokenBudget } =
   await import("./resolve");
-const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("./job");
 
 const ORG_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
@@ -44,16 +46,19 @@ const REPO_ID = "0b8f9c1e-4d2a-4f6b-9e3c-7a5d1c2b3e4f";
 const JOB_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const db = {} as Db.Database;
 
-const agentInput: AgentDefinitionInput = {
-  id: "builtin:code-reader",
-  name: "Code reader",
+const playbookInput: PlaybookInput = {
+  id: "builtin:reply-to-finding",
+  name: "Reply",
+  role: "reply-to-finding",
   systemPrompt: "You read code.",
-  taskTypes: ["query"],
+  promptTemplate: "{{question}}",
   tools: { builtin: ["Read", "Grep", "Glob"] },
   model: "haiku",
   fallbackModel: "sonnet",
+  tokenBudget: { tokens: 20_000 },
 };
 
+/** A run spec task, for `runSpecJobInput`. */
 const taskInput: TaskDefinitionInput = {
   id: "builtin:reply-to-finding",
   name: "Reply",
@@ -77,16 +82,10 @@ const payload: RunSpecJobPayload = {
   requireCheckout: true,
 };
 
-function definitions(
-  task: Partial<TaskDefinitionInput> = {},
-  agent: Partial<AgentDefinitionInput> = {},
-) {
-  const a = AgentDefinition.parse({ ...agentInput, ...agent });
-  const t = TaskDefinition.parse({ ...taskInput, ...task });
-  return {
-    getAgent: (id: string) => (id === a.id ? a : null),
-    getTask: (id: string) => (id === t.id ? t : null),
-  };
+/** A source of one playbook: `playbookInput` with `overrides` (not validated, as a stored one may not be). */
+function playbooks(overrides: Partial<Playbook> = {}) {
+  const p: Playbook = { ...Playbook.parse(playbookInput), ...overrides };
+  return { getPlaybook: (id: string) => (id === p.id ? p : null) };
 }
 
 function job(overrides: Partial<Db.Job> = {}) {
@@ -110,15 +109,27 @@ beforeEach(() => {
 });
 
 describe("resolveRunSpec", () => {
-  it("resolves the task, its agent, the trigger, the repository, ref and tokens", async () => {
-    const spec = await resolveRunSpec(db, job(), tokens, definitions());
+  it("resolves the playbook as its agent and task, the trigger, the repository, ref and tokens", async () => {
+    const spec = await resolveRunSpec(db, job(), tokens, playbooks());
     expect(spec).toMatchObject({
       jobId: JOB_ID,
       taskType: "query",
       pool: "short",
-      agent: { id: "builtin:code-reader", tools: { builtin: ["Read", "Grep", "Glob"] } },
+      agent: {
+        id: "builtin:reply-to-finding",
+        systemPrompt: "You read code.",
+        tools: { builtin: ["Read", "Grep", "Glob"] },
+        // Harnesses up to 0.13 still require an agent's task types: the run's own.
+        taskTypes: ["query"],
+      },
       // Harnesses up to 0.13 still read the task's pool: it is derived from its task type.
-      task: { id: "builtin:reply-to-finding", pool: "short" },
+      task: {
+        id: "builtin:reply-to-finding",
+        agentId: "builtin:reply-to-finding",
+        triggers: ["finding.mention"],
+        sink: "finding-thread",
+        pool: "short",
+      },
       trigger: payload.trigger,
       repository: {
         provider: "github",
@@ -135,18 +146,16 @@ describe("resolveRunSpec", () => {
   });
 
   describe("model precedence", () => {
-    it("takes the task's model first", async () => {
-      const spec = await resolveRunSpec(db, job(), tokens, definitions({ model: "sonnet" }));
-      expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
-    });
-
-    it("then the agent's, with or without a repository", async () => {
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).model).toBe("haiku");
+    it("takes the playbook's model and fallback model, with or without a repository", async () => {
+      expect(await resolveRunSpec(db, job(), tokens, playbooks())).toMatchObject({
+        model: "haiku",
+        fallbackModel: "sonnet",
+      });
       const spec = await resolveRunSpec(
         db,
         job({ repositoryId: null, payload: { trigger: payload.trigger } }),
         tokens,
-        definitions(),
+        playbooks(),
       );
       expect(spec).toMatchObject({
         model: "haiku",
@@ -157,10 +166,10 @@ describe("resolveRunSpec", () => {
       expect(spec.requireCheckout).toBe(false);
     });
 
-    it("is null when neither sets one (the Claude Code default), whatever the repository's depth", async () => {
+    it("is null when the playbook sets none (the Claude Code default), whatever the repository's depth", async () => {
       for (const depth of ["quick", "standard", "deep"]) {
         state.repository = repository({}, depth);
-        const spec = await resolveRunSpec(db, job(), tokens, definitions({}, { model: null }));
+        const spec = await resolveRunSpec(db, job(), tokens, playbooks({ model: null }));
         expect(spec.model, depth).toBeNull();
       }
     });
@@ -176,7 +185,7 @@ describe("resolveRunSpec", () => {
           trigger: { kind: "run.invoked", context: { invoker: { kind: "ralph-run", id: JOB_ID } } },
         },
       });
-      const describePr = definitions({ triggers: ["run.invoked"], sink: "run-result" });
+      const describePr = playbooks({ role: "pr-description" });
       expect(await resolveRunSpec(db, invoked, tokens, describePr)).toMatchObject({
         model: "haiku",
         fallbackModel: "sonnet",
@@ -185,15 +194,15 @@ describe("resolveRunSpec", () => {
   });
 
   describe("token budget", () => {
-    it("is the task's fixed budget, whatever the repository's depth", async () => {
+    it("is the playbook's fixed budget, whatever the repository's depth", async () => {
       for (const depth of ["quick", "standard", "deep"]) {
         state.repository = repository({}, depth);
-        expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(20_000);
+        expect((await resolveRunSpec(db, job(), tokens, playbooks())).tokenBudget).toBe(20_000);
       }
     });
 
-    it("is null (No limit) when the task sets none", async () => {
-      const none = definitions({ tokenBudget: null });
+    it("is null (No limit) when the playbook sets none", async () => {
+      const none = playbooks({ tokenBudget: null });
       expect((await resolveRunSpec(db, job(), tokens, none)).tokenBudget).toBeNull();
       const noRepository = job({ repositoryId: null, payload: { trigger: payload.trigger } });
       expect((await resolveRunSpec(db, noRepository, tokens, none)).tokenBudget).toBeNull();
@@ -210,7 +219,7 @@ describe("resolveRunSpec", () => {
       state.repository = repository({
         allowedTools: ["Read", "Grep(src/**)", "Bash(pnpm test:*)"],
       });
-      const spec = await resolveRunSpec(db, job(), tokens, definitions());
+      const spec = await resolveRunSpec(db, job(), tokens, playbooks());
       expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
       expect(spec.tools).toEqual({
         allowedTools: ["Read", "Grep(src/**)", "Bash(pnpm test:*)"],
@@ -220,7 +229,7 @@ describe("resolveRunSpec", () => {
 
     it("removes a tool the repository disallows outright, but not one it only restricts", async () => {
       state.repository = repository({ disallowedTools: ["Glob", "Grep(secrets/**)", "WebFetch"] });
-      const spec = await resolveRunSpec(db, job(), tokens, definitions());
+      const spec = await resolveRunSpec(db, job(), tokens, playbooks());
       expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
       expect(spec.tools.disallowedTools).toEqual(["Glob", "Grep(secrets/**)", "WebFetch"]);
     });
@@ -232,30 +241,29 @@ describe("resolveRunSpec", () => {
   });
 
   describe("failures", () => {
-    it("fails an unknown task", async () => {
-      const result = resolveRunSpec(db, job({ taskId: "builtin:gone" }), tokens, definitions());
+    it("fails an unknown playbook", async () => {
+      const result = resolveRunSpec(db, job({ taskId: "builtin:gone" }), tokens, playbooks());
       await expect(result).rejects.toThrow(RunSpecError);
-      await expect(result).rejects.toThrow("Unknown task builtin:gone");
+      await expect(result).rejects.toThrow("Unknown playbook builtin:gone");
     });
 
-    it("fails a trigger the task doesn't allow", async () => {
+    it("fails a trigger the playbook's role doesn't allow", async () => {
       const result = resolveRunSpec(
         db,
         job({ payload: { trigger: { kind: "chat.request", context: {} } } }),
         tokens,
-        definitions(),
+        playbooks(),
       );
       await expect(result).rejects.toThrow(
-        new RunSpecError("Task builtin:reply-to-finding can't be triggered by chat.request"),
+        new RunSpecError("Playbook builtin:reply-to-finding can't be triggered by chat.request"),
       );
     });
 
-    it("fails an unknown agent, an invalid payload, a task type mismatch and an unknown repository", async () => {
-      const cases: [Partial<Db.Job>, ReturnType<typeof definitions>, string][] = [
-        [{}, definitions({ agentId: "builtin:nobody" }), "Unknown agent builtin:nobody"],
-        [{ payload: { question: "Why?" } }, definitions(), "Invalid run payload"],
-        [{ taskType: "coding" }, definitions(), "doesn't match task builtin:reply-to-finding"],
-        [{}, definitions(), "Unknown repository"],
+    it("fails an invalid payload, a task type mismatch and an unknown repository", async () => {
+      const cases: [Partial<Db.Job>, ReturnType<typeof playbooks>, string][] = [
+        [{ payload: { question: "Why?" } }, playbooks(), "Invalid run payload"],
+        [{ taskType: "coding" }, playbooks(), "doesn't match playbook builtin:reply-to-finding"],
+        [{}, playbooks(), "Unknown repository"],
       ];
       for (const [overrides, defs, message] of cases) {
         if (message === "Unknown repository") state.repository = null;
@@ -305,12 +313,17 @@ describe("resolveRunSpec for builtin:review-pr", () => {
   }
 
   it("narrows a quick review to the diff: its model, budget and max files, no exploration tools", async () => {
-    const spec = await resolveRunSpec(db, reviewJob(PROFILES.quick), tokens, BUILTIN_DEFINITIONS);
+    const spec = await resolveRunSpec(
+      db,
+      reviewJob(PROFILES.quick),
+      tokens,
+      BUILTIN_PLAYBOOK_SOURCE,
+    );
     expect(spec).toMatchObject({
       taskType: "review",
       pool: "short",
       task: { id: "builtin:review-pr", sink: "review" },
-      agent: { id: "builtin:reviewer" },
+      agent: { id: "builtin:review-pr", taskTypes: ["review"] },
       model: "claude-haiku-5-5",
       tokenBudget: 60_000,
       maxFiles: 15,
@@ -319,25 +332,32 @@ describe("resolveRunSpec for builtin:review-pr", () => {
   });
 
   it("keeps the exploration tools of a deep review, with its model, budget and max files", async () => {
-    const spec = await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, BUILTIN_DEFINITIONS);
+    const spec = await resolveRunSpec(
+      db,
+      reviewJob(PROFILES.deep),
+      tokens,
+      BUILTIN_PLAYBOOK_SOURCE,
+    );
     expect(spec).toMatchObject({ model: "claude-opus-5-5", tokenBudget: 600_000, maxFiles: 100 });
     expect(spec.agent.tools.builtin).toEqual(["Read", "Grep", "Glob"]);
   });
 
   it("still applies the repository's tool settings", async () => {
     state.repository = repository({ disallowedTools: ["Glob"] });
-    const spec = await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, BUILTIN_DEFINITIONS);
+    const spec = await resolveRunSpec(
+      db,
+      reviewJob(PROFILES.deep),
+      tokens,
+      BUILTIN_PLAYBOOK_SOURCE,
+    );
     expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
   });
 
-  it("takes the model and budget only from the depth, never the task's or the agent's", async () => {
-    // Validation refuses a review task with a model or budget; a stored one still never applies.
-    const review = getReviewDefinitions(
-      { model: "sonnet", tokenBudget: { tokens: 50_000 } },
-      {
-        model: "haiku",
-      },
-    );
+  it("takes the model and budget only from the depth, never the playbook's", async () => {
+    // Validation refuses a review playbook with a model or budget; one that has them never applies.
+    const builtin = getBuiltinPlaybook("builtin:review-pr")!;
+    const reviewer: Playbook = { ...builtin, model: "sonnet", tokenBudget: { tokens: 50_000 } };
+    const review = { getPlaybook: (id: string) => (id === reviewer.id ? reviewer : null) };
     expect(await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, review)).toMatchObject({
       model: "claude-opus-5-5",
       tokenBudget: 600_000,
@@ -352,7 +372,12 @@ describe("resolveRunSpec for builtin:review-pr", () => {
   });
 
   it("narrowByReviewDepth ignores the run's model and budget", async () => {
-    const spec = await resolveRunSpec(db, reviewJob(PROFILES.quick), tokens, BUILTIN_DEFINITIONS);
+    const spec = await resolveRunSpec(
+      db,
+      reviewJob(PROFILES.quick),
+      tokens,
+      BUILTIN_PLAYBOOK_SOURCE,
+    );
     const narrowed = narrowByReviewDepth(
       { ...spec, model: "sonnet", tokenBudget: 1 },
       PROFILES.deep,
@@ -373,30 +398,17 @@ describe("resolveRunSpec for builtin:review-pr", () => {
         payload: { trigger: { kind: "pr.updated", context: {} }, repositoryId: REPO_ID },
       }),
       tokens,
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     );
     await expect(result).rejects.toThrow(RunSpecError);
   });
-
-  function getReviewDefinitions(
-    task: Partial<TaskDefinitionInput>,
-    agent: Partial<AgentDefinitionInput> = {},
-  ) {
-    const builtinTask = BUILTIN_DEFINITIONS.getTask("builtin:review-pr")!;
-    const builtinAgent = BUILTIN_DEFINITIONS.getAgent("builtin:reviewer")!;
-    const t = TaskDefinition.parse({ ...builtinTask, ...task });
-    const a = AgentDefinition.parse({ ...builtinAgent, ...agent });
-    return {
-      getTask: (id: string) => (id === t.id ? t : null),
-      getAgent: (id: string) => (id === a.id ? a : null),
-    };
-  }
 });
 
-describe("model and budget of every built-in task", () => {
+describe("model and budget of every built-in playbook", () => {
   /**
    * Each built-in's model and token budget on a Standard repository before the
-   * precedence fix (TOOL-587), written out so a change shows here. Null budget: "No limit".
+   * precedence fix (TOOL-587) and before agents and tasks became playbooks,
+   * written out so a change shows here. Null budget: "No limit".
    */
   const STANDARD: Record<string, { model: string | null; tokenBudget: number | null }> = {
     "builtin:learn-rule": { model: "claude-sonnet-5-5", tokenBudget: 5_000 },
@@ -411,12 +423,13 @@ describe("model and budget of every built-in task", () => {
     "builtin:describe-pr": { model: "opus", tokenBudget: null },
   };
 
-  /** A run of a built-in task on a repository of `depth` (a review's preset comes from it). */
+  /** A run of a built-in playbook on a repository of `depth` (a review's preset comes from it). */
   async function resolveBuiltin(taskId: string, depth: ReviewDepth) {
     state.repository = repository({}, depth);
-    const task = getBuiltinTask(taskId)!;
+    const playbook = getBuiltinPlaybook(taskId)!;
+    const taskType = playbookTaskType(playbook);
     const context =
-      task.taskType === "review"
+      taskType === "review"
         ? {
             reviewConfig: {
               profile: reviewProfileConfigForDepth(depth),
@@ -429,17 +442,20 @@ describe("model and budget of every built-in task", () => {
     return resolveRunSpec(
       db,
       job({
-        taskType: task.taskType,
+        taskType,
         taskId,
-        payload: { trigger: { kind: task.triggers[0]!, context }, repositoryId: REPO_ID },
+        payload: {
+          trigger: { kind: PLAYBOOK_ROLES[playbook.role].triggers[0], context },
+          repositoryId: REPO_ID,
+        },
       }),
       tokens,
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     );
   }
 
-  it("covers every built-in task", () => {
-    expect(Object.keys(STANDARD).sort()).toEqual(BUILTIN_TASKS.map((task) => task.id).sort());
+  it("covers every built-in playbook", () => {
+    expect(Object.keys(STANDARD).sort()).toEqual(BUILTIN_PLAYBOOKS.map((p) => p.id).sort());
   });
 
   it.each(Object.entries(STANDARD))(
@@ -451,7 +467,7 @@ describe("model and budget of every built-in task", () => {
     },
   );
 
-  it("changes only review tasks on a Deep repository", async () => {
+  it("changes only review playbooks on a Deep repository", async () => {
     for (const [taskId, expected] of Object.entries(STANDARD)) {
       const spec = await resolveBuiltin(taskId, "deep");
       const actual = { model: spec.model, tokenBudget: spec.tokenBudget };

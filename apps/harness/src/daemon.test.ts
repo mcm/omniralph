@@ -13,7 +13,7 @@ import type {
   JobStartResponse,
   RunSpec,
 } from "@omniralph/shared";
-import { AgentDefinition, TaskDefinition } from "@omniralph/tasks";
+import { RunSpecAgent, TaskDefinition } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
@@ -74,7 +74,7 @@ function runSpecFor(j: JobPayload, tokens: RunSpec["tokens"]): RunSpec {
     // A legacy-shaped task type on a fixture job stands for a run of that type.
     taskType: j.taskType === "system" ? "query" : j.taskType,
     pool: "short",
-    agent: AgentDefinition.parse({
+    agent: RunSpecAgent.parse({
       id: "builtin:test-agent",
       name: "Test agent",
       systemPrompt: "You answer.",

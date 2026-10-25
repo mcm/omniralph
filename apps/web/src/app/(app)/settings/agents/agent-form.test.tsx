@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
+import { BUILTIN_PLAYBOOKS, getBuiltinRunSpec, playbookRunSpec } from "@omniralph/tasks";
+import type { CustomAgent } from "@/lib/api/definitions";
 import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { AgentForm, agentInput, type AgentFormProps } from "./agent-form";
@@ -9,7 +10,7 @@ import { agentDraft } from "./agent-changes";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
-const reviewer = BUILTIN_AGENTS.find((agent) => agent.id === "builtin:reviewer") as AgentDefinition;
+const reviewer: CustomAgent = getBuiltinRunSpec("builtin:review-pr")!.agent;
 
 const AGENT = {
   ...reviewer,
@@ -17,7 +18,6 @@ const AGENT = {
   name: "Security reviewer",
   model: "claude-opus-5-5",
   fallbackModel: "claude-sonnet-5-5",
-  skills: [{ name: "owasp", content: "The OWASP top ten." }],
   referenceDocs: [{ name: "threat-model", content: "Our threat model." }],
 };
 
@@ -73,11 +73,9 @@ describe("AgentForm", () => {
       "agent-tools-harness-post_activity",
       "agent-tools-linear-linear_get_issue",
       "agent-tools-mcp",
-      "agent-skills.0-name",
       "agent-referenceDocs.0-content",
       "agent-model",
       "agent-fallback-model",
-      "agent-task-types-review",
     ]) {
       expect(html).toContain(`id="${id}"`);
     }
@@ -88,8 +86,11 @@ describe("AgentForm", () => {
     // Tools are chips, not a comma-separated text box.
     for (const tool of reviewer.tools.builtin) expect(html).toContain(`>${tool}<`);
     expect(html).not.toContain(`value="${reviewer.tools.builtin.join(", ")}"`);
-    expect(html).toContain('value="owasp"');
+    expect(html).toContain('value="threat-model"');
     expect(html).toContain("Our threat model.");
+    // Agents no longer have task types or skills.
+    expect(html).not.toContain("agent-task-types");
+    expect(html).not.toContain("Skills");
     expect(html).toContain("Save agent");
   });
 
@@ -109,19 +110,17 @@ describe("AgentForm", () => {
     expect(html).toContain("New agent");
     expect(html).toContain('id="agent-name"');
     expect(html).toContain("Create agent");
-    expect(html).toContain("No skills.");
+    expect(html).toContain("No reference docs.");
   });
 
   it("shows each field error next to its field", () => {
     const errors = {
       name: "Name is required.",
       systemPrompt: "System prompt must be a string.",
-      taskTypes: "Pick at least one task type.",
       "tools.builtin.1": "Tool names are at most 100 characters.",
       "tools.harness": "Not allowed for Triage (query).",
       "tools.linear.0": "Unknown Linear tool.",
       "tools.mcpServers.0": "Server names are required.",
-      "skills.0.name": "Skill names are required.",
       "referenceDocs.0.content": "Reference docs need content.",
       model: "Model is required.",
       fallbackModel: "Fallback model is too long.",
@@ -130,12 +129,10 @@ describe("AgentForm", () => {
     const expected: Record<string, string> = {
       name: "agent-name",
       systemPrompt: "agent-system-prompt",
-      taskTypes: "agent-task-types",
       "tools.builtin.1": "agent-tools-builtin",
       "tools.harness": "agent-tools-harness",
       "tools.linear.0": "agent-tools-linear",
       "tools.mcpServers.0": "agent-tools-mcp",
-      "skills.0.name": "agent-skills.0-name",
       "referenceDocs.0.content": "agent-referenceDocs.0-content",
       model: "agent-model",
       fallbackModel: "agent-fallback-model",
@@ -146,15 +143,15 @@ describe("AgentForm", () => {
     expect(html).toContain('id="agent-name" aria-invalid="true"');
   });
 
-  it("shows saved MCP servers as chips, configured servers too", () => {
+  it("shows saved MCP servers as chips, marking a configured server's name as unavailable", () => {
     const html = render({
       ...AGENT,
       tools: { ...AGENT.tools, mcpServers: ["@omniralph/code-graph:graph", "github"] },
     });
     expect(html).toContain(">@omniralph/code-graph:graph<");
     expect(html).toContain(">github<");
-    // Typed-in server names are allowed, so neither is drawn as unavailable.
-    expect(html).not.toMatch(/github<\/span><span class="picker-chip-note">/);
+    // Only an installable's servers can be picked: a name saved before playbooks is flagged.
+    expect(html).toMatch(/github<\/span><span class="picker-chip-note">/);
   });
 
   it("offers no model when no harness reports one", () => {
@@ -165,7 +162,7 @@ describe("AgentForm", () => {
 
 describe("agentInput", () => {
   it("saves an agent loaded and left unedited exactly as it was", () => {
-    const custom: AgentDefinition = {
+    const custom: CustomAgent = {
       ...AGENT,
       tools: {
         ...AGENT.tools,
@@ -175,7 +172,7 @@ describe("agentInput", () => {
     };
     for (const agent of [
       custom,
-      ...BUILTIN_AGENTS,
+      ...BUILTIN_PLAYBOOKS.map((playbook) => playbookRunSpec(playbook).agent),
       { ...AGENT, model: null, fallbackModel: null },
     ]) {
       const { id: _id, ...fields } = agent;

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, taskCatalog } from "../variables.js";
 
 const task = getBuiltinTask("builtin:correlate-findings")!;
-const agent = getBuiltinAgent("builtin:correlator")!;
+const agent = getBuiltinRunSpec("builtin:correlate-findings")!.agent;
 
 /** The trigger context a review run invokes the correlation with. */
 const context = {
@@ -49,15 +49,14 @@ function render(): string {
 }
 
 describe("builtin:correlate-findings", () => {
-  it("runs on builtin:correlator as a query task invoked by a run, with no tools", () => {
+  it("runs with the correlator persona as a query task invoked by a run, with no tools", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      taskTypes: ["query"],
       tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
     });
     expect(task).toMatchObject({
       taskType: "query",
-      agentId: "builtin:correlator",
+      agentId: "builtin:correlate-findings",
       triggers: ["run.invoked"],
       sink: "run-result",
       toolSettings: { shell: false, linearRead: false, network: false },

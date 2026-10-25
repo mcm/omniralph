@@ -20,7 +20,7 @@ import {
   type RalphStoryPayload,
   type RalphStoryResult,
 } from "@omniralph/shared";
-import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
@@ -112,7 +112,7 @@ async function ship(call: Call, args: Record<string, unknown>) {
   };
 }
 
-const engineer = getBuiltinAgent("builtin:engineer")!;
+const engineer = getBuiltinRunSpec("builtin:implement-story")!.agent;
 const requestTask = getBuiltinTask("builtin:handle-request")!;
 const storyTask = getBuiltinTask("builtin:implement-story")!;
 

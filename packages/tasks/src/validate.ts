@@ -1,5 +1,5 @@
 /**
- * Save-time validation of agent and task definitions: the zod schema, then
+ * Save-time validation of custom task definitions: the zod schema, then
  * the static checks a definition must pass before it's stored (templates
  * against the variable catalog for every trigger, the agent, triggers, sink
  * and coding settings). Errors are keyed by dotted field path, the format of
@@ -7,7 +7,7 @@
  */
 import type { z } from "zod";
 import { validateCodingTask, type PrDescriptionTaskFields } from "./coding.js";
-import { AgentDefinition, TaskDefinition, validateAgentForTask } from "./definitions.js";
+import { TaskDefinition, harnessToolsProblem, type RunSpecAgent } from "./definitions.js";
 import { TRIGGERS_BY_TASK_TYPE, type SinkKind, type TaskType, type TriggerKind } from "./kinds.js";
 import { invalidOutputSchema, outputSchemaProblem, type JsonSchema } from "./output-schema.js";
 import { deriveTaskRequirements, type TaskRequirements } from "./requirements.js";
@@ -40,28 +40,17 @@ export interface SinkOutput {
 
 /** What `validateTaskDefinition` looks up beyond the definition itself. */
 export interface TaskValidationContext {
-  /** The agent with an ID (built-in or the organization's), or null. */
-  getAgent(id: string): Pick<AgentDefinition, "id" | "taskTypes" | "tools"> | null;
+  /** The agent with an ID (the organization's, or a built-in playbook's), or null. */
+  getAgent(id: string): Pick<RunSpecAgent, "id" | "tools"> | null;
   /** The task with an ID (built-in or the organization's), or null: a coding task's PR description task. */
   getTask(id: string): PrDescriptionTaskFields | null;
   /** What each sink accepts (control-panel code); a kind without an entry isn't available. */
   sinks: Readonly<Partial<Record<SinkKind, SinkOutput>>>;
 }
 
-export type AgentValidation =
-  { ok: true; definition: AgentDefinition } | { ok: false; fieldErrors: DefinitionFieldErrors };
-
 export type TaskValidation =
   | { ok: true; definition: TaskDefinition; requirements: TaskRequirements }
   | { ok: false; fieldErrors: DefinitionFieldErrors };
-
-/** The parsed agent definition, or its schema errors by field. */
-export function validateAgentDefinition(input: unknown): AgentValidation {
-  const parsed = AgentDefinition.safeParse(input);
-  return parsed.success
-    ? { ok: true, definition: parsed.data }
-    : { ok: false, fieldErrors: zodFieldErrors(parsed.error) };
-}
 
 /**
  * The parsed task definition with the requirements derived from it
@@ -73,7 +62,7 @@ export function validateAgentDefinition(input: unknown): AgentValidation {
  *   `story` outside an optional section when a request may start it;
  * - `variableLimits.<name>`: a limit on a variable the task can't use;
  * - `outputSchema`: a schema the harness can't check output against (`invalidOutputSchema`);
- * - `agentId`: an unknown agent, or one that doesn't suit the task type;
+ * - `agentId`: an unknown agent, or one with harness tools the task type doesn't allow;
  * - `sink`: a sink that isn't available or doesn't accept the task's output;
  * - coding settings that don't combine (`validateCodingTask`).
  */
@@ -125,8 +114,8 @@ export function validateTaskDefinition(
   if (!agent) {
     add("agentId", `There is no agent ${task.agentId}.`);
   } else {
-    const problems = validateAgentForTask(agent, task);
-    if (problems.length > 0) add("agentId", problems.join(" "));
+    const problem = harnessToolsProblem(agent.tools, task.taskType);
+    if (problem) add("agentId", problem);
   }
 
   const schemaError = task.outputSchema && invalidOutputSchema(task.outputSchema);

@@ -78,9 +78,7 @@ const list = (...tasks: TaskDefinition[]): TaskList => ({
 });
 
 const OPTIONS: TaskFormOptions = {
-  agents: [
-    { id: "builtin:reviewer", name: "Reviewer", taskTypes: ["query", "review"], builtin: true },
-  ],
+  agents: [{ id: "builtin:review-pr", name: "Reviewer", builtin: true }],
   sinks: [
     { kind: "review", taskType: "review" },
     { kind: "chat-thread", taskType: "query" },

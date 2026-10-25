@@ -5,8 +5,8 @@
  * out of the correlation and the posted review, and its summary goes to one
  * comment on the PR that later runs edit in place.
  */
-import type { TaskDefinitionInput } from "../definitions.js";
-import { REVIEWER_AGENT } from "./reviewer.js";
+import type { PlaybookInput } from "../playbooks.js";
+import { REVIEWER_PERSONA } from "./reviewer.js";
 
 /** Longest summary a review task run may return (`MAX_REVIEW_SUMMARY_LENGTH` in `@omniralph/shared`). */
 const MAX_SUMMARY_LENGTH = 20_000;
@@ -46,17 +46,15 @@ Description:
 {{diff}}
 `;
 
-export const SUMMARIZE_PR_TASK: TaskDefinitionInput = {
+export const SUMMARIZE_PR_PLAYBOOK: PlaybookInput = {
   id: "builtin:summarize-pr",
   name: "Summarize a pull request",
   description:
     "Writes a short summary of a PR's change for its reviewers, in one comment on the PR that is updated on every push.",
-  taskType: "review",
-  agentId: REVIEWER_AGENT.id,
-  triggers: ["pr.updated", "pr.mention", "review.rerun"],
+  role: "review-summary",
+  ...REVIEWER_PERSONA,
   promptTemplate: SUMMARY_TEMPLATE,
   systemAppend: SUMMARY_SYSTEM_APPEND,
-  sink: "sticky-comment",
   // No budget of its own: the review profile's `maxTokensPerReview`.
   tokenBudget: null,
   variableLimits: { "pr.body": 10_000 },

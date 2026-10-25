@@ -53,7 +53,7 @@ export interface ChatAgentDeps {
   now?: () => Date;
   /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
   ralph?: (organizationId: string) => Promise<RalphDeps>;
-  /** Looks up the tasks chat runs (default: the organization's, `organizationDefinitions`). */
+  /** Looks up the tasks chat runs (default: the organization's, `organizationPlaybooks`). */
   getTask?: TaskLookup;
   /** Limits on the attachments a turn reads (default: `CHAT_ATTACHMENT_LIMITS`). */
   attachmentLimits?: ChatAttachmentLimits;

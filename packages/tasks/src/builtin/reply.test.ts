@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, VARIABLES } from "../variables.js";
 
@@ -45,23 +45,22 @@ function context({ finding, hunk, question }: Fixture): Record<string, unknown> 
 }
 
 const task = getBuiltinTask("builtin:reply-to-finding")!;
-const agent = getBuiltinAgent("builtin:reviewer")!;
+const agent = getBuiltinRunSpec("builtin:reply-to-finding")!.agent;
 
 function render(fixture: Fixture): string {
   return renderTemplate(task.promptTemplate, context(fixture), VARIABLES, task.variableLimits);
 }
 
 describe("builtin:reply-to-finding", () => {
-  it("runs on builtin:reviewer (query and review) as a query task with read-only file tools and no preset", () => {
+  it("runs with the reviewer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      taskTypes: ["query", "review"],
       tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
-      model: null,
+      model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
       taskType: "query",
-      agentId: "builtin:reviewer",
+      agentId: "builtin:reply-to-finding",
       triggers: ["finding.mention"],
       sink: "finding-thread",
       model: "claude-sonnet-5-5",

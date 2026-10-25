@@ -20,7 +20,7 @@ import { hasDueJob, reconcileDueJobs, syncJobsDue } from "@/lib/dispatch/due";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -120,10 +120,7 @@ async function claimNext(
     for (const job of settled) await onSettled(db, job);
     if (!claim || !tokens) return null;
 
-    const handler = await jobHooks(
-      claim.job,
-      organizationDefinitions(db, claim.job.organizationId),
-    );
+    const handler = await jobHooks(claim.job, organizationPlaybooks(db, claim.job.organizationId));
     if (handler?.onStarted) {
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
@@ -143,7 +140,7 @@ async function claimNext(
 /** A failing hook or hook lookup is logged, so it can't lose the claim or stop the other settled jobs' hooks. */
 async function onSettled(db: Database, { outcome, job }: SettledJob): Promise<void> {
   try {
-    const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+    const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
     if (outcome === "failed") {
       await handler?.onFailed?.(db, job, job.error ?? "Gave up after too many deliveries");
     } else {

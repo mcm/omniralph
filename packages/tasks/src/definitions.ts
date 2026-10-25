@@ -1,8 +1,10 @@
 /**
- * Agent and task definitions. An agent definition says how to do a kind of
- * work (persona: system prompt, tools, skills, model); a task definition says
- * what to do and when (one task on one agent: task type, triggers, prompt
- * template, tool settings, sink; its pool follows from its task type).
+ * The building blocks of playbooks (`playbooks.ts`) and the two halves of the
+ * run spec a harness runs: `RunSpecAgent` (persona: system prompt, tools,
+ * model) and `TaskDefinition` (what to do and when: task type, triggers,
+ * prompt template, tool settings, sink). The control panel builds both from a
+ * playbook (`playbookRunSpec`); custom tasks stored before playbooks still
+ * parse as `TaskDefinition`.
  */
 import { z } from "zod";
 import { HostToolName } from "./host-tools.js";
@@ -19,6 +21,7 @@ import {
   SINK_KINDS,
   TASK_TYPES,
   TRIGGER_KINDS,
+  type TaskType,
 } from "./kinds.js";
 
 export const TaskTypeSchema = z.enum(TASK_TYPES);
@@ -31,25 +34,27 @@ const Name = z.string().trim().min(1).max(200);
 const Description = z.string().max(2000);
 const Model = z.string().min(1).max(200);
 
-/** A named document (skill or reference doc) shipped with an agent. */
+/** A named reference document shipped with a playbook. */
 export const NamedContent = z.object({
   name: z.string().trim().min(1).max(200),
   content: z.string().min(1),
 });
 export type NamedContent = z.infer<typeof NamedContent>;
 
-/** The tools an agent wants; the task type and task settings narrow them further. */
+/** The tools a run's session may use; the task type and tool settings narrow them further. */
 export const AgentTools = z.object({
   /** Claude Code tool names (`Read`, `Grep`, `Bash`, …). */
   builtin: z.array(z.string().min(1).max(100)).default([]),
   /** Harness tools from the `omniralph` MCP server. */
   harness: z.array(HarnessToolSchema).default([]),
-  /** Read-only Linear tools (need the task's `toolSettings.linearRead`). */
+  /** Read-only Linear tools (need `toolSettings.linearRead`). */
   linear: z.array(LinearToolSchema).default([]),
   /**
-   * Names of configured MCP servers, or of an installable's MCP servers as
-   * `<package>:<server>` (`@omniralph/code-graph:graph`): its tasks then
-   * require that installable.
+   * An installable's MCP servers, as `<package>:<server>`
+   * (`@omniralph/code-graph:graph`): runs then require that installable.
+   * Other names are accepted on the wire (custom agents stored before
+   * playbooks) and ignored by the harness; playbooks refuse them
+   * (`PlaybookTools`).
    */
   mcpServers: z
     .array(
@@ -67,32 +72,36 @@ export const AgentTools = z.object({
     .default([]),
 });
 export type AgentTools = z.infer<typeof AgentTools>;
+export type AgentToolsInput = z.input<typeof AgentTools>;
 
 /**
- * `append` adds the agent's system prompt to the Claude Code preset;
- * `replace` uses it instead of the preset (as learn-rule, review replies and
- * code questions do today).
+ * `append` adds the system prompt to the Claude Code preset; `replace` uses it
+ * instead of the preset (as learn-rule, review replies and code questions do).
  */
 export const SYSTEM_PROMPT_MODES = ["append", "replace"] as const;
 export type SystemPromptMode = (typeof SYSTEM_PROMPT_MODES)[number];
 
-export const AgentDefinition = z.object({
+/**
+ * The agent half of a run spec: the persona a run's session gets (system
+ * prompt, tools, reference docs, model). `playbookRunSpec` builds it from a
+ * playbook; its ID and name are the playbook's. Fields it doesn't know pass
+ * through untouched: the control panel still sends the `taskTypes` that
+ * harnesses up to 0.13 require of an agent.
+ */
+export const RunSpecAgent = z.looseObject({
   id: DefinitionId,
   name: Name,
   description: Description.default(""),
   systemPrompt: z.string(),
   systemPromptMode: z.enum(SYSTEM_PROMPT_MODES).default("append"),
   tools: AgentTools.default({ builtin: [], harness: [], linear: [], mcpServers: [] }),
-  skills: z.array(NamedContent).default([]),
   referenceDocs: z.array(NamedContent).default([]),
-  /** Used when the task sets no model; null for the Claude Code default. Never a review run's. */
+  /** The playbook's model; null for the Claude Code default. Never a review run's. */
   model: Model.nullable().default(null),
   fallbackModel: Model.nullable().default(null),
-  /** Task types this agent suits. */
-  taskTypes: z.array(TaskTypeSchema).min(1),
 });
-export type AgentDefinition = z.infer<typeof AgentDefinition>;
-export type AgentDefinitionInput = z.input<typeof AgentDefinition>;
+export type RunSpecAgent = z.infer<typeof RunSpecAgent>;
+export type RunSpecAgentInput = z.input<typeof RunSpecAgent>;
 
 export const ToolSettings = z.object({
   /** Shell access (`Bash`) in the session. */
@@ -213,7 +222,7 @@ export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
 /** Settings only coding tasks have; parsing a coding task fills their defaults (see `CODING_DEFAULTS`). */
-const CODING_FIELDS = {
+export const CODING_FIELDS = {
   maxAttemptsPerStory: z.int().min(1).max(20).optional(),
   /** Rounds of a review loop (blocked results that file follow-ups) a story gets. */
   maxRoundsPerStory: z.int().min(1).max(100).optional(),
@@ -249,6 +258,11 @@ function dropUndefined<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 }
 
+/**
+ * The task half of a run spec (`playbookRunSpec` builds it from a playbook,
+ * its task type, triggers and sink from the playbook's role), and the shape
+ * of custom tasks stored before playbooks. `agentId` is the playbook's ID.
+ */
 export const TaskDefinition = z
   .object({
     id: DefinitionId,
@@ -265,13 +279,13 @@ export const TaskDefinition = z
     /** Run in the working directory, in order, after finish, whatever happened. */
     teardownCommands: z.array(TeardownCommand).max(MAX_SETUP_COMMANDS).default([]),
     toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
-    /** Installables and host tools the task's runs need (its agent's installable MCP servers add theirs). */
+    /** Installables and host tools the task's runs need (the agent's installable MCP servers add theirs). */
     requires: TaskRequires.optional(),
     /** JSON schema the session's output must match; query tasks only. */
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     sink: SinkKindSchema,
     ...CODING_FIELDS,
-    /** Overrides the agent's model. */
+    /** The playbook's model (also the run spec agent's); unset for the Claude Code default. */
     model: Model.optional(),
     tokenBudget: TokenBudget.default(null),
     /**
@@ -320,25 +334,15 @@ export type TaskDefinition = z.infer<typeof TaskDefinition>;
 export type TaskDefinitionInput = z.input<typeof TaskDefinition>;
 
 /**
- * Problems running `task` on `agent`: the agent doesn't suit the task's type,
- * or wants harness tools the type doesn't allow. Empty when they fit.
+ * Why `tools` don't fit runs of `taskType`: harness tools the type doesn't
+ * allow (`ship` is for coding runs only); null when they fit.
  */
-export function validateAgentForTask(
-  agent: Pick<AgentDefinition, "id" | "taskTypes" | "tools">,
-  task: Pick<TaskDefinition, "taskType">,
-): string[] {
-  const problems: string[] = [];
-  if (!agent.taskTypes.includes(task.taskType)) {
-    problems.push(
-      `Agent ${agent.id} suits ${agent.taskTypes.join(", ")} tasks, not ${task.taskType}.`,
-    );
-  }
-  const allowed = HARNESS_TOOLS_BY_TASK_TYPE[task.taskType];
-  const disallowed = agent.tools.harness.filter((tool) => !allowed.includes(tool));
-  if (disallowed.length > 0) {
-    problems.push(
-      `${task.taskType} tasks can't use the harness tool${disallowed.length > 1 ? "s" : ""} ${disallowed.join(", ")}.`,
-    );
-  }
-  return problems;
+export function harnessToolsProblem(
+  tools: Pick<AgentTools, "harness">,
+  taskType: TaskType,
+): string | null {
+  const allowed = HARNESS_TOOLS_BY_TASK_TYPE[taskType];
+  const disallowed = tools.harness.filter((tool) => !allowed.includes(tool));
+  if (disallowed.length === 0) return null;
+  return `${taskType} runs can't use the harness tool${disallowed.length > 1 ? "s" : ""} ${disallowed.join(", ")}.`;
 }

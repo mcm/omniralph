@@ -13,7 +13,7 @@ import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { cacheHarnessRevoked } from "./auth-state";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { jobHooks, type JobHooks } from "@/lib/sinks";
 
 const REVOKED = "Harness revoked";
@@ -131,7 +131,7 @@ async function forEachJob(
 ): Promise<void> {
   for (const job of jobs) {
     try {
-      const handler = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+      const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
       if (!handler) continue;
       await hook(handler, job);
     } catch (error) {

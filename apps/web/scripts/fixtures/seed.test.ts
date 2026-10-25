@@ -24,10 +24,12 @@ import {
   type Database,
 } from "@omniralph/db";
 import { createTestDatabase, type TestDatabase } from "@omniralph/db/testing";
-import { AgentDefinition, TaskDefinition, TaskRequirements } from "@omniralph/tasks";
+import { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
 import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CustomAgent } from "@/lib/api/definitions";
+import { customPlaybook } from "@/lib/definitions/custom-playbooks";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
@@ -167,10 +169,13 @@ describe("seedFixtures", () => {
     expect(agent?.id).toBe(FIXTURE_IDS.definitions.agent);
     expect(task?.id).toBe(FIXTURE_IDS.definitions.task);
     const stored = (row: typeof agent) => ({ ...row!.definition, id: row!.id, name: row!.name });
-    expect(AgentDefinition.safeParse(stored(agent)).success).toBe(true);
+    const parsedAgent = CustomAgent.safeParse(stored(agent));
+    expect(parsedAgent.success).toBe(true);
     const parsedTask = TaskDefinition.safeParse(stored(task));
     expect(parsedTask.success).toBe(true);
     expect(parsedTask.data?.agentId).toBe(FIXTURE_IDS.definitions.agent);
+    // Read together, they make a review playbook.
+    expect(customPlaybook(parsedTask.data!, parsedAgent.data!)?.role).toBe("review");
     expect(TaskRequirements.safeParse(task!.requirements).success).toBe(true);
   });
 

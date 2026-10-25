@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentDefinition, TaskDefinition } from "./definitions.js";
+import type { AgentTools, TaskDefinition } from "./definitions.js";
 import { parseInstallableMcpServerRef } from "./installables.js";
 import type { TaskType } from "./kinds.js";
 import { templateVariables } from "./template.js";
@@ -58,8 +58,8 @@ type RequirementFields = Pick<
 > &
   Partial<Pick<TaskDefinition, "requires">>;
 
-/** The fields of a task's agent its requirements come from. */
-export type RequirementAgentFields = { tools: Pick<AgentDefinition["tools"], "mcpServers"> };
+/** The fields of a run spec's agent its requirements come from. */
+export type RequirementAgentFields = { tools: Pick<AgentTools, "mcpServers"> };
 
 /**
  * The installables and host tools a run of `task` on `agent` needs: the

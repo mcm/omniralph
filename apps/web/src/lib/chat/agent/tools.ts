@@ -38,7 +38,7 @@ export interface ChatToolContext {
   ralph(): Promise<RalphDeps>;
   /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
   attachments?: ReadonlyMap<string, ThreadAttachment>;
-  /** Looks up the tasks chat runs (default: the organization's, `organizationDefinitions`). */
+  /** Looks up the tasks chat runs (default: the organization's, `organizationPlaybooks`). */
   getTask?: TaskLookup;
   /**
    * A tool posted its own message (e.g. a card) in the thread: an empty final

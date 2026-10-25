@@ -28,7 +28,12 @@ import {
 } from "@omniralph/shared";
 import type { TaskDefinition, TriggerKind } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { organizationDefinitions, taskJobInput, type DefinitionSource } from "@/lib/definitions";
+import {
+  getPlaybookTask,
+  organizationPlaybooks,
+  taskJobInput,
+  type PlaybookSource,
+} from "@/lib/definitions";
 import { reviewIdOfJob } from "./job-review";
 
 export interface EnqueueReviewInput {
@@ -140,11 +145,11 @@ export async function reviewTasksFor(
   taskIds: readonly string[],
   trigger: Review["trigger"],
   context: { repositoryId: string },
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<TaskDefinition[]> {
   const tasks: TaskDefinition[] = [];
   for (const id of new Set(taskIds)) {
-    const task = await definitions.getTask(id);
+    const task = await getPlaybookTask(definitions, id);
     if (!task || task.taskType !== "review") {
       console.warn(
         task
@@ -196,7 +201,7 @@ export async function enqueueReview(
   const depth = input.depth ?? settings.depth;
   const profile = reviewProfileConfigForDepth(depth);
 
-  const definitions = organizationDefinitions(db, repository.organizationId);
+  const definitions = organizationPlaybooks(db, repository.organizationId);
   const tasks = await reviewTasksFor(
     repository.reviewTaskIds,
     input.trigger,

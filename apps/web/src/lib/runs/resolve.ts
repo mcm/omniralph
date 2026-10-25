@@ -13,8 +13,13 @@ import {
   type RunToolRestrictions,
   type ReviewProfileConfig,
 } from "@omniralph/shared";
-import type { TaskDefinition } from "@omniralph/tasks";
-import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
+import {
+  playbookRunSpec,
+  type RunSpecAgent,
+  type TaskDefinition,
+  type TaskType,
+} from "@omniralph/tasks";
+import { organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /**
@@ -30,20 +35,21 @@ export class RunSpecError extends Error {
 }
 
 /**
- * Resolves a run-spec job (one with a `task_id`) into the `RunSpec` the
- * harness runs: its task and the task's agent (built-in or the job's
- * organization's own, `organizationDefinitions`), the trigger (which must be one
- * the task allows), the repository with its tool settings, the model, the
- * token budget and the job's `tokens`. The agent's tools are narrowed by the
+ * Resolves a run-spec job (one with a `task_id`, which holds a playbook ID)
+ * into the `RunSpec` the harness runs: its playbook (built-in or the job's
+ * organization's own, `organizationPlaybooks`) as the run spec's agent and
+ * task (`playbookRunSpec`), the trigger (which must be one the playbook's role
+ * allows), the repository with its tool settings, the model, the token budget
+ * and the job's `tokens`. The playbook's tools are narrowed by the
  * repository's tool settings, never widened.
  *
  * Model and budget come from one place per kind of run:
  * - a review run: its depth preset (from its trigger context: the
  *   repository's, or the one a mention or re-run asked for) sets the model,
  *   token cap, max files and exploration (`narrowByReviewDepth`);
- * - any other run: model = task `model` ?? agent `model` ?? null (the Claude
- *   Code default), fallback = agent `fallbackModel`, budget = the task's fixed
- *   `tokens` or null ("No limit"). No review setting changes it.
+ * - any other run: model = the playbook's `model` (null for the Claude Code
+ *   default), fallback = its `fallbackModel`, budget = its fixed `tokens` or
+ *   null ("No limit"). No review setting changes it.
  *
  * Throws `RunSpecError` for a job that can never be resolved.
  */
@@ -51,16 +57,15 @@ export async function resolveRunSpec(
   db: Database,
   job: Pick<Job, "id" | "organizationId" | "taskType" | "taskId" | "repositoryId" | "payload">,
   tokens: { lifecycle: JobToken; session: JobToken },
-  definitions: DefinitionSource = organizationDefinitions(db, job.organizationId),
+  playbooks: PlaybookSource = organizationPlaybooks(db, job.organizationId),
 ): Promise<RunSpec> {
-  if (job.taskId === null) throw new RunSpecError("Not a run-spec job (no task)");
-  const task = await definitions.getTask(job.taskId);
-  if (!task) throw new RunSpecError(`Unknown task ${job.taskId}`);
-  const agent = await definitions.getAgent(task.agentId);
-  if (!agent) throw new RunSpecError(`Unknown agent ${task.agentId} of task ${task.id}`);
+  if (job.taskId === null) throw new RunSpecError("Not a run-spec job (no playbook)");
+  const playbook = await playbooks.getPlaybook(job.taskId);
+  if (!playbook) throw new RunSpecError(`Unknown playbook ${job.taskId}`);
+  const { agent, task } = playbookRunSpec(playbook);
   if (job.taskType !== task.taskType) {
     throw new RunSpecError(
-      `Job task type ${job.taskType} doesn't match task ${task.id} (${task.taskType})`,
+      `Job task type ${job.taskType} doesn't match playbook ${task.id} (${task.taskType})`,
     );
   }
   const pool = poolForTaskType(task.taskType);
@@ -69,7 +74,7 @@ export async function resolveRunSpec(
   if (!parsed.success) throw new RunSpecError(`Invalid run payload: ${parsed.error.message}`);
   const payload = parsed.data;
   if (!task.triggers.includes(payload.trigger.kind)) {
-    throw new RunSpecError(`Task ${task.id} can't be triggered by ${payload.trigger.kind}`);
+    throw new RunSpecError(`Playbook ${task.id} can't be triggered by ${payload.trigger.kind}`);
   }
 
   const repositoryId = payload.repositoryId ?? job.repositoryId;
@@ -90,10 +95,10 @@ export async function resolveRunSpec(
     jobId: job.id,
     taskType: task.taskType,
     pool,
-    agent: {
-      ...agent,
-      tools: { ...agent.tools, builtin: narrowTools(agent.tools.builtin, tools) },
-    },
+    agent: withLegacyTaskTypes(
+      { ...agent, tools: { ...agent.tools, builtin: narrowTools(agent.tools.builtin, tools) } },
+      task.taskType,
+    ),
     task: withLegacyPool(task, pool),
     trigger: payload.trigger,
     repository,
@@ -101,9 +106,9 @@ export async function resolveRunSpec(
     ref: payload.ref ?? null,
     requireCheckout: payload.requireCheckout ?? false,
     tools,
-    model: task.model ?? agent.model,
-    fallbackModel: agent.fallbackModel,
-    tokenBudget: runTokenBudget(task),
+    model: playbook.model,
+    fallbackModel: playbook.fallbackModel,
+    tokenBudget: runTokenBudget(playbook),
     tokens,
   };
   if (task.taskType !== "review") return spec;
@@ -111,7 +116,7 @@ export async function resolveRunSpec(
     payload.trigger.context.reviewConfig,
   );
   if (!reviewConfig.success) {
-    throw new RunSpecError(`Review run of task ${task.id} has no valid review configuration`);
+    throw new RunSpecError(`Review run of playbook ${task.id} has no valid review configuration`);
   }
   return narrowByReviewDepth(spec, reviewConfig.data.profile);
 }
@@ -124,6 +129,15 @@ function withLegacyPool(task: TaskDefinition, pool: PoolName): TaskDefinition {
   return { ...task, pool } as TaskDefinition;
 }
 
+/**
+ * `agent` with the one task type of its run as `taskTypes`, which harnesses
+ * up to 0.13 still require of a run spec's agent (newer ones ignore it): an
+ * agent's task types went with agent definitions.
+ */
+function withLegacyTaskTypes(agent: RunSpecAgent, taskType: TaskType): RunSpecAgent {
+  return { ...agent, taskTypes: [taskType] };
+}
+
 /** Read-only file tools a review uses to read beyond the diff (the engine's `EXPLORATION_TOOLS`). */
 const EXPLORATION_TOOLS: readonly string[] = ["Read", "Grep", "Glob"];
 
@@ -131,8 +145,8 @@ const EXPLORATION_TOOLS: readonly string[] = ["Read", "Grep", "Glob"];
  * A review run as its depth's preset (`reviewConfig.profile`) sets it: the
  * preset's `model` (null for the Claude Code default), `maxTokensPerReview` as
  * the budget and `maxFiles`, and without `allowRepoExploration`, no
- * exploration tools (the review sees only the diff). The task's and agent's
- * models never apply; review tasks can't set a model or budget.
+ * exploration tools (the review sees only the diff). The playbook's model
+ * never applies; review playbooks can't set a model or budget.
  */
 export function narrowByReviewDepth(
   spec: RunSpec,
@@ -172,9 +186,11 @@ export function narrowTools(builtin: readonly string[], tools: RunToolRestrictio
 }
 
 /**
- * A non-review run's token cap: the task's fixed `tokens`, or null for "No
+ * A non-review run's token cap: its playbook's fixed `tokens`, or null for "No
  * limit". Never depends on a review setting.
  */
-export function runTokenBudget(task: Pick<TaskDefinition, "tokenBudget">): number | null {
-  return task.tokenBudget?.tokens ?? null;
+export function runTokenBudget(playbook: {
+  tokenBudget: TaskDefinition["tokenBudget"];
+}): number | null {
+  return playbook.tokenBudget?.tokens ?? null;
 }

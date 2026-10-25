@@ -62,24 +62,31 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
-// A second review task, as a repository could enable next to builtin:review-pr.
+// A second review playbook, as a repository could enable next to builtin:review-pr.
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
   const security = {
-    ...actual.getBuiltinTask("builtin:review-pr")!,
+    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
     id: "builtin:security-review",
     name: "Security review",
   };
-  // Another correlation task a repository could choose.
+  // Another correlation playbook a repository could choose.
   const correlator = {
-    ...actual.getBuiltinTask("builtin:correlate-findings")!,
+    ...actual.getBuiltinPlaybook("builtin:correlate-findings")!,
     id: "builtin:other-correlator",
     name: "Other correlator",
   };
-  const injected = new Map([security, correlator].map((task) => [task.id, task]));
+  const injected = new Map([security, correlator].map((playbook) => [playbook.id, playbook]));
+  const getBuiltinPlaybook = (id: string) => injected.get(id) ?? actual.getBuiltinPlaybook(id);
+  const getBuiltinRunSpec = (id: string) => {
+    const playbook = getBuiltinPlaybook(id);
+    return playbook && actual.playbookRunSpec(playbook);
+  };
   return {
     ...actual,
-    getBuiltinTask: (id: string) => injected.get(id) ?? actual.getBuiltinTask(id),
+    getBuiltinPlaybook,
+    getBuiltinRunSpec,
+    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
   };
 });
 const SECURITY_TASK_ID = "builtin:security-review";
@@ -547,7 +554,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       runSpec: {
         taskType: "review",
         task: { id: "builtin:review-pr", sink: "review" },
-        agent: { id: "builtin:reviewer" },
+        agent: { id: "builtin:review-pr" },
         trigger: job.payload.trigger,
         repository: { provider: "github", fullPath: "acme/app" },
         // Narrowed by the review depth's preset at claim time.
@@ -1084,7 +1091,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       await signInAdmin();
 
       // Clone the built-in reviewer and give the copy its own rubric.
-      const agentClone = await cloneAgentDefinition("builtin:reviewer");
+      const agentClone = await cloneAgentDefinition("builtin:review-pr");
       if (!("id" in agentClone)) throw new Error(JSON.stringify(agentClone));
       const agent = (await getAgentDefinition(db, orgId, agentClone.id))!.definition;
       const { id: _agentId, ...agentFields } = agent;
@@ -1100,7 +1107,10 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       const taskClone = await cloneTaskDefinition("builtin:review-pr");
       if (!("id" in taskClone)) throw new Error(JSON.stringify(taskClone));
       const stored = (await getTaskDefinition(db, orgId, taskClone.id))!;
-      expect(stored).toMatchObject({ builtin: false, definition: { agentId: "builtin:reviewer" } });
+      expect(stored).toMatchObject({
+        builtin: false,
+        definition: { agentId: "builtin:review-pr" },
+      });
       const { id: _taskId, ...taskFields } = stored.definition;
       expect(
         await updateTaskDefinition(taskClone.id, {
@@ -1136,13 +1146,13 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       const [builtinRun, customRun] = enqueued.runs;
       expect(await jobRow(customRun!.jobId)).toMatchObject({ taskId: taskClone.id });
 
-      // The harness gets the custom task and its agent with the new rubric.
+      // The harness gets the custom playbook (the task on its agent) with the new rubric.
       const started = await startAs(customRun!.jobId, accessToken);
       if (started?.action !== "run") throw new Error("expected run");
       expect(started.runSpec).toMatchObject({
         taskType: "review",
-        task: { id: taskClone.id, name: "Security review", agentId: agentClone.id, sink: "review" },
-        agent: { id: agentClone.id, name: "Security reviewer", systemPrompt: RUBRIC },
+        task: { id: taskClone.id, name: "Security review", agentId: taskClone.id, sink: "review" },
+        agent: { id: taskClone.id, name: "Security review", systemPrompt: RUBRIC },
       });
       expect(
         (await submit(customRun!.jobId, accessToken, await agentRun(started.job.payload))).body,

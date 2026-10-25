@@ -75,7 +75,7 @@ import {
   storyTaskFor,
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -371,7 +371,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
         ? await getRepositoryWithConnection(deps.db, run.repositoryId)
         : null;
       const cap = (
-        await storyLimits(main?.repository, organizationDefinitions(deps.db, run.organizationId))
+        await storyLimits(main?.repository, organizationPlaybooks(deps.db, run.organizationId))
       ).maxIterationsPerRun;
       if (run.iterations >= cap) {
         return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: cap });
@@ -590,7 +590,7 @@ async function enqueueStory(
   const routed = await codingJobInput(
     { taskId, trigger: "linear.delegated" },
     payload,
-    organizationDefinitions(deps.db, run.organizationId),
+    organizationPlaybooks(deps.db, run.organizationId),
   );
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, found.repository, "stories"));
   const { job, created } = await deps.dispatcher.createAndPublish({
@@ -626,7 +626,7 @@ async function enqueueStory(
   await publishPlan(conversationFor(run, deps), await listStories(tx, run.id));
   await postActivity(conversationFor(run, deps), {
     type: "thought",
-    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${(await storyLimits(found.repository, organizationDefinitions(deps.db, run.organizationId))).maxAttemptsPerStory})`,
+    body: `▶️ **${row.identifier}: ${row.title}** (attempt ${payload.attempt}/${(await storyLimits(found.repository, organizationPlaybooks(deps.db, run.organizationId))).maxAttemptsPerStory})`,
   });
   return { action: "enqueued", run: updated, story: running, jobId: job.id };
 }
@@ -663,7 +663,7 @@ async function publishLanes(
           : push &&
               (await pushTimingFor(
                 found.repository,
-                organizationDefinitions(deps.db, run.organizationId),
+                organizationPlaybooks(deps.db, run.organizationId),
               )) === "end"
             ? await pushLane(deps, tx, run, { ...input, ...found, lanes })
             : await describeLane(deps, tx, run, { ...input, ...found, lanes });
@@ -735,7 +735,7 @@ async function pushLane(
   const routing = await pushJobInput(
     repository,
     buildPushPayload({ run, lane, repository, connection, hiddenRef: ralphHiddenRef(run.id) }),
-    organizationDefinitions(deps.db, run.organizationId),
+    organizationPlaybooks(deps.db, run.organizationId),
   );
   if (!routing) {
     return `I couldn't push \`${lane.branch}\`: ${notACodingTask(storyTaskFor(repository), repository, "stories")}`;
@@ -801,7 +801,7 @@ async function describeLane(
       epic: input.epic,
       rows: laneRows(input.rows, lane, main),
     }),
-    organizationDefinitions(deps.db, run.organizationId),
+    organizationPlaybooks(deps.db, run.organizationId),
   );
   if (typeof routing === "string") {
     return `I couldn't open the ${term}: writing its description failed: ${routing}.`;
@@ -920,7 +920,7 @@ async function enqueueRequest(
     resumeSessionId: resume,
     attachments: payloadAttachments(attachments),
     // Story commits may only be on the run's hidden ref yet: the request starts from them.
-    ...((await pushTimingFor(repository, organizationDefinitions(deps.db, run.organizationId))) ===
+    ...((await pushTimingFor(repository, organizationPlaybooks(deps.db, run.organizationId))) ===
       "end" && {
       hiddenRef: ralphHiddenRef(run.id),
     }),
@@ -929,7 +929,7 @@ async function enqueueRequest(
   const routed = await codingJobInput(
     { taskId, trigger: requestTrigger(input.requests) },
     payload,
-    organizationDefinitions(deps.db, run.organizationId),
+    organizationPlaybooks(deps.db, run.organizationId),
   );
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, repository, "requests"));
   const { job, created } = await deps.dispatcher.createAndPublish({

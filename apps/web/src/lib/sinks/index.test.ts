@@ -1,12 +1,12 @@
 import type { Database, Job } from "@omniralph/db";
-import { getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinPlaybook } from "@omniralph/tasks";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
 const { jobHooks, parseSinkResult, sinkFor, taskSink } = await import("./index");
-const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { learnedRuleSink } = await import("./learned-rule");
 const { findingThreadSink } = await import("./finding-thread");
@@ -25,18 +25,19 @@ registerJobOutcomeHandler("sinks.legacy", {
 });
 
 const DEFINITIONS = {
-  getTask: (id: string) =>
-    ({
-      "builtin:learn-rule": getBuiltinTask("builtin:learn-rule"),
-      "builtin:reply-to-finding": getBuiltinTask("builtin:reply-to-finding"),
-      "builtin:ask-about-code": getBuiltinTask("builtin:ask-about-code"),
-      "builtin:triage": getBuiltinTask("builtin:triage"),
-      "builtin:review-pr": getBuiltinTask("builtin:review-pr"),
-      "builtin:summarize-pr": getBuiltinTask("builtin:summarize-pr"),
-      "builtin:implement-story": getBuiltinTask("builtin:implement-story"),
-      "builtin:handle-request": getBuiltinTask("builtin:handle-request"),
-    })[id] ?? null,
-  getAgent: () => null,
+  getPlaybook: (id: string) =>
+    [
+      "builtin:learn-rule",
+      "builtin:reply-to-finding",
+      "builtin:ask-about-code",
+      "builtin:triage",
+      "builtin:review-pr",
+      "builtin:summarize-pr",
+      "builtin:implement-story",
+      "builtin:handle-request",
+    ].includes(id)
+      ? getBuiltinPlaybook(id)
+      : null,
 };
 
 const answered = (structured: unknown, answer: string | null = null) => ({
@@ -82,7 +83,7 @@ describe("jobHooks", () => {
   it("uses the task's sink for a run-spec job, never its type's outcome handler", async () => {
     const hooks = (await jobHooks(
       { type: "sinks.legacy", payload: {}, taskId: "builtin:learn-rule" },
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     ))!;
     expect(hooks.isValidResult!(answered({ rule: null }))).toBe(true);
     expect(hooks.isValidResult!({})).toBe(false);
@@ -99,7 +100,7 @@ describe("jobHooks", () => {
   it("validates a review run's result with the review sink, with every review hook", async () => {
     const hooks = (await jobHooks(
       { type: "review.task", payload: {}, taskId: "builtin:review-pr" },
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     ))!;
     const result = {
       findings: [],
@@ -126,7 +127,7 @@ describe("jobHooks", () => {
         payload: {},
         taskId: "builtin:implement-story",
       },
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     ))!;
     const story = {
       status: "complete",
@@ -156,7 +157,7 @@ describe("jobHooks", () => {
     expect(
       await jobHooks(
         { type: "sinks.legacy", payload: {}, taskId: "builtin:gone" },
-        BUILTIN_DEFINITIONS,
+        BUILTIN_PLAYBOOK_SOURCE,
       ),
     ).toBeUndefined();
   });
@@ -164,7 +165,7 @@ describe("jobHooks", () => {
   it("uses the type's outcome handler for a legacy job", async () => {
     const hooks = (await jobHooks(
       { type: "sinks.legacy", payload: {}, taskId: null },
-      BUILTIN_DEFINITIONS,
+      BUILTIN_PLAYBOOK_SOURCE,
     ))!;
     await hooks.onCompleted!({} as Database, {} as Job);
     expect(legacyCompleted).toHaveBeenCalledOnce();

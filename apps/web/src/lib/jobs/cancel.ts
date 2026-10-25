@@ -2,7 +2,7 @@ import "server-only";
 import { getJob, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDispatcher } from "@/lib/dispatch";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 
 /** The warning a running job's cancel answers with: it stops with its harness's next heartbeat. */
@@ -28,7 +28,7 @@ export async function cancelJob(
   if (result === "not_cancelable") return { ok: false, error: "That job has already finished." };
   if (result === "canceled") {
     const job = await getJob(db, jobId);
-    const hooks = job && (await jobHooks(job, organizationDefinitions(db, job.organizationId)));
+    const hooks = job && (await jobHooks(job, organizationPlaybooks(db, job.organizationId)));
     if (job) await hooks?.onCanceled?.(db, job);
   }
   if (result === "cancel_requested") return { ok: true, warning: CANCEL_REQUESTED_WARNING };

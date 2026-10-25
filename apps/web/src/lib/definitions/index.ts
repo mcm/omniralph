@@ -1,11 +1,16 @@
 /**
- * The definition resolver: an organization's agents and tasks are the
- * built-ins (in code, `@omniralph/tasks`, IDs `builtin:<name>`) plus its own
- * rows (`agent_definitions`/`task_definitions`, UUIDs). A `builtin:` ID is
- * only ever resolved from code and a UUID only from the organization's rows;
- * a stored definition that no longer parses is unresolvable. Everything that
- * resolves, enqueues or claims runs goes through here, so built-in and custom
- * definitions share one path.
+ * The playbook resolver: an organization's playbooks are the built-ins (in
+ * code, `@omniralph/tasks`, IDs `builtin:<name>`) plus its own, which are still
+ * stored as a task row and the agent row it runs on (`task_definitions`/
+ * `agent_definitions`, UUIDs) and read as one playbook (`customPlaybook`). A
+ * `builtin:` ID is only ever resolved from code and a UUID only from the
+ * organization's rows; a stored definition that no longer parses, or doesn't
+ * fit a playbook role, is unresolvable. Everything that resolves, enqueues or
+ * claims runs goes through `PlaybookSource`, so built-in and custom playbooks
+ * share one path.
+ *
+ * The agent and task lists below serve the old Settings › Agents and Tasks
+ * pages: a built-in playbook shows there as a task on an agent of its own ID.
  */
 import {
   getStoredAgentDefinition,
@@ -16,30 +21,34 @@ import {
   type StoredTaskDefinition,
 } from "@omniralph/db";
 import {
-  AgentDefinition,
-  BUILTIN_AGENTS,
+  BUILTIN_PLAYBOOKS,
   BUILTIN_TASKS,
   correlationProblem,
   deriveHarnessRequirements,
-  getBuiltinAgent,
+  getBuiltinPlaybook,
+  getBuiltinRunSpec,
   getBuiltinTask,
   isBuiltinId,
+  playbookRunSpec,
   prDescriptionProblem,
   REQUEST_TRIGGERS,
   TaskDefinition,
   TaskRequirements,
+  type Playbook,
   type TaskType,
   type TriggerKind,
 } from "@omniralph/tasks";
 import type { RunSpecJobPayload } from "@omniralph/shared";
+import { CustomAgent, type CustomAgentInput } from "@/lib/api/definitions";
 import { runSpecJobInput } from "@/lib/runs/job";
+import { customPlaybook } from "./custom-playbooks";
 
 type Queryable = Parameters<typeof getStoredTaskDefinition>[0];
 type MaybePromise<T> = T | Promise<T>;
 
 /** An agent definition and where it comes from. */
 export interface ResolvedAgent {
-  definition: AgentDefinition;
+  definition: CustomAgent;
   /** Defined in code (read-only); otherwise one of the organization's rows. */
   builtin: boolean;
 }
@@ -53,7 +62,7 @@ export interface ResolvedTask {
 }
 
 function parseStoredAgent(row: StoredAgentDefinition): ResolvedAgent | null {
-  const parsed = AgentDefinition.safeParse({ ...row.definition, id: row.id, name: row.name });
+  const parsed = CustomAgent.safeParse({ ...row.definition, id: row.id, name: row.name });
   if (!parsed.success) {
     console.warn("unresolvable stored agent definition", {
       organizationId: row.organizationId,
@@ -79,15 +88,23 @@ function parseStoredTask(row: StoredTaskDefinition): ResolvedTask | null {
   return { definition: parsed.data, builtin: false, requirements: requirements.data };
 }
 
-/** Agent `id` of the organization (a built-in, or one of its rows); null when unknown or unresolvable. */
+/** The persona of a built-in playbook, as the old pages show it: an agent of the playbook's ID. */
+function builtinAgent(agent: CustomAgentInput): ResolvedAgent {
+  return { definition: CustomAgent.parse(agent), builtin: true };
+}
+
+/**
+ * Agent `id` of the organization (a built-in playbook's persona, or one of its
+ * rows); null when unknown or unresolvable.
+ */
 export async function getAgentDefinition(
   db: Queryable,
   organizationId: string,
   id: string,
 ): Promise<ResolvedAgent | null> {
   if (isBuiltinId(id)) {
-    const agent = getBuiltinAgent(id);
-    return agent && { definition: agent, builtin: true };
+    const spec = getBuiltinRunSpec(id);
+    return spec && builtinAgent(spec.agent);
   }
   const row = await getStoredAgentDefinition(db, organizationId, id);
   return row && parseStoredAgent(row);
@@ -107,14 +124,17 @@ export async function getTaskDefinition(
   return row && parseStoredTask(row);
 }
 
-/** The organization's agents: the built-ins, then its own by name (unresolvable ones left out). */
+/**
+ * The organization's agents: the built-in playbooks' personas, then its own by
+ * name (unresolvable ones left out).
+ */
 export async function listAgentDefinitions(
   db: Queryable,
   organizationId: string,
 ): Promise<ResolvedAgent[]> {
   const rows = await listStoredAgentDefinitions(db, organizationId);
   return [
-    ...BUILTIN_AGENTS.map((definition) => ({ definition, builtin: true })),
+    ...BUILTIN_PLAYBOOKS.map((playbook) => builtinAgent(playbookRunSpec(playbook).agent)),
     ...rows.map(parseStoredAgent).filter((agent) => agent !== null),
   ];
 }
@@ -224,74 +244,110 @@ export async function getTaskChoice(
 
 /**
  * Where the run plumbing (run specs, sinks, ralph's coding runs) looks
- * definitions up by ID. `organizationDefinitions` is the one real source;
- * tests pass their own.
+ * playbooks up by ID. `organizationPlaybooks` is the one real source; tests
+ * pass their own.
  */
-export interface DefinitionSource {
-  getTask(id: string): MaybePromise<TaskDefinition | null>;
-  getAgent(id: string): MaybePromise<AgentDefinition | null>;
-  /** The requirements stored with a custom task; null (or absent) for a built-in. */
-  getTaskRequirements?(id: string): MaybePromise<TaskRequirements | null>;
+export interface PlaybookSource {
+  getPlaybook(id: string): MaybePromise<Playbook | null>;
+  /** The requirements stored with a custom playbook; null (or absent) for a built-in. */
+  getPlaybookRequirements?(id: string): MaybePromise<TaskRequirements | null>;
 }
 
 /**
- * The definitions of an organization (`getTaskDefinition`/`getAgentDefinition`),
- * each looked up at most once per source.
+ * Custom playbook `id` of the organization: its task row on the agent row it
+ * names (or a built-in playbook's persona), read as one playbook. Null when
+ * either is unknown or unresolvable, or they don't fit a playbook.
  */
-export function organizationDefinitions(db: Queryable, organizationId: string): DefinitionSource {
+async function getCustomPlaybook(
+  db: Queryable,
+  organizationId: string,
+  task: ResolvedTask | null,
+): Promise<Playbook | null> {
+  if (!task) return null;
+  const agent = await getAgentDefinition(db, organizationId, task.definition.agentId);
+  if (!agent) return null;
+  const playbook = customPlaybook(task.definition, agent.definition);
+  if (!playbook) {
+    console.warn("unresolvable custom playbook", { organizationId, taskId: task.definition.id });
+  }
+  return playbook;
+}
+
+/**
+ * The playbooks of an organization (built-ins from code, its own from its
+ * rows), each looked up at most once per source.
+ */
+export function organizationPlaybooks(db: Queryable, organizationId: string): PlaybookSource {
   const tasks = new Map<string, Promise<ResolvedTask | null>>();
-  const agents = new Map<string, Promise<ResolvedAgent | null>>();
+  const playbooks = new Map<string, Promise<Playbook | null>>();
   const task = (id: string) => {
     let found = tasks.get(id);
     if (!found) tasks.set(id, (found = getTaskDefinition(db, organizationId, id)));
     return found;
   };
-  const agent = (id: string) => {
-    let found = agents.get(id);
-    if (!found) agents.set(id, (found = getAgentDefinition(db, organizationId, id)));
+  const playbook = (id: string) => {
+    let found = playbooks.get(id);
+    if (!found) {
+      found = isBuiltinId(id)
+        ? Promise.resolve(getBuiltinPlaybook(id))
+        : task(id).then((resolved) => getCustomPlaybook(db, organizationId, resolved));
+      playbooks.set(id, found);
+    }
     return found;
   };
   return {
-    getTask: async (id) => (await task(id))?.definition ?? null,
-    getAgent: async (id) => (await agent(id))?.definition ?? null,
-    getTaskRequirements: async (id) => (await task(id))?.requirements ?? null,
+    getPlaybook: playbook,
+    getPlaybookRequirements: async (id) =>
+      isBuiltinId(id) ? null : ((await task(id))?.requirements ?? null),
   };
 }
 
-/** The built-ins alone, for tests (real code resolves through `organizationDefinitions`). */
-export const BUILTIN_DEFINITIONS: DefinitionSource = {
-  getTask: (id) => getBuiltinTask(id),
-  getAgent: (id) => getBuiltinAgent(id),
-  getTaskRequirements: () => null,
+/** The built-ins alone, for tests (real code resolves through `organizationPlaybooks`). */
+export const BUILTIN_PLAYBOOK_SOURCE: PlaybookSource = {
+  getPlaybook: (id) => getBuiltinPlaybook(id),
+  getPlaybookRequirements: () => null,
 };
 
 /**
- * What runs of `task` need from a harness as `definitions` resolved it (the
- * `requirements` of `runSpecJobInput`): a custom task's at least the harness
- * version stored in its requirements, and every task the installables and
- * host tools derived from the task and its agent as they are now
- * (`deriveHarnessRequirements`: an agent edited since the task was saved
- * counts as edited).
+ * The run spec task of playbook `id` (`playbookRunSpec`: its role's task type,
+ * triggers and sink, its prompt and settings), for code that reads those; null
+ * when `playbooks` doesn't resolve it.
+ */
+export async function getPlaybookTask(
+  playbooks: PlaybookSource,
+  id: string,
+): Promise<TaskDefinition | null> {
+  const playbook = await playbooks.getPlaybook(id);
+  return playbook && playbookRunSpec(playbook).task;
+}
+
+/**
+ * What runs of `task` (a playbook's run spec task) need from a harness as
+ * `playbooks` resolve it (the `requirements` of `runSpecJobInput`): a custom
+ * playbook's at least the harness version stored with it, and every
+ * playbook's installables and host tools derived from it as it is now
+ * (`deriveHarnessRequirements` of its run spec: an agent edited since the
+ * task was saved counts as edited).
  */
 export async function taskRunRequirements(
-  definitions: DefinitionSource,
+  playbooks: PlaybookSource,
   task: TaskDefinition,
 ): Promise<TaskRequirements> {
-  const [stored, agent] = await Promise.all([
-    definitions.getTaskRequirements?.(task.id),
-    definitions.getAgent(task.agentId),
+  const [stored, playbook] = await Promise.all([
+    playbooks.getPlaybookRequirements?.(task.id),
+    playbooks.getPlaybook(task.id),
   ]);
   return {
     minHarnessVersion: stored?.minHarnessVersion ?? null,
-    ...deriveHarnessRequirements(task, agent),
+    ...deriveHarnessRequirements(task, playbook && playbookRunSpec(playbook).agent),
   };
 }
 
-/** `runSpecJobInput` for `task` with the `taskRunRequirements` `definitions` resolve. */
+/** `runSpecJobInput` for `task` with the `taskRunRequirements` `playbooks` resolve. */
 export async function taskJobInput(
-  definitions: DefinitionSource,
+  playbooks: PlaybookSource,
   task: TaskDefinition,
   payload: RunSpecJobPayload,
 ): Promise<ReturnType<typeof runSpecJobInput>> {
-  return runSpecJobInput(task, payload, await taskRunRequirements(definitions, task));
+  return runSpecJobInput(task, payload, await taskRunRequirements(playbooks, task));
 }

@@ -14,7 +14,7 @@ import {
   type RalphPushPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
-import { getBuiltinAgent, getBuiltinTask, renderTemplate, taskCatalog } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask, renderTemplate, taskCatalog } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
@@ -86,7 +86,7 @@ const PRD = `# PRD: Ralph core
 - \`true\`
 `;
 
-const engineer = getBuiltinAgent("builtin:engineer")!;
+const engineer = getBuiltinRunSpec("builtin:implement-story")!.agent;
 const storyTask = getBuiltinTask("builtin:implement-story")!;
 
 describe("coding runs of a story task", { timeout: 60_000 }, () => {

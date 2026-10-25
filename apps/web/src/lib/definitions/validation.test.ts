@@ -1,6 +1,7 @@
 import {
-  BUILTIN_AGENTS,
+  BUILTIN_PLAYBOOKS,
   BUILTIN_TASKS,
+  playbookRunSpec,
   getBuiltinTask,
   SINK_KINDS,
   validateTaskDefinition,
@@ -9,9 +10,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { sinkOutputs, taskValidationContext } = await import("./validation");
+const { sinkOutputs, taskValidationContext, validateCustomAgent } = await import("./validation");
 
-const context = taskValidationContext(BUILTIN_AGENTS, BUILTIN_TASKS);
+const context = taskValidationContext(
+  BUILTIN_PLAYBOOKS.map((playbook) => playbookRunSpec(playbook).agent),
+  BUILTIN_TASKS,
+);
 const TASK_ID = "0b6f7a0e-8a3d-4e43-9a51-2a8c55a1f6e2";
 
 describe("sinkOutputs", () => {
@@ -87,6 +91,38 @@ describe("validating against the real sinks", () => {
     expect(validateTaskDefinition({ ...triage, id: TASK_ID }, context)).toEqual({
       ok: false,
       fieldErrors: { sink: expect.stringContaining("takes structured output") },
+    });
+  });
+});
+
+describe("validateCustomAgent", () => {
+  const agent = { id: TASK_ID, name: "Security reviewer", systemPrompt: "You look for leaks." };
+
+  it("parses an agent, dropping the task types and skills agents had before playbooks", () => {
+    const result = validateCustomAgent({
+      ...agent,
+      taskTypes: ["review"],
+      skills: [{ name: "x", content: "y" }],
+    });
+    expect(result).toMatchObject({ ok: true, definition: { ...agent, model: null } });
+    expect(result.ok && result.definition).not.toHaveProperty("taskTypes");
+    expect(result.ok && result.definition).not.toHaveProperty("skills");
+  });
+
+  it("returns errors by field, refusing MCP servers that aren't an installable's", () => {
+    expect(validateCustomAgent({ ...agent, name: " ", tools: { mcpServers: ["github"] } })).toEqual(
+      {
+        ok: false,
+        fieldErrors: {
+          name: expect.any(String),
+          "tools.mcpServers.0":
+            "Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.",
+        },
+      },
+    );
+    expect(validateCustomAgent(null)).toEqual({
+      ok: false,
+      fieldErrors: { form: expect.any(String) },
     });
   });
 });

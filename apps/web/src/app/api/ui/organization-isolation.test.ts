@@ -2829,7 +2829,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         });
         // A built-in's "Used by" lists only this organization's tasks.
         const reviewer = await call(agentDetail.GET, {
-          params: { id: encodeURIComponent("builtin:reviewer") },
+          params: { id: encodeURIComponent("builtin:review-pr") },
         });
         expect(reviewer.status).toBe(200);
 
@@ -2951,7 +2951,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect((await call(taskDetail.GET, { params: { id: cloneId } })).status).toBe(404);
 
       const builtinClone = await call(agentClone.POST, {
-        params: { id: encodeURIComponent("builtin:reviewer") },
+        params: { id: encodeURIComponent("builtin:review-pr") },
         method: "POST",
       });
       expect(builtinClone).toMatchObject({ status: 200, body: { ok: true } });

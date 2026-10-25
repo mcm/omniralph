@@ -19,8 +19,8 @@ import {
   type RunSpec as RunSpecType,
 } from "@omniralph/shared";
 import {
-  AgentDefinition,
-  getBuiltinAgent,
+  RunSpecAgent,
+  getBuiltinRunSpec,
   getBuiltinTask,
   TaskDefinition,
   type TaskDefinitionInput,
@@ -203,7 +203,7 @@ describe("runReviewTask", () => {
       jobId,
       taskType: "review",
       pool: "short",
-      agent: AgentDefinition.parse({
+      agent: RunSpecAgent.parse({
         id: "builtin:test-reviewer",
         name: "Test reviewer",
         systemPrompt: "You review code.",
@@ -435,7 +435,7 @@ ${diff}
 
   describe("builtin:review-pr", () => {
     const builtin = () => ({
-      agent: getBuiltinAgent("builtin:reviewer")!,
+      agent: getBuiltinRunSpec("builtin:review-pr")!.agent,
       task: getBuiltinTask("builtin:review-pr")!,
     });
 
@@ -568,7 +568,7 @@ ${diff}
     });
 
     it("gives no tools when the agent has none (a profile without exploration)", () => {
-      const agent = AgentDefinition.parse({
+      const agent = RunSpecAgent.parse({
         id: "builtin:test-reviewer",
         name: "Test reviewer",
         systemPrompt: "You review code.",

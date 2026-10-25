@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import { buildChatAskPrompt, CHAT_ASK_SYSTEM_PROMPT } from "./chatAsk.js";
 
@@ -19,7 +19,7 @@ const FIXTURES = JSON.parse(
 >;
 
 const task = getBuiltinTask("builtin:ask-about-code")!;
-const agent = getBuiltinAgent(task.agentId)!;
+const agent = getBuiltinRunSpec(task.id)!.agent;
 
 describe("builtin:ask-about-code agrees with the code question prompt builders", () => {
   it("has the agent's system prompt + the task's systemAppend = CHAT_ASK_SYSTEM_PROMPT", () => {

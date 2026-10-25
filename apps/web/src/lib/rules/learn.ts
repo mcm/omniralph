@@ -10,7 +10,7 @@ import {
 } from "@omniralph/db";
 import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
 
 /**
  * Learned rules: a `false_positive` dismissal (`@bot dismiss` in the
@@ -86,8 +86,8 @@ export async function enqueueLearnRule(
   if (!(await resolveRepositorySwitches(db, found.repository)).query) {
     return { status: "skipped", reason: "query_disabled" };
   }
-  const definitions = organizationDefinitions(db, found.repository.organizationId);
-  const task = await definitions.getTask(LEARN_RULE_TASK_ID);
+  const definitions = organizationPlaybooks(db, found.repository.organizationId);
+  const task = await getPlaybookTask(definitions, LEARN_RULE_TASK_ID);
   if (!task) throw new Error(`Built-in task ${LEARN_RULE_TASK_ID} is missing`);
   const context = learnRuleContext({
     feedback,

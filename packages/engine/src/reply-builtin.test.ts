@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import { buildReplyPrompt, REPLY_SYSTEM_PROMPT, type ReplyFinding } from "./reply.js";
 
@@ -10,7 +10,7 @@ const FIXTURES = JSON.parse(
 ) as Record<string, { finding: ReplyFinding; hunk: string | null; question: string }>;
 
 const task = getBuiltinTask("builtin:reply-to-finding")!;
-const agent = getBuiltinAgent(task.agentId)!;
+const agent = getBuiltinRunSpec(task.id)!.agent;
 
 describe("builtin:reply-to-finding agrees with the thread-reply prompt builders", () => {
   it("has the agent's system prompt + the task's systemAppend = REPLY_SYSTEM_PROMPT", () => {

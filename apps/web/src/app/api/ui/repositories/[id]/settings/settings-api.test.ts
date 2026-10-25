@@ -54,9 +54,17 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
     triggers: ["pr.mention", "review.rerun"],
   };
   const injected = new Map([security, onRequest].map((task) => [task.id, task]));
+  // Runs resolve playbooks: the security review as one (a push-less review has no playbook role).
+  const securityPlaybook = {
+    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
+    id: security.id,
+    name: security.name,
+  };
   return {
     ...actual,
     getBuiltinTask: (id: string) => injected.get(id) ?? actual.getBuiltinTask(id),
+    getBuiltinPlaybook: (id: string) =>
+      id === securityPlaybook.id ? securityPlaybook : actual.getBuiltinPlaybook(id),
   };
 });
 const SECURITY_TASK_ID = "builtin:security-review";

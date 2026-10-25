@@ -28,7 +28,7 @@ import {
   validateChatTaskChoice,
   type ChatTaskRole,
 } from "@/lib/chat/tasks";
-import { listTaskChoices, organizationDefinitions } from "@/lib/definitions";
+import { getPlaybookTask, listTaskChoices, organizationPlaybooks } from "@/lib/definitions";
 import { linearOAuthConfig, revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 import {
   settingsActor,
@@ -246,7 +246,7 @@ async function chatTaskErrors(
   input: unknown,
   optional: boolean,
 ): Promise<Record<string, string>> {
-  const definitions = organizationDefinitions(db, organizationId);
+  const definitions = organizationPlaybooks(db, organizationId);
   const choices = asObject(input);
   const errors: Record<string, string> = {};
   for (const role of CHAT_TASK_ROLES) {
@@ -256,7 +256,7 @@ async function chatTaskErrors(
       errors[role] = "Choose a task.";
       continue;
     }
-    const task = await definitions.getTask(taskId);
+    const task = await getPlaybookTask(definitions, taskId);
     const result = validateChatTaskChoice(role, taskId, () => task);
     if (!result.ok) errors[role] = result.error;
   }

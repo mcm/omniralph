@@ -11,9 +11,8 @@
  * story list, its status and any other mention of epics or stories only
  * render in optional sections, for requests on a PRD epic's run.
  */
-import type { TaskDefinitionInput } from "../definitions.js";
-import { REQUEST_TRIGGERS } from "../kinds.js";
-import { ENGINEER_AGENT } from "./engineer.js";
+import type { PlaybookInput } from "../playbooks.js";
+import { ENGINEER_PERSONA } from "./engineer.js";
 
 /** The request-specific rules of ralph's request system prompt, `/ship`'s included. */
 export const REQUEST_RULES = `## Rules
@@ -164,18 +163,16 @@ ${REQUEST_INSTRUCTIONS}{{/ship}}
 
 ${REQUEST_RULES}`;
 
-export const HANDLE_REQUEST_TASK: TaskDefinitionInput = {
+export const HANDLE_REQUEST_PLAYBOOK: PlaybookInput = {
   id: "builtin:handle-request",
   name: "Handle a request",
   description:
     "Does what a run's pending requests ask (a mention, a chat request, review findings, a failed CI run, a fix command or /ship) in the run's branch worktree.",
-  taskType: "coding",
-  agentId: ENGINEER_AGENT.id,
-  triggers: [...REQUEST_TRIGGERS],
+  role: "request",
+  ...ENGINEER_PERSONA,
   promptTemplate: REQUEST_TEMPLATE,
   toolSettings: { shell: true, linearRead: false, network: true },
-  // Handed back to the ralph run, which posts the summary and makes the PR change.
-  sink: "ralph-run",
+  // Its runs go back to the ralph run (the role's `ralph-run` sink), which posts the summary and makes the PR change.
   // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
   model: "opus",
   tokenBudget: null,

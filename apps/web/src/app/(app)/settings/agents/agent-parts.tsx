@@ -1,7 +1,6 @@
 import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import type { ReactNode } from "react";
 import { MonoValue } from "@/components/mono-value";
-import { stateLabel } from "@/lib/state-variants";
 
 /** The path of an agent's detail page (built-in IDs contain a colon). */
 export function agentHref(id: string): string {
@@ -11,18 +10,6 @@ export function agentHref(id: string): string {
 /** The path of a custom agent's edit page. */
 export function agentEditHref(id: string): string {
   return `${agentHref(id)}/edit`;
-}
-
-export function TaskTypeBadges({ taskTypes }: { taskTypes: readonly string[] }) {
-  return (
-    <Cluster gap={1}>
-      {taskTypes.map((taskType) => (
-        <Badge key={taskType} variant="neutral">
-          {stateLabel(taskType)}
-        </Badge>
-      ))}
-    </Cluster>
-  );
 }
 
 export function BuiltinBadge() {

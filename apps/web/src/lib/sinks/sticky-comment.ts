@@ -16,7 +16,7 @@ import {
   saveReviewResult,
   settleReviewRunOf,
 } from "@/lib/review/jobs";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { repositoryTarget, reviewTaskNames, reviewUrl } from "@/lib/review/post";
 import { inlineCode, MAX_SUMMARY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import type { Sink } from "./index";
@@ -78,7 +78,7 @@ export async function postStickyComment(
   const taskId = review.taskId ?? job.taskId;
   if (!taskId) return false;
   const { adapter, repo, sanitize } = await repositoryTarget(db, review, run?.prAuthor ?? null);
-  const taskName = await reviewTaskNames(organizationDefinitions(db, job.organizationId), [taskId]);
+  const taskName = await reviewTaskNames(organizationPlaybooks(db, job.organizationId), [taskId]);
   const body = [
     `## ${taskName(taskId)}`,
     "",

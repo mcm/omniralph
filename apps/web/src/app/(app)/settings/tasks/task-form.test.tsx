@@ -32,14 +32,9 @@ const TASK: TaskDefinition = {
 };
 
 const AGENTS: TaskFormAgent[] = [
-  { id: "builtin:reviewer", name: "Reviewer", taskTypes: ["query", "review"], builtin: true },
-  { id: "builtin:engineer", name: "Engineer", taskTypes: ["coding"], builtin: true },
-  {
-    id: "11111111-1111-4111-8111-111111111111",
-    name: "Custom reviewer",
-    taskTypes: ["review"],
-    builtin: false,
-  },
+  { id: "builtin:review-pr", name: "Reviewer", builtin: true },
+  { id: "builtin:implement-story", name: "Engineer", builtin: true },
+  { id: "11111111-1111-4111-8111-111111111111", name: "Custom reviewer", builtin: false },
 ];
 
 const SINKS: TaskFormSink[] = [
@@ -159,7 +154,6 @@ describe("TaskForm", () => {
   it("states the default of the token budget and model, never of a required field", () => {
     const html = render(TASK);
     for (const required of [
-      "Agents suited to the task type.",
       "the task type decides which it accepts.",
       "Variables go in double braces, e.g. {{pr.title}}.",
       "What applies the run&#x27;s output.",
@@ -175,11 +169,11 @@ describe("TaskForm", () => {
     }
   });
 
-  it("offers only the agents, triggers and sinks the task type accepts", () => {
+  it("offers every agent, and only the triggers and sinks the task type accepts", () => {
     const html = render(TASK);
     expect(html).toContain(">Reviewer (built-in)<");
     expect(html).toContain(">Custom reviewer<");
-    expect(html).not.toContain("Engineer");
+    expect(html).toContain(">Engineer (built-in)<");
     for (const trigger of TRIGGERS_BY_TASK_TYPE.review) {
       expect(html).toContain(`id="task-triggers-${trigger}"`);
     }
@@ -202,7 +196,7 @@ describe("TaskForm", () => {
     const errors = {
       name: "Name is required.",
       taskType: "The task type can not change while it is used.",
-      agentId: "Agent builtin:engineer suits coding tasks, not review.",
+      agentId: "There is no agent builtin:gone.",
       triggers: "review tasks accept pr.updated, pr.mention, review.rerun.",
       promptTemplate: "{{chat.context}} is not available for pr.updated.",
       sink: "The chat-thread sink takes query tasks.",
@@ -313,13 +307,11 @@ describe("TaskForm", () => {
     const html = render(
       custom("builtin:implement-story", {
         pushTiming: "end",
-        draftPullRequest: "end",
         prDescriptionTaskId: PR_DESCRIPTION_TASKS[1]!.id,
       }),
     );
     for (const id of [
       "task-push-timing",
-      "task-draft-pull-request",
       "task-pr-description-task",
       "task-maxAttemptsPerStory",
       "task-maxRoundsPerStory",
@@ -336,7 +328,8 @@ describe("TaskForm", () => {
     expect(html).not.toContain('id="task-output-schema"');
     expect(html).not.toContain('id="task-tool-settings-shell"');
     expect(html).toMatch(/<option value="end" selected="">Once at the end<\/option>/);
-    expect(html).toMatch(/<option value="end" selected="">At the end<\/option>/);
+    // When the draft PR opens is the repository's setting, not the task's.
+    expect(html).not.toContain('id="task-draft-pull-request"');
     expect(html).toContain(">Describe a PR (built-in)<");
     expect(html).toMatch(
       /<option value="22222222-2222-4222-8222-222222222222" selected="">Describe with changelog<\/option>/,
@@ -377,14 +370,12 @@ describe("TaskForm", () => {
 
   it("shows coding field errors next to their fields", () => {
     const errors = {
-      draftPullRequest: "An early draft PR needs the stories pushed as they are done.",
       prDescriptionTaskId: "builtin:ask-about-code is not a query task started by run.invoked.",
     };
     const html = render(
       custom("builtin:implement-story", { prDescriptionTaskId: "builtin:ask-about-code" }),
       errors,
     );
-    expect(fieldOf(html, errors.draftPullRequest)).toBe("task-draft-pull-request");
     expect(fieldOf(html, errors.prDescriptionTaskId)).toBe("task-pr-description-task");
     // The task it names stays visible though it doesn't qualify.
     expect(html).toMatch(/<option value="builtin:ask-about-code" selected="">/);

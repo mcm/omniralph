@@ -6,7 +6,7 @@ const TASK: TaskDefinition = {
   ...getBuiltinTask("builtin:review-pr")!,
   id: "33333333-3333-4333-8333-333333333333",
   name: "Security review",
-  agentId: "builtin:reviewer",
+  agentId: "builtin:review-pr",
   promptTemplate: "Review the change for vulnerabilities.",
   model: "claude-opus-5-5",
   tokenBudget: { tokens: 50_000 },
@@ -14,7 +14,7 @@ const TASK: TaskDefinition = {
 
 const NAMES = {
   agents: new Map([
-    ["builtin:reviewer", "Reviewer"],
+    ["builtin:review-pr", "Reviewer"],
     ["11111111-1111-4111-8111-111111111111", "Custom reviewer"],
   ]),
   tasks: new Map([["builtin:describe-pr", "Describe a PR"]]),

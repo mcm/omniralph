@@ -1,5 +1,6 @@
 import {
-  AgentDefinition,
+  PlaybookTools,
+  RunSpecAgent,
   SinkKindSchema,
   TaskDefinition,
   TaskRequirements,
@@ -13,6 +14,23 @@ import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
  * Settings › Agents and Settings › Tasks (`/api/ui/agents/**`, `/api/ui/tasks/**`). IDs are
  * `builtin:<name>` or UUIDs; paths carry them URI-encoded (`definitionPath`).
  */
+
+/**
+ * A custom agent as stored and served: a run spec agent with a playbook's
+ * tools (only installable MCP servers), without the fields agents had before
+ * playbooks (`taskTypes`, `skills`), which are dropped when read.
+ */
+export const CustomAgent = z.object({
+  ...RunSpecAgent.shape,
+  tools: PlaybookTools.default({
+    builtin: [],
+    harness: [],
+    linear: [],
+    mcpServers: [],
+  }),
+});
+export type CustomAgent = z.infer<typeof CustomAgent>;
+export type CustomAgentInput = z.input<typeof CustomAgent>;
 
 /** The API path of a definition (`builtin:` IDs have a colon). */
 export function definitionPath(kind: "agents" | "tasks", id: string, ...rest: string[]): string {
@@ -53,7 +71,6 @@ export const agentSummarySchema = z.object({
   name: z.string(),
   description: z.string(),
   builtin: z.boolean(),
-  taskTypes: z.array(TaskTypeSchema),
   model: z.string().nullable(),
 });
 export type AgentSummary = z.infer<typeof agentSummarySchema>;
@@ -73,7 +90,7 @@ export type AgentTask = z.infer<typeof agentTaskSchema>;
 
 /** `GET /api/ui/agents/{id}`: the agent and the tasks running on it. */
 export const agentDetailSchema = z.object({
-  agent: AgentDefinition,
+  agent: CustomAgent,
   builtin: z.boolean(),
   tasks: z.array(agentTaskSchema),
 });
@@ -141,7 +158,6 @@ export const taskFormOptionsSchema = z.object({
     z.object({
       id: z.string(),
       name: z.string(),
-      taskTypes: z.array(TaskTypeSchema),
       builtin: z.boolean(),
     }),
   ),
