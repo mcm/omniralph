@@ -21,7 +21,7 @@ import { answerPermission } from "@/lib/ralph/permissions";
 import { runHref } from "@/lib/runs/links";
 import { attachmentName, sessionAttachmentNote, type ThreadAttachment } from "../attachments";
 import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
-import { chatTaskOf, findRalphRunId } from "./read-tools";
+import { chatPlaybookOf, findRalphRunId } from "./read-tools";
 import {
   defineChatTool,
   LINK_REQUIRED_RESULT,
@@ -65,7 +65,7 @@ export const startWork = defineChatTool({
   }),
   async execute(input, context: ChatToolContext) {
     const { chatThread, appUrl } = context;
-    const task = await chatTaskOf(context, "startWork");
+    const task = await chatPlaybookOf(context, "startWork");
     if ("error" in task) return task;
     const outcome = await startChatRequest(await context.ralph(), {
       chatThreadId: chatThread.id,

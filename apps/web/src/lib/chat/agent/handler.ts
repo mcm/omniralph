@@ -16,7 +16,7 @@ import type { RalphDeps } from "@/lib/ralph/run";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
 import { adapterFetcher, threadAttachments } from "../attachments";
-import type { TaskLookup } from "../tasks";
+import type { PlaybookLookup } from "../playbooks";
 import {
   CHAT_AGENT_HISTORY_LIMIT,
   CHAT_AGENT_MAX_STEPS,
@@ -53,8 +53,8 @@ export interface ChatAgentDeps {
   now?: () => Date;
   /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
   ralph?: (organizationId: string) => Promise<RalphDeps>;
-  /** Looks up the tasks chat runs (default: the organization's, `organizationPlaybooks`). */
-  getTask?: TaskLookup;
+  /** Looks up the playbooks chat runs (default: the organization's, `organizationPlaybooks`). */
+  getPlaybook?: PlaybookLookup;
   /** Limits on the attachments a turn reads (default: `CHAT_ATTACHMENT_LIMITS`). */
   attachmentLimits?: ChatAttachmentLimits;
   rateLimits?: {
@@ -192,7 +192,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             turnMessages,
             ralph: () => ralphDeps(organizationId),
             attachments,
-            getTask: deps.getTask,
+            getPlaybook: deps.getPlaybook,
             handedOff: () => {
               handedOff = true;
             },

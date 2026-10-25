@@ -2,14 +2,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   acceptInvitation,
   addMember,
-  deleteChatChannelTaskSetting,
+  deleteChatChannelPlaybookSetting,
   deleteChatConnection,
   removeMember,
   removeOrganizationDomain,
   requestHarnessUpdate,
   revokeInvitation,
   setHarnessDesiredVersion,
-  upsertChatChannelTaskSetting,
+  upsertChatChannelPlaybookSetting,
   addOrganizationDomain,
   captureChanges,
   claimJob,
@@ -712,7 +712,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([connectionEvent(integrationId)]);
     });
 
-    it("chat connections and their channel task settings publish the connection", async () => {
+    it("chat connections and their channel playbook settings publish the connection", async () => {
       const connectionEvent = (id: string) => ({
         channel: orgChannel,
         v: 1,
@@ -737,18 +737,18 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([connectionEvent(chatId)]);
       expect(
         await published(() =>
-          upsertChatChannelTaskSetting(db, {
+          upsertChatChannelPlaybookSetting(db, {
             organizationId: orgId,
             connectionId: chatId,
             channelId: "slack:C1",
-            askAboutCodeTaskId: null,
-            startWorkTaskId: null,
+            askPlaybookId: null,
+            startWorkPlaybookId: null,
             updatedBy: userId,
           }),
         ),
       ).toEqual([connectionEvent(chatId)]);
       expect(
-        await published(() => deleteChatChannelTaskSetting(db, orgId, chatId, "slack:C1")),
+        await published(() => deleteChatChannelPlaybookSetting(db, orgId, chatId, "slack:C1")),
       ).toEqual([connectionEvent(chatId)]);
       expect(await published(() => deleteChatConnection(db, orgId, chatId))).toEqual([
         connectionEvent(chatId),

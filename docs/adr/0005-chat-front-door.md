@@ -177,6 +177,14 @@ Setup and usage: [chat.md › Ralph from chat](../chat.md#ralph-from-chat).
   that accepts the `chat.request` trigger, on save and again when a tool starts a run (a stored
   choice that can't run returns `task_unavailable`). Changing a setting changes the next run with
   no deploy.
+
+  _Since TOOL-617 these are **chat playbooks**: `chat.tasks` became `chat.playbooks`
+  `{ ask, startWork }` and the override columns `ask_playbook_id` / `start_work_playbook_id`
+  (migration `0099_chat_playbooks`). `chatPlaybooksFor` (`apps/web/src/lib/chat/playbooks.ts`)
+  keeps the same precedence; `validateChatPlaybookChoice` checks the playbook's role (`chat-ask`,
+  resp. `request`), and a stored choice that can't run returns `playbook_unavailable`. The
+  Settings › Integrations cards are gone: the choice is an advanced setting of the 2.0 Settings
+  screen, set through the API until then ([chat.md › Chat playbooks](../chat.md#chat-playbooks))._
 - **Thread-to-run mapping.** `chat_thread_runs` maps a thread to its runs: `query` rows point at a
   job, `coding` rows at a `ralph_runs` row, each run mapped once (`mapThreadRun`,
   `latestThreadRun`, `threadOfRun` in `packages/db/src/chat.ts`, all scoped to the organization).

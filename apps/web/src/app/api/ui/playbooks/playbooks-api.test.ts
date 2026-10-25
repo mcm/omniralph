@@ -201,7 +201,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
         model: null,
         usedBy: {
           repositories: [{ id: repoId, fullPath: "acme/api", roles: ["review"] }],
-          chatTasks: [],
+          chatPlaybooks: [],
           chatChannels: [],
           playbooks: [],
         },
@@ -211,7 +211,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           id: "builtin:ask-about-code",
           role: "chat-ask",
           model: "claude-sonnet-5-5",
-          usedBy: expect.objectContaining({ chatTasks: ["askAboutCode"] }),
+          usedBy: expect.objectContaining({ chatPlaybooks: ["ask"] }),
         }),
       );
       expect(rows).toContainEqual(

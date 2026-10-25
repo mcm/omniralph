@@ -112,8 +112,9 @@ const history = await import("./route");
 const gitlabConnections = await import("@/app/api/ui/gitlab-connections/route");
 const selection = await import("@/app/api/ui/scm-connections/[id]/repositories/route");
 const repositoryWebhook = await import("@/app/api/ui/repositories/[id]/webhook/route");
-const chatTasks = await import("@/app/api/ui/integrations/chat-tasks/route");
-const channelTasks = await import("@/app/api/ui/integrations/chat-connections/[id]/channels/route");
+const chatPlaybooks = await import("@/app/api/ui/integrations/chat-tasks/route");
+const channelPlaybooks =
+  await import("@/app/api/ui/integrations/chat-connections/[id]/channels/route");
 const linear = await import("@/app/api/ui/integrations/linear/route");
 const slack = await import("@/app/api/ui/integrations/slack/[id]/route");
 const discord = await import("@/app/api/ui/integrations/discord/[id]/route");
@@ -293,7 +294,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       await recordsNothing(connection.id, select([2]));
     });
 
-    it("Slack and Discord settings: the organization's chat tasks and a channel's", async () => {
+    it("Slack and Discord settings: the organization's chat playbooks and a channel's", async () => {
       // The organization's own "ask about code" playbook.
       const { id: _id, name, role, ...definition } = getBuiltinPlaybook("builtin:ask-about-code")!;
       const [custom] = await db
@@ -308,15 +309,15 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
         .returning();
       const save = () =>
         callAction(
-          chatTasks.PUT,
+          chatPlaybooks.PUT,
           "PUT",
           {},
-          { askAboutCode: custom!.id, startWork: "builtin:handle-request" },
+          { ask: custom!.id, startWork: "builtin:handle-request" },
         );
       expect(await recordsOne(null, save)).toEqual([
         {
-          field: "askAboutCode",
-          label: "Ask about code task",
+          field: "ask",
+          label: "Ask about code playbook",
           before: name,
           after: `Custom ${name}`,
         },
@@ -332,18 +333,18 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
         installedByUserId: admin.id,
       });
       if (connection === "other_organization") throw new Error("setup");
-      const field = "channel:slack:C0123ABCD|Tasks of channel C0123ABCD";
+      const field = "channel:slack:C0123ABCD|Playbooks of channel C0123ABCD";
       const channel = () =>
         callAction(
-          channelTasks.PUT,
+          channelPlaybooks.PUT,
           "PUT",
           { id: connection.id },
-          { channel: "C0123ABCD", askAboutCode: custom!.id, startWork: null },
+          { channel: "C0123ABCD", ask: custom!.id, startWork: null },
         );
       expect(await recordsOne(connection.id, channel)).toEqual([
         {
           field,
-          label: "Tasks of channel C0123ABCD",
+          label: "Playbooks of channel C0123ABCD",
           before: null,
           after: `Ask about code: Custom ${name}`,
         },
@@ -352,7 +353,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       expect(
         await recordsOne(connection.id, () =>
           callAction(
-            channelTasks.DELETE,
+            channelPlaybooks.DELETE,
             "DELETE",
             { id: connection.id },
             { channelId: "slack:C0123ABCD" },
@@ -361,7 +362,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       ).toEqual([
         {
           field,
-          label: "Tasks of channel C0123ABCD",
+          label: "Playbooks of channel C0123ABCD",
           before: `Ask about code: Custom ${name}`,
           after: null,
         },
@@ -615,7 +616,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       expect(await runsSince("connection", integrationId)).toBe(4);
       // Slack: the ask and the chat request.
       expect(await runsSince("connection", chatConnectionId)).toBe(2);
-      // The organization's chat tasks: every run chat started.
+      // The organization's chat playbooks: every run chat started.
       expect(await runsSince("connection")).toBe(2);
     });
 

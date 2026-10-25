@@ -19,7 +19,7 @@ import {
   repositories,
   saveChatConnection,
   setAllowedTaskTypeDefaults,
-  upsertChatChannelTaskSetting,
+  upsertChatChannelPlaybookSetting,
   upsertScmConnection,
   type ChatConnection,
   type ChatThread,
@@ -30,12 +30,7 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import {
-  getBuiltinPlaybook,
-  getBuiltinTask,
-  playbookRequirements,
-  type TaskDefinition,
-} from "@omniralph/tasks";
+import { getBuiltinPlaybook, playbookRequirements, type Playbook } from "@omniralph/tasks";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -617,26 +612,26 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));
   });
 
-  it("runs the channel's ask about code task and enqueues nothing when it can't run", async () => {
+  it("runs the channel's ask about code playbook and enqueues nothing when it can't run", async () => {
     const h = await harness();
-    await upsertChatChannelTaskSetting(db, {
+    await upsertChatChannelPlaybookSetting(db, {
       organizationId: orgId,
       connectionId,
       channelId: h.chatThread.channelId,
-      askAboutCodeTaskId: "builtin:handle-request",
-      startWorkTaskId: null,
+      askPlaybookId: "builtin:handle-request",
+      startWorkPlaybookId: null,
       updatedBy: null,
     });
 
     const result = await ask(h, { repository: "acme/api", question: "What is this?" });
 
-    expect(result).toMatchObject({ error: "task_unavailable" });
-    expect(String(result.message)).toContain("needs a query task");
+    expect(result).toMatchObject({ error: "playbook_unavailable" });
+    expect(String(result.message)).toContain("needs a chat-ask playbook");
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
     expect(await listThreadRuns(db, orgId, h.chatThread.id)).toEqual([]);
   });
 
-  it("runs the organization's own query task a channel picked, by its UUID", async () => {
+  it("runs the organization's own chat-ask playbook a channel picked, by its UUID", async () => {
     const h = await harness();
     const {
       id: _id,
@@ -651,12 +646,12 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       requirements: playbookRequirements(getBuiltinPlaybook("builtin:ask-about-code")!),
       createdBy: null,
     });
-    await upsertChatChannelTaskSetting(db, {
+    await upsertChatChannelPlaybookSetting(db, {
       organizationId: orgId,
       connectionId,
       channelId: h.chatThread.channelId,
-      askAboutCodeTaskId: stored.id,
-      startWorkTaskId: null,
+      askPlaybookId: stored.id,
+      startWorkPlaybookId: null,
       updatedBy: null,
     });
 
@@ -687,12 +682,12 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       requirements: playbookRequirements({ ...builtin, ...definition }),
       createdBy: null,
     });
-    await upsertChatChannelTaskSetting(db, {
+    await upsertChatChannelPlaybookSetting(db, {
       organizationId: orgId,
       connectionId,
       channelId: h.chatThread.channelId,
-      askAboutCodeTaskId: stored.id,
-      startWorkTaskId: null,
+      askPlaybookId: stored.id,
+      startWorkPlaybookId: null,
       updatedBy: null,
     });
     const tool = await createHostTool(db, orgId, { name: "opengrep" });
@@ -751,27 +746,28 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     type GenerateResult = Awaited<ReturnType<MockLanguageModelV2["doGenerate"]>>;
     const REPLY =
       "I'm looking into how webhooks are verified in acme/api; the answer will follow here.";
-    /** A custom query task the channel picked (looked up through the injected task lookup). */
-    const customTask: TaskDefinition = {
-      ...getBuiltinTask("builtin:ask-about-code")!,
-      id: "custom:ask-briefly",
+    /** A custom chat-ask playbook the channel picked (looked up through the injected lookup). */
+    const customPlaybook: Playbook = {
+      ...getBuiltinPlaybook("builtin:ask-about-code")!,
+      id: "00000000-0000-4000-8000-0000000000ab",
       name: "Ask briefly",
     };
-    const getTask = (id: string) => (id === customTask.id ? customTask : getBuiltinTask(id));
+    const getPlaybook = (id: string) =>
+      id === customPlaybook.id ? customPlaybook : (getBuiltinPlaybook(id) ?? null);
 
-    it("starts a run of the channel's override task and posts only the responder's reply", async () => {
+    it("starts a run of the channel's override playbook and posts only the responder's reply", async () => {
       const chatThread = (await ensureChatThread(db, {
         connectionId,
         externalThreadId: "discord:G1:CH2:TURN",
         channelId: "discord:G1:CH2",
         startedByExternalUserId: "D1",
       }))!;
-      await upsertChatChannelTaskSetting(db, {
+      await upsertChatChannelPlaybookSetting(db, {
         organizationId: orgId,
         connectionId,
         channelId: chatThread.channelId,
-        askAboutCodeTaskId: customTask.id,
-        startWorkTaskId: null,
+        askPlaybookId: customPlaybook.id,
+        startWorkPlaybookId: null,
         updatedBy: null,
       });
       const calls: CallOptions[] = [];
@@ -857,7 +853,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
         model,
         env: { APP_URL } as unknown as NodeJS.ProcessEnv,
         logger,
-        getTask,
+        getPlaybook,
         ralph: async () => ralph(orgId),
         rateLimits: {
           perOrganization: () => ({ key: `test:org:${randomUUID()}`, limit: 1, windowSeconds: 60 }),
@@ -869,7 +865,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
       const [job, ...more] = await chatAskJobs(chatThread.id);
       expect(more).toEqual([]);
-      expect(job).toMatchObject({ taskId: customTask.id, taskType: "query", status: "queued" });
+      expect(job).toMatchObject({ taskId: customPlaybook.id, taskType: "query", status: "queued" });
       expect(await listThreadRuns(db, orgId, chatThread.id)).toMatchObject([
         { kind: "query", jobId: job!.id },
       ]);
@@ -880,7 +876,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       expect(toolResult.value).toMatchObject({
         status: "started",
         runId: job!.id,
-        task: customTask.id,
+        task: customPlaybook.id,
       });
       // Exactly one message for the turn: the responder's reply.
       expect(posts).toEqual([REPLY]);

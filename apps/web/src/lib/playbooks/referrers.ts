@@ -1,9 +1,9 @@
 import {
-  getChatTaskDefaults,
+  getChatPlaybookDefaults,
   listChatChannelPlaybookBindings,
   listRepositoryPlaybookBindings,
   listStoredPlaybooks,
-  type ChatTasks,
+  type ChatPlaybooks,
   type Database,
 } from "@omniralph/db";
 import { DEFAULT_PR_DESCRIPTION_TASK_ID } from "@omniralph/tasks";
@@ -23,7 +23,7 @@ export interface ChatChannelPlaybookReference {
   connectionName: string;
   channelId: string;
   /** The channel's chat playbooks it is. */
-  roles: (keyof ChatTasks)[];
+  roles: (keyof ChatPlaybooks)[];
 }
 
 /** A story or request playbook naming the playbook as its PR description playbook. */
@@ -36,8 +36,8 @@ export interface CodingPlaybookReference {
 /** What runs a playbook: settings and other playbooks of the organization naming it. */
 export interface PlaybookReferrers {
   repositories: RepositoryPlaybookReference[];
-  /** The organization's chat playbooks (`chat.tasks`, or the built-in defaults) it is. */
-  chatTasks: (keyof ChatTasks)[];
+  /** The organization's chat playbooks (`chat.playbooks`, or the built-in defaults) it is. */
+  chatPlaybooks: (keyof ChatPlaybooks)[];
   /** Chat channel overrides (`chat_channel_task_settings`) running it. */
   chatChannels: ChatChannelPlaybookReference[];
   /** Story and request playbooks with it as their PR description playbook. */
@@ -48,14 +48,14 @@ export interface PlaybookReferrers {
 export function hasNoReferrers(referrers: PlaybookReferrers): boolean {
   return (
     referrers.repositories.length === 0 &&
-    referrers.chatTasks.length === 0 &&
+    referrers.chatPlaybooks.length === 0 &&
     referrers.chatChannels.length === 0 &&
     referrers.playbooks.length === 0
   );
 }
 
 function noReferrers(): PlaybookReferrers {
-  return { repositories: [], chatTasks: [], chatChannels: [], playbooks: [] };
+  return { repositories: [], chatPlaybooks: [], chatChannels: [], playbooks: [] };
 }
 
 /** The PR description playbook a stored playbook's raw definition names, if any. */
@@ -85,7 +85,7 @@ export async function loadPlaybookUsage(
   const [repositories, chatDefaults, chatChannels, codingPlaybooks, storedRows] = await Promise.all(
     [
       listRepositoryPlaybookBindings(db, organizationId),
-      getChatTaskDefaults(db, organizationId),
+      getChatPlaybookDefaults(db, organizationId),
       listChatChannelPlaybookBindings(db, organizationId),
       listPlaybooks(db, organizationId, { taskType: "coding" }),
       listStoredPlaybooks(db, organizationId),
@@ -113,13 +113,13 @@ export async function loadPlaybookUsage(
       });
     }
   }
-  for (const role of Object.keys(chatDefaults) as (keyof ChatTasks)[]) {
-    of(chatDefaults[role]).chatTasks.push(role);
+  for (const role of Object.keys(chatDefaults) as (keyof ChatPlaybooks)[]) {
+    of(chatDefaults[role]).chatPlaybooks.push(role);
   }
   for (const channel of chatChannels) {
-    const bound: [keyof ChatTasks, string | null][] = [
-      ["askAboutCode", channel.askAboutCodeTaskId],
-      ["startWork", channel.startWorkTaskId],
+    const bound: [keyof ChatPlaybooks, string | null][] = [
+      ["ask", channel.askPlaybookId],
+      ["startWork", channel.startWorkPlaybookId],
     ];
     for (const id of new Set(bound.flatMap(([, id]) => id ?? []))) {
       of(id).chatChannels.push({

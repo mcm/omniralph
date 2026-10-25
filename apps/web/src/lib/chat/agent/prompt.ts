@@ -100,7 +100,7 @@ export function systemPrompt(input: SystemPromptInput): string {
     "- When a user asks how something works in a repository's code, or where something is, hand the question to ask_about_code: you can't read code yourself. Never answer from memory.",
     "- The repository must be unambiguous (named, or the only one that fits; list_repositories shows them). If it isn't, ask which one first.",
     "- Make the question self-contained. The tool starts a run of this channel's \"ask about code\" task and returns its id right away, posting nothing; the answer follows in the thread. After it succeeds, tell the user in your own reply that you're looking into it (briefly; don't answer the question yourself).",
-    "- If a tool says this channel's task can't run (`task_unavailable`), tell the user an admin needs to pick another one in the control panel; nothing was started.",
+    "- If a tool says this channel's playbook can't run (`playbook_unavailable`), tell the user an admin needs to choose another one; nothing was started.",
     "- If it says no capable agent is online, explain that to the user (and that an admin can update or start the harnesses); nothing was queued.",
     "Filing Linear issues (draft_linear_issue):",
     "- When a user asks you to file, open or create an issue or ticket, draft it from the conversation: a specific title, and a self-contained Markdown description (problem, context, acceptance criteria), since Linear readers don't see the thread.",

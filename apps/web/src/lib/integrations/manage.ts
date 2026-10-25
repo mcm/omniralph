@@ -1,17 +1,17 @@
 import "server-only";
 import {
-  DEFAULT_CHAT_TASKS,
-  deleteChatChannelTaskSetting,
+  DEFAULT_CHAT_PLAYBOOKS,
+  deleteChatChannelPlaybookSetting,
   deleteChatConnection,
   deleteIntegration,
   getChatConnection,
-  getChatTaskDefaults,
+  getChatPlaybookDefaults,
   getIntegration,
   getUserById,
-  listChatChannelTaskSettings,
+  listChatChannelPlaybookSettings,
   listChatConnections,
-  setChatTaskDefaults,
-  upsertChatChannelTaskSetting,
+  setChatPlaybookDefaults,
+  upsertChatChannelPlaybookSetting,
   withSettingsChanges,
   type Database,
 } from "@omniralph/db";
@@ -21,18 +21,18 @@ import type { OrgUser } from "@/lib/auth/session";
 import { discordOAuthConfig, leaveDiscordGuild } from "@/lib/chat/discord-oauth";
 import { revokeSlackToken, slackOAuthConfig, type SlackCredentials } from "@/lib/chat/slack-oauth";
 import {
-  CHAT_TASK_FILTERS,
-  CHAT_TASK_ROLES,
+  CHAT_PLAYBOOK_FILTERS,
+  CHAT_PLAYBOOK_SLOTS,
   chatChannelId,
   platformChannelId,
-  validateChatTaskChoice,
-  type ChatTaskRole,
-} from "@/lib/chat/tasks";
-import { getPlaybookTask, listPlaybookChoices, organizationPlaybooks } from "@/lib/playbooks";
+  validateChatPlaybookChoice,
+  type ChatPlaybookSlot,
+} from "@/lib/chat/playbooks";
+import { getPlaybook, listPlaybookChoices } from "@/lib/playbooks";
 import { linearOAuthConfig, revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 import {
   settingsActor,
-  trackedChatTaskDefaults,
+  trackedChatPlaybookDefaults,
   trackedConnection,
 } from "@/lib/settings-history/sections";
 
@@ -53,7 +53,7 @@ function savingConnection<T>(
 
 /**
  * Settings › Integrations: the active organization's Linear workspace, Slack workspaces and
- * Discord servers, whether this server has each app's credentials, and the tasks chat runs.
+ * Discord servers, whether this server has each app's credentials, and the playbooks chat runs.
  * Database and environment only (it is polled): no call to Linear, Slack or Discord.
  */
 export async function loadIntegrations(
@@ -64,17 +64,17 @@ export async function loadIntegrations(
   const [
     integration,
     chatConnections,
-    chatTaskDefaults,
-    channelTasks,
-    askAboutCodeChoices,
+    chatPlaybookDefaults,
+    channelPlaybooks,
+    askChoices,
     startWorkChoices,
   ] = await Promise.all([
     getIntegration(db, organizationId, "linear"),
     listChatConnections(db, organizationId),
-    getChatTaskDefaults(db, organizationId),
-    listChatChannelTaskSettings(db, organizationId),
-    listPlaybookChoices(db, organizationId, CHAT_TASK_FILTERS.askAboutCode),
-    listPlaybookChoices(db, organizationId, CHAT_TASK_FILTERS.startWork),
+    getChatPlaybookDefaults(db, organizationId),
+    listChatChannelPlaybookSettings(db, organizationId),
+    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.ask),
+    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.startWork),
   ]);
   // The installer may have left the organization since, so look them up as a user.
   const installers = new Map(
@@ -118,21 +118,21 @@ export async function loadIntegrations(
         connectedAt: c.updatedAt.toISOString(),
       })),
     discordConfigured: discordOAuthConfig() !== null,
-    chatTasks: {
-      defaults: chatTaskDefaults,
-      builtinDefaults: DEFAULT_CHAT_TASKS,
-      choices: { askAboutCode: askAboutCodeChoices, startWork: startWorkChoices },
+    chatPlaybooks: {
+      defaults: chatPlaybookDefaults,
+      builtinDefaults: DEFAULT_CHAT_PLAYBOOKS,
+      choices: { ask: askChoices, startWork: startWorkChoices },
       connections: chatConnections.map((c) => ({
         id: c.id,
         name: c.name,
         platform: c.platform,
-        channels: channelTasks
+        channels: channelPlaybooks
           .filter((t) => t.connectionId === c.id)
           .map((t) => ({
             channelId: t.channelId,
             channel: platformChannelId(t.channelId),
-            askAboutCode: t.askAboutCodeTaskId,
-            startWork: t.startWorkTaskId,
+            ask: t.askPlaybookId,
+            startWork: t.startWorkPlaybookId,
           })),
       })),
     },
@@ -230,65 +230,68 @@ export async function disconnectDiscord(
   return { ok: true };
 }
 
-/** A chat task choice per role; null (for a channel) keeps the organization's. */
-type ChatTaskInput<T> = Record<ChatTaskRole, T>;
+/** A chat playbook choice per slot; null (for a channel) keeps the organization's. */
+type ChatPlaybookInput<T> = Record<ChatPlaybookSlot, T>;
 
 const asObject = (input: unknown): Record<string, unknown> =>
   typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
 
 /**
- * Field errors of the chat task choices that don't pass `validateChatTaskChoice`
- * against the organization's tasks (built-in or its own).
+ * Field errors of the chat playbook choices that don't pass
+ * `validateChatPlaybookChoice` against the organization's playbooks (built-in
+ * or its own): each must be a playbook of its slot's role.
  */
-async function chatTaskErrors(
+async function chatPlaybookErrors(
   db: Database,
   organizationId: string,
   input: unknown,
   optional: boolean,
 ): Promise<Record<string, string>> {
-  const definitions = organizationPlaybooks(db, organizationId);
   const choices = asObject(input);
   const errors: Record<string, string> = {};
-  for (const role of CHAT_TASK_ROLES) {
-    const taskId = choices[role];
-    if (taskId === null && optional) continue;
-    if (typeof taskId !== "string") {
-      errors[role] = "Choose a task.";
+  for (const slot of CHAT_PLAYBOOK_SLOTS) {
+    const id = choices[slot];
+    if (id === null && optional) continue;
+    if (typeof id !== "string") {
+      errors[slot] = "Choose a playbook.";
       continue;
     }
-    const task = await getPlaybookTask(definitions, taskId);
-    const result = validateChatTaskChoice(role, taskId, () => task);
-    if (!result.ok) errors[role] = result.error;
+    const resolved = await getPlaybook(db, organizationId, id);
+    const result = validateChatPlaybookChoice(slot, id, resolved?.playbook ?? null);
+    if (!result.ok) errors[slot] = result.error;
   }
   return errors;
 }
 
-function invalidChatTasks(fieldErrors: Record<string, string>): ActionResult | null {
+function invalidChatPlaybooks(fieldErrors: Record<string, string>): ActionResult | null {
   const first = Object.values(fieldErrors)[0];
   return first === undefined ? null : { ok: false, error: first, fieldErrors };
 }
 
 /**
- * Sets the tasks chat's "ask about code" and "start work" run for the active organization
- * (unless a channel overrides them); each must pass `validateChatTaskChoice` among its tasks.
+ * Sets the playbooks chat's "ask about code" (`ask`) and "start work" (`startWork`) run for the
+ * active organization (unless a channel overrides them); each must pass
+ * `validateChatPlaybookChoice` among its playbooks.
  */
-export async function saveChatTaskDefaults(
+export async function saveChatPlaybookDefaults(
   db: Database,
   admin: OrgUser,
   input: unknown,
 ): Promise<ActionResult> {
-  const invalid = invalidChatTasks(await chatTaskErrors(db, admin.organization.id, input, false));
+  const invalid = invalidChatPlaybooks(
+    await chatPlaybookErrors(db, admin.organization.id, input, false),
+  );
   if (invalid) return invalid;
-  const tasks = input as ChatTaskInput<string>;
+  const playbooks = input as ChatPlaybookInput<string>;
   await withSettingsChanges(
     db,
     settingsActor(admin),
-    trackedChatTaskDefaults(admin.organization.id),
+    trackedChatPlaybookDefaults(admin.organization.id),
     (tx) =>
-      setChatTaskDefaults(
+      setChatPlaybookDefaults(
         tx,
         admin.organization.id,
-        { askAboutCode: tasks.askAboutCode, startWork: tasks.startWork },
+        { ask: playbooks.ask, startWork: playbooks.startWork },
         admin.id,
       ),
   );
@@ -296,11 +299,11 @@ export async function saveChatTaskDefaults(
 }
 
 /**
- * Sets the tasks a channel of one of the active organization's chat connections runs
+ * Sets the playbooks a channel of one of the active organization's chat connections runs
  * (`channel`: the ID the platform shows), overriding the organization's; null keeps its
- * choice. Each chosen task must pass `validateChatTaskChoice` among its tasks.
+ * choice. Each chosen playbook must pass `validateChatPlaybookChoice` among its playbooks.
  */
-export async function saveChatChannelTasks(
+export async function saveChatChannelPlaybooks(
   db: Database,
   admin: OrgUser,
   connectionId: string,
@@ -309,7 +312,7 @@ export async function saveChatChannelTasks(
   const organizationId = admin.organization.id;
   const connection = await getChatConnection(db, organizationId, connectionId);
   if (!connection) return { ok: false, error: "That chat connection isn't connected." };
-  const { channel, ...tasks } = asObject(input);
+  const { channel, ...playbooks } = asObject(input);
   const channelId = typeof channel === "string" ? chatChannelId(connection, channel) : null;
   if (!channelId) {
     const error =
@@ -318,19 +321,21 @@ export async function saveChatChannelTasks(
         : "Enter a Discord channel ID, like 123456789012345678 (Copy Channel ID).";
     return { ok: false, error, fieldErrors: { channel: error } };
   }
-  const invalid = invalidChatTasks(await chatTaskErrors(db, organizationId, tasks, true));
+  const invalid = invalidChatPlaybooks(
+    await chatPlaybookErrors(db, organizationId, playbooks, true),
+  );
   if (invalid) return invalid;
-  const chosen = tasks as ChatTaskInput<string | null>;
-  if (chosen.askAboutCode === null && chosen.startWork === null) {
-    return { ok: false, error: "Choose a task for the channel to run." };
+  const chosen = playbooks as ChatPlaybookInput<string | null>;
+  if (chosen.ask === null && chosen.startWork === null) {
+    return { ok: false, error: "Choose a playbook for the channel to run." };
   }
   const saved = await savingConnection(db, admin, connection.id, (tx) =>
-    upsertChatChannelTaskSetting(tx, {
+    upsertChatChannelPlaybookSetting(tx, {
       organizationId,
       connectionId: connection.id,
       channelId,
-      askAboutCodeTaskId: chosen.askAboutCode,
-      startWorkTaskId: chosen.startWork,
+      askPlaybookId: chosen.ask,
+      startWorkPlaybookId: chosen.startWork,
       updatedBy: admin.id,
     }),
   );
@@ -338,8 +343,11 @@ export async function saveChatChannelTasks(
   return { ok: true };
 }
 
-/** Removes a channel's task overrides (`channelId`: the Chat SDK channel ID); it runs the organization's again. */
-export async function removeChatChannelTasks(
+/**
+ * Removes a channel's playbook overrides (`channelId`: the Chat SDK channel ID); it runs the
+ * organization's again.
+ */
+export async function removeChatChannelPlaybooks(
   db: Database,
   admin: OrgUser,
   connectionId: string,
@@ -347,8 +355,8 @@ export async function removeChatChannelTasks(
 ): Promise<ActionResult> {
   // A connection of another organization reads as missing: nothing is recorded for it.
   const removed = await savingConnection(db, admin, connectionId, (tx) =>
-    deleteChatChannelTaskSetting(tx, admin.organization.id, connectionId, channelId),
+    deleteChatChannelPlaybookSetting(tx, admin.organization.id, connectionId, channelId),
   );
-  if (!removed) return { ok: false, error: "That channel has no task overrides." };
+  if (!removed) return { ok: false, error: "That channel has no playbook overrides." };
   return { ok: true };
 }

@@ -24,9 +24,9 @@ import {
   unifiedRunStatus,
 } from "@omniralph/db";
 import { MAX_CHAT_ASK_QUESTION_LENGTH, QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
-import type { TaskDefinition } from "@omniralph/tasks";
+import { playbookRunSpec, type TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { getPlaybookTask, organizationPlaybooks } from "@/lib/playbooks";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
@@ -44,11 +44,11 @@ import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
 import { enqueueChatAsk, type ChatAskAttachment } from "../ask";
 import { attachmentName } from "../attachments";
 import {
-  CHAT_TASK_LABELS,
-  chatTasksFor,
-  validateChatTaskChoice,
-  type ChatTaskRole,
-} from "../tasks";
+  CHAT_PLAYBOOK_LABELS,
+  chatPlaybooksFor,
+  validateChatPlaybookChoice,
+  type ChatPlaybookSlot,
+} from "../playbooks";
 import { defineChatTool, type ChatToolContext, type ChatToolRegistry } from "./tools";
 
 /**
@@ -87,25 +87,27 @@ export const UNKNOWN_REPOSITORY = {
 } as const;
 
 /**
- * The task chat runs for `role` in this thread's channel (`chatTasksFor`),
- * checked again since a stored choice may no longer be valid; an error
- * result when it isn't.
+ * The playbook chat runs for `slot` in this thread's channel
+ * (`chatPlaybooksFor`) as its run spec task, checked again since a stored
+ * choice may no longer be valid; an error result when it isn't.
  */
-export async function chatTaskOf(
+export async function chatPlaybookOf(
   context: ChatToolContext,
-  role: ChatTaskRole,
-): Promise<{ task: TaskDefinition } | { error: "task_unavailable"; message: string }> {
-  const tasks = await chatTasksFor(context.db, context.connection, context.chatThread.channelId);
-  const getTask =
-    context.getTask ??
-    ((id: string) =>
-      getPlaybookTask(organizationPlaybooks(context.db, context.organizationId), id));
-  const task = await getTask(tasks[role]);
-  const choice = validateChatTaskChoice(role, tasks[role], () => task);
-  if (choice.ok) return { task: choice.task };
+  slot: ChatPlaybookSlot,
+): Promise<{ task: TaskDefinition } | { error: "playbook_unavailable"; message: string }> {
+  const playbooks = await chatPlaybooksFor(
+    context.db,
+    context.connection,
+    context.chatThread.channelId,
+  );
+  const getPlaybook =
+    context.getPlaybook ?? organizationPlaybooks(context.db, context.organizationId).getPlaybook;
+  const id = playbooks[slot];
+  const choice = validateChatPlaybookChoice(slot, id, await getPlaybook(id));
+  if (choice.ok) return { task: playbookRunSpec(choice.playbook).task };
   return {
-    error: "task_unavailable",
-    message: `This channel's "${CHAT_TASK_LABELS[role]}" task can't run: ${choice.error} Nothing was started. An admin can pick another one under Settings › Integrations › Chat tasks on ${context.appUrl}/settings/integrations.`,
+    error: "playbook_unavailable",
+    message: `This channel's "${CHAT_PLAYBOOK_LABELS[slot]}" playbook can't run: ${choice.error} Nothing was started. An admin can choose another one for the organization or this channel.`,
   };
 }
 
@@ -728,7 +730,7 @@ export const askAboutCodeTool = defineChatTool({
     if ("error" in attachments) return attachments;
     const repository = await findRepository(db, organizationId, input.repository);
     if (!repository) return UNKNOWN_REPOSITORY;
-    const task = await chatTaskOf(context, "askAboutCode");
+    const task = await chatPlaybookOf(context, "ask");
     if ("error" in task) return task;
     const { dispatcher, adapterFor } = await context.ralph();
     const outcome = await enqueueChatAsk(

@@ -6,12 +6,12 @@ import {
   getAllowedTaskTypeDefaults,
   getAppSetting,
   getChatConnection,
-  getChatTaskDefaults,
+  getChatPlaybookDefaults,
   getDefaultMaxConcurrency,
   getIntegrationById,
   getRepository,
   getScmConnection,
-  listChatChannelTaskSettings,
+  listChatChannelPlaybookSettings,
   listConnectionRepositories,
   listMembers,
   listOrganizationDomains,
@@ -33,7 +33,7 @@ import {
 import { REVIEW_DEPTHS } from "@omniralph/shared";
 import type { TaskType } from "@omniralph/tasks";
 import type { OrgUser } from "@/lib/auth/session";
-import { platformChannelId } from "@/lib/chat/tasks";
+import { platformChannelId } from "@/lib/chat/playbooks";
 import { listPlaybooks } from "@/lib/playbooks";
 import type { SettingsSection } from "@/lib/live/events";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
@@ -319,7 +319,7 @@ async function readChatConnection(
   const connection = await getChatConnection(db, organizationId, connectionId);
   if (!connection) return null;
   const [channels, task] = await Promise.all([
-    listChatChannelTaskSettings(db, organizationId, connectionId),
+    listChatChannelPlaybookSettings(db, organizationId, connectionId),
     taskNames(db, organizationId),
   ]);
   return {
@@ -328,10 +328,10 @@ async function readChatConnection(
     credentials: await storedCredentialsDigest(db, connectionId),
     ...Object.fromEntries(
       channels.map((c) => [
-        `channel:${c.channelId}|Tasks of channel ${platformChannelId(c.channelId)}`,
+        `channel:${c.channelId}|Playbooks of channel ${platformChannelId(c.channelId)}`,
         [
-          c.askAboutCodeTaskId && `Ask about code: ${task(c.askAboutCodeTaskId)}`,
-          c.startWorkTaskId && `Start work: ${task(c.startWorkTaskId)}`,
+          c.askPlaybookId && `Ask about code: ${task(c.askPlaybookId)}`,
+          c.startWorkPlaybookId && `Start work: ${task(c.startWorkPlaybookId)}`,
         ]
           .filter(Boolean)
           .join("; "),
@@ -364,21 +364,21 @@ export function trackedConnection(organizationId: string, connectionId: string):
   };
 }
 
-/** The tasks chat runs for the whole organization (no single connection: subject none). */
-export function trackedChatTaskDefaults(organizationId: string): TrackedSettings {
+/** The playbooks chat runs for the whole organization (no single connection: subject none). */
+export function trackedChatPlaybookDefaults(organizationId: string): TrackedSettings {
   return {
     organizationId,
     section: "connection",
     fields: {
-      askAboutCode: { label: "Ask about code task" },
-      startWork: { label: "Start work task" },
+      ask: { label: "Ask about code playbook" },
+      startWork: { label: "Start work playbook" },
     },
     read: async (db) => {
-      const [tasks, task] = await Promise.all([
-        getChatTaskDefaults(db, organizationId),
+      const [playbooks, name] = await Promise.all([
+        getChatPlaybookDefaults(db, organizationId),
         taskNames(db, organizationId),
       ]);
-      return { askAboutCode: task(tasks.askAboutCode), startWork: task(tasks.startWork) };
+      return { ask: name(playbooks.ask), startWork: name(playbooks.startWork) };
     },
   };
 }
@@ -471,7 +471,7 @@ export function runsSinceScope(section: SettingsSection, subjectId: string | nul
     case "routing_rules":
       return { kinds: ["epic", "request", "triage"] };
     case "connection":
-      // The organization's chat task choices: the runs chat starts.
+      // The organization's chat playbook choices: the runs chat starts.
       return subjectId ? { connectionId: subjectId } : { origins: ["chat"] };
     case "organization":
     case "agent_defaults":

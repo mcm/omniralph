@@ -54,14 +54,11 @@ function settings(overrides: Partial<IntegrationsSettings> = {}): IntegrationsSe
     slackConfigured: true,
     discord: [],
     discordConfigured: true,
-    chatTasks: {
-      defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
-      builtinDefaults: {
-        askAboutCode: "builtin:ask-about-code",
-        startWork: "builtin:handle-request",
-      },
+    chatPlaybooks: {
+      defaults: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+      builtinDefaults: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
       choices: {
-        askAboutCode: [
+        ask: [
           { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
           { id: "custom-query", name: "Security Q and A", builtin: false },
         ],
@@ -96,12 +93,6 @@ function card(title: string): HTMLElement {
 /** A Slack workspace's name in the Slack card. */
 const slackNamed = (name: string) =>
   within(card("Slack")).queryByText(name, { selector: "strong" });
-
-/** The organization's "Ask about code" task picker. */
-const picker = () =>
-  screen.getByLabelText(/^Ask about code/, {
-    selector: "#chat-task-askAboutCode",
-  }) as HTMLSelectElement;
 
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -210,162 +201,5 @@ describe("IntegrationsView", () => {
     expect(toasts.toast).toHaveBeenCalledWith("Disconnected Acme, but Linear didn't confirm.", {
       variant: "warning",
     });
-  });
-
-  it("re-seeds the chat tasks from fresh data unless they're being edited", async () => {
-    let askAboutCode = "builtin:ask-about-code";
-    mockFetch({
-      [`GET ${PATH}`]: () => {
-        const base = settings();
-        return jsonResponse({
-          ...base,
-          chatTasks: { ...base.chatTasks, defaults: { ...base.chatTasks.defaults, askAboutCode } },
-        });
-      },
-    });
-    const client = renderView();
-    await waitFor(() => expect(picker().value).toBe("builtin:ask-about-code"));
-
-    // Changed elsewhere: the untouched card follows.
-    askAboutCode = "custom-query";
-    await client.invalidateQueries();
-    await waitFor(() => expect(picker().value).toBe("custom-query"));
-
-    // Being edited: a refetch leaves the draft alone.
-    await userEvent.selectOptions(picker(), "builtin:ask-about-code");
-    askAboutCode = "builtin:gone";
-    await client.invalidateQueries();
-    expect(picker().value).toBe("builtin:ask-about-code");
-  });
-
-  it("saves the chat tasks after confirming, then shows them saved", async () => {
-    let askAboutCode = "builtin:ask-about-code";
-    const seen = mockFetch({
-      [`GET ${PATH}`]: () => {
-        const base = settings();
-        return jsonResponse({
-          ...base,
-          chatTasks: { ...base.chatTasks, defaults: { ...base.chatTasks.defaults, askAboutCode } },
-        });
-      },
-      [`PUT ${PATH}/chat-tasks`]: (request) => {
-        askAboutCode = (request.body as { askAboutCode: string }).askAboutCode;
-        return jsonResponse({ ok: true });
-      },
-    });
-    renderView();
-    await waitFor(() => expect(picker().value).toBe("builtin:ask-about-code"));
-    await userEvent.selectOptions(picker(), "custom-query");
-    await userEvent.click(within(card("Chat tasks")).getByRole("button", { name: "Save" }));
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Save 1 change" }),
-    );
-    await waitFor(() => expect(within(card("Chat tasks")).getByText("Saved")).toBeTruthy());
-    expect(seen.find((r) => r.method === "PUT")!.body).toEqual({
-      askAboutCode: "custom-query",
-      startWork: "builtin:handle-request",
-    });
-    expect(picker().value).toBe("custom-query");
-    expect(toasts.toast).toHaveBeenCalledWith("Saved the chat tasks");
-  });
-
-  it("adds a channel override and lists it, without a reload", async () => {
-    let channels: IntegrationsSettings["chatTasks"]["connections"][number]["channels"] = [];
-    const seen = mockFetch({
-      [`GET ${PATH}`]: () => {
-        const base = settings();
-        return jsonResponse({
-          ...base,
-          chatTasks: {
-            ...base.chatTasks,
-            connections: [{ ...base.chatTasks.connections[0]!, channels }],
-          },
-        });
-      },
-      [`PUT ${PATH}/chat-connections/${SLACK_ID}/channels`]: () => {
-        channels = [
-          {
-            channelId: "slack:C0OPS",
-            channel: "C0OPS",
-            askAboutCode: "custom-query",
-            startWork: null,
-          },
-        ];
-        return jsonResponse({ ok: true });
-      },
-    });
-    renderView();
-    await userEvent.type(await screen.findByLabelText("Slack channel ID"), "C0OPS");
-    await userEvent.selectOptions(
-      screen.getByLabelText("Ask about code", {
-        selector: `#chat-channel-${SLACK_ID}-askAboutCode`,
-      }),
-      "custom-query",
-    );
-    await userEvent.click(screen.getByRole("button", { name: /Add channel/ }));
-    expect(await screen.findByRole("button", { name: "Remove channel C0OPS" })).toBeTruthy();
-    expect(seen.find((r) => r.method === "PUT")!.body).toEqual({
-      channel: "C0OPS",
-      askAboutCode: "custom-query",
-      startWork: null,
-    });
-    expect((screen.getByLabelText("Slack channel ID") as HTMLInputElement).value).toBe("");
-    expect(toasts.toast).toHaveBeenCalledWith("Channel C0OPS runs its own tasks");
-  });
-
-  it("removes a channel override", async () => {
-    let channels = [
-      { channelId: "slack:C0OPS", channel: "C0OPS", askAboutCode: "custom-query", startWork: null },
-    ];
-    const seen = mockFetch({
-      [`GET ${PATH}`]: () => {
-        const base = settings();
-        return jsonResponse({
-          ...base,
-          chatTasks: {
-            ...base.chatTasks,
-            connections: [{ ...base.chatTasks.connections[0]!, channels }],
-          },
-        });
-      },
-      [`DELETE ${PATH}/chat-connections/${SLACK_ID}/channels`]: () => {
-        channels = [];
-        return jsonResponse({ ok: true });
-      },
-    });
-    renderView();
-    await userEvent.click(await screen.findByRole("button", { name: "Remove channel C0OPS" }));
-    expect(await screen.findByText("No channel runs different tasks.")).toBeTruthy();
-    expect(seen.find((r) => r.method === "DELETE")!.body).toEqual({ channelId: "slack:C0OPS" });
-  });
-
-  it("shows a failed channel save's error and keeps the form", async () => {
-    mockFetch({
-      [`GET ${PATH}`]: settings(),
-      [`PUT ${PATH}/chat-connections/${SLACK_ID}/channels`]: () =>
-        jsonResponse(
-          {
-            error: "Enter a Slack channel ID, like C0123ABCD (in the channel's details).",
-            fieldErrors: { channel: "x" },
-          },
-          400,
-        ),
-    });
-    renderView();
-    await userEvent.type(await screen.findByLabelText("Slack channel ID"), "#general");
-    await userEvent.selectOptions(
-      screen.getByLabelText("Ask about code", {
-        selector: `#chat-channel-${SLACK_ID}-askAboutCode`,
-      }),
-      "custom-query",
-    );
-    await userEvent.click(screen.getByRole("button", { name: /Add channel/ }));
-    await waitFor(() =>
-      expect(toasts.toast).toHaveBeenCalledWith(
-        "Enter a Slack channel ID, like C0123ABCD (in the channel's details).",
-        expect.objectContaining({ variant: "danger" }),
-      ),
-    );
-    expect((screen.getByLabelText("Slack channel ID") as HTMLInputElement).value).toBe("#general");
   });
 });

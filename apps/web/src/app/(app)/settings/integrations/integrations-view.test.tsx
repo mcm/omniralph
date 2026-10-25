@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import type { IntegrationsSettings } from "@/lib/api/integrations";
-import type { ChatTasksSettings } from "./chat-tasks-card";
+import type { ChatPlaybooksSettings } from "@/lib/api/integrations";
 import { type DiscordServer, IntegrationsContent, type SlackWorkspace } from "./integrations-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
@@ -23,11 +23,11 @@ const SERVER: DiscordServer = {
   connectedAt: "2026-10-03T00:00:00.000Z",
 };
 
-let chatTasks: ChatTasksSettings = {
-  defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
-  builtinDefaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+const chatPlaybooks: ChatPlaybooksSettings = {
+  defaults: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+  builtinDefaults: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
   choices: {
-    askAboutCode: [{ id: "builtin:ask-about-code", name: "Ask about code", builtin: true }],
+    ask: [{ id: "builtin:ask-about-code", name: "Ask about code", builtin: true }],
     startWork: [{ id: "builtin:handle-request", name: "Handle a request", builtin: true }],
   },
   connections: [],
@@ -46,7 +46,7 @@ function render(
     slackConfigured,
     discord,
     discordConfigured,
-    chatTasks,
+    chatPlaybooks,
   });
 }
 
@@ -62,11 +62,8 @@ function renderContent(settings: IntegrationsSettings): string {
 /** The markup of the Slack card (from its title to the Discord card). */
 const slackSection = (html: string) =>
   html.slice(html.indexOf(">Slack<"), html.indexOf(">Discord<"));
-/** The markup of the Discord card (from its title to the chat tasks card). */
-const discordSection = (html: string) =>
-  html.slice(html.indexOf(">Discord<"), html.indexOf(">Chat tasks<"));
-/** The markup of the chat tasks card (to the end of the page). */
-const chatTasksSection = (html: string) => html.slice(html.indexOf(">Chat tasks<"));
+/** The markup of the Discord card (from its title to the end of the page). */
+const discordSection = (html: string) => html.slice(html.indexOf(">Discord<"));
 
 describe("IntegrationsContent › Slack", () => {
   it("lists connected workspaces with their installer, a Disconnect button and Connect", () => {
@@ -102,7 +99,7 @@ describe("IntegrationsContent › connected but not configured", () => {
       slackConfigured: true,
       discord: [],
       discordConfigured: true,
-      chatTasks,
+      chatPlaybooks,
     });
     const linear = html.slice(0, html.indexOf(">Slack<"));
     expect(linear).toContain("Connected, but the Linear app isn&#x27;t configured");
@@ -135,106 +132,31 @@ describe("IntegrationsContent › Discord", () => {
   });
 });
 
-describe("IntegrationsContent › Chat tasks", () => {
-  it("shows the organization's tasks and each connection's channel overrides", () => {
-    chatTasks = {
-      ...chatTasks,
-      defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:gone" },
-      connections: [
-        {
-          id: "conn-1",
-          name: "Acme Slack",
-          platform: "slack",
-          channels: [
-            {
-              channelId: "slack:C0SECURITY",
-              channel: "C0SECURITY",
-              askAboutCode: null,
-              startWork: "builtin:handle-request",
-            },
-          ],
-        },
-        { id: "conn-2", name: "Acme Discord", platform: "discord", channels: [] },
-      ],
-    };
-    const html = chatTasksSection(render([], true));
-    expect(html).toContain("Ask about code");
-    expect(html).toContain("Handle a request");
-    // A chosen task that's no longer a choice stays listed.
-    expect(html).toContain("builtin:gone (unavailable)");
-    expect(html).toContain("C0SECURITY");
-    expect(html).toContain("Remove");
-    expect(html).toContain("Slack channel ID");
-    expect(html).toContain("Discord channel ID");
-    expect(html).toContain("No channel runs different tasks.");
-  });
-});
-
-describe("IntegrationsContent › Chat tasks › custom tasks", () => {
-  const QUERY = "11111111-1111-4111-8111-111111111111";
-  const CODING = "22222222-2222-4222-8222-222222222222";
-
-  /** The `<select>` with `id` and its options (up to its end). */
-  const select = (html: string, id: string) => {
-    const start = html.search(new RegExp(`<select[^>]*id="${id}"`));
-    expect(start).toBeGreaterThan(-1);
-    return html.slice(start, html.indexOf("</select>", start));
-  };
-
-  it("lists the organization's own tasks in every picker, selected where chosen", () => {
-    chatTasks = {
-      ...chatTasks,
-      defaults: { askAboutCode: QUERY, startWork: "builtin:handle-request" },
-      choices: {
-        askAboutCode: [
-          { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
-          { id: QUERY, name: "Security Q and A", builtin: false },
-        ],
-        startWork: [
-          { id: "builtin:handle-request", name: "Handle a request", builtin: true },
-          { id: CODING, name: "Hotfix", builtin: false },
+describe("IntegrationsContent › chat playbooks", () => {
+  it("has no Chat tasks or Channel tasks card (chat playbook choice is an advanced setting)", () => {
+    const html = renderContent({
+      linear: null,
+      linearConfigured: true,
+      slack: [WORKSPACE],
+      slackConfigured: true,
+      discord: [SERVER],
+      discordConfigured: true,
+      chatPlaybooks: {
+        ...chatPlaybooks,
+        connections: [
+          {
+            id: "conn-1",
+            name: "Acme Slack",
+            platform: "slack",
+            channels: [{ channelId: "slack:C0OPS", channel: "C0OPS", ask: null, startWork: "x" }],
+          },
         ],
       },
-      connections: [
-        {
-          id: "conn-1",
-          name: "Acme Slack",
-          platform: "slack",
-          channels: [
-            { channelId: "slack:C0OPS", channel: "C0OPS", askAboutCode: null, startWork: CODING },
-          ],
-        },
-      ],
-    };
-    const html = chatTasksSection(render([], true));
-    const pickers = [
-      "chat-task-askAboutCode",
-      "chat-task-startWork",
-      "chat-channel-conn-1-C0OPS-askAboutCode",
-      "chat-channel-conn-1-C0OPS-startWork",
-      "chat-channel-conn-1-askAboutCode",
-      "chat-channel-conn-1-startWork",
-    ];
-    for (const id of pickers) {
-      const options = select(html, id);
-      if (id.endsWith("askAboutCode")) {
-        expect(options).toContain("Ask about code (built-in)");
-        expect(options).toContain(`value="${QUERY}"`);
-        expect(options).toContain(">Security Q and A<");
-        expect(options).not.toContain(CODING);
-      } else {
-        expect(options).toContain("Handle a request (built-in)");
-        expect(options).toContain(`value="${CODING}"`);
-        expect(options).toContain(">Hotfix<");
-        expect(options).not.toContain(QUERY);
-      }
-      expect(options).not.toContain("(unavailable)");
-    }
-    expect(select(html, "chat-task-askAboutCode")).toMatch(
-      new RegExp(`<option value="${QUERY}" selected="">`),
-    );
-    expect(select(html, "chat-channel-conn-1-C0OPS-startWork")).toMatch(
-      new RegExp(`<option value="${CODING}" selected="">`),
-    );
+    });
+    expect(html).not.toContain("Chat tasks");
+    expect(html).not.toContain("Channel tasks");
+    expect(html).not.toContain("C0OPS");
+    expect(html).not.toContain("chat-task-");
+    expect(html).not.toContain("chat-channel-");
   });
 });

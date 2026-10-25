@@ -43,8 +43,8 @@ const REPOSITORY_ROLE_NAMES: Record<
   request: "request",
 };
 
-const CHAT_TASK_NAMES: Record<PlaybookReferrers["chatTasks"][number], string> = {
-  askAboutCode: "ask about code",
+const CHAT_PLAYBOOK_NAMES: Record<PlaybookReferrers["chatPlaybooks"][number], string> = {
+  ask: "ask about code",
   startWork: "start work",
 };
 
@@ -85,11 +85,11 @@ function referrerNames(referrers: PlaybookReferrers): string[] {
       (repo) =>
         `repo ${repo.fullPath} (${repo.roles.map((role) => REPOSITORY_ROLE_NAMES[role]).join(", ")})`,
     ),
-    ...referrers.chatTasks.map((role) => `the chat ${CHAT_TASK_NAMES[role]} playbook`),
+    ...referrers.chatPlaybooks.map((role) => `the chat ${CHAT_PLAYBOOK_NAMES[role]} playbook`),
     ...referrers.chatChannels.map(
       (channel) =>
         `chat channel ${channel.connectionName} › ${channel.channelId} (${channel.roles
-          .map((role) => CHAT_TASK_NAMES[role])
+          .map((role) => CHAT_PLAYBOOK_NAMES[role])
           .join(", ")})`,
     ),
     ...referrers.playbooks.map((playbook) => `playbook ${playbook.name} (PR description)`),

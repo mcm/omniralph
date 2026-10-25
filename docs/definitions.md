@@ -342,8 +342,8 @@ admin-only and part of the repo settings API; a save that leaves a binding out k
 | `correlationPlaybookId` of `PUT /api/ui/repositories/{id}/settings`                            | `correlation`              |
 | `storyPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                    | `story`                    |
 | `requestPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                  | `request`                  |
-| **Settings › Integrations** › **Chat tasks** › **Ask about code** ([chat.md](chat.md#chat-tasks)) | `chat-ask`                 |
-| **Settings › Integrations** › **Chat tasks** › **Start work**                                 | `request`                  |
+| `ask` of `PUT /api/ui/integrations/chat-tasks` or a channel override ([chat.md](chat.md#chat-playbooks)) | `chat-ask` |
+| `startWork` of `PUT /api/ui/integrations/chat-tasks` or a channel override                    | `request`                  |
 | A story or request playbook's `coding.prDescriptionPlaybookId`                                | `pr-description`           |
 
 A binding change publishes the repo's `repository.reviews` or `repository.coding` change event.

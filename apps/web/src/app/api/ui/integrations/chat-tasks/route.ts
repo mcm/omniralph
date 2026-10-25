@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
 import { getDb } from "@/lib/db";
-import { saveChatTaskDefaults } from "@/lib/integrations/manage";
+import { saveChatPlaybookDefaults } from "@/lib/integrations/manage";
 
 /**
- * Sets the organization's chat tasks (`{ askAboutCode, startWork }`). The body is checked in
- * `saveChatTaskDefaults`, so every invalid choice gets its own field error.
+ * Sets the organization's chat playbooks (`ChatPlaybooksInput`: `{ ask, startWork }`, a
+ * `chat-ask` and a `request` playbook). The body is checked in `saveChatPlaybookDefaults`, so
+ * every invalid choice gets its own field error.
  */
 export const PUT = apiHandler({ access: "admin", body: z.unknown() }, async ({ user, body }) =>
-  saveChatTaskDefaults(getDb(), user, body),
+  saveChatPlaybookDefaults(getDb(), user, body),
 );

@@ -11,8 +11,8 @@ reviews, jobs, agents and repositories through tools. See
 The control panel does all of it: it holds the Slack and Discord credentials, receives their
 events, keeps each thread's history in Postgres and calls the model. Agent hosts are only involved
 when the bot starts a run: [code questions](#code-questions) run the channel's "ask about code"
-query task and [work requests](#ralph-from-chat) its "start work" coding task
-([chat tasks](#chat-tasks)); the control panel never reads code itself. The bot stays in the
+playbook and [work requests](#ralph-from-chat) its "start work" playbook
+([chat playbooks](#chat-playbooks)); the control panel never reads code itself. The bot stays in the
 conversation while they run: their answers, questions and approval requests come back to it, and
 it posts them in the thread.
 
@@ -147,28 +147,38 @@ the bot leave the Discord server. Uninstalling the app in Slack, or
 removing the bot from the server in Discord, disconnects it too. Messages from workspaces and
 servers that aren't connected are ignored and never reach the model.
 
-### Chat tasks
+### Chat playbooks
 
-The **Chat tasks** card on the same page picks the [task definitions](adr/0008-agents-tasks-and-the-harness.md)
-the bot runs (admins only):
+Chat is a trigger: each message the bot acts on runs a [playbook](definitions.md). Unless an
+admin chooses others, it runs the built-ins:
 
-- **Ask about code**: the query task a [code question](#code-questions) runs. Default:
-  `builtin:ask-about-code`.
-- **Start work**: the coding task a [work request](#ralph-from-chat) runs. Default:
-  `builtin:handle-request`.
+- **Ask about code** (`ask`): the `chat-ask` playbook a [code question](#code-questions) runs.
+  Default: `builtin:ask-about-code`.
+- **Start work** (`startWork`): the `request` playbook a [work request](#ralph-from-chat) runs.
+  Default: `builtin:handle-request`.
 
-The pickers list the built-in playbooks and the organization's own (custom playbooks, see
-[definitions.md](definitions.md)) of the right type (query, resp. coding) that accept the
-`chat.request` trigger; **Save** stores the organization's choice. Below them, each connected workspace or server
-lists its **channel overrides**: enter a channel's ID (Slack: `C0123ABCD`, from the channel's
-details; Discord: the channel's numeric ID, with Developer Mode on), choose a task for either role
-(or **Organization's task** to keep the organization's) and **Add channel**. Change an override
-and **Save** it, or remove it. A channel runs its override where it has one and the
-organization's choice otherwise.
+An admin can choose other playbooks of the same role, built-in or the organization's own
+([custom playbooks](definitions.md)), for the whole organization or for one channel. Choosing them
+is an advanced setting: the 2.0 Settings screen shows it to users who turn on **Show advanced
+settings**, but the setting works the same whether or not anyone shows it. Until that screen
+ships, it is set through the API (admins only):
 
+| Request                                                      | Body                                                       | What it does                                                                                                                                                    |
+| ------------------------------------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/ui/integrations`                                   |                                                            | `chatPlaybooks`: the organization's choice (`defaults`), the built-in defaults, the playbooks each can run (`choices`) and each connection's channel overrides. |
+| `PUT /api/ui/integrations/chat-tasks`                        | `{ "ask": "<playbook ID>", "startWork": "<playbook ID>" }` | Sets the organization's choice (`chat.playbooks` in `app_settings`).                                                                                            |
+| `PUT /api/ui/integrations/chat-connections/{id}/channels`    | `{ "channel": "C0123ABCD", "ask": …, "startWork": … }`     | Sets a channel's overrides (`chat_channel_task_settings`). `null` keeps the organization's choice for that one; at least one must be set.                       |
+| `DELETE /api/ui/integrations/chat-connections/{id}/channels` | `{ "channelId": "slack:C0123ABCD" }`                       | Removes a channel's overrides: it runs the organization's choice again.                                                                                         |
+
+`channel` is the ID the platform shows (Slack: `C0123ABCD`, from the channel's details; Discord:
+the channel's numeric ID, with Developer Mode on). Each chosen playbook must have its slot's role
+(`chat-ask` for `ask`, `request` for `startWork`); anything else is refused with a field error, and
+nothing is saved. Every save publishes a live change event, so open pages update.
+
+A channel runs its override where it has one, else the organization's choice, else the built-in.
 Changes apply to the next question or request, with no deploy; runs already started keep their
-task. If a chosen task can no longer run (e.g. it was deleted), the bot says an admin needs to pick
-another one and starts nothing.
+playbook. If a chosen playbook can no longer run (e.g. it was deleted), the bot says an admin
+needs to choose another one and starts nothing.
 
 ## 6. Ask a question
 
@@ -196,7 +206,7 @@ bot says so once when a limit is reached.
 ## Ralph from chat
 
 Linked members can ask the bot to change code: it starts a ralph run of the channel's **Start
-work** [chat task](#chat-tasks) in a repository, and stays the thread's voice while it works. The
+work** [chat playbook](#chat-playbooks) in a repository, and stays the thread's voice while it works. The
 run is a request-mode run, like an [@mention in Linear](linear.md#mentions-request-mode), but it
 belongs to the chat thread instead of a Linear issue; it shows up under **Coding tasks** with the
 platform and channel it came from. The organization doesn't need Linear for it.
@@ -371,7 +381,7 @@ checkout of it:
 
 - The control-panel agent can't read code itself (and never answers from memory). It hands the
   question, made self-contained, to its `ask_about_code` tool, which starts a run of the
-  channel's **Ask about code** [chat task](#chat-tasks) and returns its ID at once. The repository
+  channel's **Ask about code** [chat playbook](#chat-playbooks) and returns its ID at once. The repository
   must be one of the organization's connected repositories (ralph doesn't need to be enabled); if
   it's ambiguous the bot asks which one first.
 - The bot replies that it's looking into it. When the run answers, the bot is
@@ -500,20 +510,20 @@ the opt-out. Leaving the organization ends the link's access straight away.
 
 ## Troubleshooting
 
-| Symptom                                                  | Check                                                                                                                                                                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Connect** is disabled                                  | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                                              |
-| Slack install fails for other workspaces                 | Public distribution is activated (step 1.3).                                                                                                                                                                 |
-| The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                                       |
-| The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)). |
-| "The Omniralph assistant isn't configured"               | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                                                    |
-| The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand.                       |
-| A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                                                    |
-| A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.                               |
-| The bot says the channel's task can't run                | An admin picks another **Ask about code** or **Start work** task (or removes the channel's override) under **Settings › Integrations › Chat tasks**.                                                         |
-| The bot won't start a ralph request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                                                 |
-| The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                                             |
-| "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                                                     |
-| A code question says no harness can take it              | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                                                  |
-| The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                                         |
-| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                                            |
+| Symptom                                                  | Check                                                                                                                                                                                  |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connect** is disabled                                  | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                        |
+| Slack install fails for other workspaces                 | Public distribution is activated (step 1.3).                                                                                                                                           |
+| The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                 |
+| The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)).                   |
+| "The Omniralph assistant isn't configured"               | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                              |
+| The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand. |
+| A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                              |
+| A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.         |
+| The bot says the channel's playbook can't run            | An admin chooses another **Ask about code** or **Start work** playbook for the organization (or removes the channel's override): see [Chat playbooks](#chat-playbooks).                |
+| The bot won't start a ralph request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                               |
+| The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                       |
+| "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                               |
+| A code question says no harness can take it              | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                            |
+| The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                   |
+| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                          |

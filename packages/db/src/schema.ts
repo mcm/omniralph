@@ -601,9 +601,9 @@ export const chatThreads = pgTable(
 );
 
 /**
- * A channel's choice of the tasks "ask about code" and "start work" run from
- * chat, overriding the organization's (`chat.tasks` in `app_settings`); a null
- * column keeps the organization's choice.
+ * A channel's choice of the playbooks "ask about code" and "start work" run
+ * from chat, overriding the organization's (`chat.playbooks` in
+ * `app_settings`); a null column keeps the organization's choice.
  */
 export const chatChannelTaskSettings = pgTable(
   "chat_channel_task_settings",
@@ -617,10 +617,10 @@ export const chatChannelTaskSettings = pgTable(
       .references(() => chatConnections.id, { onDelete: "cascade" }),
     /** The channel the bot sees (`chat_threads.channel_id`). */
     channelId: text("channel_id").notNull(),
-    /** A query task's definition ID. */
-    askAboutCodeTaskId: text("ask_about_code_task_id"),
-    /** A coding task's definition ID. */
-    startWorkTaskId: text("start_work_task_id"),
+    /** A `chat-ask` playbook's ID. */
+    askPlaybookId: text("ask_playbook_id"),
+    /** A `request` playbook's ID. */
+    startWorkPlaybookId: text("start_work_playbook_id"),
     updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
     updatedAt: updatedAt(),
   },
