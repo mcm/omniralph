@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -294,7 +294,9 @@ describe("Agent editor", () => {
     await waitFor(() => expect(nameField().value).toBe("Security reviewer"));
     fireEvent.change(nameField(), { target: { value: "AppSec reviewer" } });
     await userEvent.click(screen.getByRole("button", { name: "Save agent" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Save 1 change" }));
+    // Scoped to the dialog: a `*ByRole` name query over the whole editor is slow in jsdom.
+    const confirm = await screen.findByRole("alertdialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Save 1 change" }));
 
     await waitFor(() =>
       expect(navigation.push).toHaveBeenCalledWith(`/settings/agents/${AGENT_ID}`),
