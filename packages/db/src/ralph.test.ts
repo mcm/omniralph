@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { ensureChatThread, listThreadRuns, saveChatConnection } from "./chat.js";
+import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
   listHiddenRefsToDelete,
@@ -52,6 +53,7 @@ import {
   moveToRepository,
   updateLane,
   updateMessage,
+  updatePullRequestState,
   RUN_DETAIL_MESSAGE_LIMIT,
   type NewChatRalphRunInput,
   type RalphRun,
@@ -1020,6 +1022,84 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         branch: "eng-1",
         baseBranch: "develop",
       });
+    });
+
+    it("applies a PR's draft and review state to its open lanes", async () => {
+      const previous = (await createRun(db, runInput())).run;
+      const old = (await updateLane(db, (await getMainLane(db, previous))!.id, { prNumber: 5 }))!;
+      await updateRun(db, previous.id, { status: "stopped" });
+      // The re-delegated run carries PR #5 forward.
+      const { run } = await createRun(db, runInput({ branch: old.branch }));
+      const lane = (await updateLane(db, (await getMainLane(db, run))!.id, { prNumber: 5 }))!;
+      expect(lane).toMatchObject({ prDraft: false, prReviewState: "none", prStateUpdatedAt: null });
+      // Another PR, a closed lane of the same PR and another repository aren't touched.
+      const { run: other } = await createRun(db, runInput());
+      const otherLane = (await updateLane(db, (await getMainLane(db, other))!.id, {
+        prNumber: 6,
+      }))!;
+      const web = await ensureLane(db, {
+        runId: other.id,
+        repositoryId: repoB,
+        branch: "w",
+        baseBranch: "main",
+      });
+      await updateLane(db, web.id, { prNumber: 5 });
+
+      const { result: drafted, changes } = await captureChanges(() =>
+        updatePullRequestState(db, repoA, 5, { draft: true }),
+      );
+      expect(drafted.map((l) => l.id).sort()).toEqual([old.id, lane.id].sort());
+      expect(drafted.every((l) => l.prDraft && l.prStateUpdatedAt !== null)).toBe(true);
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            resource: "pull_request",
+            ids: expect.arrayContaining([lane.id]),
+            organizationId: orgId,
+          }),
+          expect.objectContaining({ resource: "run", organizationId: orgId }),
+        ]),
+      );
+      // Nothing to change: no lane is returned and its time stays.
+      expect(await updatePullRequestState(db, repoA, 5, { draft: true })).toEqual([]);
+
+      const requested = await updatePullRequestState(db, repoA, 5, {
+        draft: false,
+        reviewState: { to: "review_requested" },
+      });
+      expect(requested.map((l) => [l.prDraft, l.prReviewState])).toEqual([
+        [false, "review_requested"],
+        [false, "review_requested"],
+      ]);
+      await updatePullRequestState(db, repoA, 5, { reviewState: { to: "approved" } });
+      // A comment doesn't undo the approval.
+      expect(
+        await updatePullRequestState(db, repoA, 5, {
+          reviewState: { to: "commented", from: ["none", "review_requested"] },
+        }),
+      ).toEqual([]);
+      expect((await getLane(db, lane.id))!.prReviewState).toBe("approved");
+      // A draft change still applies where the review state doesn't move.
+      const both = await updatePullRequestState(db, repoA, 5, {
+        draft: true,
+        reviewState: { to: "commented", from: ["none"] },
+      });
+      expect(both.map((l) => [l.prDraft, l.prReviewState])).toEqual([
+        [true, "approved"],
+        [true, "approved"],
+      ]);
+
+      await updateLane(db, old.id, { prClosed: true });
+      const closedSkipped = await updatePullRequestState(db, repoA, 5, {
+        reviewState: { to: "changes_requested" },
+      });
+      expect(closedSkipped.map((l) => l.id)).toEqual([lane.id]);
+      expect((await getLane(db, old.id))!.prReviewState).toBe("approved");
+      expect(await getLane(db, otherLane.id)).toMatchObject({
+        prDraft: false,
+        prReviewState: "none",
+      });
+      expect(await getLane(db, web.id)).toMatchObject({ prDraft: false, prReviewState: "none" });
     });
 
     it("has no lane without a repository", async () => {

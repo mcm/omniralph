@@ -31,7 +31,8 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 
 | Event | Triggers |
 | -- | -- |
-| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); ralph cleans up after a ralph PR is merged (closed + merged) |
+| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); ralph cleans up after a ralph PR is merged (closed + merged); a ralph PR's draft and review-request state (opened, reopened, ready for review, converted to draft, review requested and review request removed) |
+| `pull_request_review` | A ralph PR's review state: approved, changes requested or commented (submitted), and dismissed reviews. The App's own reviews don't count |
 | `issue_comment` | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to ralph on ralph PRs |
 | `pull_request_review_comment` | `@bot dismiss`, `@bot fix` and questions in a finding's thread |
 | `workflow_run` | Ralph's CI-fix loop: a finished workflow run on a ralph PR's head commit (the reconcile cron is the fallback) |
@@ -61,7 +62,13 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
     "actions": "read",
     "metadata": "read"
   },
-  "default_events": ["pull_request", "issue_comment", "pull_request_review_comment", "workflow_run"]
+  "default_events": [
+    "pull_request",
+    "pull_request_review",
+    "issue_comment",
+    "pull_request_review_comment",
+    "workflow_run"
+  ]
 }
 ```
 
@@ -76,6 +83,10 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
   **Permissions & events**, subscribe to the **Workflow run** event, and accept the new permissions
   on each installation. Until then, ralph can't see why a PR's CI failed and doesn't try to fix it;
   reviews and the rest of ralph keep working.
+- **Upgrading an existing App** (created before Omniralph tracked review state): subscribe to the
+  **Pull request review** event under **Permissions & events** (no new permission is needed).
+  Until then, a PR that Om opened shows only whether it's a draft, waiting for review, merged or
+  closed: approvals and change requests aren't seen.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
   GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the
