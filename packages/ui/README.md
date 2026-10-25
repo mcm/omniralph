@@ -64,6 +64,26 @@ export function Providers({
 prefersLight)` is the pure rule behind it. To avoid a flash before hydration, set
   `data-theme` with an inline script before paint (`THEME_BOOTSTRAP` in `apps/web`).
 
+## Actions
+
+Detail actions follow Design rules 5–7: up to two icon buttons plus a ⋯ menu, labeled
+buttons only for decisions, and no keyboard-shortcut hints anywhere.
+
+- `Button`: `variant` `outline` (default), `solid`, `primary`, `ghost` or `danger`; `size`
+  `md` (36 px) or `sm` (30 px); optional leading Tabler `icon`. A native
+  `<button type="button">`, or a link through `UiProvider` when `href` is given. `primary`
+  (lavender with the glow) is only for the action that clears a needs-you item.
+- `IconButton`: a required `label` is its accessible name and its tooltip.
+- `Tooltip`: Radix tooltip shown on hover and keyboard focus; carries its own provider.
+- `Toolbar`: `label`, up to two `actions` in one bordered group, and `menu` items behind a
+  ⋯ "More actions" button. One tab stop; Left/Right/Home/End move between its buttons.
+- `Menu`: `items` (`{ label, icon?, onSelect | href, destructive?, disabled? }` or
+  `"separator"`) opened from `trigger`. Destructive items always render last, after a
+  separator, in coral; their `onSelect` should open a `ConfirmDialog`.
+- `ConfirmDialog`: controlled (`open`, `onOpenChange`) `role="alertdialog"` with `title`,
+  `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
+  disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
