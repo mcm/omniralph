@@ -22,7 +22,6 @@ const LIBRARY = /["']@iamthemcmaster\/ui(?:\/[^"']*)?["']/;
  */
 const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/app-header.tsx",
-  "src/components/app-sidebar.tsx",
   "src/components/fact-strip.tsx",
   "src/components/freshness.tsx",
   "src/components/list-error.tsx",
@@ -174,6 +173,28 @@ describe("@iamthemcmaster/ui boundary", () => {
       );
     });
     expect(offenders).toEqual([]);
+  });
+
+  it("is never the source of the navigation (the 2.0 shell draws it)", () => {
+    const sidebar = /^(?:Sidebar\w*|useSidebar)$/;
+    const offenders = files.flatMap((file) =>
+      Array.from(
+        source
+          .get(file)!
+          .matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@iamthemcmaster\/ui["']/g),
+        ([, names]) => names!.split(",").map((name) => name.trim().split(/\s+as\s+/)[0]!),
+      )
+        .flat()
+        .filter((name) => sidebar.test(name))
+        .map((name) => `${file}: ${name}`),
+    );
+    expect(offenders).toEqual([]);
+    // Every file that imports the library names its imports (no namespace import to hide in).
+    expect(
+      files.filter((file) =>
+        /import\s+\*\s+as\s+\w+\s+from\s+["']@iamthemcmaster\/ui["']/.test(source.get(file)!),
+      ),
+    ).toEqual([]);
   });
 
   it("is not used at all by the signed-out pages, the shells or the toast callers", () => {

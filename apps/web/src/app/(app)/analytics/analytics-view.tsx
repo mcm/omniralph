@@ -363,7 +363,7 @@ export function AnalyticsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Analytics" }]} />
-      <main className="detail-main analytics-main">
+      <div className="detail-main analytics-main">
         <PageHeader
           title="Analytics"
           description={`Token usage, review quality and coding tasks for ${scope}, last ${params.days} days by UTC day.`}
@@ -414,7 +414,7 @@ export function AnalyticsView() {
             </div>
           )}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

@@ -779,7 +779,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
           { label: TAB_LABELS[tab] },
         ]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={
             repository ? (
@@ -821,7 +821,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
             )
           }
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

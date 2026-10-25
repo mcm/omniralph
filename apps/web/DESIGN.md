@@ -1,129 +1,137 @@
 ---
 name: Omniralph control panel
-description: Precision Aurora 1.1, tuned for a dense operator's console of settings, runs and history.
+description: Ultraviolet, the Omniralph 2.0 design system, for a dense operator's console of runs, repositories, the fleet and settings.
 ---
 
 # Design System: Omniralph control panel
 
-The panel's visual system is **Precision Aurora 1.1** (`@iamthemcmaster/ui`). Its `DESIGN.md`
-(in the `thefrakinship/mcmaster-ui` repository, and summarised in the package README) is the
-authority for tokens, typography, shapes, components and motion. This file doesn't repeat
-those tokens: it records only how the panel applies the system and where it deliberately
-departs from it. When the two disagree, this file wins for `apps/web`.
+The panel's visual system is **Ultraviolet**, shipped as `@omniralph/ui` (`packages/ui`). That
+package is the authority for tokens, fonts, the Cursor glyph and every shared component; its
+README lists them, and the canvas "Omniralph 2.0 — Primary Screens" (page "Ultraviolet —
+final") is the source the tokens come from. This file doesn't repeat token values: it records
+how the panel applies the system. When the two disagree, this file wins for `apps/web`.
+
+**Coexistence until Epic 14.** The signed-in shell, the signed-out pages (sign-in, onboarding,
+access denied, chat link, terms, privacy) and every toast are Ultraviolet. Today's screens under
+`src/app/(app)` render inside the Ultraviolet shell but keep **Precision Aurora 1.1**
+(`@iamthemcmaster/ui`) and the components only they use, until Epics 5–10 replace each one;
+Epic 14 then removes the library. `src/legacy-ui-boundary.test.ts` keeps the library inside
+those screens. No bridge tokens: a page is either Ultraviolet or Precision Aurora, never a mix.
+New screens and components use `@omniralph/ui` only.
 
 ## Overview
 
 **Creative North Star: "The Flight Recorder"**
 
 The panel is where an unattended agent fleet is configured and audited after the fact. It
-should read like a well-kept instrument log: calm Polar Night, dense rows of exact facts
-(states, IDs, SHAs, timestamps, counts) in mono metrics, and settings that explain their
-consequences before they are saved. Precision Aurora's calm is kept; its showcase moments are
-mostly left out, because almost nothing here is a forward action to celebrate.
+should read like a well-kept instrument log: a calm dark page (or warm paper in light), dense
+rows of exact facts (states, IDs, SHAs, timestamps, counts) in Geist Mono, and settings that
+explain their consequences before they are saved. Lavender is rare on purpose: it means the
+screen needs you.
 
 **Key Characteristics:**
-- The theme is the user's saved choice, else the OS preference; Polar Night when neither is
-  known, as in the library.
-- Data surfaces (run, review and job lists and details, analytics, settings) turn the ambient
-  field off. Only the sign-in, onboarding and legal shells keep `AuroraField`.
-- Denser than the library's defaults: tables and lists favour more rows per screen over padding.
-- Every ID, SHA, count, duration and timestamp uses mono metrics.
-- Screens are built from `PageHeader`, `Stack`, `Cluster`, `Grid` and `Metric`, not inline styles.
+
+- The theme is the user's saved choice (System, Dark or Light, saved per user); System follows
+  the OS as it changes, and dark is the fallback when nothing is known.
+- Flat surfaces: page, side, surface and raised tones separated by hairlines, no ambient
+  backdrop.
+- Dense: tables and lists favor more rows per screen over padding, and become stacked cards on
+  a phone.
+- Every ID, SHA, branch, count, duration, token count and timestamp is set in mono.
+- Screens compose `@omniralph/ui` components; `apps/web` adds domain views (run rows,
+  transcripts) built from them, never copies of them.
 
 ## Colors
 
-The panel uses the library's semantic roles only (`--bg-*`, `--text-*`, `--border-*`,
-`--accent*`, `--{status}*`). It adds no colors of its own.
+Only the `--or-*` tokens from `@omniralph/ui/styles.css` (dark on `:root` and
+`[data-theme="dark"]`, light on `[data-theme="light"]`, applied to `<html>`). The panel adds no
+colors of its own, and every documented text, accent and control-border pair meets WCAG AA in
+both themes (enforced in `packages/ui`).
 
 ### Named Rules
 
-**The State Vocabulary Rule.** Every run, story, job, review and harness state maps to exactly
-one of the library's variants, the same way everywhere (badge, dot, row tint, chart series):
-`success` for completed or passed; `warning` for blocked, waiting or needing a person; `danger`
-for failed or exhausted; `info` for running or in progress; `neutral` for pending, cancelled or
-skipped. The map lives in one module (today `ralph-badges.tsx` and `review-badges.tsx`) and
-nothing chooses a state color locally.
+**The Meaning of Color Rule.** Lavender/violet (`--or-acc`) means needs you, mint (`--or-run`)
+means good or running, coral (`--or-fail`) means failed, and everything else is neutral. Only
+the button that clears a needs-you item is `primary` (lavender, with the glow); Save, Add and
+every other action are outline or solid neutral. A toast is never lavender.
 
-**The No Celebration Rule.** The aurora button and the achievement sweep are not used for
-routine panel actions (save, connect, retry, dismiss). Saving a setting is confirmed with a
-toast and an inline "Saved" state, not the ribbon.
+**The State Vocabulary Rule.** Every run, story, job, review and agent state maps to exactly one
+tone, the same way everywhere (badge, dot, row tint, chart series). The map lives in one module
+(on today's screens, `src/lib/state-variants.ts` with `ralph-badges.tsx` and
+`review-badges.tsx`) and nothing chooses a state color locally.
+
+**The No Celebration Rule.** Routine actions (save, connect, retry, dismiss) are confirmed with
+an inline "Saved" state or a toast, never an effect.
 
 ## Typography
 
-As in Precision Aurora 1.1: the UI tier for component text, the reading tier for page titles
-and prose, with an 11px floor.
+Instrument Sans for the UI and headings (14 px base, line-height 1.4), Geist Mono for machine
+facts, both self-hosted through `@omniralph/ui/fonts.css`.
 
 **The Exact Values Rule.** Identifiers (Linear IDs, SHAs, job IDs, branch names), durations,
-token counts, costs and timestamps are set in mono metrics (`.text-numeric` or `numeric` table
-cells), and long ones truncate in the middle with the full value available on hover and copy.
+token counts, costs and timestamps are set in mono, and long ones truncate with the full value
+available on hover and copy.
 
 ## Layout
 
-The library's spacing steps and primitives, with two panel-specific choices:
+- **The shell** (`components/app-shell.tsx`, `AppFrame` from `@omniralph/ui`): a 232 px sidebar
+  from 1200 px, a 64 px icon rail from 769 to 1199 px, and a top bar, bottom tab bar and drawer
+  at 768 px and narrower. The navigation lives in `src/lib/navigation.ts`; every entry points at
+  a page that exists (`navigation.test.ts`). The organization picker and the user menu (theme,
+  Sign out) are one component each, shown wherever the frame places them.
+- **Dense data.** Lists and tables fill the content width. Detail pages put the key facts above
+  the long content (progress log, attempts, findings).
+- **Settings as forms with consequences.** Each setting has a label and a one-line description
+  of what it affects (`Field`). Related settings are grouped in a card with one save bar. A
+  destructive or run-affecting change asks to confirm and names what will change.
+- **Phone screens carry less.** At 390 px nothing widens the page: tables become stacked cards
+  (`DataTable`) and long values truncate.
 
-- **Dense data.** Lists and tables use compact rows and fill the content width. Detail pages put
-  the key facts (state, repository, branch, timing, attempts) in a `Grid` of `Metric`s or a
-  definition list above the long content (progress log, attempts, findings).
-- **Settings as forms with consequences.** Each setting has a label, a one-line description of
-  what it affects, and its default, wired through `Field`. Related settings are grouped in cards
-  with one save action per card. A destructive or run-affecting change asks for confirmation and
-  names what will change.
-- At 390px nothing widens the page: wide tables scroll inside their own container, and the
-  sidebar becomes the library's built-in mobile sheet.
-
-**The Primitives, Not Pixels Rule.** Inherited from the library: `style={{}}` with layout,
-spacing or color values is a missing primitive. Inline styles are allowed only for genuinely
-dynamic values (a computed width or a chart size), each with a comment.
-
-## Elevation & Depth
-
-As in Precision Aurora 1.1 (tone first, faint shadows, strata on raised wells), with the
-ambient field off on data surfaces so tables and cards sit on a flat page.
+**The Classes, Not Pixels Rule.** Components set `className`; `style={{}}` with layout, spacing
+or color values is a missing class or component. Inline styles are allowed only for genuinely
+dynamic values (a progress segment's width, a chart size), each with a
+`// dynamic-style: <reason>` comment. The design-system ESLint rules enforce this at `error`.
 
 ## Components
 
-Everything comes from `@iamthemcmaster/ui`. Panel-specific components (`app-shell`,
-`app-sidebar`, `list-pagination`, the badge maps) compose library primitives and follow the
-same rules: rime focus, the library's states in both themes, and no local colors.
+Everything comes from `@omniralph/ui`. The rules its components make the default:
 
-- **Empty states** use the library's `Empty` (frozen ribbon) with a sentence that says what will
-  appear here and how to make it happen (e.g. "Delegate a Linear epic to the Omniralph app to
-  start a run").
-- **Live data.** Every page reads its data in the browser from the panel's `/api/ui` endpoints
-  and keeps it current: it refetches every 3 seconds while the tab is visible (settings every
-  30, analytics every 60) and as soon as the tab is back (README, Data fetching). A page never
-  asks for a reload to show a change.
-  Pages of in-flight entities show how fresh they are in the header (`Freshness`, "Updated 3s
-  ago"), which turns into a warning with a retry when refetching has failed for 30 seconds.
-  Relative times tick on the browser's clock.
-- **Loading** uses the whiteout `Skeleton` shaped like the content it replaces, shown at once on
-  navigation. A list moving to another page or filter keeps the previous rows, dimmed
-  (`aria-busy`), while the new ones load.
-- **Navigation feedback.** A link whose page is loading (sidebar items, breadcrumbs, tabs, row
-  links, pagination) dims and pulses after a short delay, so fast navigations don't flicker
-  (`components/link.tsx`).
-- **Pending changes.** A save shows its pending state ("Saving…", disabled fieldset); switches
-  and toggles change at once and roll back with a danger toast if the save fails; a change that
-  takes effect on a harness's next heartbeat shows its in-between state ("Saved — waiting for
-  …", "Cancel requested") and then its outcome.
+- **Every reference carries its icon**: repository = code-host mark + name, issue = tracker
+  mark + ID, organization = building icon. Icon beats badge beats text.
+- **Detail actions** go in a `Toolbar` of icon buttons with tooltips plus a ⋯ menu;
+  destructive items go last, after a divider, and ask to confirm (`ConfirmDialog`).
+- **No keyboard-shortcut hints** anywhere, and no hint text about where things are.
+- **One progress view** (`ProgressCard`: bar, one-line count, steps). Provenance sits behind an
+  ⓘ button next to a card's title; details behind an ID-card button; lists of values are token
+  inputs; ordered steps are numbered lists.
+- **Empty states** (`EmptyState`) say what will appear and how to make it happen.
+- **Toasts** (`toast()` and the shell's `Toaster`): bottom right, above the tab bar on a phone,
+  with a status dot in their tone and a dismiss button.
+- **Live data.** Every page reads its data in the browser from `/api/ui` through TanStack
+  queries keyed with `queryKeys` and keeps it current without a reload (README, Data fetching).
+- **Navigation feedback.** A link whose page is loading dims and pulses after a short delay
+  (`components/link.tsx`, passed to `UiProvider` as the link component).
+- **Pending changes.** A save shows its pending state; switches change at once and roll back
+  with a danger toast if the save fails; a change that takes effect on an agent's next
+  heartbeat shows its in-between state and then its outcome.
 - **Errors** say what failed, why if known, and what to do next, with a retry where one makes
-  sense. A failed load is shown in place of the content it was loading, with Retry; an
-  unexpected render error replaces the page (sidebar and header stay) with Retry
+  sense. An unexpected render error replaces the page inside the shell with Retry
   (`(app)/error.tsx`).
+- **Copy.** The AI is "Om" and the machines are agents in all new copy; American English.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use the one state-to-variant map for every run, story, job, review and harness state.
-- **Do** put IDs, SHAs, counts, durations and timestamps in mono metrics.
-- **Do** describe each setting's effect and default next to it, and confirm changes that affect
-  runs.
-- **Do** keep the ambient field off on data surfaces.
-- **Do** build screens from the library's layout primitives.
+
+- **Do** take tokens and components from `@omniralph/ui`, and add a shared component there when
+  two screens need it.
+- **Do** keep lavender for what needs the user, mint for good, coral for failed.
+- **Do** put IDs, SHAs, counts, durations and timestamps in mono.
+- **Do** describe each setting's effect next to it, and confirm changes that affect runs.
 
 ### Don't:
-- **Don't** use the aurora button or achievement sweep for routine panel actions.
+
+- **Don't** import `@iamthemcmaster/ui` outside today's screens (the boundary test fails).
 - **Don't** add colors, hex or rgba literals, or inline layout styles in panel code.
-- **Don't** let a table or long ID widen the page at 390px.
-- **Don't** depart from the library's look except for the density and ambient choices recorded
-  here.
+- **Don't** show a control that does nothing yet, or a nav entry without a page.
+- **Don't** let a table or long ID widen the page at 390 px.

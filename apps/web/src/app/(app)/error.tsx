@@ -27,7 +27,7 @@ export default function AppError({
   return (
     <>
       <AppHeader />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader title="Something went wrong" />
         <Alert variant="danger" className="query-error">
           <IconAlertTriangle size={16} />
@@ -48,7 +48,7 @@ export default function AppError({
             </Button>
           </AlertDescription>
         </Alert>
-      </main>
+      </div>
     </>
   );
 }

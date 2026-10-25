@@ -68,12 +68,12 @@ export function DefinitionLoading({
   return (
     <>
       <AppHeader breadcrumbs={breadcrumbs} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader title={<Skeleton width="14rem" height="1.75rem" />} />
         <QueryBoundary query={query} skeleton={<DefinitionSkeleton />} what={what}>
           {() => null}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

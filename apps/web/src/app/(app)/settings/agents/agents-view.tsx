@@ -52,7 +52,7 @@ export function AgentsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Agents" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Agents"
           description={
@@ -86,7 +86,7 @@ export function AgentsView() {
             </QueryBoundary>
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

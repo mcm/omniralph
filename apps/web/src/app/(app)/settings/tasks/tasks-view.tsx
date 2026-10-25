@@ -143,7 +143,7 @@ export function TasksView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Tasks" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Tasks"
           description={
@@ -169,7 +169,7 @@ export function TasksView() {
         <QueryBoundary query={query} skeleton={<TasksSkeleton />} what="the tasks">
           {({ tasks }) => <TaskCards tasks={tasks} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

@@ -175,7 +175,7 @@ export function AgentDetailContent({ agent, builtin, tasks, isAdmin }: AgentDeta
       <AppHeader
         breadcrumbs={[{ label: "Agents", href: "/settings/agents" }, { label: agent.name }]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={agent.name}
           description={agent.description || undefined}
@@ -288,7 +288,7 @@ export function AgentDetailContent({ agent, builtin, tasks, isAdmin }: AgentDeta
             )}
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

@@ -534,7 +534,7 @@ export function RoutingSettingsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Routing" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Routing"
           description={
@@ -546,7 +546,7 @@ export function RoutingSettingsView() {
         <QueryBoundary query={query} skeleton={<RoutingSkeleton />} what="the routing rules">
           {(data) => <RoutingRulesEditor data={data} canEdit={isAdmin} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

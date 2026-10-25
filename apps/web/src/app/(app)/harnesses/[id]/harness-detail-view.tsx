@@ -1374,7 +1374,7 @@ export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
           { label: HARNESS_TAB_LABELS[tab] },
         ]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={name ?? <Skeleton width="12rem" height="1.75rem" />}
           meta={
@@ -1390,7 +1390,7 @@ export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
         <QueryBoundary query={detail} skeleton={<DetailSkeleton />} what="the harness">
           {(data) => <HarnessTabContent tab={tab} detail={data} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

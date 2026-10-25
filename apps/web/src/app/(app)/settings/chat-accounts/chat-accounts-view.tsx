@@ -82,7 +82,7 @@ export function ChatAccountsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Chat accounts" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Chat accounts"
           description="Slack and Discord accounts linked to you. The Omniralph bot answers a linked account as you, with your access in that organization."
@@ -117,7 +117,7 @@ export function ChatAccountsView() {
             </CardContent>
           </Stack>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

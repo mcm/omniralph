@@ -274,7 +274,7 @@ export function TriageRunsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Triage" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Triage"
           description="Linear issues Omniralph turned into PRDs, and what each triage decided."
@@ -318,7 +318,7 @@ export function TriageRunsView() {
             </QueryBoundary>
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

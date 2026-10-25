@@ -247,7 +247,7 @@ function AdminProfilesView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Profiles" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Review profiles"
           description="Each repository uses one of these profiles. Changes apply to the next review of every repository using the profile. Built-in profiles can be edited but not deleted."
@@ -255,7 +255,7 @@ function AdminProfilesView() {
         <QueryBoundary query={query} skeleton={<ProfilesSkeleton />} what="the review profiles">
           {(data) => <ProfilesContent {...data} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

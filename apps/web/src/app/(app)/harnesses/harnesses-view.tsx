@@ -199,7 +199,7 @@ export function HarnessesView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Harnesses" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Harnesses"
           description={
@@ -226,7 +226,7 @@ export function HarnessesView() {
             </QueryBoundary>
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }
