@@ -93,7 +93,7 @@ export const changeEventSchemas = {
     ...base,
     resource: z.literal("inbox_state"),
     // Item keys (`manual_story:<id>`, `failed:<runId>:<attemptId>`, ...): IDs and kinds only.
-    ids: z.array(z.string().regex(/^[a-z_]+(:[0-9A-Za-z_.:-]+)+$/)).min(1),
+    ids: z.array(z.string().regex(/^[a-z_]+(:[0-9A-Za-z_.:,+-]+)+$/)).min(1),
   }),
   webhook_event: z.strictObject({
     ...base,

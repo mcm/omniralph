@@ -55,6 +55,13 @@ const ACTIONS: Record<InboxCandidate["facts"]["kind"], InboxAction[]> = {
   run: [],
 };
 
+/** What a person can do with the item (a system attempt is retried only where it can be rerun). */
+export function inboxItemActions(item: InboxCandidate): InboxAction[] {
+  const { facts } = item;
+  if (facts.kind === "failed_system" && !isRerunnable(facts.job)) return ["done", "snooze"];
+  return ACTIONS[facts.kind];
+}
+
 /** "pull request #42" on GitHub, "merge request !7" on GitLab. */
 function changeRequestName(provider: "github" | "gitlab" | undefined, number: number): string {
   return provider === "gitlab" ? `merge request !${number}` : `pull request #${number}`;
@@ -138,7 +145,7 @@ function itemFields(
     repository: row?.repository ?? null,
     pullRequest: row?.pullRequest ?? null,
     agent: row?.agent ?? null,
-    actions: ACTIONS[facts.kind],
+    actions: inboxItemActions(item),
     question: null,
     reviewState: null,
     review: null,
@@ -251,7 +258,6 @@ function itemFields(
         repository: repository ? repositoryRef(repository) : base.repository,
         agent: agent ?? base.agent,
         reason: withError(`${label}.`, job.error ?? "It failed without saying why."),
-        actions: isRerunnable(job) ? ACTIONS.failed_system : ["done", "snooze"],
       };
     }
     case "agent_offline":

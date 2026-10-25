@@ -367,6 +367,16 @@ canceled or expired); retrying one of their attempts retries the run:
 System attempts (`repo.sync`, `install`) that failed, were canceled or expired are rerun from the
 Jobs page (`POST /api/ui/jobs/{id}/rerun`).
 
+**From the Inbox.** Any member acts on an Inbox item with `POST /api/ui/inbox/items/{key}`
+(`{action, until?}`). Done on a manual story moves its issue to a completed state, and Skip to a
+canceled state (done without work), through the work item tracker, as if a person had changed it
+in Linear: the run goes on with the next story, and the session gets "**ENG-51** was marked done
+from Omniralph by {name}" (or "was skipped"). Start anyway on an epic waiting on outside blockers
+does what the "start anyway" reply does (the same code). Resume and Retry are the run's retry
+above, or a system attempt's rerun. Done on any other item, Snooze (5 minutes to 30 days) and
+Restore change only what that person's Inbox shows. A key that no longer matches an item answers
+404 "This item was already handled.".
+
 **Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls
 a repository's own Claude Code settings `ask` about (for example `"ask": ["Bash(git commit:*)"]` in
 a committed `.claude/settings.json`). Such a call is asked about in the agent session as an

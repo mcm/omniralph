@@ -129,3 +129,49 @@ export const inboxCountsSchema = z.object({
   running: z.number(),
 });
 export type InboxCountsResponse = z.infer<typeof inboxCountsSchema>;
+
+/**
+ * What `POST /api/ui/inbox/items/{key}` does: `done` (a manual story: its work item is done
+ * and the run goes on; any other item: dismissed for the user), `skip` (a manual story is
+ * done without work), `snooze` (hidden for the user until `until`), `restore` (undoes the
+ * user's Done or Snooze), `start_anyway` (an epic waiting on outside blockers),
+ * `resume` (a stopped run) and `retry` (a failed run or system attempt). Answers are
+ * `POST /api/ui/runs/{id}/answer`'s.
+ */
+export const INBOX_ITEM_ACTIONS = [
+  "done",
+  "skip",
+  "snooze",
+  "restore",
+  "start_anyway",
+  "resume",
+  "retry",
+] as const;
+export type InboxItemAction = (typeof INBOX_ITEM_ACTIONS)[number];
+
+/** A snooze is at least this far ahead… */
+export const INBOX_SNOOZE_MIN_MS = 5 * 60_000;
+/** …and at most this far. */
+export const INBOX_SNOOZE_MAX_MS = 30 * 86_400_000;
+
+/** `POST /api/ui/inbox/items/{key}`'s body. */
+export const inboxItemActionRequestSchema = z.object({
+  action: z.enum(INBOX_ITEM_ACTIONS, { error: "Unknown action." }),
+  /** `snooze`: until when (5 minutes to 30 days ahead). */
+  until: z.iso.datetime({ offset: true, error: "Snooze until a date and time." }).optional(),
+});
+export type InboxItemActionRequest = z.infer<typeof inboxItemActionRequestSchema>;
+
+/** `POST /api/ui/inbox/items/{key}`'s answer: what was done, and the user's state of the item. */
+export const inboxItemActionResultSchema = z.object({
+  key: z.string(),
+  action: z.enum(INBOX_ITEM_ACTIONS),
+  /** The user's own state of the item afterwards (Done, Snooze); null: none. */
+  state: z.enum(["done", "snoozed"]).nullable(),
+  snoozedUntil: isoDate.nullable(),
+  /** The run the action moved (a story's epic, a retried run: a review's retry is a new run). */
+  runId: z.string().nullable(),
+  /** Set when the action did nothing new (the same work is already queued or running). */
+  warning: z.string().nullable(),
+});
+export type InboxItemActionResult = z.infer<typeof inboxItemActionResultSchema>;

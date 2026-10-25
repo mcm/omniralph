@@ -70,6 +70,7 @@ import { answerCleanup, cleanUpStoppedRun } from "./cleanup";
 import { applyGuidance, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { answerPermission } from "./permissions";
+import { ignoreBlockers, START_ANYWAY_NOTE } from "./person-actions";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import { addInstruction } from "./requests";
@@ -242,14 +243,11 @@ export async function handleReply(
       };
     }
     if (resumed.mode === "epic" && isStartAnywayRequest(body)) {
-      await updateRun(tx, resumed.id, { ignoreBlockers: true, waitingOn: null });
+      await ignoreBlockers(tx, resumed);
       return {
         kind: "start_anyway" as const,
         advance: true,
-        note: {
-          type: "thought" as const,
-          body: "OK, I'll ignore the open blockers and start anyway.",
-        },
+        note: { type: "thought" as const, body: START_ANYWAY_NOTE },
       };
     }
     // `/ship`: always a request job of its own, after whatever runs now.
