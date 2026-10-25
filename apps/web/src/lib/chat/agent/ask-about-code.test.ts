@@ -7,7 +7,7 @@ import {
   closeDb,
   createHostTool,
   deleteHostTool,
-  insertTaskDefinition,
+  insertPlaybook,
   recordHarnessHostTools,
   listThreadRuns,
   connectRepository,
@@ -30,7 +30,12 @@ import {
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
-import { deriveTaskRequirements, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import {
+  getBuiltinPlaybook,
+  getBuiltinTask,
+  playbookRequirements,
+  type TaskDefinition,
+} from "@omniralph/tasks";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -633,11 +638,17 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
   it("runs the organization's own query task a channel picked, by its UUID", async () => {
     const h = await harness();
-    const { id: _id, name: _name, ...definition } = getBuiltinTask("builtin:ask-about-code")!;
-    const stored = await insertTaskDefinition(db, orgId, {
+    const {
+      id: _id,
+      name: _name,
+      role,
+      ...definition
+    } = getBuiltinPlaybook("builtin:ask-about-code")!;
+    const stored = await insertPlaybook(db, orgId, {
       name: "Security Q&A",
+      role,
       definition,
-      requirements: deriveTaskRequirements(getBuiltinTask("builtin:ask-about-code")!),
+      requirements: playbookRequirements(getBuiltinPlaybook("builtin:ask-about-code")!),
       createdBy: null,
     });
     await upsertChatChannelTaskSetting(db, {
@@ -659,15 +670,21 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
   it("enqueues nothing until a harness has the task's installables and host tools", async () => {
     const h = await harness();
-    const { id: _id, name: _name, ...builtin } = getBuiltinTask("builtin:ask-about-code")!;
-    const definition = {
+    const builtin = getBuiltinPlaybook("builtin:ask-about-code")!;
+    const {
+      id: _id,
+      name: _name,
+      role,
+      ...definition
+    } = {
       ...builtin,
       requires: { installables: ["@omniralph/code-graph"], hostTools: ["opengrep"] },
     };
-    const stored = await insertTaskDefinition(db, orgId, {
+    const stored = await insertPlaybook(db, orgId, {
       name: "Graph Q&A",
+      role,
       definition,
-      requirements: deriveTaskRequirements(definition),
+      requirements: playbookRequirements({ ...builtin, ...definition }),
       createdBy: null,
     });
     await upsertChatChannelTaskSetting(db, {

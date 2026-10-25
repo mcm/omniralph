@@ -14,14 +14,6 @@ import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { CodingLinear, RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
 import { getDb } from "@/lib/db";
-import {
-  CORRELATION_TASKS,
-  listTaskChoices,
-  listTaskDefinitions,
-  REQUEST_TASKS,
-  REVIEW_TASKS,
-  STORY_TASKS,
-} from "@/lib/definitions";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
@@ -49,25 +41,15 @@ export async function loadRepositoryDetail(
 ): Promise<RepositoryDetail> {
   const db = getDb();
   const { repository, connection } = await connectedRepository(organizationId, id);
-  const [
-    harnesses,
-    organizationVersion,
-    pinnedHarnessIds,
-    reviewTasks,
-    correlationTasks,
-    allowedTaskTypes,
-    workItemMatch,
-    rules,
-  ] = await Promise.all([
-    listHarnessOverview(db, organizationId).then(withLastSeen),
-    organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    listRepositoryPinnedHarnessIds(db, id),
-    listTaskDefinitions(db, organizationId, REVIEW_TASKS),
-    listTaskChoices(db, organizationId, CORRELATION_TASKS),
-    getAllowedTaskTypeDefaults(db, organizationId),
-    getWorkItemMatch(db, organizationId, id),
-    listRoutingRules(db, organizationId),
-  ]);
+  const [harnesses, organizationVersion, pinnedHarnessIds, allowedTaskTypes, workItemMatch, rules] =
+    await Promise.all([
+      listHarnessOverview(db, organizationId).then(withLastSeen),
+      organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+      listRepositoryPinnedHarnessIds(db, id),
+      getAllowedTaskTypeDefaults(db, organizationId),
+      getWorkItemMatch(db, organizationId, id),
+      listRoutingRules(db, organizationId),
+    ]);
   const now = new Date();
   return {
     repository: {
@@ -82,16 +64,9 @@ export async function loadRepositoryDetail(
       pathExcludes: repository.pathExcludes,
       customInstructions: repository.customInstructions ?? "",
       pinnedHarnessIds,
-      reviewTaskIds: repository.reviewTaskIds,
-      correlationTaskId: repository.correlationTaskId,
+      reviewPlaybookIds: repository.reviewPlaybookIds,
+      correlationPlaybookId: repository.correlationPlaybookId,
     },
-    reviewTasks: reviewTasks.map(({ definition, builtin }) => ({
-      id: definition.id,
-      name: definition.name,
-      description: definition.description,
-      builtin,
-    })),
-    correlationTasks,
     harnesses: harnesses.map((harness) => {
       const row = harnessRow(harness, now, organizationVersion.version);
       return {
@@ -122,7 +97,7 @@ export async function loadRepositoryDetail(
 }
 
 /**
- * The Coding tab's settings and its pickers' choices from the database: the coding tasks, the
+ * The Coding tab's settings and its pickers' choices from the database: the
  * models of the harnesses that may run the repository's coding jobs (its pinned ones, else
  * every harness accepting coding), and the organization's routing rules that target it.
  */
@@ -132,21 +107,18 @@ export async function loadRepositoryCoding(
 ): Promise<RepositoryCoding> {
   const db = getDb();
   const { repository } = await connectedRepository(organizationId, id);
-  const [storyTasks, requestTasks, { pinned, harnessIds }, rules] = await Promise.all([
-    listTaskChoices(db, organizationId, STORY_TASKS),
-    listTaskChoices(db, organizationId, REQUEST_TASKS),
+  const [{ pinned, harnessIds }, rules] = await Promise.all([
     listRepositoryCodingHarnessIds(db, organizationId, id),
     listRoutingRules(db, organizationId),
   ]);
   const models = await listReportedModels(db, organizationId, { harnessIds });
   return {
     settings: {
-      storyTaskId: repository.storyTaskId,
-      requestTaskId: repository.requestTaskId,
+      storyPlaybookId: repository.storyPlaybookId,
+      requestPlaybookId: repository.requestPlaybookId,
       ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
       manualLabels: repositoryManualLabels(repository),
     },
-    tasks: { story: storyTasks, request: requestTasks },
     models,
     harnessCount: harnessIds.length,
     pinned,

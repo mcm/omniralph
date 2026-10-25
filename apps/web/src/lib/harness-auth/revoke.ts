@@ -13,7 +13,7 @@ import { MAX_JOB_DELIVERIES } from "@omniralph/shared";
 import { getDb } from "@/lib/db";
 import { cacheHarnessRevoked } from "./auth-state";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobHooks, type JobHooks } from "@/lib/sinks";
 
 const REVOKED = "Harness revoked";

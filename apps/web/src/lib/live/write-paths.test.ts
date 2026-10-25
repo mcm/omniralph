@@ -26,11 +26,10 @@ import {
   createRun,
   createTriageRun,
   createUser,
-  deleteAgentDefinition,
+  deletePlaybook,
   deleteRule,
   dismissFinding,
   deleteScmConnection,
-  deleteTaskDefinition,
   enrollHarness,
   ensureChatThread,
   ensureLane,
@@ -38,11 +37,10 @@ import {
   failJob,
   findings,
   harnesses,
-  insertAgentDefinition,
   insertJob,
+  insertPlaybook,
   insertLearnedRule,
   insertRunActivity,
-  insertTaskDefinition,
   jobs,
   mapThreadRun,
   markHarnessDeleted,
@@ -64,13 +62,12 @@ import {
   updateHarnessConfig,
   updateLane,
   updateMemberRole,
-  updateAgentDefinition,
   updateOrganization,
+  updatePlaybook,
   updateRule,
   updateRepositoryRalphSettings,
   updateRepositorySettings,
   updateRun,
-  updateTaskDefinition,
   updateStory,
   upsertScmConnection,
   upsertStories,
@@ -647,46 +644,32 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ]);
     });
 
-    it("agent and task definition saves and deletes publish their section", async () => {
-      const agent = { name: "Reviewer", definition: { id: "reviewer" } };
-      let agentId = "";
-      expect(
-        await published(async () => {
-          agentId = (await insertAgentDefinition(db, orgId, { ...agent, createdBy: userId })).id;
-        }),
-      ).toEqual([settingsEvent("agent_definitions")]);
-      expect(
-        await published(() =>
-          updateAgentDefinition(db, orgId, agentId, { ...agent, updatedBy: userId }),
-        ),
-      ).toEqual([settingsEvent("agent_definitions")]);
-      expect(await published(() => deleteAgentDefinition(db, orgId, agentId))).toEqual([
-        settingsEvent("agent_definitions"),
-      ]);
-
-      const task = { name: "Review", definition: { id: "review" }, requirements: {} };
-      let taskId = "";
-      expect(
-        await published(async () => {
-          taskId = (await insertTaskDefinition(db, orgId, { ...task, createdBy: userId })).id;
-        }),
-      ).toEqual([settingsEvent("task_definitions")]);
+    it("playbook saves and deletes publish the playbooks section, the playbook its subject", async () => {
+      const playbook = {
+        name: "Review",
+        role: "review",
+        definition: { promptTemplate: "x" },
+        requirements: {},
+      };
+      let playbookId = "";
+      const inserted = await published(async () => {
+        playbookId = (await insertPlaybook(db, orgId, { ...playbook, createdBy: userId })).id;
+      });
+      expect(inserted).toEqual([settingsEvent("playbooks", playbookId)]);
       expect(
         await published(() =>
-          updateTaskDefinition(db, orgId, taskId, { ...task, updatedBy: userId }),
+          updatePlaybook(db, orgId, playbookId, { ...playbook, updatedBy: userId }),
         ),
-      ).toEqual([settingsEvent("task_definitions")]);
-      expect(await published(() => deleteTaskDefinition(db, orgId, taskId))).toEqual([
-        settingsEvent("task_definitions"),
+      ).toEqual([settingsEvent("playbooks", playbookId)]);
+      expect(await published(() => deletePlaybook(db, orgId, playbookId))).toEqual([
+        settingsEvent("playbooks", playbookId),
       ]);
 
       // Nothing saved or deleted (gone, or another organization's): nothing published.
       expect(
         await published(async () => {
-          await updateAgentDefinition(db, orgId, agentId, { ...agent, updatedBy: userId });
-          await deleteAgentDefinition(db, orgId, agentId);
-          await updateTaskDefinition(db, orgId, taskId, { ...task, updatedBy: userId });
-          await deleteTaskDefinition(db, orgId, taskId);
+          await updatePlaybook(db, orgId, playbookId, { ...playbook, updatedBy: userId });
+          await deletePlaybook(db, orgId, playbookId);
         }),
       ).toEqual([]);
     });

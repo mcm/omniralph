@@ -49,26 +49,40 @@ describe("docs/definitions.md", () => {
   const doc = read("docs/definitions.md");
   const spans = codeSpans(doc);
 
-  it("names the playbook model, the pages, validators and referrer lookup", () => {
+  it("names the playbook model, the API, validators and referrer lookup", () => {
     for (const name of [
       "Playbook",
       "PLAYBOOK_ROLES",
       "playbookRunSpec",
-      "/settings/agents",
-      "/settings/tasks",
-      "validateCustomAgent",
+      "GET /api/ui/playbooks",
+      "validatePlaybookAgainst",
       "validateTaskDefinition",
-      "findTaskReferrers",
+      "findPlaybookReferrers",
+      "REPOSITORY_BINDING_ROLES",
     ]) {
       expect(spans).toContain(name);
     }
   });
 
-  it("only names control-panel pages that exist", () => {
+  it("only names control-panel pages and API routes that exist", () => {
     const routes = spans.filter((span) => /^\/(settings|repositories)\b/.test(span));
-    expect(routes.length).toBeGreaterThan(0);
     for (const route of routes) {
       expect(existsSync(path.join(pageDir(route), "page.tsx")), route).toBe(true);
+    }
+    const requests = spans.flatMap(
+      (span) => /^(?:GET|POST|PUT|DELETE) (\/api\/\S+)$/.exec(span) ?? [],
+    );
+    const apis = requests.filter((_, i) => i % 2 === 1);
+    expect(apis.length).toBeGreaterThan(5);
+    for (const api of apis) {
+      const segments = api
+        .split("/")
+        .filter(Boolean)
+        // `{id}`, or a built-in's URI-encoded ID (`builtin%3Areview-pr`).
+        .map((segment) => (segment.startsWith("{") || segment.includes("%3A") ? "[id]" : segment));
+      expect(existsSync(path.join(root, "apps/web/src/app", ...segments, "route.ts")), api).toBe(
+        true,
+      );
     }
   });
 
@@ -88,16 +102,14 @@ describe("docs/definitions.md", () => {
     for (const identifier of identifiers) {
       expect(source.includes(identifier), identifier).toBe(true);
     }
-    // What the forms' `/api/ui` handlers call.
+    // What the Playbooks API handlers call.
     for (const action of [
-      "createAgent",
-      "updateAgent",
-      "cloneAgent",
-      "deleteAgent",
-      "createTask",
-      "updateTask",
-      "cloneTask",
-      "deleteTask",
+      "loadPlaybookList",
+      "loadPlaybookDetail",
+      "createPlaybook",
+      "updatePlaybook",
+      "clonePlaybook",
+      "deletePlaybook",
     ]) {
       expect(source).toContain(`export async function ${action}(`);
     }

@@ -31,7 +31,7 @@ import {
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
 import {

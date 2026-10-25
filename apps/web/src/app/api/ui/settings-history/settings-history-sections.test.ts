@@ -16,12 +16,12 @@ import {
   mapThreadRun,
   organizationMembers,
   organizations,
+  playbooks,
   ralphRuns,
   reviewRuns,
   saveChatConnection,
   saveIntegration,
   settingsChanges,
-  taskDefinitions,
   triageRuns,
   upsertScmConnection,
   users,
@@ -32,7 +32,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinPlaybook } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SettingsHistory } from "@/lib/api/settings-history";
@@ -294,13 +294,14 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
     });
 
     it("Slack and Discord settings: the organization's chat tasks and a channel's", async () => {
-      // The organization's own "ask about code" task.
-      const { id: _id, name, ...definition } = getBuiltinTask("builtin:ask-about-code")!;
+      // The organization's own "ask about code" playbook.
+      const { id: _id, name, role, ...definition } = getBuiltinPlaybook("builtin:ask-about-code")!;
       const [custom] = await db
-        .insert(taskDefinitions)
+        .insert(playbooks)
         .values({
           organizationId: orgId,
           name: `Custom ${name}`,
+          role,
           definition,
           requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
         })

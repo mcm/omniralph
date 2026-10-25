@@ -28,7 +28,7 @@ import {
   validateChatTaskChoice,
   type ChatTaskRole,
 } from "@/lib/chat/tasks";
-import { getPlaybookTask, listTaskChoices, organizationPlaybooks } from "@/lib/definitions";
+import { getPlaybookTask, listPlaybookChoices, organizationPlaybooks } from "@/lib/playbooks";
 import { linearOAuthConfig, revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 import {
   settingsActor,
@@ -73,8 +73,8 @@ export async function loadIntegrations(
     listChatConnections(db, organizationId),
     getChatTaskDefaults(db, organizationId),
     listChatChannelTaskSettings(db, organizationId),
-    listTaskChoices(db, organizationId, CHAT_TASK_FILTERS.askAboutCode),
-    listTaskChoices(db, organizationId, CHAT_TASK_FILTERS.startWork),
+    listPlaybookChoices(db, organizationId, CHAT_TASK_FILTERS.askAboutCode),
+    listPlaybookChoices(db, organizationId, CHAT_TASK_FILTERS.startWork),
   ]);
   // The installer may have left the organization since, so look them up as a user.
   const installers = new Map(

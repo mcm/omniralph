@@ -10,7 +10,7 @@ import {
 } from "@omniralph/db";
 import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 
 /**
  * Learned rules: a `false_positive` dismissal (`@bot dismiss` in the

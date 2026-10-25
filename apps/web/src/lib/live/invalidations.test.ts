@@ -2,7 +2,7 @@ import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import { queryKeys } from "@/lib/api/keys";
-import { definitionKeys } from "@/lib/api/settings-keys";
+import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
   changesUserRecord,
@@ -17,7 +17,7 @@ const RUN = "44444444-4444-4444-8444-444444444444";
 const OTHER_RUN = "55555555-5555-4555-8555-555555555555";
 const ID = "33333333-3333-4333-8333-333333333333";
 const keys = queryKeys(ORG);
-const definitions = definitionKeys(keys);
+const playbooks = playbookKeys(keys);
 
 const event = (fields: Partial<ChangeEvent> & { resource: ChangeEvent["resource"] }) =>
   changeEvent(ORG, fields);
@@ -115,33 +115,21 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.settings.detail("host-tools"),
       keys.harnesses.all,
       keys.repositories.all,
-      definitions.tasks.formOptions,
     ]);
     expect(settings("profile")).toEqual([]);
   });
 
-  it("settings: agent and task definitions refetch every agent and task query", () => {
-    const definitionsChanged = [
-      definitions.agents.all,
-      definitions.tasks.all,
-      keys.repositories.all,
-      keys.connections.detail("integrations"),
-    ];
+  it("settings: a playbook refetches every playbook query and the settings that bind playbooks", () => {
     expect(
-      liveInvalidations(event({ resource: "settings", section: "agent_definitions" })),
-    ).toEqual(definitionsChanged);
-    expect(liveInvalidations(event({ resource: "settings", section: "task_definitions" }))).toEqual(
-      definitionsChanged,
-    );
+      liveInvalidations(event({ resource: "settings", section: "playbooks", subjectId: ID })),
+    ).toEqual([playbooks.all, keys.repositories.all, keys.connections.detail("integrations")]);
   });
 
-  it("agent: the agents list, each agent, and the forms offering what agents report", () => {
+  it("agent: the agents list and each agent", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.harnesses.lists,
       keys.harnesses.detail(ID),
       keys.harnesses.detail(RUN),
-      definitions.agents.formOptions,
-      definitions.tasks.formOptions,
     ]);
   });
 
@@ -229,24 +217,14 @@ describe("createLiveInvalidator", () => {
     ]);
   });
 
-  it("a definition save refetches agent and task queries, not other settings", () => {
-    seed(
-      definitions.agents.list,
-      definitions.agents.detail(ID),
-      definitions.agents.formOptions,
-      definitions.tasks.list,
-      definitions.tasks.formOptions,
-      keys.settings.detail("routing"),
-    );
+  it("a playbook save refetches playbook queries, not other settings", () => {
+    seed(playbooks.list, playbooks.detail(ID), keys.settings.detail("routing"));
     const invalidator = createLiveInvalidator(client);
-    invalidator.apply(event({ resource: "settings", section: "task_definitions" }), scope);
-    expect(invalidated()).toEqual([
-      definitions.agents.list,
-      definitions.agents.detail(ID),
-      definitions.agents.formOptions,
-      definitions.tasks.list,
-      definitions.tasks.formOptions,
-    ]);
+    invalidator.apply(
+      event({ resource: "settings", section: "playbooks", ids: [ID], subjectId: ID }),
+      scope,
+    );
+    expect(invalidated()).toEqual([playbooks.list, playbooks.detail(ID)]);
   });
 
   it("ignores an event for an organization outside the scope", () => {

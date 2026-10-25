@@ -26,7 +26,7 @@ import {
   type RalphFollowUp,
   type RalphStoryMetric,
 } from "@omniralph/shared";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import type { CreateIssueInput, IssueSummary } from "@/lib/linear/gateway";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";

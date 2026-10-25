@@ -63,7 +63,7 @@ const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
 const { jobHooks, parseSinkResult, sinkFor } = await import("@/lib/sinks");
-const { organizationPlaybooks } = await import("@/lib/definitions");
+const { organizationPlaybooks } = await import("@/lib/playbooks");
 const { enqueueLearnRule } = await import("@/lib/rules/learn");
 const { ruleView } = await import("@/lib/rules/display");
 

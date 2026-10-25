@@ -111,20 +111,14 @@ const { enqueueReview } = await import("@/lib/review/enqueue");
 const { POST: claim } = await import("./claim/route");
 const { POST: result } = await import("./jobs/[id]/result/route");
 const { POST: fail } = await import("./jobs/[id]/fail/route");
-const agentRoute = await import("@/app/api/ui/agents/[id]/route");
-const agentCloneRoute = await import("@/app/api/ui/agents/[id]/clone/route");
-const taskRoute = await import("@/app/api/ui/tasks/[id]/route");
-const taskCloneRoute = await import("@/app/api/ui/tasks/[id]/clone/route");
+const playbookRoute = await import("@/app/api/ui/playbooks/[id]/route");
+const playbookCloneRoute = await import("@/app/api/ui/playbooks/[id]/clone/route");
 type Cloned = ActionResult | { ok: true; id: string };
-const cloneAgentDefinition = async (id: string) =>
-  (await callAction(agentCloneRoute.POST, "POST", { id })) as Cloned;
-const updateAgentDefinition = (id: string, input: unknown) =>
-  callAction(agentRoute.PUT, "PUT", { id }, input);
-const cloneTaskDefinition = async (id: string) =>
-  (await callAction(taskCloneRoute.POST, "POST", { id })) as Cloned;
-const updateTaskDefinition = (id: string, input: unknown) =>
-  callAction(taskRoute.PUT, "PUT", { id }, input);
-const { getAgentDefinition, getTaskDefinition } = await import("@/lib/definitions");
+const clonePlaybook = async (id: string) =>
+  (await callAction(playbookCloneRoute.POST, "POST", { id })) as Cloned;
+const updatePlaybook = (id: string, input: unknown) =>
+  callAction(playbookRoute.PUT, "PUT", { id }, input);
+const { getPlaybook } = await import("@/lib/playbooks");
 const { saveRepositorySettings } = await import("@/lib/repositories/settings");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -347,8 +341,11 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     await setReviewTasks(["builtin:review-pr"]);
   });
 
-  async function setReviewTasks(reviewTaskIds: string[]) {
-    await db.update(repositories).set({ reviewTaskIds }).where(eq(repositories.id, repositoryId));
+  async function setReviewTasks(reviewPlaybookIds: string[]) {
+    await db
+      .update(repositories)
+      .set({ reviewPlaybookIds })
+      .where(eq(repositories.id, repositoryId));
   }
 
   function dispatcher() {
@@ -1090,33 +1087,17 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     it("clones builtin:review-pr with its own rubric, enabled on the repository, into the next review run", async () => {
       await signInAdmin();
 
-      // Clone the built-in reviewer and give the copy its own rubric.
-      const agentClone = await cloneAgentDefinition("builtin:review-pr");
-      if (!("id" in agentClone)) throw new Error(JSON.stringify(agentClone));
-      const agent = (await getAgentDefinition(db, orgId, agentClone.id))!.definition;
-      const { id: _agentId, ...agentFields } = agent;
-      expect(
-        await updateAgentDefinition(agentClone.id, {
-          ...agentFields,
-          name: "Security reviewer",
-          systemPrompt: RUBRIC,
-        }),
-      ).toEqual({ ok: true });
-
-      // Clone the built-in review task onto it.
-      const taskClone = await cloneTaskDefinition("builtin:review-pr");
+      // Clone the built-in review playbook and give the copy its own rubric.
+      const taskClone = await clonePlaybook("builtin:review-pr");
       if (!("id" in taskClone)) throw new Error(JSON.stringify(taskClone));
-      const stored = (await getTaskDefinition(db, orgId, taskClone.id))!;
-      expect(stored).toMatchObject({
-        builtin: false,
-        definition: { agentId: "builtin:review-pr" },
-      });
-      const { id: _taskId, ...taskFields } = stored.definition;
+      const stored = (await getPlaybook(db, orgId, taskClone.id))!;
+      expect(stored).toMatchObject({ builtin: false, playbook: { role: "review" } });
+      const { id: _id, ...fields } = stored.playbook;
       expect(
-        await updateTaskDefinition(taskClone.id, {
-          ...taskFields,
+        await updatePlaybook(taskClone.id, {
+          ...fields,
           name: "Security review",
-          agentId: agentClone.id,
+          systemPrompt: RUBRIC,
         }),
       ).toEqual({ ok: true });
 
@@ -1132,8 +1113,8 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
           pathExcludes: current!.pathExcludes,
           customInstructions: current!.customInstructions ?? "",
           pinnedHarnessIds: [],
-          reviewTaskIds: ["builtin:review-pr", taskClone.id],
-          correlationTaskId: current!.correlationTaskId,
+          reviewPlaybookIds: ["builtin:review-pr", taskClone.id],
+          correlationPlaybookId: current!.correlationPlaybookId,
         }),
       ).toMatchObject({ status: "saved" });
 
@@ -1146,7 +1127,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       const [builtinRun, customRun] = enqueued.runs;
       expect(await jobRow(customRun!.jobId)).toMatchObject({ taskId: taskClone.id });
 
-      // The harness gets the custom playbook (the task on its agent) with the new rubric.
+      // The harness gets the custom playbook with the new rubric.
       const started = await startAs(customRun!.jobId, accessToken);
       if (started?.action !== "run") throw new Error("expected run");
       expect(started.runSpec).toMatchObject({
@@ -1467,10 +1448,10 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     });
 
     describe("with the repository's correlation task", () => {
-      async function setCorrelationTask(correlationTaskId: string) {
+      async function setCorrelationTask(correlationPlaybookId: string) {
         await db
           .update(repositories)
-          .set({ correlationTaskId })
+          .set({ correlationPlaybookId })
           .where(eq(repositories.id, repositoryId));
       }
 

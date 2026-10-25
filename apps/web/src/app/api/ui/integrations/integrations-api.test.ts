@@ -30,7 +30,7 @@ const state = vi.hoisted(() => ({
     updatedBy: string | null;
   }>,
 }));
-/** Stored tasks: org-a's chat query and coding tasks, a non-chat one, and org-b's chat query task. */
+/** Stored playbooks: org-a's chat query and coding tasks, a non-chat one, and org-b's chat query task. */
 const IDS = {
   query: "11111111-1111-4111-8111-111111111111",
   coding: "22222222-2222-4222-8222-222222222222",
@@ -38,14 +38,15 @@ const IDS = {
   foreign: "44444444-4444-4444-8444-444444444444",
 };
 const rows = vi.hoisted(async () => {
-  const { getBuiltinTask } = await import("@omniralph/tasks");
+  const { getBuiltinPlaybook } = await import("@omniralph/tasks");
   const row = (id: string, organizationId: string, base: string, changes: object = {}) => {
-    const { id: _id, name, ...definition } = getBuiltinTask(base)!;
+    const { id: _id, name, role, ...definition } = getBuiltinPlaybook(base)!;
     const now = new Date("2026-10-01T00:00:00Z");
     return {
       id,
       organizationId,
       name: `Custom ${name}`,
+      role,
       definition: { ...definition, ...changes },
       requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
       createdAt: now,
@@ -57,9 +58,7 @@ const rows = vi.hoisted(async () => {
   return [
     row("11111111-1111-4111-8111-111111111111", "org-a", "builtin:ask-about-code"),
     row("22222222-2222-4222-8222-222222222222", "org-a", "builtin:handle-request"),
-    row("33333333-3333-4333-8333-333333333333", "org-a", "builtin:ask-about-code", {
-      triggers: ["finding.mention"],
-    }),
+    row("33333333-3333-4333-8333-333333333333", "org-a", "builtin:correlate-findings"),
     row("44444444-4444-4444-8444-444444444444", "org-b", "builtin:ask-about-code"),
   ];
 });
@@ -76,7 +75,7 @@ vi.mock("@omniralph/db", async () => ({
     _tracked: unknown,
     save: (tx: unknown) => Promise<unknown>,
   ) => save(db),
-  getStoredTaskDefinition: async (_db: unknown, organizationId: string, id: string) =>
+  getStoredPlaybook: async (_db: unknown, organizationId: string, id: string) =>
     (await rows).find((r) => r.organizationId === organizationId && r.id === id) ?? null,
   getIntegration: async () => state.integration && { id: "integration-1", ...state.integration },
   deleteIntegration: async (_db: unknown, organizationId: string) => {

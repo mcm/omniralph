@@ -33,7 +33,7 @@ import {
   organizationPlaybooks,
   taskJobInput,
   type PlaybookSource,
-} from "@/lib/definitions";
+} from "@/lib/playbooks";
 import { reviewIdOfJob } from "./job-review";
 
 export interface EnqueueReviewInput {
@@ -203,7 +203,7 @@ export async function enqueueReview(
 
   const definitions = organizationPlaybooks(db, repository.organizationId);
   const tasks = await reviewTasksFor(
-    repository.reviewTaskIds,
+    repository.reviewPlaybookIds,
     input.trigger,
     { repositoryId: repository.id },
     definitions,

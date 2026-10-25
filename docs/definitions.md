@@ -4,7 +4,7 @@ Every run a harness does (a review, a code question, a story, a PR description�
 **playbook**: one recipe with a role, prompts, a model, tools and what its runs need. Omniralph
 ships built-in playbooks; organization admins can add their own. This page explains what goes into
 a playbook, what its role fixes, how a run's model and budget are picked, and how custom playbooks
-are edited and checked today. The design is
+are stored, served and checked. The design is
 [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#organization-definitions).
 
 ## What a playbook is
@@ -103,7 +103,7 @@ both from a playbook, in one place: the task type, triggers and sink come from t
 request playbook's coding settings fill in `CODING_DEFAULTS`, and both halves take the playbook's
 ID and name. So harnesses need no change for playbooks. The control panel looks playbooks up
 through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
-`apps/web/src/lib/definitions/index.ts`); a job's `task_id` holds the playbook ID.
+`apps/web/src/lib/playbooks/index.ts`); a job's `task_id` holds the playbook ID.
 
 ## Built-in playbooks
 
@@ -131,67 +131,30 @@ replaced.
 
 ## Custom playbooks
 
-Until playbooks get their own storage and page, a custom playbook is a **task** on an **agent**,
-edited under **Settings › Agents** (`/settings/agents`) and **Settings › Tasks**
-(`/settings/tasks`), and read as one playbook (`customPlaybook` in
-`apps/web/src/lib/definitions/custom-playbooks.ts`): the agent's persona with the task's prompt and
-settings, model = the task's **Model override**, else the agent's. Its role comes from the task's
-type, sink and triggers (a `run-result` query task is a correlation or a PR description by its
-output schema; a coding task a request when it accepts every request trigger, else a story). A task
-that fits no role, or only a built-in-only one, doesn't resolve and its runs fail.
+An organization's own playbooks are rows of `playbooks` (`id` a UUID, `organization_id`, `name`,
+`role`, `definition` with every other field, and `requirements`, the
+[derived requirements](#derived-requirements) stored when it was saved). A row that no longer
+parses as a `Playbook`, or has a built-in-only role, doesn't resolve and its runs fail. Built-in
+playbooks stay in code and can't be edited: clone one to change it.
 
-On those pages, each built-in playbook shows as a built-in task on a built-in agent of the same ID
-(its persona). Members can list and view everything (`/settings/agents/<id>`,
-`/settings/tasks/<id>`); only admins create, edit, clone and delete. Built-ins can't be edited:
-**Clone** one to change it. A custom task may run on a built-in's persona, and a custom coding task
-may name a built-in PR description task.
+They are served by the Playbooks API (`apps/web/src/app/api/ui/playbooks`), which calls
+`loadPlaybookList`, `loadPlaybookDetail`, `createPlaybook`, `updatePlaybook`, `clonePlaybook` and
+`deletePlaybook` in `apps/web/src/lib/playbooks/manage.ts`. Paths carry a `builtin:` ID
+URI-encoded (`builtin%3Areview-pr`).
 
-**Clone** on any page copies the agent or task into a new custom one with a new UUID, named
-`<name> (copy)`, and opens its edit page. A cloned task keeps the source's agent (clone the agent
-too, then pick the copy, to change the persona). The copy is validated like a save, and its
-[requirements](#derived-requirements) are derived again; a custom task that no longer validates
-can't be cloned until it's fixed: "Nightly audit can't be cloned until it's fixed: …".
+| Request                             | Who     | What it does                                                                                                                                                                                  |
+| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/ui/playbooks`             | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it).              |
+| `GET /api/ui/playbooks/{id}`        | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.                       |
+| `POST /api/ui/playbooks`            | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id }`.                                                                                                                    |
+| `PUT /api/ui/playbooks/{id}`        | Admins  | Replaces a custom playbook. A built-in is refused with 409 `builtin_read_only`.                                                                                                               |
+| `POST /api/ui/playbooks/{id}/clone` | Admins  | Copies a built-in or custom playbook into a new one named `<name> (copy)`; answers `{ ok, id }`. A built-in-only role can't be copied.                                                        |
+| `DELETE /api/ui/playbooks/{id}`     | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                                         |
 
-### The agent form
-
-| Field                             | What it does                                                                                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Name**, **Description**         | Required name up to 200 characters; description up to 2000, shown in lists.                                                                       |
-| **Model**, **Fallback model**     | A Claude model ID used when the task sets no **Model override**; empty for the Claude Code default. Never a review's: its review depth sets that. |
-| **System prompt** › **Mode**      | **Append** to Claude Code's preset, or **Replace** it.                                                                                            |
-| **System prompt**                 | The persona's instructions.                                                                                                                       |
-| **Tools** › **Claude Code tools** | Claude Code tool names (`Read`, `Grep`, `Glob`…). The task's type and tool settings narrow them further (e.g. `Bash` only with **Shell**).        |
-| **Tools** › **Harness tools**     | `post_activity`, `ask_permission`, `get_attachment` (any type) and `ship` (coding only).                                                          |
-| **Tools** › **Linear tools**      | Read-only Linear tools; the task must also enable **Linear read access**.                                                                         |
-| **Tools** › **MCP servers**       | An installable's MCP servers as `<package>:<server>` (its tasks then require that installable).                                                   |
-| **Reference docs**                | Named Markdown documents the run can read.                                                                                                        |
-
-### The task form
-
-Cards appear for the chosen task type only (**Output schema** for query tasks, **Coding** for
-coding tasks).
-
-| Field                                | What it does                                                                                                                                                                           |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Name**, **Description**            | As for agents.                                                                                                                                                                         |
-| **Task type**                        | `query`, `review` or `coding`. It can't change while something [uses the task](#delete-refusals).                                                                                      |
-| **Agent**                            | A built-in persona or a custom agent.                                                                                                                                                  |
-| **Triggers**                         | The events that may start the task, among those its type accepts; the role they make decides what really starts its runs.                                                              |
-| **Prompt template** › **Template**   | The user prompt ([templates](#templates)).                                                                                                                                             |
-| **Setup commands**                   | See [below](#setup-and-teardown-commands).                                                                                                                                             |
-| **Teardown commands**                | See [below](#setup-and-teardown-commands).                                                                                                                                             |
-| **Tool settings**                    | **Shell (Bash)** (query tasks only), **Linear read access**, **Network access beyond the control panel**.                                                                              |
-| **Requirements**                     | **Installables** (npm package names) and **Host tools** (names from **Settings › Harnesses › Host tools**) the task's runs need.                                                       |
-| **Output schema** (query)            | A JSON schema of an object the output must match; empty for a Markdown answer.                                                                                                         |
-| **Coding** › **Push**                | **After each story** or **Once at the end**. When the draft PR opens is the repository's "open PR early" setting.                                                                      |
-| **Coding** › **PR description task** | The query task that writes the PR title and description (default `builtin:describe-pr`).                                                                                               |
-| **Coding** › limits                  | **Attempts per story** (default 3), **Story attempts per run** (50), **Review fix rounds** and **CI fix rounds** (20 each, capping the repository's settings). Empty uses the default. |
-| **Running** › **Sink**               | What applies the run's output; only sinks of the task type are listed.                                                                                                                 |
-| **Running** › **Model override**     | Wins over the agent's model. Review tasks can't set one (their review depth does).                                                                                                     |
-| **Running** › **Token budget**       | A fixed number of **Tokens**, or **No limit** (stored as `null`). Review tasks can't set one.                                                                                          |
-
-A custom task also keeps fields the form doesn't show when it was cloned from a built-in with them
-(`systemAppend`, `variableLimits`, `maxTurns`, `idleTimeoutMs`).
+Every save, clone and delete publishes the `playbooks` settings change event with the playbook as
+its subject. A playbook's role can't change on **Save** while anything
+[uses it](#delete-refusals), since whatever uses it picked it for its role. A custom playbook may
+name a built-in PR description playbook.
 
 ### Setup and teardown commands
 
@@ -255,49 +218,39 @@ before fencing.
 
 ## Save-time validation
 
-**Save** (and **Create**, and **Clone** of a task) validates the agent with `validateCustomAgent`
-(`apps/web/src/lib/definitions/validation.ts`) and the task with `validateTaskDefinition`
-(`packages/tasks/src/validate.ts`), against the organization's agents and tasks and the control
-panel's sinks. The forms send them to the `/api/ui/agents` and `/api/ui/tasks` handlers, which call
-`createAgent`, `updateAgent`, `cloneAgent` (and the same for tasks: `createTask`, `updateTask`,
-`cloneTask`) in `apps/web/src/lib/definitions/manage.ts`, and **Delete** calls `deleteAgent` /
-`deleteTask`. A rejected save says "Fix the highlighted fields." and shows each error under its
-field; nothing is stored. The rules, with the field each error appears on and an example message:
+Create, update and clone validate the playbook with `validatePlaybookAgainst`
+(`apps/web/src/lib/playbooks/validation.ts`): the `Playbook` schema, then `validateTaskDefinition`
+(`packages/tasks/src/validate.ts`) on the run spec it becomes, against the organization's
+playbooks and the control panel's sinks. A rejected save answers 400 "Fix the highlighted fields."
+with each error under its playbook field; nothing is stored. The rules, with the field each error
+appears on and an example message:
 
-| Rule                                                                                                       | Field                    | Example error                                                                                                                                    |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The schema: required fields, lengths, ranges, known values                                                 | The field                | `name`: Too small: expected string to have >=1 characters / `setupCommands.0.name`: Use lowercase letters, digits and \_, starting with a letter |
-| An agent's MCP servers are an installable's                                                                | `tools.mcpServers.<i>`   | Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.                                                         |
-| Setup command names are unique                                                                             | `setupCommands.<i>.name` | Setup command name semgrep is used twice                                                                                                         |
-| Only query tasks have an output schema                                                                     | `outputSchema`           | outputSchema is only allowed on query tasks                                                                                                      |
-| Only coding tasks have coding fields                                                                       | The field                | maxFixRounds is only allowed on coding tasks                                                                                                     |
-| Triggers are ones the task type accepts                                                                    | `triggers`               | review tasks can't be started by chat.request; they accept pr.updated, pr.mention, review.rerun.                                                 |
-| A review task sets no model or token budget                                                                | `model`, `tokenBudget`   | Review tasks can't set a model; the repo's review depth sets it.                                                                                 |
-| The template parses                                                                                        | `promptTemplate`         | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
-| Every variable exists for the task type                                                                    | `promptTemplate`         | `{{pr.titel}}` isn't a variable query tasks can use.                                                                                             |
-| Every variable is available for every trigger                                                              | `promptTemplate`         | `{{diff}}` isn't available for chat.request. / `{{dismissal.note}}` isn't available for finding.mention.                                         |
-| A coding task accepting a request trigger only uses `epic.prd` and `story.*` inside an optional section    | `promptTemplate`         | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |
-| A variable limit names a variable the task can use                                                         | `variableLimits.<name>`  | This task can't use hunk.                                                                                                                        |
-| The agent exists in the organization                                                                       | `agentId`                | There is no agent 0b7c….                                                                                                                         |
-| The agent's harness tools are allowed for the task type                                                    | `agentId`                | review runs can't use the harness tool ship.                                                                                                     |
-| The output schema is an object schema the harness can check output against                                 | `outputSchema`           | The output must be an object: set "type": "object".                                                                                              |
-| The sink is implemented by this control panel                                                              | `sink`                   | The triage sink isn't available.                                                                                                                 |
-| The sink takes the task type's output                                                                      | `sink`                   | The review sink applies the output of review tasks, not query tasks.                                                                             |
-| A Markdown-answer sink gets no output schema                                                               | `sink`                   | The chat-thread sink takes a Markdown answer: remove the output schema.                                                                          |
-| A structured sink gets an output schema that guarantees its shape                                          | `sink`                   | The learned-rule sink takes structured output: declare an output schema it accepts. / The learned-rule sink doesn't accept this output schema: … |
-| The PR description task exists and is a query task started by `run.invoked` that outputs `{ title, body }` | `prDescriptionTaskId`    | builtin:correlate-findings isn't a query task started by run.invoked. / … has no output schema: a PR description task outputs { title, body }.   |
+| Rule                                                                                                   | Field                            | Example error                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The schema: required fields, lengths, ranges, known values                                             | The field                        | `name`: Too small: expected string to have >=1 characters / `setupCommands.0.name`: Use lowercase letters, digits and \_, starting with a letter |
+| No field the role sets (`REFUSED_PLAYBOOK_FIELDS`)                                                     | The field                        | A playbook's role sets where its output goes; remove sink.                                                                                       |
+| A role a custom playbook can take                                                                      | `role`                           | Only a built-in playbook can be a triage playbook.                                                                                               |
+| MCP servers are an installable's                                                                       | `tools.mcpServers.<i>`           | Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.                                                         |
+| Harness tools are allowed for the role's task type                                                     | `tools.harness`                  | review runs can't use the harness tool ship.                                                                                                     |
+| Setup command names are unique                                                                         | `setupCommands.<i>.name`         | Setup command name semgrep is used twice                                                                                                         |
+| Only query roles have an output schema; only story and request playbooks have coding settings          | `outputSchema`, `coding`         | A review playbook can't declare an output schema.                                                                                                |
+| A review playbook sets no model or token budget                                                        | `model`, `tokenBudget`           | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
+| The template parses                                                                                    | `promptTemplate`                 | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
+| Every variable exists for the role's task type and every one of its triggers                           | `promptTemplate`                 | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |
+| A request playbook only uses `epic.prd` and `story.*` inside an optional section                       | `promptTemplate`                 | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |
+| A variable limit names a variable the playbook can use                                                 | `variableLimits.<name>`          | This task can't use hunk.                                                                                                                        |
+| The output schema is an object schema the harness can check output against                            | `outputSchema`                   | The output must be an object: set "type": "object".                                                                                              |
+| A correlation or PR description playbook outputs `{ findings, summary }` / `{ title, body }`          | `outputSchema`                   | … has no output schema: a PR description task outputs { title, body }.                                                                          |
+| The role's sink takes the output (a Markdown answer, or structured output it accepts)                  | `role`                           | The chat-thread sink takes a Markdown answer: remove the output schema.                                                                          |
+| The PR description playbook exists and is a `pr-description` playbook                                  | `coding.prDescriptionPlaybookId` | There is no task 0b7c….                                                                                                                          |
 
-The form also checks the output schema is JSON (an object) before it submits. Editing an agent is
-refused when tasks running on it would no longer validate: adding a harness tool one's type doesn't
-allow (`tools.harness`: "Not allowed for Nightly audit (review).").
-
-Every built-in passes the same validation (a test in `apps/web/src/lib/definitions/validation.test.ts`
-runs it over all of them and their clones), so a cloned built-in saves unchanged.
+Every built-in a custom playbook's role allows passes the same validation as a clone (a test in
+`apps/web/src/lib/playbooks/validation.test.ts`), so a cloned built-in saves unchanged.
 
 ## Derived requirements
 
 What a playbook's runs need from a harness is derived from it (`playbookRequirements`; for a custom
-one, also stored with its task row on save and shown under **Requirements** on the task's page):
+one, also stored with its row on save and returned as `requirements` by `GET /api/ui/playbooks/{id}`):
 
 - **Minimum harness version**: the highest of the release that runs the role's task type (query
   0.9.0, review 0.10.0, coding 0.11.0), 0.10.0 when it has setup or teardown commands, and any
@@ -340,59 +293,51 @@ installables and host tools is covered in [installables.md](installables.md).
 
 ## Delete refusals
 
-**Delete** (custom definitions only, after a confirmation) is refused, with nothing deleted, when:
+`DELETE /api/ui/playbooks/{id}` (custom playbooks only) is refused with 409 `playbook_in_use`, with
+nothing deleted, while the playbook is used (`findPlaybookReferrers` in
+`apps/web/src/lib/playbooks/referrers.ts`); the error names each user: "Security review can't be
+deleted while it's used by repo acme/app (review), the chat ask about code playbook, chat channel
+Acme Slack › C0123ABCD (start work), playbook Ship it (PR description)." Repo roles are review,
+correlation, story and request. It's refused the same way while a run of it is queued or running:
+"Security review can't be deleted while a run of it is queued or running." A built-in is refused
+with 409 `builtin_read_only`: "Built-in playbooks can't be changed; clone one to make your own."
 
-- the definition is a built-in: "Built-in tasks can't be changed; clone one to make your own."
-  (agents likewise);
-- an **agent** is still used by tasks of the organization, even ones that no longer validate:
-  "Security reviewer can't be deleted while tasks use it: Security review.";
-- a **task** is still used (`findTaskReferrers` in `apps/web/src/lib/definitions/referrers.ts`); the
-  error names each user: "Security review can't be deleted while it's used by repository acme/app
-  (review task), the chat ask about code task, chat channel Acme Slack › C0123ABCD (start work),
-  coding task Ship it (PR description)." Repository roles are review task, correlation task, story
-  task and request task;
-- a **task** has a run queued or running: "Security review can't be deleted while a run of it is
-  queued or running."
-
-Change or remove the settings named, wait for the runs, then delete. The same users keep a task's
-**Task type** from changing on **Save**.
+Change or remove the settings named, wait for the runs, then delete.
 
 ## Where custom playbooks can be chosen
 
-Every picker lists the built-in and the organization's tasks that fit (built-ins marked), and the
-server checks the pick again on save (another organization's task, or one that doesn't fit, is
-refused under the field):
+Each binding takes playbooks of the roles listed (`REPOSITORY_BINDING_ROLES`), built-in or the
+organization's own, and the server checks each pick on save: another organization's playbook, an
+unresolvable one or one of another role is refused under the field. Binding a repo's role is
+admin-only and part of the repo settings API; a save that leaves a binding out keeps it.
 
-| Setting                                                                      | Lists                                                                                                                |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Repository › **Settings** › **Review tasks** (`/repositories/<id>/settings`) | Review tasks accepting `pr.updated`; check one or more, they run in parallel in each review run                      |
-| Repository › **Settings** › **Review tasks** › **Correlation task**          | Query tasks accepting `run.invoked` whose output schema fits the correlation output (`{ findings, summary }`)        |
-| Repository › **Settings** › **Coding** › **Story task**                      | Coding tasks accepting `linear.delegated`                                                                            |
-| Repository › **Settings** › **Coding** › **Request task**                    | Coding tasks accepting every request trigger                                                                         |
-| **Settings › Integrations** › **Chat tasks** › **Ask about code**            | Query tasks accepting `chat.request` (organization default and channel overrides; see [chat.md](chat.md#chat-tasks)) |
-| **Settings › Integrations** › **Chat tasks** › **Start work**                | Coding tasks accepting `chat.request`                                                                                |
-| A coding task's **Coding** › **PR description task**                         | Query tasks accepting `run.invoked` whose output schema guarantees `{ title, body }`                                 |
+| Setting                                                                                       | Roles                      |
+| --------------------------------------------------------------------------------------------- | -------------------------- |
+| `reviewPlaybookIds` of `PUT /api/ui/repositories/{id}/settings` (run in parallel per review)   | `review`, `review-summary` |
+| `correlationPlaybookId` of `PUT /api/ui/repositories/{id}/settings`                            | `correlation`              |
+| `storyPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                    | `story`                    |
+| `requestPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                  | `request`                  |
+| **Settings › Integrations** › **Chat tasks** › **Ask about code** ([chat.md](chat.md#chat-tasks)) | `chat-ask`                 |
+| **Settings › Integrations** › **Chat tasks** › **Start work**                                 | `request`                  |
+| A story or request playbook's `coding.prDescriptionPlaybookId`                                | `pr-description`           |
 
-A task's page lists what uses it (**Used by**). Changes apply to the next run; runs already
-started keep the playbook they were claimed with.
+A binding change publishes the repo's `repository.reviews` or `repository.coding` change event.
+Changes apply to the next run; runs already started keep the playbook they were claimed with.
 
 ## Walkthrough: a second review playbook
 
 Add a security reviewer next to the default review, with its own rubric:
 
-1. **Clone the persona.** Open **Settings › Agents**, pick **Review a pull request**
-   (`builtin:review-pr`, the reviewer persona) and **Clone**. On the copy's edit page, name it
-   `Security reviewer` and edit its **Reference docs**: `rubric/universal.md` is the rubric every
+1. **Clone the built-in.** `POST /api/ui/playbooks/builtin%3Areview-pr/clone` answers the copy's
+   `id`.
+2. **Give it its rubric.** `GET /api/ui/playbooks/{id}`, then `PUT` it back named
+   `Security review` with its `referenceDocs` rewritten: `rubric/universal.md` is the rubric every
    review gets (with `rubric/languages/<language>.md` per language in the diff). Rewrite it around
-   what this reviewer looks for (e.g. injection, authz, secrets) and remove the language docs you
-   don't want. **Save agent**.
-2. **Clone the task.** Open **Settings › Tasks**, pick **Review a pull request**
-   (`builtin:review-pr`) and **Clone**. On the copy's edit page, name it `Security review`, set
-   **Agent** to `Security reviewer`, and adjust the **Template** if you like (it is checked against
-   the review variables for `pr.updated`, `pr.mention` and `review.rerun`). Keep the sink `review`,
-   so it reads as a `review` playbook. **Save task**.
-3. **Enable it on a repository.** Open the repository's **Settings**, check `Security review`
-   under **Review tasks** next to **Review a pull request**, and **Save settings**.
+   what this reviewer looks for (e.g. injection, authz, secrets), and adjust the `promptTemplate`
+   if you like (it is checked against the review variables for `pr.updated`, `pr.mention` and
+   `review.rerun`).
+3. **Bind it to a repo.** `PUT /api/ui/repositories/{id}/settings` with
+   `reviewPlaybookIds: ["builtin:review-pr", "<id>"]`.
 
 The next push or `@omniralph review` on a PR/MR of that repository starts one review run with both
 playbooks in parallel; the correlation playbook merges findings both reported, and the posted

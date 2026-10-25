@@ -125,7 +125,6 @@ export const saveSelectionSchema = z.object({
 });
 export type SaveSelection = z.infer<typeof saveSelectionSchema>;
 
-const taskChoiceSchema = z.object({ id: z.string(), name: z.string(), builtin: z.boolean() });
 const taskSwitch = z.boolean().nullable();
 
 /** A harness of the organization, as Repository › Harnesses shows (and pins) it. */
@@ -156,13 +155,11 @@ export const repositoryDetailSchema = z.object({
     pathExcludes: z.array(z.string()),
     customInstructions: z.string(),
     pinnedHarnessIds: z.array(z.string()),
-    reviewTaskIds: z.array(z.string()),
-    correlationTaskId: z.string(),
+    /** The review and review-summary playbooks its review runs fan out to, in order. */
+    reviewPlaybookIds: z.array(z.string()),
+    /** The playbook that correlates its review runs' findings. */
+    correlationPlaybookId: z.string(),
   }),
-  /** The review tasks the repository can run on its PRs/MRs (built-in and the organization's). */
-  reviewTasks: z.array(taskChoiceSchema.extend({ description: z.string() })),
-  /** The tasks that can correlate its review runs' findings. */
-  correlationTasks: z.array(taskChoiceSchema),
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: z.array(repositoryHarnessSchema),
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
@@ -182,8 +179,8 @@ export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 
 /** The Coding tab's saved values, as its form edits them (`RalphSettingsInput`). */
 const codingSettingsSchema = z.object({
-  storyTaskId: z.string(),
-  requestTaskId: z.string(),
+  storyPlaybookId: z.string(),
+  requestPlaybookId: z.string(),
   verifyCommands: z.array(z.string()),
   runPrdQualityGates: z.boolean(),
   setupCommand: z.string(),
@@ -212,8 +209,6 @@ const codingSettingsSchema = z.object({
  */
 export const repositoryCodingSchema = z.object({
   settings: codingSettingsSchema,
-  /** The coding tasks its story and request runs can use (built-in and the organization's). */
-  tasks: z.object({ story: z.array(taskChoiceSchema), request: z.array(taskChoiceSchema) }),
   /** The models reported by the harnesses that may run its coding jobs. */
   models: z.array(
     z.object({ value: z.string(), displayName: z.string(), harnessIds: z.array(z.string()) }),

@@ -39,14 +39,13 @@ import {
   HISTORY_REWRITE_LABELS,
   pickKeys,
   RALPH_DEFAULT_TEXT,
-  RALPH_REPOSITORY_DEFAULTS,
   ralphDraft,
   ralphSpecs,
   ralphValues,
   type RalphDraft,
+  type RalphFormInput,
 } from "@/lib/settings/forms";
 import { repositoryChanged } from "../repository-queries";
-import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 import {
   saveWithTaskTypes,
   TaskTypeSelect,
@@ -164,7 +163,6 @@ export function CodingSettingsSections({
   repositoryId,
   settings,
   choices,
-  codingTasks,
   taskTypes,
   onRetryLinear,
 }: {
@@ -172,8 +170,6 @@ export function CodingSettingsSections({
   settings: RalphSettingsValues;
   /** The Linear values and models the pickers offer. */
   choices: CodingChoices;
-  /** The coding tasks its story and request runs can use (built-in and the organization's). */
-  codingTasks: { story: readonly TaskChoiceOption[]; request: readonly TaskChoiceOption[] };
   /** The repository's task-type switches; this tab saves Coding's. */
   taskTypes: TaskTypesValues;
   /** Reads the Linear workspace again, when it couldn't be read. */
@@ -190,19 +186,11 @@ export function CodingSettingsSections({
 
   const savedValues = ralphValues(saved);
   const draftValues = ralphValues(draft);
-  const tasks = [...codingTasks.story, ...codingTasks.request];
-  const specs = React.useMemo(
-    () =>
-      ralphSpecs(
-        new Map([...codingTasks.story, ...codingTasks.request].map((t) => [t.id, t.name])),
-      ),
-    [codingTasks],
-  );
-  const taskName = (id: string) => tasks.find((t) => t.id === id)?.name ?? id;
+  const specs = React.useMemo(() => ralphSpecs(), []);
 
   /** The props of the section saving `keys` and the task-type switches `types`. */
   const section = (
-    keys: readonly (keyof RalphSettingsInput)[],
+    keys: readonly (keyof RalphFormInput)[],
     types: readonly TaskTypeSwitch[] = [],
   ) => {
     const typesDraft = { ...taskTypes.overrides, coding };
@@ -270,7 +258,7 @@ export function CodingSettingsSections({
   };
 
   const textInput = (
-    key: keyof RalphDraft & keyof RalphSettingsInput,
+    key: keyof RalphDraft & keyof RalphFormInput,
     id: string,
     label: string,
     hint: string,
@@ -494,36 +482,8 @@ export function CodingSettingsSections({
           <SettingsSubsection
             id="coding-agent"
             title="Agent"
-            description="How stories and requests are worked: which tasks, which model, what the sessions are told and which tools they may use."
+            description="How stories and requests are worked: which model, what the sessions are told and which tools they may use."
           >
-            <div className="settings-row">
-              <TaskPicker
-                id="ralph-story-task"
-                label="Story task"
-                hint={withDefault(
-                  "The coding task that works delegated stories.",
-                  taskName(RALPH_REPOSITORY_DEFAULTS.storyTaskId),
-                )}
-                value={draft.storyTaskId}
-                choices={codingTasks.story}
-                disabled={false}
-                error={errors.storyTaskId}
-                onChange={(value) => set("storyTaskId", value)}
-              />
-              <TaskPicker
-                id="ralph-request-task"
-                label="Request task"
-                hint={withDefault(
-                  "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands).",
-                  taskName(RALPH_REPOSITORY_DEFAULTS.requestTaskId),
-                )}
-                value={draft.requestTaskId}
-                choices={codingTasks.request}
-                disabled={false}
-                error={errors.requestTaskId}
-                onChange={(value) => set("requestTaskId", value)}
-              />
-            </div>
             {choices.harnessCount === 0 && (
               <Muted className="settings-note">
                 No active harness accepts coding jobs, so there are no models to choose from. Let a

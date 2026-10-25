@@ -10,7 +10,7 @@
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queryKeys, type QueryKeys } from "@/lib/api/keys";
-import { definitionKeys } from "@/lib/api/settings-keys";
+import { playbookKeys } from "@/lib/api/playbook-keys";
 import type {
   ChangeEvent,
   ChangeEventOf,
@@ -49,29 +49,22 @@ const SETTINGS_INVALIDATIONS: Record<
   routing_rules: (keys) => [keys.settings.detail("routing")],
   connection: (keys) => [keys.connections.all],
   organization: (keys) => [keys.organization.all],
-  // Agents and repositories show the defaults they inherit; the task form, the host tools.
+  // Agents and repositories show the defaults they inherit.
   agent_defaults: (keys) => [
     keys.settings.detail("harness-defaults"),
     keys.settings.detail("host-tools"),
     keys.harnesses.all,
     keys.repositories.all,
-    definitionKeys(keys).tasks.formOptions,
   ],
-  agent_definitions: (keys) => definitionsKeys(keys),
-  task_definitions: (keys) => definitionsKeys(keys),
+  // Playbooks list each other (PR description playbooks); repos and chat settings bind them.
+  playbooks: (keys) => [
+    playbookKeys(keys).all,
+    keys.repositories.all,
+    keys.connections.detail("integrations"),
+  ],
   // The user's own record (their theme): no query shows it, the shell applies it.
   profile: () => [],
 };
-
-/**
- * What an agent or task definition's save or delete shows in: every agent and task query
- * (agents list the tasks running on them, tasks and the task form name agents and tasks),
- * and the settings that pick tasks (repositories, chat tasks).
- */
-function definitionsKeys(keys: QueryKeys): QueryKey[] {
-  const { agents, tasks } = definitionKeys(keys);
-  return [agents.all, tasks.all, keys.repositories.all, keys.connections.detail("integrations")];
-}
 
 function repositoryKeys(keys: QueryKeys, repositoryId: string | undefined): QueryKey[] {
   return repositoryId
@@ -118,10 +111,6 @@ export const LIVE_INVALIDATIONS = {
   agent: (event, keys) => [
     keys.harnesses.lists,
     ...event.ids.map((agentId) => keys.harnesses.detail(agentId)),
-    // The agent and task forms offer the models and installables the organization's agents
-    // report, and count its agents.
-    definitionKeys(keys).agents.formOptions,
-    definitionKeys(keys).tasks.formOptions,
   ],
   repository: (event, keys) => [
     keys.repositories.lists,

@@ -31,7 +31,7 @@ import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
-import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
 

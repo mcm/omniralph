@@ -62,7 +62,7 @@ const { pinRepository } = await import("@/lib/harnesses/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
 const { codingJobInput } = await import("@/lib/ralph/coding");
-const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 const { runSpecJobInput } = await import("@/lib/runs/job");
 const { signJobTokens } = await import("@/lib/harness-api/jobs");
 

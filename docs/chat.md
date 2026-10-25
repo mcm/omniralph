@@ -157,9 +157,9 @@ the bot runs (admins only):
 - **Start work**: the coding task a [work request](#ralph-from-chat) runs. Default:
   `builtin:handle-request`.
 
-The pickers list the built-in tasks and the organization's own (custom tasks made under
-**Settings › Tasks**; see [definitions.md](definitions.md)) of the right type (query, resp. coding)
-that accept the `chat.request` trigger; **Save** stores the organization's choice. Below them, each connected workspace or server
+The pickers list the built-in playbooks and the organization's own (custom playbooks, see
+[definitions.md](definitions.md)) of the right type (query, resp. coding) that accept the
+`chat.request` trigger; **Save** stores the organization's choice. Below them, each connected workspace or server
 lists its **channel overrides**: enter a channel's ID (Slack: `C0123ABCD`, from the channel's
 details; Discord: the channel's numeric ID, with Developer Mode on), choose a task for either role
 (or **Organization's task** to keep the organization's) and **Add channel**. Change an override

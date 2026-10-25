@@ -3,7 +3,7 @@ import {
   harnessRepoPins,
   harnesses,
   connectRepository,
-  insertTaskDefinition,
+  insertPlaybook,
   closeDb,
   createDb,
   getRepository,
@@ -32,37 +32,22 @@ import {
 import { captureChanges } from "@omniralph/db/changes";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinPlaybook } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 
 vi.mock("server-only", () => ({}));
-// A second built-in review task, beside `builtin:review-pr`.
+// A second built-in review playbook, beside `builtin:review-pr`.
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
-  const security = {
-    ...actual.getBuiltinTask("builtin:review-pr")!,
+  const securityPlaybook = {
+    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
     id: "builtin:security-review",
     name: "Security review",
   };
-  // A review task that only runs when asked, never on a push.
-  const onRequest = {
-    ...actual.getBuiltinTask("builtin:review-pr")!,
-    id: "builtin:on-request-review",
-    name: "On-request review",
-    triggers: ["pr.mention", "review.rerun"],
-  };
-  const injected = new Map([security, onRequest].map((task) => [task.id, task]));
-  // Runs resolve playbooks: the security review as one (a push-less review has no playbook role).
-  const securityPlaybook = {
-    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
-    id: security.id,
-    name: security.name,
-  };
   return {
     ...actual,
-    getBuiltinTask: (id: string) => injected.get(id) ?? actual.getBuiltinTask(id),
     getBuiltinPlaybook: (id: string) =>
       id === securityPlaybook.id ? securityPlaybook : actual.getBuiltinPlaybook(id),
   };
@@ -146,13 +131,13 @@ const baseSettings: RepositorySettingsInput = {
   pathExcludes: [],
   customInstructions: "",
   pinnedHarnessIds: [],
-  reviewTaskIds: ["builtin:review-pr"],
-  correlationTaskId: "builtin:correlate-findings",
+  reviewPlaybookIds: ["builtin:review-pr"],
+  correlationPlaybookId: "builtin:correlate-findings",
 };
 
 const baseRalph: RalphSettingsInput = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
@@ -253,8 +238,8 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
         pathExcludes: ["*.snap", "/docs/**"],
         customInstructions: "  Prefer early returns.  ",
         pinnedHarnessIds: [],
-        reviewTaskIds: ["builtin:review-pr"],
-        correlationTaskId: "builtin:correlate-findings",
+        reviewPlaybookIds: ["builtin:review-pr"],
+        correlationPlaybookId: "builtin:correlate-findings",
       }),
     );
     expect(result).toEqual({ ok: true });
@@ -336,16 +321,16 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
   });
 
   it("saves the review tasks, and the next review run fans out to them", async () => {
-    expect((await getRepository(db, repoId))!.reviewTaskIds).toEqual(["builtin:review-pr"]);
+    expect((await getRepository(db, repoId))!.reviewPlaybookIds).toEqual(["builtin:review-pr"]);
     expect(
       await updateRepositorySettings(repoId, {
         ...baseSettings,
-        reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+        reviewPlaybookIds: [SECURITY_TASK_ID, "builtin:review-pr"],
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
-      correlationTaskId: "builtin:correlate-findings",
+      reviewPlaybookIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+      correlationPlaybookId: "builtin:correlate-findings",
     });
 
     prNumber += 1;
@@ -366,41 +351,43 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     expect(
       await updateRepositorySettings(repoId, {
         ...baseSettings,
-        reviewTaskIds: [SECURITY_TASK_ID],
+        reviewPlaybookIds: [SECURITY_TASK_ID],
       }),
     ).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.reviewTaskIds).toEqual([SECURITY_TASK_ID]);
+    expect((await getRepository(db, repoId))!.reviewPlaybookIds).toEqual([SECURITY_TASK_ID]);
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
   });
 
-  it("rejects no, duplicate, unknown, non-review and push-less tasks without saving anything", async () => {
+  it("rejects no, duplicate, unknown and non-review playbooks without saving anything", async () => {
+    const notReview = "Choose review or review-summary playbooks of this organization.";
     const invalid: [string[], string][] = [
-      [[], "Choose at least one review task."],
-      [["builtin:review-pr", "builtin:review-pr"], "Choose each review task once."],
-      [["builtin:review-pr", "builtin:nope"], "Some selected review tasks don't exist."],
-      [["builtin:reply-to-finding"], "Some selected review tasks don't exist."],
-      [["builtin:on-request-review"], "Some selected review tasks don't exist."],
+      [[], "Choose at least one review playbook."],
+      [["builtin:review-pr", "builtin:review-pr"], "Choose each review playbook once."],
+      [["builtin:review-pr", "builtin:nope"], notReview],
+      [["builtin:reply-to-finding"], notReview],
+      [["builtin:correlate-findings"], notReview],
     ];
-    for (const [reviewTaskIds, message] of invalid) {
+    for (const [reviewPlaybookIds, message] of invalid) {
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
           depth: "deep",
-          reviewTaskIds,
+          reviewPlaybookIds,
         }),
-      ).toMatchObject({ ok: false, fieldErrors: { reviewTaskIds: message } });
+      ).toMatchObject({ ok: false, fieldErrors: { reviewPlaybookIds: message } });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
       reviewDepth: "standard",
-      reviewTaskIds: ["builtin:review-pr"],
+      reviewPlaybookIds: ["builtin:review-pr"],
     });
   });
 
-  /** A task of `organizationId` stored as a copy of built-in `builtinId` (with `changes`). */
-  async function storedTask(builtinId: string, changes: object = {}, organizationId = orgId) {
-    const { name, ...definition } = getBuiltinTask(builtinId)!;
-    const row = await insertTaskDefinition(db, organizationId, {
+  /** A playbook of `organizationId` stored as a copy of built-in `builtinId` (with `changes`). */
+  async function storedPlaybook(builtinId: string, changes: object = {}, organizationId = orgId) {
+    const { id: _id, name, role, ...definition } = getBuiltinPlaybook(builtinId)!;
+    const row = await insertPlaybook(db, organizationId, {
       name: `Custom ${name}`,
+      role,
       definition: { ...definition, ...changes },
       requirements: {},
       createdBy: null,
@@ -413,21 +400,21 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     return other!.id;
   }
 
-  it("saves a custom review task and correlation task, and the next review run fans out to the custom task", async () => {
-    const review = await storedTask("builtin:review-pr", {
+  it("saves a custom review playbook and correlation playbook, and the next review run fans out to the custom one", async () => {
+    const review = await storedPlaybook("builtin:review-pr", {
       promptTemplate: "Review {{repository}} for security problems.",
     });
-    const correlation = await storedTask("builtin:correlate-findings");
+    const correlation = await storedPlaybook("builtin:correlate-findings");
     expect(
       await updateRepositorySettings(repoId, {
         ...baseSettings,
-        reviewTaskIds: ["builtin:review-pr", review],
-        correlationTaskId: correlation,
+        reviewPlaybookIds: ["builtin:review-pr", review],
+        correlationPlaybookId: correlation,
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      reviewTaskIds: ["builtin:review-pr", review],
-      correlationTaskId: correlation,
+      reviewPlaybookIds: ["builtin:review-pr", review],
+      correlationPlaybookId: correlation,
     });
 
     prNumber += 1;
@@ -449,35 +436,71 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
   });
 
-  it("rejects review and correlation tasks of another organization or of the wrong type without saving", async () => {
-    const other = await otherOrganization();
-    const othersReview = await storedTask("builtin:review-pr", {}, other);
-    const othersCorrelation = await storedTask("builtin:correlate-findings", {}, other);
-    const queryReview = await storedTask("builtin:ask-about-code");
-    // A query task taking run.invoked whose output isn't the correlation's.
-    const wrongOutput = await storedTask("builtin:correlate-findings", {
-      outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+  it("binds review playbooks only when given, publishing the repo's review change", async () => {
+    const review = await storedPlaybook("builtin:summarize-pr");
+    const { result, changes } = await captureChanges(() =>
+      updateRepositorySettings(repoId, { ...baseSettings, reviewPlaybookIds: [review] }),
+    );
+    expect(result).toEqual({ ok: true });
+    expect(changes).toEqual([
+      expect.objectContaining({
+        resource: "settings",
+        section: "repository.reviews",
+        ids: [repoId],
+        subjectId: repoId,
+        organizationId: orgId,
+      }),
+    ]);
+    // A save without the bindings (the old Review settings page) leaves them as they are.
+    const { reviewPlaybookIds: _ids, correlationPlaybookId: _id, ...unbound } = baseSettings;
+    expect(await updateRepositorySettings(repoId, { ...unbound, depth: "deep" })).toEqual({
+      ok: true,
     });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      reviewDepth: "deep",
+      reviewPlaybookIds: [review],
+      correlationPlaybookId: "builtin:correlate-findings",
+    });
+    const { storyPlaybookId: _story, requestPlaybookId: _request, ...codingOnly } = baseRalph;
+    expect(await updateRalphSettings(repoId, codingOnly)).toEqual({ ok: true });
+    expect(await getRepository(db, repoId)).toMatchObject({
+      storyPlaybookId: "builtin:implement-story",
+      requestPlaybookId: "builtin:handle-request",
+    });
+    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+  });
 
-    for (const reviewTaskIds of [
+  it("rejects review and correlation playbooks of another organization or of another role without saving", async () => {
+    const other = await otherOrganization();
+    const othersReview = await storedPlaybook("builtin:review-pr", {}, other);
+    const othersCorrelation = await storedPlaybook("builtin:correlate-findings", {}, other);
+    const chatAsk = await storedPlaybook("builtin:ask-about-code");
+    const correlation = await storedPlaybook("builtin:correlate-findings");
+    // A stored playbook that no longer parses (a field its role sets).
+    const unresolvable = await storedPlaybook("builtin:review-pr", { sink: "review" });
+
+    for (const reviewPlaybookIds of [
       [othersReview],
-      [queryReview],
-      ["builtin:review-pr", wrongOutput],
+      [chatAsk],
+      ["builtin:review-pr", correlation],
+      [unresolvable],
     ]) {
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
           depth: "deep",
-          reviewTaskIds,
+          reviewPlaybookIds,
         }),
       ).toMatchObject({
         ok: false,
-        fieldErrors: { reviewTaskIds: "Some selected review tasks don't exist." },
+        fieldErrors: {
+          reviewPlaybookIds: "Choose review or review-summary playbooks of this organization.",
+        },
       });
     }
-    for (const correlationTaskId of [
+    for (const correlationPlaybookId of [
       othersCorrelation,
-      wrongOutput,
+      chatAsk,
       "builtin:describe-pr",
       "builtin:review-pr",
       "builtin:nope",
@@ -487,14 +510,14 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
         await updateRepositorySettings(repoId, {
           ...baseSettings,
           depth: "deep",
-          correlationTaskId,
+          correlationPlaybookId,
         }),
-      ).toMatchObject({ ok: false, fieldErrors: { correlationTaskId: expect.any(String) } });
+      ).toMatchObject({ ok: false, fieldErrors: { correlationPlaybookId: expect.any(String) } });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
       reviewDepth: "standard",
-      reviewTaskIds: ["builtin:review-pr"],
-      correlationTaskId: "builtin:correlate-findings",
+      reviewPlaybookIds: ["builtin:review-pr"],
+      correlationPlaybookId: "builtin:correlate-findings",
     });
   });
 
@@ -527,12 +550,12 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       await updateRepositorySettings(repoId, {
         ...baseSettings,
         depth: "deep",
-        reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
+        reviewPlaybookIds: [SECURITY_TASK_ID, "builtin:review-pr"],
       }),
     ).toMatchObject({ ok: false });
     expect(await getRepository(db, repoId)).toMatchObject({
       reviewDepth: "standard",
-      reviewTaskIds: ["builtin:review-pr"],
+      reviewPlaybookIds: ["builtin:review-pr"],
     });
   });
 
@@ -642,66 +665,79 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     });
   });
 
-  it("defaults to the built-in story and request tasks", async () => {
+  it("defaults to the built-in story and request playbooks", async () => {
     expect(await getRepository(db, repoId)).toMatchObject({
-      storyTaskId: "builtin:implement-story",
-      requestTaskId: "builtin:handle-request",
+      storyPlaybookId: "builtin:implement-story",
+      requestPlaybookId: "builtin:handle-request",
     });
   });
 
-  it("saves custom story and request tasks", async () => {
-    const story = await storedTask("builtin:implement-story");
-    const request = await storedTask("builtin:handle-request");
-    expect(
-      await updateRalphSettings(repoId, {
+  it("saves custom story and request playbooks, publishing the repo's coding change", async () => {
+    const story = await storedPlaybook("builtin:implement-story");
+    const request = await storedPlaybook("builtin:handle-request");
+    const { result, changes } = await captureChanges(() =>
+      updateRalphSettings(repoId, {
         ...baseRalph,
-        storyTaskId: story,
-        requestTaskId: request,
+        storyPlaybookId: story,
+        requestPlaybookId: request,
       }),
-    ).toEqual({ ok: true });
+    );
+    expect(result).toEqual({ ok: true });
+    expect(changes).toEqual([
+      expect.objectContaining({
+        resource: "settings",
+        section: "repository.coding",
+        ids: [repoId],
+        subjectId: repoId,
+        organizationId: orgId,
+      }),
+    ]);
     expect(await getRepository(db, repoId)).toMatchObject({
-      storyTaskId: story,
-      requestTaskId: request,
+      storyPlaybookId: story,
+      requestPlaybookId: request,
     });
     expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      storyTaskId: "builtin:implement-story",
-      requestTaskId: "builtin:handle-request",
+      storyPlaybookId: "builtin:implement-story",
+      requestPlaybookId: "builtin:handle-request",
     });
   });
 
-  it("rejects story and request tasks of another organization or of the wrong type or triggers without saving", async () => {
+  it("rejects story and request playbooks of another organization or of another role without saving", async () => {
     const other = await otherOrganization();
-    const othersStory = await storedTask("builtin:implement-story", {}, other);
-    const othersRequest = await storedTask("builtin:handle-request", {}, other);
-    const chatOnly = await storedTask("builtin:handle-request", { triggers: ["chat.request"] });
+    const othersStory = await storedPlaybook("builtin:implement-story", {}, other);
+    const othersRequest = await storedPlaybook("builtin:handle-request", {}, other);
+    // A stored playbook that no longer parses (a field its role sets).
+    const unresolvable = await storedPlaybook("builtin:handle-request", {
+      triggers: ["chat.request"],
+    });
 
-    for (const storyTaskId of [
+    for (const storyPlaybookId of [
       othersStory,
       "builtin:handle-request",
       "builtin:review-pr",
       "builtin:nope",
       randomUUID(),
     ]) {
-      expect(await updateRalphSettings(repoId, { ...baseRalph, storyTaskId })).toMatchObject({
+      expect(await updateRalphSettings(repoId, { ...baseRalph, storyPlaybookId })).toMatchObject({
         ok: false,
-        fieldErrors: { storyTaskId: expect.any(String) },
+        fieldErrors: { storyPlaybookId: expect.any(String) },
       });
     }
-    for (const requestTaskId of [
+    for (const requestPlaybookId of [
       othersRequest,
-      chatOnly,
+      unresolvable,
       "builtin:implement-story",
       "builtin:nope",
     ]) {
-      expect(await updateRalphSettings(repoId, { ...baseRalph, requestTaskId })).toMatchObject({
+      expect(await updateRalphSettings(repoId, { ...baseRalph, requestPlaybookId })).toMatchObject({
         ok: false,
-        fieldErrors: { requestTaskId: expect.any(String) },
+        fieldErrors: { requestPlaybookId: expect.any(String) },
       });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
-      storyTaskId: "builtin:implement-story",
-      requestTaskId: "builtin:handle-request",
+      storyPlaybookId: "builtin:implement-story",
+      requestPlaybookId: "builtin:handle-request",
     });
   });
 

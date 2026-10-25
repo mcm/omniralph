@@ -3,17 +3,7 @@
 import * as React from "react";
 import { Link } from "@/components/link";
 import { notFound, useParams } from "next/navigation";
-import {
-  Badge,
-  Button,
-  Checkbox,
-  Field,
-  Label,
-  Muted,
-  Skeleton,
-  Stack,
-  Textarea,
-} from "@iamthemcmaster/ui";
+import { Badge, Button, Field, Muted, Skeleton, Stack, Textarea } from "@iamthemcmaster/ui";
 import { IconExternalLink, IconX } from "@tabler/icons-react";
 import {
   fieldErrors as toFieldErrors,
@@ -71,7 +61,6 @@ import {
   type CodingChoices,
   type RalphSettingsValues,
 } from "./ralph-settings-section";
-import { TaskPicker, type TaskChoiceOption } from "./task-picker";
 import {
   saveWithTaskTypes,
   TaskTypeSelect,
@@ -99,21 +88,13 @@ interface RepositorySettingsContentProps {
     pathExcludes: string[];
     customInstructions: string;
     pinnedHarnessIds: string[];
-    reviewTaskIds: string[];
-    correlationTaskId: string;
   };
-  /** The review tasks the repository can run on its PRs/MRs (built-in and the organization's). */
-  reviewTasks: (TaskChoiceOption & { description: string })[];
-  /** The tasks that can correlate its review runs' findings. */
-  correlationTasks: TaskChoiceOption[];
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: RepositoryHarness[];
   /** The Coding tab's settings; only passed to admins. */
   ralph: RalphSettingsValues | null;
   /** The Coding tab's picker choices; only passed to admins on that tab. */
   codingChoices: CodingChoices | null;
-  /** The Coding tab's story and request task choices. */
-  codingTasks: { story: TaskChoiceOption[]; request: TaskChoiceOption[] };
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
   taskTypes: TaskTypesValues;
   /** Reads the Linear workspace again (Coding tab), when it couldn't be read. */
@@ -191,12 +172,9 @@ export function RepositorySettingsContent({
   tab,
   repository,
   settings,
-  reviewTasks,
-  correlationTasks,
   harnesses,
   ralph,
   codingChoices,
-  codingTasks,
   taskTypes,
   onRetryLinear,
 }: RepositorySettingsContentProps) {
@@ -205,10 +183,7 @@ export function RepositorySettingsContent({
   const disabled = !isAdmin;
 
   const pinnable = React.useMemo(() => harnesses.filter((h) => !h.revoked), [harnesses]);
-  const context = React.useMemo(
-    () => ({ reviewTaskIds: reviewTasks.map((t) => t.id), harnessIds: pinnable.map((h) => h.id) }),
-    [reviewTasks, pinnable],
-  );
+  const context = React.useMemo(() => ({ harnessIds: pinnable.map((h) => h.id) }), [pinnable]);
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
   const [draft, setDraft] = useSeededDraft(saved);
   const [typesDraft, setTypesDraft] = useSeededDraft(taskTypes.overrides);
@@ -223,13 +198,10 @@ export function RepositorySettingsContent({
   const specs = React.useMemo(
     () =>
       repositorySpecs({
-        tasks: new Map([...reviewTasks, ...correlationTasks].map((t) => [t.id, t.name])),
         harnesses: new Map(harnesses.map((h) => [h.id, h.name])),
       }),
-    [reviewTasks, correlationTasks, harnesses],
+    [harnesses],
   );
-  const taskName = (id: string) =>
-    [...reviewTasks, ...correlationTasks].find((t) => t.id === id)?.name ?? id;
 
   /** The props of the section saving `keys` and the task-type switches `types`. */
   const section = (
@@ -375,57 +347,6 @@ export function RepositorySettingsContent({
           checked={draft.drafts}
           disabled={disabled}
           onChange={(value) => set("drafts", value)}
-        />
-      </SettingsSubsection>
-
-      <SettingsSubsection
-        id="review-who"
-        title="Who reviews"
-        description="The reviewers run in parallel and their findings are posted as one review."
-      >
-        <div className="settings-group" role="group" aria-labelledby="review-tasks-label">
-          <span id="review-tasks-label" className="settings-group-label">
-            Reviewers
-          </span>
-          <Muted>Default: {taskName(REPOSITORY_SETTING_DEFAULTS.reviewTaskIds[0])} only.</Muted>
-          {reviewTasks.map((task) => (
-            <div key={task.id} className="settings-check">
-              <Checkbox
-                id={`review-task-${task.id}`}
-                checked={draft.reviewTaskIds.includes(task.id)}
-                disabled={disabled}
-                aria-invalid={Boolean(errors.reviewTaskIds)}
-                onCheckedChange={(checked) =>
-                  set(
-                    "reviewTaskIds",
-                    checked === true
-                      ? [...draft.reviewTaskIds, task.id]
-                      : draft.reviewTaskIds.filter((id) => id !== task.id),
-                  )
-                }
-              />
-              <Stack gap={1}>
-                <Label htmlFor={`review-task-${task.id}`}>
-                  {task.name} {task.builtin && <Badge variant="neutral">Built-in</Badge>}
-                </Label>
-                {task.description && <Muted>{task.description}</Muted>}
-              </Stack>
-            </div>
-          ))}
-          <InlineError message={errors.reviewTaskIds} />
-        </div>
-        <TaskPicker
-          id="correlation-task"
-          label="Correlation task"
-          hint={withDefault(
-            "Merges the review tasks' findings that describe the same issue and writes the combined summary.",
-            taskName(REPOSITORY_SETTING_DEFAULTS.correlationTaskId),
-          )}
-          value={draft.correlationTaskId}
-          choices={correlationTasks}
-          disabled={disabled}
-          error={errors.correlationTaskId}
-          onChange={(value) => set("correlationTaskId", value)}
         />
       </SettingsSubsection>
 
@@ -592,7 +513,6 @@ export function RepositorySettingsContent({
             repositoryId={repository.id}
             settings={ralph}
             choices={codingChoices}
-            codingTasks={codingTasks}
             taskTypes={taskTypes}
             onRetryLinear={onRetryLinear}
           />
@@ -642,8 +562,6 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
       tab={tab}
       repository={data.repository}
       settings={data.settings}
-      reviewTasks={data.reviewTasks}
-      correlationTasks={data.correlationTasks}
       harnesses={data.harnesses.map((harness) => withClientOnline(harness, now))}
       ralph={codingData?.coding.settings ?? null}
       codingChoices={
@@ -657,7 +575,6 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
             }
           : null
       }
-      codingTasks={codingData?.coding.tasks ?? { story: [], request: [] }}
       taskTypes={data.taskTypes}
       onRetryLinear={() => void linear.refetch()}
     />

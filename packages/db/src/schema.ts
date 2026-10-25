@@ -742,45 +742,26 @@ export const chatLinearDelegations = pgTable(
   ],
 );
 
-// ── Agent and task definitions ───────────────────────────────────────────────
+// ── Playbooks ────────────────────────────────────────────────────────────────
 
 /**
- * An organization's own agent definition (a run spec agent, `CustomAgent` in
- * the control panel, validated when read): the persona half of a custom
- * playbook. Built-in playbooks stay in code under `builtin:<name>` IDs, so
- * they never clash with these UUIDs.
+ * An organization's own playbook (`@omniralph/tasks` `Playbook`, validated
+ * when read) with the run requirements derived from it when it was saved
+ * (`TaskRequirements`: installables, host tools, minimum harness version), so
+ * enqueueing and claiming don't derive them again. `definition` holds every
+ * field but the ID, name and role its columns hold. Built-in playbooks stay in
+ * code under `builtin:<name>` IDs, so they never clash with these UUIDs.
  */
-export const agentDefinitions = pgTable(
-  "agent_definitions",
+export const playbooks = pgTable(
+  "playbooks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
-    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [index("agent_definitions_organization_id_idx").on(t.organizationId)],
-);
-
-/**
- * An organization's own task definition (`@omniralph/tasks`
- * `TaskDefinition`) with the run requirements derived from it when it was
- * saved (`TaskRequirements`: installables, host tools, minimum harness
- * version), so enqueueing and claiming don't derive them again.
- */
-export const taskDefinitions = pgTable(
-  "task_definitions",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
+    /** Its `PlaybookRole` (never a built-in-only role). */
+    role: text("role").notNull(),
     definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
     requirements: jsonb("requirements").$type<Record<string, unknown>>().notNull().default({}),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -788,7 +769,7 @@ export const taskDefinitions = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("task_definitions_organization_id_idx").on(t.organizationId)],
+  (t) => [index("playbooks_organization_id_idx").on(t.organizationId)],
 );
 
 export interface RepositoryTriggers {
@@ -894,13 +875,18 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
-    /** The review tasks (`builtin:<name>` or UUIDs) each PR event fans out to, in order. */
-    reviewTaskIds: text("review_task_ids")
+    /**
+     * The review and review-summary playbooks (`builtin:<name>` or UUIDs) each PR event fans
+     * out to, in order.
+     */
+    reviewPlaybookIds: text("review_playbook_ids")
       .array()
       .notNull()
       .default(sql`'{builtin:review-pr}'::text[]`),
-    /** The query task that merges the results of a review run's tasks. */
-    correlationTaskId: text("correlation_task_id").notNull().default("builtin:correlate-findings"),
+    /** The correlation playbook that merges the results of a review run's playbooks. */
+    correlationPlaybookId: text("correlation_playbook_id")
+      .notNull()
+      .default("builtin:correlate-findings"),
     /**
      * Linear delegations may build in this repository (ralph); null inherits the
      * organization's allowed task types (`coding`).
@@ -915,10 +901,10 @@ export const repositories = pgTable(
       .$type<RalphSettings>()
       .notNull()
       .default(DEFAULT_RALPH_SETTINGS),
-    /** The coding task a story attempt runs. */
-    storyTaskId: text("story_task_id").notNull().default("builtin:implement-story"),
-    /** The coding task a lane's requests run. */
-    requestTaskId: text("request_task_id").notNull().default("builtin:handle-request"),
+    /** The story playbook a story attempt runs. */
+    storyPlaybookId: text("story_playbook_id").notNull().default("builtin:implement-story"),
+    /** The request playbook a lane's requests run. */
+    requestPlaybookId: text("request_playbook_id").notNull().default("builtin:handle-request"),
     /** GitLab project webhook ID created on connect (deleted on disconnect). */
     webhookId: text("webhook_id"),
     /**

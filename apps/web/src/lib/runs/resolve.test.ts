@@ -38,7 +38,7 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
 
 const { RunSpecError, narrowByReviewDepth, narrowTools, resolveRunSpec, runTokenBudget } =
   await import("./resolve");
-const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 const { runSpecJobInput } = await import("./job");
 
 const ORG_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";

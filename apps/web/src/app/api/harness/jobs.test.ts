@@ -10,9 +10,8 @@ import {
   feedback,
   findings,
   jobs,
-  insertAgentDefinition,
   insertMessage,
-  insertTaskDefinition,
+  insertPlaybook,
   listHarnessAudit,
   listMessages,
   ralphRuns,
@@ -603,16 +602,15 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       });
     });
 
-    /** A custom chat task of `organizationId` on `agentId` (custom playbooks can't learn rules). */
-    async function customTask(organizationId: string, agentId: string) {
-      return insertTaskDefinition(db, organizationId, {
+    /** A custom chat playbook of `organizationId` with `systemPrompt`. */
+    async function customPlaybook(organizationId: string, systemPrompt = "You explain code.") {
+      return insertPlaybook(db, organizationId, {
         name: "Custom explainer",
+        role: "chat-ask",
         definition: {
-          taskType: "query",
-          agentId,
-          triggers: ["chat.request"],
+          systemPrompt,
+          tools: { builtin: ["Read"] },
           promptTemplate: "{{question}}",
-          sink: "chat-thread",
           tokenBudget: { tokens: 7000 },
         },
         requirements: {},
@@ -621,22 +619,10 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     }
     const CHAT_PAYLOAD = { trigger: { kind: "chat.request", context: { question: "Why?" } } };
 
-    it("resolves the run spec of the organization's custom playbook, on a built-in or custom agent", async () => {
+    it("resolves the run spec of the organization's custom playbook", async () => {
       const { organizationId, agent, job } = await claimOrg();
-      const customAgent = await insertAgentDefinition(db, organizationId, {
-        name: "Custom agent",
-        definition: {
-          systemPrompt: "You explain code.",
-          taskTypes: ["query"],
-          tools: { builtin: ["Read"] },
-        },
-        createdBy: null,
-      });
-      for (const [agentId, systemPrompt] of [
-        ["builtin:learn-rule", "You answer questions about code."],
-        [customAgent.id, "You explain code."],
-      ] as const) {
-        const task = await customTask(organizationId, agentId);
+      for (const systemPrompt of ["You answer questions about code.", "You explain code."]) {
+        const task = await customPlaybook(organizationId, systemPrompt);
         const jobId = await job("claim.run", { taskId: task.id, payload: CHAT_PAYLOAD });
         const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
         if (body.action !== "run") throw new Error("expected run");
@@ -654,9 +640,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect((await claimAs(agent.accessToken)).status).toBe(204);
     });
 
-    it("fails a run-spec job whose task belongs to another organization", async () => {
+    it("fails a run-spec job whose playbook belongs to another organization", async () => {
       const { agent, job } = await claimOrg();
-      const theirs = await customTask(orgId, "builtin:learn-rule");
+      const theirs = await customPlaybook(orgId);
       const jobId = await job("claim.run", { taskId: theirs.id, payload: CHAT_PAYLOAD });
       expect((await claimAs(agent.accessToken)).status).toBe(204);
       expect(await jobRow(jobId)).toMatchObject({

@@ -70,22 +70,22 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       queryEnabled: null,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
-      storyTaskId: "builtin:implement-story",
-      requestTaskId: "builtin:handle-request",
+      storyPlaybookId: "builtin:implement-story",
+      requestPlaybookId: "builtin:handle-request",
     });
   });
 
-  it("adds the story and request tasks and a request's trigger (0064), without the coding path (0092)", async () => {
+  it("adds the story and request tasks and a request's trigger (0064), without the coding path (0092), as playbooks (0097)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns
        where table_schema = 'public'
-         and ((table_name = 'repositories' and column_name in ('coding_path', 'story_task_id', 'request_task_id'))
+         and ((table_name = 'repositories' and column_name in ('coding_path', 'story_task_id', 'request_task_id', 'story_playbook_id', 'request_playbook_id'))
            or (table_name = 'ralph_messages' and column_name = 'trigger'))
        order by column_name`,
     );
     expect(rows).toEqual([
-      { column_name: "request_task_id", is_nullable: "NO" },
-      { column_name: "story_task_id", is_nullable: "NO" },
+      { column_name: "request_playbook_id", is_nullable: "NO" },
+      { column_name: "story_playbook_id", is_nullable: "NO" },
       { column_name: "trigger", is_nullable: "YES" },
     ]);
     await expect(db.$client.query(`select 'tasks'::repository_coding_path`)).rejects.toThrow();
@@ -964,19 +964,19 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         expect(
           rows.map((r) => ({
             full_path: r.full_path,
-            story_task_id: r.story_task_id,
-            request_task_id: r.request_task_id,
+            story_playbook_id: r.story_playbook_id,
+            request_playbook_id: r.request_playbook_id,
           })),
         ).toEqual([
           {
             full_path: "acme/legacy",
-            story_task_id: "builtin:implement-story",
-            request_task_id: "builtin:handle-request",
+            story_playbook_id: "builtin:implement-story",
+            request_playbook_id: "builtin:handle-request",
           },
           {
             full_path: "acme/tasks",
-            story_task_id: "builtin:implement-story",
-            request_task_id: "builtin:handle-request",
+            story_playbook_id: "builtin:implement-story",
+            request_playbook_id: "builtin:handle-request",
           },
         ]);
         for (const row of rows) expect(row).not.toHaveProperty("coding_path");
@@ -1034,7 +1034,13 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [org],
         );
 
-        await runMigrations(uri);
+        // Up to 0097, which drops the task definitions (and refuses a custom one).
+        const playbooks = journal.entries.findIndex((e) => e.tag.startsWith("0097_"));
+        writeFileSync(
+          journalPath,
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, playbooks) }),
+        );
+        await migrate(drizzle(client), { migrationsFolder: before });
         const { rows: definitions } = await client.query<{ definition: unknown }>(
           `select definition from task_definitions`,
         );
@@ -1251,6 +1257,182 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         await expect(runMigrations(uri)).rejects.toMatchObject({
           cause: {
             message: expect.stringContaining(`organization ${acme.org} profile 'thorough'`),
+          },
+        });
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  describe("playbooks replace agent and task definitions (0097)", () => {
+    /** A database migrated up to just before 0097, with one production-shaped organization. */
+    async function beforePlaybooks(name: string) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0097_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      await migrate(drizzle(client), { migrationsFolder: before });
+
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Acme') returning id`,
+      );
+      const org = rows[0]!.id;
+      const { rows: connections } = await client.query<{ id: string }>(
+        `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+         values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+        [org],
+      );
+      const connection = connections[0]!.id;
+      // Production: every repository on the built-in defaults, chat tasks on built-ins too.
+      await client.query(
+        `insert into repositories (organization_id, provider, external_id, full_path, connection_id) values
+           ($1, 'github', '1', 'acme/api', $2),
+           ($1, 'github', '2', 'acme/web', $2)`,
+        [org, connection],
+      );
+      await client.query(
+        `insert into app_settings (organization_id, key, value)
+         values ($1, 'chat.tasks', '{"askAboutCode":"builtin:ask-about-code","startWork":"builtin:handle-request"}')`,
+        [org],
+      );
+      const cleanup = async () => {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      };
+      return { uri, client, org, connection, cleanup };
+    }
+
+    it("drops the empty definition tables and keeps every repo's built-in bindings", async () => {
+      const { uri, client, cleanup } = await beforePlaybooks("playbooks_production");
+      try {
+        await runMigrations(uri);
+
+        const { rows: repos } = await client.query<Record<string, unknown>>(
+          `select * from repositories order by full_path`,
+        );
+        expect(
+          repos.map((r) => [
+            r.full_path,
+            r.review_playbook_ids,
+            r.correlation_playbook_id,
+            r.story_playbook_id,
+            r.request_playbook_id,
+          ]),
+        ).toEqual([
+          [
+            "acme/api",
+            ["builtin:review-pr"],
+            "builtin:correlate-findings",
+            "builtin:implement-story",
+            "builtin:handle-request",
+          ],
+          [
+            "acme/web",
+            ["builtin:review-pr"],
+            "builtin:correlate-findings",
+            "builtin:implement-story",
+            "builtin:handle-request",
+          ],
+        ]);
+        for (const row of repos) {
+          for (const old of [
+            "review_task_ids",
+            "correlation_task_id",
+            "story_task_id",
+            "request_task_id",
+          ]) {
+            expect(row).not.toHaveProperty(old);
+          }
+        }
+        const { rows: tables } = await client.query<{ table_name: string }>(
+          `select table_name from information_schema.tables
+           where table_schema = 'public' and table_name in ('agent_definitions', 'task_definitions', 'playbooks')`,
+        );
+        expect(tables).toEqual([{ table_name: "playbooks" }]);
+        const { rows: chat } = await client.query(
+          `select value from app_settings where key = 'chat.tasks'`,
+        );
+        expect(chat).toEqual([
+          {
+            value: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+          },
+        ]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("refuses to drop a custom task and names it", async () => {
+      const { uri, client, org, cleanup } = await beforePlaybooks("playbooks_custom_task");
+      try {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into task_definitions (organization_id, name, definition) values ($1, 'Security review', '{}') returning id`,
+          [org],
+        );
+
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Custom agent and task definitions would be lost: organization ${org} task definition ${rows[0]!.id}`,
+          },
+        });
+        // Nothing was dropped or renamed.
+        const { rows: tasks } = await client.query(`select 1 from task_definitions`);
+        expect(tasks).toHaveLength(1);
+        const { rows: columns } = await client.query(
+          `select 1 from information_schema.columns where table_name = 'repositories' and column_name = 'story_task_id'`,
+        );
+        expect(columns).toHaveLength(1);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("refuses to drop when a repo, chat setting or channel override names a custom ID", async () => {
+      const { uri, client, org, cleanup } = await beforePlaybooks("playbooks_custom_bindings");
+      try {
+        const custom = "11111111-1111-4111-8111-111111111111";
+        const { rows: repos } = await client.query<{ id: string }>(
+          `update repositories set review_task_ids = $1, request_task_id = $2
+           where full_path = 'acme/api' returning id`,
+          [["builtin:review-pr", custom], custom],
+        );
+        await client.query(`update app_settings set value = $1 where key = 'chat.tasks'`, [
+          { askAboutCode: custom },
+        ]);
+        const { rows: chatConnections } = await client.query<{ id: string }>(
+          `insert into chat_connections (organization_id, platform, external_id, name, encrypted_credentials)
+           values ($1, 'slack', 'T1', 'Slack', 'x') returning id`,
+          [org],
+        );
+        const { rows: overrides } = await client.query<{ id: string }>(
+          `insert into chat_channel_task_settings (organization_id, connection_id, channel_id, start_work_task_id)
+           values ($1, $2, 'C1', $3) returning id`,
+          [org, chatConnections[0]!.id, custom],
+        );
+
+        const repo = repos[0]!.id;
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Custom agent and task definitions would be lost: ${[
+              `chat channel override ${overrides[0]!.id} start work task '${custom}'`,
+              `organization ${org} chat task askAboutCode '${custom}'`,
+              `repository ${repo} request task '${custom}'`,
+              `repository ${repo} review task '${custom}'`,
+            ]
+              .sort()
+              .join(", ")}`,
           },
         });
       } finally {

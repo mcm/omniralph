@@ -30,14 +30,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const REVIEW_ID = "11111111-1111-4111-8111-111111111111";
-const CORRELATION_ID = "22222222-2222-4222-8222-222222222222";
 const STORY_ID = "33333333-3333-4333-8333-333333333333";
 const REQUEST_ID = "44444444-4444-4444-8444-444444444444";
 
 const ralph: RalphSettingsValues = {
-  storyTaskId: STORY_ID,
-  requestTaskId: REQUEST_ID,
+  storyPlaybookId: STORY_ID,
+  requestPlaybookId: REQUEST_ID,
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
@@ -100,7 +98,6 @@ const HARNESSES: RepositoryHarness[] = [
 function render(
   tab: RepositorySettingsTab,
   overrides: {
-    correlationTaskId?: string;
     ralph?: RalphSettingsValues;
     choices?: CodingChoices;
     taskTypes?: TaskTypesValues;
@@ -125,40 +122,10 @@ function render(
           pathExcludes: [],
           customInstructions: "",
           pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
-          reviewTaskIds: ["builtin:review-pr", REVIEW_ID],
-          correlationTaskId: overrides.correlationTaskId ?? CORRELATION_ID,
         }}
-        reviewTasks={[
-          {
-            id: "builtin:review-pr",
-            name: "Review PR",
-            description: "Reviews the change.",
-            builtin: true,
-          },
-          {
-            id: REVIEW_ID,
-            name: "Security review",
-            description: "Looks for holes.",
-            builtin: false,
-          },
-        ]}
-        correlationTasks={[
-          { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-          { id: CORRELATION_ID, name: "Strict correlation", builtin: false },
-        ]}
         harnesses={overrides.harnesses ?? HARNESSES}
         ralph={overrides.ralph ?? ralph}
         codingChoices={overrides.choices ?? choices}
-        codingTasks={{
-          story: [
-            { id: "builtin:implement-story", name: "Implement story", builtin: true },
-            { id: STORY_ID, name: "Careful story", builtin: false },
-          ],
-          request: [
-            { id: "builtin:handle-request", name: "Handle request", builtin: true },
-            { id: REQUEST_ID, name: "Careful request", builtin: false },
-          ],
-        }}
         taskTypes={overrides.taskTypes ?? (tab === "coding" ? codingOn : inheritAll)}
       />
     </Wrapper>,
@@ -186,45 +153,18 @@ function allLabels(): string[] {
   );
 }
 
-describe("RepositorySettingsView task pickers", () => {
-  it("lists custom review tasks beside the built-ins, checked when enabled", () => {
-    const html = render("settings");
-    expect(html).toContain("Security review");
-    expect(html).toMatch(
-      new RegExp(`<button[^>]*aria-checked="true"[^>]*id="review-task-${REVIEW_ID}"`),
-    );
-    expect(html).toContain("Built-in");
-  });
-
-  it("offers a custom correlation task, selected when it is the repository's", () => {
-    const options = select(render("settings"), "correlation-task");
-    expect(options).toContain(
-      '<option value="builtin:correlate-findings">Correlate findings (built-in)</option>',
-    );
-    expect(options).toContain(
-      `<option value="${CORRELATION_ID}" selected="">Strict correlation</option>`,
-    );
-  });
-
-  it("offers custom story and request tasks on the Coding tab", () => {
-    const html = render("coding");
-    const story = select(html, "ralph-story-task");
-    expect(story).toContain("Implement story (built-in)");
-    expect(story).toContain(`<option value="${STORY_ID}" selected="">Careful story</option>`);
-    const request = select(html, "ralph-request-task");
-    expect(request).toContain("Handle request (built-in)");
-    expect(request).toContain(`<option value="${REQUEST_ID}" selected="">Careful request</option>`);
-  });
-
-  it("keeps a current task that is no longer offered selectable", () => {
-    const gone = "55555555-5555-4555-8555-555555555555";
-    const changed = { correlationTaskId: gone, ralph: { ...ralph, storyTaskId: gone } };
-    expect(select(render("settings", changed), "correlation-task")).toContain(
-      `<option value="${gone}" selected="">`,
-    );
-    expect(select(render("coding", changed), "ralph-story-task")).toContain(
-      `<option value="${gone}" selected="">`,
-    );
+describe("RepositorySettingsView playbook bindings", () => {
+  it("has no review, correlation, story or request playbook selects", () => {
+    const html = render("settings") + render("coding");
+    for (const id of [
+      "review-task-",
+      "correlation-task",
+      "ralph-story-task",
+      "ralph-request-task",
+    ]) {
+      expect(html).not.toContain(`id="${id}`);
+    }
+    expect(html).not.toMatch(/Who reviews|Story task|Request task|Correlation task/);
   });
 });
 
@@ -256,7 +196,6 @@ describe("RepositorySettingsView tabs", () => {
     const html = render("settings");
     expect(html).toMatch(/<h2[^>]*class="sr-only"[^>]*>Review settings<\/h2>/);
     expect(html).toMatch(/<h3[^>]*>When<\/h3>/);
-    expect(html).toMatch(/<h3[^>]*>Who reviews<\/h3>/);
     expect(html).toMatch(/<h3[^>]*>Scope<\/h3>/);
   });
 
@@ -286,7 +225,6 @@ describe("RepositorySettingsView tabs", () => {
   it("states each setting's default", () => {
     const settings = render("settings");
     expect(settings).toContain("Default: Off.");
-    expect(settings).toContain("Default: Correlate findings.");
     const coding = render("coding");
     expect(coding).toContain("Default: opus.");
     expect(coding).not.toContain("Coding path");

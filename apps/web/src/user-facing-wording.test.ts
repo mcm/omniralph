@@ -31,7 +31,7 @@ const SCANNED = [
   "apps/web/src/lib/sinks",
   "apps/web/src/lib/triage",
   "packages/ralph/src",
-  // Built-in tasks: their descriptions and prompts are shown in Settings › Tasks.
+  // Built-in playbooks: their descriptions and prompts are served by the Playbooks API.
   "packages/tasks/src/builtin",
 ];
 

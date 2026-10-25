@@ -17,7 +17,7 @@ import {
 } from "@omniralph/db";
 import type { RunAttempt, RunDetail, RunDetails, RunLane, RunRow, RunStep } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { reviewTaskNames } from "@/lib/review/post";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";

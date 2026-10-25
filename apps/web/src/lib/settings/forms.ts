@@ -55,8 +55,6 @@ const lines = (value: SettingValue): string =>
  */
 export const REPOSITORY_SETTING_DEFAULTS = {
   triggers: { onOpen: true, onPush: true, drafts: false },
-  reviewTaskIds: ["builtin:review-pr"],
-  correlationTaskId: "builtin:correlate-findings",
 } as const;
 
 /** The repository review settings form. */
@@ -68,8 +66,6 @@ export interface RepositoryDraft {
   pathExcludes: string;
   customInstructions: string;
   pinnedHarnessIds: readonly string[];
-  reviewTaskIds: readonly string[];
-  correlationTaskId: string;
 }
 
 /** The repository review settings as saved. */
@@ -78,8 +74,6 @@ export interface RepositorySettingsValues {
   pathExcludes: readonly string[];
   customInstructions: string;
   pinnedHarnessIds: readonly string[];
-  reviewTaskIds: readonly string[];
-  correlationTaskId: string;
 }
 
 export function repositoryDraft(settings: RepositorySettingsValues): RepositoryDraft {
@@ -88,15 +82,11 @@ export function repositoryDraft(settings: RepositorySettingsValues): RepositoryD
     pathExcludes: settings.pathExcludes.join("\n"),
     customInstructions: settings.customInstructions,
     pinnedHarnessIds: settings.pinnedHarnessIds,
-    reviewTaskIds: settings.reviewTaskIds,
-    correlationTaskId: settings.correlationTaskId,
   };
 }
 
 /** What the form compares and saves: lists parsed, IDs that no longer exist dropped. */
 export interface RepositoryFormContext {
-  /** The review tasks offered, in the order they're listed (and saved). */
-  reviewTaskIds: readonly string[];
   /** Harnesses that can still be pinned (pins of revoked ones are dropped). */
   harnessIds: readonly string[];
 }
@@ -110,9 +100,6 @@ export function repositoryValues(draft: RepositoryDraft, context: RepositoryForm
     customInstructions: draft.customInstructions,
     // In the harnesses' order, so picking them in another order isn't a change.
     pinnedHarnessIds: context.harnessIds.filter((id) => draft.pinnedHarnessIds.includes(id)),
-    // In the listed order; review tasks that no longer exist are dropped.
-    reviewTaskIds: context.reviewTaskIds.filter((id) => draft.reviewTaskIds.includes(id)),
-    correlationTaskId: draft.correlationTaskId,
   } satisfies Record<string, SettingValue>;
 }
 export type RepositoryValues = ReturnType<typeof repositoryValues>;
@@ -128,14 +115,11 @@ export function repositoryInput(
     pathExcludes: [...values.pathExcludes],
     customInstructions: values.customInstructions,
     pinnedHarnessIds: [...values.pinnedHarnessIds],
-    reviewTaskIds: [...values.reviewTaskIds],
-    correlationTaskId: values.correlationTaskId,
   };
 }
 
 /** The repository settings page's cards and the settings each one saves. */
 export const REPOSITORY_CARDS = {
-  tasks: ["reviewTaskIds", "correlationTaskId"],
   triggers: ["onOpen", "onPush", "drafts"],
   files: ["pathExcludes", "customInstructions"],
   pinning: ["pinnedHarnessIds"],
@@ -143,22 +127,15 @@ export const REPOSITORY_CARDS = {
 
 /** The repository settings tabs' sections and the settings each one saves. */
 export const REPOSITORY_SECTIONS = {
-  review: [...REPOSITORY_CARDS.triggers, ...REPOSITORY_CARDS.tasks, ...REPOSITORY_CARDS.files],
+  review: [...REPOSITORY_CARDS.triggers, ...REPOSITORY_CARDS.files],
   harnesses: REPOSITORY_CARDS.pinning,
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
-/** The repository settings' labels, showing tasks and harnesses by name. */
+/** The repository settings' labels, showing harnesses by name. */
 export function repositorySpecs(names: {
-  tasks: ReadonlyMap<string, string>;
   harnesses: ReadonlyMap<string, string>;
 }): Record<keyof RepositoryValues, SettingSpec<keyof RepositoryValues>> {
   return {
-    reviewTaskIds: { key: "reviewTaskIds", label: "Review tasks", format: byName(names.tasks) },
-    correlationTaskId: {
-      key: "correlationTaskId",
-      label: "Correlation task",
-      format: byName(names.tasks),
-    },
     onOpen: { key: "onOpen", label: "Review when opened" },
     onPush: { key: "onPush", label: "Review when pushed to" },
     drafts: { key: "drafts", label: "Include drafts" },
@@ -177,16 +154,11 @@ export function repositorySpecs(names: {
 
 // ── Ralph ────────────────────────────────────────────────────────────────────
 
-/** Defaults of the Ralph section's repository columns (`@omniralph/db`; a test keeps them in step). */
-export const RALPH_REPOSITORY_DEFAULTS = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
-} as const satisfies Partial<RalphSettingsInput>;
+/** What the Ralph form edits: the coding settings without the playbook bindings. */
+export type RalphFormInput = Omit<RalphSettingsInput, "storyPlaybookId" | "requestPlaybookId">;
 
 /** The Ralph form: picked lists as chips, commands one per line, numbers as typed. */
 export interface RalphDraft {
-  storyTaskId: string;
-  requestTaskId: string;
   verifyCommands: string;
   runPrdQualityGates: boolean;
   setupCommand: string;
@@ -209,7 +181,12 @@ export interface RalphDraft {
   epicCompletedState: string;
 }
 
-export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
+/** The form's draft of saved settings (the playbook bindings, which it doesn't edit, left out). */
+export function ralphDraft({
+  storyPlaybookId: _story,
+  requestPlaybookId: _request,
+  ...settings
+}: RalphSettingsInput): RalphDraft {
   return {
     ...settings,
     verifyCommands: settings.verifyCommands.join("\n"),
@@ -224,7 +201,7 @@ export function ralphDraft(settings: RalphSettingsInput): RalphDraft {
 }
 
 /** The draft's values as the server saves them (text trimmed). */
-export function ralphValues(draft: RalphDraft): RalphSettingsInput {
+export function ralphValues(draft: RalphDraft): RalphFormInput {
   return {
     ...draft,
     verifyCommands: parseLines(draft.verifyCommands),
@@ -243,7 +220,6 @@ export function ralphValues(draft: RalphDraft): RalphSettingsInput {
 
 /** The Ralph section's cards and the settings each one saves. */
 export const RALPH_CARDS = {
-  ralph: ["storyTaskId", "requestTaskId"],
   verification: ["verifyCommands", "runPrdQualityGates", "setupCommand"],
   prompt: ["appendInstruction", "model", "fallbackModel"],
   tools: ["allowedTools", "disallowedTools"],
@@ -258,19 +234,18 @@ export const RALPH_CARDS = {
     "unmergedBranchTimeoutMinutes",
   ],
   linear: ["manualLabels", "blockedLabels", "allowPreparation", "epicCompletedState"],
-} as const satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
+} as const satisfies Record<string, readonly (keyof RalphFormInput)[]>;
 
 /** The settings that rewrite history or delete branches: the Danger zone saves them on their own. */
 const DANGER_KEYS = [
   "historyRewrite",
   "cleanupMergedWorktrees",
   "unmergedBranchTimeoutMinutes",
-] as const satisfies readonly (keyof RalphSettingsInput)[];
+] as const satisfies readonly (keyof RalphFormInput)[];
 
 /** The Coding tab's sections and the settings each one saves. */
 export const CODING_SECTIONS = {
   coding: [
-    ...RALPH_CARDS.ralph,
     ...RALPH_CARDS.prompt,
     ...RALPH_CARDS.tools,
     ...RALPH_CARDS.verification,
@@ -278,7 +253,7 @@ export const CODING_SECTIONS = {
     ...RALPH_CARDS.linear,
   ],
   danger: DANGER_KEYS,
-} satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
+} satisfies Record<string, readonly (keyof RalphFormInput)[]>;
 
 export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
   "when-asked": "When asked",
@@ -286,9 +261,7 @@ export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
   never: "Never",
 };
 
-const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
-  storyTaskId: "Story task",
-  requestTaskId: "Request task",
+const RALPH_LABELS: Record<keyof RalphFormInput, string> = {
   verifyCommands: "Verify commands",
   runPrdQualityGates: "Run the PRD's quality gates",
   setupCommand: "Setup command",
@@ -311,15 +284,11 @@ const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
   epicCompletedState: "Epic completed state",
 };
 
-/** The Ralph settings' labels, showing tasks by name. */
-export function ralphSpecs(
-  taskNames: ReadonlyMap<string, string>,
-): Record<keyof RalphSettingsInput, SettingSpec<keyof RalphSettingsInput>> {
-  const formats: Partial<Record<keyof RalphSettingsInput, SettingSpec["format"]>> = {
+/** The Ralph settings' labels. */
+export function ralphSpecs(): Record<keyof RalphFormInput, SettingSpec<keyof RalphFormInput>> {
+  const formats: Partial<Record<keyof RalphFormInput, SettingSpec["format"]>> = {
     historyRewrite: (value) =>
       HISTORY_REWRITE_LABELS[value as RalphHistoryRewrite] ?? String(value),
-    storyTaskId: byName(taskNames),
-    requestTaskId: byName(taskNames),
     verifyCommands: lines,
     allowedTools: (value) =>
       Array.isArray(value) && value.length === 0
@@ -330,11 +299,11 @@ export function ralphSpecs(
       Array.isArray(value) && value.length === 0 ? "None" : formatSettingValue(value),
   };
   return Object.fromEntries(
-    (Object.keys(RALPH_LABELS) as (keyof RalphSettingsInput)[]).map((key) => [
+    (Object.keys(RALPH_LABELS) as (keyof RalphFormInput)[]).map((key) => [
       key,
       { key, label: RALPH_LABELS[key], format: formats[key] },
     ]),
-  ) as Record<keyof RalphSettingsInput, SettingSpec<keyof RalphSettingsInput>>;
+  ) as Record<keyof RalphFormInput, SettingSpec<keyof RalphFormInput>>;
 }
 
 /** The Ralph defaults as the form describes them. */

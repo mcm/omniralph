@@ -7,7 +7,7 @@ import {
   reconcileExpiredQueuedJobs,
   syncJobsDueFromPostgres,
 } from "@/lib/dispatch/due";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 

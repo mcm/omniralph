@@ -273,8 +273,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
             pathExcludes: [],
             customInstructions: "",
             pinnedHarnessIds: [],
-            reviewTaskIds: ["builtin:review-pr"],
-            correlationTaskId: "builtin:correlate-findings",
+            reviewPlaybookIds: ["builtin:review-pr"],
+            correlationPlaybookId: "builtin:correlate-findings",
           },
         );
         expect(saved).toMatchObject({ status: "saved", unpinnedHarnessIds: [harnessId] });

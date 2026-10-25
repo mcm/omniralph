@@ -20,7 +20,7 @@ import { hasDueJob, reconcileDueJobs, syncJobsDue } from "@/lib/dispatch/due";
 import { signJobTokens, type SignedJobTokens } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 

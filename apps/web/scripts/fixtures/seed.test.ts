@@ -1,5 +1,4 @@
 import {
-  agentDefinitions,
   closeDb,
   createDb,
   decrypt,
@@ -12,6 +11,7 @@ import {
   listRoutingRules,
   listTriageRuns,
   organizationMembers,
+  playbooks,
   ralphRuns,
   ralphStories,
   repositories,
@@ -19,17 +19,15 @@ import {
   reviews,
   rules,
   scmConnections,
-  taskDefinitions,
   users,
   type Database,
 } from "@omniralph/db";
 import { createTestDatabase, type TestDatabase } from "@omniralph/db/testing";
-import { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
+import { Playbook, TaskRequirements } from "@omniralph/tasks";
 import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CustomAgent } from "@/lib/api/definitions";
-import { customPlaybook } from "@/lib/definitions/custom-playbooks";
+import { storedPlaybookInput } from "@/lib/playbooks";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
@@ -163,20 +161,13 @@ describe("seedFixtures", () => {
     expect(parsed.error).toBeUndefined();
   });
 
-  it("has a custom agent and task that resolve like the panel's", async () => {
-    const [agent] = await db.select().from(agentDefinitions);
-    const [task] = await db.select().from(taskDefinitions);
-    expect(agent?.id).toBe(FIXTURE_IDS.definitions.agent);
-    expect(task?.id).toBe(FIXTURE_IDS.definitions.task);
-    const stored = (row: typeof agent) => ({ ...row!.definition, id: row!.id, name: row!.name });
-    const parsedAgent = CustomAgent.safeParse(stored(agent));
-    expect(parsedAgent.success).toBe(true);
-    const parsedTask = TaskDefinition.safeParse(stored(task));
-    expect(parsedTask.success).toBe(true);
-    expect(parsedTask.data?.agentId).toBe(FIXTURE_IDS.definitions.agent);
-    // Read together, they make a review playbook.
-    expect(customPlaybook(parsedTask.data!, parsedAgent.data!)?.role).toBe("review");
-    expect(TaskRequirements.safeParse(task!.requirements).success).toBe(true);
+  it("has a custom playbook that resolves like the panel's", async () => {
+    const [row] = await db.select().from(playbooks);
+    expect(row?.id).toBe(FIXTURE_IDS.playbooks.custom);
+    const parsed = Playbook.safeParse(storedPlaybookInput(row!));
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.data?.role).toBe("review");
+    expect(TaskRequirements.safeParse(row!.requirements).success).toBe(true);
   });
 
   it("has triage runs with their jobs and valid results", async () => {

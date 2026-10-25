@@ -75,7 +75,7 @@ import { eq, inArray } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinPlaybook } from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import {
   ENTER_ORGANIZATION_PATH,
@@ -250,14 +250,9 @@ const slackIntegration = await import("./integrations/slack/[id]/route");
 const discordIntegration = await import("./integrations/discord/[id]/route");
 const chatTasks = await import("./integrations/chat-tasks/route");
 const channelTasks = await import("./integrations/chat-connections/[id]/channels/route");
-const agentList = await import("./agents/route");
-const agentDetail = await import("./agents/[id]/route");
-const agentClone = await import("./agents/[id]/clone/route");
-const agentFormOptions = await import("./agents/form-options/route");
-const taskList = await import("./tasks/route");
-const taskDetail = await import("./tasks/[id]/route");
-const taskClone = await import("./tasks/[id]/clone/route");
-const taskFormOptions = await import("./tasks/form-options/route");
+const playbookList = await import("./playbooks/route");
+const playbookDetail = await import("./playbooks/[id]/route");
+const playbookClone = await import("./playbooks/[id]/clone/route");
 const harnessDefaults = await import("./harness-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
@@ -1303,7 +1298,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
       expect(coding).toMatchObject({
         status: 200,
-        body: { settings: { storyTaskId: "builtin:implement-story" } },
+        body: { settings: { storyPlaybookId: "builtin:implement-story" } },
       });
       for (const marker of markers(other))
         expect(JSON.stringify(coding.body)).not.toContain(marker);
@@ -1333,8 +1328,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       pathExcludes: [],
       customInstructions: "",
       pinnedHarnessIds: [],
-      reviewTaskIds: ["builtin:review-pr"],
-      correlationTaskId: "builtin:correlate-findings",
+      reviewPlaybookIds: ["builtin:review-pr"],
+      correlationPlaybookId: "builtin:correlate-findings",
     };
     // A valid Coding form: the other organization's own.
     state.userId = b.adminId;
@@ -1349,7 +1344,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       call(repositoryCoding.PUT, {
         method: "PUT",
         params: { id },
-        body: { ...(coding.settings as object), storyTaskId: "builtin:handle-request" },
+        body: { ...(coding.settings as object), storyPlaybookId: "builtin:implement-story" },
       }),
     ];
     state.userId = a.adminId;
@@ -1370,7 +1365,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       enabled: null,
       queryEnabled: null,
       ralphEnabled: null,
-      storyTaskId: "builtin:implement-story",
+      storyPlaybookId: "builtin:implement-story",
     });
   });
 
@@ -2766,202 +2761,121 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
   });
 
-  describe("agents and tasks", () => {
-    /** Each tenant's own agent and a review task on it, created through the API. */
-    const definitions = new Map<string, { agentId: string; taskId: string }>();
-    const own = (tenant: Tenant) => definitions.get(tenant.name)!;
-    const agentInput = (tenant: Tenant) => ({
-      name: `${tenant.name}-agent-def`,
-      systemPrompt: `${tenant.name} prompt`,
-      taskTypes: ["review"],
-    });
-    const { id: _reviewPrId, ...reviewPr } = getBuiltinTask("builtin:review-pr")!;
-    const taskInput = (tenant: Tenant, agentId: string) => ({
+  describe("playbooks", () => {
+    /** Each tenant's own review playbook, created through the API. */
+    const created = new Map<string, string>();
+    const own = (tenant: Tenant) => created.get(tenant.name)!;
+    const { id: _reviewPrId, ...reviewPr } = getBuiltinPlaybook("builtin:review-pr")!;
+    const playbookInput = (tenant: Tenant) => ({
       ...reviewPr,
-      name: `${tenant.name}-task-def`,
-      agentId,
+      name: `${tenant.name}-playbook`,
+      systemPrompt: `${tenant.name} prompt`,
     });
-    const definitionMarkers = (tenant: Tenant) => [
-      own(tenant).agentId,
-      own(tenant).taskId,
-      `${tenant.name}-agent-def`,
-      `${tenant.name}-task-def`,
-    ];
+    const playbookMarkers = (tenant: Tenant) => [own(tenant), `${tenant.name}-playbook`];
 
     beforeAll(async () => {
       for (const tenant of [a, b]) {
         state.userId = tenant.adminId;
-        const agent = await call(agentList.POST, { body: agentInput(tenant) });
-        expect(agent).toMatchObject({ status: 200, body: { ok: true } });
-        const agentId = agent.body.id as string;
-        const task = await call(taskList.POST, { body: taskInput(tenant, agentId) });
-        expect(task).toMatchObject({ status: 200, body: { ok: true } });
-        definitions.set(tenant.name, { agentId, taskId: task.body.id as string });
+        const playbook = await call(playbookList.POST, { body: playbookInput(tenant) });
+        expect(playbook).toMatchObject({ status: 200, body: { ok: true } });
+        created.set(tenant.name, playbook.body.id as string);
       }
     });
 
-    it("lists and shows each organization's own agents and tasks to its members, and 404s on the other's", async () => {
+    it("lists and shows each organization's own playbooks to its members, and 404s on the other's", async () => {
       for (const [mine, other] of [
         [a, b],
         [b, a],
       ] as const) {
         state.userId = mine.memberId;
-        const agents = await call(agentList.GET);
-        const tasks = await call(taskList.GET);
-        expect(agents.status).toBe(200);
-        expect(tasks.status).toBe(200);
-        expect(agents.body.agents).toContainEqual(
-          expect.objectContaining({ id: own(mine).agentId, builtin: false }),
+        const list = await call(playbookList.GET);
+        expect(list.status).toBe(200);
+        expect(list.body.playbooks).toContainEqual(
+          expect.objectContaining({ id: own(mine), builtin: false, role: "review" }),
         );
-        expect(tasks.body.tasks).toContainEqual(
-          expect.objectContaining({ id: own(mine).taskId, agentId: own(mine).agentId }),
-        );
-
-        const agent = await call(agentDetail.GET, { params: { id: own(mine).agentId } });
-        expect(agent).toMatchObject({
+        const detail = await call(playbookDetail.GET, { params: { id: own(mine) } });
+        expect(detail).toMatchObject({
           status: 200,
-          body: { agent: { name: `${mine.name}-agent-def` }, tasks: [{ id: own(mine).taskId }] },
+          body: { playbook: { name: `${mine.name}-playbook` }, builtin: false },
         });
-        const task = await call(taskDetail.GET, { params: { id: own(mine).taskId } });
-        expect(task).toMatchObject({
-          status: 200,
-          body: { task: { name: `${mine.name}-task-def` }, agentName: `${mine.name}-agent-def` },
-        });
-        // A built-in's "Used by" lists only this organization's tasks.
-        const reviewer = await call(agentDetail.GET, {
+        // A built-in's "used by" lists only this organization's settings.
+        const builtin = await call(playbookDetail.GET, {
           params: { id: encodeURIComponent("builtin:review-pr") },
         });
-        expect(reviewer.status).toBe(200);
+        expect(builtin.status).toBe(200);
 
-        for (const body of [agents.body, tasks.body, agent.body, task.body, reviewer.body]) {
+        for (const body of [list.body, detail.body, builtin.body]) {
           const json = JSON.stringify(body);
-          for (const marker of definitionMarkers(other)) expect(json).not.toContain(marker);
+          for (const marker of [...playbookMarkers(other), ...markers(other)]) {
+            expect(json).not.toContain(marker);
+          }
         }
-        for (const [handler, id] of [
-          [agentDetail.GET, own(other).agentId],
-          [taskDetail.GET, own(other).taskId],
-          [agentDetail.GET, "not-a-uuid"],
-          [taskDetail.GET, "builtin:nope"],
-        ] as const) {
-          expect(await call(handler, { params: { id } }), id).toMatchObject({ status: 404 });
-        }
-      }
-    });
-
-    it("gives each organization's form options to its admins only", async () => {
-      state.userId = a.memberId;
-      expect((await call(agentFormOptions.GET)).status).toBe(403);
-      expect((await call(taskFormOptions.GET)).status).toBe(403);
-
-      state.userId = a.adminId;
-      const agents = await call(agentFormOptions.GET);
-      expect(agents).toMatchObject({ status: 200, body: { harnessCount: expect.any(Number) } });
-      const tasks = await call(taskFormOptions.GET);
-      expect(tasks.status).toBe(200);
-      expect(tasks.body.agents).toContainEqual(expect.objectContaining({ id: own(a).agentId }));
-      for (const body of [agents.body, tasks.body]) {
-        const json = JSON.stringify(body);
-        for (const marker of [...definitionMarkers(b), ...markers(b)]) {
-          expect(json).not.toContain(marker);
+        for (const id of [own(other), "not-a-uuid", "builtin:nope"]) {
+          expect(await call(playbookDetail.GET, { params: { id } }), id).toMatchObject({
+            status: 404,
+          });
         }
       }
     });
 
-    it("refuses every change to the other organization's agents and tasks, and members can't change any", async () => {
+    it("refuses every change to the other organization's playbooks, and members can't change any", async () => {
       state.userId = a.adminId;
-      const missingAgent = { status: 400, body: { error: "That agent doesn't exist." } };
-      const missingTask = { status: 400, body: { error: "That task doesn't exist." } };
-      const agentParams = { params: { id: own(b).agentId } };
-      const taskParams = { params: { id: own(b).taskId } };
-      expect(
-        await call(agentDetail.PUT, { ...agentParams, method: "PUT", body: agentInput(a) }),
-      ).toEqual(missingAgent);
-      expect(await call(agentDetail.DELETE, { ...agentParams, method: "DELETE" })).toEqual(
-        missingAgent,
-      );
-      expect(await call(agentClone.POST, { ...agentParams, method: "POST" })).toEqual(missingAgent);
-      expect(
-        await call(taskDetail.PUT, {
-          ...taskParams,
-          method: "PUT",
-          body: taskInput(a, own(a).agentId),
-        }),
-      ).toEqual(missingTask);
-      expect(await call(taskDetail.DELETE, { ...taskParams, method: "DELETE" })).toEqual(
-        missingTask,
-      );
-      expect(await call(taskClone.POST, { ...taskParams, method: "POST" })).toEqual(missingTask);
-      // A task can't run on the other organization's agent.
-      expect(await call(taskList.POST, { body: taskInput(a, own(b).agentId) })).toMatchObject({
-        status: 400,
-        body: { fieldErrors: { agentId: expect.any(String) } },
-      });
-
-      state.userId = a.memberId;
-      const ownAgent = { params: { id: own(a).agentId } };
-      const ownTask = { params: { id: own(a).taskId } };
+      const theirs = { params: { id: own(b) } };
       for (const response of [
-        await call(agentList.POST, { body: agentInput(a) }),
-        await call(agentDetail.PUT, { ...ownAgent, method: "PUT", body: agentInput(a) }),
-        await call(agentDetail.DELETE, { ...ownAgent, method: "DELETE" }),
-        await call(agentClone.POST, { ...ownAgent, method: "POST" }),
-        await call(taskList.POST, { body: taskInput(a, own(a).agentId) }),
-        await call(taskDetail.PUT, {
-          ...ownTask,
-          method: "PUT",
-          body: taskInput(a, own(a).agentId),
-        }),
-        await call(taskDetail.DELETE, { ...ownTask, method: "DELETE" }),
-        await call(taskClone.POST, { ...ownTask, method: "POST" }),
+        await call(playbookDetail.PUT, { ...theirs, method: "PUT", body: playbookInput(a) }),
+        await call(playbookDetail.DELETE, { ...theirs, method: "DELETE" }),
+        await call(playbookClone.POST, { ...theirs, method: "POST" }),
+      ]) {
+        expect(response).toMatchObject({ status: 404 });
+      }
+
+      state.userId = a.memberId;
+      const mine = { params: { id: own(a) } };
+      for (const response of [
+        await call(playbookList.POST, { body: playbookInput(a) }),
+        await call(playbookDetail.PUT, { ...mine, method: "PUT", body: playbookInput(a) }),
+        await call(playbookDetail.DELETE, { ...mine, method: "DELETE" }),
+        await call(playbookClone.POST, { ...mine, method: "POST" }),
       ]) {
         expect(response.status).toBe(403);
       }
 
-      // The other organization keeps its agent and task as they were.
+      // The other organization keeps its playbook as it was.
       state.userId = b.memberId;
-      expect(await call(agentDetail.GET, agentParams)).toMatchObject({
+      expect(await call(playbookDetail.GET, theirs)).toMatchObject({
         status: 200,
-        body: { agent: { name: `${b.name}-agent-def` } },
-      });
-      expect(await call(taskDetail.GET, taskParams)).toMatchObject({
-        status: 200,
-        body: { task: { name: `${b.name}-task-def` } },
+        body: { playbook: { name: `${b.name}-playbook`, systemPrompt: `${b.name} prompt` } },
       });
     });
 
-    it("creates, changes, clones and deletes only the active organization's definitions", async () => {
+    it("creates, changes, clones and deletes only the active organization's playbooks", async () => {
       state.userId = a.adminId;
-      const cloned = await call(taskClone.POST, {
-        params: { id: own(a).taskId },
-        method: "POST",
-      });
+      const cloned = await call(playbookClone.POST, { params: { id: own(a) }, method: "POST" });
       expect(cloned).toMatchObject({ status: 200, body: { ok: true } });
       const cloneId = cloned.body.id as string;
       expect(
-        await call(taskDetail.PUT, {
+        await call(playbookDetail.PUT, {
           params: { id: cloneId },
           method: "PUT",
-          body: { ...taskInput(a, own(a).agentId), name: "alpha-renamed" },
+          body: { ...playbookInput(a), name: "alpha-renamed" },
         }),
       ).toEqual({ status: 200, body: { ok: true } });
-      expect(await call(taskDetail.DELETE, { params: { id: cloneId }, method: "DELETE" })).toEqual({
-        status: 200,
-        body: { ok: true },
-      });
-      expect((await call(taskDetail.GET, { params: { id: cloneId } })).status).toBe(404);
+      expect(
+        await call(playbookDetail.DELETE, { params: { id: cloneId }, method: "DELETE" }),
+      ).toEqual({ status: 200, body: { ok: true } });
+      expect((await call(playbookDetail.GET, { params: { id: cloneId } })).status).toBe(404);
 
-      const builtinClone = await call(agentClone.POST, {
+      const builtinClone = await call(playbookClone.POST, {
         params: { id: encodeURIComponent("builtin:review-pr") },
         method: "POST",
       });
       expect(builtinClone).toMatchObject({ status: 200, body: { ok: true } });
 
       state.userId = b.memberId;
-      const agents = JSON.stringify((await call(agentList.GET)).body);
-      const tasks = JSON.stringify((await call(taskList.GET)).body);
-      expect(agents).not.toContain(builtinClone.body.id as string);
-      expect(tasks).not.toContain(cloneId);
-      expect(tasks).toContain(own(b).taskId);
+      const list = JSON.stringify((await call(playbookList.GET)).body);
+      expect(list).not.toContain(builtinClone.body.id as string);
+      expect(list).not.toContain(cloneId);
+      expect(list).toContain(own(b));
     });
   });
   describe("harness defaults", () => {

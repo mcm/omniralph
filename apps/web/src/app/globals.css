@@ -892,10 +892,6 @@ body {
   /* Clear the sticky app header when the unsaved-changes bar links here. */
   scroll-margin-top: calc(52px + var(--space-4));
 }
-/* The task and agent editors' save row (settings/agents/form-parts.tsx), which the bar links to. */
-.definition-actions {
-  scroll-margin-top: calc(52px + var(--space-4));
-}
 .settings-card-fieldset {
   margin: 0;
   padding: 0;
@@ -2166,54 +2162,6 @@ body {
   text-underline-offset: 0.2em;
 }
 
-/* definitions (settings/agents, settings/tasks): detail pages and the agent and task forms. */
-.definition-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.definition-grid,
-.definition-grid-wide {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-  gap: var(--space-4);
-}
-.definition-grid-wide {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-}
-.definition-pre {
-  margin: 0;
-  padding: var(--space-3);
-  background: var(--bg-raised);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 30rem;
-  overflow-y: auto;
-}
-.definition-pre-spaced {
-  margin-top: var(--space-2);
-}
-.definition-pre-compact {
-  padding: var(--space-2);
-}
-/* One editable skill, reference doc or command of a form. */
-.definition-document {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-}
-/* The task form's budget mode and amount, side by side. */
-.task-budget {
-  display: flex;
-  gap: var(--space-2);
-}
-
 /* org / integrations / host-tools: settings screens. */
 .org-role-select {
   width: 7.5rem;
@@ -2389,12 +2337,6 @@ body {
 }
 .repo-rule-text-disabled {
   color: var(--text-secondary);
-}
-/* A definition's name and its Built-in badge: one line, so the name column keeps its width. */
-.definition-name-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 .empty-value {
   color: var(--text-secondary);

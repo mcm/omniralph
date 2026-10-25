@@ -8,7 +8,7 @@ import {
 } from "@omniralph/db";
 import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import type { FindingThreadContext } from "@/lib/sinks/finding-thread";
 
