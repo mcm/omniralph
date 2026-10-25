@@ -32,6 +32,8 @@ export interface IssueSummary {
   projectId?: string;
   parentId?: string;
   assigneeId?: string;
+  /** The (agent) user the issue is delegated to (when Linear returned it). */
+  delegateId?: string;
   /**
    * Who created the issue; absent when Linear doesn't say (e.g. an integration).
    * `url` is their profile URL, which a comment @mentions them with.
@@ -306,8 +308,14 @@ export interface LinearGateway {
   createIssue(input: CreateIssueInput): Promise<IssueSummary>;
   /** `blockerId` blocks `blockedId`. */
   createBlocksRelation(blockerId: string, blockedId: string): Promise<void>;
-  /** Moves the issue to the named state, else the team's first state of this type. */
-  setIssueState(issueId: string, target: { type?: string; name?: string }): Promise<void>;
+  /**
+   * Moves the issue to the state of this ID, else the named state, else the team's first
+   * state of this type.
+   */
+  setIssueState(
+    issueId: string,
+    target: { id?: string; type?: string; name?: string },
+  ): Promise<void>;
   /** Updates the given fields of an existing issue (a no-op when none are given). */
   updateIssue(issueId: string, input: UpdateIssueInput): Promise<void>;
   /** Adds labels by ID, keeping the issue's other labels. */
@@ -361,6 +369,9 @@ const ISSUE_SELECTION = /* GraphQL */ `
     assignee {
       id
     }
+    delegate {
+      id
+    }
     creator {
       id
       name
@@ -404,6 +415,7 @@ interface IssueNode {
   subIssueSortOrder?: number | null;
   parent?: { id: string } | null;
   assignee?: { id: string } | null;
+  delegate?: { id: string } | null;
   creator?: { id: string; name: string; url?: string | null } | null;
   team?: { id: string; key: string; name?: string | null } | null;
   state?: { id?: string | null; name: string; type: string } | null;
@@ -532,6 +544,7 @@ function summarize(issue: IssueNode): IssueSummary {
     ...(issue.project?.id && { projectId: issue.project.id }),
     parentId: issue.parent?.id ?? undefined,
     assigneeId: issue.assignee?.id ?? undefined,
+    ...(issue.delegate?.id && { delegateId: issue.delegate.id }),
     creator: issue.creator
       ? {
           id: issue.creator.id,
@@ -1245,7 +1258,10 @@ export class SdkLinearGateway implements LinearGateway {
     );
   }
 
-  async setIssueState(issueId: string, target: { type?: string; name?: string }): Promise<void> {
+  async setIssueState(
+    issueId: string,
+    target: { id?: string; type?: string; name?: string },
+  ): Promise<void> {
     const data = await this.request<{
       issue: { team?: { id: string } | null; state?: { id: string } | null };
     }>(
@@ -1268,6 +1284,7 @@ export class SdkLinearGateway implements LinearGateway {
     const states = await this.getWorkflowStates(teamId);
     const name = target.name?.toLowerCase();
     const state =
+      (target.id && states.find((s) => s.id === target.id)) ||
       (name && states.find((s) => s.name.toLowerCase() === name)) ||
       (target.type && states.find((s) => s.type === target.type));
     if (!state || state.id === data.issue.state?.id) return;

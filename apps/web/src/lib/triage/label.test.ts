@@ -275,7 +275,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     });
 
     expect((await getTriageRun(db, run.id))?.status).toBe("completed");
-    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { type: "unstarted" } }]);
+    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { id: "state-unstarted" } }]);
     expect(linear.labelChanges).toEqual([{ issueId: issue.id, removed: [labelId] }]);
     expect(await labels(issue.id)).toEqual(["ops"]);
   });

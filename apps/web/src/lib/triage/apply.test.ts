@@ -6,6 +6,9 @@ import {
   getJob,
   getTriageRun,
   insertJob,
+  integrations,
+  saveIntegration,
+  setIntegrationStateMapping,
   jobs,
   organizations,
   setTriageRunJob,
@@ -217,7 +220,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(await applyTriageJob(deps(), job)).toMatchObject({
       status: "applied",
       created: [],
-      stateType: "unstarted",
+      readiness: "ready",
     });
     const updated = await linear.getIssue(issue.id);
     expect(updated).toMatchObject({
@@ -225,12 +228,12 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       description: PRD,
       stateType: "unstarted",
     });
-    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { type: "unstarted" } }]);
+    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { id: "state-unstarted" } }]);
     expect(linear.comments).toEqual([]);
     const [response] = responses(sessionId);
     expect(response).toMatchObject({ type: "response" });
     expect(response && "body" in response && response.body).toMatch(
-      /Size:\*\* S[\s\S]*Structure:\*\* single issue[\s\S]*Status:\*\* Todo[\s\S]*No open questions/,
+      /Size:\*\* S[\s\S]*Structure:\*\* single issue[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
     );
     expect(await getTriageRun(db, run.id)).toMatchObject({
       status: "completed",
@@ -243,12 +246,65 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(responses(sessionId)).toHaveLength(1);
   });
 
+  it("moves the issue through the integration's state mapping, team override first", async () => {
+    linear.workflowStatesByTeam.set("team-1", [
+      { id: "s-backlog", name: "Backlog", type: "backlog", position: 0 },
+      { id: "s-idea", name: "Idea", type: "backlog", position: 1 },
+      { id: "s-todo", name: "Todo", type: "unstarted", position: 2 },
+      { id: "s-selected", name: "Selected", type: "unstarted", position: 3 },
+      { id: "s-started", name: "In Progress", type: "started", position: 4 },
+    ]);
+    await db.delete(integrations);
+    const integration = await saveIntegration(
+      db,
+      {
+        organizationId: orgId,
+        provider: "linear",
+        externalId: "workspace-1",
+        name: "Acme",
+        credentials: { accessToken: "t" },
+        installedByUserId: null,
+      },
+      Buffer.alloc(32, 7),
+    );
+    if (integration === "other_organization") throw new Error("unexpected");
+    await setIntegrationStateMapping(db, integration.id, {
+      ready: { types: ["unstarted"] },
+      needsRefining: { types: ["backlog"] },
+      teams: { "team-1": { ready: ["s-selected"], needsRefining: ["s-idea"] } },
+    });
+    try {
+      const ready = addIssue();
+      const first = await completedJob(ready, result());
+      expect(await applyTriageJob(deps(), first.job)).toMatchObject({ readiness: "ready" });
+      expect(await linear.getIssue(ready.id)).toMatchObject({
+        stateName: "Selected",
+        stateId: "s-selected",
+      });
+      const last = responses(first.sessionId).at(-1);
+      expect(last && "body" in last && last.body).toMatch(
+        new RegExp(
+          `\\n${ready.identifier} is ready to start\\. Start it from the Backlog, or delegate it to Om again\\.$`,
+        ),
+      );
+
+      const refining = addIssue({ stateType: "unstarted", stateName: "Selected" });
+      const second = await completedJob(refining, result({ openQuestions: ["Which?"] }));
+      expect(await applyTriageJob(deps(), second.job)).toMatchObject({
+        readiness: "needs_refining",
+      });
+      expect(await linear.getIssue(refining.id)).toMatchObject({ stateName: "Idea" });
+    } finally {
+      await db.delete(integrations);
+    }
+  });
+
   it("keeps an issue with open questions in Backlog and asks its creator", async () => {
     const issue = addIssue({ stateType: "unstarted", stateName: "Todo" });
     const questions = ["Which columns?", "Who can export?"];
     const { job, sessionId } = await completedJob(issue, result({ openQuestions: questions }));
 
-    expect(await applyTriageJob(deps(), job)).toMatchObject({ stateType: "backlog" });
+    expect(await applyTriageJob(deps(), job)).toMatchObject({ readiness: "needs_refining" });
     const updated = await linear.getIssue(issue.id);
     expect(updated.description).toBe(
       `${PRD}\n\n## Open Questions\n\n1. Which columns?\n2. Who can export?`,
@@ -260,7 +316,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       /^https:\/\/linear\.app\/acme\/profiles\/ada [\s\S]*1\. Which columns\?\n2\. Who can export\?$/,
     );
     const body = JSON.stringify(responses(sessionId));
-    expect(body).toContain("Status:** Backlog");
+    expect(body).toContain("Status:** Needs refining");
     expect(body).toContain("Which columns?");
   });
 
@@ -275,7 +331,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const { job, sessionId } = await completedJob(issue, result({ size: "XL", stories }));
 
     const applied = await applyTriageJob(deps(), job);
-    expect(applied).toMatchObject({ status: "applied", stateType: "unstarted" });
+    expect(applied).toMatchObject({ status: "applied", readiness: "ready" });
     const children = await linear.getChildren(issue.id);
     expect(
       children.map((c) => [c.title, c.priority, c.subIssueSortOrder, c.labels, c.projectName]),
@@ -391,7 +447,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       status: "applied",
       reformatted: [first.identifier, second.identifier],
       ignored: [],
-      stateType: "unstarted",
+      readiness: "ready",
     });
     expect(await linear.getIssue(issue.id)).toMatchObject({ description: PRD });
     expect(await linear.getIssue(first.id)).toMatchObject({
@@ -431,7 +487,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     );
     expect(applied).toMatchObject({ created: [{ id: validation.id }] });
     // Nothing canceled, deleted or reparented.
-    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { type: "unstarted" } }]);
+    expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { id: "state-unstarted" } }]);
     expect((await linear.getIssue(dropped.id)).stateType).toBe("canceled");
 
     const body = JSON.stringify(responses(sessionId));
@@ -515,7 +571,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       status: "applied",
       created: [],
       reformatted: [],
-      stateType: "backlog",
+      readiness: "needs_refining",
     });
     expect(linear.issueUpdates).toEqual([
       { issueId: issue.id, input: { description: `${PRD}\n\n## Open Questions\n\n1. New?` } },
@@ -530,7 +586,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const again = addIssue({ description: `${PRD}\n\n## Open Questions\n\n1. Old?` });
     linear.issueUpdates = [];
     const second = await completedJob(again, result({ outcome: "unchanged" }));
-    expect(await applyTriageJob(deps(), second.job)).toMatchObject({ stateType: "unstarted" });
+    expect(await applyTriageJob(deps(), second.job)).toMatchObject({ readiness: "ready" });
     expect(linear.issueUpdates).toEqual([{ issueId: again.id, input: { description: PRD } }]);
     expect((await linear.getIssue(again.id)).stateType).toBe("unstarted");
   });

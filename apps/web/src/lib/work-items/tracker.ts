@@ -23,6 +23,14 @@ export type WorkItemStateCategory = WorkItemState | "triage";
 export const WORK_ITEM_READINESS = ["ready", "needs_refining"] as const;
 export type WorkItemReadiness = (typeof WORK_ITEM_READINESS)[number] | "other";
 
+/**
+ * A state chosen by the readiness state mapping instead of by kind: the team's first
+ * override state of that readiness, else its first state of the mapping's types.
+ */
+export interface ReadinessStateTarget {
+  readiness: (typeof WORK_ITEM_READINESS)[number];
+}
+
 /** An open work item that blocks another. */
 export interface WorkItemBlocker {
   /** Its ID, a `ref` for the tracker's methods. */
@@ -132,13 +140,21 @@ export interface WorkItemTracker {
   listCandidates(input: ListCandidatesInput): Promise<WorkItemPage>;
   create(input: CreateWorkItemInput): Promise<WorkItem>;
   update(ref: WorkItemRef, input: UpdateWorkItemInput): Promise<void>;
-  /** Moves the item to its team's first workflow state of that kind. */
-  setState(ref: WorkItemRef, state: WorkItemState): Promise<void>;
+  /**
+   * Moves the item to its team's first workflow state of that kind or, for a readiness, to
+   * the mapping's first state of that readiness (an item that already has that readiness
+   * stays where it is).
+   */
+  setState(ref: WorkItemRef, state: WorkItemState | ReadinessStateTarget): Promise<void>;
   /** Sets the item `canceled`, with a comment when given. */
   cancel(ref: WorkItemRef, options?: { comment?: string }): Promise<void>;
   /** Starts Omniralph's triage of the item. */
   startTriage(ref: WorkItemRef): Promise<void>;
-  /** Hands the item to Omniralph, which starts working on it. */
+  /**
+   * Hands the item to Omniralph, which starts working on it. An item already delegated to
+   * Omniralph, with no active run, gets a new agent session instead, so the delegation is
+   * handled again.
+   */
   delegateToOmniralph(ref: WorkItemRef): Promise<void>;
   /** Every team of the tracker. */
   listTeams(): Promise<TrackerTeam[]>;

@@ -9,13 +9,19 @@ import type {
   Viewer,
 } from "@/lib/linear/gateway";
 import { isTriageLabel, TRIAGE_LABEL } from "@/lib/linear/webhook";
-import { readinessOf, readinessStateMatch, validateStateMapping } from "./readiness";
+import {
+  readinessOf,
+  readinessStateMatch,
+  readinessTargetState,
+  validateStateMapping,
+} from "./readiness";
 import {
   LIST_CANDIDATES_MAX_LIMIT,
   StateMappingError,
   WorkItemNotFoundError,
   type CreateWorkItemInput,
   type ListCandidatesInput,
+  type ReadinessStateTarget,
   type TrackerTeam,
   type TrackerWorkflowState,
   type UpdateWorkItemInput,
@@ -61,7 +67,14 @@ export interface LinearWorkItemTrackerOptions {
   stateMapping: TrackerStateMapping;
   /** Saves a validated mapping (the integration's `state_mapping`). */
   saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
+  /**
+   * Whether Omniralph is working on the issue right now (a ralph or triage run that isn't
+   * over): `delegateToOmniralph` then opens no new session. Default: never.
+   */
+  hasActiveRun?: (issueId: string) => Promise<boolean>;
 }
+
+const READINESS_LABELS = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
 
 /** `WorkItemTracker` over a Linear workspace's `LinearGateway`. */
 export class LinearWorkItemTracker implements WorkItemTracker {
@@ -70,6 +83,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   private readonly gateway: LinearGateway;
   private mapping: TrackerStateMapping;
   private readonly saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
+  private readonly hasActiveRun: (issueId: string) => Promise<boolean>;
   private viewer: Promise<Viewer> | undefined;
 
   constructor(options: LinearWorkItemTrackerOptions) {
@@ -77,6 +91,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     this.integrationId = options.integrationId;
     this.mapping = options.stateMapping;
     this.saveStateMapping = options.saveStateMapping;
+    this.hasActiveRun = options.hasActiveRun ?? (async () => false);
   }
 
   /** The issue of a ref; an unknown one is `WorkItemNotFoundError`. */
@@ -209,9 +224,30 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     }
   }
 
-  async setState(ref: WorkItemRef, state: WorkItemState): Promise<void> {
+  async setState(ref: WorkItemRef, state: WorkItemState | ReadinessStateTarget): Promise<void> {
     const issue = await this.issue(ref);
-    await this.gateway.setIssueState(issue.id, { type: LINEAR_STATE_TYPES[state] });
+    if (typeof state === "string") {
+      await this.gateway.setIssueState(issue.id, { type: LINEAR_STATE_TYPES[state] });
+      return;
+    }
+    const current = readinessOf(this.mapping, {
+      teamId: issue.teamId,
+      stateId: issue.stateId,
+      stateType: issue.stateType,
+    });
+    if (current === state.readiness) return;
+    const target = readinessTargetState(
+      this.mapping,
+      issue.teamId,
+      state.readiness,
+      await this.gateway.getWorkflowStates(issue.teamId),
+    );
+    if (!target) {
+      throw new Error(
+        `${issue.identifier}'s team has no ${READINESS_LABELS[state.readiness]} state (Settings › Connections › Linear).`,
+      );
+    }
+    await this.gateway.setIssueState(issue.id, { id: target.id });
   }
 
   async cancel(ref: WorkItemRef, options: { comment?: string } = {}): Promise<void> {
@@ -230,7 +266,14 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   async delegateToOmniralph(ref: WorkItemRef): Promise<void> {
     const issue = await this.issue(ref);
-    await this.gateway.delegateIssue(issue.id, (await this.appUser()).id);
+    const appUser = await this.appUser();
+    if (issue.delegateId !== appUser.id) {
+      await this.gateway.delegateIssue(issue.id, appUser.id);
+      return;
+    }
+    // Delegating it again changes nothing in Linear, so no session would start: open one.
+    if (!(await this.hasActiveRun(issue.id)))
+      await this.gateway.createAgentSessionOnIssue(issue.id);
   }
 
   async listTeams(): Promise<TrackerTeam[]> {

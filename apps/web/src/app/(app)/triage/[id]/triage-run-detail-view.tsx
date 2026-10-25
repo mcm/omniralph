@@ -175,7 +175,7 @@ function OpenQuestionsCard({ questions }: { questions: string[] }) {
       <CardHeader>
         <CardTitle as="h2">Open questions</CardTitle>
         <CardDescription>
-          What triage couldn&apos;t decide: the issue stays in Backlog until they are answered.
+          What triage couldn&apos;t decide: the issue needs refining until they are answered.
         </CardDescription>
       </CardHeader>
       <CardContent>

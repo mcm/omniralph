@@ -203,7 +203,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     await startJob(next.id);
     await completeJob(next.id, result());
     expect((await linear.getIssue(issue.id)).description).not.toContain("## Open Questions");
-    expect(linear.stateChanges.at(-1)).toMatchObject({ target: { type: "unstarted" } });
+    expect(linear.stateChanges.at(-1)).toMatchObject({ target: { id: "state-unstarted" } });
   });
 
   it("keeps replies sent while a job runs and starts the next job when it finishes", async () => {

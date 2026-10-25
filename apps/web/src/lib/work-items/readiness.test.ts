@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   readinessOf,
   readinessStateMatch,
+  readinessTargetState,
   stateMappingSchema,
   validateStateMapping,
 } from "./readiness";
@@ -111,5 +112,42 @@ describe("validateStateMapping", () => {
     expect(stateMappingSchema.safeParse(mapping).success).toBe(true);
     expect(stateMappingSchema.safeParse({ ...mapping, extra: 1 }).success).toBe(false);
     expect(stateMappingSchema.safeParse({ ready: { types: ["unstarted"] } }).success).toBe(false);
+  });
+});
+
+describe("readinessTargetState", () => {
+  const states = (prefix: string) =>
+    [
+      ["triage", "triage"],
+      ["backlog", "backlog"],
+      ["todo", "unstarted"],
+      ["review", "started"],
+    ].map(([name, type]) => ({ id: `${prefix}-${name}`, type: type! }));
+
+  it("takes the first state of the mapping's first type the team has", () => {
+    expect(readinessTargetState(mapping, "team-a", "ready", states("a"))?.id).toBe("a-todo");
+    expect(readinessTargetState(mapping, "team-a", "needs_refining", states("a"))?.id).toBe(
+      "a-triage",
+    );
+    const noTriage = states("a").filter((s) => s.type !== "triage");
+    expect(readinessTargetState(mapping, "team-a", "needs_refining", noTriage)?.id).toBe(
+      "a-backlog",
+    );
+  });
+
+  it("takes a team's first override state in workflow order", () => {
+    const withTwo = {
+      ...mapping,
+      teams: { "team-b": { ready: ["b-review", "b-todo"], needsRefining: ["b-backlog"] } },
+    };
+    expect(readinessTargetState(withTwo, "team-b", "ready", states("b"))?.id).toBe("b-todo");
+    expect(readinessTargetState(mapping, "team-b", "needs_refining", states("b"))?.id).toBe(
+      "b-todo",
+    );
+  });
+
+  it("is null when the team has no such state", () => {
+    expect(readinessTargetState(DEFAULT_TRACKER_STATE_MAPPING, "team-a", "ready", [])).toBeNull();
+    expect(readinessTargetState(mapping, "team-b", "ready", states("x"))).toBeNull();
   });
 });

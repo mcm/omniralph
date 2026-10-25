@@ -86,7 +86,10 @@ export class FakeLinearGateway implements LinearGateway {
   /** Every `linkUrl` call, in order. */
   links: Array<{ issueId: string; url: string; title?: string }> = [];
   /** Every `setIssueState` call, in order. */
-  stateChanges: Array<{ issueId: string; target: { type?: string; name?: string } }> = [];
+  stateChanges: Array<{
+    issueId: string;
+    target: { id?: string; type?: string; name?: string };
+  }> = [];
   /** Every `updateIssue` call, in order. */
   issueUpdates: Array<{ issueId: string; input: UpdateIssueInput }> = [];
   /** Every `addIssueLabels` / `removeIssueLabel` call, in order. */
@@ -175,8 +178,10 @@ export class FakeLinearGateway implements LinearGateway {
     const stateId = this.stateIdOf(issue);
     const teamName = issue.teamName ?? this.teams.find((t) => t.id === issue.teamId)?.name;
     const projectId = this.projectIdOf(issue);
+    const delegateId = issue.delegateId ?? this.delegateOf(issue.id);
     return {
       ...issue,
+      ...(delegateId && { delegateId }),
       ...(stateId && { stateId }),
       ...(teamName && { teamName }),
       ...(projectId && { projectId }),
@@ -418,20 +423,24 @@ export class FakeLinearGateway implements LinearGateway {
   async createBlocksRelation(blockerId: string, blockedId: string) {
     this.blocks.set(blockedId, [...(this.blocks.get(blockedId) ?? []), blockerId]);
   }
-  /** Like Linear's: a state with `target.name` (ignoring case), else the first of `target.type`. */
-  async setIssueState(issueId: string, target: { type?: string; name?: string }) {
+  /**
+   * Like Linear's: the state of `target.id`, else one with `target.name` (ignoring case), else
+   * the first of `target.type`.
+   */
+  async setIssueState(issueId: string, target: { id?: string; type?: string; name?: string }) {
     this.fail("setIssueState");
     this.stateChanges.push({ issueId, target });
     const issue = this.find(issueId);
     const states = this.statesOf(issue.teamId);
     const name = target.name?.toLowerCase();
     const state =
+      (target.id && states.find((s) => s.id === target.id)) ||
       (name && states.find((s) => s.name.toLowerCase() === name)) ||
       (target.type && states.find((s) => s.type === target.type));
     if (!state) return;
     issue.stateType = state.type;
     issue.stateName = state.name;
-    if (issue.stateId !== undefined) issue.stateId = state.id;
+    if (issue.stateId !== undefined || target.id) issue.stateId = state.id;
   }
   async updateIssue(issueId: string, input: UpdateIssueInput) {
     this.fail("updateIssue");
