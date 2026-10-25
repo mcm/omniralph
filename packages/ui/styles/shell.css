@@ -1,0 +1,408 @@
+/*
+ * Shell layout: the 232 px sidebar (1200 px and wider), the 64 px icon rail (769–1199 px)
+ * and, at 768 px and narrower, the sticky top bar, the bottom tab bar and the drawer.
+ */
+.or-frame {
+  display: grid;
+  grid-template-columns: var(--or-side-w) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.or-frame__main {
+  min-width: 0;
+}
+
+/* Sidebar */
+.or-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: var(--or-side-w);
+  height: 100vh;
+  padding: 16px 12px 12px;
+  overflow-y: auto;
+  border-right: 1px solid var(--or-line);
+  background: var(--or-side);
+}
+
+.or-sidebar__brand {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.or-sidebar__org,
+.or-drawer__org {
+  margin-bottom: 8px;
+}
+
+.or-sidebar__gap {
+  flex: 1;
+  min-height: 12px;
+}
+
+/* Nav entries (sidebar, rail, drawer and tab bar) */
+.or-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--or-radius);
+  color: var(--or-sec);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.or-nav__item:hover {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-nav__item[aria-current="page"] {
+  background: var(--or-sel);
+  color: var(--or-text);
+}
+
+.or-nav__item:focus-visible,
+.or-user:focus-visible,
+.or-topbar__avatar:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-nav__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.or-nav__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ui.css .count: the accent pill */
+.or-nav__count {
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--or-acc);
+  color: var(--or-acc-ink);
+  font-family: var(--or-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ui.css .pip: a small dot in the indicator's tone */
+.or-nav__pip {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+}
+
+/* User footer */
+.or-user-footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--or-line);
+}
+
+.or-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--or-radius);
+  background: transparent;
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.or-user:hover,
+.or-user[data-state="open"] {
+  background: var(--or-hover);
+}
+
+.or-user__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--or-sel);
+  color: var(--or-sec);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.or-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Phone top bar (shown at 768 px and narrower) */
+.or-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 52px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-side);
+}
+
+.or-topbar__menu {
+  position: relative;
+}
+
+.or-topbar__alert {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--or-acc);
+  box-shadow: 0 0 0 2px var(--or-side);
+}
+
+.or-topbar__brand {
+  margin-right: auto;
+}
+
+.or-topbar__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Phone tab bar (shown at 768 px and narrower) */
+.or-tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: none;
+  box-sizing: border-box;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--or-line);
+  background: var(--or-side);
+}
+
+.or-tabbar .or-nav__list {
+  flex-direction: row;
+  justify-content: space-around;
+}
+
+.or-tabbar .or-nav__entry {
+  flex: 1;
+}
+
+.or-nav__item--tab {
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  height: 52px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.or-nav__item--tab:hover,
+.or-nav__item--tab[aria-current="page"] {
+  background: transparent;
+}
+
+.or-nav__item--tab[aria-current="page"] {
+  color: var(--or-text);
+}
+
+.or-nav__item--tab .or-nav__count,
+.or-nav__item--tab .or-nav__pip {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 6px);
+  margin-left: 0;
+}
+
+/* Drawer (opened from the top bar's hamburger) */
+.or-drawer__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--or-page) 72%, transparent);
+}
+
+.or-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 48px));
+  padding: 8px 12px 12px;
+  overflow-y: auto;
+  border-right: 1px solid var(--or-border);
+  background: var(--or-side);
+}
+
+.or-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding-left: 8px;
+  margin-bottom: 8px;
+}
+
+.or-nav__item--drawer {
+  height: 44px;
+  font-size: 15px;
+}
+
+/* Rail tooltips only show on the icon rail. */
+@media (min-width: 1200px), (max-width: 768px) {
+  .or-tip--rail {
+    display: none;
+  }
+}
+
+/* Icon rail: labels stay in the accessible tree, visually hidden with clip. */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .or-frame {
+    grid-template-columns: var(--or-rail-w) minmax(0, 1fr);
+  }
+
+  .or-sidebar {
+    width: var(--or-rail-w);
+    padding: 16px 10px 12px;
+  }
+
+  .or-sidebar__brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .or-sidebar .or-rail-hidden,
+  .or-sidebar .or-wordmark {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .or-sidebar .or-lockup .or-glyph {
+    margin-right: 0;
+  }
+
+  .or-sidebar .or-nav__item,
+  .or-sidebar .or-user {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .or-sidebar .or-nav__item {
+    height: 40px;
+  }
+
+  .or-sidebar .or-nav__count,
+  .or-sidebar .or-nav__pip {
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    margin-left: 0;
+  }
+
+  .or-sidebar .or-nav__count {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+}
+
+/* Phone: no sidebar; the top bar, the tab bar and the drawer take over. */
+@media (max-width: 768px) {
+  .or-frame {
+    display: block;
+  }
+
+  .or-sidebar {
+    display: none;
+  }
+
+  .or-topbar {
+    display: flex;
+  }
+
+  .or-tabbar {
+    display: block;
+  }
+
+  .or-frame--tabs .or-frame__main {
+    padding-bottom: calc(66px + env(safe-area-inset-bottom));
+  }
+}
