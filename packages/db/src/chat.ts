@@ -771,6 +771,37 @@ export async function mapThreadRun(
   return mapped ?? null;
 }
 
+/**
+ * Points an ask (a `query` thread run) at its newest attempt, `jobId` (a retry of its last
+ * one), and links the job to it, so the attempt's answer is relayed to the same thread
+ * (`threadRunOf`). Null when the run isn't one of the organization's asks.
+ */
+export async function setThreadRunJob(
+  db: ChatExecutor,
+  input: { organizationId: string; chatThreadRunId: string; jobId: string },
+): Promise<ChatThreadRun | null> {
+  const [row] = await db
+    .update(chatThreadRuns)
+    .set({ jobId: input.jobId })
+    .where(
+      and(
+        eq(chatThreadRuns.id, input.chatThreadRunId),
+        eq(chatThreadRuns.organizationId, input.organizationId),
+        eq(chatThreadRuns.kind, "query"),
+      ),
+    )
+    .returning();
+  if (!row) return null;
+  await db.update(jobs).set({ chatThreadRunId: row.id }).where(eq(jobs.id, input.jobId));
+  recordChange(db, {
+    resource: "run",
+    ids: [row.id],
+    runId: row.id,
+    organizationId: row.organizationId,
+  });
+  return row;
+}
+
 /** The organization's thread's runs, oldest first. */
 export async function listThreadRuns(
   db: ChatExecutor,

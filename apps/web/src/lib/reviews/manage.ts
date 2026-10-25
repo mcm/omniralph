@@ -1,21 +1,29 @@
 import "server-only";
 import { getFindingOrganizationId, type Database } from "@omniralph/db";
-import type { DismissFindingInput, RerunReviewInput } from "@omniralph/shared";
+import type { DismissFindingInput } from "@omniralph/shared";
 import type { ActionResult } from "@/lib/action-result";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { rerunReview as rerun } from "@/lib/review/rerun";
+import { rerunReview as rerun, type RerunReviewOptions } from "@/lib/review/rerun";
 import { dismissFindingWithFeedback, restoreDismissedFinding } from "./feedback";
 
 export const REVIEW_NOT_FOUND = "That review doesn't exist.";
 export const FINDING_NOT_FOUND = "That finding doesn't exist.";
 
 export type RerunOutcome =
-  | { ok: true; /** The new review. */ reviewId: string }
+  | {
+      ok: true;
+      /** The new review. */
+      reviewId: string;
+      /** Its review run. */
+      reviewRunId: string;
+    }
   | {
       ok: false;
       error: string;
       /** The queued or running review of the same head, when that's why nothing was enqueued. */
       activeReviewId?: string;
+      /** Its review run. */
+      activeReviewRunId?: string;
       /** The review isn't one of the organization's. */
       notFound?: boolean;
     };
@@ -23,25 +31,26 @@ export type RerunOutcome =
 /**
  * Re-runs a review of `organizationId` on its PR's current head (admins: the caller checks):
  * Incremental reviews the whole diff for new issues, Fresh from scratch; the profile is the
- * repository's default or a built-in override. Closed or merged PRs and heads with an
- * active review get an error and no job.
+ * repository's default or a built-in override (a review run's retry passes the run's own mode
+ * and profile). Closed or merged PRs and heads with an active review get an error and no job.
  */
 export async function rerunOrganizationReview(
   db: Database,
   dispatcher: JobDispatcher,
   organizationId: string,
   reviewId: string,
-  input: RerunReviewInput,
+  input: RerunReviewOptions,
 ): Promise<RerunOutcome> {
   const result = await rerun(db, dispatcher, { organizationId, reviewId, ...input });
   switch (result.status) {
     case "enqueued":
-      return { ok: true, reviewId: result.reviewId };
+      return { ok: true, reviewId: result.reviewId, reviewRunId: result.reviewRunId };
     case "duplicate":
       return {
         ok: false,
         error: `A review of ${result.headSha.slice(0, 12)} is already queued or running.`,
         activeReviewId: result.reviewId,
+        activeReviewRunId: result.reviewRunId,
       };
     case "not_open":
       return {

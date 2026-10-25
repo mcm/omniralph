@@ -6,10 +6,23 @@ import {
   resolveRepositorySwitches,
 } from "@omniralph/db";
 import type { ChangeRequestState } from "@omniralph/scm";
-import type { RerunReviewInput } from "@omniralph/shared";
+import type { RerunReviewInput, ReviewMode } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { enqueueReview, type ReviewTaskRun } from "./enqueue";
+
+/**
+ * What a re-run reviews with: the Re-run dialog's mode and built-in profile, or (a retry of a
+ * review run) the run's own mode and profile ID.
+ */
+export type RerunReviewOptions =
+  RerunReviewInput | { runMode: ReviewMode; profileId: string | null };
+
+/** The review mode a re-run enqueues. */
+function rerunMode(options: RerunReviewOptions): ReviewMode {
+  if ("runMode" in options) return options.runMode;
+  return options.mode === "fresh" ? "fresh" : "full";
+}
 
 export type RerunReviewResult =
   | {
@@ -32,12 +45,13 @@ export type RerunReviewResult =
  * (mode `full`, like `@bot review`: open findings are still dropped as
  * duplicates); Fresh reviews it from scratch (mode `fresh`). A closed or
  * merged PR gets no job; an active review of the same head is returned as
- * `duplicate` (the dedupe key). Only reviews of `organizationId` are re-run.
+ * `duplicate` (the dedupe key). Only reviews of `organizationId` are re-run. A retry of a review
+ * run (`runMode`) keeps the run's mode and profile instead.
  */
 export async function rerunReview(
   db: Database,
   dispatcher: JobDispatcher,
-  input: { organizationId: string; reviewId: string } & RerunReviewInput,
+  input: { organizationId: string; reviewId: string } & RerunReviewOptions,
 ): Promise<RerunReviewResult> {
   const review = await getReview(db, input.reviewId);
   if (!review) return { status: "not_found" };
@@ -80,7 +94,7 @@ export async function rerunReview(
     description: cr.description,
     author: cr.author,
     trigger: "manual",
-    mode: input.mode === "fresh" ? "fresh" : "full",
+    mode: rerunMode(input),
     profileId: input.profileId,
   });
   switch (result.status) {

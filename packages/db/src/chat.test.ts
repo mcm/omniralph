@@ -36,6 +36,7 @@ import {
   listRunEvents,
   listThreadRuns,
   mapThreadRun,
+  setThreadRunJob,
   recordRunEvent,
   recordRunEventAttempt,
   markRunEventsProcessed,
@@ -620,6 +621,39 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       const empty = await newThread(orgId, "T2");
       expect(await listThreadRuns(db, orgId, empty.id)).toEqual([]);
       expect(await latestThreadRun(db, orgId, empty.id)).toBeNull();
+    });
+
+    it("points an ask at its retried attempt, in its organization only", async () => {
+      const thread = await newThread();
+      const first = await newJob();
+      const ask = (await mapThreadRun(db, {
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        jobId: first.id,
+      }))!;
+      const retry = await newJob();
+      expect(
+        await setThreadRunJob(db, {
+          organizationId: otherOrgId,
+          chatThreadRunId: ask.id,
+          jobId: retry.id,
+        }),
+      ).toBeNull();
+      expect(
+        await setThreadRunJob(db, {
+          organizationId: orgId,
+          chatThreadRunId: ask.id,
+          jobId: retry.id,
+        }),
+      ).toMatchObject({ id: ask.id, jobId: retry.id });
+      expect((await db.select().from(jobs).where(eq(jobs.id, retry.id)))[0]?.chatThreadRunId).toBe(
+        ask.id,
+      );
+      // Both attempts stay the ask's; the retry's answer reaches the same thread.
+      expect((await db.select().from(jobs).where(eq(jobs.id, first.id)))[0]?.chatThreadRunId).toBe(
+        ask.id,
+      );
+      expect((await threadOfRun(db, orgId, { jobId: retry.id }))?.id).toBe(thread.id);
     });
 
     it("is scoped to the organization", async () => {

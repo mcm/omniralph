@@ -82,9 +82,13 @@ describe("jobRerunKind", () => {
     expect(jobRerunKind({ type: "triage.run", payload: {} })).toBeNull();
   });
 
-  it("offers a rerun of failed jobs only", () => {
-    expect(isRerunnable({ type: INSTALL_JOB_TYPE, status: "failed", payload: {} })).toBe(true);
-    for (const status of ["queued", "running", "completed", "canceled", "expired", "skipped"]) {
+  it("offers a rerun of failed, canceled and expired jobs only", () => {
+    for (const status of ["failed", "canceled", "expired"]) {
+      expect(isRerunnable({ type: INSTALL_JOB_TYPE, status, payload: {} })).toBe(true);
+      expect(isRerunnable({ type: REPO_SYNC_JOB_TYPE, status, payload: {} })).toBe(true);
+      expect(isRerunnable({ type: RALPH_STORY_JOB_TYPE, status, payload: {} })).toBe(false);
+    }
+    for (const status of ["queued", "running", "completed", "skipped"]) {
       expect(isRerunnable({ type: INSTALL_JOB_TYPE, status, payload: {} })).toBe(false);
     }
   });
@@ -109,6 +113,21 @@ describe("rerunJob", () => {
         targetHarnessId: HARNESS_ID,
       }),
     );
+  });
+
+  it("dispatches a canceled or expired system RPC again", async () => {
+    for (const [i, status] of (["canceled", "expired"] as const).entries()) {
+      const ended = job({
+        id: `4444444${i}-4444-4444-8444-444444444444`,
+        status,
+        type: REPO_SYNC_JOB_TYPE,
+      });
+      const { dispatcher: d, createAndPublish } = dispatcher();
+      expect(await rerunJob({} as never, d, ORG, ended.id)).toMatchObject({ ok: true });
+      expect(createAndPublish).toHaveBeenCalledWith(
+        expect.objectContaining({ type: REPO_SYNC_JOB_TYPE, targetHarnessId: HARNESS_ID }),
+      );
+    }
   });
 
   it("warns when the same job is already queued or running", async () => {
@@ -165,7 +184,7 @@ describe("rerunJob", () => {
     const done = job({ status: "completed" });
     expect(await rerunJob({} as never, d, ORG, done.id)).toEqual({
       ok: false,
-      error: "Only failed jobs can be rerun.",
+      error: "Only failed, canceled or expired jobs can be rerun.",
     });
     const story = job({ id: "77777777-7777-4777-8777-777777777777", type: RALPH_STORY_JOB_TYPE });
     expect(await rerunJob({} as never, d, ORG, story.id)).toMatchObject({ ok: false });

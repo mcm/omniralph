@@ -55,6 +55,8 @@ import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { runListSchema, type RunList, type RunRow } from "@/lib/api/runs";
 import { runDetailSchema, transcriptPageSchema, type RunDetail } from "@/lib/api/runs";
+import type * as Adapters from "@/lib/scm/adapters";
+import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
 
 vi.mock("server-only", () => ({}));
 
@@ -66,6 +68,8 @@ const state = vi.hoisted(() => ({
   orgId: "",
   linear: undefined as unknown as LinearGateway,
   dispatcher: undefined as unknown,
+  /** The code host every adapter talks to, when set. */
+  scm: null as ScmAdapter | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 const withOrganization = (user: TestUser | null) =>
@@ -78,6 +82,14 @@ vi.mock("@/lib/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getLinearGatewayOrDisconnected: async () => state.linear,
 }));
+vi.mock("@/lib/scm/adapters", async (importOriginal) => {
+  const actual = await importOriginal<typeof Adapters>();
+  return {
+    ...actual,
+    scmAdapterFor: (...args: Parameters<typeof actual.scmAdapterFor>) =>
+      state.scm ?? actual.scmAdapterFor(...args),
+  };
+});
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -246,6 +258,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     linear = new FakeLinearGateway();
     state.linear = linear;
     state.dispatcher = new PostgresDispatcher({ db });
+    state.scm = null;
   });
 
   async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
@@ -1498,13 +1511,269 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         body: { error: "That run doesn't exist." },
       });
       expect((await retryRequest("nope")).status).toBe(404);
-      const { triage } = await runOfEachKind();
-      expect(await retryRequest(triage.id)).toMatchObject({
-        status: 400,
-        body: { error: "Only epic and request runs can be retried." },
-      });
       state.user = null;
       expect((await retryRequest(run.id)).status).toBe(401);
+    });
+  });
+
+  describe("retry of reviews, triage and asks", () => {
+    const HEAD = "c".repeat(40);
+
+    /** A code host whose PR/MRs are in `pr.state` at `pr.headSha`. */
+    function fakeScm() {
+      const pr = { state: "open" as ChangeRequestState, headSha: HEAD };
+      state.scm = {
+        provider: "github",
+        async getChangeRequest(_repo: unknown, number: number): Promise<ChangeRequest> {
+          return {
+            number,
+            title: "Add login",
+            description: "Please review",
+            author: "octocat",
+            draft: false,
+            state: pr.state,
+            baseSha: "b".repeat(40),
+            headSha: pr.headSha,
+            baseRef: "main",
+            headRef: "feature",
+            url: `https://github.com/acme/api/pull/${number}`,
+          };
+        },
+        getDefaultBranch: async () => "main",
+      } as unknown as ScmAdapter;
+      return pr;
+    }
+
+    /** A fresh review run of acme/api#9 whose one pass failed. */
+    async function failedReview() {
+      const run = await createReviewRun(db, {
+        organizationId: orgId,
+        repositoryId: repoA,
+        prNumber: 9,
+        headSha: "a".repeat(40),
+        baseSha: "b".repeat(40),
+        trigger: "webhook",
+        mode: "fresh",
+        profileId: "deep",
+      });
+      const review = await createReview(db, {
+        reviewRunId: run.id,
+        repositoryId: repoA,
+        prNumber: 9,
+        prTitle: "Add login",
+        headSha: "a".repeat(40),
+        baseSha: "b".repeat(40),
+        trigger: "webhook",
+        profileId: "deep",
+        model: null,
+        budget: 100_000,
+      });
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "review.task",
+        taskType: "review",
+        pool: "short",
+        repositoryId: repoA,
+        reviewRunId: run.id,
+        payload: { trigger: { kind: "pr.opened", context: { reviewId: review.id } } },
+      });
+      await db
+        .update(jobs)
+        .set({ status: "failed", finishedAt: new Date(), error: "Crashed." })
+        .where(eq(jobs.id, job.id));
+      await db.update(reviews).set({ status: "failed" }).where(eq(reviews.id, review.id));
+      await db.update(reviewRuns).set({ status: "failed" }).where(eq(reviewRuns.id, run.id));
+      return { run, review, job };
+    }
+
+    it("re-runs a failed review on the PR's current head with the run's mode and profile", async () => {
+      fakeScm();
+      const { run, job } = await failedReview();
+      state.user = member;
+      const before = await detailPage(run.id);
+      expect(before.details.actions.retry).toMatchObject({ run: true, attemptIds: [job.id] });
+
+      const { status, body } = await retryRequest(run.id);
+      expect(status).toBe(200);
+      const view = runDetailSchema.parse(body);
+      // The retry is a new review run of the current head, which the answer shows.
+      expect(view).toMatchObject({ kind: "review", status: "queued", origin: "manual" });
+      expect(view.id).not.toBe(run.id);
+      const [retried] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, view.id));
+      expect(retried).toMatchObject({
+        headSha: HEAD,
+        mode: "fresh",
+        profileId: "deep",
+        prNumber: 9,
+      });
+      const queued = await db
+        .select()
+        .from(jobs)
+        .where(sql`${jobs.reviewRunId} = ${view.id} and ${jobs.status} = 'queued'`);
+      expect(queued.map((j) => j.type)).toEqual(["review.task"]);
+
+      // Its pass retries the run too; while the new run is queued, the head is busy.
+      expect(
+        await retryRequest(run.id, { target: { kind: "attempt", attemptId: job.id } }),
+      ).toMatchObject({
+        status: 409,
+        body: { error: `A review of ${HEAD.slice(0, 12)} is already queued or running.` },
+      });
+    });
+
+    it("refuses a review of a merged pull request, and a review that didn't fail", async () => {
+      const pr = fakeScm();
+      const { run } = await failedReview();
+      pr.state = "merged";
+      expect(await retryRequest(run.id)).toMatchObject({
+        status: 400,
+        body: { error: "This change request is merged, so it can't be reviewed again." },
+      });
+      await db.update(reviewRuns).set({ status: "completed" }).where(eq(reviewRuns.id, run.id));
+      expect(await retryRequest(run.id)).toMatchObject({
+        status: 400,
+        body: { error: "This run is completed, so there's nothing to retry." },
+      });
+      expect(
+        await retryRequest(run.id, { target: { kind: "story", storyId: randomUUID() } }),
+      ).toMatchObject({ status: 400, body: { error: "Only an epic's stories can be retried." } });
+    });
+
+    /** A triage run of a Backlog issue whose attempt (given `reply`) ended `status`. */
+    async function endedTriage(status: "failed" | "canceled" | "expired") {
+      const issue = linear.add({ identifier: "ENG-70", title: "Shape it", description: "Rough." });
+      await linear.setIssueState(issue.id, { type: "backlog" });
+      session += 1;
+      const { run } = await createTriageRun(db, {
+        organizationId: orgId,
+        linearIssueId: issue.id,
+        linearAgentSessionId: `triage-session-${session}`,
+        trigger: "mention",
+      });
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "triage.run",
+        taskType: "query",
+        pool: "short",
+        triageRunId: run.id,
+        payload: {
+          trigger: {
+            kind: "linear.triage",
+            context: {
+              triageRunId: run.id,
+              reply: "Owners only.",
+              issue: { identifier: "ENG-70" },
+            },
+          },
+        },
+      });
+      await db.update(jobs).set({ status, finishedAt: new Date() }).where(eq(jobs.id, job.id));
+      await db
+        .update(triageRuns)
+        .set({ status: status === "canceled" ? "stopped" : "failed", currentJobId: job.id })
+        .where(eq(triageRuns.id, run.id));
+      return { run, job, issue };
+    }
+
+    it("retries a triage run whose attempt failed, was canceled or expired, with a new attempt", async () => {
+      for (const status of ["failed", "canceled", "expired"] as const) {
+        await db.delete(triageRuns);
+        await db.delete(jobs);
+        const { run, job } = await endedTriage(status);
+        state.user = { ...member, name: "Mo Member" };
+        const target =
+          status === "expired" ? { target: { kind: "attempt", attemptId: job.id } } : undefined;
+        const { status: code, body } = await retryRequest(run.id, target);
+        expect(code).toBe(200);
+        expect(runDetailSchema.parse(body)).toMatchObject({ id: run.id, status: "queued" });
+        const [again, ...more] = await db
+          .select()
+          .from(jobs)
+          .where(sql`${jobs.triageRunId} = ${run.id} and ${jobs.status} = 'queued'`);
+        expect(more).toEqual([]);
+        expect(again).toMatchObject({ type: "triage.run" });
+        // The attempt gives the retried attempt's reply again.
+        expect(JSON.stringify(again!.payload)).toContain("Owners only.");
+        const [row] = await db.select().from(triageRuns).where(eq(triageRuns.id, run.id));
+        expect(row).toMatchObject({ status: "queued", currentJobId: again!.id });
+        expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+          "Retried from Omniralph by Mo Member.",
+        );
+        // Now busy.
+        expect(await retryRequest(run.id)).toMatchObject({
+          status: 409,
+          body: { error: "Om is already working on this run." },
+        });
+      }
+    });
+
+    it("refuses a triage whose issue is in progress, and ends the run as triage would", async () => {
+      const { run, issue } = await endedTriage("failed");
+      await linear.setIssueState(issue.id, { type: "started" });
+      expect(await retryRequest(run.id)).toMatchObject({
+        status: 400,
+        body: {
+          error:
+            "Triage only rewrites work items whose work hasn't started, and ENG-70 is already in progress or done.",
+        },
+      });
+      const [row] = await db.select().from(triageRuns).where(eq(triageRuns.id, run.id));
+      expect(row!.status).toBe("stopped");
+    });
+
+    /** An ask from Slack about acme/api whose attempt ended `status`. */
+    async function endedAsk(status: "failed" | "canceled" | "expired") {
+      const thread = await slackThread(`slack:C0123:${randomUUID()}`);
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "chat.ask",
+        taskType: "query",
+        pool: "short",
+        repositoryId: repoA,
+        dedupeKey: `chat.ask:${thread.id}:q`,
+        payload: {
+          trigger: {
+            kind: "chat.request",
+            context: { question: "Where is auth handled?", chatThreadId: thread.id },
+          },
+        },
+      });
+      await db.update(jobs).set({ status, finishedAt: new Date() }).where(eq(jobs.id, job.id));
+      const ask = (await mapThreadRun(db, {
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        jobId: job.id,
+      }))!;
+      return { ask, job };
+    }
+
+    it("retries an ask with a copy of its last attempt, relayed to the same thread", async () => {
+      for (const status of ["failed", "canceled", "expired"] as const) {
+        const { ask, job } = await endedAsk(status);
+        state.user = member;
+        expect((await detailPage(ask.id)).status).toBe(
+          status === "canceled" ? "stopped" : "failed",
+        );
+        const { status: code, body } = await retryRequest(ask.id);
+        expect(code).toBe(200);
+        const view = runDetailSchema.parse(body);
+        expect(view).toMatchObject({ id: ask.id, kind: "ask", status: "queued" });
+        expect(view.attempts.map((a) => a.status)).toEqual(["queued", status]);
+        const copy = view.attempts[0]!;
+        expect(await getJob(db, copy.id)).toMatchObject({
+          type: "chat.ask",
+          chatThreadRunId: ask.id,
+          repositoryId: repoA,
+          payload: job.payload,
+        });
+        // The thread's run now points at the copy, so its answer reaches the thread.
+        const [mapped] = await db
+          .select()
+          .from(chatThreadRuns)
+          .where(eq(chatThreadRuns.id, ask.id));
+        expect(mapped!.jobId).toBe(copy.id);
+        expect(await retryRequest(ask.id)).toMatchObject({ status: 409 });
+      }
     });
   });
 

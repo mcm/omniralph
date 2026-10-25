@@ -24,6 +24,9 @@ export const RETRYABLE_RUN_STATUSES = [
 /** An attempt that is retried from these statuses. */
 export const RETRYABLE_ATTEMPT_STATUSES = ["failed", "canceled", "expired"] as const;
 
+/** Runs whose attempts are each their own step: only the newest of a type is retried. */
+const ONE_STEP_PER_ATTEMPT_KINDS: readonly RunKind[] = ["triage", "ask"];
+
 /** Runs that Stop applies to, while they haven't finished. */
 const STOPPABLE_KINDS: readonly RunKind[] = ["epic", "request"];
 const UNFINISHED: readonly RunStatus[] = ["queued", "running", "waiting"];
@@ -69,7 +72,8 @@ export function lastRequestAttemptRetryable(attempts: readonly RunActionAttempt[
 /**
  * The actions open to a user with `role` in the run's organization. An attempt is retried
  * when it failed, was canceled or expired, is the newest of its kind in its step (a later
- * one replaced it otherwise), and the run isn't busy (queued or running) or a completed
+ * one replaced it otherwise; a triage's or ask's attempts are each their own step, so there
+ * the newest of its kind in the run), and the run isn't busy (queued or running) or a completed
  * epic (which re-runs a story instead). A request run is retried as a whole also when its
  * newest request attempt didn't succeed (the run itself completes with the error).
  */
@@ -88,10 +92,11 @@ export function runActions(
   const busy = run.status === "queued" || run.status === "running";
   const completedEpic = run.kind === "epic" && run.status === "completed";
   // Attempts come newest first: the first of each (step, type) is the newest.
+  const byType = ONE_STEP_PER_ATTEMPT_KINDS.includes(run.kind);
   const newest = new Set<string>();
   const seen = new Set<string>();
   for (const attempt of attempts) {
-    const key = `${attempt.step ?? ""}\u0000${attempt.type}`;
+    const key = byType ? attempt.type : `${attempt.step ?? ""}\u0000${attempt.type}`;
     if (seen.has(key)) continue;
     seen.add(key);
     newest.add(attempt.id);
