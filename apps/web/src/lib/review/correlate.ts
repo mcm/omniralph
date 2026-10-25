@@ -122,6 +122,7 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
       },
       repositoryId: run.repositoryId,
     })),
+    reviewRunId: run.id,
     dedupeKey: correlationJobKey(run.id),
     targetHarnessId: await pinnedHarnessFor(tx, run.organizationId, run.repositoryId, {
       lastHeartbeats: readHarnessLastSeen,

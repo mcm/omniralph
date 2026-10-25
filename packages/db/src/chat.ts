@@ -703,7 +703,8 @@ const runCondition = (ref: ThreadRunRef) =>
 
 /**
  * Records that a run (a query run's job, or a coding run) belongs to a
- * thread. Idempotent: a run already mapped keeps its thread, and that row is
+ * thread, and links a query run's job to it (`jobs.chat_thread_run_id`).
+ * Idempotent: a run already mapped keeps its thread, and that row is
  * returned. Null when the thread or the run isn't the organization's.
  */
 export async function mapThreadRun(
@@ -745,13 +746,17 @@ export async function mapThreadRun(
     })
     .onConflictDoNothing()
     .returning();
-  if (row) return row;
-  const [existing] = await db
-    .select()
-    .from(chatThreadRuns)
-    .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
-    .limit(1);
-  return existing ?? null;
+  const [mapped] = row
+    ? [row]
+    : await db
+        .select()
+        .from(chatThreadRuns)
+        .where(and(runCondition(ref), eq(chatThreadRuns.organizationId, organizationId)))
+        .limit(1);
+  if (mapped?.jobId) {
+    await db.update(jobs).set({ chatThreadRunId: mapped.id }).where(eq(jobs.id, mapped.jobId));
+  }
+  return mapped ?? null;
 }
 
 /** The organization's thread's runs, oldest first. */

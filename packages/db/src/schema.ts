@@ -1520,6 +1520,22 @@ export const jobs = pgTable(
     ralphRunId: uuid("ralph_run_id").references((): AnyPgColumn => ralphRuns.id, {
       onDelete: "set null",
     }),
+    /** The ralph story a `ralph.story` job works on. */
+    ralphStoryId: uuid("ralph_story_id").references((): AnyPgColumn => ralphStories.id, {
+      onDelete: "set null",
+    }),
+    /** The review run a review task's (or a legacy `review.run`) job or its correlation job belongs to. */
+    reviewRunId: uuid("review_run_id").references((): AnyPgColumn => reviewRuns.id, {
+      onDelete: "set null",
+    }),
+    /** The triage run a `triage.run` job belongs to. */
+    triageRunId: uuid("triage_run_id").references((): AnyPgColumn => triageRuns.id, {
+      onDelete: "set null",
+    }),
+    /** The chat thread's query run a `chat.ask` job answers. */
+    chatThreadRunId: uuid("chat_thread_run_id").references((): AnyPgColumn => chatThreadRuns.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -1531,6 +1547,10 @@ export const jobs = pgTable(
     index("jobs_status_created_at_idx").on(t.status, t.createdAt),
     index("jobs_harness_id_idx").on(t.harnessId),
     index("jobs_ralph_run_id_idx").on(t.ralphRunId),
+    index("jobs_ralph_story_id_idx").on(t.ralphStoryId),
+    index("jobs_review_run_id_idx").on(t.reviewRunId),
+    index("jobs_triage_run_id_idx").on(t.triageRunId),
+    index("jobs_chat_thread_run_id_idx").on(t.chatThreadRunId),
     index("jobs_organization_created_at_idx").on(t.organizationId, t.createdAt),
     // The claim query: queued jobs that are available, and running jobs whose lease lapsed.
     index("jobs_claim_queued_idx")

@@ -325,6 +325,7 @@ export async function enqueueReview(
           repositoryId: input.repositoryId,
           ref: input.headSha,
         })),
+        reviewRunId: reviewRun.id,
         dedupeKey: reviewJobKey(input.repositoryId, input.prNumber, input.headSha, task.id),
       });
       if (!created) {

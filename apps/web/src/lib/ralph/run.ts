@@ -18,6 +18,7 @@ import {
   pinnedHarnessFor,
   updateLane,
   updateRun,
+  setJobRalphStory,
   updateStory,
   upsertStories,
   type Database,
@@ -605,6 +606,8 @@ async function enqueueStory(
     targetHarnessId: await laneHarnessId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
+  // Linked in `tx`: the story (a follow-up filed in it) may not be committed yet.
+  await setJobRalphStory(tx, job.id, row.id);
 
   // New work on the lane's branch: it is published again at the finish.
   if (found.lane.publish) await updateLane(tx, found.lane.id, { publish: null });

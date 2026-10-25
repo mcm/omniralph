@@ -320,6 +320,7 @@ export async function enqueueTriage(
           ref: repository.payload.defaultBranch,
         }),
       })),
+      triageRunId: run.id,
       dedupeKey: `triage:${run.id}`,
     });
     jobId = job.id;

@@ -487,6 +487,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         targetHarnessId: null,
       });
       const payload = storyPayload(first);
+      // The job is linked to the story it works on.
+      expect(first.ralphStoryId).toBe(payload.storyId);
       if (path === "tasks") {
         // Today's payload is the coding run's trigger context.
         expect(first.payload).toMatchObject({

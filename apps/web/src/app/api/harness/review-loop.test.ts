@@ -890,6 +890,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         expect(job).toMatchObject({
           taskId: run.taskId,
           status: "queued",
+          reviewRunId: next.reviewRunId,
           dedupeKey: `review.run:${repositoryId}:${prNumber}:${head2}:${run.taskId}`,
         });
         const payload = reviewTriggerContext(job.payload);
@@ -1411,6 +1412,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         pool: "short",
         status: "queued",
         repositoryId,
+        reviewRunId: enqueued.reviewRunId,
       });
       const payload = RunSpecJobPayload.parse(correlationJob.payload);
       expect(payload.trigger.kind).toBe("run.invoked");
