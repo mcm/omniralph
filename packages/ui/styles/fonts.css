@@ -1,0 +1,11 @@
+/*
+ * Self-hosted fonts (woff2 from Fontsource), so the agent's local UI works offline.
+ * Instrument Sans for UI and headings; Geist Mono for machine facts.
+ */
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/geist-mono";
+
+:root {
+  --or-font-sans: "Instrument Sans Variable", "Instrument Sans", system-ui, sans-serif;
+  --or-font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+}
