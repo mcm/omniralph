@@ -4,6 +4,7 @@ import {
   createDb,
   DEFAULT_TRACKER_STATE_MAPPING,
   getIntegrationById,
+  listSettingsChanges,
   organizationMembers,
   organizations,
   saveIntegration,
@@ -218,7 +219,42 @@ describe.skipIf(!databaseAvailable)("tracker state mapping endpoints", () => {
         ids: [acmeIntegration],
         organizationId: acme,
       }),
+      expect.objectContaining({
+        resource: "settings",
+        section: "connection",
+        subjectId: acmeIntegration,
+        organizationId: acme,
+      }),
     ]);
+    // The connection's change history has the changed fields only.
+    const history = () =>
+      listSettingsChanges(db, {
+        organizationIds: [acme],
+        section: "connection",
+        subjectId: acmeIntegration,
+      });
+    expect((await history()).entries).toEqual([
+      expect.objectContaining({
+        actor: { userId: admin.id, name: admin.name },
+        changes: [
+          {
+            field: "needsRefining",
+            label: "Needs refining",
+            before: ["backlog"],
+            after: ["triage", "backlog"],
+          },
+          {
+            field: "team:team-b|States of team team-b",
+            label: "States of team team-b",
+            before: null,
+            after: "Ready to start: b-2, b-3; needs refining: b-1",
+          },
+        ],
+      }),
+    ]);
+    // Saving the same mapping again records nothing.
+    expect((await call("PUT", acmeIntegration, override)).status).toBe(200);
+    expect((await history()).entries).toHaveLength(1);
     // Members read the saved mapping.
     state.user = member;
     expect((await call("GET", acmeIntegration)).body.mapping).toEqual(override);
@@ -260,6 +296,11 @@ describe.skipIf(!databaseAvailable)("tracker state mapping endpoints", () => {
     expect(result.status).toBe(200);
     expect(changes).toEqual([
       expect.objectContaining({ resource: "connection", organizationId: beta }),
+      expect.objectContaining({
+        resource: "settings",
+        section: "connection",
+        organizationId: beta,
+      }),
     ]);
   });
 

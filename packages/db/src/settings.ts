@@ -140,6 +140,20 @@ export async function listRepositoryPinnedHarnessIds(
   return rows.map((r) => r.harnessId);
 }
 
+/** Names of the agents a repository is pinned to, by name (its change history's display value). */
+export async function listRepositoryPinnedHarnessNames(
+  db: Database,
+  repositoryId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ name: harnesses.name })
+    .from(harnessRepoPins)
+    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
+    .where(eq(harnessRepoPins.repositoryId, repositoryId))
+    .orderBy(asc(harnesses.name), asc(harnesses.id));
+  return rows.map((r) => r.name);
+}
+
 /** Which of `harnessIds` are existing, non-revoked agents of the organization. */
 export async function filterActiveHarnessIds(
   db: Database,

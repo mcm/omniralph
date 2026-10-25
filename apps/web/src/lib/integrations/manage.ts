@@ -12,6 +12,7 @@ import {
   listChatConnections,
   setChatTaskDefaults,
   upsertChatChannelTaskSetting,
+  withSettingsChanges,
   type Database,
 } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
@@ -29,13 +30,36 @@ import {
 } from "@/lib/chat/tasks";
 import { listTaskChoices, organizationDefinitions } from "@/lib/definitions";
 import { linearOAuthConfig, revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
+import {
+  settingsActor,
+  trackedChatTaskDefaults,
+  trackedConnection,
+} from "@/lib/settings-history/sections";
+
+/** Runs a save of connection `connectionId`, recording what it changed in its history. */
+function savingConnection<T>(
+  db: Database,
+  admin: OrgUser,
+  connectionId: string,
+  save: (tx: Database) => Promise<T>,
+): Promise<T> {
+  return withSettingsChanges(
+    db,
+    settingsActor(admin),
+    trackedConnection(admin.organization.id, connectionId),
+    save,
+  );
+}
 
 /**
  * Settings › Integrations: the active organization's Linear workspace, Slack workspaces and
  * Discord servers, whether this server has each app's credentials, and the tasks chat runs.
  * Database and environment only (it is polled): no call to Linear, Slack or Discord.
  */
-export async function loadIntegrations(db: Database, admin: OrgUser): Promise<IntegrationsSettings> {
+export async function loadIntegrations(
+  db: Database,
+  admin: OrgUser,
+): Promise<IntegrationsSettings> {
   const organizationId = admin.organization.id;
   const [
     integration,
@@ -120,7 +144,11 @@ export async function loadIntegrations(db: Database, admin: OrgUser): Promise<In
  * Linear (best effort). Linear webhooks are ignored from then on.
  */
 export async function disconnectLinear(db: Database, admin: OrgUser): Promise<ActionResult> {
-  const removed = await deleteIntegration<LinearCredentials>(db, admin.organization.id, "linear");
+  const connected = await getIntegration(db, admin.organization.id, "linear");
+  if (!connected) return { ok: false, error: "No Linear workspace is connected." };
+  const removed = await savingConnection(db, admin, connected.id, (tx) =>
+    deleteIntegration<LinearCredentials>(tx, admin.organization.id, "linear"),
+  );
   if (!removed) return { ok: false, error: "No Linear workspace is connected." };
   try {
     await revokeToken(removed.credentials.accessToken);
@@ -149,7 +177,9 @@ export async function disconnectSlack(
   const connections = await listChatConnections(db, organizationId);
   const connection = connections.find((c) => c.id === connectionId && c.platform === "slack");
   if (!connection) return { ok: false, error: "That Slack workspace isn't connected." };
-  const removed = await deleteChatConnection<SlackCredentials>(db, organizationId, connection.id);
+  const removed = await savingConnection(db, admin, connection.id, (tx) =>
+    deleteChatConnection<SlackCredentials>(tx, organizationId, connection.id),
+  );
   if (!removed) return { ok: false, error: "That Slack workspace isn't connected." };
   if (!removed.credentials) return { ok: true };
   try {
@@ -179,7 +209,9 @@ export async function disconnectDiscord(
   const connections = await listChatConnections(db, organizationId);
   const connection = connections.find((c) => c.id === connectionId && c.platform === "discord");
   if (!connection) return { ok: false, error: "That Discord server isn't connected." };
-  const removed = await deleteChatConnection(db, organizationId, connection.id);
+  const removed = await savingConnection(db, admin, connection.id, (tx) =>
+    deleteChatConnection(tx, organizationId, connection.id),
+  );
   if (!removed) return { ok: false, error: "That Discord server isn't connected." };
   const warning = {
     ok: true,
@@ -248,11 +280,17 @@ export async function saveChatTaskDefaults(
   const invalid = invalidChatTasks(await chatTaskErrors(db, admin.organization.id, input, false));
   if (invalid) return invalid;
   const tasks = input as ChatTaskInput<string>;
-  await setChatTaskDefaults(
+  await withSettingsChanges(
     db,
-    admin.organization.id,
-    { askAboutCode: tasks.askAboutCode, startWork: tasks.startWork },
-    admin.id,
+    settingsActor(admin),
+    trackedChatTaskDefaults(admin.organization.id),
+    (tx) =>
+      setChatTaskDefaults(
+        tx,
+        admin.organization.id,
+        { askAboutCode: tasks.askAboutCode, startWork: tasks.startWork },
+        admin.id,
+      ),
   );
   return { ok: true };
 }
@@ -286,14 +324,16 @@ export async function saveChatChannelTasks(
   if (chosen.askAboutCode === null && chosen.startWork === null) {
     return { ok: false, error: "Choose a task for the channel to run." };
   }
-  const saved = await upsertChatChannelTaskSetting(db, {
-    organizationId,
-    connectionId: connection.id,
-    channelId,
-    askAboutCodeTaskId: chosen.askAboutCode,
-    startWorkTaskId: chosen.startWork,
-    updatedBy: admin.id,
-  });
+  const saved = await savingConnection(db, admin, connection.id, (tx) =>
+    upsertChatChannelTaskSetting(tx, {
+      organizationId,
+      connectionId: connection.id,
+      channelId,
+      askAboutCodeTaskId: chosen.askAboutCode,
+      startWorkTaskId: chosen.startWork,
+      updatedBy: admin.id,
+    }),
+  );
   if (!saved) return { ok: false, error: "That chat connection isn't connected." };
   return { ok: true };
 }
@@ -305,11 +345,9 @@ export async function removeChatChannelTasks(
   connectionId: string,
   channelId: string,
 ): Promise<ActionResult> {
-  const removed = await deleteChatChannelTaskSetting(
-    db,
-    admin.organization.id,
-    connectionId,
-    channelId,
+  // A connection of another organization reads as missing: nothing is recorded for it.
+  const removed = await savingConnection(db, admin, connectionId, (tx) =>
+    deleteChatChannelTaskSetting(tx, admin.organization.id, connectionId, channelId),
   );
   if (!removed) return { ok: false, error: "That channel has no task overrides." };
   return { ok: true };

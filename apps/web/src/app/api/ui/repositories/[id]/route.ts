@@ -33,6 +33,5 @@ export const GET = apiHandler<"member", undefined, typeof detailQuery, Params>(
  */
 export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
   { access: "admin" },
-  async ({ user, params }) =>
-    disconnectRepository(getDb(), user.organization.id, requireUuid(params.id)),
+  async ({ user, params }) => disconnectRepository(getDb(), user, requireUuid(params.id)),
 );

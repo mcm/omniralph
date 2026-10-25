@@ -10,5 +10,5 @@ import { updateRepositoryReviewSettings } from "@/lib/repositories/save";
 export const PUT = apiHandler<"admin", z.ZodUnknown, undefined, { id: string }>(
   { access: "admin", body: z.unknown() },
   async ({ user, params, body }) =>
-    updateRepositoryReviewSettings(user.organization.id, requireUuid(params.id), body),
+    updateRepositoryReviewSettings(user, requireUuid(params.id), body),
 );

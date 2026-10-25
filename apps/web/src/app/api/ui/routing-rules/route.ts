@@ -3,6 +3,7 @@ import type { RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { getDb } from "@/lib/db";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { loadRoutingRules, saveRoutingRules } from "@/lib/routing/rules";
+import { settingsActor } from "@/lib/settings-history/sections";
 
 /**
  * Settings › Routing (every member): the organization's rules in evaluation order, the fields
@@ -21,5 +22,5 @@ export const GET = apiHandler({}, async ({ user }): Promise<RoutingRules> =>
 export const PUT = apiHandler(
   { access: "admin", body: linearRoutingRulesSchema },
   async ({ user, body }): Promise<SavedRoutingRules> =>
-    saveRoutingRules(getDb(), user.organization.id, body.rules),
+    saveRoutingRules(getDb(), user.organization.id, body.rules, settingsActor(user)),
 );

@@ -59,7 +59,7 @@ export const PUT = apiHandler<"admin", typeof saveSelectionSchema, undefined, Pa
   async ({ user, params, body }) =>
     (body.provider === "github" ? saveGitHubRepositories : saveGitLabProjects)(
       getDb(),
-      user.organization.id,
+      user,
       requireUuid(params.id),
       body.selectedIds,
     ),

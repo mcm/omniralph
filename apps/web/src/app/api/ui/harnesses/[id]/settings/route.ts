@@ -3,6 +3,7 @@ import { harnessSettingsSaveSchema } from "@/lib/api/harnesses";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { saveHarnessSettings } from "@/lib/harnesses/manage";
+import { settingsActor } from "@/lib/settings-history/sections";
 
 /**
  * Saves the Settings tab's changes in one request (config, desired version, unpins, pins):
@@ -17,6 +18,7 @@ export const PUT = apiHandler<"admin", typeof harnessSettingsSaveSchema, undefin
       user.organization.id,
       params.id,
       body,
+      settingsActor(user),
     );
     return result.ok ? { ...result, savedAt: new Date().toISOString() } : result;
   },

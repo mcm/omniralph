@@ -18,12 +18,24 @@ vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") =>
     assertRole(state.user && { ...state.user, organization: { id: ORG_ID, name: "Acme" } }, role),
 }));
+// The change history is covered by the settings-history tests; here a connect just saves.
+vi.mock("@/lib/settings-history/sections", () => ({
+  settingsActor: () => ({ userId: null, name: "Admin" }),
+  connectingWithHistory: <T>(
+    db: unknown,
+    _actor: unknown,
+    _organizationId: string,
+    _existingId: string | null,
+    save: (tx: unknown) => Promise<T>,
+  ) => save(db),
+}));
 vi.mock("@omniralph/db", () => ({
   consumeOAuthState: async (_db: unknown, nonce: string, expiresAt: Date) => {
     if (state.consumed.has(nonce)) return false;
     state.consumed.set(nonce, expiresAt);
     return true;
   },
+  getChatConnectionByExternalId: async () => null,
   saveChatConnection: async (_db: unknown, values: Record<string, unknown>) => {
     if (state.takenGuilds.has(values.externalId as string)) return "other_organization";
     state.saved.push(values);

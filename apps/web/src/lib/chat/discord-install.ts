@@ -1,5 +1,9 @@
 import "server-only";
-import { consumeOAuthState, saveChatConnection } from "@omniralph/db";
+import {
+  consumeOAuthState,
+  getChatConnectionByExternalId,
+  saveChatConnection,
+} from "@omniralph/db";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   createSignedState,
@@ -7,6 +11,7 @@ import {
   SIGNED_STATE_TTL_SECONDS,
 } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
+import { connectingWithHistory, settingsActor } from "@/lib/settings-history/sections";
 import {
   DISCORD_CALLBACK_PATH,
   DISCORD_OAUTH_STATE_PURPOSE,
@@ -111,14 +116,23 @@ export async function discordCallback(
     if (queryGuildId !== null && queryGuildId !== guild.id) {
       throw new DiscordOAuthError("Discord's guild differs from the callback's guild_id");
     }
-    saved = await saveChatConnection(db, {
+    const existing = await getChatConnectionByExternalId(db, "discord", guild.id);
+    saved = await connectingWithHistory(
+      db,
+      settingsActor(admin),
       organizationId,
-      platform: "discord",
-      externalId: guild.id,
-      name: guild.name,
-      credentials: null,
-      installedByUserId: admin.id,
-    });
+      existing?.organizationId === organizationId ? existing.id : null,
+      (tx) =>
+        saveChatConnection(tx, {
+          organizationId,
+          platform: "discord",
+          externalId: guild.id,
+          name: guild.name,
+          credentials: null,
+          installedByUserId: admin.id,
+        }),
+      (result) => (result === "other_organization" ? null : result.id),
+    );
   } catch (error) {
     console.error("Discord OAuth callback failed", {
       name: error instanceof Error ? error.name : typeof error,

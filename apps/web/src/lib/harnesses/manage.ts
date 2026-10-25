@@ -12,7 +12,9 @@ import {
   TRACK_LATEST_HARNESS_VERSION,
   unpinRepositoryFromHarness,
   updateHarnessConfig as updateHarnessConfigRow,
+  withSettingsChanges,
   type Database,
+  type SettingsActor,
 } from "@omniralph/db";
 import { HarnessVersion, HostToolPath } from "@omniralph/shared";
 import { POOLS, TASK_TYPES } from "@omniralph/tasks";
@@ -29,6 +31,7 @@ import {
   deleteHarness as deleteHarnessWithRevoke,
   revokeHarness as revokeHarnessWithJobs,
 } from "@/lib/harness-auth/revoke";
+import { trackedRepositoryAgents } from "@/lib/settings-history/sections";
 import { recordLatestHarnessVersion } from "./desired-version";
 import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
@@ -174,7 +177,8 @@ export async function saveInOrder(steps: readonly SaveStep[]): Promise<ActionRes
 /**
  * The Settings tab's save, as one request: the config, then the desired version, then the
  * unpins and the pins, in that order. It stops at the first that fails; the error names the
- * changes it didn't save (those before it are saved).
+ * changes it didn't save (those before it are saved). Each pin and unpin is recorded in its
+ * repository's change history.
  */
 export async function saveHarnessSettings(
   db: Database,
@@ -182,8 +186,23 @@ export async function saveHarnessSettings(
   organizationId: string,
   harnessId: string,
   save: HarnessSettingsSave,
+  actor: SettingsActor,
 ): Promise<ActionResult> {
   const pins = "pinned repositories";
+  const tracked =
+    (repositoryId: string, run: (db: Database) => Promise<ActionResult>) => async () => {
+      // An ID that isn't one is refused by the step itself.
+      if (!z.uuid().safeParse(repositoryId).success) return run(db);
+      const result = await withSettingsChanges(
+        db,
+        actor,
+        trackedRepositoryAgents(organizationId, repositoryId),
+        run,
+      );
+      // The bump in the transaction ran before its commit: bump again once it's visible.
+      await bumpHarnessHeartbeat(harnessId);
+      return result;
+    };
   return saveInOrder([
     ...(save.config
       ? [
@@ -203,11 +222,11 @@ export async function saveHarnessSettings(
       : []),
     ...save.unpin.map((id) => ({
       label: pins,
-      run: () => unpinRepository(db, organizationId, harnessId, id),
+      run: tracked(id, (tx) => unpinRepository(tx, organizationId, harnessId, id)),
     })),
     ...save.pin.map((id) => ({
       label: pins,
-      run: () => pinRepository(db, dispatcher, organizationId, harnessId, id),
+      run: tracked(id, (tx) => pinRepository(tx, dispatcher, organizationId, harnessId, id)),
     })),
   ]);
 }

@@ -638,6 +638,13 @@
       "when": 1792935457175,
       "tag": "0090_inbox_item_states",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792937826964,
+      "tag": "0091_settings_changes",
+      "breakpoints": true
     }
   ]
 }

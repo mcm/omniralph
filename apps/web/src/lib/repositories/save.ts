@@ -1,5 +1,10 @@
 import "server-only";
-import { getRepository, setRepositorySwitches, updateRepositoryRalphSettings } from "@omniralph/db";
+import {
+  getRepository,
+  setRepositorySwitches,
+  updateRepositoryRalphSettings,
+  withSettingsChanges,
+} from "@omniralph/db";
 import {
   fieldErrors,
   RalphSettingsInput,
@@ -8,11 +13,25 @@ import {
   RepositoryTaskTypesInput,
 } from "@omniralph/shared";
 import type { ActionResult } from "@/lib/action-result";
+import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
+import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import {
+  settingsActor,
+  trackedRepositoryAgents,
+  trackedRepositoryCoding,
+  trackedRepositoryReviews,
+} from "@/lib/settings-history/sections";
 import { ralphLinearErrors, ralphTaskErrors, saveRepositorySettings } from "./settings";
 
-/** The saves of Repository › Review settings, Coding and Harnesses, for `/api/ui`'s handlers. */
+/**
+ * The saves of Repository › Review settings, Coding and Harnesses, for `/api/ui`'s handlers.
+ * Each records what it changed in the repository's change history (`withSettingsChanges`).
+ */
+
+/** The admin saving, in their active organization. */
+type Saver = Pick<OrgUser, "id" | "name" | "email" | "organization">;
 
 const NOT_CONNECTED: ActionResult = { ok: false, error: "That repository isn't connected." };
 
@@ -27,19 +46,28 @@ function invalid(error: Parameters<typeof fieldErrors>[0]): ActionResult {
  * job; the next review job enqueued for the repository uses the new settings.
  */
 export async function updateRepositoryReviewSettings(
-  organizationId: string,
+  user: Saver,
   repositoryId: string,
   input: unknown,
 ): Promise<ActionResult> {
   const parsed = RepositorySettingsInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
-  const result = await saveRepositorySettings(
+  const organizationId = user.organization.id;
+  const result = await withSettingsChanges(
     getDb(),
-    getDispatcher(),
-    organizationId,
-    repositoryId,
-    parsed.data,
+    settingsActor(user),
+    [
+      trackedRepositoryReviews(organizationId, repositoryId),
+      trackedRepositoryAgents(organizationId, repositoryId),
+    ],
+    (tx) => saveRepositorySettings(tx, getDispatcher(), organizationId, repositoryId, parsed.data),
   );
+  if (result.status === "saved") {
+    // The bumps in the transaction ran before its commit: bump again once it's visible.
+    for (const id of [...result.pinnedHarnessIds, ...result.unpinnedHarnessIds]) {
+      await bumpHarnessHeartbeat(id);
+    }
+  }
   switch (result.status) {
     case "unknown_repository":
       return NOT_CONNECTED;
@@ -80,16 +108,24 @@ export async function updateRepositoryReviewSettings(
  * claim or delegation uses the new values.
  */
 export async function updateRepositoryTaskTypes(
-  organizationId: string,
+  user: Saver,
   repositoryId: string,
   input: unknown,
 ): Promise<ActionResult> {
   const parsed = RepositoryTaskTypesInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
-  if (!(await setRepositorySwitches(getDb(), organizationId, repositoryId, parsed.data))) {
-    return NOT_CONNECTED;
-  }
-  return { ok: true };
+  const organizationId = user.organization.id;
+  // The review switch is part of the review settings; coding and query of the coding settings.
+  const saved = await withSettingsChanges(
+    getDb(),
+    settingsActor(user),
+    [
+      trackedRepositoryReviews(organizationId, repositoryId),
+      trackedRepositoryCoding(organizationId, repositoryId),
+    ],
+    (tx) => setRepositorySwitches(tx, organizationId, repositoryId, parsed.data),
+  );
+  return saved ? { ok: true } : NOT_CONNECTED;
 }
 
 /**
@@ -99,12 +135,13 @@ export async function updateRepositoryTaskTypes(
  * (`ralphLinearErrors`). The next job and decision of every run pick it up.
  */
 export async function updateRepositoryCodingSettings(
-  organizationId: string,
+  user: Saver,
   repositoryId: string,
   input: unknown,
 ): Promise<ActionResult> {
   const parsed = RalphSettingsInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
+  const organizationId = user.organization.id;
   const { codingPath, storyTaskId, requestTaskId } = parsed.data;
   const db = getDb();
   const repository = await getRepository(db, repositoryId, organizationId);
@@ -123,11 +160,17 @@ export async function updateRepositoryCodingSettings(
   if (Object.keys(errors).length > 0) {
     return { ok: false, error: "Fix the highlighted fields.", fieldErrors: errors };
   }
-  const saved = await updateRepositoryRalphSettings(db, repositoryId, {
-    ralphSettings: ralphSettingsFromInput(parsed.data),
-    codingPath,
-    storyTaskId,
-    requestTaskId,
-  });
+  const saved = await withSettingsChanges(
+    db,
+    settingsActor(user),
+    trackedRepositoryCoding(organizationId, repositoryId),
+    (tx) =>
+      updateRepositoryRalphSettings(tx, repositoryId, {
+        ralphSettings: ralphSettingsFromInput(parsed.data),
+        codingPath,
+        storyTaskId,
+        requestTaskId,
+      }),
+  );
   return saved ? { ok: true } : NOT_CONNECTED;
 }

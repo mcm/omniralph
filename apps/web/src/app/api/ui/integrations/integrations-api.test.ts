@@ -69,8 +69,16 @@ vi.mock("@/lib/auth/session", () => ({
     assertRole(state.user && { ...state.user, organization: { id: "org-a", name: "Acme" } }, role),
 }));
 vi.mock("@omniralph/db", async () => ({
+  // The change history is covered by its own tests: a save just runs.
+  withSettingsChanges: async (
+    db: unknown,
+    _actor: unknown,
+    _tracked: unknown,
+    save: (tx: unknown) => Promise<unknown>,
+  ) => save(db),
   getStoredTaskDefinition: async (_db: unknown, organizationId: string, id: string) =>
     (await rows).find((r) => r.organizationId === organizationId && r.id === id) ?? null,
+  getIntegration: async () => state.integration && { id: "integration-1", ...state.integration },
   deleteIntegration: async (_db: unknown, organizationId: string) => {
     state.deletes += 1;
     state.deletedFrom.push(organizationId);

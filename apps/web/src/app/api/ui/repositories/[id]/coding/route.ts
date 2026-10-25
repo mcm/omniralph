@@ -25,5 +25,5 @@ export const GET = apiHandler<"admin", undefined, typeof codingQuery, Params>(
 export const PUT = apiHandler<"admin", z.ZodUnknown, undefined, Params>(
   { access: "admin", body: z.unknown() },
   async ({ user, params, body }) =>
-    updateRepositoryCodingSettings(user.organization.id, requireUuid(params.id), body),
+    updateRepositoryCodingSettings(user, requireUuid(params.id), body),
 );
