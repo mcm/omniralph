@@ -33,7 +33,7 @@ import { parseRalphSettings, REVIEW_DEPTHS, type RalphSettings } from "@omniralp
 import type { TaskType } from "@omniralph/tasks";
 import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/tasks";
-import { listTaskDefinitions } from "@/lib/definitions";
+import { listPlaybooks } from "@/lib/playbooks";
 import type { SettingsSection } from "@/lib/live/events";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { describeQuery } from "@/lib/routing/describe";
@@ -59,10 +59,10 @@ function switchValue(value: boolean | null): string {
 
 const onOff = (value: boolean) => (value ? "On" : "Off");
 
-/** Task names by ID (built-in and the organization's own); unknown IDs read as themselves. */
+/** Playbook names by ID (built-in and the organization's own); unknown IDs read as themselves. */
 async function taskNames(db: Database, organizationId: string) {
-  const tasks = await listTaskDefinitions(db, organizationId);
-  const names = new Map(tasks.map((t) => [t.definition.id, t.definition.name]));
+  const playbooks = await listPlaybooks(db, organizationId);
+  const names = new Map(playbooks.map(({ playbook }) => [playbook.id, playbook.name]));
   return (id: string) => names.get(id) ?? id;
 }
 
@@ -76,8 +76,8 @@ const REPOSITORY_REVIEWS_FIELDS: SettingsFields = {
   drafts: { label: "Review drafts" },
   pathExcludes: { label: "Excluded paths" },
   customInstructions: { label: "Custom instructions" },
-  reviewTasks: { label: "Review tasks" },
-  correlationTask: { label: "Correlation task" },
+  reviewTasks: { label: "Review playbooks" },
+  correlationTask: { label: "Correlation playbook" },
 };
 
 async function readRepositoryReviews(
@@ -96,8 +96,8 @@ async function readRepositoryReviews(
     drafts: onOff(repository.triggers.drafts),
     pathExcludes: repository.pathExcludes,
     customInstructions: repository.customInstructions,
-    reviewTasks: repository.reviewTaskIds.map(task),
-    correlationTask: task(repository.correlationTaskId),
+    reviewTasks: repository.reviewPlaybookIds.map(task),
+    correlationTask: task(repository.correlationPlaybookId),
   };
 }
 
@@ -142,8 +142,8 @@ const RALPH_SETTING_LABELS = {
 const REPOSITORY_CODING_FIELDS: SettingsFields = {
   coding: { label: "Coding" },
   query: { label: "Ask about code" },
-  storyTask: { label: "Story task" },
-  requestTask: { label: "Request task" },
+  storyTask: { label: "Story playbook" },
+  requestTask: { label: "Request playbook" },
   ...Object.fromEntries(
     Object.entries(RALPH_SETTING_LABELS).map(([key, label]) => [key, { label }]),
   ),
@@ -170,8 +170,8 @@ async function readRepositoryCoding(
   return {
     coding: switchValue(repository.ralphEnabled),
     query: switchValue(repository.queryEnabled),
-    storyTask: task(repository.storyTaskId),
-    requestTask: task(repository.requestTaskId),
+    storyTask: task(repository.storyPlaybookId),
+    requestTask: task(repository.requestPlaybookId),
     ...Object.fromEntries(
       Object.keys(RALPH_SETTING_LABELS).map((key) => [
         key,

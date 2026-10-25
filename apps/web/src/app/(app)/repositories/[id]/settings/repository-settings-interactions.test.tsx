@@ -29,8 +29,8 @@ const saves = (part: string) =>
   seen.filter((r) => r.method === "PUT" && r.path === `/api/ui/repositories/repo-1/${part}`);
 
 const ralph: RalphSettingsValues = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
@@ -57,20 +57,7 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         pathExcludes: [],
         customInstructions: "",
         pinnedHarnessIds,
-        reviewTaskIds: ["builtin:review-pr"],
-        correlationTaskId: "builtin:correlate-findings",
       }}
-      reviewTasks={[
-        {
-          id: "builtin:review-pr",
-          name: "Review PR",
-          description: "Reviews the change.",
-          builtin: true,
-        },
-      ]}
-      correlationTasks={[
-        { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-      ]}
       harnesses={[
         { ...HARNESS, id: "h1", name: "build-01" },
         { ...HARNESS, id: "h2", name: "build-02", online: false },
@@ -82,10 +69,6 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         harnessCount: 0,
         pinned: false,
         routingRules: [],
-      }}
-      codingTasks={{
-        story: [{ id: "builtin:implement-story", name: "Implement story", builtin: true }],
-        request: [{ id: "builtin:handle-request", name: "Handle request", builtin: true }],
       }}
       taskTypes={{
         overrides: { query: null, review: null, coding: true },

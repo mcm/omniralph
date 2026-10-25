@@ -343,7 +343,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     await setChatTaskDefaults(db, orgId, null, null);
     await db
       .update(repositories)
-      .set({ requestTaskId: "builtin:handle-request" })
+      .set({ requestPlaybookId: "builtin:handle-request" })
       .where(eq(repositories.id, appRepoId));
     await db.execute("DELETE FROM chat_threads");
     chatThread = (await ensureChatThread(db, {
@@ -616,7 +616,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     // The repository's own request task doesn't take chat requests: the run's task is used instead.
     await db
       .update(repositories)
-      .set({ requestTaskId: "builtin:implement-story" })
+      .set({ requestPlaybookId: "builtin:implement-story" })
       .where(eq(repositories.id, appRepoId));
     // The organization's choice is gone (e.g. a deleted custom task); the channel's override wins.
     await setChatTaskDefaults(

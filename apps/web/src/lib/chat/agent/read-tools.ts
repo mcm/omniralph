@@ -26,7 +26,7 @@ import {
 import { MAX_CHAT_ASK_QUESTION_LENGTH, QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { getPlaybookTask, organizationPlaybooks } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks } from "@/lib/playbooks";
 import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";

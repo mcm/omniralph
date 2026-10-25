@@ -36,7 +36,7 @@ import {
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";

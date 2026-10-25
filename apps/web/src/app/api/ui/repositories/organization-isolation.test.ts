@@ -371,14 +371,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
         pathExcludes: [],
         customInstructions: "",
         pinnedHarnessIds: [],
-        reviewTaskIds: ["builtin:review-pr"],
-        correlationTaskId: "builtin:correlate-findings",
+        reviewPlaybookIds: ["builtin:review-pr"],
+        correlationPlaybookId: "builtin:correlate-findings",
       }),
     ).toEqual(refused);
     expect(
       await updateRalphSettings(b.repoId, {
-        storyTaskId: "builtin:implement-story",
-        requestTaskId: "builtin:handle-request",
+        storyPlaybookId: "builtin:implement-story",
+        requestPlaybookId: "builtin:handle-request",
         ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
       }),
     ).toEqual(refused);
@@ -406,8 +406,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       pathExcludes: [],
       customInstructions: "",
       pinnedHarnessIds: [],
-      reviewTaskIds: ["builtin:review-pr"],
-      correlationTaskId: "builtin:correlate-findings",
+      reviewPlaybookIds: ["builtin:review-pr"],
+      correlationPlaybookId: "builtin:correlate-findings",
     };
     expect(await updateRepositorySettings(a.repoId, settings)).toEqual({ ok: true });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.depth).toBe("deep");

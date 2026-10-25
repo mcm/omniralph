@@ -20,8 +20,8 @@ const validSettings: RepositorySettingsInput = {
   pathExcludes: ["*.lock", "/vendor/**", "src/**/*.{gen,pb}.ts", "docs/[!_]*.md"],
   customInstructions: "Prefer early returns.",
   pinnedHarnessIds: [],
-  reviewTaskIds: ["builtin:review-pr"],
-  correlationTaskId: "builtin:correlate-findings",
+  reviewPlaybookIds: ["builtin:review-pr"],
+  correlationPlaybookId: "builtin:correlate-findings",
 };
 
 describe("pathExcludeGlobError", () => {
@@ -101,18 +101,20 @@ describe("RepositorySettingsInput", () => {
     expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual(["depth", "pinnedHarnessIds.0"]);
   });
 
-  it("requires one to 20 distinct review tasks", () => {
-    const errors = (reviewTaskIds: string[]) => {
-      const result = RepositorySettingsInput.safeParse({ ...validSettings, reviewTaskIds });
+  it("takes one to 20 distinct review playbooks, or leaves them unchanged", () => {
+    const errors = (reviewPlaybookIds: string[]) => {
+      const result = RepositorySettingsInput.safeParse({ ...validSettings, reviewPlaybookIds });
       return result.success ? {} : fieldErrors(result.error);
     };
     expect(errors(["builtin:review-pr", "builtin:security-review"])).toEqual({});
-    expect(errors([])).toEqual({ reviewTaskIds: "Choose at least one review task." });
+    const { reviewPlaybookIds: _ids, correlationPlaybookId: _id, ...unbound } = validSettings;
+    expect(RepositorySettingsInput.safeParse(unbound).success).toBe(true);
+    expect(errors([])).toEqual({ reviewPlaybookIds: "Choose at least one review playbook." });
     expect(errors(["builtin:review-pr", "builtin:review-pr"])).toEqual({
-      reviewTaskIds: "Choose each review task once.",
+      reviewPlaybookIds: "Choose each review playbook once.",
     });
     expect(errors(Array.from({ length: 21 }, (_, i) => `task-${i}`))).toEqual({
-      reviewTaskIds: "At most 20 review tasks.",
+      reviewPlaybookIds: "At most 20 review playbooks.",
     });
   });
 
@@ -126,9 +128,14 @@ describe("RepositorySettingsInput", () => {
     });
   });
 
-  it("requires a correlation task", () => {
-    const result = RepositorySettingsInput.safeParse({ ...validSettings, correlationTaskId: "" });
-    expect(fieldErrors(result.error!)).toEqual({ correlationTaskId: "Choose a correlation task." });
+  it("refuses an empty correlation playbook", () => {
+    const result = RepositorySettingsInput.safeParse({
+      ...validSettings,
+      correlationPlaybookId: "",
+    });
+    expect(fieldErrors(result.error!)).toEqual({
+      correlationPlaybookId: "Choose a correlation playbook.",
+    });
   });
 });
 
@@ -150,8 +157,8 @@ describe("RepositoryTaskTypesInput", () => {
 });
 
 const validRalph: RalphSettingsInput = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   verifyCommands: ["pnpm typecheck", "pnpm test"],
   runPrdQualityGates: true,
   setupCommand: "pnpm install --frozen-lockfile",

@@ -92,13 +92,13 @@ const baseSettings: RepositorySettingsInput = {
   pathExcludes: [],
   customInstructions: "",
   pinnedHarnessIds: [],
-  reviewTaskIds: ["builtin:review-pr"],
-  correlationTaskId: "builtin:correlate-findings",
+  reviewPlaybookIds: ["builtin:review-pr"],
+  correlationPlaybookId: "builtin:correlate-findings",
 };
 
 const baseCoding: RalphSettingsInput = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 

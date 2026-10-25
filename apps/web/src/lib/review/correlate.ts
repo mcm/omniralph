@@ -20,7 +20,7 @@ import {
   type QueryRunResult,
 } from "@omniralph/shared";
 import { z } from "zod";
-import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import { reviewTaskNames } from "./post";
 import { finishReviewRun } from "./run";
@@ -94,7 +94,7 @@ export function correlationContext(
 export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
   const repository = await getRepository(tx, run.repositoryId);
   if (!repository) return { error: "Correlation skipped: the repository is gone" };
-  const taskId = repository.correlationTaskId;
+  const taskId = repository.correlationPlaybookId;
   const definitions = organizationPlaybooks(tx, run.organizationId);
   const task = await getPlaybookTask(definitions, taskId);
   if (!task || task.taskType !== "query" || !task.triggers.includes("run.invoked")) {

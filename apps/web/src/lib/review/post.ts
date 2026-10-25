@@ -13,7 +13,7 @@ import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
 import { REVIEW_DEPTHS, REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
 import { getAppUrl } from "@/lib/app-url";
-import { getPlaybookTask, organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { connectionBotHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";

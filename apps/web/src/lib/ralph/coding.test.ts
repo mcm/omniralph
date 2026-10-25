@@ -76,8 +76,8 @@ const DEFINITIONS = {
 const repository = (
   overrides: Partial<Parameters<typeof storyLimits>[0] & { ralphSettings: unknown }> = {},
 ) => ({
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   ralphSettings: { ...DEFAULT_RALPH_SETTINGS, maxReviewRounds: 4, maxFixRounds: 2 },
   ...overrides,
 });
@@ -100,7 +100,7 @@ describe("storyLimits", () => {
       stallRounds: 3,
       maxIterationsPerRun: 50,
     });
-    expect(await storyLimits(repository({ storyTaskId: strict.id }), DEFINITIONS)).toEqual({
+    expect(await storyLimits(repository({ storyPlaybookId: strict.id }), DEFINITIONS)).toEqual({
       maxAttemptsPerStory: 1,
       maxRoundsPerStory: 4,
       stallRounds: 2,
@@ -136,12 +136,12 @@ describe("roundLimits", () => {
       maxReviewRounds: 4,
       maxFixRounds: 2,
     });
-    expect(await roundLimits(run, repository({ requestTaskId: cautious.id }), DEFINITIONS)).toEqual(
-      {
-        maxReviewRounds: 1,
-        maxFixRounds: 0,
-      },
-    );
+    expect(
+      await roundLimits(run, repository({ requestPlaybookId: cautious.id }), DEFINITIONS),
+    ).toEqual({
+      maxReviewRounds: 1,
+      maxFixRounds: 0,
+    });
     // A run's own coding task caps them instead.
     expect(await roundLimits({ codingTaskId: cautious.id }, repository(), DEFINITIONS)).toEqual({
       maxReviewRounds: 1,
@@ -152,14 +152,14 @@ describe("roundLimits", () => {
 
 describe("requestTaskFor and requestTrigger", () => {
   it("runs requests with the repository's request task", async () => {
-    expect(requestTaskFor({ codingTaskId: null }, repository({ requestTaskId: cautious.id }))).toBe(
-      cautious.id,
-    );
+    expect(
+      requestTaskFor({ codingTaskId: null }, repository({ requestPlaybookId: cautious.id })),
+    ).toBe(cautious.id);
   });
 
   it("runs requests with the run's own coding task when it has one", async () => {
     expect(
-      requestTaskFor({ codingTaskId: cautious.id }, repository({ requestTaskId: story.id })),
+      requestTaskFor({ codingTaskId: cautious.id }, repository({ requestPlaybookId: story.id })),
     ).toBe(cautious.id);
   });
 
@@ -236,16 +236,16 @@ describe("describing a lane's PR", () => {
   it("uses the story task's prDescriptionTaskId, the default's without a coding story task", async () => {
     expect(await prDescriptionTaskFor(repository(), DEFINITIONS)).toBe("builtin:describe-pr");
     expect(
-      await prDescriptionTaskFor(repository({ storyTaskId: describing.id }), DEFINITIONS),
+      await prDescriptionTaskFor(repository({ storyPlaybookId: describing.id }), DEFINITIONS),
     ).toBe(customDescribe.id);
     expect(
-      await prDescriptionTaskFor(repository({ storyTaskId: "builtin:gone" }), DEFINITIONS),
+      await prDescriptionTaskFor(repository({ storyPlaybookId: "builtin:gone" }), DEFINITIONS),
     ).toBe("builtin:describe-pr");
   });
 
   it("is a query run in a checkout of the lane's branch", async () => {
     const input = await describePrJobInput(
-      repository({ storyTaskId: describing.id }),
+      repository({ storyPlaybookId: describing.id }),
       payload,
       DEFINITIONS,
     );
@@ -282,7 +282,11 @@ describe("describing a lane's PR", () => {
 
   it("says why when the description task isn't a query task taking run.invoked", async () => {
     expect(
-      await describePrJobInput(repository({ storyTaskId: misdescribing.id }), payload, DEFINITIONS),
+      await describePrJobInput(
+        repository({ storyPlaybookId: misdescribing.id }),
+        payload,
+        DEFINITIONS,
+      ),
     ).toBe(`${request.id} isn't a query task started by run.invoked`);
   });
 
@@ -331,8 +335,10 @@ describe("push and draft PR timing", () => {
 
   it("pushes as the story task says, after each story by default", async () => {
     expect(await pushTimingFor(repository(), DEFINITIONS)).toBe("per-story");
-    expect(await pushTimingFor(repository({ storyTaskId: atTheEnd.id }), DEFINITIONS)).toBe("end");
-    expect(await pushTimingFor(repository({ storyTaskId: "custom:gone" }), DEFINITIONS)).toBe(
+    expect(await pushTimingFor(repository({ storyPlaybookId: atTheEnd.id }), DEFINITIONS)).toBe(
+      "end",
+    );
+    expect(await pushTimingFor(repository({ storyPlaybookId: "custom:gone" }), DEFINITIONS)).toBe(
       "per-story",
     );
   });
@@ -343,7 +349,7 @@ describe("push and draft PR timing", () => {
     // Pushing only at the end, there's no branch for an early draft.
     expect(
       await opensPullRequestEarly(
-        repository({ storyTaskId: atTheEnd.id, ...early(true) }),
+        repository({ storyPlaybookId: atTheEnd.id, ...early(true) }),
         DEFINITIONS,
       ),
     ).toBe(false);
@@ -367,7 +373,7 @@ describe("push and draft PR timing", () => {
   };
 
   it("pushes a lane with a coding run of the story task, the push as its trigger context", async () => {
-    const input = await pushJobInput({ storyTaskId: atTheEnd.id }, pushPayload, DEFINITIONS);
+    const input = await pushJobInput({ storyPlaybookId: atTheEnd.id }, pushPayload, DEFINITIONS);
     expect(input).toMatchObject({
       taskType: "coding",
       taskId: atTheEnd.id,
@@ -377,7 +383,7 @@ describe("push and draft PR timing", () => {
       },
     });
     expect(
-      await pushJobInput({ storyTaskId: describeTask.id }, pushPayload, DEFINITIONS),
+      await pushJobInput({ storyPlaybookId: describeTask.id }, pushPayload, DEFINITIONS),
     ).toBeNull();
   });
 

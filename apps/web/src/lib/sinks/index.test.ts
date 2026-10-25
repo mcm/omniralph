@@ -6,7 +6,7 @@ import { z } from "zod";
 vi.mock("server-only", () => ({}));
 
 const { jobHooks, parseSinkResult, sinkFor, taskSink } = await import("./index");
-const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
 const { learnedRuleSink } = await import("./learned-rule");
 const { findingThreadSink } = await import("./finding-thread");

@@ -7,7 +7,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import type { TaskDefinition, TaskType } from "@omniralph/tasks";
-import type { TaskDefinitionFilter } from "@/lib/definitions";
+import type { PlaybookFilter } from "@/lib/playbooks";
 
 /**
  * The tasks chat runs: "ask about code" (`askAboutCode`, a query task) and
@@ -29,10 +29,10 @@ export const CHAT_TASK_TYPES: Record<ChatTaskRole, TaskType> = {
 };
 
 /**
- * What each chat task's pickers offer (`listTaskChoices`): the organization's
- * tasks, built-in or its own, of the role's type accepting `chat.request`.
+ * What each chat task's pickers offer (`listPlaybookChoices`): the organization's
+ * playbooks, built-in or its own, of the role's type accepting `chat.request`.
  */
-export const CHAT_TASK_FILTERS: Record<ChatTaskRole, TaskDefinitionFilter> = {
+export const CHAT_TASK_FILTERS: Record<ChatTaskRole, PlaybookFilter> = {
   askAboutCode: { taskType: CHAT_TASK_TYPES.askAboutCode, trigger: "chat.request" },
   startWork: { taskType: CHAT_TASK_TYPES.startWork, trigger: "chat.request" },
 };

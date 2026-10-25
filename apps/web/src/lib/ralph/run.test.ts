@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
   harnessRepoPins,
-  insertTaskDefinition,
+  insertPlaybook,
   chatLinearDelegations,
   chatMessages,
   chatRunEvents,
@@ -86,12 +86,11 @@ import { fitTitle } from "@omniralph/ralph";
 import {
   CODING_DEFAULTS,
   getBuiltinPlaybook,
-  getBuiltinTask,
   type Playbook,
   type PlaybookCoding,
 } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { advanceRun, laneHarnessId, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
@@ -433,8 +432,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   describe("coding and query runs", () => {
     afterEach(async () => {
       await db.update(repositories).set({
-        storyTaskId: "builtin:implement-story",
-        requestTaskId: "builtin:handle-request",
+        storyPlaybookId: "builtin:implement-story",
+        requestPlaybookId: "builtin:handle-request",
       });
     });
 
@@ -981,8 +980,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("runs a formerly legacy repository's stories and PR description as task runs", async () => {
       // A repository that was on the legacy jobs keeps its default story and request tasks (0092).
       expect(await getRepository(db, repoId)).toMatchObject({
-        storyTaskId: "builtin:implement-story",
-        requestTaskId: "builtin:handle-request",
+        storyPlaybookId: "builtin:implement-story",
+        requestPlaybookId: "builtin:handle-request",
       });
       const epic = linear.add({ identifier: "ENG-171", title: "Epic" });
       linear.add({ identifier: "ENG-172", title: "Only", parentId: epic.id });
@@ -1003,7 +1002,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("runs stories with the repository's story task, failing the run when it isn't a coding task", async () => {
       await db
         .update(repositories)
-        .set({ storyTaskId: "builtin:describe-pr" })
+        .set({ storyPlaybookId: "builtin:describe-pr" })
         .where(eq(repositories.id, repoId));
       const epic = linear.add({ identifier: "ENG-65", title: "Epic" });
       linear.add({ identifier: "ENG-66", title: "Only", parentId: epic.id });
@@ -1016,17 +1015,23 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       });
     });
 
-    it("runs stories with the organization's custom story task", async () => {
-      const { id: _id, name: _name, ...definition } = getBuiltinTask("builtin:implement-story")!;
-      const custom = await insertTaskDefinition(db, orgId, {
+    it("runs stories with the organization's custom story playbook", async () => {
+      const {
+        id: _id,
+        name: _name,
+        role,
+        ...definition
+      } = getBuiltinPlaybook("builtin:implement-story")!;
+      const custom = await insertPlaybook(db, orgId, {
         name: "Careful story",
+        role,
         definition: { ...definition, promptTemplate: `Be careful.\n${definition.promptTemplate}` },
         requirements: { minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION },
         createdBy: null,
       });
       await db
         .update(repositories)
-        .set({ storyTaskId: custom.id })
+        .set({ storyPlaybookId: custom.id })
         .where(eq(repositories.id, repoId));
       const epic = linear.add({ identifier: "ENG-69", title: "Epic" });
       linear.add({ identifier: "ENG-70", title: "Only", parentId: epic.id });
@@ -1228,7 +1233,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     afterEach(async () => {
       vi.restoreAllMocks();
       changedBuiltins.clear();
-      await db.update(repositories).set({ storyTaskId: "builtin:implement-story" });
+      await db.update(repositories).set({ storyPlaybookId: "builtin:implement-story" });
       await setEarly(false);
     });
 
@@ -1489,7 +1494,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       linear.add({ identifier: "ENG-182", title: "Second", parentId: epic.id, priority: 2 });
       const run = await delegate(epic.id);
       // The next story can't be enqueued: the repository's story task isn't a coding task.
-      await db.update(repositories).set({ storyTaskId: "builtin:describe-pr" });
+      await db.update(repositories).set({ storyPlaybookId: "builtin:describe-pr" });
       await work(run.id, onHiddenRef(run.id, sha(181)));
       expect(await getRun(db, run.id)).toMatchObject({ status: "failed" });
 

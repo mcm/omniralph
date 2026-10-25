@@ -4,7 +4,7 @@ import { QueryRunResult, type JobSkipReason } from "@omniralph/shared";
 import { SINK_KINDS, type SinkKind, type TaskType } from "@omniralph/tasks";
 import type { z } from "zod";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
-import { getPlaybookTask, type PlaybookSource } from "@/lib/definitions";
+import { getPlaybookTask, type PlaybookSource } from "@/lib/playbooks";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";

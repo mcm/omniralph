@@ -117,7 +117,7 @@ its match (`workItemMatch`).
 | Setting | What it does |
 | -- | -- |
 | **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. The story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
-| **Story task** (`storyTaskId`) and **Request task** (`requestTaskId`) | The coding tasks stories and requests run as (by default `builtin:implement-story` and `builtin:handle-request`). The story task's `pushTiming` says when the branch is pushed: `per-story` (the default) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
+| **Story task** (`storyPlaybookId`) and **Request task** (`requestPlaybookId`) | The coding tasks stories and requests run as (by default `builtin:implement-story` and `builtin:handle-request`). The story task's `pushTiming` says when the branch is pushed: `per-story` (the default) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
 
 The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
 config), with the same names and defaults, grouped as on the page:

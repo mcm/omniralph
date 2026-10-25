@@ -75,7 +75,7 @@ import {
   storyTaskFor,
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";

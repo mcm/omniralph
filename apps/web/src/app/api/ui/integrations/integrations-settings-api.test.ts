@@ -9,18 +9,19 @@ const state = vi.hoisted(() => ({
   discordConfigured: true,
 }));
 /**
- * org-a's own tasks: a chat query task, a chat coding task, and a query task
- * not accepting `chat.request` (no picker offers it).
+ * org-a's own playbooks: a chat query playbook, a chat coding playbook, and a query
+ * playbook not accepting `chat.request` (no picker offers it).
  */
 async function storedTaskRows() {
-  const { getBuiltinTask } = await import("@omniralph/tasks");
+  const { getBuiltinPlaybook } = await import("@omniralph/tasks");
   const row = (id: string, name: string, base: string, changes: object = {}) => {
-    const { id: _id, name: _name, ...definition } = getBuiltinTask(base)!;
+    const { id: _id, name: _name, role, ...definition } = getBuiltinPlaybook(base)!;
     const now = new Date("2026-10-01T00:00:00Z");
     return {
       id,
       organizationId: "org-a",
       name,
+      role,
       definition: { ...definition, ...changes },
       requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
       createdAt: now,
@@ -32,9 +33,7 @@ async function storedTaskRows() {
   return [
     row("11111111-1111-4111-8111-111111111111", "Security Q&A", "builtin:ask-about-code"),
     row("22222222-2222-4222-8222-222222222222", "Hotfix", "builtin:handle-request"),
-    row("33333333-3333-4333-8333-333333333333", "Not for chat", "builtin:ask-about-code", {
-      triggers: ["finding.mention"],
-    }),
+    row("33333333-3333-4333-8333-333333333333", "Not for chat", "builtin:correlate-findings"),
   ];
 }
 
@@ -55,7 +54,7 @@ vi.mock("@omniralph/db", () => ({
     askAboutCode: "builtin:ask-about-code",
     startWork: "builtin:handle-request",
   },
-  listStoredTaskDefinitions: async (_db: unknown, organizationId: string) =>
+  listStoredPlaybooks: async (_db: unknown, organizationId: string) =>
     organizationId === "org-a" ? await storedTaskRows() : [],
   // Only the active organization's integration exists.
   getIntegration: async (_db: unknown, organizationId: string, provider: string) =>

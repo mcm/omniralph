@@ -18,7 +18,7 @@ import type {
   LinearDocument,
   LinearGateway,
 } from "@/lib/linear/gateway";
-import { organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
+import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 
 /**
  * The Linear tools a job's run may call: those its playbook lists, when it

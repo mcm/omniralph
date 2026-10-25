@@ -8,7 +8,6 @@
  * to refresh them. Seeding replaces the previous fixture rows (by their fixed IDs).
  */
 import {
-  agentDefinitions,
   appSettings,
   DEFAULT_RALPH_SETTINGS,
   DESIRED_HARNESS_VERSION_KEY,
@@ -26,6 +25,7 @@ import {
   organizationInvitations,
   organizationMembers,
   organizations,
+  playbooks,
   ralphLanes,
   ralphMessages,
   ralphRuns,
@@ -36,13 +36,12 @@ import {
   reviews,
   rules,
   scmConnections,
-  taskDefinitions,
   runActivities,
   triageRuns,
   users,
   type Database,
 } from "@omniralph/db";
-import { deriveTaskRequirements, getBuiltinRunSpec } from "@omniralph/tasks";
+import { getBuiltinPlaybook, playbookRequirements } from "@omniralph/tasks";
 import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
 import { inArray, sql } from "drizzle-orm";
 import { FIXTURE_EMAILS, FIXTURE_IDS, fixtureId } from "./ids";
@@ -126,26 +125,22 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       expiresAt: new Date(now.getTime() + 6 * DAY),
       createdAt: ago(DAY),
     });
-    // A custom agent and a task on it (built-ins can't be edited), copied from the built-in
-    // review playbook's run spec.
-    const reviewPr = getBuiltinRunSpec("builtin:review-pr")!;
-    const { id: _agentId, name: _agentName, ...agent } = reviewPr.agent;
-    const { id: _taskId, name: _taskName, ...task } = reviewPr.task;
-    const customTask = { ...task, agentId: FIXTURE_IDS.definitions.agent };
-    await tx.insert(agentDefinitions).values({
-      id: FIXTURE_IDS.definitions.agent,
-      organizationId: O.main,
-      name: "Strict reviewer",
-      definition: agent,
-      createdBy: U.admin,
-      updatedBy: U.admin,
-    });
-    await tx.insert(taskDefinitions).values({
-      id: FIXTURE_IDS.definitions.task,
+    // A custom playbook (built-ins can't be edited), cloned from the built-in review playbook.
+    const { id: _id, name: _name, role, ...reviewPr } = getBuiltinPlaybook("builtin:review-pr")!;
+    await tx.insert(playbooks).values({
+      id: FIXTURE_IDS.playbooks.custom,
       organizationId: O.main,
       name: "Strict review",
-      definition: customTask,
-      requirements: { ...deriveTaskRequirements(customTask, undefined, agent) },
+      role,
+      definition: reviewPr,
+      requirements: {
+        ...playbookRequirements({
+          ...reviewPr,
+          id: FIXTURE_IDS.playbooks.custom,
+          name: "Strict review",
+          role,
+        }),
+      },
       createdBy: U.admin,
       updatedBy: U.admin,
     });

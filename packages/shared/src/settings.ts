@@ -69,8 +69,8 @@ export function parsePathExcludes(text: string): string[] {
     .filter(Boolean);
 }
 
-/** A task picker's value: a task ID (`builtin:<name>` or a UUID) the server resolves. */
-const TaskId = (message: string) => z.string({ error: message }).min(1, message).max(200);
+/** A playbook binding's value: a playbook ID (`builtin:<name>` or a UUID) the server resolves. */
+const PlaybookId = (message: string) => z.string({ error: message }).min(1, message).max(200);
 
 export const RepositorySettingsInput = z.object({
   /** The review depth (`repositories.review_depth`). */
@@ -93,19 +93,21 @@ export const RepositorySettingsInput = z.object({
   /** Agents the repository is pinned to; empty means any agent. */
   pinnedHarnessIds: z.array(z.uuid()).max(100),
   /**
-   * Review tasks each review run of the repository's PRs/MRs fans out to, in
-   * order (`repositories.review_task_ids`); the server checks they are review tasks.
+   * Review and review-summary playbooks each review run of the repository's PRs/MRs fans out
+   * to, in order (`repositories.review_playbook_ids`); unchanged when left out. The server
+   * checks each one's role.
    */
-  reviewTaskIds: z
+  reviewPlaybookIds: z
     .array(z.string().min(1).max(200))
-    .min(1, "Choose at least one review task.")
-    .max(MAX_REVIEW_TASKS, `At most ${MAX_REVIEW_TASKS} review tasks.`)
-    .refine((ids) => new Set(ids).size === ids.length, "Choose each review task once."),
+    .min(1, "Choose at least one review playbook.")
+    .max(MAX_REVIEW_TASKS, `At most ${MAX_REVIEW_TASKS} review playbooks.`)
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each review playbook once.")
+    .optional(),
   /**
-   * The query task that merges a review run's findings (`repositories.correlation_task_id`);
-   * the server checks it outputs the correlation's `{ findings, summary }`.
+   * The correlation playbook that merges a review run's findings
+   * (`repositories.correlation_playbook_id`); unchanged when left out.
    */
-  correlationTaskId: TaskId("Choose a correlation task."),
+  correlationPlaybookId: PlaybookId("Choose a correlation playbook.").optional(),
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
@@ -318,10 +320,10 @@ const optionalText = (schema: z.ZodType) =>
 
 /** The Ralph section of Repository › Settings (`repositories.ralph_*`). */
 export const RalphSettingsInput = z.object({
-  /** The coding task of its story runs (`story_task_id`); the server checks it accepts `linear.delegated`. */
-  storyTaskId: TaskId("Choose a story task."),
-  /** The coding task of its request runs (`request_task_id`); the server checks it accepts the request triggers. */
-  requestTaskId: TaskId("Choose a request task."),
+  /** The story playbook of its story runs (`story_playbook_id`); unchanged when left out. */
+  storyPlaybookId: PlaybookId("Choose a story playbook.").optional(),
+  /** The request playbook of its request runs (`request_playbook_id`); unchanged when left out. */
+  requestPlaybookId: PlaybookId("Choose a request playbook.").optional(),
 
   // Verification
   verifyCommands: RalphSettings.shape.verifyCommands.unwrap(),
@@ -394,7 +396,7 @@ export function ralphSettingsFromInput(input: RalphSettingsInput): RalphSettings
 /** The Ralph form's values of stored settings (none becomes empty text or lists). */
 export function ralphSettingsFormValues(
   settings: RalphSettings,
-): Omit<RalphSettingsInput, "storyTaskId" | "requestTaskId"> {
+): Omit<RalphSettingsInput, "storyPlaybookId" | "requestPlaybookId"> {
   return {
     verifyCommands: [...settings.verifyCommands],
     runPrdQualityGates: settings.runPrdQualityGates,

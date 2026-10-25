@@ -51,16 +51,10 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
       pathExcludes: [],
       customInstructions: "",
       pinnedHarnessIds: [HARNESS_ID],
-      reviewTaskIds: ["builtin:review-pr"],
-      correlationTaskId: "builtin:correlate-findings",
+      reviewPlaybookIds: ["builtin:review-pr"],
+      correlationPlaybookId: "builtin:correlate-findings",
       ...overrides,
     },
-    reviewTasks: [
-      { id: "builtin:review-pr", name: "Review PR", description: "Reviews.", builtin: true },
-    ],
-    correlationTasks: [
-      { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-    ],
     harnesses: [
       {
         id: HARNESS_ID,
@@ -84,13 +78,9 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
 
 const coding: RepositoryCoding = {
   settings: {
-    storyTaskId: "builtin:implement-story",
-    requestTaskId: "builtin:handle-request",
+    storyPlaybookId: "builtin:implement-story",
+    requestPlaybookId: "builtin:handle-request",
     ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
-  },
-  tasks: {
-    story: [{ id: "builtin:implement-story", name: "Implement story", builtin: true }],
-    request: [{ id: "builtin:handle-request", name: "Handle request", builtin: true }],
   },
   models: [],
   harnessCount: 1,

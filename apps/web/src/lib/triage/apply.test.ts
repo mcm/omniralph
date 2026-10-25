@@ -25,7 +25,7 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import { BUILTIN_PLAYBOOK_SOURCE } from "@/lib/definitions";
+import { BUILTIN_PLAYBOOK_SOURCE } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { loadEpic } from "@/lib/ralph/epic-loader";

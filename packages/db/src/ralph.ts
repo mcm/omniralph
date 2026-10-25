@@ -117,9 +117,9 @@ export interface RepositoryRalphSettingsUpdate {
   ralphEnabled?: boolean | null;
   ralphSettings: RalphSettings;
   /** The coding task of its story runs (`story_task_id`); omitted: unchanged. */
-  storyTaskId?: string;
+  storyPlaybookId?: string;
   /** The coding task of its request runs (`request_task_id`); omitted: unchanged. */
-  requestTaskId?: string;
+  requestPlaybookId?: string;
 }
 
 /**
@@ -136,8 +136,8 @@ export async function updateRepositoryRalphSettings(
     .set({
       ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
       ralphSettings: input.ralphSettings,
-      ...(input.storyTaskId && { storyTaskId: input.storyTaskId }),
-      ...(input.requestTaskId && { requestTaskId: input.requestTaskId }),
+      ...(input.storyPlaybookId && { storyPlaybookId: input.storyPlaybookId }),
+      ...(input.requestPlaybookId && { requestPlaybookId: input.requestPlaybookId }),
     })
     .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
     .returning();
@@ -660,7 +660,7 @@ export interface RalphLaneDetail {
   /** The repository's stored ralph settings (unparsed: old rows may lack newer fields). */
   ralphSettings: unknown;
   /** The repository's coding tasks (the round caps of its request task). */
-  coding: Pick<Repository, "storyTaskId" | "requestTaskId">;
+  coding: Pick<Repository, "storyPlaybookId" | "requestPlaybookId">;
   /** The lane of the run's own repository. */
   main: boolean;
 }
@@ -717,8 +717,8 @@ export async function getRunDetail(
         },
         ralphSettings: repositories.ralphSettings,
         coding: {
-          storyTaskId: repositories.storyTaskId,
-          requestTaskId: repositories.requestTaskId,
+          storyPlaybookId: repositories.storyPlaybookId,
+          requestPlaybookId: repositories.requestPlaybookId,
         },
       })
       .from(ralphLanes)

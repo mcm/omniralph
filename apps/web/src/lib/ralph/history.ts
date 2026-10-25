@@ -10,7 +10,7 @@ import {
   type ScmProvider,
 } from "@omniralph/db";
 import { parseRalphSettings } from "@omniralph/shared";
-import type { PlaybookSource } from "@/lib/definitions";
+import type { PlaybookSource } from "@/lib/playbooks";
 import { roundLimits, storyLimits } from "./coding";
 import {
   cleanupLabel,

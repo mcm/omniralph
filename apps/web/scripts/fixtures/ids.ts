@@ -24,8 +24,7 @@ const KINDS = {
   feedback: 0x101,
   rule: 0x102,
   pin: 0x103,
-  agentDefinition: 0x104,
-  taskDefinition: 0x105,
+  playbook: 0x104,
   triageRun: 0x106,
   runActivity: 0x107,
 } as const;
@@ -81,10 +80,9 @@ export const FIXTURE_IDS = {
     failed: fixtureId("triageRun", 2),
     running: fixtureId("triageRun", 3),
   },
-  /** A custom agent and a task on it (built-ins are read-only). */
-  definitions: {
-    agent: fixtureId("agentDefinition", 1),
-    task: fixtureId("taskDefinition", 1),
+  /** A custom playbook (built-ins are read-only). */
+  playbooks: {
+    custom: fixtureId("playbook", 1),
   },
   reviews: {
     /** Completed, with findings in every severity and status (open, dismissed, restored, …). */

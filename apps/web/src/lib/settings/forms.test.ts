@@ -12,7 +12,6 @@ import {
   pickKeys,
   CODING_SECTIONS,
   RALPH_CARDS,
-  RALPH_REPOSITORY_DEFAULTS,
   ralphDraft,
   ralphSpecs,
   ralphValues,
@@ -26,24 +25,17 @@ import {
   type RalphDraft,
 } from "./forms";
 
-const STORY = "33333333-3333-4333-8333-333333333333";
-
 const ralph: RalphInput = {
-  storyTaskId: "builtin:implement-story",
-  requestTaskId: "builtin:handle-request",
+  storyPlaybookId: "builtin:implement-story",
+  requestPlaybookId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
   verifyCommands: ["pnpm test"],
 };
 
-const taskNames = new Map([
-  ["builtin:implement-story", "Implement story"],
-  [STORY, "Careful story"],
-]);
-
 /** The change list a Ralph card's confirmation shows after `edit`. */
 function ralphCardChanges(card: keyof typeof RALPH_CARDS, edit: Partial<RalphDraft>) {
   const saved = ralphDraft(ralph);
-  const specs = ralphSpecs(taskNames);
+  const specs = ralphSpecs();
   return settingChanges(
     RALPH_CARDS[card].map((key) => specs[key]),
     ralphValues(saved),
@@ -52,10 +44,10 @@ function ralphCardChanges(card: keyof typeof RALPH_CARDS, edit: Partial<RalphDra
 }
 
 describe("Ralph change lists", () => {
-  it("lists the story task by name", () => {
-    expect(ralphCardChanges("ralph", { storyTaskId: STORY })).toEqual([
-      { key: "storyTaskId", label: "Story task", from: "Implement story", to: "Careful story" },
-    ]);
+  it("leaves the playbook bindings out of the draft and the saved values", () => {
+    const values = ralphValues(ralphDraft(ralph));
+    expect(values).not.toHaveProperty("storyPlaybookId");
+    expect(values).not.toHaveProperty("requestPlaybookId");
   });
 
   it("lists verify commands one per line", () => {
@@ -73,7 +65,7 @@ describe("Ralph change lists", () => {
 
   it("lists the model and a cleared fallback model", () => {
     const saved = { ...ralph, fallbackModel: "sonnet" };
-    const specs = ralphSpecs(taskNames);
+    const specs = ralphSpecs();
     expect(
       settingChanges(
         RALPH_CARDS.prompt.map((key) => specs[key]),
@@ -96,7 +88,7 @@ describe("Ralph change lists", () => {
   });
 
   it("labels every setting in plain words, never by its config key", () => {
-    const specs = ralphSpecs(taskNames);
+    const specs = ralphSpecs();
     for (const spec of Object.values(specs)) {
       expect(spec.label).not.toMatch(/\b[a-z]+[A-Z]/);
     }
@@ -111,16 +103,21 @@ describe("Ralph change lists", () => {
     expect(parsed.verifyCommands).toEqual(["pnpm test"]);
   });
 
+  /** Every setting the form edits: all but the playbook bindings. */
+  const FORM_KEYS = Object.keys(RalphSettingsInput.shape)
+    .filter((key) => key !== "storyPlaybookId" && key !== "requestPlaybookId")
+    .sort();
+
   it("covers every Ralph setting with exactly one card", () => {
     const keys = Object.values(RALPH_CARDS).flat();
     expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual(Object.keys(RalphSettingsInput.shape).sort());
+    expect([...keys].sort()).toEqual(FORM_KEYS);
   });
 
   it("covers every Coding setting with exactly one section, the destructive ones in the Danger zone", () => {
     const keys = Object.values(CODING_SECTIONS).flat();
     expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual(Object.keys(RalphSettingsInput.shape).sort());
+    expect([...keys].sort()).toEqual(FORM_KEYS);
     expect([...CODING_SECTIONS.danger].sort()).toEqual([
       "cleanupMergedWorktrees",
       "historyRewrite",
@@ -143,15 +140,9 @@ describe("repository change lists", () => {
     pathExcludes: ["*.snap"],
     customInstructions: "",
     pinnedHarnessIds: ["h1"],
-    reviewTaskIds: ["builtin:review-pr"],
-    correlationTaskId: "builtin:correlate-findings",
   };
-  const context = { reviewTaskIds: ["builtin:review-pr", "t2"], harnessIds: ["h1", "h2"] };
+  const context = { harnessIds: ["h1", "h2"] };
   const specs = repositorySpecs({
-    tasks: new Map([
-      ["builtin:review-pr", "Review PR"],
-      ["t2", "Security review"],
-    ]),
     harnesses: new Map([
       ["h1", "build-01"],
       ["h2", "build-02"],
@@ -166,15 +157,7 @@ describe("repository change lists", () => {
     );
   };
 
-  it("names tasks and harnesses", () => {
-    expect(changes("tasks", { reviewTaskIds: ["t2", "builtin:review-pr"] })).toEqual([
-      {
-        key: "reviewTaskIds",
-        label: "Review tasks",
-        from: "Review PR",
-        to: "Review PR, Security review",
-      },
-    ]);
+  it("names harnesses", () => {
     expect(changes("pinning", { pinnedHarnessIds: [] })).toEqual([
       {
         key: "pinnedHarnessIds",
@@ -215,12 +198,7 @@ describe("stated defaults", () => {
   it("match the repository column defaults", () => {
     expect(repositories.reviewDepth.default).toBe(DEFAULT_REVIEW_DEPTH);
     expect(repositories.triggers.default).toEqual(REPOSITORY_SETTING_DEFAULTS.triggers);
-    expect(repositories.correlationTaskId.default).toBe(
-      REPOSITORY_SETTING_DEFAULTS.correlationTaskId,
-    );
     // Null inherits the organization's allowed task types.
     expect(repositories.ralphEnabled.default).toBeUndefined();
-    expect(repositories.storyTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.storyTaskId);
-    expect(repositories.requestTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.requestTaskId);
   });
 });

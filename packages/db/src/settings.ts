@@ -75,9 +75,9 @@ export interface RepositorySettingsUpdate {
   /** Empty or null clears them. */
   customInstructions: string | null;
   /** Review tasks of the repository's review runs; unchanged when left out. */
-  reviewTaskIds?: string[];
+  reviewPlaybookIds?: string[];
   /** Correlation task of the repository's review runs; unchanged when left out. */
-  correlationTaskId?: string;
+  correlationPlaybookId?: string;
 }
 
 /**
@@ -97,8 +97,10 @@ export async function updateRepositorySettings(
       triggers: input.triggers,
       pathExcludes: input.pathExcludes,
       customInstructions: input.customInstructions?.trim() || null,
-      ...(input.reviewTaskIds ? { reviewTaskIds: input.reviewTaskIds } : {}),
-      ...(input.correlationTaskId ? { correlationTaskId: input.correlationTaskId } : {}),
+      ...(input.reviewPlaybookIds ? { reviewPlaybookIds: input.reviewPlaybookIds } : {}),
+      ...(input.correlationPlaybookId
+        ? { correlationPlaybookId: input.correlationPlaybookId }
+        : {}),
     })
     .where(
       and(

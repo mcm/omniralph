@@ -44,17 +44,10 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         pathExcludes: [],
         customInstructions: "",
         pinnedHarnessIds,
-        reviewTaskIds: [],
-        correlationTaskId: "builtin:correlate-findings",
       }}
-      reviewTasks={[]}
-      correlationTasks={[
-        { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-      ]}
       harnesses={HARNESSES}
       ralph={null}
       codingChoices={null}
-      codingTasks={{ story: [], request: [] }}
       taskTypes={{
         overrides: { query: null, review: null, coding: null },
         inherited: { query: true, review: true, coding: false },

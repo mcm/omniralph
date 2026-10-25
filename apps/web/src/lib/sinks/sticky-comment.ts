@@ -16,7 +16,7 @@ import {
   saveReviewResult,
   settleReviewRunOf,
 } from "@/lib/review/jobs";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { repositoryTarget, reviewTaskNames, reviewUrl } from "@/lib/review/post";
 import { inlineCode, MAX_SUMMARY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import type { Sink } from "./index";

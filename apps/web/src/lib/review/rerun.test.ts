@@ -593,13 +593,13 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
     beforeEach(async () => {
       await db
         .update(repositories)
-        .set({ reviewTaskIds: ["builtin:review-pr", SECURITY_TASK_ID] })
+        .set({ reviewPlaybookIds: ["builtin:review-pr", SECURITY_TASK_ID] })
         .where(eq(repositories.id, repoId));
     });
     afterEach(async () => {
       await db
         .update(repositories)
-        .set({ reviewTaskIds: ["builtin:review-pr"] })
+        .set({ reviewPlaybookIds: ["builtin:review-pr"] })
         .where(eq(repositories.id, repoId));
     });
 

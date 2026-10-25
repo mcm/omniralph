@@ -23,7 +23,7 @@ import {
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { organizationPlaybooks, taskRunRequirements } from "@/lib/definitions";
+import { organizationPlaybooks, taskRunRequirements } from "@/lib/playbooks";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
   queryClaimableHarnesses,

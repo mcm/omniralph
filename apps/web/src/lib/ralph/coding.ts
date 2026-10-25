@@ -31,12 +31,12 @@ import {
   type TriggerKind,
 } from "@omniralph/tasks";
 import type { runSpecJobInput } from "@/lib/runs/job";
-import { getPlaybookTask, taskJobInput, type PlaybookSource } from "@/lib/definitions";
+import { getPlaybookTask, taskJobInput, type PlaybookSource } from "@/lib/playbooks";
 
 /** Story attempts a run makes before it stops and asks (cyralph's `maxIterationsPerRun`). */
 export const MAX_ITERATIONS_PER_RUN = 50;
 
-type CodingRepository = Pick<Repository, "storyTaskId" | "requestTaskId">;
+type CodingRepository = Pick<Repository, "storyPlaybookId" | "requestPlaybookId">;
 
 /** The coding task `id`, or null when it's unknown or of another task type. */
 export async function codingTask(
@@ -48,8 +48,8 @@ export async function codingTask(
 }
 
 /** The coding task a story attempt runs: the repository's `story_task_id`. */
-export function storyTaskFor(repository: Pick<Repository, "storyTaskId">): string {
-  return repository.storyTaskId;
+export function storyTaskFor(repository: Pick<Repository, "storyPlaybookId">): string {
+  return repository.storyPlaybookId;
 }
 
 /**
@@ -59,9 +59,9 @@ export function storyTaskFor(repository: Pick<Repository, "storyTaskId">): strin
  */
 export function requestTaskFor(
   run: Pick<RalphRun, "codingTaskId">,
-  repository: Pick<Repository, "requestTaskId">,
+  repository: Pick<Repository, "requestPlaybookId">,
 ): string {
-  return run.codingTaskId ?? repository.requestTaskId;
+  return run.codingTaskId ?? repository.requestPlaybookId;
 }
 
 /**
@@ -161,7 +161,7 @@ export async function roundLimits(
  * published), after each story when it sets none.
  */
 export async function pushTimingFor(
-  repository: Pick<Repository, "storyTaskId">,
+  repository: Pick<Repository, "storyPlaybookId">,
   definitions: PlaybookSource,
 ): Promise<PushTiming> {
   return (await codingTask(storyTaskFor(repository), definitions))?.pushTiming ?? "per-story";
@@ -174,7 +174,7 @@ export async function pushTimingFor(
  * the end never opens one early (there's no branch to open it for until then).
  */
 export async function opensPullRequestEarly(
-  repository: Pick<Repository, "storyTaskId"> & { ralphSettings: unknown },
+  repository: Pick<Repository, "storyPlaybookId"> & { ralphSettings: unknown },
   definitions: PlaybookSource,
 ): Promise<boolean> {
   const task = await codingTask(storyTaskFor(repository), definitions);
@@ -207,7 +207,7 @@ export async function codingJobInput(
  * taking that trigger.
  */
 export async function pushJobInput(
-  repository: Pick<Repository, "storyTaskId">,
+  repository: Pick<Repository, "storyPlaybookId">,
   payload: RalphPushPayload,
   definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | null> {
@@ -237,7 +237,7 @@ export function ralphJobPayload(job: Pick<Job, "payload">): unknown {
  * coding task).
  */
 export async function prDescriptionTaskFor(
-  repository: Pick<Repository, "storyTaskId">,
+  repository: Pick<Repository, "storyPlaybookId">,
   definitions: PlaybookSource,
 ): Promise<string> {
   return (
@@ -281,7 +281,7 @@ export function describePrTriggerContext(
  * there is none: that task isn't a query task taking `run.invoked`.
  */
 export async function describePrJobInput(
-  repository: Pick<Repository, "storyTaskId">,
+  repository: Pick<Repository, "storyPlaybookId">,
   payload: RalphDescribePrPayload,
   definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | string> {

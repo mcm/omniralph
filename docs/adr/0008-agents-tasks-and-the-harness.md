@@ -453,7 +453,7 @@ parallel on any harnesses that accept `review` tasks.
   of only summary-only tasks posts no review.
 
 So adding a review task (a security reviewer, say) is a definitions-only change: a `review` task
-(built-in, or one of the organization's made under **Settings › Tasks**), picked per repository.
+(built-in, or one of the organization's own playbooks), picked per repository.
 
 ### System RPCs
 
@@ -484,13 +484,23 @@ TOOL-306 lets organization admins add their own agents and tasks (a security rev
 rubric, a research agent) without a deploy. The user guide, with every field and validation rule,
 is [docs/definitions.md](../definitions.md).
 
+_Since TOOL-598 an organization's own definitions are **playbooks**: `agent_definitions` and
+`task_definitions` are replaced by one `playbooks` table (`id`, `organization_id`, `name`, `role`,
+`definition`, `requirements`; migration `0097_playbooks`, which refuses to run while a custom agent
+or task, or a setting naming a custom ID, would be lost). The repo columns are
+`review_playbook_ids`, `correlation_playbook_id`, `story_playbook_id` and `request_playbook_id`.
+The Settings › Agents and Settings › Tasks pages and their `/api/ui` handlers are gone; playbooks
+are served under `/api/ui/playbooks` (`apps/web/src/lib/playbooks/manage.ts`), resolved by
+`apps/web/src/lib/playbooks/index.ts`, validated by `validatePlaybookAgainst` and protected from
+deletion by `findPlaybookReferrers`. The bullets below describe the TOOL-306 design._
+
 - **Tables.** `agent_definitions` and `task_definitions` (migration `0070_agent_task_definitions`):
   organization, UUID `id`, `name`, the definition as `definition` jsonb (without its ID and name,
   which the columns hold), timestamps and `created_by`/`updated_by`; task rows also store
-  `requirements` jsonb. Every helper (`packages/db/src/definitions.ts`) takes the organization and
+  `requirements` jsonb. Every helper (now `packages/db/src/playbooks.ts`) takes the organization and
   returns nothing for a non-UUID ID, so built-in IDs never reach Postgres and one organization never
   sees another's rows.
-- **Resolver.** `apps/web/src/lib/definitions/index.ts` merges the built-ins (code) and the
+- **Resolver.** `apps/web/src/lib/playbooks/index.ts` merges the built-ins (code) and the
   organization's rows: `getAgentDefinition`, `getTaskDefinition`, `listAgentDefinitions`,
   `listTaskDefinitions` (filtered by task type, trigger or a predicate) and
   `organizationDefinitions(db, organizationId)`, the `DefinitionSource` every enqueue, claim
@@ -505,10 +515,8 @@ is [docs/definitions.md](../definitions.md).
   object schema `z.fromJSONSchema` accepts (query tasks only); the sink takes the task type and its
   output (`outputSchemaProblem` compares the task's schema with the sink's); coding settings combine
   and the PR description task outputs `{ title, body }`. Errors are keyed by field path, the format
-  of `fieldErrors`. The `/api/ui/agents` and `/api/ui/tasks` handlers
-  (`apps/web/src/lib/definitions/manage.ts`) call them through `validateOrganizationTask`
-  (`apps/web/src/lib/definitions/validation.ts`: the organization's agents and tasks, the real
-  sinks), admins only. A test runs every built-in (and its clone) through the same validation.
+  of `fieldErrors`. The Settings › Agents and Tasks handlers called them through
+  `validateOrganizationTask` (the organization's agents and tasks, the real sinks), admins only. A test runs every built-in (and its clone) through the same validation.
 - **Stored requirements.** A task save derives `TaskRequirements` (`deriveTaskRequirements`: the
   minimum harness version for the task type, commands and template variables; the installables and
   host tools of the task's `requires` and of its agent's `<package>:<server>` MCP servers) and
@@ -522,7 +530,7 @@ is [docs/definitions.md](../definitions.md).
 - **References.** Repository settings (review tasks, correlation, story and request tasks), chat
   task settings and coding tasks' PR description task may name custom tasks (pickers use
   `listTaskChoices` with a filter per role; saves re-check with `getTaskChoice`).
-  `findTaskReferrers` (`apps/web/src/lib/definitions/referrers.ts`) lists them, so deleting a task
+  `findTaskReferrers` (now `findPlaybookReferrers`) lists them, so deleting a task
   (or changing its type) is refused while anything uses it, and deleting an agent while a task runs
   on it.
 

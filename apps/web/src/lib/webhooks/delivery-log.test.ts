@@ -362,7 +362,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
         before: async () => {
           await db
             .update(repositories)
-            .set({ reviewTaskIds: [] })
+            .set({ reviewPlaybookIds: [] })
             .where(eq(repositories.id, githubRepo));
         },
         send: () => sendGitHub(pullRequest("opened", 14)),
@@ -436,22 +436,22 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
         } finally {
           await db
             .update(repositories)
-            .set({ reviewTaskIds: (await defaultReviewTasks()) ?? [] })
+            .set({ reviewPlaybookIds: (await defaultReviewTasks()) ?? [] })
             .where(eq(repositories.id, githubRepo));
         }
       });
     }
 
-    let reviewTaskIds: string[] | null = null;
+    let reviewPlaybookIds: string[] | null = null;
     async function defaultReviewTasks() {
-      if (!reviewTaskIds) {
+      if (!reviewPlaybookIds) {
         const [repo] = await db
-          .select({ ids: repositories.reviewTaskIds })
+          .select({ ids: repositories.reviewPlaybookIds })
           .from(repositories)
           .where(eq(repositories.id, gitlabRepo));
-        reviewTaskIds = repo!.ids;
+        reviewPlaybookIds = repo!.ids;
       }
-      return reviewTaskIds;
+      return reviewPlaybookIds;
     }
 
     it("names GitLab events with their action and the MR term in reasons", async () => {

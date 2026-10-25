@@ -19,7 +19,7 @@ import {
   type TaskDefinition,
   type TaskType,
 } from "@omniralph/tasks";
-import { organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
+import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 
 /**

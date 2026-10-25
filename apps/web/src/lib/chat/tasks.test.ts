@@ -1,5 +1,11 @@
 import type * as Db from "@omniralph/db";
-import { BUILTIN_TASKS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import {
+  BUILTIN_PLAYBOOKS,
+  getBuiltinPlaybook,
+  getBuiltinTask,
+  playbookRunSpec,
+  type TaskDefinition,
+} from "@omniralph/tasks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -40,7 +46,7 @@ const {
   platformChannelId,
   validateChatTaskChoice,
 } = await import("./tasks");
-const { matchesTaskFilter } = await import("@/lib/definitions");
+const { matchesPlaybookFilter } = await import("@/lib/playbooks");
 
 /** A database whose `app_settings` read returns the organization's `chat.tasks` setting. */
 const db = {
@@ -212,21 +218,16 @@ describe("validateChatTaskChoice", () => {
 });
 
 describe("CHAT_TASK_FILTERS", () => {
-  it("offers tasks of the role's type accepting chat.request, built-in or custom", () => {
-    const tasks = [
-      task("builtin:ask-about-code", "builtin:ask-about-code"),
-      task("00000000-0000-4000-8000-000000000001", "builtin:ask-about-code"),
-      task("00000000-0000-4000-8000-000000000002", "builtin:ask-about-code", {
-        triggers: ["run.invoked"],
-      }),
-      task("builtin:handle-request", "builtin:handle-request"),
-      task("00000000-0000-4000-8000-000000000003", "builtin:handle-request"),
-      task("00000000-0000-4000-8000-000000000004", "builtin:handle-request", {
-        triggers: ["linear.mention"],
-      }),
+  it("offers playbooks of the role's type accepting chat.request, built-in or custom", () => {
+    const custom = (id: string, from: string) => ({ ...getBuiltinPlaybook(from)!, id });
+    const playbooks = [
+      ...BUILTIN_PLAYBOOKS,
+      custom("00000000-0000-4000-8000-000000000001", "builtin:ask-about-code"),
+      custom("00000000-0000-4000-8000-000000000003", "builtin:handle-request"),
+      custom("00000000-0000-4000-8000-000000000004", "builtin:implement-story"),
     ];
     const offered = (role: "askAboutCode" | "startWork") =>
-      tasks.filter((t) => matchesTaskFilter(t, CHAT_TASK_FILTERS[role])).map((t) => t.id);
+      playbooks.filter((p) => matchesPlaybookFilter(p, CHAT_TASK_FILTERS[role])).map((p) => p.id);
     expect(offered("askAboutCode")).toEqual([
       "builtin:ask-about-code",
       "00000000-0000-4000-8000-000000000001",
@@ -237,11 +238,12 @@ describe("CHAT_TASK_FILTERS", () => {
     ]);
   });
 
-  it("offers exactly the tasks passing validateChatTaskChoice", () => {
+  it("offers exactly the playbooks passing validateChatTaskChoice", () => {
     for (const role of ["askAboutCode", "startWork"] as const) {
-      for (const t of BUILTIN_TASKS) {
-        expect(matchesTaskFilter(t, CHAT_TASK_FILTERS[role])).toBe(
-          validateChatTaskChoice(role, t.id, () => t).ok,
+      for (const playbook of BUILTIN_PLAYBOOKS) {
+        const { task } = playbookRunSpec(playbook);
+        expect(matchesPlaybookFilter(playbook, CHAT_TASK_FILTERS[role])).toBe(
+          validateChatTaskChoice(role, task.id, () => task).ok,
         );
       }
     }

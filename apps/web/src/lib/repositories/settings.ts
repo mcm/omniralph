@@ -16,12 +16,10 @@ import {
   type RepositorySettingsInput,
 } from "@omniralph/shared";
 import {
-  CORRELATION_TASKS,
-  getTaskChoice,
-  REQUEST_TASKS,
-  REVIEW_TASKS,
-  STORY_TASKS,
-} from "@/lib/definitions";
+  getPlaybookChoice,
+  REPOSITORY_BINDING_ROLES,
+  type RepositoryBinding,
+} from "@/lib/playbooks";
 import { pinRepository } from "@/lib/harnesses/pins";
 import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
@@ -39,16 +37,79 @@ export type SaveRepositorySettingsResult =
     }
   | { status: "unknown_repository" }
   | { status: "unknown_agents"; harnessIds: string[] }
-  | { status: "unknown_review_tasks"; taskIds: string[] }
-  | { status: "unknown_correlation_task" };
+  | { status: "invalid_bindings"; fieldErrors: FieldErrors };
+
+/** Why a repository role can't be bound to these playbooks (one of the organization's, of a role it takes). */
+const BINDING_ERRORS: Record<RepositoryBinding, string> = {
+  review: "Choose review or review-summary playbooks of this organization.",
+  correlation: "Choose a correlation playbook of this organization.",
+  story: "Choose a story playbook of this organization.",
+  request: "Choose a request playbook of this organization.",
+};
+
+/** Whether each of `ids` is a playbook of the organization whose role `binding` takes. */
+async function bindsTo(
+  db: Database,
+  organizationId: string,
+  binding: RepositoryBinding,
+  ids: readonly string[],
+): Promise<boolean> {
+  const roles = REPOSITORY_BINDING_ROLES[binding];
+  const found = await Promise.all(
+    ids.map((id) => getPlaybookChoice(db, organizationId, id, { roles })),
+  );
+  return found.every(Boolean);
+}
 
 /**
- * Saves a repository's review settings, its review depth among them (a repository of
- * the organization; its review tasks tasks of the organization
- * (built-in or its own) passing `REVIEW_TASKS`, and its correlation task one passing
- * `CORRELATION_TASKS`) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through
- * `pinRepository`, which enqueues a `repo.sync` job for that agent.
- * The next review job enqueued for the repository picks the settings up.
+ * Field errors of a repository's playbook bindings (`reviewPlaybookIds`, `correlationPlaybookId`,
+ * `storyPlaybookId`, `requestPlaybookId`; each left out stays as it is): every playbook must be
+ * one of the organization's (built-in or its own) with a role the binding takes
+ * (`REPOSITORY_BINDING_ROLES`).
+ */
+export async function repositoryBindingErrors(
+  db: Database,
+  organizationId: string,
+  input: {
+    reviewPlaybookIds?: readonly string[];
+    correlationPlaybookId?: string;
+    storyPlaybookId?: string;
+    requestPlaybookId?: string;
+  },
+): Promise<FieldErrors> {
+  const checks: [keyof typeof input, RepositoryBinding, readonly string[] | undefined][] = [
+    ["reviewPlaybookIds", "review", input.reviewPlaybookIds],
+    [
+      "correlationPlaybookId",
+      "correlation",
+      input.correlationPlaybookId === undefined ? undefined : [input.correlationPlaybookId],
+    ],
+    [
+      "storyPlaybookId",
+      "story",
+      input.storyPlaybookId === undefined ? undefined : [input.storyPlaybookId],
+    ],
+    [
+      "requestPlaybookId",
+      "request",
+      input.requestPlaybookId === undefined ? undefined : [input.requestPlaybookId],
+    ],
+  ];
+  const errors: FieldErrors = {};
+  for (const [field, binding, ids] of checks) {
+    if (ids && !(await bindsTo(db, organizationId, binding, ids))) {
+      errors[field] = BINDING_ERRORS[binding];
+    }
+  }
+  return errors;
+}
+
+/**
+ * Saves a repository's review settings, its review depth among them (a repository of the
+ * organization, validated with `RepositorySettingsInput`), and the review and correlation
+ * playbooks its review runs use when they're given (`repositoryBindingErrors`), and reconciles
+ * its agent pins: newly pinned agents go through `pinRepository`, which enqueues a `repo.sync`
+ * job for that agent. The next review job enqueued for the repository picks the settings up.
  */
 export async function saveRepositorySettings(
   db: Database,
@@ -61,13 +122,9 @@ export async function saveRepositorySettings(
   if (!(await getRepository(db, repositoryId, organizationId))) {
     return { status: "unknown_repository" };
   }
-  const reviewTasks = await Promise.all(
-    input.reviewTaskIds.map((id) => getTaskChoice(db, organizationId, id, REVIEW_TASKS)),
-  );
-  const unknownTasks = input.reviewTaskIds.filter((_, i) => !reviewTasks[i]);
-  if (unknownTasks.length > 0) return { status: "unknown_review_tasks", taskIds: unknownTasks };
-  if (!(await getTaskChoice(db, organizationId, input.correlationTaskId, CORRELATION_TASKS))) {
-    return { status: "unknown_correlation_task" };
+  const bindingErrors = await repositoryBindingErrors(db, organizationId, input);
+  if (Object.keys(bindingErrors).length > 0) {
+    return { status: "invalid_bindings", fieldErrors: bindingErrors };
   }
 
   const wanted = [...new Set(input.pinnedHarnessIds)];
@@ -82,8 +139,8 @@ export async function saveRepositorySettings(
     triggers: input.triggers,
     pathExcludes: input.pathExcludes,
     customInstructions: input.customInstructions,
-    reviewTaskIds: input.reviewTaskIds,
-    correlationTaskId: input.correlationTaskId,
+    reviewPlaybookIds: input.reviewPlaybookIds,
+    correlationPlaybookId: input.correlationPlaybookId,
   });
   if (!saved) return { status: "unknown_repository" };
 
@@ -101,30 +158,6 @@ export async function saveRepositorySettings(
     }
   }
   return { status: "saved", pinnedHarnessIds: added, unpinnedHarnessIds: removed, syncJobIds };
-}
-
-/**
- * Field errors of a Ralph form's story and request tasks: each must be a task
- * of the organization (built-in or its own) passing `STORY_TASKS` / `REQUEST_TASKS`.
- */
-export async function ralphTaskErrors(
-  db: Database,
-  organizationId: string,
-  input: Pick<RalphSettingsInput, "storyTaskId" | "requestTaskId">,
-): Promise<FieldErrors> {
-  const [story, request] = await Promise.all([
-    getTaskChoice(db, organizationId, input.storyTaskId, STORY_TASKS),
-    getTaskChoice(db, organizationId, input.requestTaskId, REQUEST_TASKS),
-  ]);
-  return {
-    ...(!story && {
-      storyTaskId: "Choose a coding task of this organization that accepts linear.delegated.",
-    }),
-    ...(!request && {
-      requestTaskId:
-        "Choose a coding task of this organization that accepts every request trigger.",
-    }),
-  };
 }
 
 /** The Linear values a repository has saved, as the Coding tab shows them. */

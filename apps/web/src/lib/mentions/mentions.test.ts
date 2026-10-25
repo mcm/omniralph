@@ -152,7 +152,7 @@ const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { onReviewJobStarted } = await import("@/lib/review/jobs");
 const { jobHooks } = await import("@/lib/sinks");
-const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/definitions");
+const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 const { resolveRunSpec } = await import("@/lib/runs/resolve");
 
 /** The thread-reply sink's hooks for a `review.reply` job. */

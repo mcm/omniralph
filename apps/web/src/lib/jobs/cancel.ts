@@ -2,7 +2,7 @@ import "server-only";
 import { getJob, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDispatcher } from "@/lib/dispatch";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 
 /** The warning a running job's cancel answers with: it stops with its harness's next heartbeat. */

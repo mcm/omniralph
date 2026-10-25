@@ -32,7 +32,7 @@ import {
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
 import { parseRalphSettings } from "@omniralph/shared";
-import { organizationPlaybooks } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
