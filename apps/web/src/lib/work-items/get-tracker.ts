@@ -1,5 +1,12 @@
 import "server-only";
-import { getIntegration, setIntegrationStateMapping, type Database } from "@omniralph/db";
+import {
+  DEFAULT_TRACKER_STATE_MAPPING,
+  getActiveTriageRun,
+  getIntegration,
+  getRunByIssue,
+  setIntegrationStateMapping,
+  type Database,
+} from "@omniralph/db";
 import { getLinearGateway, lazyLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import { fixtureLinearEnabled, fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -14,6 +21,13 @@ export interface WorkItemTrackerOptions {
   /** Encryption key override (tests). */
   key?: string | Buffer;
 }
+
+/** Whether the organization has a ralph or triage run of the issue that isn't over. */
+const activeRunCheck =
+  (db: Database, organizationId: string) =>
+  async (issueId: string): Promise<boolean> =>
+    !!(await getRunByIssue(db, organizationId, issueId, { activeOnly: true })) ||
+    !!(await getActiveTriageRun(db, organizationId, issueId));
 
 /**
  * The organization's work item tracker: its Linear connection. Throws
@@ -44,5 +58,32 @@ export async function getWorkItemTracker(
         throw new TrackerNotConnectedError();
       }
     },
+    hasActiveRun: activeRunCheck(db, organizationId),
+  });
+}
+
+/**
+ * The tracker over a Linear gateway the caller already holds (a Linear webhook's or a
+ * triage job's), with the organization's saved state mapping. When the integration row is
+ * missing (gone since the gateway was made), the default mapping applies and saving a
+ * mapping throws `TrackerNotConnectedError`.
+ */
+export async function workItemTrackerFor(options: {
+  db: Database;
+  organizationId: string;
+  gateway: LinearGateway;
+}): Promise<WorkItemTracker> {
+  const { db, organizationId, gateway } = options;
+  const integration = await getIntegration(db, organizationId, "linear");
+  return new LinearWorkItemTracker({
+    gateway,
+    integrationId: integration?.id ?? "",
+    stateMapping: integration?.stateMapping ?? structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
+    saveStateMapping: async (mapping) => {
+      if (!integration || !(await setIntegrationStateMapping(db, integration.id, mapping))) {
+        throw new TrackerNotConnectedError();
+      }
+    },
+    hasActiveRun: activeRunCheck(db, organizationId),
   });
 }

@@ -41,6 +41,7 @@ function linearHarness(
   fake.workflowStatesByTeam.set("team-b", statesFor("b"));
   fake.projects = [{ id: "project-1", name: "Control panel" }];
   const saved: TrackerStateMapping[] = [];
+  const activeRuns = new Set<string>();
   const tracker = new LinearWorkItemTracker({
     gateway: options.gateway?.(fake) ?? fake,
     integrationId: "integration-1",
@@ -48,6 +49,7 @@ function linearHarness(
     saveStateMapping: async (mapping) => {
       saved.push(mapping);
     },
+    hasActiveRun: async (issueId) => activeRuns.has(issueId),
   });
   let seq = 0;
   return {
@@ -97,6 +99,12 @@ function linearHarness(
     },
     async isTriageRequested(id) {
       return fake.issues.get(id)!.labels.includes("coding:triage");
+    },
+    setActiveRun(id) {
+      activeRuns.add(id);
+    },
+    async sessionsOpened(id) {
+      return fake.sessionsCreated.filter((s) => s.issueId === id).length;
     },
   };
 }
@@ -190,6 +198,54 @@ describe("LinearWorkItemTracker", () => {
       { issueId: two.id, delegateId: "omniralph-app" },
     ]);
     expect(calls.filter((c) => c === "getViewer")).toHaveLength(1);
+  });
+
+  it("opens an agent session instead of delegating again when Omniralph is already the delegate", async () => {
+    const h = linearHarness();
+    const item = await h.seed({
+      teamId: "team-a",
+      title: "Again",
+      state: "todo",
+      delegatedToOmniralph: true,
+    });
+    const delegations = h.fake.delegations.length;
+    await h.tracker.delegateToOmniralph(item.identifier);
+    expect(h.fake.delegations).toHaveLength(delegations);
+    expect(h.fake.sessionsCreated).toEqual([{ issueId: item.id, sessionId: "session-1" }]);
+  });
+
+  it("moves to the override state by ID, not by name", async () => {
+    const h = linearHarness();
+    const states = statesFor("a");
+    // Two states named the same: only the ID tells them apart.
+    states.splice(3, 0, { id: "a-selected", name: "Todo", type: "unstarted", position: 2.5 });
+    h.fake.workflowStatesByTeam.set("team-a", states);
+    await h.tracker.setStateMapping({
+      ready: { types: ["unstarted"] },
+      needsRefining: { types: ["backlog"] },
+      teams: { "team-a": { ready: ["a-selected"], needsRefining: ["a-state-1"] } },
+    });
+    const item = await h.seed({ teamId: "team-a", title: "Item", state: "backlog" });
+    await h.tracker.setState(item.id, { readiness: "ready" });
+    expect(h.fake.stateChanges.at(-1)).toEqual({ issueId: item.id, target: { id: "a-selected" } });
+    expect((await h.tracker.get(item.id)).readiness).toBe("ready");
+  });
+
+  it("says which readiness a team has no state for", async () => {
+    const h = linearHarness();
+    await h.tracker.setStateMapping({
+      ready: { types: ["triage"] },
+      needsRefining: { types: ["backlog"] },
+      teams: {},
+    });
+    h.fake.workflowStatesByTeam.set(
+      "team-a",
+      statesFor("a").filter((s) => s.type !== "triage"),
+    );
+    const item = await h.seed({ teamId: "team-a", title: "Item", state: "backlog" });
+    await expect(h.tracker.setState(item.id, { readiness: "ready" })).rejects.toThrow(
+      /has no Ready to start state/,
+    );
   });
 
   it("lists candidates with readiness and blockers in one gateway call per page", async () => {

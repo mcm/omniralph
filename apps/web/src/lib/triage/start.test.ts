@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { InvalidInputLinearError } from "@linear/sdk";
 import {
   closeDb,
   connectRepository,
@@ -31,6 +32,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
+import { AGENT_SESSION_MARKER } from "@/lib/ralph/start";
+import { WorkItemNotFoundError } from "@/lib/work-items/tracker";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { TriageDeps } from "./start";
 import { startTriage, type SessionCreatedEvent } from "./start";
@@ -450,5 +453,151 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     );
     expect(await db.select().from(triageRuns)).toEqual([]);
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
+  });
+  describe("a delegation reads the work item's readiness (default mapping)", () => {
+    const delegation = (issueId: string, identifier?: string): SessionCreatedEvent =>
+      mention(issueId, `${AGENT_SESSION_MARKER}. Delegated by Steve.`, {
+        ...(identifier && { issueIdentifier: identifier }),
+      });
+
+    const handle = (event: SessionCreatedEvent) =>
+      handleLinearEvent(
+        event,
+        { db, organizationId: orgId, workspaceId: "ws-1" },
+        {
+          linear,
+          dispatcher: new PostgresDispatcher({ db }),
+          adapterFor: () => fakeAdapter,
+        },
+      );
+
+    const ready = (identifier: string, stateType: string, stateName: string) =>
+      linear.add({
+        identifier,
+        title: "Priorities",
+        description: "Let people set a priority.",
+        stateType,
+        stateName,
+        labels: ["backend"],
+      });
+
+    it("triages a Backlog item in the delegation's own session, saying why first", async () => {
+      const issue = ready("ENG-40", "backlog", "Backlog");
+      const event = delegation(issue.id, "ENG-40");
+      await handle(event);
+
+      const run = await getTriageRunBySession(db, event.sessionId);
+      expect(run).toMatchObject({ linearIssueId: issue.id, status: "queued" });
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      const activities = linear.activities.filter((a) => a.sessionId === event.sessionId);
+      expect(activities[0]!.content).toEqual({
+        type: "thought",
+        body: "ENG-40 needs refining, so Om is triaging it first.",
+      });
+      // The delegation's system note guides nothing.
+      const { context } = await payloadOf(run!.currentJobId!);
+      expect(context.reply).toBeNull();
+
+      // A redelivered event changes nothing.
+      await handle(event);
+      expect(await db.select().from(triageRuns)).toHaveLength(1);
+      expect(await db.select().from(jobs)).toHaveLength(1);
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(
+        linear.bodies(event.sessionId, "thought").filter((b) => b.includes("needs refining")),
+      ).toHaveLength(1);
+    });
+
+    it.each([
+      ["Todo", "unstarted"],
+      ["In Progress", "started"],
+    ])("starts a run for a %s item", async (stateName, stateType) => {
+      const issue = ready(`ENG-${stateType}`, stateType, stateName);
+      const event = delegation(issue.id);
+      await handle(event);
+      expect(await db.select().from(triageRuns)).toEqual([]);
+      expect(await db.select().from(ralphRuns)).toEqual([
+        expect.objectContaining({ linearIssueId: issue.id, linearAgentSessionId: event.sessionId }),
+      ]);
+      expect(linear.bodies(event.sessionId, "thought").join("\n")).not.toContain("needs refining");
+    });
+
+    it("does nothing new for a redelivered delegation that already has its run", async () => {
+      const issue = ready("ENG-41", "unstarted", "Todo");
+      const event = delegation(issue.id);
+      await handle(event);
+      const [run] = await db.select().from(ralphRuns);
+      const jobCount = (await db.select().from(jobs)).length;
+      // Since moved to Backlog: the session's run is what counts, not the readiness.
+      linear.issues.get(issue.id)!.stateType = "backlog";
+      linear.issues.get(issue.id)!.stateName = "Backlog";
+      await handle(event);
+      expect(await db.select().from(ralphRuns)).toEqual([expect.objectContaining({ id: run!.id })]);
+      expect(await db.select().from(triageRuns)).toEqual([]);
+      expect(await db.select().from(jobs)).toHaveLength(jobCount);
+    });
+
+    it("runs what a mention asks for on a Backlog item: /coding starts a run", async () => {
+      const issue = ready("ENG-42", "backlog", "Backlog");
+      const event = mention(issue.id, "@omniralph /coding");
+      await handle(event);
+      expect(await db.select().from(triageRuns)).toEqual([]);
+      expect(await db.select().from(ralphRuns)).toEqual([
+        expect.objectContaining({ linearIssueId: issue.id, mode: "epic" }),
+      ]);
+    });
+
+    it("starts a run, and logs why, when the work item can't be loaded", async () => {
+      const issue = ready("ENG-43", "backlog", "Backlog");
+      const load = linear.getIssue.bind(linear);
+      let failed = false;
+      linear.getIssue = async (id: string) => {
+        if (!failed) {
+          failed = true;
+          throw new Error("Linear is down");
+        }
+        return load(id);
+      };
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const event = delegation(issue.id, "ENG-43");
+        await handle(event);
+        expect(await db.select().from(triageRuns)).toEqual([]);
+        expect(await db.select().from(ralphRuns)).toEqual([
+          expect.objectContaining({ linearIssueId: issue.id }),
+        ]);
+        expect(logged).toHaveBeenCalledWith(
+          expect.stringContaining("Reading the readiness of ENG-43 failed"),
+          expect.objectContaining({ message: "Linear is down" }),
+        );
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it("starts a run when the work item isn't found", async () => {
+      const issue = ready("ENG-44", "backlog", "Backlog");
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const load = linear.getIssue.bind(linear);
+      let failed = false;
+      // Linear answers an issue it can't see with an invalid input error.
+      linear.getIssue = async (id: string) => {
+        if (!failed) {
+          failed = true;
+          throw new InvalidInputLinearError({ message: "Entity not found" });
+        }
+        return load(id);
+      };
+      try {
+        await handle(delegation(issue.id));
+        expect(await db.select().from(ralphRuns)).toHaveLength(1);
+        expect(logged).toHaveBeenCalledWith(
+          expect.stringContaining("Reading the readiness"),
+          expect.any(WorkItemNotFoundError),
+        );
+      } finally {
+        logged.mockRestore();
+      }
+    });
   });
 });

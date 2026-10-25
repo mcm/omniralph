@@ -45,6 +45,27 @@ export function readinessOf(
 }
 
 /**
+ * The state a work item of team `teamId` moves to for a readiness: the first of the team's
+ * override states in workflow order, else the first state of the mapping's first type that
+ * the team has. Null when the team has none. `states` are the team's, in workflow order.
+ */
+export function readinessTargetState<S extends { id: string; type: string }>(
+  mapping: TrackerStateMapping,
+  teamId: string,
+  readiness: (typeof WORK_ITEM_READINESS)[number],
+  states: readonly S[],
+): S | null {
+  const key = readinessKeys[readiness];
+  const team = mapping.teams[teamId];
+  if (team) return states.find((state) => team[key].includes(state.id)) ?? null;
+  for (const type of mapping[key].types) {
+    const state = states.find((s) => s.type === type);
+    if (state) return state;
+  }
+  return null;
+}
+
+/**
  * The states of some readiness values, for a tracker query: a state of one of `types` in a
  * team without an override, or one of the override states `ids`.
  */

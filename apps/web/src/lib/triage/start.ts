@@ -177,6 +177,16 @@ export interface StartTriageOptions {
    * one, and ends `stopped` or `failed` when triage doesn't start.
    */
   run?: TriageRun;
+  /**
+   * A delegation of a work item that needs refining: the session first says why it is
+   * triaged, and the delegation's comment (a system note) guides nothing.
+   */
+  delegation?: { identifier: string };
+}
+
+/** The first activity of triage a delegation started because its item needs refining. */
+export function needsRefiningMessage(identifier: string): string {
+  return `${identifier} needs refining, so Om is triaging it first.`;
 }
 
 /** What triage reads from Linear and the repository before a job. */
@@ -354,8 +364,9 @@ export async function enqueueTriage(
 }
 
 /**
- * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`,
- * or the session the triage label opened (with its `run`).
+ * Handles `AgentSessionEvent.created` whose instruction asks for `/triage`, a
+ * delegation of a work item that needs refining (`delegation`), or the session the
+ * triage label opened (with its `run`).
  */
 export async function startTriage(
   event: SessionCreatedEvent,
@@ -369,6 +380,12 @@ export async function startTriage(
   if (!given) {
     const existing = await getTriageRunBySession(db, sessionId);
     if (existing) return { status: "exists", run: existing };
+  }
+  if (options.delegation) {
+    await postActivity(linearConversation(linear, sessionId), {
+      type: "thought",
+      body: needsRefiningMessage(options.delegation.identifier),
+    });
   }
   /** Ends the given run when triage doesn't start. */
   const endGiven = async (status: "stopped" | "failed") => {
@@ -397,6 +414,6 @@ export async function startTriage(
   }
 
   // What the mention says besides `/triage` guides the triage like a reply.
-  const reply = parseInstruction(event.commentBody).text;
+  const reply = options.delegation ? null : parseInstruction(event.commentBody).text;
   return enqueueTriage(deps, run, prepared.context, { reply });
 }

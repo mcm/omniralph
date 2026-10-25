@@ -253,6 +253,16 @@ Set an issue's **Delegate** (or assignee, depending on the Linear version) to th
 agent session acknowledges within seconds, then the run starts. What gets built depends on the
 issue:
 
+**An issue that still needs refining is triaged first.** A delegation reads the issue's readiness
+from the [state mapping](#work-item-tracker-and-readiness) before anything else. In a
+**Needs refining** state (by default Backlog), it starts [triage](#triage) in the delegation's own
+agent session instead of a run, saying "ENG-12 needs refining, so Om is triaging it first." When
+triage leaves it **Ready to start**, delegate it again (or start it from the Backlog): Om never
+starts the run by itself. In a Ready to start state (by default Todo) or any other state (In
+Progress, say), the run starts as below. When the issue can't be read, the run starts as before
+and the failure is logged. @mentions don't read readiness: `/coding` starts a run whatever the
+state, and `/triage` always triages.
+
 | Delegated issue | Run kind | Stories |
 | -- | -- | -- |
 | An epic with sub-issues | `children` | Each open sub-issue is a story. |
@@ -503,6 +513,8 @@ questions. It never writes code, branches, commits or PRs/MRs.
 
 ### Starting triage
 
+- **Delegation.** Delegating an issue in a **Needs refining** state (by default Backlog) triages it
+  in that agent session, as `/triage` would (see [Delegate an issue](#5-delegate-an-issue)).
 - **Mention.** @mention the app with `/triage` in an issue's comment, e.g. `@omniralph /triage`
   (the rest of the comment is passed along like a reply). A mention without `/triage` is a ralph
   request, as before.
@@ -586,10 +598,14 @@ end of the description, as a numbered list (never checkboxes, so ralph doesn't r
 acceptance criteria). The section is left out when there are none and removed once all of them
 are answered.
 
+The status follows the integration's [state mapping](#work-item-tracker-and-readiness): the
+team's override states first (the first of them in the workflow's order), else the team's first
+state of the mapping's first type. An issue that already has the readiness stays where it is.
+
 | Open questions | Status set |
 | -- | -- |
-| None | **Todo** (the team's first `unstarted` state): ready to delegate to ralph. |
-| Some | **Backlog** (the first `backlog` state). The control panel also comments on the issue, @mentioning its creator, with the list. |
+| None | The first **Ready to start** state (by default Todo). The final response ends "ENG-12 is ready to start. Start it from the Backlog, or delegate it to Om again." Triage never starts the run itself. |
+| Some | The first **Needs refining** state (by default Backlog). The control panel also comments on the issue, @mentioning its creator, with the list. |
 
 ### Replying to continue
 
@@ -623,10 +639,10 @@ without one. A new adapter runs the shared contract suite
 | `get(ref)` | `getIssue` (an unknown ID or identifier is `WorkItemNotFoundError`) and its blockers |
 | `listCandidates({...})` | `listIssues`: one `issues(filter:)` query per page, blockers included |
 | `create`, `update` | `createIssue`, `updateIssue`, `addIssueLabels`, `removeIssueLabel` (labels by name, created when missing) |
-| `setState(ref, state)` | the team's first workflow state of type `backlog`, `unstarted` (todo), `started` (in progress), `completed` (done) or `canceled` |
+| `setState(ref, state)` | the team's first workflow state of type `backlog`, `unstarted` (todo), `started` (in progress), `completed` (done) or `canceled`; `{readiness}` moves to the mapping's first Ready-to-start or Needs-refining state (the team's override states first, then by type), leaving an issue that already has it |
 | `cancel(ref, {comment})` | the canceled state, then the comment |
 | `startTriage(ref)` | adds the `coding:triage` label, so the label webhook starts triage |
-| `delegateToOmniralph(ref)` | delegates the issue to the app user |
+| `delegateToOmniralph(ref)` | delegates the issue to the app user; an issue already delegated to it, with no active run, gets a new agent session instead, so the delegation is handled again |
 
 Every work item carries its `readiness`, from the integration's **state mapping**
 (`integrations.state_mapping`): which workflow states mean **Ready to start** and which **Needs

@@ -47,6 +47,10 @@ export interface WorkItemTrackerHarness {
   isDelegatedToOmniralph(id: string): Promise<boolean>;
   /** Whether the tracker was asked to start Omniralph's triage of the item. */
   isTriageRequested(id: string): Promise<boolean>;
+  /** Marks the item as having an active Omniralph run (the tracker's `hasActiveRun`). */
+  setActiveRun(id: string): void;
+  /** How many new Omniralph agent sessions were opened on the item. */
+  sessionsOpened(id: string): Promise<number>;
 }
 
 const stateOf = (states: TrackerWorkflowState[], category: WorkItemStateCategory) => {
@@ -388,6 +392,41 @@ export function describeWorkItemTrackerContract(
         await tracker.setState(seeded.identifier, state);
         expect((await tracker.get(seeded.id)).state.category).toBe(state);
       });
+
+      it("moves a work item to the mapping's first state of a readiness", async () => {
+        const ready = await h.seed({ teamId: teamA, title: "To ready", state: "triage" });
+        await tracker.setState(ready.identifier, { readiness: "ready" });
+        expect(await tracker.get(ready.id)).toMatchObject({
+          state: { category: "todo" },
+          readiness: "ready",
+        });
+        const refining = await h.seed({ teamId: teamA, title: "To refine", state: "todo" });
+        await tracker.setState(refining.id, { readiness: "needs_refining" });
+        expect(await tracker.get(refining.id)).toMatchObject({
+          state: { category: "backlog" },
+          readiness: "needs_refining",
+        });
+      });
+
+      it("uses a team's override states first, and leaves an item that has the readiness", async () => {
+        const statesB = await tracker.listWorkflowStates(teamB);
+        const started = stateOf(statesB, "in_progress");
+        await tracker.setStateMapping({
+          ready: { types: ["unstarted"] },
+          needsRefining: { types: ["backlog"] },
+          teams: { [teamB]: { ready: [started.id], needsRefining: [stateOf(statesB, "todo").id] } },
+        });
+        const b = await h.seed({ teamId: teamB, title: "B", state: "backlog" });
+        await tracker.setState(b.id, { readiness: "ready" });
+        expect((await tracker.get(b.id)).state).toEqual({
+          category: "in_progress",
+          name: started.name,
+        });
+        const a = await h.seed({ teamId: teamA, title: "A", state: "todo" });
+        const before = await tracker.get(a.id);
+        await tracker.setState(a.id, { readiness: "ready" });
+        expect((await tracker.get(a.id)).state).toEqual(before.state);
+      });
     });
 
     describe("cancel", () => {
@@ -425,6 +464,32 @@ export function describeWorkItemTrackerContract(
         expect(await h.isDelegatedToOmniralph(seeded.id)).toBe(true);
         const delegated = await tracker.listCandidates({ delegatedToOmniralph: true, limit: 10 });
         expect(delegated.items.map((i) => i.id)).toEqual([seeded.id]);
+        expect(await h.sessionsOpened(seeded.id)).toBe(0);
+      });
+
+      it("opens a new session on an item already delegated to Omniralph with no active run", async () => {
+        const seeded = await h.seed({
+          teamId: teamA,
+          title: "Item",
+          state: "todo",
+          delegatedToOmniralph: true,
+        });
+        await tracker.delegateToOmniralph(seeded.identifier);
+        expect(await h.isDelegatedToOmniralph(seeded.id)).toBe(true);
+        expect(await h.sessionsOpened(seeded.id)).toBe(1);
+      });
+
+      it("opens no session while Omniralph is working on the item", async () => {
+        const seeded = await h.seed({
+          teamId: teamA,
+          title: "Item",
+          state: "todo",
+          delegatedToOmniralph: true,
+        });
+        h.setActiveRun(seeded.id);
+        await tracker.delegateToOmniralph(seeded.id);
+        expect(await h.isDelegatedToOmniralph(seeded.id)).toBe(true);
+        expect(await h.sessionsOpened(seeded.id)).toBe(0);
       });
     });
 

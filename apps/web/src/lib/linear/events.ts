@@ -1,16 +1,18 @@
 import "server-only";
-import type { Database } from "@omniralph/db";
+import { getRunBySession, type Database } from "@omniralph/db";
 import { parseInstruction } from "@omniralph/ralph";
 import { getDispatcher } from "@/lib/dispatch";
 import { cleanupAfterIssueCompleted } from "@/lib/ralph/cleanup";
 import { wakeRunsForIssue } from "@/lib/ralph/reconcile";
 import { handleReply } from "@/lib/ralph/reply";
 import type { RalphDeps } from "@/lib/ralph/run";
-import { ACKNOWLEDGEMENT, startRun } from "@/lib/ralph/start";
+import { ACKNOWLEDGEMENT, isMention, startRun, type SessionCreatedEvent } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { isOwnTriageSession, startLabelTriage } from "@/lib/triage/label";
 import { handleTriageReply } from "@/lib/triage/reply";
 import { startTriage } from "@/lib/triage/start";
+import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
+import type { WorkItem } from "@/lib/work-items/tracker";
 import { getLinearGateway } from "./client";
 import type { LinearGateway } from "./gateway";
 import type { LinearWebhookEvent } from "./webhook";
@@ -63,9 +65,44 @@ export async function acknowledgeLinearEvent(
 }
 
 /**
+ * A new agent session: `/triage` always starts triage; a mention runs what it asks for
+ * (`startRun`); a session that already has its run (a redelivery) goes to that run; a
+ * delegation reads the work item's readiness first and triages an item that needs
+ * refining (in the delegation's own session) instead of building it. When the work item
+ * can't be read, the delegation starts a run as before. Triage's own sessions are left
+ * alone.
+ */
+async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promise<void> {
+  const { db, organizationId } = ralph;
+  if (parseInstruction(event.commentBody).wantsTriage) {
+    await startTriage(event, ralph);
+    return;
+  }
+  if (await isOwnTriageSession(db, organizationId, event)) return;
+  if (isMention(event) || (await getRunBySession(db, event.sessionId))) {
+    await startRun(event, ralph);
+    return;
+  }
+  let item: WorkItem;
+  try {
+    const tracker = await workItemTrackerFor({ db, organizationId, gateway: ralph.linear });
+    item = await tracker.get(event.issueId);
+  } catch (error) {
+    console.error(
+      `Reading the readiness of ${event.issueIdentifier ?? event.issueId} failed; starting a run`,
+      error,
+    );
+    await startRun(event, ralph);
+    return;
+  }
+  if (item.readiness === "needs_refining") {
+    await startTriage(event, ralph, { delegation: { identifier: item.identifier } });
+  } else await startRun(event, ralph);
+}
+
+/**
  * Acts on a verified, deduplicated Linear event after the webhook response:
- * a new agent session starts a ralph run (or triage, when its instruction
- * contains `/triage`; the sessions triage opens itself are left alone); the
+ * a new agent session starts a ralph run or triage (`startSession`); the
  * A triage label (`coding:triage`) added to an issue starts triage; an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
  * completed, cleans up its runs' merged PRs/MRs), then starts triage when the
@@ -88,10 +125,8 @@ export async function handleLinearEvent(
     adapterFor: deps.adapterFor ?? scmAdapterFor,
     ...(deps.chat && { chat: deps.chat }),
   };
-  if (event.kind === "session_created") {
-    if (parseInstruction(event.commentBody).wantsTriage) await startTriage(event, ralph);
-    else if (!(await isOwnTriageSession(db, organizationId, event))) await startRun(event, ralph);
-  } else if (event.kind === "session_prompted") {
+  if (event.kind === "session_created") await startSession(event, ralph);
+  else if (event.kind === "session_prompted") {
     // Triage sessions' replies go to triage; every other session is ralph's.
     if (!(await handleTriageReply(event, ralph))) await handleReply(event, ralph);
   } else if (event.kind === "triage_label_added") await startLabelTriage(event, ralph);

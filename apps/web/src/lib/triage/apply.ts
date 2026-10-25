@@ -3,8 +3,9 @@
  * the issue's title and description become the PRD (with its open questions
  * at the end), a new epic gets its story sub-issues, a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations and a
- * validation sub-issue), and the issue moves to Todo when nothing is left to
- * answer or Backlog otherwise. The outcome is
+ * validation sub-issue), and the issue moves through the tracker's readiness state
+ * mapping: to its first Ready-to-start state when nothing is left to answer, else to its
+ * first Needs-refining state. Triage never starts the epic itself. The outcome is
  * reported in the run's Linear agent session.
  *
  * Nothing in Linear changes for a result that isn't valid, or when the issue
@@ -40,6 +41,8 @@ import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { getDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
+import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { removeTriageLabelQuietly } from "./label";
 import { continueTriageAfterJob } from "./reply";
 import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
@@ -47,6 +50,8 @@ import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 export interface TriageApplyDeps {
   db: Database;
   linear: LinearGateway;
+  /** The work item tracker the issue's state changes go through (default: over `linear`). */
+  tracker?: WorkItemTracker;
 }
 
 /** What the job handlers use: also what starts the job a pending reply asks for. */
@@ -71,14 +76,23 @@ export type ApplyTriageOutcome =
       reformatted: string[];
       /** Sub-issue updates (or their blockers) that were ignored, and why. */
       ignored: string[];
-      stateType: "unstarted" | "backlog";
+      /** Where the state mapping moved the issue. */
+      readiness: TriageReadiness;
     };
+
+/** Ready to start (no open questions left) or Needs refining. */
+export type TriageReadiness = "ready" | "needs_refining";
 
 const EPIC_SIZES = new Set(["L", "XL"]);
 /** Title of the validation story `buildTriagePrompt` asks for (the last story). */
 const VALIDATION_TITLE = /^validate\b/i;
 
-const STATE_NAMES = { unstarted: "Todo", backlog: "Backlog" } as const;
+const READINESS_NAMES = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
+
+/** The last line of the final response when triage leaves the issue Ready to start. */
+export function readyToStartMessage(issue: Pick<IssueSummary, "identifier">): string {
+  return `${issue.identifier} is ready to start. Start it from the Backlog, or delegate it to Om again.`;
+}
 
 /** Sub-issue state types a reformat may rewrite. */
 const REFORMATTABLE = new Set(["backlog", "unstarted"]);
@@ -207,7 +221,7 @@ export function appliedMessage(
   issue: Pick<IssueSummary, "identifier">,
   triage: TriageAgentOutput,
   created: readonly IssueSummary[],
-  stateType: "unstarted" | "backlog",
+  readiness: TriageReadiness,
   notes: readonly string[] = [],
   subIssues = 0,
 ): string {
@@ -227,18 +241,18 @@ export function appliedMessage(
     "",
     `- **Size:** ${triage.size}`,
     `- **Structure:** ${structure}`,
-    `- **Status:** ${STATE_NAMES[stateType]}`,
+    `- **Status:** ${READINESS_NAMES[readiness]}`,
     ...notes.map((n) => `- ${n}`),
   ];
   if (triage.openQuestions.length > 0) {
     lines.push(
       "",
-      `**Open questions** (it stays in Backlog until they are answered; reply here to answer them):`,
+      `**Open questions** (it needs refining until they are answered; reply here to answer them):`,
       "",
       ...triage.openQuestions.map((q, i) => `${i + 1}. ${q}`),
     );
   } else {
-    lines.push("", "No open questions: it's ready to delegate to Omniralph.");
+    lines.push("", readyToStartMessage(issue));
   }
   return lines.join("\n");
 }
@@ -249,7 +263,7 @@ export function openQuestionsComment(
   questions: readonly string[],
 ): string {
   const who = issue.creator?.url ?? (issue.creator ? `@${issue.creator.name}` : null);
-  const intro = `${who ? `${who} ` : ""}triage left ${questions.length === 1 ? "an open question" : `${questions.length} open questions`} on this issue. It stays in Backlog until ${questions.length === 1 ? "it is" : "they are"} answered (reply in the triage session, or edit the description and triage again):`;
+  const intro = `${who ? `${who} ` : ""}triage left ${questions.length === 1 ? "an open question" : `${questions.length} open questions`} on this issue. It needs refining until ${questions.length === 1 ? "it is" : "they are"} answered (reply in the triage session, or edit the description and triage again):`;
   return [intro, "", ...questions.map((q, i) => `${i + 1}. ${q}`)].join("\n");
 }
 
@@ -390,7 +404,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     return { status: "in_progress", issues: locked };
   }
 
-  const stateType = triage.openQuestions.length > 0 ? "backlog" : "unstarted";
+  const readiness: TriageReadiness = triage.openQuestions.length > 0 ? "needs_refining" : "ready";
   const notes: string[] = [];
   let created: IssueSummary[] = [];
   let reformat: SubIssueReformat | null = null;
@@ -448,7 +462,10 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       }
     }
 
-    if (issue.stateType !== stateType) await linear.setIssueState(issue.id, { type: stateType });
+    const tracker =
+      deps.tracker ??
+      (await workItemTrackerFor({ db, organizationId: run.organizationId, gateway: linear }));
+    await tracker.setState(issue.id, { readiness });
   } catch (error) {
     return fail(error);
   }
@@ -460,14 +477,14 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   }
   await postActivity(linearConversation(linear, sessionId), {
     type: "response",
-    body: appliedMessage(issue, triage, created, stateType, notes, reformat ? children.length : 0),
+    body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),
   });
   return {
     status: "applied",
     created,
     reformatted: reformat?.reformatted.map((c) => c.identifier) ?? [],
     ignored: reformat?.ignored ?? [],
-    stateType,
+    readiness,
   };
 }
 
