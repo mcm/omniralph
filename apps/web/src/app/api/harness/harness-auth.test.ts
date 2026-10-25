@@ -130,7 +130,6 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         status,
         harnessId,
       })

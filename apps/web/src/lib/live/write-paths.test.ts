@@ -376,7 +376,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         organizationId: orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
       });
       let askId = "";
       expect(
@@ -397,7 +396,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         ralphRunId: run?.id ?? null,
       });
       return job;
@@ -445,7 +443,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
               organizationId: orgId,
               type: "repo.sync",
               taskType: "system",
-              pool: null,
             })
           ).job.id;
         }),
@@ -472,7 +469,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         ralphRunId: run.id,
       });
       expect(
@@ -588,7 +584,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           organizationId: orgId,
           type: "install",
           taskType: "system",
-          pool: null,
           targetHarnessId: harnessId,
         }),
       );

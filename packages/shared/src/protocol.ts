@@ -11,6 +11,7 @@ import {
 } from "@omniralph/tasks";
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
+import { POOLS } from "./pools.js";
 import { RunSpec } from "./run-spec.js";
 
 export { JobRepository, JobToken } from "./job-basics.js";
@@ -89,32 +90,28 @@ export function isJobTaskType(value: string): value is JobTaskType {
   return (JOB_TASK_TYPES as readonly string[]).includes(value);
 }
 
-/** The pools seeded for every organization: `short` (query, review) and `long` (coding). */
-export const DEFAULT_POOLS = ["short", "long"] as const;
-
 const poolName = z.string().min(1).max(64);
 
-/** How a legacy job type is routed: its task type and pool (null for `system`). */
+/** How a legacy job type is routed: its task type (its pool follows, `poolForTaskType`). */
 export interface JobRouting {
   taskType: JobTaskType;
-  pool: string | null;
 }
 
 const LEGACY_JOB_ROUTING: Record<string, JobRouting> = {
-  "review.reply": { taskType: "query", pool: "short" },
-  "review.learn-rule": { taskType: "query", pool: "short" },
-  "chat.ask": { taskType: "query", pool: "short" },
-  "triage.run": { taskType: "query", pool: "short" },
-  "ralph.prepare": { taskType: "coding", pool: "long" },
-  "ralph.cleanup": { taskType: "coding", pool: "long" },
-  [REPO_SYNC_JOB_TYPE]: { taskType: "system", pool: null },
-  [WORKTREE_EXEC_JOB_TYPE]: { taskType: "system", pool: null },
-  [WORKTREE_CLEANUP_JOB_TYPE]: { taskType: "system", pool: null },
-  [INSTALL_JOB_TYPE]: { taskType: "system", pool: null },
+  "review.reply": { taskType: "query" },
+  "review.learn-rule": { taskType: "query" },
+  "chat.ask": { taskType: "query" },
+  "triage.run": { taskType: "query" },
+  "ralph.prepare": { taskType: "coding" },
+  "ralph.cleanup": { taskType: "coding" },
+  [REPO_SYNC_JOB_TYPE]: { taskType: "system" },
+  [WORKTREE_EXEC_JOB_TYPE]: { taskType: "system" },
+  [WORKTREE_CLEANUP_JOB_TYPE]: { taskType: "system" },
+  [INSTALL_JOB_TYPE]: { taskType: "system" },
 };
 
 /**
- * The task type and pool of a legacy job type (one of today's hard-coded job
+ * The task type of a legacy job type (one of today's hard-coded job
  * types). Throws for any other type.
  */
 export function legacyJobRouting(type: string): JobRouting {
@@ -149,14 +146,13 @@ export function effectivePoolLimit(
   return Math.max(1, Math.min(maxConcurrency, limit));
 }
 
-/** The effective limit of each pool in `pools` (default: `short` and `long`). */
+/** The effective limit of each pool (`short` and `long`). */
 export function effectivePoolLimits(
   limits: Partial<Record<string, number>>,
   maxConcurrency: number,
-  pools: readonly string[] = DEFAULT_POOLS,
 ): PoolLimits {
   return Object.fromEntries(
-    pools.map((name) => [name, effectivePoolLimit(name, limits, maxConcurrency)]),
+    POOLS.map((name) => [name, effectivePoolLimit(name, limits, maxConcurrency)]),
   );
 }
 
@@ -354,7 +350,7 @@ export const HeartbeatResponse = z.object({
   /** Task types the harness may claim jobs of (`system` is always accepted). */
   acceptedTaskTypes: z.array(JobTaskType),
   /**
-   * Effective per-pool concurrency limits of the organization's pools. The
+   * Effective concurrency limits of the `short` and `long` pools. The
    * harness only claims a pool's jobs while it runs fewer than this.
    */
   poolLimits: PoolLimits,
@@ -407,7 +403,7 @@ export const JobPayload = z.object({
   id: z.uuid(),
   type: z.string(),
   taskType: JobTaskType,
-  /** Null for `system` jobs. */
+  /** `poolForTaskType(taskType)`: null for `system` jobs. */
   pool: poolName.nullable(),
   /** The task definition the job runs; null for legacy jobs. */
   taskId: z.string().nullable(),

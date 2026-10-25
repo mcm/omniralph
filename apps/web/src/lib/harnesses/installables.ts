@@ -38,7 +38,6 @@ export async function enqueueInstall(
     // A system RPC: no session, no pool; only the targeted harness claims it.
     type: INSTALL_JOB_TYPE,
     taskType: "system",
-    pool: null,
     payload,
     dedupeKey: `${INSTALL_JOB_TYPE}:${input.harnessId}:${input.name}@${input.version ?? "latest"}`,
     targetHarnessId: input.harnessId,

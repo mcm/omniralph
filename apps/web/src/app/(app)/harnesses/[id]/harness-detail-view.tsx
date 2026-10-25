@@ -31,8 +31,8 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconCheck, IconClock, IconCloudDownload, IconTrash } from "@tabler/icons-react";
-import { defaultPoolLimit, HarnessVersion } from "@omniralph/shared";
-import { POOLS, TASK_TYPES } from "@omniralph/tasks";
+import { defaultPoolLimit, HarnessVersion, POOLS } from "@omniralph/shared";
+import { TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Freshness } from "@/components/freshness";

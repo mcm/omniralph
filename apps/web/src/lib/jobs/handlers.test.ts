@@ -11,7 +11,6 @@ function job(overrides: Partial<Job>): Job {
     id: "00000000-0000-4000-8000-000000000009",
     type: "review.task",
     taskType: "review",
-    pool: "short",
     payload: { reviewId: "00000000-0000-4000-8000-000000000001" },
     ...overrides,
   } as Job;
@@ -32,7 +31,7 @@ describe("job outcome handlers", () => {
     expect(jobOutcomeHandler(job({ type: "review.other" }))).toBeUndefined();
     expect(jobOutcomeHandler(job({ type: "ralph.story", payload: { x: 1 } }))).toBeUndefined();
     expect(
-      jobOutcomeHandler(job({ type: "repo.sync", taskType: "system", pool: null })),
+      jobOutcomeHandler(job({ type: "repo.sync", taskType: "system" })),
     ).toBeUndefined();
   });
 
@@ -44,7 +43,7 @@ describe("job outcome handlers", () => {
   });
 
   it("has no triage handler: triage runs are builtin:triage runs with the triage sink", () => {
-    expect(jobOutcomeHandler(job({ type: "triage.run", taskType: "query", pool: "short" }))).toBe(
+    expect(jobOutcomeHandler(job({ type: "triage.run", taskType: "query" }))).toBe(
       undefined,
     );
   });

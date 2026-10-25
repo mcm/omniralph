@@ -2,7 +2,6 @@ import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "..
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { listPoolNames } from "./pools.js";
 import {
   acceptInvitation,
   addMember,
@@ -127,8 +126,6 @@ describe.skipIf(!databaseAvailable)("organization queries", () => {
         ["standard", true],
         ["deep", true],
       ]);
-      // …and the short and long pools.
-      expect((await listPoolNames(db, id)).toSorted()).toEqual(["long", "short"]);
     }
   });
 

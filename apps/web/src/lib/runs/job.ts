@@ -11,7 +11,7 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
 /**
  * The routing and payload of a run-spec job for `task` (spread into
  * `insertJob`/`createAndPublish` input next to `organizationId`, `type` and
- * `dedupeKey`): the task's type and pool, its ID in `task_id` and the stored
+ * `dedupeKey`): the task's type (its pool follows), its ID in `task_id` and the stored
  * `RunSpecJobPayload`, which `resolveRunSpec` turns into a run spec at claim time.
  * Query, review and coding tasks need a harness with their lifecycle
  * (`QUERY_TASKS_MIN_HARNESS_VERSION`, `REVIEW_TASKS_MIN_HARNESS_VERSION`,
@@ -24,13 +24,12 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
  * claim the job.
  */
 export function runSpecJobInput(
-  task: Pick<TaskDefinition, "id" | "taskType" | "pool"> &
+  task: Pick<TaskDefinition, "id" | "taskType"> &
     Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
   payload: RunSpecJobPayload,
   requirements?: Partial<TaskRequirements> | null,
 ): {
   taskType: TaskDefinition["taskType"];
-  pool: TaskDefinition["pool"];
   taskId: string;
   payload: RunSpecJobPayload;
   repositoryId: string | null;
@@ -41,7 +40,6 @@ export function runSpecJobInput(
   const parsed = RunSpecJobPayload.parse(payload);
   return {
     taskType: task.taskType,
-    pool: task.pool,
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,

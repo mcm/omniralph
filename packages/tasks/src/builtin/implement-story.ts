@@ -181,7 +181,6 @@ export const IMPLEMENT_STORY_TASK: TaskDefinitionInput = {
   toolSettings: { shell: true, linearRead: false, network: true },
   // Handed back to the ralph run, which records the attempt.
   sink: "ralph-run",
-  pool: "long",
   // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
   model: "opus",
   tokenBudget: null,

@@ -396,7 +396,6 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
         organizationId: orgId,
         type: "ralph.request",
         taskType: "coding",
-        pool: "long",
         payload: {},
         ralphRunId: run.id,
         repositoryId: repoId,

@@ -53,7 +53,6 @@ export const REPLY_TASK: TaskDefinitionInput = {
   systemAppend: REPLY_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
   sink: "finding-thread",
-  pool: "short",
   tokenBudget: { profileFraction: 0.1 },
   // Turns with file tools; without them (no checkout) the model answers in one.
   maxTurns: 10,

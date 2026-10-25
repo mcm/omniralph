@@ -3,16 +3,14 @@ import {
   HARNESS_TOOLS,
   HARNESS_TOOLS_BY_TASK_TYPE,
   LINEAR_TOOLS,
-  POOLS,
   SINK_KINDS,
   TASK_TYPES,
   TRIGGER_KINDS,
 } from "./index.js";
 
 describe("vocabularies", () => {
-  it("lists the task types, pools, sinks and tools", () => {
+  it("lists the task types, sinks and tools", () => {
     expect(TASK_TYPES).toEqual(["query", "review", "coding"]);
-    expect(POOLS).toEqual(["short", "long"]);
     expect(TRIGGER_KINDS).toHaveLength(13);
     expect(SINK_KINDS).toContain("learned-rule");
     expect(HARNESS_TOOLS).toEqual(["post_activity", "ask_permission", "get_attachment", "ship"]);

@@ -210,7 +210,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         ...values,
       })
       .returning();
@@ -287,7 +286,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const ralphJob = {
         type: "ralph.cleanup",
         taskType: "coding",
-        pool: "long",
       } as const;
 
       it("issues a GitLab write_repository token to a running ralph job and audits it as write", async () => {
@@ -405,7 +403,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const codingTask = {
           type: "task.run",
           taskType: "coding",
-          pool: "long",
           taskId: "builtin:story",
         } as const;
 
@@ -437,7 +434,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           expect(await passwordFor(codingTask, forged, "session")).toBe("ghs_contents_read");
           for (const taskType of ["query", "review"] as const) {
             expect(
-              await passwordFor({ ...codingTask, taskType, pool: "short" }, forged, "session"),
+              await passwordFor({ ...codingTask, taskType }, forged, "session"),
             ).toBe("ghs_contents_read");
           }
           // Even a legacy ralph job never pushes with a session token.
@@ -449,7 +446,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         it("keeps lifecycle tokens of non-coding run-spec jobs read-only", async () => {
           for (const taskType of ["query", "review"] as const) {
             expect(
-              await passwordFor({ ...codingTask, taskType, pool: "short" }, WRITE, "lifecycle"),
+              await passwordFor({ ...codingTask, taskType }, WRITE, "lifecycle"),
             ).toBe("ghs_contents_read");
           }
         });
@@ -688,7 +685,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
             id: await newJob({
               type: "task.run",
               taskType: reviewPr.taskType,
-              pool: reviewPr.pool,
               taskId: reviewPr.id,
               status: "running",
               harnessId: reviewHarnessId,
@@ -923,7 +919,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         id: pinned.syncJobId,
         type: "repo.sync",
         taskType: "system",
-        pool: null,
         status: "queued",
         targetHarnessId: harnessId,
         repositoryId: gitlabRepoId,

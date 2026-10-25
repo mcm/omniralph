@@ -288,7 +288,6 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     expect(job).toMatchObject({
       type: "repo.sync",
       taskType: "system",
-      pool: null,
       status: "queued",
       repositoryId: repoId,
       targetHarnessId: agentA,

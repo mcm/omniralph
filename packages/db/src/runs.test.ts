@@ -40,7 +40,6 @@ describe.skipIf(!databaseAvailable)("run activities and permission requests", ()
         organizationId: orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:chat-ask",
         status: "running",
       })

@@ -1,6 +1,5 @@
 import {
   AgentDefinition,
-  PoolNameSchema,
   SinkKindSchema,
   TaskDefinition,
   TaskRequirements,
@@ -92,7 +91,6 @@ export const taskSummarySchema = z.object({
   agentName: z.string().nullable(),
   triggers: z.array(z.string()),
   sink: SinkKindSchema,
-  pool: PoolNameSchema,
 });
 export type TaskSummary = z.infer<typeof taskSummarySchema>;
 
@@ -148,7 +146,6 @@ export const taskFormOptionsSchema = z.object({
     }),
   ),
   sinks: z.array(z.object({ kind: SinkKindSchema, taskType: TaskTypeSchema })),
-  pools: z.array(PoolNameSchema),
   prDescriptionTasks: z.array(z.object({ id: z.string(), name: z.string(), builtin: z.boolean() })),
   choices: harnessChoicesSchema,
   hostTools: z.array(z.object({ name: z.string(), description: z.string().nullable() })),

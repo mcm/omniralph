@@ -210,7 +210,6 @@ const INPUT = {
   triggers: ["pr.updated", "review.rerun"],
   promptTemplate: "Review {{pr.title}} for vulnerabilities.",
   sink: "review",
-  pool: "short",
   model: "claude-opus-5-5",
   tokenBudget: { tokens: 50_000 },
 } satisfies Omit<TaskDefinitionInput, "id">;
@@ -248,7 +247,6 @@ const DESCRIBER = {
     additionalProperties: false,
   },
   sink: "run-result",
-  pool: "short",
   model: "claude-opus-5-5",
   tokenBudget: { profileFraction: 0.25 },
 } satisfies Omit<TaskDefinitionInput, "id">;
@@ -276,7 +274,6 @@ const CODER = {
   ],
   toolSettings: { shell: true, linearRead: false, network: true },
   sink: "ralph-run",
-  pool: "long",
   tokenBudget: null,
   maxAttemptsPerStory: 2,
   maxRoundsPerStory: 6,

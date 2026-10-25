@@ -37,7 +37,6 @@ import {
   reviews,
   rules,
   scmConnections,
-  seedPools,
   taskDefinitions,
   seedReviewProfiles,
   runActivities,
@@ -130,7 +129,6 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     });
     for (const org of [O.main, O.sandbox]) {
       await seedReviewProfiles(tx, org);
-      await seedPools(tx, org);
     }
     await tx.insert(reviewProfiles).values({
       organizationId: O.main,
@@ -814,7 +812,6 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
           organizationId: O.main,
           type: "ralph.story",
           taskType: "coding",
-          pool: "long",
           taskId: "builtin:implement-story",
           payload: {
             trigger: {
@@ -892,7 +889,6 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
         organizationId: O.main,
         type: "ralph.describe-pr",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:describe-pr",
         payload: {},
         status: "completed",
@@ -1077,7 +1073,6 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       organizationId: O.main,
       type: "review.task",
       taskType: "review",
-      pool: "short",
       taskId: "builtin:review-pr",
       payload: { prNumber },
       status:
@@ -1352,7 +1347,6 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     organizationId: O.main,
     type: "triage.run",
     taskType: "query",
-    pool: "short",
   } as const;
   await tx.insert(jobs).values([
     {
@@ -1448,7 +1442,6 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       id: nextJobId(),
       type: "repo.sync",
       taskType: "system",
-      pool: null,
       payload: {},
       status: "queued",
       repositoryId: R.controlPanel,
@@ -1460,7 +1453,6 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       id: nextJobId(),
       type: "review.reply",
       taskType: "query",
-      pool: "short",
       payload: { prNumber: 412 },
       status: "canceled",
       repositoryId: R.controlPanel,
@@ -1473,7 +1465,6 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       id: nextJobId(),
       type: "review.task",
       taskType: "review",
-      pool: "short",
       payload: { prNumber: 77 },
       status: "expired",
       repositoryId: R.platformApi,
@@ -1486,7 +1477,6 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       id: nextJobId(),
       type: "worktree.cleanup",
       taskType: "system",
-      pool: null,
       payload: {},
       status: "failed",
       repositoryId: R.harness,
@@ -1501,7 +1491,6 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       id: nextJobId(),
       type: "install",
       taskType: "system",
-      pool: null,
       payload: { name: "@omniralph/code-graph", version: "0.4.1" },
       // Its MCP server is what the agent editor suggests as @omniralph/code-graph:graph.
       result: {

@@ -194,7 +194,6 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     expect(job).toMatchObject({
       type: "triage.run",
       taskType: "query",
-      pool: "short",
     });
     expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
     expect(linear.bodies("session-1", "thought")[0]).toContain(`Triaging **${issue.identifier}**`);

@@ -453,7 +453,6 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         repositoryId: repo.id,
       })
       .returning();

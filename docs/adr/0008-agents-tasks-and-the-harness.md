@@ -305,6 +305,10 @@ active legacy `review.run` jobs and renamed run-spec ones `review.task`.)
 - **Trust:** `harnesses.accepted_task_types` (default `query`, `review`) says which task types a
   host may run. `system` jobs are always accepted. This replaces the per-harness capability toggles.
 - **Concurrency:** `short` and `long` pools are seeded per organization (`pools`).
+  _Since TOOL-577 a job's pool is derived from its task type (`poolForTaskType` in
+  `@omniralph/shared`: `long` for coding, `short` for query and review, none for `system`):
+  migration `0085_drop_job_pools.sql` dropped `jobs.pool`, its check constraint and the `pools`
+  table, and task definitions no longer have a `pool`. Claims still report each job's derived pool._
   `harnesses.pool_limits` replaces `capability_limits`; an unset pool defaults to max concurrency
   for `short` and max concurrency − 1 (at least 1) for `long`, as ralph had. The heartbeat
   delivers both, and the harness only asks for pools it has a free slot in.

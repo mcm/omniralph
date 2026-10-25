@@ -20,13 +20,13 @@ const NAMES = {
   tasks: new Map([["builtin:describe-pr", "Describe a PR"]]),
 };
 
-const saved = taskDraft(TASK, ["short", "long"]);
+const saved = taskDraft(TASK);
 const changesTo = (change: Partial<TaskDraft>) =>
   taskChanges(saved, { ...saved, ...change }, NAMES);
 
 describe("taskChanges", () => {
   it("has none for the saved task", () => {
-    expect(taskChanges(saved, taskDraft(TASK, ["short", "long"]), NAMES)).toEqual([]);
+    expect(taskChanges(saved, taskDraft(TASK), NAMES)).toEqual([]);
   });
 
   it("ignores whitespace the save trims", () => {
@@ -37,14 +37,12 @@ describe("taskChanges", () => {
   it("lists each changed setting old → new, in form order, agents by name", () => {
     expect(
       changesTo({
-        pool: "long",
         agentId: "11111111-1111-4111-8111-111111111111",
         name: "Security audit",
       }),
     ).toEqual([
       { key: "name", label: "Name", from: "Security review", to: "Security audit" },
       { key: "agentId", label: "Agent", from: "Reviewer", to: "Custom reviewer" },
-      { key: "pool", label: "Pool", from: saved.pool, to: "long" },
     ]);
   });
 
@@ -92,7 +90,7 @@ describe("taskChanges", () => {
   });
 
   it("shows a coding task's limits and timing, with an empty limit as its default", () => {
-    const coding = taskDraft({ ...TASK, taskType: "coding", maxAttemptsPerStory: 5 }, ["long"]);
+    const coding = taskDraft({ ...TASK, taskType: "coding", maxAttemptsPerStory: 5 });
     const changes = taskChanges(
       coding,
       {

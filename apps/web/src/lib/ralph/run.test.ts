@@ -437,7 +437,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     /** A story or request job's routing: a coding run of `taskId`. */
     const routing = (taskId: string) => ({
       taskType: "coding",
-      pool: "long",
       taskId,
       minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
     });
@@ -557,7 +556,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(describeJob).toMatchObject({
         type: "ralph.describe-pr",
         taskType: "query",
-        pool: "short",
         targetHarnessId: agentA,
         ralphRunId: run.id,
         dedupeKey: runDedupeKey(run.id),
@@ -988,14 +986,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(await activeJob(run.id)).toMatchObject({
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         taskId: "builtin:implement-story",
       });
       await work(run.id, { commitSha: sha(171) });
       expect(await activeJob(run.id)).toMatchObject({
         type: "ralph.describe-pr",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:describe-pr",
       });
     });
@@ -1251,7 +1247,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(job).toMatchObject({
         type: "ralph.push",
         taskType: "coding",
-        pool: "long",
         taskId: "builtin:implement-story",
       });
       const payload = RalphPushPayload.parse(ralphJobPayload(job));
@@ -1309,7 +1304,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(job).toMatchObject({
         type: "worktree.cleanup",
         taskType: "system",
-        pool: null,
         targetHarnessId: null,
         repositoryId: repoId,
       });

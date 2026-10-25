@@ -545,7 +545,6 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       });
       expect(created[0]).toMatchObject({
         taskType: "query",
-        pool: "short",
         taskId: "builtin:reply-to-finding",
         minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         // Once per asking comment.
@@ -766,7 +765,6 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         ralphRunId: run.id,
         repositoryId: repoId,
       });

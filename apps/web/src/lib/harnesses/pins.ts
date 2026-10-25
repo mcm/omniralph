@@ -34,7 +34,6 @@ export async function pinRepository(
     // A system RPC: no session, no pool; only the targeted harness claims it.
     type: REPO_SYNC_JOB_TYPE,
     taskType: "system",
-    pool: null,
     payload,
     repositoryId: input.repositoryId,
     dedupeKey: `${REPO_SYNC_JOB_TYPE}:${input.harnessId}:${input.repositoryId}`,

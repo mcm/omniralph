@@ -251,7 +251,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: runId,
     });
     await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
@@ -646,7 +645,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       organizationId: orgId,
       type: "triage.run",
       taskType: "query",
-      pool: "short",
       triageRunId: triage.id,
     });
     await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));

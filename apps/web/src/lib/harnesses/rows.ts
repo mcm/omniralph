@@ -1,6 +1,5 @@
 import type { HarnessOverview, JobListEntry } from "@omniralph/db";
 import {
-  DEFAULT_POOLS,
   effectivePoolLimits,
   type HarnessUpdateReport,
   type SelfUpdateSupport,
@@ -107,11 +106,7 @@ export function harnessRow(
       maxConcurrency: agent.defaults.maxConcurrency,
     },
     poolLimits: storedLimits(agent.poolLimits),
-    effectivePoolLimits: effectivePoolLimits(
-      agent.poolLimits,
-      agent.effective.maxConcurrency,
-      DEFAULT_POOLS,
-    ),
+    effectivePoolLimits: effectivePoolLimits(agent.poolLimits, agent.effective.maxConcurrency),
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
       type: job.type,

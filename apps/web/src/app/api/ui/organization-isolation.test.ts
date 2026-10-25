@@ -412,7 +412,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         organizationId: org.id,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         status: "running",
         harnessId,
       })
@@ -1587,7 +1586,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           organizationId: tenant.orgId,
           type: "ralph.story",
           taskType: "coding",
-          pool: "long",
           ralphRunId: tenant.runId,
           ralphStoryId: tenant.storyId,
         })
@@ -1707,7 +1705,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         organizationId: tenant.orgId,
         type: "review.task",
         taskType: "review",
-        pool: "short",
         repositoryId: tenant.repoId,
         reviewRunId: reviewRun.id,
       });
@@ -1731,7 +1728,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         organizationId: tenant.orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         repositoryId: tenant.repoId,
         payload: {
           trigger: { kind: "chat.request", context: { question: `${tenant.name} question` } },
@@ -1907,7 +1903,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       organizationId: b.orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: b.runId,
     });
     await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
@@ -2188,7 +2183,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         organizationId: tenant.orgId,
         type: "triage.run",
         taskType: "query",
-        pool: "short",
         payload: {
           trigger: {
             kind: "linear.triage",

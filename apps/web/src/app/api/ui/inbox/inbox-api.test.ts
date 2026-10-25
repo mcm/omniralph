@@ -388,7 +388,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
         organizationId: state.orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         status: "running",
         ralphRunId: ids.permissionQuestion!,
       })

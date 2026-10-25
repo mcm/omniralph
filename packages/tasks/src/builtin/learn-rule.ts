@@ -72,7 +72,6 @@ export const LEARN_RULE_TASK: TaskDefinitionInput = {
     additionalProperties: false,
   },
   sink: "learned-rule",
-  pool: "short",
   tokenBudget: { tokens: 5000 },
   // Keeps the prompt far below the token budget, as `buildLearnRulePrompt` does.
   variableLimits: { "finding.body": 2000, hunk: 5000, "dismissal.note": 1000 },

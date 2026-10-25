@@ -57,7 +57,6 @@ export async function rerunJob(
     organizationId,
     type: job.type,
     taskType: job.taskType,
-    pool: job.pool,
     taskId: job.taskId,
     minHarnessVersion: job.minHarnessVersion,
     requiredInstallables: job.requiredInstallables,

@@ -42,7 +42,6 @@ const summary = (task: TaskDefinition, builtin: boolean, agentName: string): Tas
   agentName,
   triggers: task.triggers,
   sink: task.sink,
-  pool: task.pool,
 });
 
 const reviewPr = getBuiltinTask("builtin:review-pr")!;
@@ -111,7 +110,6 @@ describe("TasksView", () => {
     expect(builtin).toContain(">Reviewer<");
     for (const trigger of reviewPr.triggers) expect(builtin).toContain(`>${trigger}<`);
     expect(builtin).toContain(`>${reviewPr.sink}<`);
-    expect(builtin).toContain(`>${reviewPr.pool}<`);
 
     const custom = row(html, "Security review");
     expect(custom).toContain(CUSTOM_ID);
@@ -291,7 +289,7 @@ describe("TaskDetailContent", () => {
 });
 
 describe("TasksView on phone", () => {
-  it("repeats the agent, triggers, sink and pool under the name and hides their columns", () => {
+  it("repeats the agent, triggers and sink under the name and hides their columns", () => {
     const html = tasksView(false, [CUSTOM_REVIEW]);
     const tr = row(html, "Security review");
     const firstCell = tr.slice(tr.indexOf("<td"), tr.indexOf("</td>"));
@@ -300,8 +298,7 @@ describe("TasksView on phone", () => {
     expect(meta).toContain(">Security reviewer<");
     for (const trigger of CUSTOM_REVIEW.triggers) expect(meta).toContain(`>${trigger}<`);
     expect(meta).toContain(`>${CUSTOM_REVIEW.sink}<`);
-    expect(meta).toContain(`>${CUSTOM_REVIEW.pool}<`);
-    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(5);
-    expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(5);
+    expect(tr.match(/<td class="[^"]*list-col-wide/g)).toHaveLength(4);
+    expect(html.match(/<th class="[^"]*list-col-wide/g)).toHaveLength(4);
   });
 });

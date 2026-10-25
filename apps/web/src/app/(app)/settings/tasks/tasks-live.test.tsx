@@ -74,7 +74,6 @@ const list = (...tasks: TaskDefinition[]): TaskList => ({
     agentName: "Reviewer",
     triggers: task.triggers,
     sink: task.sink,
-    pool: task.pool,
   })),
 });
 
@@ -86,7 +85,6 @@ const OPTIONS: TaskFormOptions = {
     { kind: "review", taskType: "review" },
     { kind: "chat-thread", taskType: "query" },
   ],
-  pools: ["short", "long"],
   prDescriptionTasks: [],
   choices: { models: [], installables: [], harnessCount: 1 },
   hostTools: [],

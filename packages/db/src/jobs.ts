@@ -21,7 +21,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
-import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
+import { harnessVersionAtLeast, isJobTaskType, poolForTaskType } from "@omniralph/shared";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveHostToolPath } from "./host-tools.js";
@@ -89,8 +89,6 @@ export interface NewJobInput {
   type: string;
   /** How the harness runs the job (`legacyJobRouting(type)` for legacy job types). */
   taskType: JobTaskType;
-  /** The pool whose slots the job takes; null exactly for `system` jobs. */
-  pool: string | null;
   /** The task definition the job runs; null for legacy jobs. */
   taskId?: string | null;
   /** Only harnesses reporting at least this version claim the job. */
@@ -133,7 +131,6 @@ export async function insertJob(
         organizationId: input.organizationId,
         type: input.type,
         taskType: input.taskType,
-        pool: input.pool,
         taskId: input.taskId ?? null,
         minHarnessVersion: input.minHarnessVersion ?? null,
         requiredInstallables: [...(input.requiredInstallables ?? [])],
@@ -318,8 +315,8 @@ export interface ClaimJobResult {
 /**
  * Claims the next job for a harness from the `jobs` table, in one transaction.
  * Eligible: the harness's organization's jobs whose task type is in
- * `acceptedTaskTypes` and whose pool is in `pools` (the pools it has a free
- * slot in), plus `system` jobs (always accepted, no pool); whose
+ * `acceptedTaskTypes` and whose pool (`poolForTaskType`) is in `pools` (the
+ * pools it has a free slot in), plus `system` jobs (always accepted, no pool); whose
  * `min_harness_version` is null or at most `harnessVersion`
  * (`harnessVersionAtLeast`; none when the harness reported no version);
  * whose `required_installables` are all in the harness's
@@ -442,16 +439,16 @@ async function claimCandidates(
   input: ClaimCandidatesInput & { now: Date },
 ): Promise<SQL | undefined> {
   const { now } = input;
-  const pooledTaskTypes = input.acceptedTaskTypes
-    .filter(isJobTaskType)
-    .filter((t) => t !== "system");
+  // Accepted task types whose pool has a free slot (a job's pool follows from its task type).
+  const pooledTaskTypes = input.acceptedTaskTypes.filter(isJobTaskType).filter((t) => {
+    const pool = poolForTaskType(t);
+    return pool !== null && input.pools.includes(pool);
+  });
   const claimable = and(
     eq(jobs.organizationId, input.organizationId),
     or(
       eq(jobs.taskType, "system"),
-      pooledTaskTypes.length > 0 && input.pools.length > 0
-        ? and(inArray(jobs.taskType, pooledTaskTypes), inArray(jobs.pool, [...input.pools]))
-        : sql`false`,
+      pooledTaskTypes.length > 0 ? inArray(jobs.taskType, pooledTaskTypes) : sql`false`,
     ),
     or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
     or(

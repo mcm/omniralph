@@ -83,7 +83,6 @@ function taskFixture(overrides: Partial<TaskDefinitionInput> = {}): TaskDefiniti
     triggers: ["chat.request"],
     promptTemplate: TEMPLATE,
     sink: "chat-thread",
-    pool: "short",
     maxTurns: 30,
     ...overrides,
   });

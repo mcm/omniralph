@@ -114,7 +114,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
         organizationId,
         type: JOB_TYPE,
         taskType: "query",
-        pool: "short",
         payload: {},
         dedupeKey: randomUUID(),
       });

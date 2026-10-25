@@ -88,7 +88,6 @@ function runSpecFor(j: JobPayload, tokens: RunSpec["tokens"]): RunSpec {
       triggers: ["finding.dismissed"],
       promptTemplate: "{{finding.title}}",
       sink: "learned-rule",
-      pool: "short",
     }),
     trigger: { kind: "finding.dismissed", context: { finding: { title: "Unused import" } } },
     repository: null,

@@ -62,7 +62,6 @@ const taskInput: TaskDefinitionInput = {
   triggers: ["finding.mention"],
   promptTemplate: "{{question}}",
   sink: "finding-thread",
-  pool: "short",
   tokenBudget: { profileFraction: 0.1 },
 };
 
@@ -95,7 +94,6 @@ function job(overrides: Partial<Db.Job> = {}) {
     id: JOB_ID,
     organizationId: ORG_ID,
     taskType: "query",
-    pool: "short",
     taskId: "builtin:reply-to-finding",
     repositoryId: REPO_ID,
     payload,
@@ -120,7 +118,8 @@ describe("resolveRunSpec", () => {
       taskType: "query",
       pool: "short",
       agent: { id: "builtin:code-reader", tools: { builtin: ["Read", "Grep", "Glob"] } },
-      task: { id: "builtin:reply-to-finding" },
+      // Harnesses up to 0.13 still read the task's pool: it is derived from its task type.
+      task: { id: "builtin:reply-to-finding", pool: "short" },
       trigger: payload.trigger,
       repository: {
         provider: "github",
@@ -281,11 +280,11 @@ describe("resolveRunSpec", () => {
       );
     });
 
-    it("fails an unknown agent, an invalid payload, a routing mismatch and an unknown repository", async () => {
+    it("fails an unknown agent, an invalid payload, a task type mismatch and an unknown repository", async () => {
       const cases: [Partial<Db.Job>, ReturnType<typeof definitions>, string][] = [
         [{}, definitions({ agentId: "builtin:nobody" }), "Unknown agent builtin:nobody"],
         [{ payload: { question: "Why?" } }, definitions(), "Invalid run payload"],
-        [{ pool: "long" }, definitions(), "doesn't match task builtin:reply-to-finding"],
+        [{ taskType: "coding" }, definitions(), "doesn't match task builtin:reply-to-finding"],
         [{}, definitions(), "Unknown repository"],
       ];
       for (const [overrides, defs, message] of cases) {
@@ -412,7 +411,6 @@ describe("runSpecJobInput", () => {
     const task = TaskDefinition.parse(taskInput);
     expect(runSpecJobInput(task, payload)).toEqual({
       taskType: "query",
-      pool: "short",
       taskId: "builtin:reply-to-finding",
       payload,
       repositoryId: REPO_ID,
@@ -441,7 +439,7 @@ describe("runSpecJobInput", () => {
   });
 
   it("requires a harness with the coding lifecycle for coding tasks", () => {
-    const task = TaskDefinition.parse({ ...taskInput, taskType: "coding", pool: "long" });
+    const task = TaskDefinition.parse({ ...taskInput, taskType: "coding" });
     expect(runSpecJobInput(task, payload).minHarnessVersion).toBe(CODING_TASKS_MIN_HARNESS_VERSION);
     // Coding runs run a coding task's setup commands too: the higher minimum wins.
     expect(
@@ -450,7 +448,6 @@ describe("runSpecJobInput", () => {
     const withSetup = TaskDefinition.parse({
       ...taskInput,
       taskType: "coding",
-      pool: "long",
       setupCommands: [{ name: "deps", command: "pnpm install" }],
     });
     expect(runSpecJobInput(withSetup, payload).minHarnessVersion).toBe(

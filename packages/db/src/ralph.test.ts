@@ -636,7 +636,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     expect(job.ralphRunId).toBe(run.id);
@@ -678,7 +677,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         ralphRunId: run.id,
       });
       await db.update(jobs).set({ status }).where(eq(jobs.id, job.id));
@@ -691,7 +689,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
     });
     expect(await listActiveRunJobIds(db, run.id)).toEqual([queued, running]);
   });
@@ -734,7 +731,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: busy.id,
     });
     const { run: finished } = await createRun(db, runInput());
@@ -866,14 +862,12 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     const { job: second } = await insertJob(db, {
       organizationId: orgId,
       type: "ralph.describe-pr",
       taskType: "query",
-      pool: "short",
       ralphRunId: run.id,
     });
     await db
@@ -887,7 +881,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: other.id,
     });
 
@@ -918,7 +911,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       organizationId: orgId,
       type: "ralph.request",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     const pending = await insertMessage(db, { runId: run.id, kind: "request", text: "Open a PR" });

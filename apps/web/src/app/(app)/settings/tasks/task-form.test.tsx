@@ -76,7 +76,6 @@ const render = (task: TaskDefinition | null, initialErrors = {}) => {
         task={task}
         agents={AGENTS}
         sinks={SINKS}
-        pools={["short", "long"]}
         prDescriptionTasks={PR_DESCRIPTION_TASKS}
         choices={CHOICES}
         hostTools={HOST_TOOLS}
@@ -131,7 +130,6 @@ describe("TaskForm", () => {
       "task-triggers-pr.updated",
       "task-prompt-template",
       "task-sink",
-      "task-pool",
       "task-model",
       "task-token-budget",
       "task-token-budget-amount",
@@ -144,6 +142,8 @@ describe("TaskForm", () => {
     expect(html).toMatch(/id="task-model"[^]*?Opus 5\.5/);
     expect(html).toContain('value="50000"');
     expect(html).toContain("Save task");
+    // A task's pool follows from its task type: nobody picks one.
+    expect(html).not.toContain('id="task-pool"');
   });
 
   it("disables Save on an unchanged edit, without Discard or the unsaved badge", () => {
@@ -156,7 +156,7 @@ describe("TaskForm", () => {
     expect(submitButton(render(null))).not.toContain('disabled=""');
   });
 
-  it("states the default of the pool, token budget and model, never of a required field", () => {
+  it("states the default of the token budget and model, never of a required field", () => {
     const html = render(TASK);
     for (const required of [
       "Agents suited to the task type.",
@@ -168,7 +168,6 @@ describe("TaskForm", () => {
     }
     for (const [field, text] of [
       ["task-sink", "What applies the run&#x27;s output."],
-      ["task-pool", "Whose concurrency slots its runs take. Default: short."],
       ["task-token-budget", "Default: the profile budget."],
       ["task-model", "Default: the agent&#x27;s model."],
     ]) {
@@ -188,7 +187,6 @@ describe("TaskForm", () => {
     expect(html).toContain('value="sticky-comment"');
     expect(html).not.toContain('value="chat-thread"');
     expect(html).not.toContain('value="ralph-run"');
-    expect(html).toContain('value="long"');
   });
 
   it("renders an empty query task for a new task", () => {
@@ -208,7 +206,6 @@ describe("TaskForm", () => {
       triggers: "review tasks accept pr.updated, pr.mention, review.rerun.",
       promptTemplate: "{{chat.context}} is not available for pr.updated.",
       sink: "The chat-thread sink takes query tasks.",
-      pool: "Pick a pool.",
       model: "Model is too long.",
       "tokenBudget.tokens": "Tokens must be at least 1.",
     };
@@ -220,7 +217,6 @@ describe("TaskForm", () => {
       triggers: "task-triggers",
       promptTemplate: "task-prompt-template",
       sink: "task-sink",
-      pool: "task-pool",
       model: "task-model",
       "tokenBudget.tokens": "task-token-budget",
     };
@@ -414,7 +410,6 @@ describe("taskInput", () => {
   it("saves a task loaded and left unedited exactly as it was", () => {
     const custom: TaskDefinition = {
       ...TASK,
-      pool: "long",
       requires: {
         installables: ["@omniralph/sast", "@omniralph/unreported"],
         hostTools: ["opengrep"],
@@ -424,7 +419,7 @@ describe("taskInput", () => {
       const { id: _id, ...fields } = task;
       // A task without requirements saves empty ones, which mean the same.
       const requires = task.requires ?? { installables: [], hostTools: [] };
-      expect(taskInput(task, taskDraft(task, ["short", "long"]))).toEqual({
+      expect(taskInput(task, taskDraft(task))).toEqual({
         input: { ...fields, requires },
       });
     }

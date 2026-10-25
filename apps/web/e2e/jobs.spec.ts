@@ -9,7 +9,6 @@ async function queuedJob(db: Database) {
     organizationId: FIXTURE_IDS.organizations.main,
     type: "review.run",
     taskType: "review",
-    pool: "short",
   });
   return job;
 }

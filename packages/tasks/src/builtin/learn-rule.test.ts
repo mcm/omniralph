@@ -66,7 +66,6 @@ describe("builtin:learn-rule", () => {
       agentId: "builtin:rule-writer",
       triggers: ["finding.dismissed"],
       sink: "learned-rule",
-      pool: "short",
       tokenBudget: { tokens: 5000 },
       toolSettings: { shell: false, linearRead: false, network: false },
     });

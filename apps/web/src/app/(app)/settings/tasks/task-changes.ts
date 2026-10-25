@@ -3,7 +3,6 @@
  * "old → new" list an edit confirms. Pure, so the change list can be tested.
  */
 import type {
-  PoolName,
   SinkKind,
   TaskDefinition,
   TaskType,
@@ -41,7 +40,6 @@ export interface TaskDraft {
   triggers: TriggerKind[];
   promptTemplate: string;
   sink: SinkKind | "";
-  pool: PoolName | "";
   model: string;
   budgetMode: BudgetMode;
   budgetAmount: string;
@@ -52,12 +50,6 @@ export interface TaskDraft {
   requiredHostTools: string[];
   outputSchema: string;
   coding: CodingDraft;
-}
-
-/** The pool a new task of `taskType` defaults to: coding runs are long. */
-export function defaultPool(taskType: TaskType, pools: readonly PoolName[]): PoolName | "" {
-  const preferred = taskType === "coding" ? "long" : "short";
-  return pools.includes(preferred) ? preferred : (pools[0] ?? "");
 }
 
 function budgetMode(budget: TokenBudget | undefined): BudgetMode {
@@ -71,7 +63,7 @@ function budgetAmount(budget: TokenBudget | undefined): string {
 }
 
 /** The draft of `task`, or of a new task when null. */
-export function taskDraft(task: TaskDefinition | null, pools: readonly PoolName[]): TaskDraft {
+export function taskDraft(task: TaskDefinition | null): TaskDraft {
   const taskType = task?.taskType ?? "query";
   return {
     name: task?.name ?? "",
@@ -81,7 +73,6 @@ export function taskDraft(task: TaskDefinition | null, pools: readonly PoolName[
     triggers: task?.triggers ?? [],
     promptTemplate: task?.promptTemplate ?? "",
     sink: task?.sink ?? "",
-    pool: task?.pool ?? defaultPool(taskType, pools),
     model: task?.model ?? "",
     budgetMode: budgetMode(task?.tokenBudget),
     budgetAmount: budgetAmount(task?.tokenBudget),
@@ -164,7 +155,6 @@ export function taskValues(draft: TaskDraft): Record<string, SettingValue> {
       LIMITS.map(([key]) => [key, coding ? draft.coding[key].trim() : null] as const),
     ),
     sink: draft.sink,
-    pool: draft.pool,
     model: draft.model.trim(),
     tokenBudget: formatTokenBudget(tokenBudget(draft.budgetMode, draft.budgetAmount)),
   };
@@ -210,7 +200,6 @@ export function taskSpecs(names: TaskChangeNames): SettingSpec[] {
       format: limit(LIMIT_DEFAULTS[key]),
     })),
     { key: "sink", label: "Sink" },
-    { key: "pool", label: "Pool" },
     { key: "model", label: "Model override" },
     { key: "tokenBudget", label: "Token budget" },
   ];

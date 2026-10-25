@@ -290,7 +290,6 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
       organizationId: orgId,
       type: "ralph.request",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     const request = {

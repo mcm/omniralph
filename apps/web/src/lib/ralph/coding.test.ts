@@ -196,7 +196,6 @@ describe("codingJobInput", () => {
     );
     expect(input).toMatchObject({
       taskType: "coding",
-      pool: "long",
       taskId: story.id,
       repositoryId: payload.repositoryId,
       payload: {
@@ -265,7 +264,6 @@ describe("describing a lane's PR", () => {
     );
     expect(input).toMatchObject({
       taskType: "query",
-      pool: "short",
       taskId: customDescribe.id,
       repositoryId: payload.repositoryId,
       minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
@@ -398,7 +396,6 @@ describe("push and draft PR timing", () => {
     const input = await pushJobInput({ storyTaskId: atTheEnd.id }, pushPayload, DEFINITIONS);
     expect(input).toMatchObject({
       taskType: "coding",
-      pool: "long",
       taskId: atTheEnd.id,
       payload: {
         trigger: { kind: "linear.delegated", context: pushPayload },

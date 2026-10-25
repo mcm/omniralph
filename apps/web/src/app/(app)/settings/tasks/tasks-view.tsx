@@ -2,7 +2,6 @@
 
 import { Link } from "@/components/link";
 import {
-  Badge,
   Button,
   Card,
   CardContent,
@@ -51,7 +50,6 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
           <TableHead className={WIDE_COLUMN}>Agent</TableHead>
           <TableHead className={WIDE_COLUMN}>Triggers</TableHead>
           <TableHead className={WIDE_COLUMN}>Sink</TableHead>
-          <TableHead className={WIDE_COLUMN}>Pool</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -71,7 +69,6 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
                 <AgentLink id={task.agentId} name={task.agentName} className="list-secondary" />
                 <TriggerBadges triggers={task.triggers} />
                 <MonoValue value={task.sink} className="text-xs" />
-                <Badge variant="neutral">{task.pool}</Badge>
               </PhoneMeta>
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
@@ -85,9 +82,6 @@ function TaskTable({ tasks }: { tasks: TaskSummary[] }) {
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <MonoValue value={task.sink} className="text-xs" />
-            </TableCell>
-            <TableCell className={WIDE_COLUMN}>
-              <Badge variant="neutral">{task.pool}</Badge>
             </TableCell>
           </TableRow>
         ))}

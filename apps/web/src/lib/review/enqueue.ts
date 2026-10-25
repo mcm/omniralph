@@ -166,7 +166,7 @@ export async function reviewTasksFor(
  * canceled), then creates the `queued` review run and, for each of
  * the repository's review tasks taking this trigger (`reviewTasksFor`), a
  * `queued` review and a `review.task` job running that task (routed by the
- * task: task type `review`, its pool). Each job's trigger (`pr.updated`,
+ * task: task type `review`). Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
  * (profile, rules, instructions, excludes), the PR text, the mode and the
  * previous review's head SHA (none for a `full` review) and open findings

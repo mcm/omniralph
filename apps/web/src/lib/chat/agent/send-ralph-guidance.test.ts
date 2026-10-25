@@ -131,7 +131,6 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
       organizationId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       repositoryId: repository,
       ralphRunId: run.id,
     });
@@ -264,7 +263,6 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
       organizationId: orgId,
       type: "ralph.request",
       taskType: "coding",
-      pool: "long",
       repositoryId,
       ralphRunId: run.id,
     });

@@ -68,7 +68,6 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
         organizationId: orgId,
         type: "triage.run",
         taskType: "query",
-        pool: "short",
       })
     ).job;
 
@@ -313,7 +312,6 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
         organizationId,
         type,
         taskType: "query",
-        pool: "short",
         payload: {
           trigger: { kind: "linear.triage", context: { triageRunId: runId, issue: {} } },
         },

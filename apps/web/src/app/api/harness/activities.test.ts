@@ -139,7 +139,6 @@ describe.skipIf(!databaseAvailable)("POST /api/harness/jobs/{id}/activities", ()
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         status: "running",
         harnessId,
         repositoryId,
@@ -201,7 +200,6 @@ describe.skipIf(!databaseAvailable)("POST /api/harness/jobs/{id}/activities", ()
     const jobId = await newJob({
       type: "chat.ask",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:chat-ask",
     });
     const session = await getTokenSigner().signJobToken({
@@ -275,7 +273,6 @@ describe.skipIf(!databaseAvailable)("POST /api/harness/jobs/{id}/activities", ()
     const reviewJob = await newJob({
       type: "review.run",
       taskType: "review",
-      pool: "short",
     });
     const reviewToken = await token(reviewJob, ["credentials:read"]);
     expect((await activityRequest(reviewJob, reviewToken, THOUGHT)).status).toBe(401);

@@ -75,7 +75,6 @@ const query: TaskDefinitionInput = {
   triggers: ["finding.mention"],
   promptTemplate: "{{finding.title}}\n\n{{question}}",
   sink: "finding-thread",
-  pool: "short",
 };
 
 /** A valid coding task started by a story or a request. */
@@ -87,7 +86,6 @@ const coding: TaskDefinitionInput = {
   triggers: ["linear.delegated", "linear.mention"],
   promptTemplate: "{{epic.title}}{{#epic.prd}}\n{{epic.prd}}{{/epic.prd}}",
   sink: "ralph-run",
-  pool: "long",
 };
 
 function errors(input: unknown) {

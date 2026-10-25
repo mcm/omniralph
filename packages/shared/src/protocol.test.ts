@@ -99,21 +99,21 @@ describe("protocol", () => {
     expect(JobFailure.safeParse({ retryable: true, retryAfterSeconds: 7200 }).success).toBe(false);
   });
 
-  it("routes every legacy job type to its task type and pool", () => {
+  it("routes every legacy job type to its task type", () => {
     const routing = (type: string) => legacyJobRouting(type);
     for (const type of ["review.reply", "review.learn-rule", "chat.ask", "triage.run"]) {
-      expect(routing(type)).toEqual({ taskType: "query", pool: "short" });
+      expect(routing(type)).toEqual({ taskType: "query" });
     }
     for (const type of ["ralph.prepare", "ralph.cleanup"]) {
-      expect(routing(type)).toEqual({ taskType: "coding", pool: "long" });
+      expect(routing(type)).toEqual({ taskType: "coding" });
     }
     // Stories, requests and PR/MR descriptions are task runs, never legacy jobs.
     for (const type of ["ralph.story", "ralph.request", "ralph.describe-pr"]) {
       expect(() => routing(type)).toThrow(/Unknown legacy job type/);
     }
-    expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
-    expect(routing("worktree.exec")).toEqual({ taskType: "system", pool: null });
-    expect(routing("worktree.cleanup")).toEqual({ taskType: "system", pool: null });
+    expect(routing("repo.sync")).toEqual({ taskType: "system" });
+    expect(routing("worktree.exec")).toEqual({ taskType: "system" });
+    expect(routing("worktree.cleanup")).toEqual({ taskType: "system" });
     expect(() => routing("review.unknown")).toThrow(/Unknown legacy job type/);
     // Review runs are review task runs (`review.task`, run specs), not a legacy job type.
     expect(() => routing("review.run")).toThrow(/Unknown legacy job type/);
@@ -122,7 +122,7 @@ describe("protocol", () => {
   it("lists the system RPCs, each routed as a system job", () => {
     expect(SYSTEM_RPCS).toEqual(["repo.sync", "worktree.exec", "worktree.cleanup", "install"]);
     for (const name of SYSTEM_RPCS) {
-      expect(legacyJobRouting(name)).toEqual({ taskType: "system", pool: null });
+      expect(legacyJobRouting(name)).toEqual({ taskType: "system" });
     }
     expect(isSystemRpc("repo.sync")).toBe(true);
     expect(isSystemRpc("worktree.exec")).toBe(true);
@@ -163,10 +163,8 @@ describe("protocol", () => {
     expect(effectivePoolLimits({}, 1)).toEqual({ short: 1, long: 1 });
     expect(effectivePoolLimits({}, 3)).toEqual({ short: 3, long: 2 });
     expect(effectivePoolLimits({ long: 3, short: 9 }, 3)).toEqual({ short: 3, long: 3 });
-    expect(effectivePoolLimits({ long: 0, gpu: 1 }, 3, ["long", "gpu"])).toEqual({
-      long: 1,
-      gpu: 1,
-    });
+    // Only `short` and `long` are pools: a stored limit for any other name is ignored.
+    expect(effectivePoolLimits({ long: 0, gpu: 1 }, 3)).toEqual({ short: 3, long: 1 });
   });
 
   it("requires the agent's organization in the heartbeat response", () => {

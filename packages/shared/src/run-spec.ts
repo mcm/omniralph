@@ -8,13 +8,13 @@ import {
   AgentDefinition,
   HARNESS_VERSION_BY_TASK_TYPE,
   HARNESS_VERSION_FOR_COMMANDS,
-  PoolNameSchema,
   TaskDefinition,
   TaskTypeSchema,
   TriggerKindSchema,
 } from "@omniralph/tasks";
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
+import { POOLS } from "./pools.js";
 
 /**
  * The first harness release that runs query tasks through the fixed
@@ -74,7 +74,8 @@ export type RunToolRestrictions = z.infer<typeof RunToolRestrictions>;
 export const RunSpec = z.object({
   jobId: z.uuid(),
   taskType: TaskTypeSchema,
-  pool: PoolNameSchema,
+  /** `poolForTaskType(taskType)`. */
+  pool: z.enum(POOLS),
   /** The task's agent, its tools already narrowed by the repository's settings. */
   agent: AgentDefinition,
   task: TaskDefinition,

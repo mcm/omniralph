@@ -59,7 +59,6 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
       triggers: ["chat.request"],
       promptTemplate: "{{question}}",
       sink: "chat-thread",
-      pool: "short",
       toolSettings: { linearRead },
     });
   const documentReader = tasks.AgentDefinition.parse({
@@ -169,7 +168,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
         organizationId: orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         taskId,
         status: "running",
         harnessId,
@@ -374,7 +372,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
         organizationId: other!.id,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:linear-reader",
         status: "running",
         harnessId: otherHarness!.id,

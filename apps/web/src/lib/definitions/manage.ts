@@ -9,7 +9,6 @@ import {
   insertAgentDefinition,
   insertTaskDefinition,
   listHostTools,
-  listPoolNames,
   listStoredTaskDefinitions,
   updateAgentDefinition as updateAgentDefinitionRow,
   updateTaskDefinition as updateTaskDefinitionRow,
@@ -20,10 +19,8 @@ import {
   deriveTaskRequirements,
   HARNESS_TOOLS_BY_TASK_TYPE,
   isBuiltinId,
-  POOLS,
   validateAgentDefinition,
   type AgentDefinition,
-  type PoolName,
   type TaskDefinition,
 } from "@omniralph/tasks";
 import type { ActionResult } from "@/lib/action-result";
@@ -300,7 +297,6 @@ export async function loadTaskList(db: Database, user: OrgUser): Promise<TaskLis
       agentName: agentNames.get(definition.agentId) ?? null,
       triggers: definition.triggers,
       sink: definition.sink,
-      pool: definition.pool,
     })),
   };
 }
@@ -340,20 +336,17 @@ export async function loadTaskDetail(
 }
 
 /**
- * What the task form picks from: the organization's agents, pools, PR description tasks and
+ * What the task form picks from: the organization's agents, PR description tasks and
  * host tools, what its harnesses report, and the implemented sinks.
  */
 export async function loadTaskFormOptions(db: Database, user: OrgUser): Promise<TaskFormOptions> {
   const organizationId = user.organization.id;
-  const [agents, poolNames, prDescriptionTasks, choices, hostTools] = await Promise.all([
+  const [agents, prDescriptionTasks, choices, hostTools] = await Promise.all([
     listAgentDefinitions(db, organizationId),
-    listPoolNames(db, organizationId),
     listTaskChoices(db, organizationId, PR_DESCRIPTION_TASKS),
     loadHarnessChoices(db, organizationId),
     listHostTools(db, organizationId),
   ]);
-  // A task names one of the pools definitions know; an organization has them seeded.
-  const pools = POOLS.filter((pool: PoolName) => poolNames.includes(pool));
   return {
     agents: agents.map(({ definition, builtin }) => ({
       id: definition.id,
@@ -362,7 +355,6 @@ export async function loadTaskFormOptions(db: Database, user: OrgUser): Promise<
       builtin,
     })),
     sinks: allSinks().map((sink) => ({ kind: sink.kind, taskType: sink.taskType })),
-    pools: pools.length > 0 ? pools : [...POOLS],
     prDescriptionTasks,
     choices,
     hostTools: hostTools.map((tool) => ({ name: tool.name, description: tool.description })),

@@ -196,7 +196,6 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     expect(job).toMatchObject({
       type: "triage.run",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:triage",
       minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       repositoryId: repoId,

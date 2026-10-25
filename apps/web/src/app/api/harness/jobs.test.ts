@@ -73,7 +73,6 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
       triggers: ["finding.dismissed", "finding.mention"],
       promptTemplate: "{{finding.title}}",
       sink,
-      pool: "short",
       tokenBudget: { tokens: 5000 },
     }),
   );
@@ -219,7 +218,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       organizationId: input.organizationId ?? orgId,
       type: "review.run",
       taskType: "review",
-      pool: "short",
       payload: { prNumber: 7 },
       repositoryId: input.repositoryId ?? null,
       dedupeKey: input.dedupeKey ?? randomUUID(),
@@ -252,7 +250,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     try {
       const res = await claim(
         agentRequest("claim", accessToken, {
-          body: { pools: before.pool ? [before.pool] : [], waitSeconds: 0 },
+          body: { pools: ["short", "long"], waitSeconds: 0 },
         }),
       );
       if (res.status === 204) return null;
@@ -290,7 +288,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         payload: { prNumber: 7 },
         dedupeKey: "review:insert",
       });
@@ -300,7 +297,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         payload: { prNumber: 7 },
         status: "queued",
         targetHarnessId: null,
@@ -313,14 +309,12 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         dedupeKey: "review:dedupe",
       });
       const second = await dispatcher().createAndPublish({
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         dedupeKey: "review:dedupe",
       });
       expect(second.created).toBe(false);
@@ -335,7 +329,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         dedupeKey: "review:dedupe",
       });
       expect(third.created).toBe(true);
@@ -355,7 +348,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         status: "running",
         harnessId: busy.harnessId,
       });
@@ -371,7 +363,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           type: "repo.sync",
           taskType: "system",
-          pool: null,
           repositoryId,
           targetHarnessId: busy.harnessId,
         });
@@ -476,7 +467,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           organizationId,
           type,
           taskType: "query",
-          pool: "short",
           payload: {},
           dedupeKey: randomUUID(),
         });
@@ -627,7 +617,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           triggers: ["finding.dismissed"],
           promptTemplate: "{{finding.title}}",
           sink: "learned-rule",
-          pool: "short",
           tokenBudget: { tokens: 7000 },
         },
         requirements: {},
@@ -698,7 +687,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     it("claims system RPCs without a pool, also on a harness accepting no task types, with one lifecycle token", async () => {
       const { organizationId, job } = await claimOrg();
       const agent = await newAgent({ organizationId, acceptedTaskTypes: [] });
-      const jobId = await job("repo.sync", { taskType: "system", pool: null });
+      const jobId = await job("repo.sync", { taskType: "system" });
       const res = await claimAs(agent.accessToken, { pools: [], waitSeconds: 0 });
       const body = (await res.json()) as JobStartResponse & { action: "run" };
       expect(body.job).toMatchObject({
@@ -1040,7 +1029,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           type: "review.learn-rule",
           taskType: "query",
-          pool: "short",
           taskId: "builtin:learn-rule",
           repositoryId,
           dedupeKey: `review.learn-rule:${row!.id}`,
@@ -1170,7 +1158,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: orgId,
         type: "review.reply",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:reply-to-finding",
         repositoryId,
         dedupeKey: `review.reply:${repositoryId}:778`,
@@ -1389,7 +1376,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           type: "ralph.story",
           taskType: "coding",
-          pool: "long",
           status: "running",
           harnessId,
           ralphRunId: run!.id,
@@ -1453,15 +1439,14 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     });
 
     async function codingJob(organizationId: string) {
-      return taskJob(organizationId, "coding", "long");
+      return taskJob(organizationId, "coding");
     }
 
-    async function taskJob(organizationId: string, taskType: Tasks.TaskType, pool: string) {
+    async function taskJob(organizationId: string, taskType: Tasks.TaskType) {
       const { job } = await dispatcher().createAndPublish({
         organizationId,
         type: "defaults.run",
         taskType,
-        pool,
         payload: {},
         dedupeKey: randomUUID(),
       });
@@ -1516,12 +1501,14 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         ["review", "short"],
         ["coding", "long"],
       ] as const) {
-        const jobId = await taskJob(organizationId, taskType, pool);
+        const jobId = await taskJob(organizationId, taskType);
         const res = await claim(
           agentRequest("claim", accessToken, { body: { pools: [pool], waitSeconds: 0 } }),
         );
         expect(res.status).toBe(200);
-        expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
+        // The pool is derived from the task type, so the harness counts the right slots.
+        const { job } = (await res.json()) as JobStartResponse & { action: "run" };
+        expect(job).toMatchObject({ id: jobId, taskType, pool });
       }
     });
 
@@ -1607,7 +1594,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         organizationId: otherOrgId,
         type: "review.run",
         taskType: "review",
-        pool: "short",
         repositoryId: input.repositoryId ?? null,
         dedupeKey: randomUUID(),
       });
@@ -1643,7 +1629,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           organizationId: orgId,
           type: "repo.sync",
           taskType: "system",
-          pool: null,
           repositoryId,
           targetHarnessId: foreign.harnessId,
           dedupeKey,
@@ -1757,14 +1742,12 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
             organizationId: orgId,
             type: "review.run",
             taskType: "review",
-            pool: "short",
             createdAt: dayAgo,
           },
           {
             organizationId: otherOrgId,
             type: "review.run",
             taskType: "review",
-            pool: "short",
             createdAt: dayAgo,
           },
         ])
@@ -1799,20 +1782,17 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
             organizationId: orgId,
             type: "review.run",
             taskType: "review",
-            pool: "short",
             createdAt: dayAgo,
           },
           {
             organizationId: orgId,
             type: "review.run",
             taskType: "review",
-            pool: "short",
           },
           {
             organizationId: orgId,
             type: "review.run",
             taskType: "review",
-            pool: "short",
             status: "running",
             createdAt: dayAgo,
           },

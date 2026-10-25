@@ -179,7 +179,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         organizationId: orgId,
         type: "test.job",
         taskType: "review",
-        pool: "short",
         status: "running",
         harnessId,
         startedAt: new Date(),

@@ -40,7 +40,6 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       organizationId: orgA,
       type: "review.run",
       taskType: "review",
-      pool: "short",
       ...input,
     });
     await db
@@ -134,7 +133,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     });
 
     it("only counts jobs in the given pools", async () => {
-      await enqueue({ pool: "long", taskType: "coding", type: "ralph.run" });
+      await enqueue({ taskType: "coding", type: "ralph.run" });
       expect(await claimable(agentA, at(1), { pools: ["short"] })).toBe(false);
       expect(await claimable(agentA, at(1), { pools: ["long"] })).toBe(true);
     });
@@ -210,7 +209,6 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const coding = await enqueue({
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
     });
     expect(
       (await claim(agentA, at(1), { acceptedTaskTypes: ["query", "review"] })).claim,
@@ -222,8 +220,8 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
   });
 
   it("only claims jobs of the pools asked for", async () => {
-    const long = await enqueue({ taskType: "coding", pool: "long", createdAt: at(-20) });
-    const short = await enqueue({ taskType: "query", pool: "short", createdAt: at(-10) });
+    const long = await enqueue({ taskType: "coding", createdAt: at(-20) });
+    const short = await enqueue({ taskType: "query", createdAt: at(-10) });
     expect((await claim(agentA, at(1), { pools: [] })).claim).toBeNull();
     expect((await claim(agentA, at(1), { pools: ["short"] })).claim?.job.id).toBe(short);
     expect((await claim(agentA, at(1), { pools: ["short"] })).claim).toBeNull();
@@ -234,7 +232,6 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const sync = await enqueue({
       type: "repo.sync",
       taskType: "system",
-      pool: null,
     });
     expect((await claim(agentA, at(1), { acceptedTaskTypes: [], pools: [] })).claim?.job.id).toBe(
       sync,
