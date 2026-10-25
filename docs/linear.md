@@ -377,6 +377,18 @@ above, or a system attempt's rerun. Done on any other item, Snooze (5 minutes to
 Restore change only what that person's Inbox shows. A key that no longer matches an item answers
 404 "This item was already handled.".
 
+**Answer from Omniralph.** A run's open question (which repo to use, whether to run a manual
+story's preparation, what to do with a merged PR/MR's leftovers, or whether to allow a tool call)
+is in its detail (`GET /api/ui/runs/{id}`, `details.question`) and in its Inbox `question` item,
+with a `key`, a plain-language `prompt` and the offered `options`. Any member answers it with
+`POST /api/ui/runs/{id}/answer` (`{questionKey, optionId}`): the option becomes the reply the
+question offered (the repo's full path, "Run it", "Push to origin", "Allow"…) and goes through the
+same code as a reply in the session or chat thread, after a note "{name} answered from Omniralph:
+{option}" there, so the conversation stays a complete record. The run goes on as after the reply.
+A triage, review or ask run's tool permission is answered on its stored request, which its agent
+polls. A key that no longer matches the open question (answered elsewhere, expired or replaced)
+answers 409 "This question was already answered.".
+
 **Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls
 a repository's own Claude Code settings `ask` about (for example `"ask": ["Bash(git commit:*)"]` in
 a committed `.claude/settings.json`). Such a call is asked about in the agent session as an

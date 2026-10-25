@@ -23,6 +23,7 @@ import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
 import { runActions } from "./actions";
 import { runRow } from "./list";
+import { loadRunQuestion } from "./question";
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
@@ -281,6 +282,7 @@ export async function loadRunDetail(
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
+  const question = await loadRunQuestion(db, run, row.workItem?.identifier ?? null);
   const base: AttemptLabelContext = {
     workItem: row.workItem?.identifier ?? null,
     repository: row.repository?.fullPath ?? null,
@@ -347,6 +349,7 @@ export async function loadRunDetail(
         merged: pullRequest?.merged ?? null,
         closed: pullRequest?.closed ?? null,
       },
+      question,
       actions: runActions(row, organization.role, {
         stories: facts.stories,
         attempts: attemptViews,

@@ -731,10 +731,13 @@ export async function answerCleanup(
   deps: RalphDeps,
   runId: string,
   reply: string,
+  /** Only this lane's question (an answer from Omniralph names the question it answers). */
+  only?: { laneId: string },
 ): Promise<CleanupAnswer | null> {
   const result = await lockRun(deps.db, runId, async (tx, run) => {
     const lanes = await listLanes(tx, run.id);
     const pending = lanes
+      .filter((lane) => !only || lane.id === only.laneId)
       .flatMap((lane) => (lane.cleanup?.questions ?? []).map((question) => ({ ...question, lane })))
       .sort((a, b) => a.askedAt.localeCompare(b.askedAt));
     if (pending.length === 0) return null;

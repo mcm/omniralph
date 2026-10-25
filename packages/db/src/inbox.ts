@@ -56,6 +56,26 @@ export const INBOX_SYSTEM_JOB_TYPES = [
 ] as const;
 
 export type InboxQuestionKind = "repository" | "preparation" | "cleanup" | "permission";
+
+/** What a question is about, beyond its kind: what its prompt and options are built from. */
+export type InboxQuestionSubject =
+  /** The offered repositories, in the offered order. */
+  | { kind: "repository"; repositoryIds: string[] }
+  | { kind: "preparation"; storyTitle: string | null }
+  /** The question of one lane (the run's oldest open one). */
+  | {
+      kind: "cleanup";
+      laneId: string;
+      branch: string | null;
+      question: "stashes" | "branch";
+      /** Stash entries, or unmerged commits. */
+      count: number;
+    }
+  /**
+   * A tool call: a ralph run's (`ralph_runs.permission`), or a stored request of another
+   * run's job (`run_permission_requests`).
+   */
+  | { kind: "permission"; detail: string; jobId: string; requestId: string; stored: boolean };
 export type InboxReviewState =
   "none" | "review_requested" | "commented" | "changes_requested" | "approved";
 
@@ -78,6 +98,8 @@ export type InboxFacts =
         tool: string | null;
         /** The manual story a preparation question is about. */
         story: string | null;
+        /** What answers it offer, by kind. */
+        subject: InboxQuestionSubject;
       };
     }
   | { kind: "stopped_epic"; error: string | null }
@@ -152,7 +174,13 @@ interface Scope {
   orgs: SQL;
   cutoff: string;
   now: string;
+  /** Only this run's items (`listRunQuestions`). */
+  runId?: string;
 }
+
+/** `and <column> = <run>` when the scope is one run's. */
+const onlyRun = (scope: Scope, column: string) =>
+  scope.runId ? sql`and ${sql.raw(column)} = ${scope.runId}` : sql``;
 
 function ralphKind(mode: string): RunKind {
   return mode === "epic" ? "epic" : "request";
@@ -203,12 +231,21 @@ interface RalphQuestionRow extends Record<string, unknown> {
   ignore_blockers: boolean;
   repository_id: string | null;
   waiting_on: { blockers?: RalphIssueRef[] } | null;
-  pending_elicitation: { kind?: string } | null;
+  pending_elicitation: { kind?: string; repositoryIds?: string[] } | null;
   preparation: {
-    request?: { identifier?: string; askedAt?: string; answer?: string; jobId?: string } | null;
+    request?: {
+      identifier?: string;
+      title?: string;
+      askedAt?: string;
+      answer?: string;
+      jobId?: string;
+    } | null;
   } | null;
   permission: {
+    requestId?: string;
+    jobId?: string;
     tool?: string;
+    detail?: string;
     askedAt?: string;
     expiresAt?: string;
     answer?: string;
@@ -233,7 +270,7 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
         or r.pending_elicitation is not null
         or jsonb_typeof(r.preparation -> 'request') = 'object'
         or (r.permission is not null and r.permission ->> 'answer' is null))
-      and r.status <> 'failed'`);
+      and r.status <> 'failed' ${onlyRun(scope, "r.id")}`);
   const items: InboxCandidate[] = [];
   const now = Date.parse(scope.now);
   const cutoff = Date.parse(scope.cutoff);
@@ -269,22 +306,23 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
     // Repository and preparation questions are open only while the run is.
     const open = row.status !== "completed";
     const question = (
-      kind: InboxQuestionKind,
+      subject: InboxQuestionSubject,
       askedAt: string,
       extra: { expiresAt?: string | null; tool?: string | null; story?: string | null } = {},
     ) =>
       items.push({
         ...base,
-        key: `question:${row.id}:${kind}:${askedAt}`,
+        key: `question:${row.id}:${subject.kind}:${askedAt}`,
         since: new Date(askedAt),
         facts: {
           kind: "question",
           question: {
-            kind,
+            kind: subject.kind,
             askedAt,
             expiresAt: extra.expiresAt ?? null,
             tool: extra.tool ?? null,
             story: extra.story ?? null,
+            subject,
           },
         },
       });
@@ -295,11 +333,16 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
       !row.repository_id &&
       recent(row.created_at)
     ) {
-      question("repository", row.created_at);
+      question(
+        { kind: "repository", repositoryIds: row.pending_elicitation.repositoryIds ?? [] },
+        row.created_at,
+      );
     }
     const request = row.preparation?.request;
     if (open && request && !request.jobId && request.answer !== "run" && recent(request.askedAt)) {
-      question("preparation", request.askedAt!, { story: request.identifier ?? null });
+      question({ kind: "preparation", storyTitle: request.title ?? null }, request.askedAt!, {
+        story: request.identifier ?? null,
+      });
     }
     const permission = row.permission;
     if (
@@ -308,7 +351,14 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
       recent(permission.askedAt) &&
       (!permission.expiresAt || Date.parse(permission.expiresAt) > now)
     ) {
-      question("permission", permission.askedAt!, {
+      const subject: InboxQuestionSubject = {
+        kind: "permission",
+        detail: permission.detail ?? "",
+        jobId: permission.jobId ?? "",
+        requestId: permission.requestId ?? "",
+        stored: false,
+      };
+      question(subject, permission.askedAt!, {
         expiresAt: permission.expiresAt ?? null,
         tool: permission.tool ?? null,
       });
@@ -317,23 +367,35 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
   return items;
 }
 
-/** Open questions about a merged lane's leftovers: one item per run (its oldest question). */
+/**
+ * Open questions about a merged lane's leftovers: one item per run, about its oldest question
+ * (the next one shows once it is answered).
+ */
 async function cleanupQuestions(db: Queryable, scope: Scope): Promise<InboxCandidate[]> {
   const result = await db.execute<{
     run_id: string;
     organization_id: string;
     mode: string;
+    lane_id: string;
+    branch: string | null;
+    question: "stashes" | "branch";
+    shas: number | null;
+    commits: number | null;
     asked_at: string;
     expires_at: string | null;
   }>(sql`
-    select r.id as run_id, r.organization_id, r.mode,
-      min(q ->> 'askedAt') as asked_at, min(q ->> 'deadline') as expires_at
+    select distinct on (r.id) r.id as run_id, r.organization_id, r.mode, l.id as lane_id,
+      l.branch, q ->> 'kind' as question,
+      jsonb_array_length(case when jsonb_typeof(q -> 'shas') = 'array'
+        then q -> 'shas' else '[]'::jsonb end) as shas,
+      (q ->> 'commits')::int as commits,
+      q ->> 'askedAt' as asked_at, q ->> 'deadline' as expires_at
     from ralph_lanes l
     join ralph_runs r on r.id = l.run_id
     cross join lateral jsonb_array_elements(coalesce(l.cleanup -> 'questions', '[]'::jsonb)) q
     where r.organization_id in (${scope.orgs}) and r.status <> 'failed'
-      and jsonb_typeof(l.cleanup -> 'questions') = 'array'
-    group by r.id, r.organization_id, r.mode`);
+      and jsonb_typeof(l.cleanup -> 'questions') = 'array' ${onlyRun(scope, "r.id")}
+    order by r.id, q ->> 'askedAt', l.id`);
   const cutoff = Date.parse(scope.cutoff);
   return result.rows
     .filter((row) => Date.parse(row.asked_at) >= cutoff)
@@ -351,6 +413,13 @@ async function cleanupQuestions(db: Queryable, scope: Scope): Promise<InboxCandi
           expiresAt: row.expires_at,
           tool: null,
           story: null,
+          subject: {
+            kind: "cleanup",
+            laneId: row.lane_id,
+            branch: row.branch,
+            question: row.question,
+            count: (row.question === "stashes" ? row.shas : row.commits) ?? 0,
+          },
         },
       },
     }));
@@ -366,14 +435,19 @@ async function permissionRequests(db: Queryable, scope: Scope): Promise<InboxCan
     kind: RunKind;
     organization_id: string;
     tool: string;
+    detail: string;
+    job_id: string;
+    request_id: string;
     asked_at: string;
     expires_at: string;
   }>(sql`
-    select distinct on (run_id) run_id, kind, organization_id, tool, asked_at, expires_at from (
+    select distinct on (run_id) run_id, kind, organization_id, tool, detail, job_id, request_id,
+      asked_at, expires_at from (
       select coalesce(j.review_run_id, j.triage_run_id, j.chat_thread_run_id) as run_id,
         (case when j.review_run_id is not null then 'review'
           when j.triage_run_id is not null then 'triage' else 'ask' end) as kind,
-        j.organization_id, p.tool, ${iso("p.asked_at")} as asked_at,
+        j.organization_id, p.tool, p.detail, p.job_id, p.request_id,
+        ${iso("p.asked_at")} as asked_at,
         ${iso("p.expires_at")} as expires_at, p.asked_at as asked
       from run_permission_requests p join jobs j on j.id = p.job_id
       where j.organization_id in (${scope.orgs}) and j.ralph_run_id is null
@@ -383,6 +457,7 @@ async function permissionRequests(db: Queryable, scope: Scope): Promise<InboxCan
         and p.answer is null and p.expires_at > ${scope.now}::timestamptz
         and p.asked_at >= ${scope.cutoff}::timestamptz
     ) pending
+    where true ${onlyRun(scope, "run_id")}
     order by run_id, asked desc`);
   return result.rows.map((row) => ({
     key: `question:${row.run_id}:permission:${row.asked_at}`,
@@ -398,6 +473,13 @@ async function permissionRequests(db: Queryable, scope: Scope): Promise<InboxCan
         expiresAt: row.expires_at,
         tool: row.tool,
         story: null,
+        subject: {
+          kind: "permission",
+          detail: row.detail,
+          jobId: row.job_id,
+          requestId: row.request_id,
+          stored: true,
+        },
       },
     },
   }));
@@ -804,6 +886,37 @@ export async function findInboxItem(
   return byKey.get(query.key) ?? null;
 }
 
+/** A question item's candidate (`facts.kind` `question`). */
+export type InboxQuestionCandidate = InboxCandidate & {
+  facts: Extract<InboxFacts, { kind: "question" }>;
+};
+
+/**
+ * The run's open questions, whatever their age, oldest first: the items the Inbox derives for
+ * them (same keys), without the 14-day window. A run has a few at most (its repository or
+ * preparation question, a tool permission, a lane's cleanup question).
+ */
+export async function listRunQuestions(
+  db: Queryable,
+  run: { id: string; kind: RunKind; organizationId: string },
+  now = new Date(),
+): Promise<InboxQuestionCandidate[]> {
+  const scope: Scope = {
+    orgs: list([run.organizationId]),
+    now: now.toISOString(),
+    cutoff: new Date(0).toISOString(),
+    runId: run.id,
+  };
+  const queries =
+    run.kind === "epic" || run.kind === "request"
+      ? [ralphRunItems(db, scope), cleanupQuestions(db, scope)]
+      : [permissionRequests(db, scope)];
+  return (await Promise.all(queries))
+    .flat()
+    .filter((item): item is InboxQuestionCandidate => item.facts.kind === "question")
+    .sort((a, b) => a.since.getTime() - b.since.getTime() || a.key.localeCompare(b.key));
+}
+
 export interface InboxItemStateKey {
   userId: string;
   organizationId: string;
@@ -899,6 +1012,9 @@ export async function loadInboxReferences(
   const harnessIds = new Set<string>();
   for (const { facts } of items) {
     if (facts.kind === "pr_waiting") repositoryIds.add(facts.lane.repositoryId);
+    if (facts.kind === "question" && facts.question.subject.kind === "repository") {
+      for (const id of facts.question.subject.repositoryIds) repositoryIds.add(id);
+    }
     if (facts.kind === "failed_system") {
       if (facts.job.repositoryId) repositoryIds.add(facts.job.repositoryId);
       if (facts.job.harnessId) harnessIds.add(facts.job.harnessId);

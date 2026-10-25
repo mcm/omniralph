@@ -760,6 +760,7 @@ export {
   clearInboxItemState,
   findInboxItem,
   listInboxItems,
+  listRunQuestions,
   loadInboxReferences,
   pruneInboxItemStates,
   setInboxItemState,
@@ -770,7 +771,9 @@ export {
   type InboxFacts,
   type InboxItemKind,
   type InboxQuery,
+  type InboxQuestionCandidate,
   type InboxQuestionKind,
+  type InboxQuestionSubject,
   type InboxReviewState,
   type InboxTab,
 } from "./inbox.js";

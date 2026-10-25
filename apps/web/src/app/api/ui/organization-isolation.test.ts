@@ -189,6 +189,7 @@ const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
 const runRetry = await import("./runs/[id]/retry/route");
+const runAnswer = await import("./runs/[id]/answer/route");
 const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
@@ -1551,6 +1552,49 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     expect((await getRun(db, b.runId))!.status).toBe("pending");
     await updateRun(db, b.runId, { status: "running" });
+  });
+
+  it("refuses to answer the other organization's run's question, and lets its own members answer", async () => {
+    const { job } = await insertJob(db, {
+      organizationId: b.orgId,
+      type: "ralph.story",
+      taskType: "coding",
+      pool: "long",
+      ralphRunId: b.runId,
+    });
+    await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, job.id));
+    await updateRun(db, b.runId, {
+      permission: {
+        requestId: "req-isolation",
+        jobId: job.id,
+        tool: "Bash",
+        detail: "",
+        askedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      },
+    });
+    state.userId = b.memberId;
+    const questionKey = (
+      (await call(runDetail.GET, { params: { id: b.runId } })).body as {
+        details: { question: { key: string } };
+      }
+    ).details.question.key;
+    const answer = (id: string) =>
+      call(runAnswer.POST, { params: { id }, body: { questionKey, optionId: "deny" } });
+    for (const userId of [a.memberId, a.adminId]) {
+      state.userId = userId;
+      expect(await answer(b.runId)).toMatchObject({
+        status: 404,
+        body: { error: "That run doesn't exist." },
+      });
+    }
+    expect((await getRun(db, b.runId))!.permission?.answer).toBeUndefined();
+
+    state.userId = b.memberId;
+    expect(await answer(b.runId)).toMatchObject({ status: 200, body: { id: b.runId } });
+    expect((await getRun(db, b.runId))!.permission).toMatchObject({ answer: "denied" });
+    await updateRun(db, b.runId, { permission: null });
+    await db.delete(jobs).where(eq(jobs.id, job.id));
   });
 
   it("previews routing with only the organization's own runs and repositories", async () => {

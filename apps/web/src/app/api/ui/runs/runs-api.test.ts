@@ -888,6 +888,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       ],
       error: "A story ran out of attempts.",
       waitingOn: null,
+      question: null,
       actions: {
         // A failed run doesn't stop.
         stop: false,

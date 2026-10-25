@@ -26,6 +26,7 @@ import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
 import { storyIssueUrl } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
+import { questionView } from "@/lib/runs/question";
 
 const TAB_OF_PARAM: Record<InboxTabParam, InboxTab> = {
   "needs-you": "needs_you",
@@ -192,11 +193,10 @@ function itemFields(
       return {
         ...base,
         reason,
-        question: {
-          kind: question.kind,
-          askedAt: new Date(question.askedAt).toISOString(),
-          expiresAt: question.expiresAt ? new Date(question.expiresAt).toISOString() : null,
-        },
+        question: questionView(
+          { ...item, facts },
+          { workItem: row?.workItem?.identifier ?? null, repositories: references.repositories },
+        ),
       };
     }
     case "stopped_epic":
