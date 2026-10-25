@@ -265,7 +265,7 @@ export function TaskForm({
   return (
     <>
       <AppHeader breadcrumbs={breadcrumbs} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={title}
           description="A task runs an agent with its prompt on the triggers it accepts and hands the output to its sink. Changes apply to the next run."
@@ -695,7 +695,7 @@ export function TaskForm({
             }}
           />
         )}
-      </main>
+      </div>
     </>
   );
 }

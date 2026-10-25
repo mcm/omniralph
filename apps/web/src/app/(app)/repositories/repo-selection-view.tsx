@@ -214,7 +214,7 @@ export function RepoSelectionView({
           { label: name ? breadcrumb(name) : "…" },
         ]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={title || (provider === "github" ? "GitHub installation" : "GitLab connection")}
           description={intro}
@@ -362,7 +362,7 @@ export function RepoSelectionView({
             )
           }
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

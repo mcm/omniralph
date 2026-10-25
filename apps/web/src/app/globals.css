@@ -17,11 +17,6 @@ body {
   font-family: var(--or-font-sans);
 }
 
-/* The signed-in shell: sidebar rail and content fill at least the viewport. */
-.app-shell {
-  min-height: 100dvh;
-}
-
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
@@ -38,8 +33,18 @@ body {
   background: var(--text-tertiary);
 }
 
-/* App header (components/app-header.tsx): one line at every width. It grows rather than
-   clips if its content ever needs more room, and the breadcrumbs truncate instead of wrapping. */
+/* Today's pages inside the 2.0 shell (app/(app)/legacy-frame.tsx): the page fills the
+   main column's height, so the unsaved-changes bar sticks to the bottom of the viewport. */
+.legacy-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* App header (components/app-header.tsx): today's breadcrumbs, one line at every width. It
+   grows rather than clips if its content ever needs more room, and the breadcrumbs truncate
+   instead of wrapping. */
 .app-header {
   position: sticky;
   top: 0;
@@ -54,40 +59,6 @@ body {
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-subtle);
 }
-.app-header-start {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-}
-.app-header-end {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-.app-header-user {
-  gap: var(--space-2);
-  padding-right: var(--space-2);
-}
-.app-header-avatar {
-  width: 24px;
-  height: 24px;
-}
-.app-header-user-name {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-.app-header-chevron {
-  color: var(--text-tertiary);
-}
-
 .app-crumbs {
   min-width: 0;
 }
@@ -118,15 +89,10 @@ body {
   height: auto;
 }
 
-/* Phone: avatar-only user menu (no name, no chevron), and only the first and current
-   crumbs. */
+/* Phone: only the first and current crumbs. */
 @media (max-width: 767.98px) {
   .app-header {
     padding: var(--space-2) var(--space-3);
-  }
-  .app-header-user-name,
-  .app-header-chevron {
-    display: none;
   }
   .app-crumb-middle {
     display: none;
@@ -519,6 +485,16 @@ body {
 @media (max-width: 767px) {
   .unsaved-bar {
     padding-inline: var(--space-4);
+  }
+}
+/* Phone: the shell's top bar (52px) and tab bar are fixed over the page, so today's header
+   sticks below the one and the unsaved-changes bar above the other. */
+@media (max-width: 768px) {
+  .app-header {
+    top: 52px;
+  }
+  .or-frame--tabs .unsaved-bar {
+    bottom: calc(66px + env(safe-area-inset-bottom));
   }
 }
 
@@ -2033,67 +2009,6 @@ body {
   color: var(--text-tertiary);
 }
 
-/* sidebar, auth, legal, onboarding: shell, brand and auth-page layout */
-.sidebar-header {
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.sidebar-brand-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-}
-.sidebar-brand-mark {
-  width: 24px;
-  height: 24px;
-}
-.sidebar-brand-name {
-  font-family: var(--font-mono);
-  color: var(--text-accent);
-  letter-spacing: 0.12em;
-}
-.sidebar-brand-name {
-  font-size: var(--text-xs);
-}
-/* The organization picker sits above the signed-in user at the foot of the sidebar. */
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-.sidebar-footer.sidebar-footer-collapsed {
-  align-items: center;
-  padding: var(--space-2) 0 var(--space-3);
-}
-.sidebar-user {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.sidebar-avatar {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-.sidebar-avatar-fallback {
-  font-size: var(--text-ui-xs);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-}
 /* Signed-out pages (components/auth-shell.tsx, legal-shell.tsx): Ultraviolet on --or-page. */
 .auth-main,
 .legal-main {

@@ -424,7 +424,7 @@ export function ReviewDetailView() {
             : [{ label: "Reviews", href: "/reviews" }, { label: "Review" }]
         }
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={
             review ? (
@@ -468,7 +468,7 @@ export function ReviewDetailView() {
         <QueryBoundary query={detail} skeleton={<ReviewSkeleton />} what="the review">
           {(data) => <ReviewContent review={data.review} isAdmin={isAdmin} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

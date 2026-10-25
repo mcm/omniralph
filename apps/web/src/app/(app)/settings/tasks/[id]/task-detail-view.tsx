@@ -268,7 +268,7 @@ export function TaskDetailContent({
       <AppHeader
         breadcrumbs={[{ label: "Tasks", href: "/settings/tasks" }, { label: task.name }]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={task.name}
           description={task.description || undefined}
@@ -476,7 +476,7 @@ export function TaskDetailContent({
             <ReferrerList referrers={referrers} />
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

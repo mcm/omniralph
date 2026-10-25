@@ -351,7 +351,7 @@ export function HarnessSettingsView({ tab }: { tab: HarnessSettingsTab }) {
           { label: HARNESS_SETTINGS_TAB_LABELS[tab] },
         ]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Harness defaults"
           description="Settings every harness of this organization gets with its heartbeat."
@@ -362,7 +362,7 @@ export function HarnessSettingsView({ tab }: { tab: HarnessSettingsTab }) {
           {tab === "defaults" && <DefaultsTab />}
           {tab === "host-tools" && <HostToolsTab />}
         </div>
-      </main>
+      </div>
     </>
   );
 }

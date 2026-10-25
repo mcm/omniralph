@@ -1,106 +1,129 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { isNavActive } from "@omniralph/ui";
 import { describe, expect, it } from "vitest";
-import { isNavItemActive, navGroups, navGroupsForRole } from "@/lib/navigation";
+import { navItems } from "@/lib/navigation";
 
-describe("navGroups", () => {
-  it("lists the Omniralph sections", () => {
-    const labels = navGroups.flatMap((group) => group.items.map((item) => item.label));
-    expect(labels).toEqual([
-      "Repositories",
-      "Reviews",
-      "Triage",
-      "Harnesses",
-      "Jobs",
-      "Analytics",
-      "Organization",
-      "Agents",
-      "Tasks",
-      "Routing",
-      "Profiles",
-      "Integrations",
-      "Harness defaults",
-      "Chat accounts",
+const APP_DIR = path.resolve(__dirname, "../app/(app)");
+
+/** Every `page.tsx` under `src/app/(app)`, by the URL path it serves (route groups dropped). */
+function appPages(dir = APP_DIR, segments: string[] = []): Map<string, string> {
+  const pages = new Map<string, string>();
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) {
+      const next = /^\(.*\)$/.test(name) ? segments : [...segments, name];
+      for (const [route, file] of appPages(full, next)) pages.set(route, file);
+    } else if (name === "page.tsx") {
+      pages.set(`/${segments.join("/")}`, full);
+    }
+  }
+  return pages;
+}
+
+const pages = appPages();
+
+/** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
+function pageFor(href: string): string | undefined {
+  const exact = pages.get(href);
+  if (exact) return exact;
+  const wanted = href.split("/");
+  for (const [route, file] of pages) {
+    const parts = route.split("/");
+    if (
+      parts.length === wanted.length &&
+      parts.every((part, i) => part === wanted[i] || /^\[[^.\]]+\]$/.test(part))
+    ) {
+      return file;
+    }
+  }
+  return undefined;
+}
+
+describe("navItems", () => {
+  it("finds today's pages (sanity check)", () => {
+    expect(pages.get("/repositories")).toBeDefined();
+    expect(pages.get("/settings/routing")).toBeDefined();
+    expect(pages.get("/repositories/[id]/rules")).toBeDefined();
+    expect(pageFor("/repositories/abc/rules")).toBe(pages.get("/repositories/[id]/rules"));
+    expect(pageFor("/nowhere")).toBeUndefined();
+  });
+
+  it("points every entry at an existing page", () => {
+    for (const item of navItems) {
+      const page = pageFor(item.href);
+      expect(page, item.href).toBeDefined();
+      expect(existsSync(page!)).toBe(true);
+    }
+  });
+
+  it("lists Runs, Repos and Fleet, then Settings at the bottom", () => {
+    expect(
+      navItems.map(({ id, label, href, placement, phone }) => ({
+        id,
+        label,
+        href,
+        placement,
+        phone,
+      })),
+    ).toEqual([
+      { id: "runs", label: "Runs", href: "/reviews", placement: "main", phone: "tab" },
+      { id: "repos", label: "Repos", href: "/repositories", placement: "main", phone: "drawer" },
+      { id: "fleet", label: "Fleet", href: "/harnesses", placement: "main", phone: "drawer" },
+      {
+        id: "settings",
+        label: "Settings",
+        href: "/settings/organization",
+        placement: "bottom",
+        phone: "drawer",
+      },
     ]);
   });
 
-  it("links the harness pages", () => {
-    const items = navGroups.flatMap((group) => group.items);
-    expect(items).toContainEqual(
-      expect.objectContaining({ href: "/harnesses", label: "Harnesses" }),
-    );
-    expect(items).toContainEqual(
-      expect.objectContaining({
-        href: "/settings/harnesses",
-        label: "Harness defaults",
-        adminOnly: true,
-      }),
-    );
+  it("gives every entry its own icon", () => {
+    expect(new Set(navItems.map((item) => item.icon)).size).toBe(navItems.length);
   });
 
-  it("gives every destination one entry with a distinct label", () => {
-    const items = navGroups.flatMap((group) => group.items);
-    expect(new Set(items.map((item) => item.href)).size).toBe(items.length);
-    expect(new Set(items.map((item) => item.label)).size).toBe(items.length);
-    expect(new Set(items.map((item) => item.icon)).size).toBe(items.length);
-  });
-
-  it("links the agent definitions for every member", () => {
-    const items = navGroups.flatMap((group) => group.items);
-    const agents = items.find((item) => item.href === "/settings/agents");
-    expect(agents).toEqual({ href: "/settings/agents", label: "Agents", icon: "agents" });
-  });
-
-  it("links the task definitions for every member", () => {
-    const items = navGroups.flatMap((group) => group.items);
-    const tasks = items.find((item) => item.href === "/settings/tasks");
-    expect(tasks).toEqual({ href: "/settings/tasks", label: "Tasks", icon: "tasks" });
-  });
-});
-
-describe("navGroupsForRole", () => {
-  const labels = (role: "admin" | "member") =>
-    navGroupsForRole(role).map((g) => [g.label, g.items.map((i) => i.label)]);
-
-  it("shows admin pages to admins", () => {
-    expect(labels("admin")).toEqual([
-      [
-        "Operations",
-        ["Repositories", "Reviews", "Triage", "Harnesses", "Jobs", "Analytics"],
-      ],
-      [
-        "Settings",
-        [
-          "Organization",
-          "Agents",
-          "Tasks",
-          "Routing",
-          "Profiles",
-          "Integrations",
-          "Harness defaults",
-          "Chat accounts",
-        ],
-      ],
+  it.each([
+    ["/runs", "runs"],
+    ["/runs/abc", "runs"],
+    ["/reviews", "runs"],
+    ["/reviews/123", "runs"],
+    ["/triage/abc", "runs"],
+    ["/jobs", "runs"],
+    ["/analytics", "runs"],
+    ["/repositories", "repos"],
+    ["/repositories/abc/settings", "repos"],
+    ["/harnesses", "fleet"],
+    ["/harnesses/abc", "fleet"],
+    ["/settings/organization", "settings"],
+    ["/settings/routing", "settings"],
+    ["/settings/harnesses", "settings"],
+  ])("makes %s active for %s alone", (pathname, id) => {
+    expect(navItems.filter((item) => isNavActive(pathname, item)).map((item) => item.id)).toEqual([
+      id,
     ]);
   });
 
-  it("hides admin pages from members", () => {
-    expect(labels("member")).toEqual([
-      [
-        "Operations",
-        ["Repositories", "Reviews", "Triage", "Harnesses", "Jobs", "Analytics"],
-      ],
-      ["Settings", ["Organization", "Agents", "Tasks", "Routing", "Chat accounts"]],
-    ]);
-  });
-});
-
-describe("isNavItemActive", () => {
-  it("matches the page and its sub-pages", () => {
-    expect(isNavItemActive("/harnesses", "/harnesses")).toBe(true);
-    expect(isNavItemActive("/harnesses", "/harnesses/abc")).toBe(true);
+  it("makes every page reachable from an entry, except the root redirect", () => {
+    const orphaned = [...pages.keys()]
+      .filter((route) => route !== "/")
+      .filter((route) => !navItems.some((item) => isNavActive(route, item)));
+    expect(orphaned).toEqual([]);
   });
 
-  it("does not match sibling paths with a shared prefix", () => {
-    expect(isNavItemActive("/harnesses", "/harnessesx")).toBe(false);
-    expect(isNavItemActive("/jobs", "/harnesses")).toBe(false);
+  it("only links pages every member may open", () => {
+    for (const item of navItems) {
+      expect(item).not.toHaveProperty("adminOnly");
+      // An admin-only page sends members to access-denied; the entry's page and the views
+      // beside it must not.
+      const dir = path.dirname(pageFor(item.href)!);
+      const sources = readdirSync(dir)
+        .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+        .map((name) => readFileSync(path.join(dir, name), "utf8"));
+      for (const source of sources) {
+        expect(source, item.href).not.toMatch(/ACCESS_DENIED_PATH|role !== "admin"/);
+      }
+    }
   });
 });

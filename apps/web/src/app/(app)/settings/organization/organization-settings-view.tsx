@@ -694,7 +694,7 @@ export function OrganizationSettingsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Organization" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Organization"
           description={
@@ -706,7 +706,7 @@ export function OrganizationSettingsView() {
         <QueryBoundary query={query} skeleton={<SettingsSkeleton />} what="the organization">
           {(settings) => <OrganizationSettingsContent {...settings} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

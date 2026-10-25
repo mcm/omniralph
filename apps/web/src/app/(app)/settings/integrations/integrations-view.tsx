@@ -236,7 +236,7 @@ function AdminIntegrationsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Integrations" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Integrations"
           description="Issue trackers Omniralph works from and chat platforms people talk to it in. Delegating a Linear issue to the Omniralph app starts a coding task."
@@ -264,7 +264,7 @@ function AdminIntegrationsView() {
         <QueryBoundary query={query} skeleton={<IntegrationsSkeleton />} what="the integrations">
           {(settings) => <IntegrationsContent {...settings} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

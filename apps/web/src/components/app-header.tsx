@@ -9,19 +9,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  Button,
   cn,
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  SidebarTrigger,
-  useSidebar,
 } from "@iamthemcmaster/ui";
-import { IconChevronDown } from "@tabler/icons-react";
-import { userDisplayName, userInitials } from "@/lib/user-display";
-import { useCurrentUser } from "./current-user";
 import { Link } from "./link";
-import { UserMenu } from "./user-menu";
 
 /** A breadcrumb; `href` only when the crumb has a page of its own. */
 export interface Crumb {
@@ -30,42 +20,18 @@ export interface Crumb {
 }
 
 interface AppHeaderProps {
-  /** Starts with the sidebar entry that is active for this page. */
+  /** Starts with the section the page belongs to. */
   breadcrumbs?: Crumb[];
 }
 
+/**
+ * Today's page header inside the 2.0 shell: the page's breadcrumbs. The theme and "Sign out"
+ * live in the shell's user menu, and the shell draws the navigation at every width.
+ */
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
-  const user = useCurrentUser();
-  const { isMobile } = useSidebar();
-  const name = userDisplayName(user);
   return (
     <header className="app-header">
-      <div className="app-header-start">
-        {/* Below 768px the sidebar is a sheet; this opens it. */}
-        {isMobile && <SidebarTrigger className="shrink-0" />}
-        {breadcrumbs.length > 0 && <HeaderBreadcrumbs crumbs={breadcrumbs} />}
-      </div>
-
-      <div className="app-header-end">
-        {/* User menu, with the theme. Below 768px the name is hidden and the avatar alone opens it. */}
-        <UserMenu
-          trigger={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="app-header-user"
-              aria-label={`Account menu for ${name}`}
-            >
-              <Avatar className="app-header-avatar">
-                {user.image && <AvatarImage src={user.image} alt="" />}
-                <AvatarFallback>{userInitials(user)}</AvatarFallback>
-              </Avatar>
-              <span className="app-header-user-name">{name}</span>
-              <IconChevronDown size={12} className="app-header-chevron" />
-            </Button>
-          }
-        />
-      </div>
+      {breadcrumbs.length > 0 && <HeaderBreadcrumbs crumbs={breadcrumbs} />}
     </header>
   );
 }

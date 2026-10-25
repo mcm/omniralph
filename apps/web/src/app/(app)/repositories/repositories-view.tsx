@@ -667,7 +667,7 @@ export function RepositoriesView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Repositories" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Repositories"
           description="Pull and merge requests in repositories with reviews on are reviewed automatically when they're opened or pushed to. Set each repository's task types in its settings."
@@ -741,7 +741,7 @@ export function RepositoriesView() {
             </Stack>
           </Card>
         )}
-      </main>
+      </div>
     </>
   );
 }

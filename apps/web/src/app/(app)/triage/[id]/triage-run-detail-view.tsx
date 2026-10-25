@@ -499,7 +499,7 @@ export function TriageRunDetailView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Triage", href: "/triage" }, { label }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={
             run ? (
@@ -536,7 +536,7 @@ export function TriageRunDetailView() {
         <QueryBoundary query={detail} skeleton={<TriageRunSkeleton />} what="the triage run">
           {(data) => <TriageRunContent run={data.run} isAdmin={isAdmin} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

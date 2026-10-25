@@ -575,7 +575,7 @@ export function RulesView() {
           { label: "Rules" },
         ]}
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={
             repository ? (
@@ -606,7 +606,7 @@ export function RulesView() {
         <QueryBoundary query={rules} skeleton={<RulesSkeleton />} what="the rules">
           {(data: RepositoryRules) => <RulesContent repositoryId={id} rules={data.rules} />}
         </QueryBoundary>
-      </main>
+      </div>
     </>
   );
 }

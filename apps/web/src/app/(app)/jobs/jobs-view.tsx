@@ -515,7 +515,7 @@ export function JobsView() {
   return (
     <>
       <AppHeader breadcrumbs={[{ label: "Jobs" }]} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title="Jobs"
           description="Queued, running and finished jobs of every type."
@@ -566,7 +566,7 @@ export function JobsView() {
             </QueryBoundary>
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

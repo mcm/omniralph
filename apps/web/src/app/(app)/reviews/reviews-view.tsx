@@ -333,7 +333,7 @@ export function ReviewsView({ inRepository = false }: { inRepository?: boolean }
             : [{ label: "Reviews" }]
         }
       />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={
             !repositoryId ? (
@@ -420,7 +420,7 @@ export function ReviewsView({ inRepository = false }: { inRepository?: boolean }
             </QueryBoundary>
           </CardContent>
         </Card>
-      </main>
+      </div>
     </>
   );
 }

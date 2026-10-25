@@ -228,7 +228,7 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
   return (
     <>
       <AppHeader breadcrumbs={breadcrumbs} />
-      <main className="detail-main">
+      <div className="detail-main">
         <PageHeader
           title={title}
           description="An agent is the persona tasks run on. Changes apply to the next run of every task using it."
@@ -509,7 +509,7 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
             }}
           />
         )}
-      </main>
+      </div>
     </>
   );
 }
