@@ -221,6 +221,15 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       })
       .returning();
 
+    // Coding runs' jobs are coding and query tasks, not legacy job types.
+    const CODING_RUN_TASK_TYPES: Record<
+      string,
+      { taskType: "coding" | "query"; pool: "long" | "short" }
+    > = {
+      "ralph.story": { taskType: "coding", pool: "long" },
+      "ralph.request": { taskType: "coding", pool: "long" },
+      "ralph.describe-pr": { taskType: "query", pool: "short" },
+    };
     const job = (
       organizationId: string,
       repositoryId: string | null,
@@ -236,7 +245,7 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       type,
       ...(type.startsWith("review.")
         ? { taskType: "review" as const, pool: "short" }
-        : legacyJobRouting(type)),
+        : (CODING_RUN_TASK_TYPES[type] ?? legacyJobRouting(type))),
       repositoryId,
       status,
       ...link,

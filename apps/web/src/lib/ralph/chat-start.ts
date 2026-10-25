@@ -2,8 +2,7 @@
  * Starts a request-mode ralph run from a chat thread (the control-panel
  * agent's `start_work`): the run belongs to the thread, works in the
  * repository the agent named and runs the agent's request as a `ralph.request`
- * job (on the repository's `tasks` path, a coding run of the chat "start
- * work" task), like a Linear mention. A follow-up in the thread (its last run worked
+ * coding run of the chat "start work" task, like a Linear mention. A follow-up in the thread (its last run worked
  * in the same repository) continues that run's branch and PR/MR.
  */
 import {

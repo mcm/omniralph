@@ -1,15 +1,21 @@
 /**
  * Ralph: building a delegated Linear epic story by story.
- * The control panel orchestrates the run; agents run its jobs:
+ * The control panel orchestrates the run; agents run its jobs. Stories,
+ * requests and PR/MR descriptions are coding and query runs of the
+ * repository's tasks, whose `jobs.type` names the run step:
  *
- * - `ralph.story`: one attempt at one story in the epic's branch worktree
- *   (Claude session, quality gates, commit, push).
- * - `ralph.describe-pr`: a read-only session that writes the PR/MR title and body.
+ * - `ralph.story`: a coding run of one attempt at one story in the epic's
+ *   branch worktree (Claude session, quality gates, commit, push).
+ * - `ralph.describe-pr`: a query run that writes the PR/MR title and body.
+ * - `ralph.request`: a coding run doing what a request from the Linear
+ *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
+ * - `ralph.push`: a coding run with no session that pushes a lane's branch.
+ *
+ * The agent's ralph capability still runs two legacy jobs (`RALPH_JOB_TYPES`):
+ *
  * - `ralph.prepare`: runs the approved `cyralph-prepare` commands of a manual story
  *   (legacy: the control panel now runs them as the `worktree.exec` system RPC,
  *   with the same payload and result).
- * - `ralph.request`: one Claude session doing what a request from the Linear
- *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  * - `ralph.cleanup`: removes a merged lane's branch worktree and local branch,
  *   and carries out the answers to the questions about its leftovers
  *   (legacy: the control panel now runs it as the `worktree.cleanup` system
@@ -29,16 +35,11 @@ export const RALPH_CLEANUP_JOB_TYPE = "ralph.cleanup";
 /**
  * A coding run with no session that pushes a lane's branch once before its
  * PR/MR is described, when the story task pushes only at the end (`pushTiming:
- * end`). Only on the `tasks` coding path: no legacy job has this type.
+ * end`).
  */
 export const RALPH_PUSH_JOB_TYPE = "ralph.push";
-export const RALPH_JOB_TYPES = [
-  RALPH_STORY_JOB_TYPE,
-  RALPH_DESCRIBE_PR_JOB_TYPE,
-  RALPH_PREPARE_JOB_TYPE,
-  RALPH_REQUEST_JOB_TYPE,
-  RALPH_CLEANUP_JOB_TYPE,
-] as const;
+/** The legacy job types the agent's ralph capability runs. */
+export const RALPH_JOB_TYPES = [RALPH_PREPARE_JOB_TYPE, RALPH_CLEANUP_JOB_TYPE] as const;
 
 /** Attempts (not queue deliveries) a story gets before it is marked exhausted. */
 export const MAX_ATTEMPTS_PER_STORY = 3;
@@ -158,7 +159,7 @@ export const RalphStoryListItem = RalphIssue.extend({
 });
 export type RalphStoryListItem = z.infer<typeof RalphStoryListItem>;
 
-/** Payload of a `ralph.story` job: one attempt at one story. */
+/** Trigger context of a `ralph.story` coding run: one attempt at one story. */
 export const RalphStoryPayload = RalphJobBase.extend({
   /** The `ralph_stories` row. */
   storyId: z.uuid(),
@@ -243,7 +244,7 @@ export const RalphStoryMetric = z.object({
 });
 export type RalphStoryMetric = z.infer<typeof RalphStoryMetric>;
 
-/** Result of a `ralph.story` job (`/api/harness/jobs/{id}/result`). */
+/** Outcome of a `ralph.story` coding run (`/api/harness/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
   /** What was done, or what is in the way; posted to Linear. */
@@ -270,7 +271,7 @@ export const RalphStoryResult = z.object({
 });
 export type RalphStoryResult = z.infer<typeof RalphStoryResult>;
 
-/** Payload of a `ralph.describe-pr` job: every story is done; describe the branch. */
+/** What a `ralph.describe-pr` query run describes: every story is done; describe the branch. */
 export const RalphDescribePrPayload = RalphJobBase.extend({
   epic: RalphIssue.extend({
     url: z.url().nullable(),
@@ -302,10 +303,10 @@ export const RalphDescribePrTriggerContext = z.looseObject({
 });
 export type RalphDescribePrTriggerContext = z.infer<typeof RalphDescribePrTriggerContext>;
 
-/** Longest PR/MR title a `ralph.describe-pr` job returns. */
+/** Longest PR/MR title a `ralph.describe-pr` run returns. */
 export const MAX_PULL_REQUEST_TITLE_LENGTH = 72;
 
-/** Result of a `ralph.describe-pr` job: the PR/MR the control panel opens or updates. */
+/** A PR/MR description a `ralph.describe-pr` run writes: the PR/MR the control panel opens or updates. */
 export const RalphDescribePrResult = z.object({
   title: z.string().trim().min(1).max(MAX_PULL_REQUEST_TITLE_LENGTH),
   body: z.string().trim().min(1).max(60_000),
@@ -368,7 +369,7 @@ export type WorktreeExecResult = RalphPrepareResult;
 export const RALPH_REQUEST_SOURCES = ["linear", "chat"] as const;
 export type RalphRequestSource = (typeof RALPH_REQUEST_SOURCES)[number];
 
-/** Payload of a `ralph.request` job: a lane's pending requests, done in one Claude session. */
+/** Trigger context of a `ralph.request` coding run: a lane's pending requests, done in one Claude session. */
 export const RalphRequestPayload = RalphJobBase.extend({
   /**
    * Where the requests come from. Older control panels don't send it (Linear);
@@ -454,7 +455,7 @@ export const RalphFindingOutcome = z.object({
 });
 export type RalphFindingOutcome = z.infer<typeof RalphFindingOutcome>;
 
-/** Result of a `ralph.request` job. */
+/** Outcome of a `ralph.request` coding run. */
 export const RalphRequestResult = z.object({
   /** For the Linear thread: what the session did, or why it couldn't (`error`). */
   summary: z.string().max(20_000),

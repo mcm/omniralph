@@ -141,7 +141,6 @@ export async function loadRepositoryCoding(
   const models = await listReportedModels(db, organizationId, { harnessIds });
   return {
     settings: {
-      codingPath: repository.codingPath,
       storyTaskId: repository.storyTaskId,
       requestTaskId: repository.requestTaskId,
       ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),

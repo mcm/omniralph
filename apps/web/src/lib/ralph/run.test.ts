@@ -19,6 +19,7 @@ import {
   failJob,
   getJob,
   getMainLane,
+  getRepository,
   updateLane,
   followUpSources,
   getFollowUpSource,
@@ -284,10 +285,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   /** The job's outcome hooks: a coding run's are the `ralph-run` sink's, the same ralph hooks. */
   const expectRalphHooks = async (job: Job) => {
-    if (job.taskId !== null)
-      expect((await taskSink(job, organizationDefinitions(db, job.organizationId)))?.kind).toBe(
-        "ralph-run",
-      );
+    expect((await taskSink(job, organizationDefinitions(db, job.organizationId)))?.kind).toBe(
+      "ralph-run",
+    );
   };
 
   /**
@@ -346,10 +346,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   /**
    * Plays the agent's part for the run's queued describe job (a description,
-   * an invalid result or a failure): a `ralph.describe-pr` job, or on the
-   * `tasks` path a query run whose `run-result` sink hands it to the ralph
-   * run (its `onStarted`, then the ralph hooks). Returns the
-   * `ralph.describe-pr` payload (a query run's is in its trigger context).
+   * an invalid result or a failure): a `ralph.describe-pr` query run whose
+   * `run-result` sink hands it to the ralph run (its `onStarted`, then the
+   * ralph hooks). Returns the `ralph.describe-pr` payload (in its trigger context).
    */
   async function describePr(
     runId: string,
@@ -369,8 +368,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
     expect(claim?.job.id).toBe(job.id);
     const sink = await taskSink(job, organizationDefinitions(db, job.organizationId));
-    if (job.taskId !== null) expect(sink?.kind).toBe("run-result");
-    expect(await (sink?.onStarted ?? onRalphJobStarted)(db, job, harnessId)).toEqual({
+    expect(sink?.kind).toBe("run-result");
+    expect(await sink!.onStarted!(db, job, harnessId)).toEqual({
       skip: false,
     });
     if ("jobError" in outcome) {
@@ -384,18 +383,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     } else {
       const { title, body, usage } = description("invalid" in outcome ? {} : outcome);
       const text = "invalid" in outcome ? { summary: body } : { title, body };
-      const result =
-        job.taskId === null
-          ? { ...text, usage }
-          : {
-              outcome: "answered",
-              answer: null,
-              structured: text,
-              references: [],
-              usage,
-              durationMs: 1000,
-            };
-      if (job.taskId !== null) expect(sink?.parseResult?.(result)).not.toBeNull();
+      const result = {
+        outcome: "answered",
+        answer: null,
+        structured: text,
+        references: [],
+        usage,
+        durationMs: 1000,
+      };
+      expect(sink?.parseResult?.(result)).not.toBeNull();
       await completeJob(db, { jobId: job.id, harnessId, result });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
@@ -430,25 +426,20 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }),
   });
 
-  describe.each(["legacy", "tasks"] as const)("on the %s coding path", (path) => {
-    beforeEach(async () => {
-      await db.update(repositories).set({ codingPath: path });
-    });
-
+  describe("coding and query runs", () => {
     afterEach(async () => {
       await db.update(repositories).set({
-        codingPath: "legacy",
         storyTaskId: "builtin:implement-story",
         requestTaskId: "builtin:handle-request",
       });
     });
 
-    /** A story or request job's routing on this path: a coding run of `taskId`, or a legacy job. */
+    /** A story or request job's routing: a coding run of `taskId`. */
     const routing = (taskId: string) => ({
       taskType: "coding",
       pool: "long",
-      taskId: path === "tasks" ? taskId : null,
-      minHarnessVersion: path === "tasks" ? CODING_TASKS_MIN_HARNESS_VERSION : null,
+      taskId,
+      minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
@@ -489,13 +480,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const payload = storyPayload(first);
       // The job is linked to the story it works on.
       expect(first.ralphStoryId).toBe(payload.storyId);
-      if (path === "tasks") {
-        // Today's payload is the coding run's trigger context.
-        expect(first.payload).toMatchObject({
-          trigger: { kind: "linear.delegated", context: payload },
-          repositoryId: repoId,
-        });
-      }
+      // Today's payload is the coding run's trigger context.
+      expect(first.payload).toMatchObject({
+        trigger: { kind: "linear.delegated", context: payload },
+        repositoryId: repoId,
+      });
       expect(payload).toMatchObject({
         runId: run.id,
         repositoryId: repoId,
@@ -572,37 +561,35 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         targetHarnessId: agentA,
         ralphRunId: run.id,
         dedupeKey: runDedupeKey(run.id),
-        taskId: path === "tasks" ? "builtin:describe-pr" : null,
-        minHarnessVersion: path === "tasks" ? QUERY_TASKS_MIN_HARNESS_VERSION : null,
+        taskId: "builtin:describe-pr",
+        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       });
-      if (path === "tasks") {
-        // A query run of the story task's `prDescriptionTaskId` in a checkout of the branch, with
-        // today's payload and the values its template renders.
-        expect(describeJob.payload).toMatchObject({
-          trigger: {
-            kind: "run.invoked",
-            context: {
-              invoker: { kind: "ralph-run", id: run.id },
-              payload: describePrPayload(describeJob),
-              branch: "feat/epic",
-              baseBranch: "develop",
-              prTerm: "pull request",
-              epic: { identifier: "ENG-1", title: "Epic" },
-              stories: {
-                items: [
-                  { identifier: "ENG-2", title: "Alpha", commit: sha(3).slice(0, 10) },
-                  { identifier: "ENG-3", title: "Beta", commit: sha(2).slice(0, 10) },
-                  { identifier: "ENG-4", title: "Gamma", commit: sha(1).slice(0, 10) },
-                ],
-              },
-              qualityGates: { items: ["pnpm test", "pnpm lint"] },
+      // A query run of the story task's `prDescriptionTaskId` in a checkout of the branch, with
+      // today's payload and the values its template renders.
+      expect(describeJob.payload).toMatchObject({
+        trigger: {
+          kind: "run.invoked",
+          context: {
+            invoker: { kind: "ralph-run", id: run.id },
+            payload: describePrPayload(describeJob),
+            branch: "feat/epic",
+            baseBranch: "develop",
+            prTerm: "pull request",
+            epic: { identifier: "ENG-1", title: "Epic" },
+            stories: {
+              items: [
+                { identifier: "ENG-2", title: "Alpha", commit: sha(3).slice(0, 10) },
+                { identifier: "ENG-3", title: "Beta", commit: sha(2).slice(0, 10) },
+                { identifier: "ENG-4", title: "Gamma", commit: sha(1).slice(0, 10) },
+              ],
             },
+            qualityGates: { items: ["pnpm test", "pnpm lint"] },
           },
-          repositoryId: repoId,
-          ref: "feat/epic",
-          requireCheckout: true,
-        });
-      }
+        },
+        repositoryId: repoId,
+        ref: "feat/epic",
+        requireCheckout: true,
+      });
       const describePayload = await describePr(run.id);
       expect(describePayload).toMatchObject({
         runId: run.id,
@@ -941,11 +928,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         baseBranch: "main",
         requests: [{ text: "fix CI" }],
       });
-      if (path === "tasks") {
-        // The request run's trigger is its oldest request's origin.
-        expect(first.job.payload).toMatchObject({ trigger: { kind: "linear.mention" } });
-        expect(second.job.payload).toMatchObject({ trigger: { kind: "pr.ci-failed" } });
-      }
+      // The request run's trigger is its oldest request's origin.
+      expect(first.job.payload).toMatchObject({ trigger: { kind: "linear.mention" } });
+      expect(second.job.payload).toMatchObject({ trigger: { kind: "pr.ci-failed" } });
 
       expect(await activeJobs(run.id)).toEqual([]);
       expect((await getRun(db, run.id))?.status).toBe("completed");
@@ -974,26 +959,48 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await delegate(epic.id);
       const job = await activeJob(run.id);
       expect(job).toMatchObject({ type: "ralph.story", ...routing("builtin:implement-story") });
-      if (path === "tasks") {
-        // 0.10.0 has no coding lifecycle: it would fail the run as an unsupported task type.
-        for (const harnessVersion of [null, "0.10.0"]) {
-          const { claim } = await claimJob(db, {
-            organizationId: orgId,
-            harnessId: agentA,
-            acceptedTaskTypes: ["query", "coding"],
-            pools: ["short", "long"],
-            harnessVersion,
-            maxDeliveries: MAX_JOB_DELIVERIES,
-          });
-          expect(claim).toBeNull();
-        }
+      // 0.10.0 has no coding lifecycle: it would fail the run as an unsupported task type.
+      for (const harnessVersion of [null, "0.10.0"]) {
+        const { claim } = await claimJob(db, {
+          organizationId: orgId,
+          harnessId: agentA,
+          acceptedTaskTypes: ["query", "coding"],
+          pools: ["short", "long"],
+          harnessVersion,
+          maxDeliveries: MAX_JOB_DELIVERIES,
+        });
+        expect(claim).toBeNull();
       }
       // A harness on the coding tasks' minimum (or later) runs it.
       await work(run.id, { commitSha: sha(67) });
       expect(await activeJob(run.id)).toMatchObject({ type: "ralph.describe-pr" });
     });
 
-    it("runs stories with the repository's story task on the tasks path only", async () => {
+    it("runs a formerly legacy repository's stories and PR description as task runs", async () => {
+      // A repository that was on the legacy jobs keeps its default story and request tasks (0092).
+      expect(await getRepository(db, repoId)).toMatchObject({
+        storyTaskId: "builtin:implement-story",
+        requestTaskId: "builtin:handle-request",
+      });
+      const epic = linear.add({ identifier: "ENG-171", title: "Epic" });
+      linear.add({ identifier: "ENG-172", title: "Only", parentId: epic.id });
+      const run = await delegate(epic.id);
+      expect(await activeJob(run.id)).toMatchObject({
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+        taskId: "builtin:implement-story",
+      });
+      await work(run.id, { commitSha: sha(171) });
+      expect(await activeJob(run.id)).toMatchObject({
+        type: "ralph.describe-pr",
+        taskType: "query",
+        pool: "short",
+        taskId: "builtin:describe-pr",
+      });
+    });
+
+    it("runs stories with the repository's story task, failing the run when it isn't a coding task", async () => {
       await db
         .update(repositories)
         .set({ storyTaskId: "builtin:describe-pr" })
@@ -1001,10 +1008,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const epic = linear.add({ identifier: "ENG-65", title: "Epic" });
       linear.add({ identifier: "ENG-66", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
-      if (path === "legacy") {
-        expect(await activeJob(run.id)).toMatchObject({ type: "ralph.story", taskId: null });
-        return;
-      }
       // Not a coding task: the run can't go on.
       expect(await activeJobs(run.id)).toEqual([]);
       expect(await getRun(db, run.id)).toMatchObject({
@@ -1013,7 +1016,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       });
     });
 
-    it("runs stories with the organization's custom story task on the tasks path", async () => {
+    it("runs stories with the organization's custom story task", async () => {
       const { id: _id, name: _name, ...definition } = getBuiltinTask("builtin:implement-story")!;
       const custom = await insertTaskDefinition(db, orgId, {
         name: "Careful story",
@@ -1046,7 +1049,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const job = await activeJob(run.id);
       expect(job).toMatchObject({
         type: "ralph.describe-pr",
-        taskId: path === "tasks" ? "builtin:describe-pr" : null,
+        taskId: "builtin:describe-pr",
       });
       expect((await getRun(db, run.id))?.prJobId).toBe(job.id);
       expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({
@@ -1067,9 +1070,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await describingRun(150);
       const long =
         "Add gadgets with configurable widgets, sprockets and a settings page for all of them";
-      // A legacy job's title arrives fitted by the harness; a query run's is fitted by the control panel.
+      // A query run's title is fitted by the control panel.
       await describePr(run.id, {
-        title: path === "tasks" ? long : fitTitle(long),
+        title: long,
         body: "Adds gadgets.",
       });
       expect(fitTitle(long)).toBe(
@@ -1211,7 +1214,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
   });
 
-  describe("push and draft PR timing on the tasks path", () => {
+  describe("push and draft PR timing", () => {
     const setEarly = (openPullRequestEarly: boolean) =>
       updateRepositoryRalphSettings(db, repoId, {
         ralphEnabled: true,
@@ -1222,16 +1225,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         },
       });
 
-    beforeEach(async () => {
-      await db.update(repositories).set({ codingPath: "tasks" });
-    });
-
     afterEach(async () => {
       vi.restoreAllMocks();
       changedBuiltins.clear();
-      await db
-        .update(repositories)
-        .set({ codingPath: "legacy", storyTaskId: "builtin:implement-story" });
+      await db.update(repositories).set({ storyTaskId: "builtin:implement-story" });
       await setEarly(false);
     });
 
@@ -1843,7 +1840,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       .filter((b) => b.includes("is blocked"));
     expect(thought).toContain(`Its work so far is committed as \`${sha(9).slice(0, 10)}\`.`);
     // The other story's payload carries the log with the wip entry.
-    const other = RalphStoryPayload.parse((await activeJob(run.id)).payload);
+    const other = storyPayload(await activeJob(run.id));
     expect(other.progress).toContain("ENG-46: Needs a key (blocked)");
     // Not a Linear completion: the story stays open.
     const comments = linear.comments.filter((c) => c.issueId === blocked.linearIssueId);
@@ -2116,7 +2113,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     await linear.setIssueState(outside.id, { type: "completed" });
     await event(outside.id);
-    expect((await activeJob(run.id)).payload).toMatchObject({ story: { identifier: "ENG-61" } });
+    expect(storyPayload(await activeJob(run.id))).toMatchObject({ story: { identifier: "ENG-61" } });
     expect(await getRun(db, run.id)).toMatchObject({ status: "running", waitingOn: null });
   });
 

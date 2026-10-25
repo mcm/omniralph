@@ -47,6 +47,7 @@ import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
 import { reconcileCi, respondToCi } from "./ci";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { ralphJobPayload } from "./coding";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -229,9 +230,12 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     const describe = await start(run.id);
     expect(describe.type).toBe("ralph.describe-pr");
     await finish(describe, {
-      title: "Build the epic",
-      body: "Builds it.",
+      outcome: "answered",
+      answer: null,
+      structured: { title: "Build the epic", body: "Builds it." },
+      references: [],
       usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
     });
     expect((await getRun(db, run.id))?.status).toBe("completed");
     expect(scm.changeRequests).toHaveLength(1);
@@ -249,7 +253,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
 
   const requestTexts = async (runId: string) =>
     (await requestJobs(runId)).map((j) =>
-      RalphRequestPayload.parse(j.payload)
+      RalphRequestPayload.parse(ralphJobPayload(j))
         .requests.map((r) => r.text)
         .join("\n\n"),
     );
@@ -459,13 +463,13 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     // Both PRs are handled in one pass: the main lane's request runs first.
     const first = await start(run.id);
     expect(first).toMatchObject({ type: "ralph.request", repositoryId: repoId });
-    expect(RalphRequestPayload.parse(first.payload).requests[0]!.text).toContain(
+    expect(RalphRequestPayload.parse(ralphJobPayload(first)).requests[0]!.text).toContain(
       `pull request #1 (${scm.changeRequests[0]!.url}) failed on \`head1\``,
     );
     await finish(first, requestResult());
     const second = await start(run.id);
     expect(second).toMatchObject({ type: "ralph.request", repositoryId: otherRepoId });
-    const payload = RalphRequestPayload.parse(second.payload);
+    const payload = RalphRequestPayload.parse(ralphJobPayload(second));
     expect(payload.requests[0]!.text).toContain(`pull request #8 (${webUrl}) failed on \`head1\``);
     expect(payload).toMatchObject({ branch: main.branch });
     await finish(second, requestResult());

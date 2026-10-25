@@ -216,7 +216,7 @@ export async function runPushRun(
 /**
  * A story run (its
  * trigger context parses as `RalphStoryPayload`, e.g. `builtin:implement-story`)
- * is one attempt at one story, as a `ralph.story` job (`runStoryAttempt`):
+ * is one attempt at one story (`runStoryAttempt`):
  * the lane's branch worktree with the repository's setup command and the
  * `pre-push` guard, the run's stashes, attachments and progress file, and the
  * task's setup commands (`taskCommands`); then a
@@ -286,7 +286,7 @@ export async function runStoryRun(
 
 /**
  * A request run (its trigger context parses as `RalphRequestPayload`, e.g.
- * `builtin:handle-request`) is one request session, as a `ralph.request` job
+ * `builtin:handle-request`) is one request session
  * (`runRequestAttempt`): the lane's branch worktree and the task's setup
  * commands (`taskCommands`; its teardown commands run after the attempt,
  * whatever happened), resuming the lane's last

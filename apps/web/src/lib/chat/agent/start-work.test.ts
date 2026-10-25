@@ -64,6 +64,7 @@ const { processThreadRunEvents } = await import("./wake");
 const { LINK_REQUIRED_RESULT } = await import("./tools");
 const { askPermission } = await import("@/lib/ralph/permissions");
 const { onRalphJobFinished, onRalphJobStarted } = await import("@/lib/ralph/jobs");
+const { ralphJobPayload } = await import("@/lib/ralph/coding");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -344,7 +345,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     await setChatTaskDefaults(db, orgId, null, null);
     await db
       .update(repositories)
-      .set({ codingPath: "legacy", requestTaskId: "builtin:handle-request" })
+      .set({ requestTaskId: "builtin:handle-request" })
       .where(eq(repositories.id, appRepoId));
     await db.execute("DELETE FROM chat_threads");
     chatThread = (await ensureChatThread(db, {
@@ -436,7 +437,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       status: "queued",
       targetHarnessId: null,
     });
-    const payload = RalphRequestPayload.parse(job!.payload);
+    const payload = RalphRequestPayload.parse(ralphJobPayload(job!));
     expect(payload).toMatchObject({
       source: "chat",
       branch: `omniralph/chat-${run.id.slice(0, 8)}`,
@@ -561,7 +562,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       .select()
       .from(jobs)
       .where(and(eq(jobs.ralphRunId, second.id), eq(jobs.status, "queued")));
-    const payload = RalphRequestPayload.parse(next!.payload);
+    const payload = RalphRequestPayload.parse(ralphJobPayload(next!));
     expect(payload).toMatchObject({ branch: firstLane.branch, prUrl: firstLane.prUrl });
     // The follow-up keeps the lane's base branch: it doesn't read the default branch again.
     expect(scm.calls.filter((c) => c === "getDefaultBranch")).toHaveLength(branchReads);
@@ -582,7 +583,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       .select()
       .from(jobs)
       .where(and(eq(jobs.ralphRunId, second.id), eq(jobs.status, "queued")));
-    const payload = RalphRequestPayload.parse(next!.payload);
+    const payload = RalphRequestPayload.parse(ralphJobPayload(next!));
     expect(payload).toMatchObject({ ship: true, branch: firstLane.branch });
     expect(payload.requests[0]!.text).toMatch(/^Ship it\./);
     expect(systemOf(calls[0]!)).toContain("set `ship` on start_work");
@@ -613,11 +614,11 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       prUrl: null,
     });
   });
-  it("runs the channel's start work task on the tasks path, over the repository's request task", async () => {
+  it("runs the channel's start work task over the repository's request task", async () => {
     // The repository's own request task doesn't take chat requests: the run's task is used instead.
     await db
       .update(repositories)
-      .set({ codingPath: "tasks", requestTaskId: "builtin:implement-story" })
+      .set({ requestTaskId: "builtin:implement-story" })
       .where(eq(repositories.id, appRepoId));
     // The organization's choice is gone (e.g. a deleted custom task); the channel's override wins.
     await setChatTaskDefaults(

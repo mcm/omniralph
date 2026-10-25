@@ -373,8 +373,9 @@ both paths, and both share all run state.
   `ralph.request`, `ralph.describe-pr`), the run dedupe key and the sticky target, and carry the
   legacy payload (`buildStoryPayload`, `buildRequestPayload`, …) as their trigger context, so live
   messages, the Jobs page and the outcome hooks are unchanged; code reads a ralph job's payload
-  with `ralphJobPayload(job)`. Omniralph builds itself with this loop, so the legacy path stays
-  until a coding run has merged a real PR; deleting it is a separate issue.
+  with `ralphJobPayload(job)`. Omniralph builds itself with this loop, so the legacy path stayed
+  until a coding run had merged a real PR. TOOL-576 (2026-10-25) deleted it: the switch and the
+  harness's legacy story, request and describe code are gone, and every repository is on `tasks`.
 - **Prompts.** Story and request prompts are the tasks' templates over contexts built from the same
   inputs as `buildStoryPrompt` and `buildRequestPrompt`, and render the same for the same inputs
   (snapshot and parity tests in `packages/tasks`). `builtin:engineer`'s system prompt is

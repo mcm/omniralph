@@ -36,7 +36,6 @@ const STORY_ID = "33333333-3333-4333-8333-333333333333";
 const REQUEST_ID = "44444444-4444-4444-8444-444444444444";
 
 const ralph: RalphSettingsValues = {
-  codingPath: "tasks",
   storyTaskId: STORY_ID,
   requestTaskId: REQUEST_ID,
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
@@ -304,7 +303,7 @@ describe("RepositorySettingsView tabs", () => {
     expect(settings).toContain("Default: Correlate findings.");
     const coding = render("coding");
     expect(coding).toContain("Default: opus.");
-    expect(coding).toContain("Default: Legacy jobs.");
+    expect(coding).not.toContain("Coding path");
   });
 });
 

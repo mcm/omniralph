@@ -1,12 +1,11 @@
 # Linear (ralph)
 
 Ralph builds Linear issues: delegate an epic (or a single issue) to the Omniralph Linear app and
-the control panel runs it story by story on a harness, one `ralph.story` job per
-story, then opens a pull/merge request to the repository's default branch. See
-[ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated. Depending on the
-repository's **Coding path**, those jobs run the harness's legacy ralph code or are coding runs of
-built-in tasks ([deploy-harness.md](deploy-harness.md#coding-path-legacy-jobs-or-coding-tasks));
-everything below applies to both, except where it says otherwise.
+the control panel runs it story by story on a harness, one `ralph.story` coding run per story
+attempt, then opens a pull/merge request to the repository's default branch. See
+[ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated. Stories and
+requests are coding runs of the repository's story and request tasks
+([deploy-harness.md](deploy-harness.md#coding-runs)).
 
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
@@ -115,8 +114,8 @@ decided by the organization's [routing rules](#routing-rules), not by the reposi
 
 | Setting | What it does |
 | -- | -- |
-| **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. On the **Coding tasks** path the story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
-| **Coding path** (`codingPath`) | `legacy` (**Legacy jobs**, the default) or `tasks` (**Coding tasks**): whether stories and requests run as the legacy ralph jobs or as coding runs of `builtin:implement-story` and `builtin:handle-request`. Applies from a run's next job. On **Coding tasks**, the story task's `pushTiming` says when the branch is pushed: `per-story` (the default, today's behaviour) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
+| **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. The story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
+| **Story task** (`storyTaskId`) and **Request task** (`requestTaskId`) | The coding tasks stories and requests run as (by default `builtin:implement-story` and `builtin:handle-request`). The story task's `pushTiming` says when the branch is pushed: `per-story` (the default) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
 
 The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
 config), with the same names and defaults, grouped as on the page:

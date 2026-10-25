@@ -93,7 +93,6 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
 
 const coding: RepositoryCoding = {
   settings: {
-    codingPath: "tasks",
     storyTaskId: "builtin:implement-story",
     requestTaskId: "builtin:handle-request",
     ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),

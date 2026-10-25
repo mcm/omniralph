@@ -1619,8 +1619,15 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         type: "ralph.request",
         taskType: "coding",
         pool: "long",
+        taskId: "builtin:handle-request",
         ralphRunId: run.id,
-        payload: { requests: [{ id: message.id, text: message.text }] },
+        // A coding run's payload: the request is its trigger context.
+        payload: {
+          trigger: {
+            kind: "linear.mention",
+            context: { requests: [{ id: message.id, text: message.text }] },
+          },
+        },
       });
       await db
         .update(jobs)

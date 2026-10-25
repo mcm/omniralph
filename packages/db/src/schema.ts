@@ -151,7 +151,6 @@ export const ralphMessageTrigger = pgEnum("ralph_message_trigger", [
   "pr.fix-command",
 ]);
 /** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
-export const repositoryCodingPath = pgEnum("repository_coding_path", ["legacy", "tasks"]);
 /** What started a triage run: an `@omniralph /triage` mention, or the triage label. */
 export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
 /** A Linear issue draft posted from chat: `creating` while its **Create** click runs. */
@@ -935,11 +934,9 @@ export const repositories = pgTable(
       .$type<RalphSettings>()
       .notNull()
       .default(DEFAULT_RALPH_SETTINGS),
-    /** Whether ralph runs enqueue the legacy `ralph.story`/`ralph.request` jobs or coding tasks. */
-    codingPath: repositoryCodingPath("coding_path").notNull().default("legacy"),
-    /** The coding task a story attempt runs on the `tasks` path. */
+    /** The coding task a story attempt runs. */
     storyTaskId: text("story_task_id").notNull().default("builtin:implement-story"),
-    /** The coding task a lane's requests run on the `tasks` path. */
+    /** The coding task a lane's requests run. */
     requestTaskId: text("request_task_id").notNull().default("builtin:handle-request"),
     /** GitLab project webhook ID created on connect (deleted on disconnect). */
     webhookId: text("webhook_id"),

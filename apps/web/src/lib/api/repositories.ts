@@ -1,8 +1,4 @@
-import {
-  RALPH_CODING_PATHS,
-  RALPH_HISTORY_REWRITE_POLICIES,
-  type RalphSettingsInput,
-} from "@omniralph/shared";
+import { RALPH_HISTORY_REWRITE_POLICIES, type RalphSettingsInput } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, linearSettingsOptionsSchema, mutationResultSchema } from "./schemas";
 
@@ -183,7 +179,6 @@ export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 
 /** The Coding tab's saved values, as its form edits them (`RalphSettingsInput`). */
 const codingSettingsSchema = z.object({
-  codingPath: z.enum(RALPH_CODING_PATHS),
   storyTaskId: z.string(),
   requestTaskId: z.string(),
   verifyCommands: z.array(z.string()),

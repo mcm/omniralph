@@ -12,12 +12,10 @@ import {
   MAX_FIX_ROUNDS,
   MAX_SETUP_COMMAND_LENGTH,
   MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
-  RALPH_CODING_PATHS,
   RALPH_HISTORY_REWRITE_POLICIES,
   RalphSettingsInput,
   RepositoryTaskTypesInput,
   type FieldErrors,
-  type RalphCodingPath,
   type RalphHistoryRewrite,
 } from "@omniralph/shared";
 import {
@@ -37,7 +35,6 @@ import { mutationResultSchema } from "@/lib/api/schemas";
 import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 import { settingChanges, withDefault, withoutFieldErrors } from "@/lib/settings/changes";
 import {
-  CODING_PATH_LABELS,
   CODING_SECTIONS,
   HISTORY_REWRITE_LABELS,
   pickKeys,
@@ -499,33 +496,12 @@ export function CodingSettingsSections({
             title="Agent"
             description="How stories and requests are worked: which tasks, which model, what the sessions are told and which tools they may use."
           >
-            <Field
-              label="Coding path"
-              htmlFor="ralph-coding-path"
-              description={withDefault(
-                "How runs work stories and requests: the legacy jobs, or coding runs of the story and request tasks below.",
-                RALPH_DEFAULT_TEXT.codingPath,
-              )}
-              error={errors.codingPath}
-            >
-              <NativeSelect
-                id="ralph-coding-path"
-                value={draft.codingPath}
-                onChange={(e) => set("codingPath", e.target.value as RalphCodingPath)}
-              >
-                {RALPH_CODING_PATHS.map((path) => (
-                  <option key={path} value={path}>
-                    {CODING_PATH_LABELS[path]}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
             <div className="settings-row">
               <TaskPicker
                 id="ralph-story-task"
                 label="Story task"
                 hint={withDefault(
-                  "The coding task that works delegated stories on the coding-tasks path.",
+                  "The coding task that works delegated stories.",
                   taskName(RALPH_REPOSITORY_DEFAULTS.storyTaskId),
                 )}
                 value={draft.storyTaskId}
@@ -538,7 +514,7 @@ export function CodingSettingsSections({
                 id="ralph-request-task"
                 label="Request task"
                 hint={withDefault(
-                  "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands) on the coding-tasks path.",
+                  "The coding task that handles requests (mentions, chat, review findings, CI failures, fix commands).",
                   taskName(RALPH_REPOSITORY_DEFAULTS.requestTaskId),
                 )}
                 value={draft.requestTaskId}

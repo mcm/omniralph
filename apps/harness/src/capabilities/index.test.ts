@@ -8,12 +8,7 @@ import {
   type Capability,
   type JobContext,
 } from "./index.js";
-import {
-  NotImplementedJobError,
-  RALPH_DESCRIBE_PR_TOOL_POLICY,
-  RALPH_TOOL_POLICY,
-  ralphCapability,
-} from "./ralph/index.js";
+import { NotImplementedJobError, RALPH_PREPARE_TOOL_POLICY, ralphCapability } from "./ralph/index.js";
 
 describe("capability registry", () => {
   it("ships only the ralph capability, and no system, review or triage capability", () => {
@@ -27,38 +22,31 @@ describe("capability registry", () => {
       expect(registry.forJob({ type })).toBeUndefined();
     }
     expect(registry.forJob({ type: "review.other" })).toBeUndefined();
-    for (const type of ["ralph.story", "ralph.describe-pr", "ralph.prepare"]) {
+    for (const type of ["ralph.prepare", "ralph.cleanup"]) {
       expect(registry.forJob({ type })?.name).toBe("ralph");
+    }
+    // Stories, requests and PR/MR descriptions run as coding and query tasks, by their run spec.
+    for (const type of ["ralph.story", "ralph.request", "ralph.describe-pr"]) {
+      expect(registry.forJob({ type })).toBeUndefined();
     }
   });
 
   it("dispatches by job type, so a type may belong to one capability only", () => {
     const [ralph] = defaultCapabilities() as [Capability];
     expect(
-      () => new CapabilityRegistry([ralph, { ...ralph, name: "other", jobTypes: ["ralph.story"] }]),
-    ).toThrow(/job type 'ralph.story' registered twice/);
+      () => new CapabilityRegistry([ralph, { ...ralph, name: "other", jobTypes: ["ralph.prepare"] }]),
+    ).toThrow(/job type 'ralph.prepare' registered twice/);
   });
 
-  it("lets ralph story sessions write, and keeps describe-pr sessions read-only", () => {
-    expect(RALPH_TOOL_POLICY).toMatchObject({
-      tools: "claude_code",
-      permissionMode: "bypassPermissions",
-      settingSources: ["user", "project", "local"],
-      writable: true,
-    });
-    expect(toolPolicyFor(ralphCapability, "ralph.story")).toBe(RALPH_TOOL_POLICY);
-    const describePr = toolPolicyFor(ralphCapability, "ralph.describe-pr");
-    expect(describePr).toBe(RALPH_DESCRIBE_PR_TOOL_POLICY);
-    expect(describePr.writable).toBe(false);
-    expect(describePr.permissionMode).not.toBe("bypassPermissions");
-    for (const tool of ["Write", "Edit", "MultiEdit", "Bash"]) {
-      expect(describePr.allowedTools).not.toContain(tool);
-      expect(describePr.disallowedTools).toContain(tool);
-    }
+  it("runs prepare jobs without a writable session", () => {
+    const prepare = toolPolicyFor(ralphCapability, "ralph.prepare");
+    expect(prepare).toBe(RALPH_PREPARE_TOOL_POLICY);
+    expect(prepare.writable).toBe(false);
+    expect(prepare.permissionMode).not.toBe("bypassPermissions");
   });
 
   it("fails ralph job types it doesn't know as not implemented, never as retryable", async () => {
-    for (const type of ["ralph.frobnicate"]) {
+    for (const type of ["ralph.frobnicate", "ralph.story", "ralph.request", "ralph.describe-pr"]) {
       const job: JobPayload = {
         id: "00000000-0000-4000-8000-000000000001",
         type,

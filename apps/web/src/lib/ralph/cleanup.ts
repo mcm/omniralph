@@ -14,7 +14,7 @@
  *   branch, and asks nothing. Resuming a stopped run drops one that hasn't
  *   started (`dropKeepBranchCleanups`). Nothing deletes a branch on origin.
  * - The work runs as a `worktree.cleanup` system RPC on the run's sticky
- *   harness (on both coding paths; a legacy `ralph.cleanup` job queued before
+ *   harness (a legacy `ralph.cleanup` job queued before
  *   that is still applied), which
  *   holds the lane's branch worktree, once none of the run's jobs is active
  *   (until then the lane's cleanup is `pending`). It stashes uncommitted

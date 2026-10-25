@@ -181,7 +181,6 @@ describe("RepositoryTaskTypesInput", () => {
 });
 
 const validRalph: RalphSettingsInput = {
-  codingPath: "tasks",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
   verifyCommands: ["pnpm typecheck", "pnpm test"],

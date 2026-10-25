@@ -104,7 +104,7 @@ export interface RequestAttemptPrepared {
   ship(request: ShipRequest): Promise<ShipOutcome>;
 }
 
-/** The session settings that differ between the legacy `ralph.request` job and a coding run. */
+/** The session settings a coding run gives its request attempt. */
 export type RequestSessionSettings = Pick<
   SessionRequest,
   | "prompt"
@@ -163,8 +163,8 @@ function sessionError(session: SessionResult): string {
  * pushed after the session the same way. What the session leaves uncommitted
  * is stashed and reported. Replies from the Linear thread reach the live
  * session. A Claude rate limit throws `RetryableJobError`; a canceled job
- * stashes its work and rejects. Shared by `ralph.request` jobs (`runRequest`)
- * and coding runs of request tasks (`runCodingTask`).
+ * stashes its work and rejects. Run by coding runs of request tasks
+ * (`runCodingTask`).
  */
 export async function runRequestAttempt(args: RequestAttemptArgs): Promise<RalphRequestResult> {
   const { payload, ctx, options } = args;

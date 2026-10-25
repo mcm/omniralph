@@ -46,6 +46,7 @@ import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
+import { ralphJobPayload } from "./coding";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { stopRun } from "./reply";
 import { retryRalphRun, type RalphRetryTarget } from "./retry";
@@ -215,17 +216,21 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     const job = await start(runId);
     expect(job.type).toBe("ralph.story");
     await finish(job, storyResult(outcome));
-    return RalphStoryPayload.parse(job.payload);
+    return RalphStoryPayload.parse(ralphJobPayload(job));
   }
 
   /** Plays the run's queued describe job. */
   async function describePr(runId: string): Promise<void> {
     const job = await start(runId);
     expect(job.type).toBe("ralph.describe-pr");
+    // A query run: its `run-result` sink hands the description to the ralph run.
     await finish(job, {
-      title: "Build the epic",
-      body: "Builds it.",
+      outcome: "answered",
+      answer: null,
+      structured: { title: "Build the epic", body: "Builds it." },
+      references: [],
       usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
     });
   }
 
@@ -476,9 +481,9 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
         });
         const again = await activeJob(run.id);
         expect(again.type).toBe("ralph.request");
-        expect(RalphRequestPayload.parse(again.payload).requests.map((r) => r.text)).toEqual([
-          "fix the typo in the README",
-        ]);
+        expect(
+          RalphRequestPayload.parse(ralphJobPayload(again)).requests.map((r) => r.text),
+        ).toEqual(["fix the typo in the README"]);
         expect(thoughts(run)).toContain("Retried from Omniralph by Ada Admin.");
       },
     );

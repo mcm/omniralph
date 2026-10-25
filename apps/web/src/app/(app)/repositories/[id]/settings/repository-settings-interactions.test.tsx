@@ -29,7 +29,6 @@ const saves = (part: string) =>
   seen.filter((r) => r.method === "PUT" && r.path === `/api/ui/repositories/repo-1/${part}`);
 
 const ralph: RalphSettingsValues = {
-  codingPath: "tasks",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),

@@ -109,8 +109,6 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       queryEnabled: null,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
-      // Ralph runs stay on the legacy jobs until an admin switches (0064).
-      codingPath: "legacy",
       storyTaskId: "builtin:implement-story",
       requestTaskId: "builtin:handle-request",
     });
@@ -128,7 +126,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     ).rejects.toThrow();
   });
 
-  it("adds the coding path and a request's trigger (0064)", async () => {
+  it("adds the story and request tasks and a request's trigger (0064), without the coding path (0092)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns
        where table_schema = 'public'
@@ -137,12 +135,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
        order by column_name`,
     );
     expect(rows).toEqual([
-      { column_name: "coding_path", is_nullable: "NO" },
       { column_name: "request_task_id", is_nullable: "NO" },
       { column_name: "story_task_id", is_nullable: "NO" },
       { column_name: "trigger", is_nullable: "YES" },
     ]);
-    await expect(db.$client.query(`select 'other'::repository_coding_path`)).rejects.toThrow();
+    await expect(db.$client.query(`select 'tasks'::repository_coding_path`)).rejects.toThrow();
   });
 
   it("adds hidden refs, unique per repository and ref (0065)", async () => {
@@ -910,6 +907,134 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [org, connection],
         );
         expect(added).toEqual([{ enabled: null, ralph_enabled: null, query_enabled: null }]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
+  it("moves every repository to the tasks coding path, keeping its tasks, and cancels active legacy coding jobs (0092)", async () => {
+    await db.execute(sql`create database repository_coding_path`);
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/repository_coding_path");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0092_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const connection = connections[0]!.id;
+        // Production-shaped: most repositories on the legacy jobs with the default tasks, a few on tasks.
+        await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id, coding_path)
+           values ($1, 'github', '1', 'acme/legacy', $2, 'legacy')`,
+          [org, connection],
+        );
+        await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id, coding_path, story_task_id, request_task_id)
+           values ($1, 'github', '2', 'acme/tasks', $2, 'tasks', 'builtin:implement-story', 'builtin:handle-request')`,
+          [org, connection],
+        );
+        // Active legacy jobs never run again; finished ones and task runs stay as they are.
+        await client.query(
+          `insert into jobs (organization_id, type, task_type, pool, task_id, status, payload, dedupe_key) values
+             ($1, 'ralph.story', 'coding', 'long', null, 'running', '{}', 'legacy-story'),
+             ($1, 'ralph.request', 'coding', 'long', null, 'queued', '{}', 'legacy-request'),
+             ($1, 'ralph.describe-pr', 'query', 'short', null, 'queued', '{}', 'legacy-describe'),
+             ($1, 'ralph.story', 'coding', 'long', null, 'completed', '{}', 'legacy-done'),
+             ($1, 'ralph.story', 'coding', 'long', 'builtin:implement-story', 'queued', '{}', 'task-story'),
+             ($1, 'ralph.cleanup', 'coding', 'long', null, 'queued', '{}', 'legacy-cleanup')`,
+          [org],
+        );
+
+        await runMigrations(uri);
+        const { rows: jobRows } = await client.query(
+          `select dedupe_key, status, cancel_requested, error is not null as has_error from jobs order by dedupe_key`,
+        );
+        expect(jobRows).toEqual([
+          {
+            dedupe_key: "legacy-cleanup",
+            status: "queued",
+            cancel_requested: false,
+            has_error: false,
+          },
+          {
+            dedupe_key: "legacy-describe",
+            status: "canceled",
+            cancel_requested: true,
+            has_error: true,
+          },
+          {
+            dedupe_key: "legacy-done",
+            status: "completed",
+            cancel_requested: false,
+            has_error: false,
+          },
+          {
+            dedupe_key: "legacy-request",
+            status: "canceled",
+            cancel_requested: true,
+            has_error: true,
+          },
+          {
+            dedupe_key: "legacy-story",
+            status: "canceled",
+            cancel_requested: true,
+            has_error: true,
+          },
+          { dedupe_key: "task-story", status: "queued", cancel_requested: false, has_error: false },
+        ]);
+        const { rows } = await client.query<Record<string, unknown>>(
+          `select * from repositories order by full_path`,
+        );
+        expect(
+          rows.map((r) => ({
+            full_path: r.full_path,
+            story_task_id: r.story_task_id,
+            request_task_id: r.request_task_id,
+          })),
+        ).toEqual([
+          {
+            full_path: "acme/legacy",
+            story_task_id: "builtin:implement-story",
+            request_task_id: "builtin:handle-request",
+          },
+          {
+            full_path: "acme/tasks",
+            story_task_id: "builtin:implement-story",
+            request_task_id: "builtin:handle-request",
+          },
+        ]);
+        for (const row of rows) expect(row).not.toHaveProperty("coding_path");
+        const { rows: types } = await client.query(
+          `select 1 from pg_type where typname = 'repository_coding_path'`,
+        );
+        expect(types).toEqual([]);
       } finally {
         await client.end();
       }

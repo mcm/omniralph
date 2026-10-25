@@ -54,6 +54,7 @@ import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { ralphJobPayload } from "./coding";
 import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
@@ -229,7 +230,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     const job = await start(runId);
     expect(job.type).toBe("ralph.story");
     await finish(job, "jobError" in outcome ? outcome : { ...storyResult(outcome) });
-    return RalphStoryPayload.parse(job.payload);
+    return RalphStoryPayload.parse(ralphJobPayload(job));
   }
 
   /** Plays the run's queued `ralph.request` job (a summary). Returns its payload. */
@@ -243,7 +244,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       usage: { inputTokens: 1, outputTokens: 1 },
       durationMs: 10,
     });
-    return RalphRequestPayload.parse(job.payload);
+    return RalphRequestPayload.parse(ralphJobPayload(job));
   }
 
   /** Plays the run's queued `worktree.exec` system RPC. Returns its payload. */
@@ -1115,34 +1116,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
           await restore(webId);
         }
       });
-    });
-
-    it("runs the preparation as worktree.exec on the tasks coding path too", async () => {
-      const codingPath = (path: "legacy" | "tasks") =>
-        updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
-          codingPath: path,
-        });
-      const { bucket, run } = await manualEpic();
-      await work(run.id, { commitSha: sha(7) });
-      await codingPath("tasks");
-      try {
-        await reply(run, "Run it");
-        expect(await activeJob(run.id)).toMatchObject({
-          type: "worktree.exec",
-          taskType: "system",
-          pool: null,
-          taskId: null,
-          targetHarnessId: agentA,
-        });
-        await prepare(run.id, {});
-        expect((await getRun(db, run.id))?.preparation?.handled).toMatchObject({
-          [bucket.id]: { how: "prepared", headSha: sha(7) },
-        });
-      } finally {
-        await codingPath("legacy");
-      }
     });
 
     it("still applies a ralph.prepare job queued before preparations ran as worktree.exec", async () => {

@@ -7,7 +7,6 @@ import {
   DEFAULT_RALPH_SETTINGS,
   parseLines,
   parsePathExcludes,
-  type RalphCodingPath,
   type RalphHistoryRewrite,
   type RalphSettingsInput,
   type RepositorySettingsInput,
@@ -214,14 +213,12 @@ export function repositorySpecs(names: {
 
 /** Defaults of the Ralph section's repository columns (`@omniralph/db`; a test keeps them in step). */
 export const RALPH_REPOSITORY_DEFAULTS = {
-  codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
 } as const satisfies Partial<RalphSettingsInput>;
 
 /** The Ralph form: picked lists as chips, commands one per line, numbers as typed. */
 export interface RalphDraft {
-  codingPath: RalphCodingPath;
   storyTaskId: string;
   requestTaskId: string;
   verifyCommands: string;
@@ -280,7 +277,7 @@ export function ralphValues(draft: RalphDraft): RalphSettingsInput {
 
 /** The Ralph section's cards and the settings each one saves. */
 export const RALPH_CARDS = {
-  ralph: ["codingPath", "storyTaskId", "requestTaskId"],
+  ralph: ["storyTaskId", "requestTaskId"],
   verification: ["verifyCommands", "runPrdQualityGates", "setupCommand"],
   prompt: ["appendInstruction", "model", "fallbackModel"],
   tools: ["allowedTools", "disallowedTools"],
@@ -317,11 +314,6 @@ export const CODING_SECTIONS = {
   danger: DANGER_KEYS,
 } satisfies Record<string, readonly (keyof RalphSettingsInput)[]>;
 
-export const CODING_PATH_LABELS: Record<RalphCodingPath, string> = {
-  legacy: "Legacy jobs",
-  tasks: "Coding tasks",
-};
-
 export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
   "when-asked": "When asked",
   always: "Always (rebase, never merge)",
@@ -329,7 +321,6 @@ export const HISTORY_REWRITE_LABELS: Record<RalphHistoryRewrite, string> = {
 };
 
 const RALPH_LABELS: Record<keyof RalphSettingsInput, string> = {
-  codingPath: "Coding path",
   storyTaskId: "Story task",
   requestTaskId: "Request task",
   verifyCommands: "Verify commands",
@@ -359,7 +350,6 @@ export function ralphSpecs(
   taskNames: ReadonlyMap<string, string>,
 ): Record<keyof RalphSettingsInput, SettingSpec<keyof RalphSettingsInput>> {
   const formats: Partial<Record<keyof RalphSettingsInput, SettingSpec["format"]>> = {
-    codingPath: (value) => CODING_PATH_LABELS[value as RalphCodingPath] ?? String(value),
     historyRewrite: (value) =>
       HISTORY_REWRITE_LABELS[value as RalphHistoryRewrite] ?? String(value),
     storyTaskId: byName(taskNames),
@@ -390,7 +380,6 @@ export const RALPH_DEFAULT_TEXT = {
   manualLabels: DEFAULT_RALPH_SETTINGS.manualLabels.join(", "),
   blockedLabels: DEFAULT_RALPH_SETTINGS.blockedLabels.join(", "),
   historyRewrite: HISTORY_REWRITE_LABELS[DEFAULT_RALPH_SETTINGS.historyRewrite],
-  codingPath: CODING_PATH_LABELS[RALPH_REPOSITORY_DEFAULTS.codingPath],
   onOff: (value: boolean) => formatSettingValue(value),
 };
 

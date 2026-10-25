@@ -1,6 +1,8 @@
 import type { Job } from "@omniralph/db";
 import {
   INSTALL_JOB_TYPE,
+  RALPH_DESCRIBE_PR_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
   REPO_SYNC_JOB_TYPE,
   REVIEW_TASK_JOB_TYPE,
@@ -78,7 +80,10 @@ describe("jobRerunKind", () => {
     expect(jobRerunKind({ type: REVIEW_TASK_JOB_TYPE, payload: {} })).toBeNull();
     expect(jobRerunKind({ type: REPO_SYNC_JOB_TYPE, payload: {} })).toBe("copy");
     expect(jobRerunKind({ type: INSTALL_JOB_TYPE, payload: {} })).toBe("copy");
-    expect(jobRerunKind({ type: RALPH_STORY_JOB_TYPE, payload: {} })).toBeNull();
+    // Stories, requests and PR/MR descriptions are coding and query runs: their ralph run retries them.
+    for (const type of [RALPH_STORY_JOB_TYPE, RALPH_REQUEST_JOB_TYPE, RALPH_DESCRIBE_PR_JOB_TYPE]) {
+      expect(jobRerunKind({ type, payload: {} })).toBeNull();
+    }
     expect(jobRerunKind({ type: "triage.run", payload: {} })).toBeNull();
   });
 
@@ -186,7 +191,12 @@ describe("rerunJob", () => {
       ok: false,
       error: "Only failed, canceled or expired jobs can be rerun.",
     });
-    const story = job({ id: "77777777-7777-4777-8777-777777777777", type: RALPH_STORY_JOB_TYPE });
+    const story = job({
+      id: "77777777-7777-4777-8777-777777777777",
+      type: RALPH_STORY_JOB_TYPE,
+      taskType: "coding",
+      taskId: "builtin:implement-story",
+    });
     expect(await rerunJob({} as never, d, ORG, story.id)).toEqual({
       ok: false,
       error: "Retry this from its run.",

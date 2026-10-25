@@ -33,7 +33,6 @@ import {
 const STORY = "33333333-3333-4333-8333-333333333333";
 
 const ralph: RalphInput = {
-  codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
@@ -57,9 +56,8 @@ function ralphCardChanges(card: keyof typeof RALPH_CARDS, edit: Partial<RalphDra
 }
 
 describe("Ralph change lists", () => {
-  it("lists the coding path and the story task by name", () => {
-    expect(ralphCardChanges("ralph", { codingPath: "tasks", storyTaskId: STORY })).toEqual([
-      { key: "codingPath", label: "Coding path", from: "Legacy jobs", to: "Coding tasks" },
+  it("lists the story task by name", () => {
+    expect(ralphCardChanges("ralph", { storyTaskId: STORY })).toEqual([
       { key: "storyTaskId", label: "Story task", from: "Implement story", to: "Careful story" },
     ]);
   });
@@ -295,7 +293,6 @@ describe("stated defaults", () => {
     );
     // Null inherits the organization's allowed task types.
     expect(repositories.ralphEnabled.default).toBeUndefined();
-    expect(repositories.codingPath.default).toBe(RALPH_REPOSITORY_DEFAULTS.codingPath);
     expect(repositories.storyTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.storyTaskId);
     expect(repositories.requestTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.requestTaskId);
   });

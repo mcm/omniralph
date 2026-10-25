@@ -2,14 +2,36 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
-import { ClaudeAgentProvider } from "@omniralph/engine";
+import { ClaudeAgentProvider, DISALLOWED_TOOLS, EXPLORATION_TOOLS } from "@omniralph/engine";
 import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import type { ToolPolicy } from "./index.js";
-import { RALPH_DESCRIBE_PR_TOOL_POLICY, RALPH_TOOL_POLICY } from "./ralph/index.js";
-import { DESCRIBE_PR_GIT_COMMANDS } from "./ralph/policy.js";
+import { RALPH_TOOL_POLICY } from "./ralph/index.js";
 import { queryToolPolicy } from "../lifecycle/tool-policy.js";
 import { isReadOnlyCommand, narrowPermissions, ruleTool, sdkPermissions } from "./tool-policy.js";
+
+/** Read-only git commands a read-only session may run. */
+const READ_ONLY_GIT_COMMANDS: readonly string[] = [
+  "git log",
+  "git diff",
+  "git show",
+  "git status",
+  "git rev-parse",
+  "git merge-base",
+  "git ls-files",
+];
+
+/** A read-only policy: Read, Grep and Glob in the worktree, plus read-only git commands. */
+const READ_ONLY_GIT_POLICY: ToolPolicy = {
+  tools: "allowed",
+  allowedTools: EXPLORATION_TOOLS,
+  disallowedTools: DISALLOWED_TOOLS,
+  fileScope: "worktree",
+  permissionMode: "dontAsk",
+  settingSources: [],
+  writable: false,
+  readOnlyCommands: READ_ONLY_GIT_COMMANDS,
+};
 
 const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "omniralph-policy-")));
 const controller = new AbortController();
@@ -121,8 +143,8 @@ describe("sdkPermissions", () => {
     });
   });
 
-  it("keeps ralph describe-pr sessions read-only, with read-only git commands", async () => {
-    const permissions = sdkPermissions(RALPH_DESCRIBE_PR_TOOL_POLICY)({
+  it("keeps read-only sessions read-only, with read-only git commands", async () => {
+    const permissions = sdkPermissions(READ_ONLY_GIT_POLICY)({
       cwd,
       allowExploration: true,
     });
@@ -131,7 +153,7 @@ describe("sdkPermissions", () => {
       expect.arrayContaining(["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git diff:*)"]),
     );
     expect((permissions.allowedTools ?? []).filter((t) => t.startsWith("Bash"))).toHaveLength(
-      DESCRIBE_PR_GIT_COMMANDS.length,
+      READ_ONLY_GIT_COMMANDS.length,
     );
     expect(permissions.permissionMode).toBe("dontAsk");
     expect(permissions.allowDangerouslySkipPermissions).toBeUndefined();
@@ -225,8 +247,8 @@ describe("sdkPermissions additional directories", () => {
 
 describe("narrowPermissions", () => {
   const story = () => sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: true });
-  const describePr = () =>
-    sdkPermissions(RALPH_DESCRIBE_PR_TOOL_POLICY)({ cwd, allowExploration: true });
+  const readOnly = () =>
+    sdkPermissions(READ_ONLY_GIT_POLICY)({ cwd, allowExploration: true });
 
   it("reads the tool of a permission rule", () => {
     expect(ruleTool("Read")).toBe("Read");
@@ -241,14 +263,14 @@ describe("narrowPermissions", () => {
   });
 
   it("adds the repository's disallowed tools to the policy's", () => {
-    const narrowed = narrowPermissions(describePr(), { disallowedTools: ["WebFetch", "Task"] });
+    const narrowed = narrowPermissions(readOnly(), { disallowedTools: ["WebFetch", "Task"] });
     expect(narrowed.disallowedTools).toEqual(
-      expect.arrayContaining([...describePr().disallowedTools!, "WebFetch", "Task"]),
+      expect.arrayContaining([...readOnly().disallowedTools!, "WebFetch", "Task"]),
     );
   });
 
   it("can only take tools away from a policy with an explicit tool list", () => {
-    const base = describePr();
+    const base = readOnly();
     const narrowed = narrowPermissions(base, {
       allowedTools: ["Read", "Write", "Edit", "Bash(rm -rf:*)", "Bash(git log:*)"],
     });
