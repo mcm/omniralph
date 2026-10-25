@@ -3,11 +3,14 @@ import {
   ANALYTICS_RANGES,
   RALPH_RUN_OUTCOMES,
   RALPH_STORY_OUTCOMES,
+  RUN_ANALYTICS_BUCKETS,
   type AnalyticsData,
   type AnalyticsParams,
   type RalphAnalyticsData,
+  type RunAnalyticsData,
 } from "@/lib/analytics/display";
 import { FINDING_SEVERITIES, REVIEW_STATUSES } from "@/lib/reviews/display";
+import { RUN_KINDS } from "./runs";
 import { isoDate } from "./schemas";
 
 /** Wire format of the Analytics endpoint under `/api/ui`. */
@@ -108,3 +111,61 @@ export const analyticsResponseSchema = z.object({
   }) satisfies z.ZodType<AnalyticsParams>,
 });
 export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
+
+/**
+ * `GET /api/ui/analytics/runs` query: the window (7, 30 or 90 days; default 30), the bucket
+ * (`day` or `week`; default `day`), an optional repository and the organization scope (the
+ * active organization, one of the user's, or `all`).
+ */
+export const runAnalyticsQuerySchema = z.object({
+  days: z
+    .enum(["7", "30", "90"], { error: "days must be 7, 30 or 90." })
+    .default("30")
+    .transform((days) => Number(days) as (typeof ANALYTICS_RANGES)[number]),
+  bucket: z.enum(RUN_ANALYTICS_BUCKETS, { error: "bucket must be day or week." }).default("day"),
+  repository: z.uuid({ error: "repository must be a repository ID." }).optional(),
+  organization: z.string().optional(),
+});
+
+const runTokens = z.object({ tokensIn: z.number(), tokensOut: z.number() });
+
+/** Stories, review runs, attempts and tokens by run kind over a period. */
+const runAnalyticsFigures = {
+  stories: z.number(),
+  reviewRuns: z.number(),
+  attempts: z.object({
+    finished: z.number(),
+    completed: z.number(),
+    failed: z.number(),
+    expired: z.number(),
+    /** completed / (completed + failed + expired); null when none of those finished. */
+    successRate: z.number().nullable(),
+  }),
+  tokens: z.object(
+    Object.fromEntries(RUN_KINDS.map((kind) => [kind, runTokens])) as Record<
+      (typeof RUN_KINDS)[number],
+      typeof runTokens
+    >,
+  ),
+};
+
+/**
+ * `GET /api/ui/analytics/runs?days=&bucket=&repository=&organization=`: per UTC day or
+ * (Monday-started) week, every bucket of the window zero-filled, with totals, per
+ * repository and per organization.
+ */
+export const runAnalyticsSchema = z.object({
+  from: isoDate,
+  to: isoDate,
+  bucket: z.enum(RUN_ANALYTICS_BUCKETS),
+  buckets: z.array(z.object({ start: z.string(), ...runAnalyticsFigures })),
+  totals: z.object(runAnalyticsFigures),
+  byRepository: z.array(z.object({ repository, ...runAnalyticsFigures })),
+  byOrganization: z.array(
+    z.object({
+      organization: z.object({ id: z.string(), name: z.string() }),
+      ...runAnalyticsFigures,
+    }),
+  ),
+}) satisfies z.ZodType<RunAnalyticsData>;
+export type RunAnalyticsResponse = z.infer<typeof runAnalyticsSchema>;
