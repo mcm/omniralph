@@ -7,11 +7,6 @@ import { ApiError } from "./client";
  * change events invalidate them (`src/lib/live`).
  */
 export const FALLBACK_POLL_INTERVAL = 10_000;
-/**
- * For queries whose changes publish no live change event (agent and task definitions,
- * review profiles): they keep polling, slowly, even while live updates are connected.
- */
-export const SETTINGS_REFETCH_INTERVAL = 30_000;
 /** Attempts after the first before a query shows its error. */
 const QUERY_RETRIES = 3;
 

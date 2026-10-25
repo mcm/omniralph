@@ -5,6 +5,7 @@
  * one organization: a row of another organization is never read or written.
  */
 import { and, arrayContains, asc, count, eq, inArray, or } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
   agentDefinitions,
@@ -25,6 +26,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Whether `id` can be a stored definition's ID (built-in `builtin:<name>` IDs can't). */
 function isStoredId(id: string): boolean {
   return UUID.test(id);
+}
+
+/** The live `settings` section a save of each kind of definition publishes. */
+const DEFINITION_SECTIONS = { agent: "agent_definitions", task: "task_definitions" } as const;
+
+/** Records a saved or deleted definition of `kind` (Settings › Agents or Settings › Tasks). */
+function recordDefinitionChange(db: Queryable, organizationId: string, kind: "agent" | "task") {
+  recordChange(db, {
+    resource: "settings",
+    section: DEFINITION_SECTIONS[kind],
+    ids: [organizationId],
+    organizationId,
+  });
 }
 
 export interface NewAgentDefinitionInput {
@@ -67,6 +81,7 @@ export async function insertAgentDefinition(
       updatedBy: input.createdBy,
     })
     .returning();
+  recordDefinitionChange(db, organizationId, "agent");
   return row!;
 }
 
@@ -83,6 +98,7 @@ export async function updateAgentDefinition(
     .set({ name: input.name, definition: input.definition, updatedBy: input.updatedBy })
     .where(and(eq(agentDefinitions.organizationId, organizationId), eq(agentDefinitions.id, id)))
     .returning();
+  if (row) recordDefinitionChange(db, organizationId, "agent");
   return row ?? null;
 }
 
@@ -123,7 +139,9 @@ export async function deleteAgentDefinition(
     .delete(agentDefinitions)
     .where(and(eq(agentDefinitions.organizationId, organizationId), eq(agentDefinitions.id, id)))
     .returning({ id: agentDefinitions.id });
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  recordDefinitionChange(db, organizationId, "agent");
+  return true;
 }
 
 export async function insertTaskDefinition(
@@ -143,6 +161,7 @@ export async function insertTaskDefinition(
       updatedBy: input.createdBy,
     })
     .returning();
+  recordDefinitionChange(db, organizationId, "task");
   return row!;
 }
 
@@ -164,6 +183,7 @@ export async function updateTaskDefinition(
     })
     .where(and(eq(taskDefinitions.organizationId, organizationId), eq(taskDefinitions.id, id)))
     .returning();
+  if (row) recordDefinitionChange(db, organizationId, "task");
   return row ?? null;
 }
 
@@ -204,7 +224,9 @@ export async function deleteTaskDefinition(
     .delete(taskDefinitions)
     .where(and(eq(taskDefinitions.organizationId, organizationId), eq(taskDefinitions.id, id)))
     .returning({ id: taskDefinitions.id });
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  recordDefinitionChange(db, organizationId, "task");
+  return true;
 }
 
 /** A repository of the organization whose settings name a task. */

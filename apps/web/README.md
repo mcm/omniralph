@@ -112,10 +112,8 @@ record (their theme, their memberships) re-render the shell from the server (`ro
   when realtime isn't configured (no `ABLY_API_KEY`, as in local development), mounted queries poll
   every `FALLBACK_POLL_INTERVAL` (10s). Returning after a drop refetches the active queries once.
   Queries still refetch when the tab regains focus or the network reconnects, and on every mount
-  (`staleTime: 0`). Network and 5xx failures retry with backoff; 4xx answers don't. Queries whose
-  writes publish no event yet (agent and task definitions, review profiles) poll at
-  `SETTINGS_REFETCH_INTERVAL` (30s). Handlers stay cheap all the same (paginated, indexed,
-  `getDb()` on the Node runtime): every event refetches every open tab's matching queries.
+  (`staleTime: 0`). Network and 5xx failures retry with backoff; 4xx answers don't. Handlers stay cheap all the same (paginated,
+  indexed, `getDb()` on the Node runtime): every event refetches every open tab's matching queries.
 - **Throttling.** A query that refetches an expensive aggregate sets `meta: { liveThrottleMs: n }`:
   events invalidate it at most once per `n` ms, the last one of a burst delivered when the window
   ends (Analytics: `ANALYTICS_LIVE_THROTTLE_MS`, 10s).

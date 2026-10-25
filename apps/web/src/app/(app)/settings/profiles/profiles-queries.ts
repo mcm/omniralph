@@ -5,11 +5,10 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import type { QueryKeys } from "@/lib/api/keys";
-import { SETTINGS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 import { reviewProfilesSchema } from "@/lib/api/review-profiles";
+import { reviewProfilesKey } from "@/lib/api/settings-keys";
 
-/** The key of Settings › Review profiles. */
-export const reviewProfilesKey = (keys: QueryKeys) => keys.settings.detail("review-profiles");
+export { reviewProfilesKey };
 
 /** The organization's review profiles and model choices, live (`GET /api/ui/review-profiles`, admins). */
 export function useReviewProfiles() {
@@ -22,7 +21,6 @@ export function useReviewProfiles() {
         organizationId: organization.id,
         signal,
       }),
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
   });
 }
 

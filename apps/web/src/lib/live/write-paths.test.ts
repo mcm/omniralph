@@ -25,15 +25,19 @@ import {
   createRun,
   createTriageRun,
   createUser,
+  deleteAgentDefinition,
   deleteScmConnection,
+  deleteTaskDefinition,
   enrollHarness,
   ensureChatThread,
   ensureLane,
   expireQueuedJobs,
   failJob,
   harnesses,
+  insertAgentDefinition,
   insertJob,
   insertRunActivity,
+  insertTaskDefinition,
   jobs,
   mapThreadRun,
   markHarnessDeleted,
@@ -55,10 +59,13 @@ import {
   updateHarnessConfig,
   updateLane,
   updateMemberRole,
+  updateAgentDefinition,
   updateOrganization,
   updateRepositoryRalphSettings,
   updateRepositorySettings,
+  updateReviewProfile,
   updateRun,
+  updateTaskDefinition,
   updateStory,
   upsertScmConnection,
   upsertStories,
@@ -583,6 +590,63 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(await published(() => createHostTool(db, orgId, { name: "jq" }))).toEqual([
         settingsEvent("agent_defaults"),
       ]);
+    });
+
+    it("agent and task definition saves and deletes publish their section", async () => {
+      const agent = { name: "Reviewer", definition: { id: "reviewer" } };
+      let agentId = "";
+      expect(
+        await published(async () => {
+          agentId = (await insertAgentDefinition(db, orgId, { ...agent, createdBy: userId })).id;
+        }),
+      ).toEqual([settingsEvent("agent_definitions")]);
+      expect(
+        await published(() =>
+          updateAgentDefinition(db, orgId, agentId, { ...agent, updatedBy: userId }),
+        ),
+      ).toEqual([settingsEvent("agent_definitions")]);
+      expect(await published(() => deleteAgentDefinition(db, orgId, agentId))).toEqual([
+        settingsEvent("agent_definitions"),
+      ]);
+
+      const task = { name: "Review", definition: { id: "review" }, requirements: {} };
+      let taskId = "";
+      expect(
+        await published(async () => {
+          taskId = (await insertTaskDefinition(db, orgId, { ...task, createdBy: userId })).id;
+        }),
+      ).toEqual([settingsEvent("task_definitions")]);
+      expect(
+        await published(() =>
+          updateTaskDefinition(db, orgId, taskId, { ...task, updatedBy: userId }),
+        ),
+      ).toEqual([settingsEvent("task_definitions")]);
+      expect(await published(() => deleteTaskDefinition(db, orgId, taskId))).toEqual([
+        settingsEvent("task_definitions"),
+      ]);
+
+      // Nothing saved or deleted (gone, or another organization's): nothing published.
+      expect(
+        await published(async () => {
+          await updateAgentDefinition(db, orgId, agentId, { ...agent, updatedBy: userId });
+          await deleteAgentDefinition(db, orgId, agentId);
+          await updateTaskDefinition(db, orgId, taskId, { ...task, updatedBy: userId });
+          await deleteTaskDefinition(db, orgId, taskId);
+        }),
+      ).toEqual([]);
+    });
+
+    it("review profile saves publish their section", async () => {
+      const limits = {
+        model: "claude-sonnet-5-5",
+        maxTokensPerReview: 120_000,
+        maxFiles: 40,
+        allowRepoExploration: false,
+      };
+      expect(await published(() => updateReviewProfile(db, orgId, "standard", limits))).toEqual([
+        settingsEvent("review_profiles"),
+      ]);
+      expect(await published(() => updateReviewProfile(db, orgId, "missing", limits))).toEqual([]);
     });
 
     it("connections and integrations publish the connection", async () => {

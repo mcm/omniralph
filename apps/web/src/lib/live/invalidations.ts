@@ -10,11 +10,13 @@
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queryKeys, type QueryKeys } from "@/lib/api/keys";
+import { definitionKeys, reviewProfilesKey } from "@/lib/api/settings-keys";
 import type {
   ChangeEvent,
   ChangeEventOf,
   ChangeEventResource,
   SettingsSection,
+  UntrackedSettingsSection,
   UserSettingsSection,
 } from "./events";
 
@@ -37,26 +39,42 @@ type Invalidator<R extends ChangeEventResource> = (
 
 /** Each settings section's queries (the event's `subjectId` is its subject, if it has one). */
 const SETTINGS_INVALIDATIONS: Record<
-  SettingsSection | UserSettingsSection,
+  SettingsSection | UntrackedSettingsSection | UserSettingsSection,
   (keys: QueryKeys, subjectId: string | undefined) => QueryKey[]
 > = {
-  "repository.reviews": (keys, id) => repositoryKeys(keys, id),
+  // Review profiles list the repositories using each.
+  "repository.reviews": (keys, id) => [...repositoryKeys(keys, id), reviewProfilesKey(keys)],
   "repository.coding": (keys, id) => repositoryKeys(keys, id),
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.harnesses.all],
   routing_rules: (keys) => [keys.settings.detail("routing")],
   connection: (keys) => [keys.connections.all],
   organization: (keys) => [keys.organization.all],
-  // Agents and repositories show the defaults they inherit.
+  // Agents and repositories show the defaults they inherit; the task form, the host tools.
   agent_defaults: (keys) => [
     keys.settings.detail("harness-defaults"),
     keys.settings.detail("host-tools"),
     keys.harnesses.all,
     keys.repositories.all,
+    definitionKeys(keys).tasks.formOptions,
   ],
+  agent_definitions: (keys) => definitionsKeys(keys),
+  task_definitions: (keys) => definitionsKeys(keys),
+  // A repository's Settings tab shows its profile's limits.
+  review_profiles: (keys) => [reviewProfilesKey(keys), keys.repositories.all],
   // The user's own record (their theme): no query shows it, the shell applies it.
   profile: () => [],
 };
+
+/**
+ * What an agent or task definition's save or delete shows in: every agent and task query
+ * (agents list the tasks running on them, tasks and the task form name agents and tasks),
+ * and the settings that pick tasks (repositories, chat tasks).
+ */
+function definitionsKeys(keys: QueryKeys): QueryKey[] {
+  const { agents, tasks } = definitionKeys(keys);
+  return [agents.all, tasks.all, keys.repositories.all, keys.connections.detail("integrations")];
+}
 
 function repositoryKeys(keys: QueryKeys, repositoryId: string | undefined): QueryKey[] {
   return repositoryId
@@ -103,12 +121,19 @@ export const LIVE_INVALIDATIONS = {
   agent: (event, keys) => [
     keys.harnesses.lists,
     ...event.ids.map((agentId) => keys.harnesses.detail(agentId)),
+    // The agent and task forms and review profiles offer the models and installables the
+    // organization's agents report, and count its agents.
+    definitionKeys(keys).agents.formOptions,
+    definitionKeys(keys).tasks.formOptions,
+    reviewProfilesKey(keys),
   ],
   repository: (event, keys) => [
     keys.repositories.lists,
     ...event.ids.map((repositoryId) => keys.repositories.detail(repositoryId)),
     // A connection's setup and selectable repositories show which are connected.
     keys.connections.all,
+    // Review profiles list the connected repositories using each.
+    reviewProfilesKey(keys),
   ],
   connection: (_event, keys) => [keys.connections.all, keys.repositories.lists],
   organization: (_event, keys) => [keys.organization.all],
