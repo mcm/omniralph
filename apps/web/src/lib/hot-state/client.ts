@@ -14,6 +14,12 @@ export function hotStateEnabled(): boolean {
   return Boolean(process.env.REDIS_URL);
 }
 
+/** 2s by default; `REDIS_COMMAND_TIMEOUT_MS` overrides it (the test suite raises it under load). */
+function commandTimeoutMs(): number {
+  const override = Number(process.env.REDIS_COMMAND_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : 2_000;
+}
+
 /** The shared Redis client, created on first use. Throws when `REDIS_URL` is unset. */
 export function getRedis(): Redis {
   if (!redis) {
@@ -24,7 +30,7 @@ export function getRedis(): Redis {
       // Postgres instead of queueing behind reconnect attempts.
       maxRetriesPerRequest: 1,
       connectTimeout: 5_000,
-      commandTimeout: 2_000,
+      commandTimeout: commandTimeoutMs(),
     });
     // Without a listener, ioredis logs every connection error as unhandled.
     redis.on("error", (error: unknown) => {
