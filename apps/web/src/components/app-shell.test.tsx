@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -160,5 +161,43 @@ describe("AppShell", () => {
   it("mounts the toaster", () => {
     renderShell("/reviews");
     expect(screen.getByRole("region", { name: "Notifications" })).toBeTruthy();
+  });
+
+  it("starts over with an empty query cache when the organization scope changes", () => {
+    const clients: QueryClient[] = [];
+    function Probe() {
+      const client = useQueryClient();
+      if (!clients.includes(client)) clients.push(client);
+      return null;
+    }
+    const shell = (user: SessionUser) => (
+      <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null}>
+        <Probe />
+      </AppShell>
+    );
+    nav.pathname = "/reviews";
+    const { rerender } = render(shell(twoOrganizations));
+    clients[0]!.setQueryData([testUser.organization.id, "probe"], 1);
+    // A re-render in the same scope keeps the cache.
+    rerender(shell(twoOrganizations));
+    expect(clients).toHaveLength(1);
+    // Same active organization, scope "all": a new, empty client.
+    rerender(shell({ ...twoOrganizations, scope: "all" }));
+    expect(clients).toHaveLength(2);
+    expect(clients[1]!.getQueryData([testUser.organization.id, "probe"])).toBeUndefined();
+  });
+
+  it("shows no search control, keyboard-shortcut indicators or hints in the sidebar or drawer", async () => {
+    renderShell("/reviews");
+    const check = () => {
+      expect(screen.queryAllByRole("search")).toHaveLength(0);
+      expect(screen.queryAllByRole("searchbox")).toHaveLength(0);
+      expect(screen.queryAllByRole("button", { name: /search/i })).toHaveLength(0);
+      expect(document.querySelector("kbd, input[placeholder]")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/⌘|ctrl\s*\+|shortcut|search|press /i);
+    };
+    check();
+    await openDrawer();
+    check();
   });
 });

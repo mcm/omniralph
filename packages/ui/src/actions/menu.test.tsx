@@ -67,6 +67,24 @@ describe("Menu", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it.each(["{Enter}", " "])("selects the focused item with %s and closes", async (key) => {
+    const user = userEvent.setup();
+    const copy = vi.fn();
+    const rerun = vi.fn();
+    const trigger = renderMenu([
+      { label: "Copy ID", onSelect: copy },
+      { label: "Rerun", onSelect: rerun },
+    ]);
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard(key);
+    expect(rerun).toHaveBeenCalledTimes(1);
+    expect(copy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("renders destructive items last, after a separator, in the danger style", async () => {
     const user = userEvent.setup();
     const trigger = renderMenu([

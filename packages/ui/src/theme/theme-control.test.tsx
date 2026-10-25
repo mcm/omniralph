@@ -90,3 +90,9 @@ describe("ThemeControl", () => {
     expect(radio("Dark").getAttribute("aria-checked")).toBe("true");
   });
 });
+
+describe("package root", () => {
+  it("exports the one ThemeControl", async () => {
+    expect((await import("../index.js")).ThemeControl).toBe(ThemeControl);
+  });
+});

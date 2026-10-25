@@ -559,7 +559,7 @@ export function RulesContent({ repositoryId, rules }: { repositoryId: string; ru
 
 /**
  * Repository › Rules, live (`GET /api/ui/repositories/{id}/rules`): rules added, edited,
- * switched or learned anywhere show up within a poll.
+ * switched or learned anywhere show up through the repository's live change events.
  */
 export function RulesView() {
   const { id } = useParams<{ id: string }>();

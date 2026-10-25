@@ -6,7 +6,7 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
-import type { FindingRow, Review } from "./reviews.js";
+import { recordReviewChanges, type FindingRow, type Review } from "./reviews.js";
 import type { feedbackReason, feedbackSource } from "./schema.js";
 import { feedback, findings, reviews, users } from "./schema.js";
 
@@ -71,6 +71,7 @@ export async function dismissFinding(
         scmUsername: input.scmUsername ?? null,
       })
       .returning();
+    await recordReviewChanges(tx as unknown as Database, [found.review.id]);
     return { status: "dismissed", finding, review: found.review, feedback: row! };
   });
 }
@@ -96,6 +97,7 @@ export async function restoreFinding(
       .update(feedback)
       .set({ restoredAt: new Date(), restoredBy: input.userId ?? null })
       .where(and(eq(feedback.findingId, finding.id), isNull(feedback.restoredAt)));
+    await recordReviewChanges(tx as unknown as Database, [found.review.id]);
     return { status: "restored", finding, review: found.review };
   });
 }
