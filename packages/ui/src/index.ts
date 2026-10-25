@@ -1,4 +1,5 @@
 export * from "./actions/index.js";
+export * from "./brand/index.js";
 export * from "./controls/index.js";
 export * from "./fields/index.js";
 export * from "./provider/index.js";
