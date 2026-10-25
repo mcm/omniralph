@@ -49,12 +49,12 @@ describe("/chat/link", () => {
   it("explains links that can't be used", async () => {
     state.check = { status: "expired" };
     expect((await render({ state: "s" })).props).toEqual({
-      problem: "This link has expired. Mention the bot again to get a new one.",
+      problem: "This link has expired. Mention Om again to get a new one.",
     });
     state.check = { status: "used" };
     expect((await render({ state: "s" })).props).toEqual({
       problem:
-        "This link was used already. Each link works once: mention the bot again to get a new one.",
+        "This link was used already. Each link works once: mention Om again to get a new one.",
     });
     state.check = { status: "not_member", organizationName: "Acme" };
     expect((await render({ state: "s" })).props.problem).toMatch(/^You aren't a member of Acme/);

@@ -10,7 +10,7 @@ import {
   queryWrapper,
   testUser,
 } from "@/components/query-test-utils";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { OrganizationSettings } from "@/lib/api/organization";
 import { OrganizationSettingsView } from "./organization-settings-view";
 
@@ -20,10 +20,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => router,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const PATH = "/api/ui/organization";
@@ -61,7 +61,7 @@ const domainJoin = () => screen.getByRole("switch");
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
   router.refresh.mockReset();
   router.push.mockReset();
 });
@@ -129,7 +129,7 @@ describe("OrganizationSettingsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     await waitFor(() => expect(router.refresh).toHaveBeenCalled());
     expect(seen.find((r) => r.method === "PATCH")!.body).toEqual({ name: "Acme Corp" });
-    expect(toast.notify).toHaveBeenCalledWith("Renamed to Acme Corp");
+    expect(toasts.toast).toHaveBeenCalledWith("Renamed to Acme Corp");
     expect(screen.getByText(/Settings for Acme Corp/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Rename" }).hasAttribute("disabled")).toBe(true);
   });
@@ -158,7 +158,7 @@ describe("OrganizationSettingsView", () => {
 
     release();
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith("Anyone with a matching email can join"),
+      expect(toasts.toast).toHaveBeenCalledWith("Anyone with a matching email can join"),
     );
     await waitFor(() => expect(domainJoin().hasAttribute("disabled")).toBe(false));
     expect(domainJoin().getAttribute("aria-checked")).toBe("true");
@@ -180,7 +180,7 @@ describe("OrganizationSettingsView", () => {
 
     release();
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "Add an email domain before allowing people to join.",
         { variant: "danger" },
       ),

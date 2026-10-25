@@ -23,6 +23,12 @@ describe("Card", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Agents" })).toBeTruthy();
   });
 
+  it("can be the page's own heading", () => {
+    render(<Card title="Sign in" headingLevel={1} />);
+    expect(screen.getByRole("region", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Sign in" })).toBeTruthy();
+  });
+
   it("puts the info button right after the title and the actions after it", async () => {
     const user = userEvent.setup();
     render(

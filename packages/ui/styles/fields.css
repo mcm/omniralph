@@ -41,6 +41,15 @@
   min-width: 0;
 }
 
+/* Stacked: the label above the control at every width (narrow surfaces). */
+.or-field--stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.or-field--stacked .or-field__head {
+  padding-top: 0;
+}
+
 @media (max-width: 768px) {
   .or-field {
     grid-template-columns: minmax(0, 1fr);

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
   jsonResponse,
@@ -36,10 +36,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigation.redirect,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -91,7 +91,7 @@ function renderView(node: React.ReactNode, role: "admin" | "member" = "admin") {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
   navigation.push.mockReset();
   navigation.notFound.mockReset();
   navigation.redirect.mockClear();
@@ -181,7 +181,7 @@ describe("AgentDetailView", () => {
       expect(navigation.push).toHaveBeenCalledWith(`/settings/agents/${CLONE_ID}/edit`),
     );
     expect(listRefetchedFirst).toBe(true);
-    expect(toast.notify).toHaveBeenCalledWith("Cloned Security reviewer");
+    expect(toasts.toast).toHaveBeenCalledWith("Cloned Security reviewer");
   });
 
   it("deletes, refetching the list before going back to it", async () => {
@@ -225,7 +225,7 @@ describe("AgentDetailView", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Delete/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "Security reviewer can't be deleted while tasks use it: X.",
         { variant: "danger" },
       ),
@@ -307,7 +307,7 @@ describe("Agent editor", () => {
     expect(client.getQueryData(keys.agents.detail(AGENT_ID))).toEqual(
       detail(custom({ name: "AppSec reviewer" })),
     );
-    expect(toast.notify).toHaveBeenCalledWith("AppSec reviewer saved");
+    expect(toasts.toast).toHaveBeenCalledWith("AppSec reviewer saved");
   });
 
   it("creates an agent and opens it; a refused one shows its field errors", async () => {
@@ -337,6 +337,6 @@ describe("Agent editor", () => {
     expect(seen.filter((request) => request.method === "POST").at(-1)!.body).toMatchObject({
       name: "Researcher",
     });
-    expect(toast.notify).toHaveBeenCalledWith("Researcher created");
+    expect(toasts.toast).toHaveBeenCalledWith("Researcher created");
   });
 });

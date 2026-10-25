@@ -1,6 +1,6 @@
 "use client";
 
-import { notify } from "@iamthemcmaster/ui";
+import { toast } from "@omniralph/ui";
 import { useMutation } from "@tanstack/react-query";
 import * as React from "react";
 import type { ActionResult } from "@/lib/action-result";
@@ -30,17 +30,17 @@ export function useSettingsSave() {
     mutationFn: (save) => save.action(),
     onSuccess: (result, save) => {
       if (result.ok) {
-        if (result.warning) notify(result.warning, { variant: "warning" });
-        else notify(save.success);
+        if (result.warning) toast(result.warning, { variant: "warning" });
+        else toast(save.success);
         save.onSuccess?.();
       } else {
-        notify(result.error, { variant: "danger" });
+        toast(result.error, { variant: "danger" });
         save.onError?.(result);
       }
     },
     onError: (_error, save) => {
       const result: Failure = { ok: false, error: MUTATION_FAILED };
-      notify(result.error, { variant: "danger" });
+      toast(result.error, { variant: "danger" });
       save.onError?.(result);
     },
   });

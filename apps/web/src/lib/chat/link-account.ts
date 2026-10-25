@@ -102,11 +102,11 @@ export async function linkChatAccount(
 export function chatLinkProblem(check: Exclude<ChatLinkCheck, { status: "ready" }>): string {
   switch (check.status) {
     case "expired":
-      return "This link has expired. Mention the bot again to get a new one.";
+      return "This link has expired. Mention Om again to get a new one.";
     case "invalid":
-      return "This link isn't valid. Mention the bot again to get a new one.";
+      return "This link isn't valid. Mention Om again to get a new one.";
     case "used":
-      return "This link was used already. Each link works once: mention the bot again to get a new one.";
+      return "This link was used already. Each link works once: mention Om again to get a new one.";
     case "not_connected":
       return "The workspace or server this link came from is no longer connected to Omniralph.";
     case "not_member":

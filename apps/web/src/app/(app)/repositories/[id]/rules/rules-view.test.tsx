@@ -10,7 +10,7 @@ import {
   queryWrapper,
   testUser,
 } from "@/components/query-test-utils";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { RepositoryRules } from "@/lib/api/rules";
 import type { RuleView } from "@/lib/rules/display";
 import { RulesView } from "./rules-view";
@@ -24,10 +24,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 function rule(n: number, overrides: Partial<RuleView> = {}): RuleView {
@@ -72,7 +72,7 @@ function enabledSwitch(text: string) {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("RulesView", () => {
@@ -131,7 +131,7 @@ describe("RulesView", () => {
     expect(seen.find((request) => request.method === "PATCH")!.body).toEqual({ enabled: false });
 
     release();
-    await waitFor(() => expect(toast.notify).toHaveBeenCalledWith("Rule disabled"));
+    await waitFor(() => expect(toasts.toast).toHaveBeenCalledWith("Rule disabled"));
     await waitFor(() =>
       expect(enabledSwitch("Rule number 1").hasAttribute("disabled")).toBe(false),
     );
@@ -155,7 +155,7 @@ describe("RulesView", () => {
 
     release();
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith("That rule doesn't exist.", { variant: "danger" }),
+      expect(toasts.toast).toHaveBeenCalledWith("That rule doesn't exist.", { variant: "danger" }),
     );
     await waitFor(() =>
       expect(enabledSwitch("Rule number 1").getAttribute("aria-checked")).toBe("true"),
@@ -181,7 +181,7 @@ describe("RulesView", () => {
     expect(seen.find((request) => request.method === "POST")!.body).toEqual({
       text: "Flag TODOs.",
     });
-    expect(toast.notify).toHaveBeenCalledWith("Rule added; it applies to the next review");
+    expect(toasts.toast).toHaveBeenCalledWith("Rule added; it applies to the next review");
     expect((screen.getByLabelText("Rule") as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -229,7 +229,7 @@ describe("RulesView", () => {
     );
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByText("Delete"));
     await waitFor(() => expect(screen.getByText("No custom rules")).toBeTruthy());
-    expect(toast.notify).toHaveBeenCalledWith("Rule deleted");
+    expect(toasts.toast).toHaveBeenCalledWith("Rule deleted");
   });
 
   it("shows members the rules read-only", async () => {

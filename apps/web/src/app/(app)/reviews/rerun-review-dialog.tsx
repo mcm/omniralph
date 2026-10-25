@@ -19,8 +19,8 @@ import {
   RadioGroup,
   RadioGroupItem,
   Stack,
-  notify,
 } from "@iamthemcmaster/ui";
+import { toast } from "@omniralph/ui";
 import { IconRefresh } from "@tabler/icons-react";
 import {
   RERUN_MODES,
@@ -82,8 +82,8 @@ export function RerunReviewDialog({
     success: null,
     onSuccess: (result) => {
       if (result.active)
-        notify(result.message ?? "A review is already running.", { variant: "info" });
-      else notify(`Re-run of ${changeLabel} queued`);
+        toast(result.message ?? "A review is already running.", { variant: "info" });
+      else toast(`Re-run of ${changeLabel} queued`);
       onOpenChange(false);
       router.push(`/reviews/${result.reviewId}`);
     },

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import type * as OmniralphUi from "@omniralph/ui";
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
@@ -7,15 +8,18 @@ import { queryKeys } from "@/lib/api/keys";
 import { createTestQueryClient, queryWrapper, TEST_ORGANIZATION_ID } from "./query-test-utils";
 import { MUTATION_FAILED, useApiMutation } from "./use-api-mutation";
 
-const ui = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", () => ui);
+const ui = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: ui.toast,
+}));
 const guard = vi.hoisted(() => ({ stale: false }));
 vi.mock("./organization-guard", () => ({ useIsOrganizationStale: () => () => guard.stale }));
 
 const keys = queryKeys(TEST_ORGANIZATION_ID);
 
 beforeEach(() => {
-  ui.notify.mockReset();
+  ui.toast.mockReset();
   guard.stale = false;
 });
 afterEach(cleanup);
@@ -49,7 +53,7 @@ describe("useApiMutation", () => {
     await act(() => result.current.mutateAsync("h1"));
 
     expect(mutationFn).toHaveBeenCalledWith("h1", { organizationId: TEST_ORGANIZATION_ID });
-    expect(ui.notify).toHaveBeenCalledWith("Harness renamed");
+    expect(ui.toast).toHaveBeenCalledWith("Harness renamed");
     expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.harnesses.detail("h1"))?.isInvalidated).toBe(true);
     expect(client.getQueryState(other)?.isInvalidated).toBe(false);
@@ -81,8 +85,8 @@ describe("useApiMutation", () => {
     const { mutationFn, result } = setup({});
     mutationFn.mockResolvedValue({ ok: true, warning: "Renamed, but offline." } as never);
     await act(() => result.current.mutateAsync("h1"));
-    expect(ui.notify).toHaveBeenCalledTimes(1);
-    expect(ui.notify).toHaveBeenCalledWith("Renamed, but offline.", { variant: "warning" });
+    expect(ui.toast).toHaveBeenCalledTimes(1);
+    expect(ui.toast).toHaveBeenCalledWith("Renamed, but offline.", { variant: "warning" });
   });
 
   it("builds the success toast from the result, or shows none", async () => {
@@ -91,13 +95,13 @@ describe("useApiMutation", () => {
     });
     first.mutationFn.mockResolvedValue({ ok: true, name: "build-02" });
     await act(() => first.result.current.mutateAsync("build-01"));
-    expect(ui.notify).toHaveBeenCalledWith("Renamed build-01 to build-02");
+    expect(ui.toast).toHaveBeenCalledWith("Renamed build-01 to build-02");
 
-    ui.notify.mockReset();
+    ui.toast.mockReset();
     const second = setup({ success: null });
     second.mutationFn.mockResolvedValue({ ok: true } as never);
     await act(() => second.result.current.mutateAsync("x"));
-    expect(ui.notify).not.toHaveBeenCalled();
+    expect(ui.toast).not.toHaveBeenCalled();
   });
 
   it("toasts the server's message as danger, calls onError and still invalidates", async () => {
@@ -109,7 +113,7 @@ describe("useApiMutation", () => {
     mutationFn.mockRejectedValue(error);
     act(() => result.current.mutate("h1"));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(ui.notify).toHaveBeenCalledWith("That name is taken.", { variant: "danger" });
+    expect(ui.toast).toHaveBeenCalledWith("That name is taken.", { variant: "danger" });
     expect(onError).toHaveBeenCalledWith(error, "h1", undefined);
     expect(onSuccess).not.toHaveBeenCalled();
     await waitFor(() =>
@@ -122,7 +126,7 @@ describe("useApiMutation", () => {
     mutationFn.mockRejectedValue(new TypeError("boom"));
     act(() => result.current.mutate("h1"));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(ui.notify).toHaveBeenCalledWith(MUTATION_FAILED, { variant: "danger" });
+    expect(ui.toast).toHaveBeenCalledWith(MUTATION_FAILED, { variant: "danger" });
   });
 
   it("passes onMutate's context to onError, for rolling back optimistic updates", async () => {
@@ -144,6 +148,6 @@ describe("useApiMutation", () => {
     expect(mutationFn).not.toHaveBeenCalled();
     expect(onMutate).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
-    expect(ui.notify).not.toHaveBeenCalled();
+    expect(ui.toast).not.toHaveBeenCalled();
   });
 });

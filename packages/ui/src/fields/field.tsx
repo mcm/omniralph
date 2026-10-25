@@ -12,20 +12,24 @@ export type FieldProps = {
   htmlFor?: string;
   /** One control: `TextInput`, `Textarea`, `Select` or `TokenInput`. */
   children: ReactNode;
+  /** Puts the label above the control at every width (for narrow surfaces such as a form card). */
+  stacked?: boolean;
   className?: string;
 };
 
 /**
  * A setting row: label and description on the left (200 px), the control on the right.
- * Collapses to one column at 768 px and narrower.
+ * Collapses to one column at 768 px and narrower, or always when `stacked`.
  */
-export function Field({ label, description, htmlFor, children, className }: FieldProps) {
+export function Field({ label, description, htmlFor, children, stacked, className }: FieldProps) {
   const generatedId = useId();
   const controlId = htmlFor ?? `${generatedId}-control`;
   const descriptionId = description === undefined ? undefined : `${generatedId}-description`;
 
   return (
-    <div className={["or-field", className].filter(Boolean).join(" ")}>
+    <div
+      className={["or-field", stacked && "or-field--stacked", className].filter(Boolean).join(" ")}
+    >
       <div className="or-field__head">
         <label htmlFor={controlId} className="or-field__label">
           {label}

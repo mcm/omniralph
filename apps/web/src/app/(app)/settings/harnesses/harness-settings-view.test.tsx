@@ -3,7 +3,7 @@ import "@/components/pickers/test-dom";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
   jsonResponse,
@@ -26,10 +26,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigation.redirect,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const DEFAULTS = "/api/ui/harness-defaults";
@@ -72,7 +72,7 @@ async function saveAndConfirm() {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("HarnessSettingsView › Defaults", () => {
@@ -148,7 +148,7 @@ describe("HarnessSettingsView › Defaults", () => {
     expect(seen.filter((r) => r.method === "PUT").map((r) => r.body)).toEqual([
       { version: "latest" },
     ]);
-    expect(toast.notify).toHaveBeenCalledWith(
+    expect(toasts.toast).toHaveBeenCalledWith(
       "Saved. Harnesses will follow the latest version on npm.",
     );
   });
@@ -198,7 +198,7 @@ describe("HarnessSettingsView › Defaults", () => {
     await userEvent.type(version(), "next");
     await saveAndConfirm();
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "Enter a version like 1.4.0 or latest, or leave it blank.",
         expect.objectContaining({ variant: "danger" }),
       ),
@@ -281,7 +281,7 @@ describe("HarnessSettingsView › Host tools", () => {
     await userEvent.type(screen.getByLabelText(/^Name/), "semgrep");
     await userEvent.click(screen.getByRole("button", { name: /Add host tool/ }));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "There already is a host tool named semgrep.",
         expect.objectContaining({ variant: "danger" }),
       ),
@@ -306,6 +306,6 @@ describe("HarnessSettingsView › Host tools", () => {
     await waitFor(() => expect(screen.queryByLabelText("Delete semgrep")).toBeNull());
     expect(screen.getByLabelText("Delete ruff")).toBeTruthy();
     expect(seen.some((r) => r.method === "DELETE")).toBe(true);
-    expect(toast.notify).toHaveBeenCalledWith("Deleted semgrep");
+    expect(toasts.toast).toHaveBeenCalledWith("Deleted semgrep");
   });
 });

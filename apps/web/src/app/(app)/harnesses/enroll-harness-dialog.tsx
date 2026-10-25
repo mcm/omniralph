@@ -18,10 +18,10 @@ import {
   Field,
   Input,
   Muted,
-  notify,
   Spinner,
   Stack,
 } from "@iamthemcmaster/ui";
+import { toast } from "@omniralph/ui";
 import { IconCopy, IconKey, IconPackage, IconPlus, IconTerminal2 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
@@ -41,9 +41,9 @@ import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
 async function copy(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
-    notify(`${what} copied`);
+    toast(`${what} copied`);
   } catch {
-    notify("Couldn't copy to the clipboard", { variant: "danger" });
+    toast("Couldn't copy to the clipboard", { variant: "danger" });
   }
 }
 

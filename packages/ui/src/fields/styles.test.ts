@@ -59,6 +59,11 @@ describe("fields.css", () => {
     );
   });
 
+  it("stacks the label above the control at every width when stacked", () => {
+    expect(declarationsFor(".or-field--stacked")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    expect(declarationsFor(".or-field--stacked .or-field__head")["padding-top"]).toBe("0");
+  });
+
   it.each([".or-input", ".or-tokens"])("draws %s with the control border on the page", (box) => {
     expect(declarationsFor(box)).toMatchObject({
       border: "1px solid var(--or-ctl)",

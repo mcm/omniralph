@@ -2,7 +2,7 @@
 import "@/components/pickers/test-dom";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import { AppFrame, PREFERS_LIGHT_QUERY, type ThemePreference } from "@omniralph/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionResult } from "@/lib/action-result";
@@ -14,13 +14,13 @@ import { UserMenu } from "./user-menu";
 const actions = vi.hoisted(() => ({
   saveThemePreference: vi.fn<(preference: string) => Promise<ActionResult>>(),
   signOutAction: vi.fn(async () => {}),
-  notify: vi.fn(),
+  toast: vi.fn(),
 }));
 vi.mock("@/lib/theme-actions", () => ({ saveThemePreference: actions.saveThemePreference }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: actions.signOutAction }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: actions.notify,
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: actions.toast,
 }));
 
 /** A controllable `prefers-color-scheme: light`; every other query never matches. */
@@ -83,7 +83,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
   actions.saveThemePreference.mockReset().mockResolvedValue({ ok: true });
   actions.signOutAction.mockClear();
-  actions.notify.mockReset();
+  actions.toast.mockReset();
   installMatchMedia(false);
 });
 
@@ -126,7 +126,7 @@ describe("UserMenu", () => {
     expect(actions.saveThemePreference).toHaveBeenCalledWith("light");
     await act(async () => finish({ ok: true }));
     expect(theme()).toBe("light");
-    expect(actions.notify).not.toHaveBeenCalled();
+    expect(actions.toast).not.toHaveBeenCalled();
     // The menu stays open for another choice.
     expect(screen.getByRole("menu")).toBeTruthy();
   });
@@ -168,8 +168,8 @@ describe("UserMenu", () => {
     await user.click(option("Light"));
     await waitFor(() => expect(theme()).toBe("dark"));
     expect(option("Dark").getAttribute("aria-checked")).toBe("true");
-    expect(actions.notify).toHaveBeenCalledTimes(1);
-    expect(actions.notify).toHaveBeenCalledWith(THEME_SAVE_FAILED, { variant: "danger" });
+    expect(actions.toast).toHaveBeenCalledTimes(1);
+    expect(actions.toast).toHaveBeenCalledWith(THEME_SAVE_FAILED, { variant: "danger" });
   });
 
   it("signs out", async () => {

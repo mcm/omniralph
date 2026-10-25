@@ -3,7 +3,7 @@ import "@/components/pickers/test-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
   jsonResponse,
@@ -18,10 +18,10 @@ import { DEFAULT_RULES, RoutingSettingsView } from "./routing-settings-view";
 import { INVALID_RULES_MESSAGE } from "./routing-test";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const API = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -125,7 +125,7 @@ function summary(body: { rules: unknown[] }) {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("RoutingSettingsView", () => {
@@ -205,7 +205,7 @@ describe("RoutingSettingsView", () => {
     await userEvent.type(within(ruleRow(2)).getByRole("textbox", { name: "Value" }), "docs");
 
     await userEvent.click(screen.getByRole("button", { name: /Save/ }));
-    await waitFor(() => expect(toast.notify).toHaveBeenCalledWith("Saved the routing rules"));
+    await waitFor(() => expect(toasts.toast).toHaveBeenCalledWith("Saved the routing rules"));
     const [body] = putBodies(seen);
     expect(summary(body!)).toEqual([
       [API, [{ field: "labels", operator: "containsAny", value: ["Backend"] }]],
@@ -369,7 +369,7 @@ describe("RoutingSettingsView", () => {
     expect(within(ruleRow(2)).getByRole("alert").textContent).toBe("Pick a value.");
     expect(ruleRow(1).getAttribute("data-invalid")).toBe("true");
     expect(screen.getByText(/2 rules need attention/)).toBeTruthy();
-    expect(toast.notify).toHaveBeenCalledWith("Check the highlighted fields.", {
+    expect(toasts.toast).toHaveBeenCalledWith("Check the highlighted fields.", {
       variant: "danger",
     });
   });

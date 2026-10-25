@@ -3,7 +3,8 @@
 import { useId, type ReactNode } from "react";
 import { InfoPopover } from "./popovers.js";
 
-export type HeadingLevel = 2 | 3 | 4;
+/** 1 is for a card or empty state that is the page itself (e.g. a signed-out page). */
+export type HeadingLevel = 1 | 2 | 3 | 4;
 
 export interface CardProps {
   /** The card's heading; it also names the `section`. */

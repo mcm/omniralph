@@ -9,15 +9,15 @@ import {
   mockFetch,
   queryWrapper,
 } from "@/components/query-test-utils";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { ChatAccount } from "@/lib/api/organization";
 import { ChatAccountsView } from "./chat-accounts-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const account: ChatAccount = {
@@ -32,7 +32,7 @@ const account: ChatAccount = {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("ChatAccountsView", () => {
@@ -60,7 +60,7 @@ describe("ChatAccountsView", () => {
       platform: "slack",
       externalUserId: "U1",
     });
-    expect(toast.notify).toHaveBeenCalledWith("Unlinked ada");
+    expect(toasts.toast).toHaveBeenCalledWith("Unlinked ada");
   });
 
   it("shows accounts linked through the bot elsewhere when the list refetches", async () => {

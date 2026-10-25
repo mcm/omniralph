@@ -7,6 +7,7 @@ import {
   requirePageUser,
 } from "@/lib/auth/session";
 import { themePreference } from "@/lib/theme";
+import { LegacyFrame } from "./legacy-frame";
 
 /**
  * Signed-in area: every page below requires a session and an active organization
@@ -35,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
       scopeCookie={jar.get(ORGANIZATION_SCOPE_COOKIE)?.value ?? null}
     >
-      {children}
+      <LegacyFrame>{children}</LegacyFrame>
     </AppShell>
   );
 }

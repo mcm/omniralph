@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@iamthemcmaster/ui";
+import { ConfirmDialog } from "@omniralph/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -96,28 +88,20 @@ export function OrganizationGuard({
   return (
     <StaleContext.Provider value={check}>
       <SwitchingContext.Provider value={expectSwitch}>{children}</SwitchingContext.Provider>
-      <AlertDialog open={stale}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>You switched organizations in another tab</AlertDialogTitle>
-            <AlertDialogDescription>
-              This tab still shows {organizationName}. Continue from the dashboard so changes
-              aren&apos;t made in the wrong organization.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction
-              onClick={() => {
-                // Like switching here: start over from the dashboard, in the new organization.
-                router.push("/");
-                router.refresh();
-              }}
-            >
-              Go to dashboard
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Required: no Cancel and no Escape, the tab must start over. */}
+      <ConfirmDialog
+        open={stale}
+        onOpenChange={() => {}}
+        title="You switched organizations in another tab"
+        description={`This tab still shows ${organizationName}. Continue from the dashboard so changes aren't made in the wrong organization.`}
+        confirmLabel="Go to dashboard"
+        cancelLabel={null}
+        onConfirm={() => {
+          // Like switching here: start over from the dashboard, in the new organization.
+          router.push("/");
+          router.refresh();
+        }}
+      />
     </StaleContext.Provider>
   );
 }

@@ -121,8 +121,9 @@ it in the accent with the halo.
 
 - `Field`: a setting row with `label` (a `<label for>` the control), an optional one-line
   `description` (linked to the control by `aria-describedby`) and one control as children,
-  in a 200 px + flexible grid that collapses to one column at 768 px and narrower. The
-  control picks its id up from the Field (or pass `htmlFor`).
+  in a 200 px + flexible grid that collapses to one column at 768 px and narrower
+  (`stacked` keeps it one column at every width, for narrow cards). The control picks its
+  id up from the Field (or pass `htmlFor`).
 - `TextInput`, `Textarea`, `Select` (a styled native `<select>` with `<option>` children):
   `invalid` sets `aria-invalid`; `errorMessage` renders under the control, linked by
   `aria-describedby` (and implies `invalid`); `mono` sets Geist Mono.
@@ -182,6 +183,20 @@ truncated with an ellipsis and keeps the full text in `title`.
 
 Component CSS uses only `--or-` tokens: a test fails on any color literal outside
 `tokens.css`.
+
+## Feedback
+
+- `toast(message, { variant?, duration? })`: shows a toast from anywhere (hooks, plain
+  callbacks, code that runs before a `Toaster` mounts: the toast waits in a module-level
+  store). `variant` is `success` (default, mint dot), `info` or `warning` (neutral dot) or
+  `danger` (coral dot). Returns an id for `dismissToast(id)`; `clearToasts()` empties the
+  queue (e.g. between tests).
+- `Toaster` (`label`, default "Notifications"): mount once per page tree. A named region,
+  bottom-right on desktop and above the tab bar at 768 px and narrower. Success, info and
+  warning messages are `role="status"`, danger is `role="alert"`; each toast has a
+  "Dismiss" button. Success, info and warning leave after 5 s and danger after 8 s
+  (`TOAST_DURATIONS`), paused while the toast is hovered or focused; at most 3 show
+  (`MAX_TOASTS`), the oldest leaving first. No accent: a toast never means "needs you".
 
 ## Surfaces
 

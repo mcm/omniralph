@@ -3,7 +3,7 @@ import "@/components/pickers/test-dom";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
   jsonResponse,
@@ -26,10 +26,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigation.redirect,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const PATH = "/api/ui/review-profiles";
@@ -90,7 +90,7 @@ function card(title: string): HTMLElement {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("ProfilesView", () => {
@@ -174,7 +174,7 @@ describe("ProfilesView", () => {
       [TEST_ORGANIZATION_ID, "settings", "detail", "review-profiles"],
       [TEST_ORGANIZATION_ID, "repositories"],
     ]);
-    expect(toast.notify).toHaveBeenCalledWith(
+    expect(toasts.toast).toHaveBeenCalledWith(
       "standard profile saved; it applies to the next review",
     );
   });

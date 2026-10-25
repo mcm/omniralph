@@ -1,6 +1,6 @@
 "use client";
 
-import { notify } from "@iamthemcmaster/ui";
+import { toast } from "@omniralph/ui";
 import {
   useMutation,
   useQueryClient,
@@ -107,9 +107,9 @@ export function useApiMutation<TData = unknown, TVariables = void, TContext = un
     onSuccess: async (data, variables) => {
       const { success } = latest.current;
       const warning = warningOf(data);
-      if (warning) notify(warning, { variant: "warning" });
+      if (warning) toast(warning, { variant: "warning" });
       else if (success !== null) {
-        notify(typeof success === "function" ? success(data, variables) : success);
+        toast(typeof success === "function" ? success(data, variables) : success);
       }
       await invalidate(variables, data);
       latest.current.onSuccess?.(data, variables);
@@ -118,7 +118,7 @@ export function useApiMutation<TData = unknown, TVariables = void, TContext = un
       if (error instanceof OrganizationStaleError) return;
       const apiError =
         error instanceof ApiError ? error : new ApiError(MUTATION_FAILED, 0, "client");
-      notify(apiError.message, { variant: "danger" });
+      toast(apiError.message, { variant: "danger" });
       latest.current.onError?.(apiError, variables, context);
       await invalidate(variables, undefined);
     },

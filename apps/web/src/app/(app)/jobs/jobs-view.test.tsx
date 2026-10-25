@@ -10,7 +10,7 @@ import {
   queryWrapper,
   testUser,
 } from "@/components/query-test-utils";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { JobList } from "@/lib/api/jobs";
 import type { JobRow } from "@/lib/harnesses/rows";
 import { JobsView } from "./jobs-view";
@@ -25,10 +25,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => nav.search,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 function jobRow(n: number, overrides: Partial<JobRow> = {}): JobRow {
@@ -75,7 +75,7 @@ beforeEach(() => {
   nav.router.push.mockReset();
   nav.router.replace.mockReset();
   window.location.hash = "";
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
 });
 
 describe("JobsView", () => {
@@ -179,7 +179,7 @@ describe("JobsView", () => {
       expect(within(row(job)).getAllByText("Cancel requested").length).toBeGreaterThan(0),
     );
     expect(seen.some((request) => request.method === "POST")).toBe(true);
-    expect(toast.notify).toHaveBeenCalledWith(
+    expect(toasts.toast).toHaveBeenCalledWith(
       "Cancel requested: the agent stops the job with its next heartbeat.",
       { variant: "warning" },
     );
@@ -211,7 +211,7 @@ describe("JobsView", () => {
     );
     fail(jsonResponse({ error: "That job has already finished." }, 400));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith("That job has already finished.", {
+      expect(toasts.toast).toHaveBeenCalledWith("That job has already finished.", {
         variant: "danger",
       }),
     );
@@ -246,7 +246,7 @@ describe("JobsView", () => {
     expect(
       seen.some((r) => r.method === "POST" && r.path === `/api/ui/jobs/${failed.id}/rerun`),
     ).toBe(true);
-    expect(toast.notify).toHaveBeenCalledWith("Job rerun");
+    expect(toasts.toast).toHaveBeenCalledWith("Job rerun");
     expect(within(row(failed)).getAllByText("Failed").length).toBeGreaterThan(0);
   });
 
@@ -263,7 +263,7 @@ describe("JobsView", () => {
     expect(await screen.findByText(/queued again for the harness it ran on/)).toBeTruthy();
     await userEvent.click(await screen.findByRole("button", { name: "Rerun job" }));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith("The harness this job ran on is gone.", {
+      expect(toasts.toast).toHaveBeenCalledWith("The harness this job ran on is gone.", {
         variant: "danger",
       }),
     );
