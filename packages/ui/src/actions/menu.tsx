@@ -2,7 +2,7 @@
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { IconCheck } from "@tabler/icons-react";
-import type { ReactElement } from "react";
+import type { KeyboardEvent, ReactElement, ReactNode } from "react";
 import { useLinkComponent } from "../provider/index.js";
 import type { ButtonIcon } from "./button.js";
 
@@ -54,10 +54,51 @@ export interface MenuProps {
   align?: "start" | "center" | "end";
   /** Disables the trigger. */
   disabled?: boolean;
+  /**
+   * Content above the items, after which a separator follows: e.g. who is signed in and a
+   * control such as `ThemeControl`. Its controls keep their own keys; Tab and Shift+Tab move
+   * between them and the items.
+   */
+  header?: ReactNode;
+}
+
+const TABBABLE =
+  "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]";
+
+/**
+ * Tab inside a menu with a header: Radix keeps focus on the items, so cycle between the
+ * header's tab stops and the items (as one stop, the first enabled item).
+ */
+function onTabKey(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Tab") return;
+  const content = event.currentTarget;
+  const header = content.querySelector<HTMLElement>(".or-menu__header");
+  if (!header) return;
+  // Stops Radix's own Tab handling for this event too.
+  event.preventDefault();
+  const firstItem = content.querySelector<HTMLElement>('[role^="menuitem"]:not([data-disabled])');
+  // Roving groups (e.g. a segmented control) keep one stop; the rest have tabindex -1.
+  const stops = [...header.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (element) => element.tabIndex >= 0,
+  );
+  if (firstItem) stops.push(firstItem);
+  if (stops.length === 0) return;
+  const target = event.target as HTMLElement;
+  const current = header.contains(target)
+    ? stops.findIndex((stop) => stop.contains(target))
+    : stops.length - 1;
+  const step = event.shiftKey ? -1 : 1;
+  const next = (current + step + stops.length) % stops.length;
+  stops[next]!.focus();
+}
+
+/** Keeps keys pressed in the header from reaching the menu's typeahead (Escape still closes). */
+function onHeaderKey(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
 }
 
 /** A dropdown of actions, opened from `trigger`. Destructive items always come last. */
-export function Menu({ items, trigger, align = "end", disabled = false }: MenuProps) {
+export function Menu({ items, trigger, align = "end", disabled = false, header }: MenuProps) {
   const LinkComponent = useLinkComponent();
   return (
     <DropdownMenu.Root>
@@ -70,7 +111,16 @@ export function Menu({ items, trigger, align = "end", disabled = false }: MenuPr
           align={align}
           sideOffset={6}
           collisionPadding={8}
+          onKeyDown={header !== undefined ? onTabKey : undefined}
         >
+          {header !== undefined ? (
+            <>
+              <div className="or-menu__header" onKeyDown={onHeaderKey}>
+                {header}
+              </div>
+              {items.length > 0 ? <DropdownMenu.Separator className="or-menu__separator" /> : null}
+            </>
+          ) : null}
           {orderMenuItems(items).map((item, index) => {
             if (item === "separator") {
               return (

@@ -1,4 +1,5 @@
 import type { UiTheme } from "@omniralph/db";
+import type { ThemePreference } from "@omniralph/ui";
 
 /** Control panel color theme, remembered per user in the database. */
 export type Theme = UiTheme;
@@ -9,10 +10,25 @@ export function parseTheme(value: unknown): Theme | null {
 }
 
 /**
+ * The stored theme for a chosen preference: System is `null` (follow the OS), Dark and
+ * Light are themselves. `undefined` when the value is no preference at all.
+ */
+export function parseThemePreference(value: unknown): Theme | null | undefined {
+  if (value === "system") return null;
+  if (value === "dark" || value === "light") return value;
+  return undefined;
+}
+
+/** The preference a stored theme stands for: `null` is System. */
+export function themePreference(theme: Theme | null): ThemePreference {
+  return theme ?? "system";
+}
+
+/**
  * Inline `<head>` script for `src/app/layout.tsx`. It runs before paint when the
  * server rendered no theme (signed out, or no choice saved yet), following the OS
  * preference to avoid a flash of the wrong theme. With no OS preference it falls
- * back to Polar Night (dark), the library's default.
+ * back to dark, Ultraviolet's default.
  */
 export const THEME_BOOTSTRAP = `
 (function(){

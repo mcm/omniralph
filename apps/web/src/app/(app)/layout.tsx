@@ -6,6 +6,7 @@ import {
   getOrganizationScope,
   requirePageUser,
 } from "@/lib/auth/session";
+import { themePreference } from "@/lib/theme";
 
 /**
  * Signed-in area: every page below requires a session and an active organization
@@ -30,6 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         email: user.email,
         image: user.image,
       }}
+      themePreference={themePreference(user.theme)}
       organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
       scopeCookie={jar.get(ORGANIZATION_SCOPE_COOKIE)?.value ?? null}
     >

@@ -1,16 +1,20 @@
 "use server";
 
 import { setUserTheme } from "@omniralph/db";
+import type { ThemePreference } from "@omniralph/ui";
 import type { ActionResult } from "@/lib/action-result";
 import { requireSignedInUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { parseTheme } from "@/lib/theme";
+import { parseThemePreference } from "@/lib/theme";
 
-/** Remembers the signed-in user's theme so every page renders in it, on any device. */
-export async function saveThemePreference(theme: string): Promise<ActionResult> {
+/**
+ * Remembers the signed-in user's theme preference so every page renders in it, on any
+ * device. System is stored as `null` (follow the OS).
+ */
+export async function saveThemePreference(preference: ThemePreference): Promise<ActionResult> {
   const user = await requireSignedInUser();
-  const parsed = parseTheme(theme);
-  if (!parsed) return { ok: false, error: "Unknown theme." };
-  await setUserTheme(getDb(), user.id, parsed);
+  const theme = parseThemePreference(preference);
+  if (theme === undefined) return { ok: false, error: "Unknown theme." };
+  await setUserTheme(getDb(), user.id, theme);
   return { ok: true };
 }

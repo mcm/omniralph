@@ -41,7 +41,10 @@ export function Providers({
     <UiProvider linkComponent={Link}>
       <ThemeProvider
         preference={theme}
-        onPreferenceChange={(next) => void saveThemePreference(next)}
+        onPreferenceChange={async (next) => {
+          const result = await saveThemePreference(next);
+          if (!result.ok) throw new Error(result.error); // restores the previous theme
+        }}
       >
         {children}
       </ThemeProvider>
@@ -58,10 +61,14 @@ export function Providers({
   `location.pathname` elsewhere).
 - `ThemeProvider` takes the saved `preference` (`"system" | "dark" | "light"`) and calls
   `onPreferenceChange(preference)` once each time it changes; persisting it is the app's job.
-  It sets `data-theme` on `document.documentElement` and, on `system`, follows
+  The new theme applies at once; if `onPreferenceChange` returns a promise that rejects, the
+  previous preference comes back (unless a newer choice was made meanwhile). It sets `data-theme` on `document.documentElement` and, on `system`, follows
   `prefers-color-scheme` as the OS changes (dark when the OS states no preference).
   `useTheme()` returns `{ preference, resolved, setPreference }`, and `resolveTheme(preference,
-prefersLight)` is the pure rule behind it. To avoid a flash before hydration, set
+prefersLight)` is the pure rule behind it.
+- `ThemeControl` is the one theme control (a user menu, settings, the agent UI): a "Theme"
+  `SegmentedControl` with System, Dark and Light (`THEME_OPTIONS`) bound to `useTheme()`.
+  `size` defaults to `sm`. To avoid a flash before hydration, set
   `data-theme` with an inline script before paint (`THEME_BOOTSTRAP` in `apps/web`).
 
 ## Actions
@@ -81,7 +88,9 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   or `"separator"`) opened from `trigger`. Destructive items always render last, after a
   separator, in coral; their `onSelect` should open a `ConfirmDialog`. An item with
   `checked` is a `menuitemcheckbox` choice with a check after its label when `true` (e.g.
-  the current organization).
+  the current organization). `header` renders content above the items (e.g. who is
+  signed in and a `ThemeControl`, styled with `.or-menu__heading`, `-title` and `-detail`);
+  its controls keep their own keys, and Tab / Shift+Tab move between them and the items.
 - `ConfirmDialog`: controlled (`open`, `onOpenChange`) `role="alertdialog"` with `title`,
   `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
   disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.

@@ -7,6 +7,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -56,8 +57,12 @@ function usePrefersLight(enabled: boolean): boolean {
 export interface ThemeProviderProps {
   /** The saved preference. A new value replaces the current one. */
   preference: ThemePreference;
-  /** Called once each time `setPreference` changes the preference; the app persists it. */
-  onPreferenceChange?: (preference: ThemePreference) => void;
+  /**
+   * Called once each time `setPreference` changes the preference; the app persists it. The
+   * new theme applies at once. If this returns a promise that rejects, the previous
+   * preference comes back (unless another choice was made in the meantime).
+   */
+  onPreferenceChange?: (preference: ThemePreference) => void | Promise<unknown>;
   children?: ReactNode;
 }
 
@@ -82,14 +87,26 @@ export function ThemeProvider({
   const resolved = resolveTheme(preference, prefersLight);
 
   useIsomorphicLayoutEffect(() => {
-    document.documentElement.dataset.theme = resolved;
-  }, [resolved]);
+    // While hydrating, `prefersLight` is the server's guess (false); read the OS directly so
+    // a light System preference never flashes dark.
+    document.documentElement.dataset.theme =
+      preference === "system" ? resolveTheme(preference, getPrefersLight()) : resolved;
+  }, [preference, resolved]);
 
+  // Counts choices, so a failed save only rolls back if it's still the latest one.
+  const latestChange = useRef(0);
   const setPreference = useCallback(
     (next: ThemePreference) => {
       if (next === preference) return;
+      const previous = preference;
+      const change = ++latestChange.current;
       setPreferenceState(next);
-      onPreferenceChange?.(next);
+      const saved = onPreferenceChange?.(next);
+      if (saved && typeof saved.then === "function") {
+        saved.then(undefined, () => {
+          if (latestChange.current === change) setPreferenceState(previous);
+        });
+      }
     },
     [preference, onPreferenceChange],
   );

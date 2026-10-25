@@ -124,6 +124,59 @@ describe("ThemeProvider", () => {
     expect(theme()).toBe("light");
   });
 
+  it("restores the previous preference when onPreferenceChange rejects", async () => {
+    installMatchMedia(false);
+    const user = userEvent.setup();
+    let reject!: (error: Error) => void;
+    const onPreferenceChange = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        }),
+    );
+    render(
+      <ThemeProvider preference="dark" onPreferenceChange={onPreferenceChange}>
+        <Probe />
+      </ThemeProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "light" }));
+    expect(theme()).toBe("light");
+    await act(async () => reject(new Error("offline")));
+    expect(theme()).toBe("dark");
+    expect(screen.getByLabelText("preference").textContent).toBe("dark");
+  });
+
+  it("keeps a newer choice when an earlier save fails", async () => {
+    installMatchMedia(false);
+    const user = userEvent.setup();
+    const rejects: ((error: Error) => void)[] = [];
+    const onPreferenceChange = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          rejects.push(fail);
+        }),
+    );
+    render(
+      <ThemeProvider preference="dark" onPreferenceChange={onPreferenceChange}>
+        <Probe />
+      </ThemeProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "light" }));
+    await user.click(screen.getByRole("button", { name: "system" }));
+    await act(async () => rejects[0]!(new Error("offline")));
+    expect(screen.getByLabelText("preference").textContent).toBe("system");
+  });
+
+  it("applies the OS theme for system before the first paint", () => {
+    installMatchMedia(true);
+    render(
+      <ThemeProvider preference="system">
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(theme()).toBe("light");
+  });
+
   it("takes a new saved preference from its props", () => {
     installMatchMedia(false);
     const { rerender } = render(
