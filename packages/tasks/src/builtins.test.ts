@@ -24,7 +24,6 @@ const task: TaskDefinitionInput = {
   triggers: ["finding.dismissed"],
   promptTemplate: "{{finding.title}}: {{dismissal.note}}",
   sink: "learned-rule",
-  pool: "short",
 };
 
 describe("the built-in registry", () => {
@@ -104,7 +103,6 @@ describe("builtinProblems", () => {
       triggers: ["linear.mention", "chat.request"],
       promptTemplate: "{{#epic.prd}}{{epic.prd}}{{/epic.prd}} on {{branch}}",
       sink: "ralph-run",
-      pool: "long",
       prDescriptionTaskId: "builtin:describe-pr",
     };
     const describer: TaskDefinitionInput = {

@@ -762,7 +762,6 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
           repositoryId: appRepoId,
           type: "chat.ask",
           taskType: "query",
-          pool: "short",
           status: "completed",
           payload: {},
         })

@@ -1105,23 +1105,6 @@ export const harnesses = pgTable(
   (t) => [index("harnesses_organization_id_idx").on(t.organizationId)],
 );
 
-/**
- * Named concurrency pools of an organization (`short` and `long` are seeded):
- * each job takes a slot of its pool, and harnesses limit their jobs per pool.
- */
-export const pools = pgTable(
-  "pools",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("pools_organization_name_uq").on(t.organizationId, t.name)],
-);
-
 export const harnessEnrollments = pgTable("harness_enrollments", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** The organization the redeemed harness joins. */
@@ -1512,8 +1495,6 @@ export const jobs = pgTable(
      * fixed command, no session). Only harnesses accepting it claim the job.
      */
     taskType: text("task_type").$type<JobTaskType>().notNull(),
-    /** The pool whose slots the job takes (e.g. `short`); null for `system` jobs. */
-    pool: text("pool"),
     /** The task definition the job runs (`builtin:<name>` or a UUID); null for legacy jobs. */
     taskId: text("task_id"),
     /** Only harnesses reporting at least this version (semver) claim the job. */
@@ -1597,7 +1578,6 @@ export const jobs = pgTable(
       .on(t.organizationId, t.taskType, t.leaseExpiresAt)
       .where(sql`status = 'running'`),
     check("jobs_task_type_valid", sql`${t.taskType} in ('query', 'review', 'coding', 'system')`),
-    check("jobs_pool_system_only_null", sql`(${t.taskType} = 'system') = (${t.pool} is null)`),
   ],
 );
 

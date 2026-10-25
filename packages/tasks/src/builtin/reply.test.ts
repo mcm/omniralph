@@ -64,7 +64,6 @@ describe("builtin:reply-to-finding", () => {
       agentId: "builtin:reviewer",
       triggers: ["finding.mention"],
       sink: "finding-thread",
-      pool: "short",
       tokenBudget: { profileFraction: 0.1 },
       maxTurns: 10,
       toolSettings: { shell: false, linearRead: false, network: false },

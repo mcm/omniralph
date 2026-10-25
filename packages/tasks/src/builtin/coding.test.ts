@@ -206,7 +206,6 @@ describe("builtin:implement-story", () => {
       taskType: "coding",
       agentId: "builtin:engineer",
       triggers: ["linear.delegated"],
-      pool: "long",
       maxAttemptsPerStory: 3,
       maxIterationsPerRun: 50,
       pushTiming: "per-story",
@@ -260,7 +259,6 @@ describe("builtin:handle-request", () => {
         "pr.ci-failed",
         "pr.fix-command",
       ],
-      pool: "long",
     });
     expect(
       validateTemplate(

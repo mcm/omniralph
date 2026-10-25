@@ -176,7 +176,6 @@ describe("runReviewTask", () => {
         },
       ],
       sink: "review",
-      pool: "short",
       ...overrides,
     });
   }

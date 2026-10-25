@@ -162,7 +162,6 @@ describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
       organizationId: orgId,
       type: "chat.ask",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:ask-about-code",
       payload,
       repositoryId,

@@ -2,7 +2,7 @@
  * Agent and task definitions. An agent definition says how to do a kind of
  * work (persona: system prompt, tools, skills, model); a task definition says
  * what to do and when (one task on one agent: task type, triggers, prompt
- * template, tool settings, sink, pool).
+ * template, tool settings, sink; its pool follows from its task type).
  */
 import { z } from "zod";
 import { HostToolName } from "./host-tools.js";
@@ -16,14 +16,12 @@ import {
   HARNESS_TOOLS,
   HARNESS_TOOLS_BY_TASK_TYPE,
   LINEAR_TOOLS,
-  POOLS,
   SINK_KINDS,
   TASK_TYPES,
   TRIGGER_KINDS,
 } from "./kinds.js";
 
 export const TaskTypeSchema = z.enum(TASK_TYPES);
-export const PoolNameSchema = z.enum(POOLS);
 export const TriggerKindSchema = z.enum(TRIGGER_KINDS);
 export const SinkKindSchema = z.enum(SINK_KINDS);
 export const HarnessToolSchema = z.enum(HARNESS_TOOLS);
@@ -272,7 +270,6 @@ export const TaskDefinition = z
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     sink: SinkKindSchema,
     ...CODING_FIELDS,
-    pool: PoolNameSchema,
     /** Overrides the agent's model. */
     model: Model.optional(),
     tokenBudget: TokenBudget.default(null),

@@ -50,7 +50,6 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/cron/expire-jobs", () => {
       organizationId: orgId,
       type: "repo.sync",
       taskType: "system",
-      pool: null,
     });
     await state.db
       .update(jobs)

@@ -8,6 +8,7 @@ import {
 import {
   ClaimRequest,
   MAX_JOB_DELIVERIES,
+  poolForTaskType,
   type JobStartResponse,
   type RunSpec,
 } from "@omniralph/shared";
@@ -33,7 +34,7 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
 
 /**
  * Hands the harness its next job: claims one of its organization's jobs of a
- * task type the harness accepts, in a pool it asked for (or a `system` job),
+ * task type the harness accepts, in a pool it asked for (`poolForTaskType`; or a `system` job),
  * whose minimum harness version it meets (`claimJob`) and returns it
  * with its tokens (`signJobTokens`: a lifecycle and a session token for a
  * run-spec job, one token for a legacy job) and, for a run-spec job (with a
@@ -127,7 +128,9 @@ async function claimNext(
       const hook = await handler.onStarted(db, claim.job, agent.id);
       if (hook.skip) continue;
     }
-    const { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount } = claim.job;
+    const { id, type, taskType, taskId, repositoryId, payload, deliveryCount } = claim.job;
+    // The derived pool, so the harness counts the job against that pool's slots.
+    const pool = poolForTaskType(taskType);
     return {
       action: "run",
       job: { id, type, taskType, pool, taskId, repositoryId, payload, deliveryCount },

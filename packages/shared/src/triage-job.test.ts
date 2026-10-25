@@ -18,10 +18,10 @@ const result = {
 };
 
 describe("triage jobs", () => {
-  it("have one job type, a query task in the short pool", () => {
+  it("have one job type, a query task", () => {
     expect(TRIAGE_RUN_JOB_TYPE).toBe("triage.run");
     expect(TRIAGE_JOB_TYPES).toEqual(["triage.run"]);
-    expect(legacyJobRouting(TRIAGE_RUN_JOB_TYPE)).toEqual({ taskType: "query", pool: "short" });
+    expect(legacyJobRouting(TRIAGE_RUN_JOB_TYPE)).toEqual({ taskType: "query" });
   });
 });
 

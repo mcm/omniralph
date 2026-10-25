@@ -514,7 +514,6 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           organizationId: runsOrgId,
           type: "chat.ask",
           taskType: "query",
-          pool: "short",
           repositoryId: repoId,
         });
         const run = (await mapThreadRun(db, {

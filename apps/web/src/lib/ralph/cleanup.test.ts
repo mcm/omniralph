@@ -331,7 +331,6 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect(job).toMatchObject({
       type: "worktree.cleanup",
       taskType: "system",
-      pool: null,
       taskId: null,
       targetHarnessId: agentA,
       dedupeKey: cleanupDedupeKey((await lane(run)).id),
@@ -430,7 +429,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     const [queued] = await cleanupJobs(run.id);
     await db
       .update(jobs)
-      .set({ type: "ralph.cleanup", taskType: "coding", pool: "long" })
+      .set({ type: "ralph.cleanup", taskType: "coding" })
       .where(eq(jobs.id, queued!.id));
     const job = await start(run.id, "ralph.cleanup");
     await finish(job, cleanupResult());

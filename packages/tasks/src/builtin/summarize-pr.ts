@@ -57,7 +57,6 @@ export const SUMMARIZE_PR_TASK: TaskDefinitionInput = {
   promptTemplate: SUMMARY_TEMPLATE,
   systemAppend: SUMMARY_SYSTEM_APPEND,
   sink: "sticky-comment",
-  pool: "short",
   // No budget of its own: the review profile's `maxTokensPerReview`.
   tokenBudget: null,
   variableLimits: { "pr.body": 10_000 },

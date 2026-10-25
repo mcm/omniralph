@@ -374,7 +374,6 @@ describe.skipIf(!databaseAvailable)("settings changes", () => {
           organizationId: org,
           type: "chat.ask",
           taskType: "query",
-          pool: "short",
           payload: {},
           status: "completed",
         })

@@ -16,7 +16,6 @@ const story: TaskDefinitionInput = {
   triggers: ["linear.delegated"],
   promptTemplate: "{{story.title}}\n{{epic.prd}}",
   sink: "ralph-run",
-  pool: "long",
 };
 
 const request: TaskDefinitionInput = {

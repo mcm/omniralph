@@ -144,7 +144,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
         organizationId: orgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
         status: "running",
         harnessId,
         repositoryId,
@@ -207,7 +206,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
         organizationId: orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:chat-ask",
         status: "running",
         harnessId,
@@ -241,7 +239,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
     const review = await newJob([ID], {
       type: "review.run",
       taskType: "review",
-      pool: "short",
       ralphRunId: null,
     });
     const forged = await token(review, ["credentials:read", "run:attachments"]);

@@ -279,7 +279,6 @@ export {
   type NewJobInput,
   type SettledJob,
 } from "./jobs.js";
-export { listPoolNames, seedPools } from "./pools.js";
 export {
   listHiddenRefsToDelete,
   listRunHiddenRefs,

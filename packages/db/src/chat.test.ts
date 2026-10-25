@@ -553,7 +553,7 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       (
         await db
           .insert(jobs)
-          .values({ organizationId, type: "chat.ask", taskType: "query", pool: "short" })
+          .values({ organizationId, type: "chat.ask", taskType: "query" })
           .returning()
       )[0]!;
     const newRalphRun = async (organizationId = orgId) =>

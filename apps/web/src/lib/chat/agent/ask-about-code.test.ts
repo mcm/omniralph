@@ -375,7 +375,6 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       repositoryId,
       targetHarnessId: null,
       taskType: "query",
-      pool: "short",
       taskId: "builtin:ask-about-code",
       minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       dedupeKey: chatAskDedupeKey(h.chatThread.id, "How are webhooks verified?"),

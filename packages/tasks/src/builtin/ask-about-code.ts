@@ -66,7 +66,6 @@ export const ASK_ABOUT_CODE_TASK: TaskDefinitionInput = {
   systemAppend: ASK_ABOUT_CODE_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
   sink: "chat-thread",
-  pool: "short",
   tokenBudget: { profileFraction: 0.25 },
   // More than a thread reply: the session starts from nothing.
   maxTurns: 30,

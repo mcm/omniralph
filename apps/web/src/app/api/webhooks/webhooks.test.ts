@@ -284,7 +284,6 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
         id: body.jobId,
         type: "review.task",
         taskType: "review",
-        pool: "short",
       });
       const payload = reviewTriggerContext(job!.payload);
       expect(payload).toMatchObject({

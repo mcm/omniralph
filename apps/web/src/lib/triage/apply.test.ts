@@ -187,7 +187,6 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       organizationId: orgId,
       type: "triage.run",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:triage",
       payload,
     });
@@ -677,7 +676,6 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       organizationId: orgId,
       type: "triage.run",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:triage",
       payload: job.payload,
     });

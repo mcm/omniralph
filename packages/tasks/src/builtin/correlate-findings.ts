@@ -126,6 +126,5 @@ export const CORRELATE_FINDINGS_TASK: TaskDefinitionInput = {
     additionalProperties: false,
   },
   sink: "run-result",
-  pool: "short",
   tokenBudget: { profileFraction: 0.5 },
 };

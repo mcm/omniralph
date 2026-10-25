@@ -467,7 +467,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
   it("adds required installables and host tools to jobs, empty by default (0073)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Job requirements" }).returning();
     const { rows } = await db.$client.query(
-      `insert into jobs (organization_id, type, task_type, pool) values ($1, 'review.run', 'review', 'short')
+      `insert into jobs (organization_id, type, task_type) values ($1, 'review.run', 'review')
        returning required_installables, required_host_tools`,
       [org!.id],
     );
@@ -1035,6 +1035,90 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           `select 1 from pg_type where typname = 'repository_coding_path'`,
         );
         expect(types).toEqual([]);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
+  it("drops the stored pools: jobs and tasks keep their task type, pools follow from it (0093)", async () => {
+    await db.execute(sql`create database job_pools`);
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/job_pools");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0093_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        // Production-shaped: the seeded pools, and jobs of each kind with their stored pool.
+        await client.query(
+          `insert into pools (organization_id, name) values ($1, 'short'), ($1, 'long')`,
+          [org],
+        );
+        await client.query(
+          `insert into jobs (organization_id, type, task_type, pool, task_id, status) values
+             ($1, 'ralph.story', 'coding', 'long', 'builtin:implement-story', 'running'),
+             ($1, 'chat.ask', 'query', 'short', null, 'queued'),
+             ($1, 'review.task', 'review', 'short', 'builtin:review-pr', 'completed'),
+             ($1, 'repo.sync', 'system', null, null, 'queued')`,
+          [org],
+        );
+        await client.query(
+          `insert into task_definitions (organization_id, name, definition)
+           values ($1, 'Custom', '{"name": "Custom", "taskType": "query", "pool": "short"}')`,
+          [org],
+        );
+
+        await runMigrations(uri);
+        const { rows: definitions } = await client.query<{ definition: unknown }>(
+          `select definition from task_definitions`,
+        );
+        expect(definitions).toEqual([{ definition: { name: "Custom", taskType: "query" } }]);
+        const { rows } = await client.query<Record<string, unknown>>(
+          `select * from jobs order by type`,
+        );
+        expect(rows.map((r) => [r.type, r.task_type, r.task_id, r.status])).toEqual([
+          ["chat.ask", "query", null, "queued"],
+          ["ralph.story", "coding", "builtin:implement-story", "running"],
+          ["repo.sync", "system", null, "queued"],
+          ["review.task", "review", "builtin:review-pr", "completed"],
+        ]);
+        for (const row of rows) expect(row).not.toHaveProperty("pool");
+        const { rows: tables } = await client.query(
+          `select 1 from information_schema.tables where table_name = 'pools'`,
+        );
+        expect(tables).toEqual([]);
+        const { rows: constraints } = await client.query(
+          `select 1 from pg_constraint where conname = 'jobs_pool_system_only_null'`,
+        );
+        expect(constraints).toEqual([]);
+        // New jobs carry no pool; the task type check stays.
+        await client.query(
+          `insert into jobs (organization_id, type, task_type) values ($1, 'review.task', 'review')`,
+          [org],
+        );
+        await expect(
+          client.query(
+            `insert into jobs (organization_id, type, task_type) values ($1, 'review.task', 'deploy')`,
+            [org],
+          ),
+        ).rejects.toThrow(/jobs_task_type_valid/);
       } finally {
         await client.end();
       }
@@ -1776,7 +1860,6 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       organizationId: org!.id,
       type: "review.run",
       taskType: "review" as const,
-      pool: "short",
       dedupeKey: "repo:1:pr:2",
     };
     const [first] = await db.insert(jobs).values(job).returning();

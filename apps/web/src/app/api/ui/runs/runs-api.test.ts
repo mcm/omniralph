@@ -341,7 +341,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: epic.id,
     });
     const started = new Date(Date.UTC(2026, 9, 1, 9));
@@ -408,7 +407,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       organizationId: orgId,
       type: "triage.run",
       taskType: "query",
-      pool: "short",
       repositoryId: repoA,
       triageRunId: triage.id,
       payload: {
@@ -433,7 +431,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       organizationId: orgId,
       type: "chat.ask",
       taskType: "query",
-      pool: "short",
       repositoryId: repoA,
       payload: {
         trigger: { kind: "chat.request", context: { question: "Where is auth handled?" } },
@@ -677,7 +674,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
 
   /** A job of the run, set to `finish` (status, times, usage, agent…) once inserted. */
   async function attempt(
-    input: Omit<Parameters<typeof insertJob>[1], "organizationId" | "taskType" | "pool"> & {
+    input: Omit<Parameters<typeof insertJob>[1], "organizationId" | "taskType"> & {
       taskType?: "coding" | "query" | "review";
     },
     finish: Partial<typeof jobs.$inferInsert> = {},
@@ -685,7 +682,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     const taskType = input.taskType ?? "coding";
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      pool: taskType === "coding" ? "long" : "short",
       ...input,
       taskType,
     });
@@ -1327,7 +1323,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     await updateStory(db, story!.id, { status: "running", lastJobId: job.id });
@@ -1492,7 +1487,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
           organizationId: orgId,
           type: "ralph.story",
           taskType: "coding",
-          pool: "long",
           ralphRunId: run.id,
           ralphStoryId: status === "completed" ? built.id : open.id,
           payload: {},
@@ -1528,7 +1522,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         organizationId: orgId,
         type: "review.task",
         taskType: "review",
-        pool: "short",
         repositoryId: repoA,
         reviewRunId: review.id,
         payload: {},
@@ -1618,7 +1611,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         organizationId: orgId,
         type: "ralph.request",
         taskType: "coding",
-        pool: "long",
         taskId: "builtin:handle-request",
         ralphRunId: run.id,
         // A coding run's payload: the request is its trigger context.
@@ -1725,7 +1717,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         organizationId: orgId,
         type: "review.task",
         taskType: "review",
-        pool: "short",
         repositoryId: repoA,
         reviewRunId: run.id,
         payload: { trigger: { kind: "pr.opened", context: { reviewId: review.id } } },
@@ -1847,7 +1838,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         organizationId: orgId,
         type: "triage.run",
         taskType: "query",
-        pool: "short",
         triageRunId: run.id,
         payload: {
           trigger: {
@@ -1921,7 +1911,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         organizationId: orgId,
         type: "chat.ask",
         taskType: "query",
-        pool: "short",
         repositoryId: repoA,
         dedupeKey: `chat.ask:${thread.id}:q`,
         // As `enqueueChatAsk` stores it (`ChatThreadContext`).

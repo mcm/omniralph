@@ -51,7 +51,6 @@ describe("builtin:ask-about-code", () => {
       agentId: "builtin:code-explainer",
       triggers: ["chat.request"],
       sink: "chat-thread",
-      pool: "short",
       tokenBudget: { profileFraction: 0.25 },
       maxTurns: 30,
       toolSettings: { shell: false, linearRead: false, network: false },

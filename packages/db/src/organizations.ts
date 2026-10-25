@@ -17,7 +17,6 @@ import {
   organizations,
   users,
 } from "./schema.js";
-import { seedPools } from "./pools.js";
 import { seedReviewProfiles } from "./settings.js";
 import { normalizeEmail } from "./users.js";
 
@@ -93,7 +92,7 @@ async function countOrgAdmins(tx: Tx, organizationId: string): Promise<number> {
 
 /**
  * Creates an organization with its creator as its first `admin`, the built-in
- * review profiles and the `short` and `long` pools, and makes it the creator's active organization.
+ * review profiles, and makes it the creator's active organization.
  */
 export async function createOrganization(
   db: Database,
@@ -109,7 +108,6 @@ export async function createOrganization(
       .insert(organizationMembers)
       .values({ organizationId: organization.id, userId: input.createdBy, role: "admin" });
     await seedReviewProfiles(tx, organization.id);
-    await seedPools(tx, organization.id);
     await tx
       .update(users)
       .set({ activeOrganizationId: organization.id })

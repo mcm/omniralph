@@ -12,10 +12,6 @@
 export const TASK_TYPES = ["query", "review", "coding"] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
-/** Concurrency pools: `short` for query and review runs, `long` for coding runs. */
-export const POOLS = ["short", "long"] as const;
-export type PoolName = (typeof POOLS)[number];
-
 /** Events that can start a task. */
 export const TRIGGER_KINDS = [
   "pr.updated",

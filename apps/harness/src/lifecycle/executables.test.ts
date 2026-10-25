@@ -54,7 +54,6 @@ function task(overrides: Partial<TaskDefinitionInput> = {}) {
     triggers: ["chat.request"],
     promptTemplate: "Hi",
     sink: "chat-thread",
-    pool: "short",
     ...overrides,
   });
 }

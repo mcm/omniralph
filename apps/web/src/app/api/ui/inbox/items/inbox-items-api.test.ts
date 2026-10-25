@@ -552,7 +552,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       organizationId: orgId,
       type: REPO_SYNC_JOB_TYPE,
       taskType: "system",
-      pool: null,
       payload: { repositoryId: repoId },
       repositoryId: repoId,
       targetHarnessId: agentId,

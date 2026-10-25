@@ -170,7 +170,6 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
       organizationId: orgId,
       type: "review.run",
       taskType: "review" as const,
-      pool: "short",
       harnessId,
       repositoryId,
       status,

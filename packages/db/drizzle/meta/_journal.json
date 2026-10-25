@@ -652,6 +652,13 @@
       "when": 1792955625085,
       "tag": "0092_drop_repository_coding_path",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792955679715,
+      "tag": "0093_drop_job_pools",
+      "breakpoints": true
     }
   ]
 }

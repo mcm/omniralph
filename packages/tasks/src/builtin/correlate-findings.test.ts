@@ -60,7 +60,6 @@ describe("builtin:correlate-findings", () => {
       agentId: "builtin:correlator",
       triggers: ["run.invoked"],
       sink: "run-result",
-      pool: "short",
       toolSettings: { shell: false, linearRead: false, network: false },
       setupCommands: [],
     });

@@ -9,11 +9,13 @@ import {
   ReviewTaskContext,
   RunSpecJobPayload,
   parseRalphSettings,
+  poolForTaskType,
   RalphRunInvoker,
   RalphSettings,
   ruleTool,
   type JobRepository,
   type JobToken,
+  type PoolName,
   type RunSpec,
   type RunToolRestrictions,
   type ReviewProfileConfig,
@@ -52,7 +54,7 @@ export async function resolveRunSpec(
   db: Database,
   job: Pick<
     Job,
-    "id" | "organizationId" | "taskType" | "pool" | "taskId" | "repositoryId" | "payload"
+    "id" | "organizationId" | "taskType" | "taskId" | "repositoryId" | "payload"
   >,
   tokens: { lifecycle: JobToken; session: JobToken },
   definitions: DefinitionSource = organizationDefinitions(db, job.organizationId),
@@ -62,11 +64,12 @@ export async function resolveRunSpec(
   if (!task) throw new RunSpecError(`Unknown task ${job.taskId}`);
   const agent = await definitions.getAgent(task.agentId);
   if (!agent) throw new RunSpecError(`Unknown agent ${task.agentId} of task ${task.id}`);
-  if (job.taskType !== task.taskType || job.pool !== task.pool) {
+  if (job.taskType !== task.taskType) {
     throw new RunSpecError(
-      `Job routing (${job.taskType}/${job.pool ?? "no pool"}) doesn't match task ${task.id} (${task.taskType}/${task.pool})`,
+      `Job task type ${job.taskType} doesn't match task ${task.id} (${task.taskType})`,
     );
   }
+  const pool = poolForTaskType(task.taskType);
 
   const parsed = RunSpecJobPayload.safeParse(job.payload);
   if (!parsed.success) throw new RunSpecError(`Invalid run payload: ${parsed.error.message}`);
@@ -103,12 +106,12 @@ export async function resolveRunSpec(
   const spec: RunSpec = {
     jobId: job.id,
     taskType: task.taskType,
-    pool: task.pool,
+    pool,
     agent: {
       ...agent,
       tools: { ...agent.tools, builtin: narrowTools(agent.tools.builtin, tools) },
     },
-    task,
+    task: withLegacyPool(task, pool),
     trigger: payload.trigger,
     repository,
     repositoryId: repositoryId || null,
@@ -128,6 +131,14 @@ export async function resolveRunSpec(
     throw new RunSpecError(`Review run of task ${task.id} has no valid review configuration`);
   }
   return narrowByReviewProfile(spec, reviewConfig.data.profile);
+}
+
+/**
+ * `task` with its derived `pool`, which harnesses up to 0.13 still require in
+ * a run spec's task (newer ones drop it): a task's pool follows from its type.
+ */
+function withLegacyPool(task: TaskDefinition, pool: PoolName): TaskDefinition {
+  return { ...task, pool } as TaskDefinition;
 }
 
 /**

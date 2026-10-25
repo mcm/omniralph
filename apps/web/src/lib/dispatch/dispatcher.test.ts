@@ -32,7 +32,6 @@ const input: DispatchJobInput = {
   organizationId: ORG_ID,
   type: "repo.sync",
   taskType: "system",
-  pool: "system",
 };
 
 function job(overrides: Partial<Job> = {}): Job {

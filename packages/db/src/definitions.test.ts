@@ -213,7 +213,6 @@ describe.skipIf(!databaseAvailable)("definition queries", () => {
         organizationId,
         type: "chat.ask",
         taskType: "query" as const,
-        pool: "short",
         taskId: id,
         status,
       });

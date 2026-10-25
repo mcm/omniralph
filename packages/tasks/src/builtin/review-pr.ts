@@ -133,7 +133,6 @@ export const REVIEW_PR_TASK: TaskDefinitionInput = {
   promptTemplate: REVIEW_TEMPLATE,
   systemAppend: REVIEW_SYSTEM_APPEND,
   sink: "review",
-  pool: "short",
   // No budget of its own: the review profile's `maxTokensPerReview`.
   tokenBudget: null,
   // As `buildPrompt` quotes it (`MAX_DESCRIPTION_CHARS`).

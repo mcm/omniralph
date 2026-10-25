@@ -12,7 +12,6 @@ describe("builtin:summarize-pr", () => {
       agentId: "builtin:reviewer",
       triggers: ["pr.updated", "pr.mention", "review.rerun"],
       sink: "sticky-comment",
-      pool: "short",
       tokenBudget: null,
     });
     expect(task.systemAppend).toContain('{"findings": [], "summary": string}');

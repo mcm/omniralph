@@ -72,7 +72,6 @@ vi.mock("@omniralph/db", async () => {
           ]
         : [],
     listChatChannelTaskReferences: async () => [],
-    listPoolNames: async () => ["short", "long", "gpu"],
     listActiveHarnessIds: async () => ["harness-1"],
     listReportedModels: async () => [],
     listReportedInstallables: async () => [
@@ -138,7 +137,6 @@ describe("Settings › Tasks pages' API", () => {
       agentName: "Reviewer",
       triggers: expect.arrayContaining(["pr.updated"]),
       sink: "review",
-      pool: "short",
     });
   });
 
@@ -204,7 +202,7 @@ describe("Settings › Tasks pages' API", () => {
     );
   });
 
-  it("gives the form's options to admins only: agents, sinks, pools, choices and host tools", async () => {
+  it("gives the form's options to admins only: agents, sinks, choices and host tools", async () => {
     state.user = user("member");
     expect((await get(formOptions.GET)).status).toBe(403);
     state.user = user("admin");
@@ -218,8 +216,8 @@ describe("Settings › Tasks pages' API", () => {
     });
     expect(body.sinks).toContainEqual({ kind: "review", taskType: "review" });
     expect(body.sinks).toContainEqual({ kind: "chat-thread", taskType: "query" });
-    // Only pools a definition can name.
-    expect(body.pools).toEqual(["short", "long"]);
+    // A task's pool follows from its task type: the form offers none.
+    expect(body).not.toHaveProperty("pools");
     expect(body.choices).toEqual({
       models: [],
       installables: [

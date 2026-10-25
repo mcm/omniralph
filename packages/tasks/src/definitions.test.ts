@@ -31,7 +31,6 @@ const task: TaskDefinitionInput = {
   promptTemplate: "{{finding.title}}",
   outputSchema: { type: "object", properties: { rule: { type: ["string", "null"] } } },
   sink: "learned-rule",
-  pool: "short",
   tokenBudget: { tokens: 5000 },
 };
 
@@ -170,7 +169,6 @@ describe("TaskDefinition", () => {
       taskType: "coding",
       triggers: ["linear.delegated"],
       sink: "ralph-run",
-      pool: "long",
       maxTurns: 200,
       idleTimeoutMs: 600_000,
     };
@@ -242,13 +240,16 @@ describe("TaskDefinition", () => {
     });
   });
 
-  it("rejects unknown triggers, sinks and pools", () => {
+  it("rejects unknown triggers and sinks", () => {
     expect(issues(TaskDefinition.safeParse({ ...task, triggers: ["pr.opened"] }))).toEqual([
       "triggers.0",
     ]);
     expect(issues(TaskDefinition.safeParse({ ...task, triggers: [] }))).toEqual(["triggers"]);
     expect(issues(TaskDefinition.safeParse({ ...task, sink: "email" }))).toEqual(["sink"]);
-    expect(issues(TaskDefinition.safeParse({ ...task, pool: "medium" }))).toEqual(["pool"]);
+  });
+
+  it("drops a stored pool: a task's pool follows from its task type", () => {
+    expect(TaskDefinition.parse({ ...task, pool: "long" })).not.toHaveProperty("pool");
   });
 
   it("accepts setup and teardown commands and fills their defaults", () => {

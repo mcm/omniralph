@@ -253,7 +253,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     outcome: Partial<WorktreeExecResult> | { jobError: string },
   ): Promise<WorktreeExecPayload> {
     const job = await start(runId);
-    expect(job).toMatchObject({ type: "worktree.exec", taskType: "system", pool: null });
+    expect(job).toMatchObject({ type: "worktree.exec", taskType: "system" });
     const payload = WorktreeExecPayload.parse(job.payload);
     await finish(
       job,
@@ -332,7 +332,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     result: Partial<RalphCleanupResult> = {},
   ): Promise<WorktreeCleanupPayload> {
     const job = await activeJob(runId);
-    expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system", pool: null });
+    expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system" });
     const started = await claimJob(db, {
       organizationId: orgId,
       harnessId: agentA,
@@ -923,7 +923,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(job).toMatchObject({
         type: "worktree.exec",
         taskType: "system",
-        pool: null,
         taskId: null,
         targetHarnessId: agentA,
         dedupeKey: runDedupeKey(run.id),
@@ -1125,7 +1124,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const queued = await activeJob(run.id);
       await db
         .update(jobs)
-        .set({ type: "ralph.prepare", taskType: "coding", pool: "long" })
+        .set({ type: "ralph.prepare", taskType: "coding" })
         .where(eq(jobs.id, queued.id));
       const job = await start(run.id);
       expect(job.type).toBe("ralph.prepare");

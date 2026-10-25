@@ -60,7 +60,6 @@ describe("builtin:triage", () => {
       agentId: "builtin:planner",
       triggers: ["linear.triage"],
       sink: "triage",
-      pool: "short",
       model: "opus",
       tokenBudget: null,
       idleTimeoutMs: 300_000,

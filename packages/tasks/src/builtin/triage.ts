@@ -388,7 +388,6 @@ export const TRIAGE_TASK: TaskDefinitionInput = {
   toolSettings: { shell: false, linearRead: true, network: false },
   outputSchema: TRIAGE_OUTPUT_SCHEMA,
   sink: "triage",
-  pool: "short",
   // Ralph's story model (`DEFAULT_STORY_MODEL`), with no token budget, as before the port.
   model: "opus",
   tokenBudget: null,

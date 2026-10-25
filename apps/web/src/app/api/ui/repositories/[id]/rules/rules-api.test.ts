@@ -257,7 +257,6 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
       expect(job).toMatchObject({
         type: "review.learn-rule",
         taskType: "query",
-        pool: "short",
         taskId: "builtin:learn-rule",
         minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         repositoryId: repoId,

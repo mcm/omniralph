@@ -94,8 +94,8 @@ describe.skipIf(!databaseAvailable)("ralph analytics queries", () => {
       type,
       // Coding runs, and the PR/MR description's query run.
       ...(type === "ralph.describe-pr"
-        ? { taskType: "query" as const, pool: "short", taskId: "builtin:describe-pr" }
-        : { taskType: "coding" as const, pool: "long", taskId: "builtin:implement-story" }),
+        ? { taskType: "query" as const, taskId: "builtin:describe-pr" }
+        : { taskType: "coding" as const, taskId: "builtin:implement-story" }),
       repositoryId,
       ralphRunId: runId,
       status: "completed" as const,

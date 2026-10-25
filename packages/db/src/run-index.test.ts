@@ -193,7 +193,7 @@ describe.skipIf(!databaseAvailable)("run index", () => {
       .returning();
     const [job] = await db
       .insert(jobs)
-      .values({ organizationId: orgId, type: "chat.ask", taskType: "query", pool: "short" })
+      .values({ organizationId: orgId, type: "chat.ask", taskType: "query" })
       .returning();
     const [ask] = await db
       .insert(chatThreadRuns)

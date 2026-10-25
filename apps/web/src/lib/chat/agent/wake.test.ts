@@ -252,7 +252,6 @@ describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
       organizationId: orgId,
       type: "chat.ask",
       taskType: "query",
-      pool: "short",
       taskId: "builtin:ask-about-code",
       payload,
       repositoryId,
@@ -348,7 +347,6 @@ describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
       organizationId: orgId,
       type: "ralph.request",
       taskType: "coding",
-      pool: "long",
       ralphRunId: run.id,
     });
     const request = {

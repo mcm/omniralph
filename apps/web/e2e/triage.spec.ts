@@ -20,7 +20,6 @@ async function runningTriage(db: Database, prefix: string) {
     organizationId,
     type: "triage.run",
     taskType: "query",
-    pool: "short",
     payload: {
       trigger: {
         kind: "linear.triage",

@@ -7,13 +7,12 @@ const task = getBuiltinTask("builtin:review-pr")!;
 const agent = getBuiltinAgent("builtin:reviewer")!;
 
 describe("builtin:review-pr", () => {
-  it("runs on builtin:reviewer as a review task in the short pool, posting through the review sink", () => {
+  it("runs on builtin:reviewer as a review task, posting through the review sink", () => {
     expect(task).toMatchObject({
       taskType: "review",
       agentId: "builtin:reviewer",
       triggers: ["pr.updated", "pr.mention", "review.rerun"],
       sink: "review",
-      pool: "short",
       tokenBudget: null,
       setupCommands: [],
       teardownCommands: [],

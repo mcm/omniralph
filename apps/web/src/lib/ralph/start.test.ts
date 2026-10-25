@@ -983,7 +983,6 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       organizationId: orgId,
       type: "ralph.story",
       taskType: "coding",
-      pool: "long",
       ralphRunId: previous.id,
     });
 

@@ -304,9 +304,6 @@ export function TaskDetailContent({
             <Fact label="Sink">
               <MonoValue value={task.sink} className="text-xs" />
             </Fact>
-            <Fact label="Pool">
-              <Badge variant="neutral">{task.pool}</Badge>
-            </Fact>
             <Fact label="Model override">
               {task.model ? (
                 <MonoValue value={task.model} className="text-xs" />

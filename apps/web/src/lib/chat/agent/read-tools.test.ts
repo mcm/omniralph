@@ -179,7 +179,6 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       organizationId: id,
       type: "review.task",
       taskType: "review",
-      pool: "short",
       repositoryId: repository.id,
       payload: { prNumber: 7 },
     });
@@ -218,7 +217,6 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
         organizationId: crowdedOrgId,
         type: "ralph.story",
         taskType: "coding",
-        pool: "long",
       });
     }
   }, 180_000);

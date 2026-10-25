@@ -18,7 +18,6 @@ import {
   CODING_FIELD_NAMES,
   TASK_TYPES,
   TRIGGERS_BY_TASK_TYPE,
-  type PoolName,
   type SinkKind,
   type TaskDefinition,
   type TaskDefinitionInput,
@@ -36,11 +35,10 @@ import { api } from "@/lib/api/client";
 import { definitionPath, savedDefinitionSchema } from "@/lib/api/definitions";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
-import { NOT_SET, withDefault } from "@/lib/settings/changes";
+import { withDefault } from "@/lib/settings/changes";
 import { Choices, EditorActions, errorFor, installableOptions } from "../agents/form-parts";
 import { definitionsChanged } from "../definition-queries";
 import {
-  defaultPool,
   taskChanges,
   taskDraft,
   tokenBudget,
@@ -87,8 +85,6 @@ export interface TaskFormProps {
   /** The organization's agents (built-in and custom). */
   agents: TaskFormAgent[];
   sinks: TaskFormSink[];
-  /** The organization's pools a task may run in. */
-  pools: PoolName[];
   /** The tasks a coding task may name for its PR description (`PR_DESCRIPTION_TASKS`). */
   prDescriptionTasks: TaskChoice[];
   /** The models and installables the organization's harnesses report. */
@@ -131,7 +127,6 @@ export function taskInput(
     triggers: draft.triggers,
     promptTemplate: draft.promptTemplate,
     sink: draft.sink,
-    pool: draft.pool,
     model: draft.model.trim() || undefined,
     tokenBudget: tokenBudget(draft.budgetMode, draft.budgetAmount),
     setupCommands: draft.setupCommands.map(setupCommand),
@@ -164,7 +159,6 @@ export function TaskForm({
   task,
   agents,
   sinks,
-  pools,
   prDescriptionTasks,
   choices,
   hostTools,
@@ -172,7 +166,7 @@ export function TaskForm({
 }: TaskFormProps) {
   const router = useRouter();
   // The saved task as the query has it now: the draft follows it while it isn't edited.
-  const saved = taskDraft(task, pools);
+  const saved = taskDraft(task);
   const [draft, setDraft] = useSeededDraft(saved);
   const [errors, setErrors] = React.useState<FieldErrors>(initialErrors);
   const [confirming, setConfirming] = React.useState(false);
@@ -203,7 +197,6 @@ export function TaskForm({
       sink: sinks.some((option) => option.kind === current.sink && option.taskType === next)
         ? current.sink
         : "",
-      pool: task ? current.pool : defaultPool(next, pools),
       // Shell is a query task setting: other types keep the saved one.
       toolSettings:
         next === "query"
@@ -583,31 +576,6 @@ export function TaskForm({
                     {typeSinks.map((option) => (
                       <option key={option.kind} value={option.kind}>
                         {option.kind}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-                <Field
-                  label="Pool"
-                  htmlFor="task-pool"
-                  description={withDefault(
-                    "Whose concurrency slots its runs take.",
-                    defaultPool(taskType, pools) || NOT_SET,
-                  )}
-                  error={errors.pool}
-                  required
-                >
-                  <NativeSelect
-                    id="task-pool"
-                    disabled={pending}
-                    aria-invalid={Boolean(errors.pool)}
-                    value={draft.pool}
-                    onChange={(e) => set({ pool: e.target.value as PoolName })}
-                  >
-                    {draft.pool === "" && <option value="">Choose a pool</option>}
-                    {pools.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
                       </option>
                     ))}
                   </NativeSelect>

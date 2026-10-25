@@ -64,7 +64,6 @@ describe("HttpControlPanelApi.claim", () => {
         triggers: ["chat.request"],
         promptTemplate: "{{question}}",
         sink: "chat-thread",
-        pool: "short",
       },
       trigger: { kind: "chat.request", context: { question: "Why?" } },
       repository: null,
