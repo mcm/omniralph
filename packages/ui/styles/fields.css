@@ -1,0 +1,221 @@
+/*
+ * Fields: field layout, text inputs, select and token input (ui.css .field, .label,
+ * .input, .tokens, .token). Controls sit on --or-page with the --or-ctl border; hover
+ * lifts the border to --or-sec, focus draws it in the accent with the halo.
+ */
+
+/* Field: label and description (200 px), then the control */
+.or-field {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 6px 24px;
+  align-items: start;
+}
+
+.or-field__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.or-field__label {
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.or-field__description {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.or-field__control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .or-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .or-field__head {
+    padding-top: 0;
+  }
+}
+
+.or-field-error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Text input, textarea and select */
+.or-input,
+.or-tokens {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--or-ctl);
+  border-radius: var(--or-radius);
+  background: var(--or-page);
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
+  font-size: 14px;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.or-input {
+  height: 36px;
+  padding: 0 10px;
+  line-height: 1.4;
+}
+
+.or-input--mono,
+.or-tokens--mono {
+  font-family: var(--or-font-mono);
+  font-size: 13px;
+}
+
+.or-input::placeholder,
+.or-tokens__input::placeholder {
+  color: var(--or-ter);
+  opacity: 1;
+}
+
+.or-input:hover,
+.or-tokens:hover {
+  border-color: var(--or-sec);
+}
+
+.or-input:focus,
+.or-tokens:focus-within {
+  border-color: var(--or-acc);
+  box-shadow: 0 0 0 3px var(--or-halo);
+  outline: none;
+}
+
+.or-input[aria-invalid="true"],
+.or-tokens[data-invalid] {
+  border-color: var(--or-fail);
+}
+
+.or-input:disabled,
+.or-tokens[data-disabled] {
+  border-color: var(--or-border);
+  color: var(--or-ter);
+  cursor: not-allowed;
+}
+
+.or-textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.or-select {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.or-select__control {
+  appearance: none;
+  padding-right: 32px;
+  cursor: pointer;
+}
+
+.or-select__chevron {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: var(--or-sec);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+/* Token input: chips and a text input in one wrapping box */
+.or-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 6px;
+  cursor: text;
+}
+
+.or-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 2px 0 8px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-size: 12px;
+}
+
+.or-token__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-token__remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--or-sec);
+  cursor: pointer;
+}
+
+.or-token__remove:hover {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-token__remove:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 1px;
+}
+
+.or-token__remove:disabled {
+  cursor: not-allowed;
+}
+
+.or-tokens__input {
+  flex: 1 0 80px;
+  min-width: 80px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.or-tokens__input:disabled {
+  cursor: not-allowed;
+}

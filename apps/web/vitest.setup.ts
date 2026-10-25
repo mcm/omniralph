@@ -3,3 +3,6 @@
 import { configure } from "@testing-library/dom";
 
 configure({ asyncUtilTimeout: 10_000 });
+
+// Same for Redis: the client fails a command after 2s, which a loaded test Redis can exceed.
+process.env.REDIS_COMMAND_TIMEOUT_MS ??= "10000";

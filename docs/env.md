@@ -27,6 +27,7 @@ put them in `apps/web/.env.local`.
 | `DATABASE_URL` | yes | — | Pooled Neon Postgres URL, used by the app. Injected by the Neon integration. |
 | `DATABASE_URL_UNPOOLED` | no | falls back to `DATABASE_URL` | Direct (unpooled) Neon URL, preferred by `pnpm --filter @omniralph/db migrate`. Injected by the Neon integration. |
 | `REDIS_URL` | no | — (hot state off: idle paths read Postgres) | Upstash Redis TCP URL (`rediss://default:<password>@<host>:6379`), not the REST URL. Holds hot state for idle agent paths (`apps/web/src/lib/hot-state/`) so Neon can scale to zero: caches, counters and signals rebuilt from Postgres whenever the `hot-state:epoch` key is missing. Postgres stays the source of truth, and every hot-state read falls back to it when this is unset or Redis errors. |
+| `REDIS_COMMAND_TIMEOUT_MS` | no | `2000` | How long a Redis command may take, in milliseconds, before it fails and the read falls back to Postgres. The test suite raises it to 10000 because a loaded test Redis can be slower. |
 
 ### Secrets and URLs
 

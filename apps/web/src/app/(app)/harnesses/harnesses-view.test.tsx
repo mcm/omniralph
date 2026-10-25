@@ -2,7 +2,7 @@
 import "@/components/pickers/test-dom";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestQueryClient, queryWrapper, testUser } from "@/components/query-test-utils";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import { HarnessesView } from "./harnesses-view";
@@ -68,7 +68,13 @@ beforeEach(() => {
 });
 
 describe("HarnessesView", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows a skeleton, then the harnesses, online by the browser's clock", async () => {
+    // Freeze only the clock, so a slow render still reads "5s ago" (timers stay real).
+    vi.useFakeTimers({ toFake: ["Date"] });
     const recent = new Date(Date.now() - 5_000).toISOString();
     mockFetch({
       // The server rendered it offline; the browser's clock decides.

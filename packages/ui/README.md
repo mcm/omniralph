@@ -103,6 +103,26 @@ Keyboard-operable form controls (Design rule 12). Each shows the accent focus ri
   accent and `fail` in coral; the count is part of the tab's name ("Needs you, 4"). Arrow
   keys move and select, Home/End jump; the strip scrolls sideways instead of wrapping.
 
+## Fields
+
+Text fields on `--or-page` with the `--or-ctl` border; hover lifts the border, focus draws
+it in the accent with the halo.
+
+- `Field`: a setting row with `label` (a `<label for>` the control), an optional one-line
+  `description` (linked to the control by `aria-describedby`) and one control as children,
+  in a 200 px + flexible grid that collapses to one column at 768 px and narrower. The
+  control picks its id up from the Field (or pass `htmlFor`).
+- `TextInput`, `Textarea`, `Select` (a styled native `<select>` with `<option>` children):
+  `invalid` sets `aria-invalid`; `errorMessage` renders under the control, linked by
+  `aria-describedby` (and implies `invalid`); `mono` sets Geist Mono.
+- `TokenInput`: a list of values edited one chip at a time (Design rule 18). `values`,
+  `onChange`, `placeholder`, `validate(value) => string | null`, `mono` (default true).
+  Enter or comma adds the trimmed text; empty and duplicate values are skipped; pasted
+  lines or comma-separated text add one token per part; Backspace in the empty input
+  removes the last token; each chip has a "Remove <value>" button. A `validate` error is
+  shown under the box, linked by `aria-describedby`, and blocks the add. Focus stays in the
+  text input.
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
