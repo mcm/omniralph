@@ -77,10 +77,10 @@ export async function routeStories(
     organizationId: run.organizationId,
     linear: deps.linear,
   });
-  // Without custom rules every story routes as the epic (the main lane) but follow-ups, which
+  // Without routing rules or work item matches every story routes as the epic (the main lane) but follow-ups, which
   // route as their source.
   const issueIds = epic.stories.flatMap((s) => (s.issueId ? [s.issueId] : []));
-  const toRoute = router.hasCustomRules
+  const toRoute = router.hasCustomRoutes
     ? new Set(issueIds)
     : await listFollowUps(tx, run.organizationId, issueIds);
   if (toRoute.size === 0) return lanes;

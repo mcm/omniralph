@@ -77,6 +77,8 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
       overrides: { query: null, review: null, coding: true },
       inherited: { query: true, review: true, coding: true },
     },
+    workItemMatch: null,
+    routingRules: [],
   };
 }
 

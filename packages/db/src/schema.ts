@@ -39,6 +39,8 @@ export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
 /** Sources of webhook deliveries: the code hosts plus Linear. */
 export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "linear"]);
 export const integrationProvider = pgEnum("integration_provider", ["linear"]);
+/** The tracker a repository's work item match reads work items from. */
+export const workItemTracker = pgEnum("work_item_tracker", ["linear"]);
 export const chatPlatform = pgEnum("chat_platform", ["slack", "discord"]);
 /** How a chat identity was linked: by the member (`manual`) or by a matching email (`email`). */
 export const chatIdentitySource = pgEnum("chat_identity_source", ["manual", "email"]);
@@ -961,6 +963,44 @@ export const routingRules = pgTable(
   (t) => [
     uniqueIndex("routing_rules_organization_position_uq").on(t.organizationId, t.position),
     index("routing_rules_repository_id_idx").on(t.repositoryId),
+  ],
+);
+
+/**
+ * A repository's work item match: the work items it builds (`apps/web/src/lib/routing/match.ts`).
+ * Routing tries it after the organization's routing rules and before the default rules; the
+ * most specific match wins. Team, project and labels match ignoring case.
+ */
+export const workItemMatches = pgTable(
+  "work_item_matches",
+  {
+    /** One match per repository; deleting the repository deletes it. */
+    repositoryId: uuid("repository_id")
+      .primaryKey()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    /** The team's key (`ENG`). */
+    team: text("team").notNull(),
+    /** A project's name; null with `withoutProject` false is any project (or none). */
+    project: text("project"),
+    /** Only work items with no project. */
+    withoutProject: boolean("without_project").notNull().default(false),
+    /** Any of these labels; empty is any labels. */
+    labels: text("labels").array().notNull().default([]),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("work_item_matches_organization_id_idx").on(t.organizationId),
+    check(
+      "work_item_matches_without_project_no_project",
+      sql`not ${t.withoutProject} or ${t.project} is null`,
+    ),
   ],
 );
 

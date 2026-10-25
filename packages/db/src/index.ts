@@ -220,6 +220,17 @@ export {
   type RoutingRule,
 } from "./routing-rules.js";
 export {
+  deleteWorkItemMatch,
+  getWorkItemMatch,
+  listOtherWorkItemMatches,
+  listWorkItemMatches,
+  saveWorkItemMatch,
+  type SaveWorkItemMatchInput,
+  type WorkItemMatch,
+  type WorkItemMatchFields,
+  type WorkItemTracker,
+} from "./work-item-matches.js";
+export {
   CHAT_TASKS_KEY,
   DEFAULT_CHAT_TASKS,
   DESIRED_HARNESS_VERSION_KEY,

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
 import type { RoutingTestResult } from "@/lib/api/routing-rules";
 import { getDb } from "@/lib/db";
+import { workItemMatchInputSchema } from "@/lib/api/work-item-matches";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import {
   hitRoutingTestLimit,
@@ -15,14 +16,19 @@ const bodySchema = linearRoutingRulesSchema.extend({
     .trim()
     .min(1, "Enter an issue identifier, e.g. ENG-12.")
     .max(100, "That's too long for an issue identifier."),
+  /** A repository's unsaved work item match (null: cleared), applied to the saved ones. */
+  workItemMatch: z
+    .object({ repositoryId: z.uuid(), match: workItemMatchInputSchema.nullable() })
+    .optional(),
 });
 
 /**
  * Settings › Routing's "Test an issue" (every member): where `{ identifier }` routes under
- * `{ rules }`, the unsaved list (validated as on save), without saving anything. Answers the
- * outcome, the rule the issue matched and the route's chain; 404 for an issue Linear doesn't
- * know, 409 without a Linear workspace, 429 past `ROUTING_TEST_LIMIT` a minute per user
- * (shared with the routing preview).
+ * `{ rules }`, the unsaved list (validated as on save), and the work item matches with
+ * `{ workItemMatch }` (one repository's unsaved match) applied, without saving anything.
+ * Answers the outcome, what the issue matched (`matched`, and `rule`) and the route's chain;
+ * 404 for an issue Linear doesn't know, 409 without a Linear workspace, 429 past
+ * `ROUTING_TEST_LIMIT` a minute per user (shared with the routing preview).
  */
 export const POST = apiHandler(
   { body: bodySchema },
@@ -38,6 +44,7 @@ export const POST = apiHandler(
       { db, organizationId: user.organization.id, linear },
       body.identifier,
       body.rules,
+      body.workItemMatch,
     );
   },
 );

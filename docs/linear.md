@@ -108,9 +108,11 @@ expires) and from the same browser.
 ## 4. Configure routing
 
 Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Its coding settings are on **Repository › Settings › Coding**. Which issues build where is
-decided by the organization's [routing rules](#routing-rules), not by the repository: its
-**Routing** subsection lists the rules that target it (number and conditions) and links to
-**Settings › Routing**.
+decided by each repository's [work item match](#work-item-matches) and, when the organization has
+any, its [routing rules](#routing-rules), which apply first. The Coding tab's **Routing**
+subsection lists the rules that target the repository (number and conditions) and links to
+**Settings › Routing**; `GET /api/ui/repositories/{id}` reports them too (`routingRules`), beside
+its match (`workItemMatch`).
 
 | Setting | What it does |
 | -- | -- |
@@ -141,9 +143,44 @@ config), with the same names and defaults, grouped as on the page:
 Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
 also changes running epics from their next story on (for example which stories are manual).
 
+### Routing order
+
+A delegated issue (and a mention, a story of an epic, and triage) is routed in this order:
+
+1. The organization's [routing rules](#routing-rules), whenever it has any: the first one that
+   matches wins.
+2. The repositories' [work item matches](#work-item-matches): the most specific match wins, and
+   a tie asks.
+3. The default rules: follow-up, sub-issue, then ask (below).
+
+A route to a repository with coding off makes the issue manual: it's for a person.
+
+### Work item matches
+
+Each repository can say which work items it builds: its work item match
+(`PUT /api/ui/repositories/{id}/work-item-match`, admins; `{ "match": null }` clears it). A match
+has:
+
+- a tracker (`linear`, which must be connected) and a team, by key (`SOC`);
+- optionally a project, by name, or "no project" (`withoutProject`: only work items without
+  one), but not both;
+- optionally labels: a work item needs any one of them.
+
+Team, project and labels match ignoring case. A disconnected repository's match routes nothing.
+
+When several repositories match a work item, the most specific match wins. Specificity counts the
+conditions beyond tracker and team: a project or "no project" adds 1, labels add 1. When two or
+more matches tie at the highest specificity, routing asks which repository to use, and the route
+names the tied repositories (`work item matches of acme/api, acme/web tie`). Saving a match
+answers `warnings` naming each other repository whose match has the same tracker, team and
+project condition and whose labels intersect (or are both empty), since a work item both match
+would ask.
+
+The run's **Routed by** reads like `work item match (Team is SOC, label product:portal)`.
+
 ### Routing rules
 
-A delegated issue (and a mention, and triage) is routed by the organization's routing rules,
+Routing rules are the organization's ordered list,
 **Settings › Routing** (`/api/ui/routing-rules`). Each rule is a condition over the issue's Linear
 fields (identifier, title, description, team, project, milestone, cycle, state, state type,
 priority, assignee, creator, parent, labels, estimate, due date), its parent's fields
@@ -157,7 +194,8 @@ at once (**Discard** drops the changes). Value pickers offer your Linear workspa
 projects, milestones, cycles, states, labels and people; a value that isn't in the workspace any
 more shows a warning and is still saved. A rule with no conditions matches every issue.
 
-After your rules come default rules that aren't stored and can't be edited:
+After your rules come the [work item matches](#work-item-matches), then default rules that
+aren't stored and can't be edited:
 
 1. If the issue is a follow-up, route it the same as its source: the story it was filed from.
    An issue is a follow-up only when Omniralph filed it (or reused it) as one and recorded its
@@ -171,8 +209,8 @@ own route. If the other issue would ask, the rule doesn't apply and the next one
 manual (coding off), so is this issue. More than 5 such steps, or a loop, count as no route.
 
 The run's **Routed by** says how: `rule 3 (Labels contains any of backend)`,
-`follow-up of ENG-12 → story of ENG-1`, `sub-issue of ENG-10 → rule 1 (Team is ENG)`, or
-`your selection`.
+`work item match (Team is SOC)`, `follow-up of ENG-12 → story of ENG-1`,
+`sub-issue of ENG-10 → rule 1 (Team is ENG)`, or `your selection`.
 
 **Coding off.** A rule may name a repository with coding off. An issue it matches is for a
 person: a delegation or mention gets "This routes to `x` (rule N), which has coding off, so it's
@@ -180,9 +218,12 @@ for a person." and nothing is built, created or moved in Linear. Triage still re
 repository.
 
 **Test an issue.** Below the rules, enter an issue identifier (`ENG-12`) and **Test** to see
-where it would route under the rules as they are on the page, unsaved changes included
-(`POST /api/ui/routing-rules/test`; every member, at most 30 tests a minute each). It shows the
-rule the issue matched (its number and conditions, or the default rule), the chain, such as
+where it would route under the rules as they are on the page, unsaved changes included, and the
+saved work item matches (`POST /api/ui/routing-rules/test`; every member, at most 30 tests a
+minute each). The request can also carry one repository's unsaved match
+(`workItemMatch: { repositoryId, match }`, `match: null` for cleared), applied in place of its
+saved one. The answer's `matched` is `rule`, `match` or `default`. It shows the
+rule the issue matched (its number and conditions, a work item match, or the default rule), the chain, such as
 `sub-issue of ENG-10 → rule 2 (Team is ENG) → acme/web`, and the result: the repository,
 "manual (coding off)", or "Would ask which repository to use". It uses the same routing as a
 delegation, and nothing is saved or changed in Linear.
@@ -194,8 +235,8 @@ issue, that run's ID and how it was routed (`routed_by`), so the two can be comp
 Linear doesn't know is a `not_found` result rather than a failed request. Each request counts
 once against the "Test an issue" limit.
 
-Routing comes only from the rules: text in the issue's description (such as a `[repo=…]` tag)
-only matters when a rule tests the description.
+Routing comes only from the rules and the work item matches: text in the issue's description
+(such as a `[repo=…]` tag) only matters when a rule tests the description.
 
 An issue that routes nowhere gets a question in its agent session: "Which repository should I work
 in for this issue?", with every ralph-enabled repository as an option. Nothing is built until you
@@ -215,8 +256,8 @@ If no repository has coding on at all, the session gets an error explaining how 
 
 ### Stories in other repositories
 
-In an epic with sub-issues, each story is routed with the same [routing rules](#routing-rules)
-as delegated issues. A story that matches no rule of its own falls to the "sub-issue" default and
+In an epic with sub-issues, each story is routed with the same [routing order](#routing-order)
+as delegated issues. A story that matches no rule or work item match of its own falls to the "sub-issue" default and
 stays in the epic's repository. A story a rule routes to another repository with coding on gets a
 lane there: its own branch (the epic's branch name, based on that repository's default branch) and
 its own PR/MR, and the run's start message says so. Stories are routed before ralph decides which

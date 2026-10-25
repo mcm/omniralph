@@ -5,6 +5,7 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, linearSettingsOptionsSchema, mutationResultSchema } from "./schemas";
+import { workItemMatchSchema } from "./work-item-matches";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
@@ -169,6 +170,13 @@ export const repositoryDetailSchema = z.object({
     overrides: z.object({ query: taskSwitch, review: taskSwitch, coding: taskSwitch }),
     inherited: z.object({ query: z.boolean(), review: z.boolean(), coding: z.boolean() }),
   }),
+  /** The work items it builds; null when it has no match. */
+  workItemMatch: workItemMatchSchema.nullable(),
+  /**
+   * The organization's routing rules that target it, which apply before any work item match:
+   * position (1-based, in order, as `rule N` in `routed_by`) and condition in words.
+   */
+  routingRules: z.array(z.object({ position: z.number(), description: z.string() })),
 });
 export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 
