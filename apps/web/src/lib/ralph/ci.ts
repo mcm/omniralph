@@ -8,7 +8,7 @@
  * - Triggers: GitHub `workflow_run` (completed) and GitLab `Pipeline Hook`
  *   webhooks (`respondToCiEvent`), and the ralph reconcile cron, which checks
  *   every open ralph PR/MR (`reconcileCi`).
- * - Skipped: repositories with `respondToCiFailures` off, stopped (or failed)
+ * - Skipped: repositories with `respondToReviewsAndCi` off, stopped (or failed)
  *   runs, and runs with an active job (it may push again; a later check
  *   catches up). A closed or merged PR/MR is recorded and left to cleanup.
  * - Only `failed` acts, once per head commit (`handled_ci_shas`), at most
@@ -31,7 +31,6 @@ import {
 } from "@omniralph/db";
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
-import { parseRalphSettings } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
@@ -93,8 +92,7 @@ export async function respondToCi(
   ) {
     return ignored("repository_unavailable");
   }
-  const settings = parseRalphSettings(target.repository.ralphSettings);
-  if (!settings.respondToCiFailures) return ignored("opted_out");
+  if (!target.repository.respondToReviewsAndCi) return ignored("opted_out");
   if (OVER.has(found.run.status)) return ignored("run_over");
   // Work on the run may push again: check its CI later. Decided by the caller
   // before acting on any of a run's lanes, so each of its PRs/MRs is checked.

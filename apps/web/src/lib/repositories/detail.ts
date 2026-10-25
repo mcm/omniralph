@@ -4,22 +4,22 @@ import {
   getRepositoryWithConnection,
   getWorkItemMatch,
   listHarnessOverview,
-  listReportedModels,
-  listRepositoryCodingHarnessIds,
   listRepositoryPinnedHarnessIds,
   listRoutingRules,
   repositorySwitchOverrides,
+  resolveRepositorySwitches,
+  type Database,
+  type Repository,
 } from "@omniralph/db";
-import { parseRalphSettings, ralphSettingsFormValues } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
-import type { CodingLinear, RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
+import type { RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
 import { getDb } from "@/lib/db";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
-import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
-import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
+import { organizationPlaybooks } from "@/lib/playbooks";
+import { storyCodingSettings } from "@/lib/ralph/coding";
 import { describeQuery } from "@/lib/routing/describe";
 import { repositoryWebUrl } from "./web-url";
 import { workItemMatchRow } from "./work-item-match";
@@ -66,6 +66,8 @@ export async function loadRepositoryDetail(
       pinnedHarnessIds,
       reviewPlaybookIds: repository.reviewPlaybookIds,
       correlationPlaybookId: repository.correlationPlaybookId,
+      storyPlaybookId: repository.storyPlaybookId,
+      requestPlaybookId: repository.requestPlaybookId,
     },
     harnesses: harnesses.map((harness) => {
       const row = harnessRow(harness, now, organizationVersion.version);
@@ -96,48 +98,30 @@ export async function loadRepositoryDetail(
   };
 }
 
-/**
- * The Coding tab's settings and its pickers' choices from the database: the
- * models of the harnesses that may run the repository's coding jobs (its pinned ones, else
- * every harness accepting coding), and the organization's routing rules that target it.
- */
+/** A repository's coding policy on the wire, with its story playbook's round limits. */
+export async function repositoryCoding(
+  db: Database,
+  repository: Repository,
+): Promise<RepositoryCoding> {
+  const [switches, settings] = await Promise.all([
+    resolveRepositorySwitches(db, repository),
+    storyCodingSettings(repository, organizationPlaybooks(db, repository.organizationId)),
+  ]);
+  return {
+    codingEnabled: switches.coding,
+    codingInstructions: repository.codingInstructions,
+    openPullRequestEarly: repository.openPullRequestEarly,
+    historyRewrite: repository.historyRewrite,
+    respondToReviewsAndCi: repository.respondToReviewsAndCi,
+    roundLimits: { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds },
+  };
+}
+
+/** The organization's connected repository's coding policy (`repositoryCodingSchema`). */
 export async function loadRepositoryCoding(
   organizationId: string,
   id: string,
 ): Promise<RepositoryCoding> {
-  const db = getDb();
   const { repository } = await connectedRepository(organizationId, id);
-  const [{ pinned, harnessIds }, rules] = await Promise.all([
-    listRepositoryCodingHarnessIds(db, organizationId, id),
-    listRoutingRules(db, organizationId),
-  ]);
-  const models = await listReportedModels(db, organizationId, { harnessIds });
-  return {
-    settings: {
-      storyPlaybookId: repository.storyPlaybookId,
-      requestPlaybookId: repository.requestPlaybookId,
-      ...ralphSettingsFormValues(parseRalphSettings(repository.ralphSettings)),
-      manualLabels: repositoryManualLabels(repository),
-    },
-    models,
-    harnessCount: harnessIds.length,
-    pinned,
-    routingRules: rules.flatMap((rule, index) =>
-      rule.repositoryId === id
-        ? [{ number: index + 1, summary: describeQuery(rule.query, LINEAR_ROUTING_FIELDS) }]
-        : [],
-    ),
-  };
-}
-
-/** The organization's Linear workspace the Coding tab's Linear fields pick from (calls Linear). */
-export async function loadCodingLinear(organizationId: string): Promise<CodingLinear> {
-  return getLinearSettingsOptions(organizationId).then(
-    (options): CodingLinear =>
-      options ? { status: "connected", options } : { status: "disconnected" },
-    (error: unknown): CodingLinear => {
-      console.error("Loading the Linear settings options failed", error);
-      return { status: "unavailable" };
-    },
-  );
+  return repositoryCoding(getDb(), repository);
 }

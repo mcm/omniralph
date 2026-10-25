@@ -78,11 +78,15 @@ export interface RepositorySettingsUpdate {
   reviewPlaybookIds?: string[];
   /** Correlation task of the repository's review runs; unchanged when left out. */
   correlationPlaybookId?: string;
+  /** Story playbook of its story runs; unchanged when left out. */
+  storyPlaybookId?: string;
+  /** Request playbook of its request runs; unchanged when left out. */
+  requestPlaybookId?: string;
 }
 
 /**
- * Saves a connected repository's review config. Returns null if the
- * organization has no such connected repository.
+ * Saves a connected repository's review config and (when given) its playbook bindings.
+ * Returns null if the organization has no such connected repository.
  */
 export async function updateRepositorySettings(
   db: Database,
@@ -101,6 +105,8 @@ export async function updateRepositorySettings(
       ...(input.correlationPlaybookId
         ? { correlationPlaybookId: input.correlationPlaybookId }
         : {}),
+      ...(input.storyPlaybookId ? { storyPlaybookId: input.storyPlaybookId } : {}),
+      ...(input.requestPlaybookId ? { requestPlaybookId: input.requestPlaybookId } : {}),
     })
     .where(
       and(
@@ -110,6 +116,12 @@ export async function updateRepositorySettings(
       ),
     )
     .returning();
-  if (row) recordRepositorySettingsChange(db, row, "repository.reviews");
+  if (row) {
+    recordRepositorySettingsChange(db, row, "repository.reviews");
+    // The story and request playbooks are coding settings.
+    if (input.storyPlaybookId || input.requestPlaybookId) {
+      recordRepositorySettingsChange(db, row, "repository.coding");
+    }
+  }
   return row ?? null;
 }

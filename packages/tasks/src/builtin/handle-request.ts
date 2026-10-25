@@ -173,7 +173,7 @@ export const HANDLE_REQUEST_PLAYBOOK: PlaybookInput = {
   promptTemplate: REQUEST_TEMPLATE,
   toolSettings: { shell: true, linearRead: false, network: true },
   // Its runs go back to the ralph run (the role's `ralph-run` sink), which posts the summary and makes the PR change.
-  // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
+  // Ralph's story model (`DEFAULT_STORY_MODEL`). Its coding settings are `CODING_DEFAULTS`.
   model: "opus",
   tokenBudget: null,
 };

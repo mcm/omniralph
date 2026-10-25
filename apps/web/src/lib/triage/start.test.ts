@@ -13,9 +13,8 @@ import {
   repositories,
   setAllowedTaskTypeDefaults,
   triageRuns,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   replaceRoutingRules,
   type Database,
 } from "@omniralph/db";
@@ -103,9 +102,8 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await replaceRoutingRules(db, orgId, [
       {

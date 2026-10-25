@@ -36,7 +36,7 @@ import {
   listRuns,
   listStories,
   lockRun,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertStories,
@@ -69,7 +69,6 @@ import {
   harnesses,
   hiddenRefs,
   chatConnections,
-  DEFAULT_RALPH_SETTINGS,
   jobs,
   ralphMessages,
   ralphRuns,
@@ -78,6 +77,14 @@ import {
 } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
+
+/** A repository's coding policy columns as they default. */
+const CODING_OFF_DEFAULTS = {
+  codingInstructions: null,
+  openPullRequestEarly: false,
+  historyRewrite: "when-asked",
+  respondToReviewsAndCi: true,
+} as const;
 
 describe.skipIf(!databaseAvailable)("ralph queries", () => {
   const key = randomBytes(32);
@@ -251,10 +258,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     );
   });
 
-  it("adds ralph settings to repositories, with defaults", async () => {
+  it("adds the coding policy to repositories, with defaults", async () => {
     expect(await getRepository(db, repoA)).toMatchObject({
       ralphEnabled: null,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
+      ...CODING_OFF_DEFAULTS,
     });
     // Inheriting: coding is on while the organization allows it (the built-in default), by path.
     expect((await listRalphRepositories(db, orgId)).map((r) => [r.id, r.effective.coding])).toEqual(
@@ -266,23 +273,21 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
     expect(await listRalphRepositories(db, orgId)).toEqual([]);
 
-    const settings = {
-      ...DEFAULT_RALPH_SETTINGS,
-      verifyCommands: ["pnpm test"],
-      epicCompletedState: "In Review",
+    const policy = {
+      codingInstructions: "Always rebase.",
       openPullRequestEarly: true,
-      setupCommand: "pnpm install",
-      model: "sonnet",
-      manualLabels: ["by hand"],
-    };
+      historyRewrite: "always",
+      respondToReviewsAndCi: false,
+    } as const;
     for (const id of [repoA, repoB]) {
-      expect(
-        await updateRepositoryRalphSettings(db, id, {
-          ralphEnabled: true,
-          ralphSettings: settings,
-        }),
-      ).toMatchObject({ ralphEnabled: true, ralphSettings: settings });
+      expect(await updateRepositoryCoding(db, id, { ralphEnabled: true, ...policy })).toMatchObject(
+        { ralphEnabled: true, ...policy },
+      );
     }
+    // Blank instructions are none.
+    expect(
+      await updateRepositoryCoding(db, repoA, { ...policy, codingInstructions: "  " }),
+    ).toMatchObject({ ralphEnabled: true, codingInstructions: null });
     // An explicit true wins over the organization's default; by path.
     expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
       "acme/a-web",
@@ -297,10 +302,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     await disconnectRepository(db, orgId, repoB);
     expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
     expect(
-      await updateRepositoryRalphSettings(db, repoB, {
-        ralphEnabled: true,
-        ralphSettings: DEFAULT_RALPH_SETTINGS,
-      }),
+      await updateRepositoryCoding(db, repoB, { ralphEnabled: true, ...CODING_OFF_DEFAULTS }),
     ).toBeNull();
     await connectRepository(db, {
       connectionId: (await getRepository(db, repoB))!.connectionId,
@@ -1235,15 +1237,12 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   });
 
   it("lists the repositories runs can be filtered by: ralph enabled or with runs", async () => {
-    const off = {
-      ralphEnabled: false,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
-    };
-    await updateRepositoryRalphSettings(db, repoA, off);
-    await updateRepositoryRalphSettings(db, repoB, off);
+    const off = { ralphEnabled: false, ...CODING_OFF_DEFAULTS };
+    await updateRepositoryCoding(db, repoA, off);
+    await updateRepositoryCoding(db, repoB, off);
     expect(await listRalphRunRepositories(db, orgId)).toEqual([]);
 
-    await updateRepositoryRalphSettings(db, repoB, { ...off, ralphEnabled: true });
+    await updateRepositoryCoding(db, repoB, { ...off, ralphEnabled: true });
     expect((await listRalphRunRepositories(db, orgId)).map((r) => r.id)).toEqual([repoB]);
 
     // repoA has a run (its ralph setting was turned off later).
@@ -1276,10 +1275,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         fullPath: "other/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, otherRepo, {
-      ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
-    });
+    await updateRepositoryCoding(db, otherRepo, { ralphEnabled: true, ...CODING_OFF_DEFAULTS });
     const otherInput = runInput({ organizationId: other!.id, repositoryId: otherRepo });
     const { run: otherRun } = await createRun(db, otherInput);
     await upsertStories(db, otherRun.id, [

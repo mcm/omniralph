@@ -18,9 +18,8 @@ import {
   listPendingRequests,
   ralphRuns,
   claimJob,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   organizations,
@@ -117,9 +116,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     gitlabRepoId = (
       await connectRepository(db, {
@@ -129,9 +127,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         fullPath: "acme/web",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, gitlabRepoId, {
+    await updateRepositoryCoding(db, gitlabRepoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(db, orgId, [gitlabRepoId, projectIs("Web")], [repoId, teamIs("ENG")]);
   }, 180_000);
@@ -160,10 +157,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
-    await updateRepositoryRalphSettings(db, repoId, {
-      ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
-    });
+    await updateRepositoryCoding(db, repoId, { ralphEnabled: true, historyRewrite: "when-asked" });
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -826,10 +820,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     });
 
     it("follows the repository's historyRewrite setting", async () => {
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, historyRewrite: "never" },
-      });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, historyRewrite: "never" });
       const { epic } = threeStoryEpic();
       const { run } = await session(epic.id, "@omniralph rebase onto main");
       expect((await request(run!.id)).historyRewrite).toBe("never");

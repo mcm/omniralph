@@ -6,15 +6,8 @@ import {
   unpinRepositoryFromHarness,
   updateRepositorySettings,
   type Database,
-  type Repository,
 } from "@omniralph/db";
-import {
-  DEFAULT_BLOCKED_LABELS,
-  parseRalphSettings,
-  type FieldErrors,
-  type RalphSettingsInput,
-  type RepositorySettingsInput,
-} from "@omniralph/shared";
+import type { FieldErrors, RepositorySettingsInput } from "@omniralph/shared";
 import {
   getPlaybookChoice,
   REPOSITORY_BINDING_ROLES,
@@ -22,9 +15,6 @@ import {
 } from "@/lib/playbooks";
 import { pinRepository } from "@/lib/harnesses/pins";
 import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
-import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
-import { unknownLinearValues } from "@/lib/linear/settings-values";
-import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
 import type { JobDispatcher } from "@/lib/dispatch";
 
 export type SaveRepositorySettingsResult =
@@ -106,8 +96,8 @@ export async function repositoryBindingErrors(
 
 /**
  * Saves a repository's review settings, its review depth among them (a repository of the
- * organization, validated with `RepositorySettingsInput`), and the review and correlation
- * playbooks its review runs use when they're given (`repositoryBindingErrors`), and reconciles
+ * organization, validated with `RepositorySettingsInput`), and its playbook bindings when
+ * they're given (`repositoryBindingErrors`), and reconciles
  * its agent pins: newly pinned agents go through `pinRepository`, which enqueues a `repo.sync`
  * job for that agent. The next review job enqueued for the repository picks the settings up.
  */
@@ -141,6 +131,8 @@ export async function saveRepositorySettings(
     customInstructions: input.customInstructions,
     reviewPlaybookIds: input.reviewPlaybookIds,
     correlationPlaybookId: input.correlationPlaybookId,
+    storyPlaybookId: input.storyPlaybookId,
+    requestPlaybookId: input.requestPlaybookId,
   });
   if (!saved) return { status: "unknown_repository" };
 
@@ -158,68 +150,4 @@ export async function saveRepositorySettings(
     }
   }
   return { status: "saved", pinnedHarnessIds: added, unpinnedHarnessIds: removed, syncJobIds };
-}
-
-/** The Linear values a repository has saved, as the Coding tab shows them. */
-type SavedLinearValues = Pick<Repository, "ralphSettings">;
-
-/** `values` not in `saved`, ignoring case. */
-function newValues(values: readonly string[], saved: readonly string[]): string[] {
-  const have = new Set(saved.map((v) => v.toLowerCase()));
-  return values.filter((v) => !have.has(v.toLowerCase()));
-}
-
-function notInWorkspace(values: readonly string[], what: string): string {
-  const list = values.map((v) => `“${v}”`).join(", ");
-  return values.length === 1
-    ? `${list} isn't a ${what} in your Linear workspace.`
-    : `${list} aren't ${what}s in your Linear workspace.`;
-}
-
-/**
- * Field errors of a Coding form's Linear values: each manual and blocked label and the epic completed state must exist in the organization's connected Linear workspace.
- * Values the repository already has saved are kept even when they went stale (a renamed label
- * stays until a person removes it); only new ones are checked. Without a connected workspace
- * nothing is checked. `"unavailable"` when the workspace couldn't be read.
- */
-export async function ralphLinearErrors(
-  organizationId: string,
-  saved: SavedLinearValues,
-  input: Pick<RalphSettingsInput, "manualLabels" | "blockedLabels" | "epicCompletedState">,
-): Promise<FieldErrors | "unavailable"> {
-  const savedSettings = parseRalphSettings(saved.ralphSettings);
-  const savedEpicState = savedSettings.epicCompletedState ?? "";
-  const epicState = input.epicCompletedState.trim();
-  const added = {
-    manualLabels: newValues(input.manualLabels, repositoryManualLabels(saved)),
-    // The default blocked labels are always accepted: one missing from the workspace never matches.
-    blockedLabels: newValues(input.blockedLabels, [
-      ...savedSettings.blockedLabels,
-      ...DEFAULT_BLOCKED_LABELS,
-    ]),
-    epicCompletedState:
-      epicState.toLowerCase() === savedEpicState.trim().toLowerCase() ? null : epicState,
-  };
-  const anyAdded =
-    added.manualLabels.length + added.blockedLabels.length > 0 || Boolean(added.epicCompletedState);
-  if (!anyAdded) return {};
-  let options;
-  try {
-    options = await getLinearSettingsOptions(organizationId);
-  } catch {
-    return "unavailable";
-  }
-  if (!options) return {};
-  const unknown = unknownLinearValues(options, added);
-  return {
-    ...(unknown.manualLabels.length > 0 && {
-      manualLabels: notInWorkspace(unknown.manualLabels, "label"),
-    }),
-    ...(unknown.blockedLabels.length > 0 && {
-      blockedLabels: notInWorkspace(unknown.blockedLabels, "label"),
-    }),
-    ...(unknown.epicCompletedState && {
-      epicCompletedState: `“${unknown.epicCompletedState}” isn't a workflow state in your Linear workspace.`,
-    }),
-  };
 }

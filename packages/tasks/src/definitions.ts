@@ -208,6 +208,14 @@ export const DEFAULT_STALL_ROUNDS = 3;
 export const DEFAULT_MAX_ITERATIONS_PER_RUN = 50;
 /** Most review or CI fix rounds (`MAX_FIX_ROUNDS` in `@omniralph/shared`; a test there checks they agree). */
 export const CODING_MAX_FIX_ROUNDS = 20;
+/** Review and CI fix rounds a lane's PR gets when its request playbook sets none. */
+export const DEFAULT_FIX_ROUNDS = 3;
+/** Most verify commands of a coding playbook (`MAX_VERIFY_COMMANDS` in `@omniralph/shared`). */
+export const MAX_VERIFY_COMMANDS = 50;
+/** Longest verify or worktree setup command. */
+export const MAX_CODING_COMMAND_LENGTH = 4000;
+/** Longest wait for an answer about a merged lane's unmerged commits (a week). */
+export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
 
 /** When a coding run pushes its branch: after each story, or once when every story is done. */
 export const PUSH_TIMINGS = ["per-story", "end"] as const;
@@ -221,6 +229,15 @@ export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
+/** A one-line shell command (a verify command or the worktree setup command). */
+const CodingCommand = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_CODING_COMMAND_LENGTH)
+  // eslint-disable-next-line no-control-regex
+  .regex(/^[^\u0000-\u001f\u007f]+$/, "Commands are one line, without control characters.");
+
 /** Settings only coding tasks have; parsing a coding task fills their defaults (see `CODING_DEFAULTS`). */
 export const CODING_FIELDS = {
   maxAttemptsPerStory: z.int().min(1).max(20).optional(),
@@ -229,15 +246,32 @@ export const CODING_FIELDS = {
   /** Rounds in a row a story's reported metric may fail to beat its best. */
   stallRounds: z.int().min(1).max(100).optional(),
   maxIterationsPerRun: z.int().min(1).max(1000).optional(),
-  /** Caps the repository's `ralph_settings.maxReviewRounds`. */
+  /** Review rounds (fixing findings and `@bot` requests) a lane's PR gets. */
   maxReviewRounds: FixRounds.optional(),
-  /** Caps the repository's `ralph_settings.maxFixRounds`. */
+  /** CI fix rounds a lane's PR gets. */
   maxFixRounds: FixRounds.optional(),
   pushTiming: z.enum(PUSH_TIMINGS).optional(),
-  /** Unset follows the repository's `ralph_settings.openPullRequestEarly`. */
+  /** Refused on playbooks: the repo's "open PR early" decides when the draft PR opens. */
   draftPullRequest: z.enum(DRAFT_PULL_REQUEST_TIMINGS).optional(),
   /** Query task (accepting `run.invoked`) that writes the PR title and description. */
   prDescriptionTaskId: DefinitionId.optional(),
+  /** Quality gates every story and request runs, before the PRD's. */
+  verifyCommands: z.array(CodingCommand).max(MAX_VERIFY_COMMANDS).optional(),
+  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
+  worktreeSetupCommand: CodingCommand.nullable().optional(),
+  /** Also run the PRD's `## Quality Gates` commands. */
+  runPrdQualityGates: z.boolean().optional(),
+  /** Offer to run a manual story's `cyralph-prepare` commands ("Run it"). */
+  allowPreparation: z.boolean().optional(),
+  /**
+   * The state an epic moves to when every story is complete: a state type
+   * (`started` or `completed`) or a state name; null leaves it as it is.
+   */
+  epicCompletedState: z.string().trim().min(1).max(255).nullable().optional(),
+  /** Remove the worktree and local branch after the PR merges. */
+  cleanupMergedWorktrees: z.boolean().optional(),
+  /** A merged lane's unmerged commits' branch is deleted after this long without an answer. */
+  unmergedBranchTimeoutMinutes: z.int().min(1).max(MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES).optional(),
 };
 /** The coding-only fields, which other task types must leave unset. */
 export const CODING_FIELD_NAMES = Object.keys(CODING_FIELDS) as (keyof typeof CODING_FIELDS)[];
@@ -248,10 +282,17 @@ export const CODING_DEFAULTS = {
   maxRoundsPerStory: DEFAULT_MAX_ROUNDS_PER_STORY,
   stallRounds: DEFAULT_STALL_ROUNDS,
   maxIterationsPerRun: DEFAULT_MAX_ITERATIONS_PER_RUN,
-  maxReviewRounds: CODING_MAX_FIX_ROUNDS,
-  maxFixRounds: CODING_MAX_FIX_ROUNDS,
+  maxReviewRounds: DEFAULT_FIX_ROUNDS,
+  maxFixRounds: DEFAULT_FIX_ROUNDS,
   pushTiming: "per-story",
   prDescriptionTaskId: DEFAULT_PR_DESCRIPTION_TASK_ID,
+  verifyCommands: [] as string[],
+  worktreeSetupCommand: null,
+  runPrdQualityGates: true,
+  allowPreparation: true,
+  epicCompletedState: null,
+  cleanupMergedWorktrees: true,
+  unmergedBranchTimeoutMinutes: 60,
 } as const satisfies Partial<Record<keyof typeof CODING_FIELDS, unknown>>;
 
 function dropUndefined<T extends object>(value: T): T {

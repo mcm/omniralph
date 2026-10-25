@@ -90,7 +90,7 @@ export const RunSpec = z.object({
   ref: z.string().min(1).nullable(),
   /** Finish without a session when `ref` is missing. */
   requireCheckout: z.boolean(),
-  /** The repository's tool settings, applied on top of the agent's tools (they never widen them). */
+  /** Always empty: a playbook's tools are its runs' tools. Kept for agents that still read it. */
   tools: RunToolRestrictions,
   /**
    * A review run's depth model. Any other run's: the playbook's; null for the

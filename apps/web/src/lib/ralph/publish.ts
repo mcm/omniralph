@@ -30,7 +30,7 @@ import {
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
-import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
+import { epicCompletedTarget, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
@@ -40,6 +40,7 @@ import {
   opensPullRequestEarly,
   pushResult,
   pushTimingFor,
+  storyCodingSettings,
 } from "./coding";
 import { conversationFor, runCompletedEvent } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
@@ -396,7 +397,7 @@ export async function tickPushedStories(
 }
 
 /**
- * Every story of the epic is complete: the epic moves to the repository's
+ * Every story of the epic is complete: the epic moves to its repository's story playbook's
  * `epicCompletedState` (cyralph's `epicCompletedStateName`/`Type`), a state of
  * that name or else the first state of that type. Runs after the PR/MR step,
  * whether or not it worked; a single issue (or a chat run) is left alone. A failure is logged,
@@ -412,13 +413,16 @@ export async function moveCompletedEpic(
     | "linearIdentifier"
     | "linearAgentSessionId"
     | "repositoryId"
+    | "organizationId"
   >,
 ): Promise<void> {
   if (run.kind === "single" || !isLinearRun(run)) return;
   await quietly(`Moving epic ${run.linearIssueId} to its completed state`, async () => {
     const repository = run.repositoryId ? await getRepository(deps.db, run.repositoryId) : null;
     const target = epicCompletedTarget(
-      repository && parseRalphSettings(repository.ralphSettings).epicCompletedState,
+      repository &&
+        (await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId)))
+          .epicCompletedState,
     );
     if (target) await deps.linear.setIssueState(run.linearIssueId, target);
   });

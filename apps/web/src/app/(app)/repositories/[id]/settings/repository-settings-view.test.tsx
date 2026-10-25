@@ -1,6 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import {
   createTestQueryClient,
   mockFetch,
@@ -12,7 +11,6 @@ import {
   type RepositoryHarness,
   type RepositorySettingsTab,
 } from "./repository-settings-view";
-import type { CodingChoices, RalphSettingsValues } from "./ralph-settings-section";
 import {
   inheritLabel,
   saveWithTaskTypes,
@@ -30,50 +28,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const STORY_ID = "33333333-3333-4333-8333-333333333333";
-const REQUEST_ID = "44444444-4444-4444-8444-444444444444";
-
-const ralph: RalphSettingsValues = {
-  storyPlaybookId: STORY_ID,
-  requestPlaybookId: REQUEST_ID,
-  ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
-};
-
 const inheritAll: TaskTypesValues = {
   overrides: { query: null, review: null, coding: null },
   inherited: { query: true, review: true, coding: false },
-};
-
-/** A connected Linear workspace and the models of two harnesses accepting coding. */
-const choices: CodingChoices = {
-  linear: {
-    status: "connected",
-    options: {
-      teams: [
-        { key: "ENG", name: "Engineering" },
-        { key: "OPS", name: "Operations" },
-      ],
-      labels: ["backend", "manual"],
-      projects: ["Omniralph"],
-      states: ["In Review", "Done"],
-      projectMilestones: [],
-      cycles: [],
-      users: [],
-    },
-  },
-  models: [
-    { value: "opus", displayName: "Opus", harnessIds: ["h1", "h2"] },
-    { value: "sonnet", displayName: "Sonnet", harnessIds: ["h1"] },
-  ],
-  harnessCount: 2,
-  pinned: false,
-  routingRules: [],
-};
-
-/** Coding on for the repository, so the Coding tab shows its settings. */
-const codingOn: TaskTypesValues = {
-  ...inheritAll,
-  overrides: { ...inheritAll.overrides, coding: true },
 };
 
 const HARNESSES: RepositoryHarness[] = [
@@ -98,8 +55,6 @@ const HARNESSES: RepositoryHarness[] = [
 function render(
   tab: RepositorySettingsTab,
   overrides: {
-    ralph?: RalphSettingsValues;
-    choices?: CodingChoices;
     taskTypes?: TaskTypesValues;
     harnesses?: RepositoryHarness[];
     pinnedHarnessIds?: string[];
@@ -124,9 +79,7 @@ function render(
           pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
         }}
         harnesses={overrides.harnesses ?? HARNESSES}
-        ralph={overrides.ralph ?? ralph}
-        codingChoices={overrides.choices ?? choices}
-        taskTypes={overrides.taskTypes ?? (tab === "coding" ? codingOn : inheritAll)}
+        taskTypes={overrides.taskTypes ?? inheritAll}
       />
     </Wrapper>,
   );
@@ -146,7 +99,7 @@ function text(html: string): string {
 
 /** The labels of every tab. */
 function allLabels(): string[] {
-  return (["settings", "coding", "harnesses"] as const).flatMap((tab) =>
+  return (["settings", "harnesses"] as const).flatMap((tab) =>
     [...render(tab).matchAll(/<label[^>]*>(.*?)<\/label>/g)].map((m) =>
       m[1]!.replace(/<[^>]+>/g, ""),
     ),
@@ -155,7 +108,7 @@ function allLabels(): string[] {
 
 describe("RepositorySettingsView playbook bindings", () => {
   it("has no review, correlation, story or request playbook selects", () => {
-    const html = render("settings") + render("coding");
+    const html = render("settings") + render("harnesses");
     for (const id of [
       "review-task-",
       "correlation-task",
@@ -169,24 +122,19 @@ describe("RepositorySettingsView playbook bindings", () => {
 });
 
 describe("RepositorySettingsView tabs", () => {
-  it("shows one section with one save per tab, and the Danger zone apart on Coding", () => {
+  it("shows one section with one save per tab", () => {
     const saves = (tab: RepositorySettingsTab) =>
       [...render(tab).matchAll(/<button[^>]*type="submit"[^>]*>(.*?)<\/button>/g)].map((m) =>
         m[1]!.replace(/<[^>]+>/g, ""),
       );
     expect(saves("settings")).toEqual(["Save review settings"]);
-    expect(saves("coding")).toEqual(["Save coding", "Save danger zone"]);
     expect(saves("harnesses")).toEqual(["Save harnesses"]);
   });
 
   it("shows only its own tab's settings", () => {
     const settings = render("settings");
     expect(settings).toContain('id="path-excludes"');
-    expect(settings).not.toContain('id="ralph-model"');
     expect(settings).not.toContain("Pinned harnesses");
-    const coding = render("coding");
-    expect(coding).toContain('id="ralph-model"');
-    expect(coding).not.toContain('id="path-excludes"');
     const harnesses = render("harnesses");
     expect(harnesses).toContain("Any harness can run this repository&#x27;s jobs.");
     expect(harnesses).not.toContain('id="path-excludes"');
@@ -206,48 +154,30 @@ describe("RepositorySettingsView tabs", () => {
     expect(html).not.toMatch(/>Profile</);
   });
 
-  it("keeps the settings that rewrite history or delete branches in the red Danger zone", () => {
-    const html = render("coding");
-    const danger = html.slice(html.indexOf('id="danger-zone"'));
-    expect(html).toMatch(/id="danger-zone"[^>]*data-tone="danger"/);
-    for (const id of ["ralph-history-rewrite", "ralph-cleanup", "ralph-unmerged-timeout"]) {
-      expect(danger).toContain(`id="${id}"`);
-      expect(html.indexOf(`id="${id}"`)).toBeGreaterThan(html.indexOf('id="danger-zone"'));
-    }
-  });
-
   it("labels settings in plain words, not by their config keys", () => {
     const labels = allLabels();
-    expect(labels.length).toBeGreaterThan(20);
+    expect(labels.length).toBeGreaterThanOrEqual(8);
     for (const label of labels) expect(label).not.toMatch(/\b[a-z]+[A-Z][a-zA-Z]*\b/);
   });
 
   it("states each setting's default", () => {
     const settings = render("settings");
     expect(settings).toContain("Default: Off.");
-    const coding = render("coding");
-    expect(coding).toContain("Default: opus.");
-    expect(coding).not.toContain("Coding path");
   });
 });
 
 describe("RepositorySettingsView task types", () => {
   it("offers Use organization default (showing the inherited value), On and Off for each", () => {
     const settings = render("settings");
-    const coding = render("coding", { taskTypes: inheritAll });
     expect(select(settings, "task-type-query")).toContain(
       '<option value="inherit" selected="">Use organization default (On)</option>',
     );
     expect(select(settings, "task-type-review")).toContain(
       '<option value="inherit" selected="">Use organization default (On)</option>',
     );
-    expect(select(coding, "task-type-coding")).toContain(
-      '<option value="inherit" selected="">Use organization default (Off)</option>',
-    );
     for (const [html, key] of [
       [settings, "query"],
       [settings, "review"],
-      [coding, "coding"],
     ] as const) {
       const options = select(html, `task-type-${key}`);
       expect(options).toContain('<option value="on">On</option>');
@@ -255,14 +185,12 @@ describe("RepositorySettingsView task types", () => {
     }
     expect(settings).toContain(">Query<");
     expect(settings).toContain(">Reviews<");
-    expect(coding).toContain(">Coding<");
   });
 
   it("selects each switch's own value: inherit, on or off", () => {
     for (const [key, tab] of [
       ["query", "settings"],
       ["review", "settings"],
-      ["coding", "coding"],
     ] as const) {
       for (const [value, choice] of [
         [null, "inherit"],
@@ -279,15 +207,6 @@ describe("RepositorySettingsView task types", () => {
     }
   });
 
-  it("hides the Coding settings while coding is off, keeping them", () => {
-    const off = render("coding", { taskTypes: inheritAll });
-    expect(off).toContain("Coding is off");
-    expect(off).toMatch(/<div hidden="">\s*<section id="coding-routing"/);
-    const on = render("coding");
-    expect(on).not.toContain("Coding is off");
-    expect(on).not.toContain('hidden=""');
-  });
-
   it("says when reviews are off", () => {
     expect(render("settings")).not.toContain("Reviews are off");
     const off = render("settings", {
@@ -296,18 +215,8 @@ describe("RepositorySettingsView task types", () => {
     expect(off).toContain("Reviews are off");
   });
 
-  it("no longer has a Ralph enable switch", () => {
-    const html = render("coding");
-    expect(html).not.toContain("Enable Ralph");
-    expect(html).not.toContain('id="ralph-enabled"');
-  });
-
-  it("calls the coding settings Coding, not Ralph", () => {
-    const coding = text(render("coding"));
-    for (const title of ["Coding", "Routing", "Agent", "Verification", "Pull requests", "Linear"]) {
-      expect(coding).toContain(title);
-    }
-    for (const tab of ["settings", "coding", "harnesses"] as const) {
+  it("never says Ralph", () => {
+    for (const tab of ["settings", "harnesses"] as const) {
       expect(text(render(tab))).not.toMatch(/\bRalph\b/);
     }
   });
@@ -320,150 +229,6 @@ describe("RepositorySettingsView task types", () => {
     expect(taskTypeValue("on")).toBe(true);
     expect(taskTypeValue("off")).toBe(false);
     expect(inheritLabel(false)).toBe("Use organization default (Off)");
-  });
-});
-
-describe("RepositorySettingsView Coding pickers", () => {
-  const picked: RalphSettingsValues = {
-    ...ralph,
-    manualLabels: ["manual", "by-hand"],
-    model: "opus",
-    fallbackModel: "claude-gone-1",
-    allowedTools: ["Read", "Bash(pnpm test:*)"],
-    epicCompletedState: "In Review",
-  };
-
-  /** The markup of the Field around the control with `id`. */
-  function field(html: string, id: string): string {
-    const start = html.indexOf(`id="${id}"`);
-    expect(start, id).toBeGreaterThan(-1);
-    // From the label before the control to the next field's label.
-    const from = html.lastIndexOf("<label", start);
-    const next = html.indexOf("<label", start);
-    return html.slice(from, next === -1 ? undefined : next);
-  }
-
-  it("lists the routing rules that target the repository, linking to Settings › Routing", () => {
-    const html = render("coding", {
-      ralph: picked,
-      choices: {
-        ...choices,
-        routingRules: [
-          { number: 1, summary: "Labels contains any of backend" },
-          { number: 3, summary: "Team is ENG" },
-        ],
-      },
-    });
-    const routing = html.slice(
-      html.indexOf('id="coding-routing"'),
-      html.indexOf('id="coding-agent"'),
-    );
-    expect(routing).toContain('href="/settings/routing"');
-    expect(text(routing)).toMatch(/Rule 1\s*Labels contains any of backend/);
-    expect(text(routing)).toMatch(/Rule 3\s*Team is ENG/);
-    // The old pickers are gone.
-    for (const id of ["ralph-labels", "ralph-projects", "ralph-teams"]) {
-      expect(html).not.toContain(`id="${id}"`);
-    }
-    const none = render("coding", { ralph: picked });
-    expect(text(none)).toMatch(/No routing rule targets this repository/);
-  });
-
-  it("picks Linear labels as chips, stale ones flagged", () => {
-    const html = render("coding", { ralph: picked });
-    const manual = field(html, "ralph-manual-labels");
-    expect(manual).toContain('role="combobox"');
-    expect(text(manual)).toContain("manual");
-    expect(text(manual)).toMatch(/“by-hand” is not available/);
-    // No comma-separated text boxes left.
-    expect(text(html)).not.toMatch(/Comma-separated/);
-  });
-
-  it("picks blocked labels from the workspace, never flagging the defaults as stale", () => {
-    const html = render("coding", {
-      ralph: { ...picked, blockedLabels: ["under-review", "blocked", "on-hold"] },
-    });
-    const blocked = text(field(html, "ralph-blocked-labels"));
-    expect(blocked).toContain("under-review");
-    expect(blocked).not.toMatch(/“under-review” is not available/);
-    expect(blocked).not.toMatch(/“blocked” is not available/);
-    expect(blocked).toMatch(/“on-hold” is not available/);
-  });
-
-  it("describes the first manual label as the one Coding adds, in order", () => {
-    const html = render("coding", { ralph: { ...picked, manualLabels: ["by-hand", "manual"] } });
-    expect(text(html)).toMatch(/The first, “by-hand”, is the label Coding adds/);
-    const manual = text(field(html, "ralph-manual-labels"));
-    expect(manual.indexOf("by-hand")).toBeLessThan(manual.lastIndexOf("manual"));
-  });
-
-  it("offers the epic state as leave alone, started, completed, then the workspace's states", () => {
-    const html = render("coding", { ralph: picked });
-    const options = [
-      ...select(html, "ralph-epic-completed-state").matchAll(/<option[^>]*>([^<]*)</g),
-    ].map((m) => m[1]);
-    expect(options).toEqual([
-      "Leave the epic alone",
-      "started: the team&#x27;s first started state",
-      "completed: the team&#x27;s first completed state",
-      "In Review",
-      "Done",
-    ]);
-    expect(select(html, "ralph-epic-completed-state")).toMatch(
-      /<option value="In Review" selected="">/,
-    );
-
-    const stale = render("coding", { ralph: { ...picked, epicCompletedState: "Shipped" } });
-    expect(select(stale, "ralph-epic-completed-state")).toContain("Shipped (not available)");
-    expect(text(stale)).toMatch(/“Shipped” is not available/);
-  });
-
-  it("picks the models the harnesses report, the fallback with None", () => {
-    const html = render("coding", { ralph: picked });
-    const model = field(html, "ralph-model");
-    expect(model).toContain('role="combobox"');
-    expect(text(model)).toContain("Opus");
-    expect(text(model)).toMatch(/from those the harnesses that accept coding report/);
-    // The saved fallback no harness reports is kept with a warning.
-    expect(text(field(html, "ralph-fallback-model"))).toMatch(/not available/);
-    const pinned = render("coding", { ralph: picked, choices: { ...choices, pinned: true } });
-    expect(text(field(pinned, "ralph-model"))).toMatch(/the repository.{1,6}s pinned harnesses/);
-    const none = render("coding", { ralph: { ...picked, fallbackModel: "" } });
-    expect(text(field(none, "ralph-fallback-model"))).toContain("None");
-  });
-
-  it("says when no harness can run coding jobs", () => {
-    const html = render("coding", {
-      ralph: picked,
-      choices: { ...choices, models: [], harnessCount: 0 },
-    });
-    expect(text(html)).toMatch(/No active harness accepts coding jobs/);
-  });
-
-  it("enters tools as chips, rules included", () => {
-    const html = render("coding", { ralph: picked });
-    const tools = text(field(html, "ralph-allowed-tools"));
-    expect(tools).toContain("Read");
-    expect(tools).toContain("Bash(pnpm test:*)");
-    // Rules aren't Claude Code tool names, but they aren't stale either.
-    expect(tools).not.toMatch(/not available/);
-    expect(html).not.toMatch(/<textarea[^>]*id="ralph-allowed-tools"/);
-  });
-
-  it("shows the saved Linear values read-only, linking to Integrations, without Linear", () => {
-    for (const linear of [{ status: "disconnected" }, { status: "unavailable" }] as const) {
-      const html = render("coding", { ralph: picked, choices: { ...choices, linear } });
-      expect(html).toContain('href="/settings/integrations"');
-      for (const id of ["ralph-manual-labels", "ralph-blocked-labels"]) {
-        expect(field(html, id)).toMatch(new RegExp(`id="${id}"[^>]*disabled=""`));
-        expect(text(field(html, id))).not.toMatch(/not available/);
-      }
-      expect(text(field(html, "ralph-manual-labels"))).toContain("by-hand");
-      expect(select(html, "ralph-epic-completed-state")).toContain("In Review");
-      expect(html).toMatch(/<select[^>]*id="ralph-epic-completed-state"[^>]*disabled=""/);
-    }
-    const linked = render("coding", { ralph: picked });
-    expect(linked).not.toContain('href="/settings/integrations"');
   });
 });
 

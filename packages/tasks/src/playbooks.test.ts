@@ -7,6 +7,7 @@ import {
   PLAYBOOK_ROLE_IDS,
   Playbook,
   REQUEST_TRIGGERS,
+  getBuiltinPlaybook,
   TRIGGERS_BY_TASK_TYPE,
   playbookRequirements,
   playbookRunSpec,
@@ -315,7 +316,13 @@ describe("playbookRunSpec", () => {
       ...chat,
       role: "story",
       promptTemplate: "{{epic.title}}",
-      coding: { maxAttemptsPerStory: 5, prDescriptionPlaybookId: UUID },
+      coding: {
+        maxAttemptsPerStory: 5,
+        prDescriptionPlaybookId: UUID,
+        verifyCommands: ["pnpm test"],
+        worktreeSetupCommand: "pnpm install",
+        epicCompletedState: "In Review",
+      },
     });
     expect(playbookRunSpec(story).task).toMatchObject({
       ...CODING_DEFAULTS,
@@ -324,11 +331,31 @@ describe("playbookRunSpec", () => {
       sink: "ralph-run",
       maxAttemptsPerStory: 5,
       prDescriptionTaskId: UUID,
+      verifyCommands: ["pnpm test"],
+      worktreeSetupCommand: "pnpm install",
+      epicCompletedState: "In Review",
     });
     const request = Playbook.parse({ ...chat, role: "request", promptTemplate: "{{branch}}" });
     const { task } = playbookRunSpec(request);
     expect(task).toMatchObject({ ...CODING_DEFAULTS, triggers: [...REQUEST_TRIGGERS] });
     expect(task.draftPullRequest).toBeUndefined();
+  });
+
+  it("gives the built-in story and request playbooks 3 review and CI fix rounds", () => {
+    for (const id of ["builtin:implement-story", "builtin:handle-request"]) {
+      const { task } = playbookRunSpec(getBuiltinPlaybook(id)!);
+      expect(task).toMatchObject({
+        maxReviewRounds: 3,
+        maxFixRounds: 3,
+        verifyCommands: [],
+        worktreeSetupCommand: null,
+        runPrdQualityGates: true,
+        allowPreparation: true,
+        epicCompletedState: null,
+        cleanupMergedWorktrees: true,
+        unmergedBranchTimeoutMinutes: 60,
+      });
+    }
   });
 });
 

@@ -16,11 +16,9 @@ import {
   organizations,
 } from "@omniralph/db";
 import {
-  DEFAULT_RALPH_SETTINGS,
-  ralphSettingsFormValues,
   reviewTriggerContext,
   type ReviewTriggerContext,
-  type RalphSettingsInput,
+  type RepositoryCodingInput,
   type RepositorySettingsInput,
   type RepositoryTaskTypesInput,
 } from "@omniralph/shared";
@@ -120,8 +118,7 @@ const updateRepositorySettings = (id: string, input: RepositorySettingsInput) =>
   save(repositorySettings.PUT, id, input);
 const updateRepositoryTaskTypes = (id: string, input: RepositoryTaskTypesInput) =>
   save(repositoryTaskTypes.PUT, id, input);
-const updateRalphSettings = (id: string, input: RalphSettingsInput) =>
-  save(repositoryCoding.PUT, id, input);
+const updateCoding = (id: string, input: unknown) => save(repositoryCoding.PUT, id, input);
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 
@@ -135,10 +132,12 @@ const baseSettings: RepositorySettingsInput = {
   correlationPlaybookId: "builtin:correlate-findings",
 };
 
-const baseRalph: RalphSettingsInput = {
-  storyPlaybookId: "builtin:implement-story",
-  requestPlaybookId: "builtin:handle-request",
-  ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
+const baseCoding: RepositoryCodingInput = {
+  codingEnabled: true,
+  codingInstructions: null,
+  openPullRequestEarly: false,
+  historyRewrite: "when-asked",
+  respondToReviewsAndCi: true,
 };
 
 describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
@@ -461,8 +460,8 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       reviewPlaybookIds: [review],
       correlationPlaybookId: "builtin:correlate-findings",
     });
-    const { storyPlaybookId: _story, requestPlaybookId: _request, ...codingOnly } = baseRalph;
-    expect(await updateRalphSettings(repoId, codingOnly)).toEqual({ ok: true });
+    // The coding policy never carries them.
+    expect(await updateCoding(repoId, baseCoding)).toMatchObject({ codingEnabled: true });
     expect(await getRepository(db, repoId)).toMatchObject({
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
@@ -619,49 +618,147 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     await updateRepositorySettings(repoId, baseSettings);
   });
 
-  it("saves the Ralph section: openPullRequestEarly, setup command, model and manual labels", async () => {
-    expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: null,
-      ralphSettings: {
-        openPullRequestEarly: false,
-        setupCommand: null,
-        model: "opus",
-        manualLabels: ["manual"],
-      },
-    });
-    expect(
-      await updateRalphSettings(repoId, {
-        ...baseRalph,
-        openPullRequestEarly: true,
-        setupCommand: "  pnpm install --frozen-lockfile  ",
-        model: "claude-opus-5-5",
-        manualLabels: ["by hand", "manual"],
-      }),
-    ).toEqual({ ok: true });
-    expect(await getRepository(db, repoId)).toMatchObject({
-      // Coding is switched under Task types, not by the Ralph section.
-      ralphEnabled: null,
-      ralphSettings: {
-        openPullRequestEarly: true,
-        setupCommand: "pnpm install --frozen-lockfile",
-        model: "claude-opus-5-5",
-        manualLabels: ["by hand", "manual"],
-      },
-    });
-    // Saving the review settings leaves the Ralph section alone, and the other way round.
-    expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.ralphSettings.model).toBe("claude-opus-5-5");
+  describe("coding policy", () => {
+    const getCoding = async (id = repoId) => {
+      const response = await repositoryCoding.GET(new Request("http://localhost/api/ui"), {
+        params: Promise.resolve({ id }),
+      });
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    };
 
-    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
-    expect(await getRepository(db, repoId)).toMatchObject({
-      ralphEnabled: null,
-      ralphSettings: {
-        openPullRequestEarly: false,
-        setupCommand: null,
-        model: "opus",
-        manualLabels: ["manual"],
-      },
-      reviewDepth: "standard",
+    it("answers exactly the six-field policy and the story playbook's round limits", async () => {
+      expect(await getCoding()).toEqual({
+        status: 200,
+        body: {
+          codingEnabled: true,
+          codingInstructions: null,
+          openPullRequestEarly: false,
+          historyRewrite: "when-asked",
+          respondToReviewsAndCi: true,
+          roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
+        },
+      });
+    });
+
+    it("saves the policy, answers it and publishes the repo's coding change", async () => {
+      const policy: RepositoryCodingInput = {
+        codingEnabled: false,
+        codingInstructions: "  NEVER use `git merge` in this repo, ALWAYS rebase.  ",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
+      };
+      const { result, changes } = await captureChanges(() => updateCoding(repoId, policy));
+      const saved = {
+        ...policy,
+        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
+        roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
+      };
+      expect(result).toEqual(saved);
+      expect(changes).toEqual([
+        expect.objectContaining({
+          resource: "settings",
+          section: "repository.coding",
+          ids: [repoId],
+          subjectId: repoId,
+          organizationId: orgId,
+        }),
+      ]);
+      expect(await getRepository(db, repoId)).toMatchObject({
+        ralphEnabled: false,
+        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
+      });
+      expect((await getCoding()).body).toEqual(saved);
+      // Saving the review settings leaves the coding policy alone.
+      expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
+      expect((await getCoding()).body).toEqual(saved);
+
+      // Empty instructions are none.
+      expect(await updateCoding(repoId, { ...baseCoding, codingInstructions: "" })).toEqual({
+        ...baseCoding,
+        roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
+      });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        ralphEnabled: true,
+        codingInstructions: null,
+      });
+    });
+
+    it("rejects unknown keys and invalid values with 400, saving and publishing nothing", async () => {
+      const before = await getRepository(db, repoId);
+      for (const key of [
+        "model",
+        "verifyCommands",
+        "setupCommand",
+        "maxReviewRounds",
+        "manualLabels",
+        "storyPlaybookId",
+        "roundLimits",
+      ]) {
+        const { result, changes } = await captureChanges(() =>
+          updateCoding(repoId, { ...baseCoding, codingEnabled: false, [key]: "x" }),
+        );
+        expect(result, key).toMatchObject({ ok: false, error: expect.stringContaining(key) });
+        expect(changes).toEqual([]);
+      }
+      expect(
+        await updateCoding(repoId, {
+          ...baseCoding,
+          codingEnabled: "yes",
+          historyRewrite: "sometimes",
+          codingInstructions: "x".repeat(10_001),
+        }),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          codingEnabled: "Choose on or off.",
+          historyRewrite: "Choose a policy.",
+          codingInstructions: "Extra instructions can be at most 10,000 characters.",
+        },
+      });
+      const { codingEnabled: _missing, ...partial } = baseCoding;
+      expect(await updateCoding(repoId, partial)).toMatchObject({
+        ok: false,
+        fieldErrors: { codingEnabled: "Choose on or off." },
+      });
+      expect(await getRepository(db, repoId)).toEqual(before);
+    });
+
+    it("reports the round limits of the repo's story playbook", async () => {
+      const story = await storedPlaybook("builtin:implement-story", {
+        coding: { maxReviewRounds: 5, maxFixRounds: 1 },
+      });
+      try {
+        expect(
+          await updateRepositorySettings(repoId, { ...baseSettings, storyPlaybookId: story }),
+        ).toEqual({ ok: true });
+        expect((await getCoding()).body.roundLimits).toEqual({
+          maxReviewRounds: 5,
+          maxFixRounds: 1,
+        });
+      } finally {
+        await updateRepositorySettings(repoId, {
+          ...baseSettings,
+          storyPlaybookId: "builtin:implement-story",
+        });
+      }
+    });
+
+    it("rejects coding saves for unknown repositories and from non-admins", async () => {
+      const before = await getRepository(db, repoId);
+      expect(await updateCoding(randomUUID(), baseCoding)).toEqual({
+        ok: false,
+        error: "That repository isn't connected.",
+      });
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(await updateCoding(repoId, { ...baseCoding, codingEnabled: false })).toMatchObject({
+        ok: false,
+      });
+      expect((await getCoding()).status).toBe(403);
+      expect(await getRepository(db, repoId)).toEqual(before);
     });
   });
 
@@ -672,31 +769,39 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     });
   });
 
-  it("saves custom story and request playbooks, publishing the repo's coding change", async () => {
+  it("saves custom story and request playbooks with the review settings, publishing the repo's coding change", async () => {
     const story = await storedPlaybook("builtin:implement-story");
     const request = await storedPlaybook("builtin:handle-request");
     const { result, changes } = await captureChanges(() =>
-      updateRalphSettings(repoId, {
-        ...baseRalph,
+      updateRepositorySettings(repoId, {
+        ...baseSettings,
         storyPlaybookId: story,
         requestPlaybookId: request,
       }),
     );
     expect(result).toEqual({ ok: true });
-    expect(changes).toEqual([
-      expect.objectContaining({
-        resource: "settings",
-        section: "repository.coding",
-        ids: [repoId],
-        subjectId: repoId,
-        organizationId: orgId,
-      }),
-    ]);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resource: "settings",
+          section: "repository.coding",
+          ids: [repoId],
+          subjectId: repoId,
+          organizationId: orgId,
+        }),
+      ]),
+    );
     expect(await getRepository(db, repoId)).toMatchObject({
       storyPlaybookId: story,
       requestPlaybookId: request,
     });
-    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
+    expect(
+      await updateRepositorySettings(repoId, {
+        ...baseSettings,
+        storyPlaybookId: "builtin:implement-story",
+        requestPlaybookId: "builtin:handle-request",
+      }),
+    ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
@@ -719,7 +824,9 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       "builtin:nope",
       randomUUID(),
     ]) {
-      expect(await updateRalphSettings(repoId, { ...baseRalph, storyPlaybookId })).toMatchObject({
+      expect(
+        await updateRepositorySettings(repoId, { ...baseSettings, storyPlaybookId }),
+      ).toMatchObject({
         ok: false,
         fieldErrors: { storyPlaybookId: expect.any(String) },
       });
@@ -730,7 +837,9 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       "builtin:implement-story",
       "builtin:nope",
     ]) {
-      expect(await updateRalphSettings(repoId, { ...baseRalph, requestPlaybookId })).toMatchObject({
+      expect(
+        await updateRepositorySettings(repoId, { ...baseSettings, requestPlaybookId }),
+      ).toMatchObject({
         ok: false,
         fieldErrors: { requestPlaybookId: expect.any(String) },
       });
@@ -738,234 +847,6 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     expect(await getRepository(db, repoId)).toMatchObject({
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
-    });
-  });
-
-  it("saves every cyralph setting, storing empty text and lists as none", async () => {
-    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
-    expect(
-      await updateRalphSettings(repoId, {
-        ...baseRalph,
-        verifyCommands: ["pnpm typecheck", "pnpm test"],
-        runPrdQualityGates: false,
-        appendInstruction: "  Keep commits small.  ",
-        fallbackModel: "sonnet",
-        allowedTools: ["Read", "Bash(pnpm test:*)"],
-        disallowedTools: ["WebFetch"],
-        allowPreparation: false,
-        manualLabels: ["by hand"],
-        blockedLabels: [],
-        historyRewrite: "never",
-        respondToReviews: false,
-        maxReviewRounds: 5,
-        respondToCiFailures: false,
-        maxFixRounds: 0,
-        cleanupMergedWorktrees: false,
-        unmergedBranchTimeoutMinutes: 120,
-        epicCompletedState: "In Review",
-      }),
-    ).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.ralphSettings).toEqual({
-      ...DEFAULT_RALPH_SETTINGS,
-      verifyCommands: ["pnpm typecheck", "pnpm test"],
-      runPrdQualityGates: false,
-      appendInstruction: "Keep commits small.",
-      fallbackModel: "sonnet",
-      allowedTools: ["Read", "Bash(pnpm test:*)"],
-      disallowedTools: ["WebFetch"],
-      allowPreparation: false,
-      manualLabels: ["by hand"],
-      blockedLabels: [],
-      historyRewrite: "never",
-      respondToReviews: false,
-      maxReviewRounds: 5,
-      respondToCiFailures: false,
-      maxFixRounds: 0,
-      cleanupMergedWorktrees: false,
-      unmergedBranchTimeoutMinutes: 120,
-      epicCompletedState: "In Review",
-    });
-    expect(await updateRalphSettings(repoId, { ...baseRalph, historyRewrite: "always" })).toEqual({
-      ok: true,
-    });
-    expect((await getRepository(db, repoId))!.ralphSettings.historyRewrite).toBe("always");
-    expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
-    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
-  });
-
-  it("rejects invalid cyralph settings with field errors without saving", async () => {
-    expect(
-      await updateRalphSettings(repoId, {
-        ...baseRalph,
-        verifyCommands: ["pnpm test", "  "],
-        allowedTools: ["not a tool"],
-        fallbackModel: "x y",
-        historyRewrite: "sometimes" as never,
-        maxReviewRounds: -1,
-        maxFixRounds: 2.5,
-        unmergedBranchTimeoutMinutes: 0,
-        epicCompletedState: "Done, really",
-      }),
-    ).toEqual({
-      ok: false,
-      error: "Fix the highlighted fields.",
-      fieldErrors: {
-        "verifyCommands.1": "Enter a command.",
-        "allowedTools.0": "Enter a tool name or rule, e.g. Read or Bash(pnpm test:*).",
-        fallbackModel: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
-        historyRewrite: "Choose a policy.",
-        maxReviewRounds: "Enter 0 or more.",
-        maxFixRounds: "Enter a whole number.",
-        unmergedBranchTimeoutMinutes: "Enter at least 1 minute.",
-        epicCompletedState: "Names can't contain commas or control characters.",
-      },
-    });
-    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(DEFAULT_RALPH_SETTINGS);
-  });
-
-  it("rejects invalid Ralph settings with field errors without saving", async () => {
-    expect(
-      await updateRalphSettings(repoId, {
-        ...baseRalph,
-        model: "",
-        manualLabels: [],
-        blockedLabels: ["a,b"],
-      }),
-    ).toEqual({
-      ok: false,
-      error: "Fix the highlighted fields.",
-      fieldErrors: {
-        model: "Enter a model.",
-        manualLabels: "Enter at least one manual label.",
-        "blockedLabels.0": "Names can't contain commas or control characters.",
-      },
-    });
-    // Not a valid input shape at all.
-    expect(
-      await updateRalphSettings(repoId, {
-        ...baseRalph,
-        runPrdQualityGates: "yes",
-      } as unknown as RalphSettingsInput),
-    ).toMatchObject({ ok: false, fieldErrors: { runPrdQualityGates: expect.any(String) } });
-  });
-
-  it("rejects Ralph settings for unknown repositories and from non-admins", async () => {
-    expect(await updateRalphSettings(randomUUID(), baseRalph)).toEqual({
-      ok: false,
-      error: "That repository isn't connected.",
-    });
-    const before = (await getRepository(db, repoId))!.ralphSettings;
-    state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-    expect(
-      await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["members"] }),
-    ).toMatchObject({ ok: false });
-    expect((await getRepository(db, repoId))!.ralphSettings).toEqual(before);
-  });
-
-  describe("Linear values", () => {
-    const workspace = {
-      teams: [{ key: "ENG", name: "Engineering" }],
-      labels: ["backend", "manual", "Needs Human"],
-      projects: ["Omniralph"],
-      states: ["In Review"],
-      projectMilestones: [],
-      cycles: [],
-      users: [],
-    };
-
-    beforeEach(async () => {
-      state.linear = null;
-      state.linearLoads = 0;
-      expect(await updateRalphSettings(repoId, baseRalph)).toEqual({ ok: true });
-      state.linearLoads = 0;
-    });
-
-    afterAll(() => {
-      state.linear = null;
-    });
-
-    it("saves values of the connected workspace, ignoring case", async () => {
-      state.linear = workspace;
-      expect(
-        await updateRalphSettings(repoId, {
-          ...baseRalph,
-          manualLabels: ["needs human", "manual"],
-          blockedLabels: ["blocked", "BACKEND"],
-          epicCompletedState: "in review",
-        }),
-      ).toEqual({ ok: true });
-      expect(await getRepository(db, repoId)).toMatchObject({
-        ralphSettings: { manualLabels: ["needs human", "manual"], epicCompletedState: "in review" },
-      });
-      expect(
-        await updateRalphSettings(repoId, { ...baseRalph, epicCompletedState: "completed" }),
-      ).toEqual({ ok: true });
-    });
-
-    it("rejects values the workspace doesn't have, with an error on each field", async () => {
-      state.linear = workspace;
-      expect(
-        await updateRalphSettings(repoId, {
-          ...baseRalph,
-          manualLabels: ["by-hand"],
-          // The default "under-review" is already saved, so only "on-hold" is checked.
-          blockedLabels: ["under-review", "on-hold"],
-          epicCompletedState: "Shipped",
-        }),
-      ).toEqual({
-        ok: false,
-        error: "Fix the highlighted fields.",
-        fieldErrors: {
-          manualLabels: "“by-hand” isn't a label in your Linear workspace.",
-          blockedLabels: "“on-hold” isn't a label in your Linear workspace.",
-          epicCompletedState: "“Shipped” isn't a workflow state in your Linear workspace.",
-        },
-      });
-      expect(await getRepository(db, repoId)).toMatchObject({
-        ralphSettings: { manualLabels: ["manual"], epicCompletedState: null },
-      });
-    });
-
-    it("keeps saved values that went stale, rejecting only new ones", async () => {
-      // Saved while the workspace still had them.
-      state.linear = { ...workspace, labels: [...workspace.labels, "old-name"] };
-      const saved = { ...baseRalph, manualLabels: ["old-name"] };
-      expect(await updateRalphSettings(repoId, saved)).toEqual({ ok: true });
-      // Renamed in Linear since: other changes still save, and the stale label stays.
-      state.linear = workspace;
-      expect(await updateRalphSettings(repoId, { ...saved, maxFixRounds: 2 })).toEqual({
-        ok: true,
-      });
-      expect((await getRepository(db, repoId))!.ralphSettings.manualLabels).toEqual(["old-name"]);
-      expect(
-        await updateRalphSettings(repoId, { ...saved, manualLabels: ["old-name", "new-one"] }),
-      ).toMatchObject({
-        ok: false,
-        fieldErrors: { manualLabels: "“new-one” isn't a label in your Linear workspace." },
-      });
-    });
-
-    it("doesn't check the values without a connected workspace", async () => {
-      state.linear = null;
-      expect(
-        await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["anything"] }),
-      ).toEqual({ ok: true });
-      expect(state.linearLoads).toBe(1);
-    });
-
-    it("reads Linear only when a Linear value changed, and fails when it can't", async () => {
-      state.linear = new Error("Linear is down");
-      expect(await updateRalphSettings(repoId, { ...baseRalph, maxFixRounds: 1 })).toEqual({
-        ok: true,
-      });
-      expect(state.linearLoads).toBe(0);
-      expect(
-        await updateRalphSettings(repoId, { ...baseRalph, manualLabels: ["backend"] }),
-      ).toEqual({
-        ok: false,
-        error: "Couldn't check the Linear values against your workspace. Try again in a moment.",
-      });
-      expect((await getRepository(db, repoId))!.ralphSettings.manualLabels).toEqual(["manual"]);
     });
   });
 

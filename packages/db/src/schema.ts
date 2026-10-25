@@ -47,6 +47,11 @@ export const chatIdentitySource = pgEnum("chat_identity_source", ["manual", "ema
 export const chatMessageRole = pgEnum("chat_message_role", ["user", "assistant", "tool"]);
 /** A repository's review depth (`REVIEW_DEPTHS` in `@omniralph/shared`). */
 export const reviewDepth = pgEnum("review_depth", ["quick", "standard", "deep"]);
+/**
+ * Whether a repo's coding runs may rebase and `--force-with-lease`: only when a request asks
+ * for it, `always` (rebasing instead of ever merging the base branch) or `never`.
+ */
+export const historyRewrite = pgEnum("history_rewrite", ["when-asked", "always", "never"]);
 export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
   "queued",
@@ -784,68 +789,6 @@ export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
   drafts: false,
 };
 
-/**
- * Per-repository settings of ralph (`repositories.ralph_settings`),
- * validated by `RalphSettings` in `@omniralph/shared` (which documents each one).
- */
-export interface RalphSettings {
-  verifyCommands: string[];
-  runPrdQualityGates: boolean;
-  appendInstruction: string | null;
-  allowedTools: string[] | null;
-  disallowedTools: string[] | null;
-  /** Claude model (alias or ID) the sessions use. */
-  model: string;
-  fallbackModel: string | null;
-  allowPreparation: boolean;
-  /**
-   * Linear labels marking a story as a manual step (matched ignoring case); the
-   * first one labels the manual stories and follow-ups ralph files.
-   */
-  manualLabels: string[];
-  /**
-   * Linear labels (matched ignoring case) that keep Omniralph from working an
-   * issue: a delegation or mention of an issue (or its epic) with one is refused.
-   */
-  blockedLabels: string[];
-  historyRewrite: "when-asked" | "always" | "never";
-  respondToReviews: boolean;
-  maxReviewRounds: number;
-  respondToCiFailures: boolean;
-  maxFixRounds: number;
-  cleanupMergedWorktrees: boolean;
-  unmergedBranchTimeoutMinutes: number;
-  /** A state type (`started`, `completed`) or name the epic moves to when every story is complete. */
-  epicCompletedState: string | null;
-  /** Open a draft PR/MR after the first pushed story (updated and marked ready at the end). */
-  openPullRequestEarly: boolean;
-  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
-  setupCommand: string | null;
-}
-
-export const DEFAULT_RALPH_SETTINGS: RalphSettings = {
-  verifyCommands: [],
-  runPrdQualityGates: true,
-  appendInstruction: null,
-  allowedTools: null,
-  disallowedTools: null,
-  model: "opus",
-  fallbackModel: null,
-  allowPreparation: true,
-  manualLabels: ["manual"],
-  blockedLabels: ["under-review", "blocked"],
-  historyRewrite: "when-asked",
-  respondToReviews: true,
-  maxReviewRounds: 3,
-  respondToCiFailures: true,
-  maxFixRounds: 3,
-  cleanupMergedWorktrees: true,
-  unmergedBranchTimeoutMinutes: 60,
-  epicCompletedState: null,
-  openPullRequestEarly: false,
-  setupCommand: null,
-};
-
 export const repositories = pgTable(
   "repositories",
   {
@@ -897,10 +840,14 @@ export const repositories = pgTable(
      * allowed task types (`query`).
      */
     queryEnabled: boolean("query_enabled"),
-    ralphSettings: jsonb("ralph_settings")
-      .$type<RalphSettings>()
-      .notNull()
-      .default(DEFAULT_RALPH_SETTINGS),
+    /** Extra instructions appended to every story and request prompt; null for none. */
+    codingInstructions: text("coding_instructions"),
+    /** Open a draft PR after the first pushed story (updated and marked ready at the end). */
+    openPullRequestEarly: boolean("open_pull_request_early").notNull().default(false),
+    /** Whether its coding runs may rebase and force-push the branch. */
+    historyRewrite: historyRewrite("history_rewrite").notNull().default("when-asked"),
+    /** Fix review findings, `@bot` requests and failed CI on its runs' PRs. */
+    respondToReviewsAndCi: boolean("respond_to_reviews_and_ci").notNull().default(true),
     /** The story playbook a story attempt runs. */
     storyPlaybookId: text("story_playbook_id").notNull().default("builtin:implement-story"),
     /** The request playbook a lane's requests run. */

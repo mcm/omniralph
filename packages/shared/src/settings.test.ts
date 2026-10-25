@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_RALPH_SETTINGS,
   epicCompletedTarget,
   fieldErrors,
   parseLines,
-  parseRalphSettings,
-  RalphSettings,
-  ralphSettingsFromInput,
   parsePathExcludes,
   pathExcludeGlobError,
-  RalphSettingsInput,
+  RepositoryCodingInput,
   RepositorySettingsInput,
   RepositoryTaskTypesInput,
 } from "./settings.js";
@@ -156,207 +152,50 @@ describe("RepositoryTaskTypesInput", () => {
   });
 });
 
-const validRalph: RalphSettingsInput = {
-  storyPlaybookId: "builtin:implement-story",
-  requestPlaybookId: "builtin:handle-request",
-  verifyCommands: ["pnpm typecheck", "pnpm test"],
-  runPrdQualityGates: true,
-  setupCommand: "pnpm install --frozen-lockfile",
-  appendInstruction: "Keep commits small.",
-  model: "opus",
-  fallbackModel: "",
-  allowedTools: [],
-  disallowedTools: ["WebFetch"],
+const validCoding: RepositoryCodingInput = {
+  codingEnabled: true,
+  codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
   openPullRequestEarly: false,
-  historyRewrite: "when-asked",
-  respondToReviews: true,
-  maxReviewRounds: 3,
-  respondToCiFailures: true,
-  maxFixRounds: 3,
-  cleanupMergedWorktrees: true,
-  unmergedBranchTimeoutMinutes: 60,
-  manualLabels: ["manual", "needs a person"],
-  blockedLabels: ["under-review", "blocked"],
-  allowPreparation: true,
-  epicCompletedState: "",
+  historyRewrite: "always",
+  respondToReviewsAndCi: true,
 };
 
-describe("RalphSettingsInput", () => {
-  it("accepts valid settings", () => {
-    expect(RalphSettingsInput.parse(validRalph)).toEqual(validRalph);
+describe("RepositoryCodingInput", () => {
+  it("accepts the six-field coding policy, with or without instructions", () => {
+    expect(RepositoryCodingInput.parse(validCoding)).toEqual(validCoding);
     expect(
-      RalphSettingsInput.parse({ ...validRalph, setupCommand: "", model: " claude-opus-5-5 " }),
-    ).toMatchObject({
-      setupCommand: "",
-      model: "claude-opus-5-5",
-    });
+      RepositoryCodingInput.safeParse({ ...validCoding, codingInstructions: null }).success,
+    ).toBe(true);
   });
 
-  it("rejects bad labels, bad models and long setup commands", () => {
-    const result = RalphSettingsInput.safeParse({
-      ...validRalph,
-      manualLabels: ["a,b"],
-      blockedLabels: [" "],
-      setupCommand: "x".repeat(4001),
-      model: "opus; rm -rf /",
-    });
-    expect(fieldErrors(result.error!)).toEqual({
-      "manualLabels.0": "Names can't contain commas or control characters.",
-      "blockedLabels.0": "Enter a name.",
-      setupCommand: "The setup command can be at most 4,000 characters.",
-      model: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
-    });
-  });
-
-  it("caps the number of labels", () => {
-    const result = RalphSettingsInput.safeParse({
-      ...validRalph,
-      blockedLabels: Array.from({ length: 51 }, (_, i) => `l${i}`),
-    });
-    expect(fieldErrors(result.error!)).toEqual({ blockedLabels: "At most 50 blocked labels." });
-  });
-
-  it("needs at least one valid manual label", () => {
-    expect(
-      fieldErrors(RalphSettingsInput.safeParse({ ...validRalph, manualLabels: [] }).error!),
-    ).toEqual({ manualLabels: "Enter at least one manual label." });
-    expect(
-      fieldErrors(
-        RalphSettingsInput.safeParse({ ...validRalph, manualLabels: ["ok", "a,b"] }).error!,
-      ),
-    ).toEqual({ "manualLabels.1": "Names can't contain commas or control characters." });
-  });
-
-  it("allows no blocked labels, but only valid ones", () => {
-    expect(RalphSettingsInput.parse({ ...validRalph, blockedLabels: [] }).blockedLabels).toEqual(
-      [],
-    );
-    expect(
-      fieldErrors(
-        RalphSettingsInput.safeParse({ ...validRalph, blockedLabels: ["blocked", "a,b"] }).error!,
-      ),
-    ).toEqual({ "blockedLabels.1": "Names can't contain commas or control characters." });
-  });
-});
-
-describe("RalphSettings", () => {
-  it("has the epic's defaults", () => {
-    expect(DEFAULT_RALPH_SETTINGS).toEqual({
-      verifyCommands: [],
-      runPrdQualityGates: true,
-      appendInstruction: null,
-      allowedTools: null,
-      disallowedTools: null,
-      model: "opus",
-      fallbackModel: null,
-      allowPreparation: true,
-      manualLabels: ["manual"],
-      blockedLabels: ["under-review", "blocked"],
-      historyRewrite: "when-asked",
-      respondToReviews: true,
-      maxReviewRounds: 3,
-      respondToCiFailures: true,
-      maxFixRounds: 3,
-      cleanupMergedWorktrees: true,
-      unmergedBranchTimeoutMinutes: 60,
-      epicCompletedState: null,
-      openPullRequestEarly: false,
-      setupCommand: null,
-    });
-  });
-
-  it("rejects invalid stored settings", () => {
-    const result = RalphSettings.safeParse({
-      verifyCommands: ["pnpm test\nrm -rf /"],
-      allowedTools: ["Bash(git log:*", "rm -rf"],
-      historyRewrite: "sometimes",
-      maxReviewRounds: -1,
-      unmergedBranchTimeoutMinutes: 0,
-    });
-    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual([
-      "allowedTools.0",
-      "allowedTools.1",
-      "historyRewrite",
+  it("rejects unknown keys, such as the settings that moved to playbooks", () => {
+    for (const key of [
+      "model",
+      "verifyCommands",
       "maxReviewRounds",
-      "unmergedBranchTimeoutMinutes",
-      "verifyCommands.0",
-    ]);
+      "manualLabels",
+      "storyPlaybookId",
+    ]) {
+      const parsed = RepositoryCodingInput.safeParse({ ...validCoding, [key]: "x" });
+      expect(parsed.success).toBe(false);
+      expect(fieldErrors(parsed.error!)).toEqual({ form: expect.stringContaining(key) });
+    }
   });
 
-  it("reads older rows with the defaults for missing or invalid fields", () => {
+  it("rejects missing switches, unknown policies and long instructions", () => {
     expect(
-      parseRalphSettings({
-        openPullRequestEarly: true,
-        setupCommand: "pnpm i",
-        model: "sonnet",
-        manualLabels: [],
-      }),
-    ).toEqual({
-      ...DEFAULT_RALPH_SETTINGS,
-      openPullRequestEarly: true,
-      setupCommand: "pnpm i",
-      model: "sonnet",
-    });
-    expect(parseRalphSettings(null)).toEqual(DEFAULT_RALPH_SETTINGS);
-    expect(parseRalphSettings({ blockedLabels: [] }).blockedLabels).toEqual([]);
-  });
-});
-
-describe("ralphSettingsFromInput", () => {
-  it("stores empty text and lists as none", () => {
-    expect(ralphSettingsFromInput(RalphSettingsInput.parse(validRalph))).toEqual({
-      ...DEFAULT_RALPH_SETTINGS,
-      verifyCommands: ["pnpm typecheck", "pnpm test"],
-      appendInstruction: "Keep commits small.",
-      disallowedTools: ["WebFetch"],
-      manualLabels: ["manual", "needs a person"],
-      setupCommand: "pnpm install --frozen-lockfile",
-    });
-    expect(
-      ralphSettingsFromInput(
-        RalphSettingsInput.parse({
-          ...validRalph,
-          blockedLabels: [],
-          fallbackModel: " sonnet ",
-          allowedTools: ["Read", "Bash(pnpm test:*)"],
-          epicCompletedState: "In Review",
-          historyRewrite: "never",
-        }),
+      fieldErrors(
+        RepositoryCodingInput.safeParse({
+          ...validCoding,
+          codingEnabled: undefined,
+          historyRewrite: "sometimes",
+          codingInstructions: "x".repeat(10_001),
+        }).error!,
       ),
-    ).toMatchObject({
-      blockedLabels: [],
-      fallbackModel: "sonnet",
-      allowedTools: ["Read", "Bash(pnpm test:*)"],
-      epicCompletedState: "In Review",
-      historyRewrite: "never",
-    });
-  });
-});
-
-describe("RalphSettingsInput (cyralph settings)", () => {
-  it("rejects bad commands, tools, models, rounds and states", () => {
-    const result = RalphSettingsInput.safeParse({
-      ...validRalph,
-      verifyCommands: [" "],
-      fallbackModel: "not a model",
-      allowedTools: ["Read", "bad tool"],
-      maxReviewRounds: 21,
-      maxFixRounds: 1.5,
-      unmergedBranchTimeoutMinutes: 0,
-      historyRewrite: "sometimes",
-      epicCompletedState: "a,b",
-      appendInstruction: "x".repeat(10_001),
-    });
-    expect(fieldErrors(result.error!)).toEqual({
-      "verifyCommands.0": "Enter a command.",
-      fallbackModel: "Enter a Claude model ID, e.g. claude-sonnet-5-5.",
-      "allowedTools.1": "Enter a tool name or rule, e.g. Read or Bash(pnpm test:*).",
-      maxReviewRounds: "At most 20.",
-      maxFixRounds: "Enter a whole number.",
-      unmergedBranchTimeoutMinutes: "Enter at least 1 minute.",
+    ).toEqual({
+      codingEnabled: "Choose on or off.",
       historyRewrite: "Choose a policy.",
-      epicCompletedState: "Names can't contain commas or control characters.",
-      appendInstruction: "The instruction can be at most 10,000 characters.",
+      codingInstructions: "Extra instructions can be at most 10,000 characters.",
     });
   });
 });

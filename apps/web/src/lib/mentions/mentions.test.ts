@@ -19,10 +19,9 @@ import {
   reviews,
   setAllowedTaskTypeDefaults,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
   users,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   organizations,
@@ -816,9 +815,8 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
      * (so requests wait for it, and nothing else runs).
      */
     async function ralphPr(number: number) {
-      await updateRepositoryRalphSettings(db, repoId, {
+      await updateRepositoryCoding(db, repoId, {
         ralphEnabled: true,
-        ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
       runSeq += 1;
       const created = await createRun(db, {

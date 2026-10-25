@@ -20,8 +20,9 @@ import {
   type RalphTransaction,
 } from "@omniralph/db";
 import { withManualOptions, type Epic } from "@omniralph/ralph";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository } from "@/lib/routing/resolve";
-import { repositoryAllowsPreparation, repositoryManualLabels } from "./epic-loader";
+import { organizationManualLabels, repositoryAllowsPreparation } from "./epic-loader";
 import type { RalphDeps } from "./run";
 
 type Executor = Database | RalphTransaction;
@@ -53,8 +54,8 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
  * as its source story, so it joins that story's lane. One that routes to
  * another repository with coding on gets `repo` and a lane there (created with
  * the main lane's branch and that repository's default branch as its base), and
- * is manual (and prepared) by that repository's manual labels and
- * `allowPreparation` instead of the main repository's. One that routes to a
+ * is prepared by its story playbook's `allowPreparation` instead of the main
+ * repository's. One that routes to a
  * repository with coding off becomes manual with `elsewhere` set (and no
  * preparation), like a manual-labelled story. Other epics' stories stay in the
  * main lane. Returns every story's lane.
@@ -101,10 +102,13 @@ export async function routeStories(
       lanes.set(key(s), { laneId: null, elsewhere: reason });
       continue;
     }
-    // Its repository's manual labels and preparation setting apply, not the main one's.
+    // Its repository's preparation setting applies, not the main one's.
     const routed = withManualOptions(s, {
-      manualLabels: repositoryManualLabels(repository),
-      allowPreparation: repositoryAllowsPreparation(repository),
+      manualLabels: await organizationManualLabels(tx, run.organizationId),
+      allowPreparation: await repositoryAllowsPreparation(
+        repository,
+        organizationPlaybooks(deps.db, run.organizationId),
+      ),
     });
     routed.repo = { id: repository.id, name: repository.fullPath, routedBy: route.by };
     epic.stories[i] = routed;

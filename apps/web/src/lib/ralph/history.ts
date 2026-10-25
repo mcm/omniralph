@@ -9,7 +9,6 @@ import {
   type RalphRunListEntry,
   type ScmProvider,
 } from "@omniralph/db";
-import { parseRalphSettings } from "@omniralph/shared";
 import type { PlaybookSource } from "@/lib/playbooks";
 import { roundLimits, storyLimits } from "./coding";
 import {
@@ -59,13 +58,8 @@ export async function ralphRunDetailView(
 ): Promise<RalphRunDetailView> {
   const { run, repository } = detail;
   const lanes = await Promise.all(
-    detail.lanes.map(async ({ lane, repository: laneRepository, main: isMain, ...repo }) => {
-      const settings = parseRalphSettings(repo.ralphSettings);
-      const limits = await roundLimits(
-        run,
-        { ...repo.coding, ralphSettings: repo.ralphSettings },
-        definitions,
-      );
+    detail.lanes.map(async ({ lane, repository: laneRepository, main: isMain, coding }) => {
+      const limits = await roundLimits(run, coding, definitions);
       return {
         id: lane.id,
         repository: laneRepository,
@@ -76,11 +70,11 @@ export async function ralphRunDetailView(
         cleanup: cleanupLabel(lane.cleanup),
         reviewRounds: {
           done: lane.reviewRounds,
-          max: settings.respondToReviews ? limits.maxReviewRounds : null,
+          max: coding.respondToReviewsAndCi ? limits.maxReviewRounds : null,
         },
         ciFixRounds: {
           done: lane.ciFixRounds,
-          max: settings.respondToCiFailures ? limits.maxFixRounds : null,
+          max: coding.respondToReviewsAndCi ? limits.maxFixRounds : null,
         },
       };
     }),

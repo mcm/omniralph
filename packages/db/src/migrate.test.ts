@@ -72,6 +72,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       pathExcludes: [],
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
+      // The coding policy (0098).
+      codingInstructions: null,
+      openPullRequestEarly: false,
+      historyRewrite: "when-asked",
+      respondToReviewsAndCi: true,
     });
   });
 
@@ -1435,6 +1440,141 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
               .join(", ")}`,
           },
         });
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
+  describe("repo coding policy columns replace ralph_settings (0098)", () => {
+    /** Every key of `ralph_settings` at its default, as production stores it. */
+    const DEFAULT_BLOB = {
+      verifyCommands: [],
+      runPrdQualityGates: true,
+      appendInstruction: null,
+      allowedTools: null,
+      disallowedTools: null,
+      model: "opus",
+      fallbackModel: null,
+      allowPreparation: true,
+      manualLabels: ["manual"],
+      blockedLabels: ["under-review", "blocked"],
+      historyRewrite: "when-asked",
+      respondToReviews: true,
+      maxReviewRounds: 3,
+      respondToCiFailures: true,
+      maxFixRounds: 3,
+      cleanupMergedWorktrees: true,
+      unmergedBranchTimeoutMinutes: 60,
+      epicCompletedState: null,
+      openPullRequestEarly: false,
+      setupCommand: null,
+    };
+    const REBASE = "NEVER use `git merge` in this repo, ALWAYS rebase.";
+    const RELEASE_NOTE =
+      "Every user-facing change needs a release note: add a changeset with `pnpm changeset`.";
+
+    /** A database migrated up to just before 0098, with a repo per `ralph_settings` blob. */
+    async function beforeCodingPolicy(name: string, blobs: Record<string, unknown>[]) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0098_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      await migrate(drizzle(client), { migrationsFolder: before });
+
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Acme') returning id`,
+      );
+      const org = rows[0]!.id;
+      const { rows: connections } = await client.query<{ id: string }>(
+        `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+         values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+        [org],
+      );
+      const repos: string[] = [];
+      for (const [index, blob] of blobs.entries()) {
+        const { rows: inserted } = await client.query<{ id: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id, ralph_settings)
+           values ($1, 'github', $2, $3, $4, $5) returning id`,
+          [org, String(index + 1), `acme/repo-${index + 1}`, connections[0]!.id, blob],
+        );
+        repos.push(inserted[0]!.id);
+      }
+      const cleanup = async () => {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      };
+      return { uri, client, repos, cleanup };
+    }
+
+    it("converts the production blobs into the coding policy columns", async () => {
+      const { uri, client, cleanup } = await beforeCodingPolicy("coding_policy_production", [
+        { ...DEFAULT_BLOB, historyRewrite: "always", appendInstruction: REBASE },
+        DEFAULT_BLOB,
+        DEFAULT_BLOB,
+        { ...DEFAULT_BLOB, openPullRequestEarly: true, appendInstruction: RELEASE_NOTE },
+        // One review switch off still responds (CI is on); both off turns it off.
+        { ...DEFAULT_BLOB, respondToReviews: false },
+        { ...DEFAULT_BLOB, respondToReviews: false, respondToCiFailures: false },
+        // An old row without most keys gets the defaults.
+        { model: "opus" },
+      ]);
+      try {
+        await runMigrations(uri);
+
+        const { rows } = await client.query<Record<string, unknown>>(
+          `select * from repositories order by full_path`,
+        );
+        expect(
+          rows.map((r) => [
+            r.full_path,
+            r.coding_instructions,
+            r.open_pull_request_early,
+            r.history_rewrite,
+            r.respond_to_reviews_and_ci,
+          ]),
+        ).toEqual([
+          ["acme/repo-1", REBASE, false, "always", true],
+          ["acme/repo-2", null, false, "when-asked", true],
+          ["acme/repo-3", null, false, "when-asked", true],
+          ["acme/repo-4", RELEASE_NOTE, true, "when-asked", true],
+          ["acme/repo-5", null, false, "when-asked", true],
+          ["acme/repo-6", null, false, "when-asked", false],
+          ["acme/repo-7", null, false, "when-asked", true],
+        ]);
+        for (const row of rows) expect(row).not.toHaveProperty("ralph_settings");
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("refuses to drop a setting that differs from its default and names the repo and key", async () => {
+      const { uri, client, repos, cleanup } = await beforeCodingPolicy("coding_policy_custom", [
+        DEFAULT_BLOB,
+        { ...DEFAULT_BLOB, model: "sonnet", maxFixRounds: 3, blockedLabels: ["blocked"] },
+      ]);
+      try {
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Repo coding settings differ from the defaults and would be lost: repository ${repos[1]} (acme/repo-2) key blockedLabels, repository ${repos[1]} (acme/repo-2) key model`,
+          },
+        });
+        // Nothing was converted or dropped.
+        const { rows: columns } = await client.query(
+          `select 1 from information_schema.columns where table_name = 'repositories' and column_name = 'ralph_settings'`,
+        );
+        expect(columns).toHaveLength(1);
       } finally {
         await cleanup();
       }

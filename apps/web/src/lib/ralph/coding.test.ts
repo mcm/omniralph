@@ -1,4 +1,3 @@
-import { DEFAULT_RALPH_SETTINGS } from "@omniralph/db";
 import {
   MAX_ATTEMPTS_PER_STORY,
   MAX_ROUNDS_PER_STORY,
@@ -16,6 +15,8 @@ vi.mock("server-only", () => ({}));
 
 const {
   MAX_ITERATIONS_PER_RUN,
+  DEFAULT_CODING_SETTINGS,
+  codingSettings,
   describePrJobInput,
   describePrPayload,
   describePrText,
@@ -74,11 +75,11 @@ const DEFINITIONS = {
 };
 
 const repository = (
-  overrides: Partial<Parameters<typeof storyLimits>[0] & { ralphSettings: unknown }> = {},
+  overrides: Partial<Parameters<typeof storyLimits>[0] & { openPullRequestEarly: boolean }> = {},
 ) => ({
   storyPlaybookId: "builtin:implement-story",
   requestPlaybookId: "builtin:handle-request",
-  ralphSettings: { ...DEFAULT_RALPH_SETTINGS, maxReviewRounds: 4, maxFixRounds: 2 },
+  openPullRequestEarly: false,
   ...overrides,
 });
 
@@ -130,11 +131,10 @@ describe("jobStoryCaps", () => {
 describe("roundLimits", () => {
   const run = { codingTaskId: null };
 
-  it("are the lesser of the repository's and the request task's", async () => {
-    // The built-in's caps (20) never lower the repository's.
+  it("are the request playbook's (3 each for the built-in)", async () => {
     expect(await roundLimits(run, repository(), DEFINITIONS)).toEqual({
-      maxReviewRounds: 4,
-      maxFixRounds: 2,
+      maxReviewRounds: 3,
+      maxFixRounds: 3,
     });
     expect(
       await roundLimits(run, repository({ requestPlaybookId: cautious.id }), DEFINITIONS),
@@ -147,6 +147,67 @@ describe("roundLimits", () => {
       maxReviewRounds: 1,
       maxFixRounds: 0,
     });
+  });
+});
+
+describe("codingSettings", () => {
+  const custom: Playbook = {
+    ...story,
+    id: "builtin:custom-coding",
+    model: "claude-sonnet-5-5",
+    fallbackModel: "claude-haiku-5-5",
+    coding: {
+      verifyCommands: ["pnpm test"],
+      worktreeSetupCommand: "pnpm install",
+      runPrdQualityGates: false,
+      allowPreparation: false,
+      epicCompletedState: "In Review",
+      cleanupMergedWorktrees: false,
+      unmergedBranchTimeoutMinutes: 30,
+      maxReviewRounds: 5,
+      maxFixRounds: 1,
+    },
+  };
+  const source = {
+    getPlaybook: (id: string) => (id === custom.id ? custom : DEFINITIONS.getPlaybook(id)),
+  };
+
+  it("are a coding playbook's own, the built-ins' today's defaults", async () => {
+    expect(await codingSettings(custom.id, source)).toEqual({
+      model: "claude-sonnet-5-5",
+      fallbackModel: "claude-haiku-5-5",
+      verifyCommands: ["pnpm test"],
+      worktreeSetupCommand: "pnpm install",
+      runPrdQualityGates: false,
+      allowPreparation: false,
+      epicCompletedState: "In Review",
+      cleanupMergedWorktrees: false,
+      unmergedBranchTimeoutMinutes: 30,
+      maxReviewRounds: 5,
+      maxFixRounds: 1,
+    });
+    for (const id of [story.id, request.id]) {
+      expect(await codingSettings(id, source)).toEqual({
+        ...DEFAULT_CODING_SETTINGS,
+        model: "opus",
+      });
+    }
+    expect(DEFAULT_CODING_SETTINGS).toMatchObject({
+      verifyCommands: [],
+      worktreeSetupCommand: null,
+      runPrdQualityGates: true,
+      allowPreparation: true,
+      epicCompletedState: null,
+      cleanupMergedWorktrees: true,
+      unmergedBranchTimeoutMinutes: 60,
+      maxReviewRounds: 3,
+      maxFixRounds: 3,
+    });
+  });
+
+  it("are the defaults for an unknown or non-coding playbook", async () => {
+    expect(await codingSettings("builtin:gone", source)).toEqual(DEFAULT_CODING_SETTINGS);
+    expect(await codingSettings(describeTask.id, source)).toEqual(DEFAULT_CODING_SETTINGS);
   });
 });
 
@@ -329,9 +390,7 @@ describe("describing a lane's PR", () => {
 });
 
 describe("push and draft PR timing", () => {
-  const early = (openPullRequestEarly: boolean) => ({
-    ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly },
-  });
+  const early = (openPullRequestEarly: boolean) => ({ openPullRequestEarly });
 
   it("pushes as the story task says, after each story by default", async () => {
     expect(await pushTimingFor(repository(), DEFINITIONS)).toBe("per-story");

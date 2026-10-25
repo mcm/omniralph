@@ -5,11 +5,11 @@
  * lane whose PR/MR it is.
  *
  * - A review run is acted on once it completed and was posted (no webhook,
- *   no polling): if the repository's `respondToReviews` is on, the run isn't
+ *   no polling): if the repository's `respondToReviewsAndCi` is on, the run isn't
  *   stopped and the review run wasn't seen yet, and it reviewed the PR/MR's
  *   current head, its open findings become one request. An older head's
  *   review run is recorded as handled and skipped; one without open findings does
- *   nothing; after `maxReviewRounds` the run leaves it for a person.
+ *   nothing; after its request playbook's `maxReviewRounds` the run leaves it for a person.
  * - Delivery is a reply's: into the running `ralph.request` job working in
  *   that lane (the heartbeat's live messages), else a pending request, run as
  *   a `ralph.request` job once nothing else runs (a finished run reopens). A
@@ -35,7 +35,7 @@ import {
   resolveRepositorySwitches,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
-import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
+import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
@@ -170,8 +170,7 @@ export async function respondToReview(
   ) {
     return ignored("repository_unavailable");
   }
-  const settings = parseRalphSettings(target.repository.ralphSettings);
-  if (!settings.respondToReviews) return ignored("opted_out");
+  if (!target.repository.respondToReviewsAndCi) return ignored("opted_out");
   if (OVER.has(found.run.status)) return ignored("run_over");
   if (found.lane.handledReviewIds.includes(reviewRun.id)) return ignored("handled");
 

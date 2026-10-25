@@ -7,9 +7,12 @@ import {
   getAllowedTaskTypeDefaults,
   getAppSetting,
   getDefaultMaxConcurrency,
+  getTrackerLabels,
   setAllowedTaskTypeDefaults,
   setAppSetting,
   setDefaultMaxConcurrency,
+  setTrackerLabels,
+  TRACKER_LABELS_KEY,
 } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { appSettings, organizations } from "./schema.js";
@@ -54,6 +57,22 @@ describe.skipIf(!databaseAvailable)("organization task-type and concurrency defa
 
     await setAllowedTaskTypeDefaults(db, orgA, [], null);
     expect(await getAllowedTaskTypeDefaults(db, orgA)).toEqual([]);
+  });
+
+  it("keeps the tracker labels per organization, with defaults", async () => {
+    const defaults = { manualLabels: ["manual"], blockedLabels: ["under-review", "blocked"] };
+    expect(await getTrackerLabels(db, orgA)).toEqual(defaults);
+    await setTrackerLabels(db, orgA, { manualLabels: ["by hand"], blockedLabels: [] }, null);
+    expect(await getTrackerLabels(db, orgA)).toEqual({
+      manualLabels: ["by hand"],
+      blockedLabels: [],
+    });
+    expect(await getTrackerLabels(db, orgB)).toEqual(defaults);
+    // Malformed lists, and an empty manual list, are the defaults.
+    await setAppSetting(db, orgA, TRACKER_LABELS_KEY, { manualLabels: [], blockedLabels: 3 }, null);
+    expect(await getTrackerLabels(db, orgA)).toEqual(defaults);
+    await setTrackerLabels(db, orgA, null, null);
+    expect(await getAppSetting(db, orgA, TRACKER_LABELS_KEY)).toBeNull();
   });
 
   it("accepts the concurrency bounds", async () => {

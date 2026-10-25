@@ -26,8 +26,10 @@ import {
   type MaterializationPlan,
   type ParsedPrd,
 } from "@omniralph/ralph";
-import { getRepository, type Database } from "@omniralph/db";
+import { getRepository, getTrackerLabels, type Database, type Repository } from "@omniralph/db";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
+import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
+import { storyCodingSettings } from "./coding";
 
 export interface LoadedEpic {
   epic: Epic;
@@ -67,42 +69,47 @@ export interface LoadEpicOptions {
 }
 
 /**
- * The labels marking a repository's stories as manual (`ralph_settings.manualLabels`),
- * `manual` when none are set.
+ * The labels marking the organization's stories as manual (its `tracker.labels`), `manual`
+ * when none are set.
  */
-export function repositoryManualLabels(repository: {
-  ralphSettings: { manualLabels?: readonly string[] | null };
-}): string[] {
-  const labels = repository.ralphSettings.manualLabels?.filter((l) => l.trim()) ?? [];
-  return labels.length > 0 ? [...labels] : [...DEFAULT_MANUAL_LABELS];
+export async function organizationManualLabels(
+  db: Pick<Database, "select">,
+  organizationId: string,
+): Promise<string[]> {
+  const labels = (await getTrackerLabels(db, organizationId)).manualLabels;
+  return labels.length > 0 ? labels : [...DEFAULT_MANUAL_LABELS];
 }
 
-/** Whether a repository offers manual stories' preparation (`ralph_settings.allowPreparation`). */
-export function repositoryAllowsPreparation(repository: {
-  ralphSettings: { allowPreparation?: boolean | null };
-}): boolean {
-  return repository.ralphSettings.allowPreparation !== false;
+/** Whether a repository offers manual stories' preparation (its story playbook's `allowPreparation`). */
+export async function repositoryAllowsPreparation(
+  repository: Pick<Repository, "storyPlaybookId">,
+  definitions: PlaybookSource,
+): Promise<boolean> {
+  return (await storyCodingSettings(repository, definitions)).allowPreparation;
 }
 
-/** The manual labels of a run's repository (`manual` when the repository is gone). */
+/** The manual labels of a run's organization. */
 export async function runManualLabels(
   db: Database,
-  run: { repositoryId: string | null },
+  run: { organizationId: string },
 ): Promise<string[]> {
-  const repository = run.repositoryId ? await getRepository(db, run.repositoryId) : null;
-  return repository ? repositoryManualLabels(repository) : [...DEFAULT_MANUAL_LABELS];
+  return organizationManualLabels(db, run.organizationId);
 }
 
-/** How a run's repository reads its epic: the manual labels and whether preparation is offered. */
+/** How a run reads its epic: the organization's manual labels and whether its repository offers preparation. */
 export async function runEpicOptions(
   db: Database,
-  run: { repositoryId: string | null },
+  run: { organizationId: string; repositoryId: string | null },
 ): Promise<Pick<LoadEpicOptions, "manualLabels" | "allowPreparation">> {
+  const manualLabels = await organizationManualLabels(db, run.organizationId);
   const repository = run.repositoryId ? await getRepository(db, run.repositoryId) : null;
-  if (!repository) return { manualLabels: [...DEFAULT_MANUAL_LABELS] };
+  if (!repository) return { manualLabels };
   return {
-    manualLabels: repositoryManualLabels(repository),
-    allowPreparation: repositoryAllowsPreparation(repository),
+    manualLabels,
+    allowPreparation: await repositoryAllowsPreparation(
+      repository,
+      organizationPlaybooks(db, run.organizationId),
+    ),
   };
 }
 

@@ -15,10 +15,10 @@ import {
   ralphLanes,
   ralphRuns,
   claimJob,
-  updateRepositoryRalphSettings,
+  repositories,
+  updateRepositoryCoding,
   upsertScmConnection,
   webhookDeliveries,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   type RalphRun,
@@ -47,6 +47,7 @@ import { handleWebhook } from "@/lib/webhooks/ingest";
 import { reconcileCi, respondToCi } from "./ci";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
+import { bindCodingPlaybook } from "./testing";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -89,11 +90,17 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     adapterFor: () => scm.asAdapter(),
   });
 
-  const ralphOn = (id: string, settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
-    updateRepositoryRalphSettings(db, id, {
+  const ralphOn = async (id: string, policy: { respondToReviewsAndCi?: boolean } = {}) => {
+    await db
+      .update(repositories)
+      .set({ requestPlaybookId: "builtin:handle-request" })
+      .where(eq(repositories.id, id));
+    return updateRepositoryCoding(db, id, {
       ralphEnabled: true,
-      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
+      respondToReviewsAndCi: true,
+      ...policy,
     });
+  };
 
   beforeAll(async () => {
     testDb = await createTestDatabase();
@@ -338,7 +345,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
   });
 
   it("stops after maxFixRounds and says so in the session", async () => {
-    await ralphOn(repoId, { maxFixRounds: 1 });
+    await bindCodingPlaybook(db, orgId, repoId, "request", { maxFixRounds: 1 });
     const { run, sessionId } = await ciEpic();
     const prUrl = scm.changeRequests[0]!.url;
     setCi(failed("head1"));
@@ -370,7 +377,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
       scm.calls.filter((c) => c === "getCiStatus" || c === "getChangeRequestState").length;
 
     // Opted out: CI isn't even checked.
-    await ralphOn(repoId, { respondToCiFailures: false });
+    await ralphOn(repoId, { respondToReviewsAndCi: false });
     expect(await respondToCi(deps(), await found(run))).toEqual({
       status: "ignored",
       reason: "opted_out",

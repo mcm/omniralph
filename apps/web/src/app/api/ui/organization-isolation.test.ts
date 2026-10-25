@@ -202,7 +202,6 @@ const repositoryWebhook = await import("./repositories/[id]/webhook/route");
 const repositorySettings = await import("./repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("./repositories/[id]/task-types/route");
 const repositoryCoding = await import("./repositories/[id]/coding/route");
-const repositoryLinear = await import("./repositories/[id]/coding/linear/route");
 const repositoryRules = await import("./repositories/[id]/rules/route");
 const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
 const gitlabConnections = await import("./gitlab-connections/route");
@@ -1298,26 +1297,18 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
       expect(coding).toMatchObject({
         status: 200,
-        body: { settings: { storyPlaybookId: "builtin:implement-story" } },
+        body: { codingEnabled: true, roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 } },
       });
       for (const marker of markers(other))
         expect(JSON.stringify(coding.body)).not.toContain(marker);
-      expect(await call(repositoryLinear.GET, { params: { id: own.repoId } })).toEqual({
-        status: 200,
-        body: { status: "disconnected" },
+      expect(await call(repositoryCoding.GET, { params: { id: other.repoId } })).toMatchObject({
+        status: 404,
       });
-      for (const handler of [repositoryCoding.GET, repositoryLinear.GET]) {
-        expect(await call(handler, { params: { id: other.repoId } })).toMatchObject({
-          status: 404,
-        });
-      }
-      // Members see Review settings and Harnesses read-only; Coding is for admins.
+      // Members see Review settings and Harnesses read-only; the coding policy is for admins.
       state.userId = own.memberId;
-      for (const handler of [repositoryCoding.GET, repositoryLinear.GET]) {
-        expect(await call(handler, { params: { id: own.repoId } })).toMatchObject({
-          status: 403,
-        });
-      }
+      expect(await call(repositoryCoding.GET, { params: { id: own.repoId } })).toMatchObject({
+        status: 403,
+      });
     }
   });
 
@@ -1331,9 +1322,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       reviewPlaybookIds: ["builtin:review-pr"],
       correlationPlaybookId: "builtin:correlate-findings",
     };
-    // A valid Coding form: the other organization's own.
+    // A valid coding policy: the other organization's own.
     state.userId = b.adminId;
-    const coding = (await call(repositoryCoding.GET, { params: { id: b.repoId } })).body;
+    const { roundLimits: _limits, ...coding } = (
+      await call(repositoryCoding.GET, { params: { id: b.repoId } })
+    ).body;
     const saves = (id: string) => [
       call(repositorySettings.PUT, { method: "PUT", params: { id }, body: reviewSettings }),
       call(repositoryTaskTypes.PUT, {
@@ -1344,7 +1337,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       call(repositoryCoding.PUT, {
         method: "PUT",
         params: { id },
-        body: { ...(coding.settings as object), storyPlaybookId: "builtin:implement-story" },
+        body: coding,
       }),
     ];
     state.userId = a.adminId;

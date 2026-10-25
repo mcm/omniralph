@@ -11,9 +11,8 @@ import {
   organizations,
   ralphRuns,
   saveChatConnection,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type ChatConnection,
   type ChatThread,
   type Database,
@@ -90,9 +89,8 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
         fullPath: "acme/app",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     const saved = await saveChatConnection(
       db,

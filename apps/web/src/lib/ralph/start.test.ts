@@ -21,16 +21,16 @@ import {
   saveIntegration,
   setAllowedTaskTypeDefaults,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
+  setTrackerLabels,
   updateRun,
   updateStory,
   upsertScmConnection,
   webhookDeliveries,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type RalphLaneUpdate,
   type RalphRun,
-  type RepositoryRalphSettingsUpdate,
+  type RepositoryCodingUpdate,
   organizations,
   replaceRoutingRules,
 } from "@omniralph/db";
@@ -125,11 +125,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     adapterFor: () => fakeAdapter,
   });
 
-  const routing = (
-    overrides: Partial<RepositoryRalphSettingsUpdate> = {},
-  ): RepositoryRalphSettingsUpdate => ({
+  const routing = (overrides: Partial<RepositoryCodingUpdate> = {}): RepositoryCodingUpdate => ({
     ralphEnabled: true,
-    ralphSettings: DEFAULT_RALPH_SETTINGS,
     ...overrides,
   });
 
@@ -216,8 +213,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await updateRepositoryRalphSettings(db, repoId, routing());
-    await updateRepositoryRalphSettings(db, otherRepoId, routing());
+    await updateRepositoryCoding(db, repoId, routing());
+    await updateRepositoryCoding(db, otherRepoId, routing());
+    await setTrackerLabels(db, orgId, null, null);
     await setRules([otherRepoId, labels("frontend")], [repoId, team("ENG")]);
     linear = new FakeLinearGateway();
     defaultBranchCalls = [];
@@ -316,13 +314,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     ]);
   });
 
-  it("marks and materializes manual stories with the routed repository's manual labels", async () => {
-    await updateRepositoryRalphSettings(
+  it("marks and materializes manual stories with the organization's manual labels", async () => {
+    await setTrackerLabels(
       db,
-      repoId,
-      routing({
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, manualLabels: ["by hand", "ops"] },
-      }),
+      orgId,
+      { manualLabels: ["by hand", "ops"], blockedLabels: [] },
+      null,
     );
     // A children epic: the custom labels (any case) mark manual stories, `manual` no longer does.
     const epic = linear.add({ identifier: "ENG-20", title: "Epic" });
@@ -474,8 +471,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     await setRules();
-    await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: false }));
-    await updateRepositoryRalphSettings(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
     const elsewhere = linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
@@ -489,7 +486,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("doesn't build an issue whose rule routes to a repository with coding off", async () => {
-    await updateRepositoryRalphSettings(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
     const issue = linear.add({
       identifier: "ENG-55",
       title: "Docs",
@@ -516,7 +513,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
 
   it("routes to a repository that inherits coding from the organization, unless it overrides", async () => {
     // No organization settings: a repository that never set its coding switch is routable.
-    await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: null }));
+    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: null }));
     expect((await getRepository(db, repoId))?.ralphEnabled).toBeNull();
     const inherited = created(linear.add({ identifier: "ENG-50", title: "Inherit" }).id);
     expect(await startRun(inherited, deps())).toMatchObject({ status: "started" });
@@ -525,8 +522,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await db.delete(ralphRuns);
 
     // An explicit false blocks coding although the organization allows it.
-    await updateRepositoryRalphSettings(db, otherRepoId, routing({ ralphEnabled: false }));
-    await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: false }));
     // Its rule now makes the issue manual.
     const blocked = created(linear.add({ identifier: "ENG-51", title: "Blocked" }).id);
     expect(await startRun(blocked, deps())).toEqual({ status: "manual", repository: "acme/api" });
@@ -534,12 +531,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     try {
       await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
       // Inheriting a default without coding: not routable.
-      await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: null }));
+      await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: null }));
       const off = created(linear.add({ identifier: "ENG-52", title: "Off" }).id);
       expect(await startRun(off, deps())).toEqual({ status: "manual", repository: "acme/api" });
 
       // An explicit true allows it although the organization doesn't.
-      await updateRepositoryRalphSettings(db, repoId, routing({ ralphEnabled: true }));
+      await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: true }));
       const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
       expect(await startRun(on, deps())).toMatchObject({ status: "started" });
       expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
@@ -857,8 +854,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       });
       const [response] = linear.bodies(event.sessionId, "response");
       expect(response).toContain("I won't work on **ENG-70**");
-      expect(response).toContain("`acme/api` doesn't let me work issues labeled `Under-Review`");
-      expect(response).toContain("Repository › Settings › Coding › Linear › Blocked labels");
+      expect(response).toContain(
+        "work items labeled `Under-Review` are blocked for Om in this organization",
+      );
       expect(await db.select().from(ralphRuns)).toEqual([]);
       expect(await linear.getChildren(issue.id)).toEqual([]);
       expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
@@ -879,61 +877,61 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       expect(await db.select().from(ralphRuns)).toEqual([]);
     });
 
-    it("uses the routed repository's own labels; none blocks nothing", async () => {
-      await updateRepositoryRalphSettings(
+    it("uses the organization's labels, whichever repository the issue routes to; none blocks nothing", async () => {
+      await setTrackerLabels(
         db,
-        repoId,
-        routing({
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: ["on hold"] },
-        }),
+        orgId,
+        { manualLabels: ["manual"], blockedLabels: ["on hold"] },
+        null,
       );
+      // Routed to acme/api (team ENG) or acme/web (label frontend): refused either way.
       const held = linear.add({ identifier: "ENG-73", title: "Held", labels: ["On Hold"] });
       expect(await startRun(created(held.id), deps())).toMatchObject({
         status: "blocked_labels",
         labels: ["On Hold"],
       });
+      const web = linear.add({
+        identifier: "ENG-76",
+        title: "UI",
+        labels: ["Frontend", "on hold"],
+      });
+      expect(await startRun(created(web.id), deps())).toMatchObject({
+        status: "blocked_labels",
+        labels: ["on hold"],
+      });
+      // `blocked` is no longer one of them.
       const blocked = linear.add({ identifier: "ENG-74", title: "Fine", labels: ["blocked"] });
       expect(await startRun(created(blocked.id), deps())).toMatchObject({ status: "started" });
 
-      await updateRepositoryRalphSettings(
-        db,
-        otherRepoId,
-        routing({
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: [] },
-        }),
-      );
+      await setTrackerLabels(db, orgId, { manualLabels: ["manual"], blockedLabels: [] }, null);
       const ui = linear.add({ identifier: "ENG-75", title: "UI", labels: ["Frontend", "blocked"] });
       expect(await startRun(created(ui.id), deps())).toMatchObject({ status: "started" });
     });
 
-    it("offers only the repositories that don't block an unrouted issue, else refuses", async () => {
-      await updateRepositoryRalphSettings(
-        db,
-        otherRepoId,
-        routing({
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, blockedLabels: [] },
-        }),
-      );
+    it("refuses an unrouted issue with a blocked label instead of asking for a repository", async () => {
       const issue = linear.add({
         identifier: "OPS-70",
         title: "Infra",
         teamKey: "OPS",
         labels: ["blocked"],
       });
-      const event = created(issue.id);
-      expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
-      expect((await getRunBySession(db, event.sessionId))?.pendingElicitation).toEqual({
-        kind: "repository",
-        repositoryIds: [otherRepoId],
-      });
-
-      await db.delete(ralphRuns);
-      await updateRepositoryRalphSettings(db, otherRepoId, routing());
       const refused = created(issue.id);
-      expect(await startRun(refused, deps())).toMatchObject({ status: "blocked_labels" });
+      expect(await startRun(refused, deps())).toMatchObject({
+        status: "blocked_labels",
+        labels: ["blocked"],
+      });
       expect(linear.bodies(refused.sessionId, "response")[0]).toContain(
-        "no repository lets me work issues labeled `blocked`",
+        "work items labeled `blocked` are blocked for Om in this organization",
       );
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+
+      // Without a blocked label, every repository with coding on is offered.
+      const other = linear.add({ identifier: "OPS-71", title: "Infra", teamKey: "OPS" });
+      const event = created(other.id);
+      expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
+      expect(
+        (await getRunBySession(db, event.sessionId))?.pendingElicitation?.repositoryIds?.sort(),
+      ).toEqual([repoId, otherRepoId].sort());
     });
   });
 
@@ -1277,7 +1275,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
           fullPath: "other/ops",
         })
       ).id;
-      await updateRepositoryRalphSettings(db, foreignRepoId, routing());
+      await updateRepositoryCoding(db, foreignRepoId, routing());
       await replaceRoutingRules(db, other!.id, [
         { repositoryId: foreignRepoId, query: team("OPS") },
       ]);

@@ -26,7 +26,7 @@ A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 | `setupCommands`, `teardownCommands`           | Commands run before and after the session ([below](#setup-and-teardown-commands)).                                                                                                                                   |
 | `outputSchema`                                | A JSON schema of an object the output must match; query roles only, empty for a Markdown answer.                                                                                                                     |
 | `tokenBudget`                                 | A fixed `{ tokens }`, or `null` for **No limit**. A review playbook sets none: its review depth does.                                                                                                                |
-| `coding`                                      | Story and request playbooks only: attempts and rounds per story, stall rounds, attempts per run, review and CI fix rounds, push timing and the `prDescriptionPlaybookId` that writes the PR description.             |
+| `coding`                                      | Story and request playbooks only ([coding settings](#coding-settings)): attempts and rounds per story, stall rounds, attempts per run, review and CI fix rounds, push timing, verify and worktree setup commands, preparation, the epic's completed state, branch cleanup and the `prDescriptionPlaybookId` that writes the PR description. |
 | `variableLimits`, `maxTurns`, `idleTimeoutMs` | Most characters of a variable rendered into the prompt, most turns, and how long a session may go quiet.                                                                                                             |
 
 A playbook has no task types, skills, sink, pool, triggers or draft PR timing of its own. Parsing
@@ -104,6 +104,31 @@ request playbook's coding settings fill in `CODING_DEFAULTS`, and both halves ta
 ID and name. So harnesses need no change for playbooks. The control panel looks playbooks up
 through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
 `apps/web/src/lib/playbooks/index.ts`); a job's `task_id` holds the playbook ID.
+
+### Coding settings
+
+A story or request playbook's `coding` holds everything about how its runs work, apart from the
+repository's own coding policy (on/off, work item match, extra instructions, open PR early, history
+rewrite, and responding to reviews and CI; see [Linear](linear.md#4-configure-routing)). Each field
+it leaves out has its default (`CODING_DEFAULTS` in `packages/tasks/src/definitions.ts`), which is
+what the built-ins use:
+
+| Field | Default | What it does |
+| -- | -- | -- |
+| `maxAttemptsPerStory`, `maxRoundsPerStory`, `stallRounds`, `maxIterationsPerRun` | 3, 8, 3, 50 | How often a story is tried, how many review-loop rounds it gets, how many rounds without a better metric, and story attempts per run. |
+| `maxReviewRounds`, `maxFixRounds` | 3, 3 | How many reviews and failed CI runs of a lane's PR become requests. The request playbook's apply (it runs the rounds); the repo API reports the story playbook's. |
+| `pushTiming` | `per-story` | When the branch is pushed: after each story, or once at the `end`. |
+| `verifyCommands` | none | Quality gates the job runs after the session, before the PRD's. |
+| `runPrdQualityGates` | on | Also run the PRD's `## Quality Gates`. |
+| `worktreeSetupCommand` | none | Run once in a fresh branch worktree (e.g. `pnpm install`). |
+| `allowPreparation` | on | Offer to run a manual story's preparation commands. |
+| `epicCompletedState` | none | The state the epic moves to when every story is complete. |
+| `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes` | on, 60 | Remove the worktree and local branch after the merge, and how long to wait for an answer about unmerged commits. |
+| `prDescriptionPlaybookId` | `builtin:describe-pr` | The `pr-description` playbook that writes the PR title and description. |
+
+The control panel reads them with `codingSettings` (`apps/web/src/lib/ralph/coding.ts`): the story
+playbook's for the run as a whole, the request playbook's for requests and their rounds. The agent
+reads the worktree setup command and the model from the run spec.
 
 ## Built-in playbooks
 

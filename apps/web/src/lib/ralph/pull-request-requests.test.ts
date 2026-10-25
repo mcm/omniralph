@@ -21,9 +21,9 @@ import {
   reviewRuns,
   reviews,
   claimJob,
-  updateRepositoryRalphSettings,
+  repositories,
+  updateRepositoryCoding,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type FindingRow,
   type Job,
@@ -50,6 +50,7 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted, onReviewForRalph } from "./jobs";
 import { ralphJobPayload } from "./coding";
+import { bindCodingPlaybook } from "./testing";
 import { exchangeJobMessages } from "./messages";
 import { respondToReview } from "./pull-request-requests";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
@@ -87,11 +88,21 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     adapterFor: () => scm.asAdapter(),
   });
 
-  const ralphOn = (id: string, settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
-    updateRepositoryRalphSettings(db, id, {
+  const ralphOn = async (
+    id: string,
+    policy: { respondToReviewsAndCi?: boolean; openPullRequestEarly?: boolean } = {},
+  ) => {
+    await db
+      .update(repositories)
+      .set({ requestPlaybookId: "builtin:handle-request" })
+      .where(eq(repositories.id, id));
+    return updateRepositoryCoding(db, id, {
       ralphEnabled: true,
-      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
+      respondToReviewsAndCi: true,
+      openPullRequestEarly: false,
+      ...policy,
     });
+  };
 
   beforeAll(async () => {
     testDb = await createTestDatabase();
@@ -489,7 +500,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     expect((await getRun(db, run.id))?.status).toBe("completed");
 
     // Opted out.
-    await ralphOn(repoId, { respondToReviews: false });
+    await ralphOn(repoId, { respondToReviewsAndCi: false });
     expect(await respondToReview(deps(), (await review()).id)).toEqual({
       status: "ignored",
       reason: "opted_out",
@@ -520,7 +531,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
   });
 
   it("stops after maxReviewRounds and says so in the session", async () => {
-    await ralphOn(repoId, { maxReviewRounds: 1 });
+    await bindCodingPlaybook(db, orgId, repoId, "request", { maxReviewRounds: 1 });
     const { run, sessionId } = await reviewedEpic();
     expect(await respondToReview(deps(), (await review()).id)).toMatchObject({
       status: "started",

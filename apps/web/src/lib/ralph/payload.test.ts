@@ -1,12 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  DEFAULT_RALPH_SETTINGS,
-  type RalphRun,
-  type RalphSettings,
-  type RalphStory,
-  type Repository,
-  type ScmConnection,
-} from "@omniralph/db";
+import { type RalphRun, type RalphStory, type Repository, type ScmConnection } from "@omniralph/db";
 import type { Epic, Story } from "@omniralph/ralph";
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,6 +12,15 @@ const {
   jobSettings,
   storyQualityGates,
 } = await import("./payload");
+const { DEFAULT_CODING_SETTINGS } = await import("./coding");
+type CodingSettings = typeof DEFAULT_CODING_SETTINGS;
+
+/** A story or request playbook's coding settings: `settings` over the built-ins'. */
+const coding = (settings: Partial<CodingSettings> = {}): CodingSettings => ({
+  ...DEFAULT_CODING_SETTINGS,
+  model: "opus",
+  ...settings,
+});
 
 const story: Story = {
   key: "issue-2",
@@ -44,12 +46,14 @@ const epic = (kind: Epic["kind"] = "children"): Epic => ({
   stories: [story],
 });
 
-const repository = (settings: Partial<RalphSettings> = {}) =>
+const repository = (policy: Partial<Repository> = {}) =>
   ({
     id: randomUUID(),
     provider: "github",
     fullPath: "acme/api",
-    ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
+    codingInstructions: null,
+    historyRewrite: "when-asked",
+    ...policy,
   }) as Repository;
 
 const connection = { baseUrl: "https://api.github.com" } as ScmConnection;
@@ -67,11 +71,16 @@ const lane = { branch: "feat/epic", baseBranch: "main" };
 
 const row = { id: randomUUID(), linearIssueId: "issue-2", attempts: 0, lastFeedback: null };
 
-function payloadFor(kind: RalphRun["kind"], settings: Partial<RalphSettings>) {
+function payloadFor(
+  kind: RalphRun["kind"],
+  settings: Partial<CodingSettings>,
+  policy: Partial<Repository> = {},
+) {
   return buildStoryPayload({
+    coding: coding(settings),
     run: run(kind),
     lane,
-    repository: repository(settings),
+    repository: repository(policy),
     connection,
     epic: epic(kind === "single" ? "single" : "children"),
     stories: [story],
@@ -107,14 +116,15 @@ describe("story quality gates", () => {
     const payload = payloadFor("single", { verifyCommands: ["make check"] });
     expect(payload.qualityGates).toEqual(["make check"]);
     expect(payload.prdQualityGates).toEqual([]);
-    expect(storyQualityGates("single", epic(), repository())).toEqual([]);
+    expect(storyQualityGates("single", epic(), repository(), coding())).toEqual([]);
   });
 
   it("are what the describe-pr job reports as the verification", () => {
     const payload = buildDescribePrPayload({
+      coding: coding({ verifyCommands: ["pnpm typecheck"] }),
       run: run(),
       lane,
-      repository: repository({ verifyCommands: ["pnpm typecheck"] }),
+      repository: repository(),
       connection,
       epic: epic(),
       rows: [],
@@ -122,16 +132,13 @@ describe("story quality gates", () => {
     expect(payload.qualityGates).toEqual(["pnpm typecheck", "pnpm test", "pnpm lint"]);
   });
 
-  it("are a request's gates too, with the repository's settings and history rule", () => {
+  it("are a request's gates too, from the request playbook, with the repository's instructions and history rule", () => {
     const request = (kind: RalphRun["kind"]) =>
       buildRequestPayload({
+        coding: coding({ verifyCommands: ["pnpm typecheck"] }),
         run: run(kind),
         lane: { ...lane, prUrl: null },
-        repository: repository({
-          verifyCommands: ["pnpm typecheck"],
-          appendInstruction: "Be brief.",
-          historyRewrite: "never",
-        }),
+        repository: repository({ codingInstructions: "Be brief.", historyRewrite: "never" }),
         connection,
         epic: epic(kind === "single" ? "single" : "children"),
         stories: [story],
@@ -154,11 +161,12 @@ describe("story quality gates", () => {
         "acme/web": ["pnpm build"],
       },
     };
-    const api = { ...repository({ verifyCommands: ["pnpm typecheck"] }), fullPath: "Acme/API" };
-    const web = { ...repository({}), fullPath: "acme/web" };
-    const other = { ...repository({}), fullPath: "acme/docs" };
-    const storyPayload = (repo: Repository) =>
+    const api = { ...repository(), fullPath: "Acme/API" };
+    const web = { ...repository(), fullPath: "acme/web" };
+    const other = { ...repository(), fullPath: "acme/docs" };
+    const storyPayload = (repo: Repository, settings: Partial<CodingSettings> = {}) =>
       buildStoryPayload({
+        coding: coding(settings),
         run: run(),
         lane,
         repository: repo,
@@ -169,7 +177,7 @@ describe("story quality gates", () => {
         row: row as RalphStory,
       });
 
-    expect(storyPayload(api)).toMatchObject({
+    expect(storyPayload(api, { verifyCommands: ["pnpm typecheck"] })).toMatchObject({
       qualityGates: ["pnpm typecheck", "pnpm test", "pnpm lint", "cargo test"],
       prdQualityGates: ["pnpm test", "pnpm lint", "cargo test"],
     });
@@ -180,13 +188,11 @@ describe("story quality gates", () => {
     expect(storyPayload(other).qualityGates).toEqual(["pnpm test", "pnpm lint"]);
     // With runPrdQualityGates off, a lane runs only its verify commands.
     expect(
-      storyQualityGates("children", scoped, {
-        ...repository({ runPrdQualityGates: false }),
-        fullPath: "acme/web",
-      }),
+      storyQualityGates("children", scoped, web, coding({ runPrdQualityGates: false })),
     ).toEqual([]);
     // The describe-pr and request jobs of a lane report the same gates.
     const describe = buildDescribePrPayload({
+      coding: coding(),
       run: run(),
       lane,
       repository: web,
@@ -196,6 +202,7 @@ describe("story quality gates", () => {
     });
     expect(describe.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
     const request = buildRequestPayload({
+      coding: coding(),
       run: run(),
       lane: { ...lane, prUrl: null },
       repository: web,
@@ -211,9 +218,10 @@ describe("story quality gates", () => {
   it("say whether a request comes from Linear or a chat thread", () => {
     const request = (origin: RalphRun["origin"]) =>
       buildRequestPayload({
+        coding: coding(),
         run: { ...run("single"), origin },
         lane: { ...lane, prUrl: null },
-        repository: repository({}),
+        repository: repository(),
         connection,
         epic: epic("single"),
         stories: [],
@@ -226,31 +234,25 @@ describe("story quality gates", () => {
 });
 
 describe("job settings", () => {
-  it("carry the repository's prompt, model and tool settings", () => {
+  it("carry the playbook's model and worktree setup command and the repository's instructions", () => {
     expect(
-      payloadFor("children", {
-        model: "sonnet",
-        fallbackModel: "haiku",
-        appendInstruction: "Write a changelog entry.",
-        allowedTools: ["Read", "Bash(pnpm test:*)"],
-        disallowedTools: ["WebFetch"],
-        setupCommand: "pnpm install",
-      }).settings,
+      payloadFor(
+        "children",
+        { model: "sonnet", fallbackModel: "haiku", worktreeSetupCommand: "pnpm install" },
+        { codingInstructions: "Write a changelog entry." },
+      ).settings,
     ).toEqual({
       model: "sonnet",
       fallbackModel: "haiku",
       appendInstruction: "Write a changelog entry.",
-      allowedTools: ["Read", "Bash(pnpm test:*)"],
-      disallowedTools: ["WebFetch"],
+      allowedTools: null,
+      disallowedTools: null,
       setupCommand: "pnpm install",
     });
   });
 
-  it("fill in the defaults for a row saved before the settings existed", () => {
-    const old = {
-      ralphSettings: { openPullRequestEarly: false, setupCommand: null, model: "opus" },
-    } as unknown as Repository;
-    expect(jobSettings(old)).toEqual({
+  it("are the built-in playbook's for a repository without instructions", () => {
+    expect(jobSettings(repository({ codingInstructions: "  " }), coding())).toEqual({
       model: "opus",
       setupCommand: null,
       fallbackModel: null,
@@ -258,10 +260,5 @@ describe("job settings", () => {
       allowedTools: null,
       disallowedTools: null,
     });
-  });
-
-  it("match the shared schema's defaults", async () => {
-    const { DEFAULT_RALPH_SETTINGS: shared } = await import("@omniralph/shared");
-    expect(DEFAULT_RALPH_SETTINGS).toEqual(shared);
   });
 });

@@ -39,7 +39,9 @@ import {
   WorktreeCleanupResult,
   type RalphStoryResult,
 } from "@omniralph/shared";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
+import { storyCodingSettings } from "./coding";
 import { errorMessage } from "./notify";
 import { jobSettings } from "./payload";
 import type { RalphDeps } from "./run";
@@ -95,7 +97,10 @@ export async function enqueueHiddenRefDeletion(
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(
+      repository,
+      await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId)),
+    ),
     epic: { identifier: runReference(run) },
     hiddenRefs: refs.slice(0, MAX_CLEANUP_HIDDEN_REFS),
   });

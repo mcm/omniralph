@@ -169,13 +169,20 @@ describe("TaskDefinition", () => {
         maxRoundsPerStory: 8,
         stallRounds: 3,
         maxIterationsPerRun: 50,
-        maxReviewRounds: CODING_MAX_FIX_ROUNDS,
-        maxFixRounds: CODING_MAX_FIX_ROUNDS,
+        maxReviewRounds: 3,
+        maxFixRounds: 3,
         pushTiming: "per-story",
         prDescriptionTaskId: "builtin:describe-pr",
+        verifyCommands: [],
+        worktreeSetupCommand: null,
+        runPrdQualityGates: true,
+        allowPreparation: true,
+        epicCompletedState: null,
+        cleanupMergedWorktrees: true,
+        unmergedBranchTimeoutMinutes: 60,
       });
       expect(parsed).not.toHaveProperty("draftPullRequest");
-      expect(CODING_DEFAULTS.maxFixRounds).toBe(20);
+      expect(CODING_DEFAULTS.maxFixRounds).toBe(3);
     });
 
     it("keeps the values a coding task sets", () => {
@@ -190,6 +197,13 @@ describe("TaskDefinition", () => {
         pushTiming: "end",
         draftPullRequest: "end",
         prDescriptionTaskId: UUID,
+        verifyCommands: ["pnpm test"],
+        worktreeSetupCommand: "pnpm install",
+        runPrdQualityGates: false,
+        allowPreparation: false,
+        epicCompletedState: "In Review",
+        cleanupMergedWorktrees: false,
+        unmergedBranchTimeoutMinutes: 30,
       };
       expect(TaskDefinition.parse(set)).toMatchObject(set);
       // Parsing a parsed task again changes nothing (run specs carry parsed tasks).
@@ -208,6 +222,8 @@ describe("TaskDefinition", () => {
         pushTiming: "per-story",
         draftPullRequest: "early",
         prDescriptionTaskId: "builtin:describe-pr",
+        verifyCommands: ["pnpm test"],
+        cleanupMergedWorktrees: true,
       };
       expect(issues(TaskDefinition.safeParse({ ...task, ...fields })).sort()).toEqual(
         Object.keys(fields).sort(),
@@ -223,6 +239,9 @@ describe("TaskDefinition", () => {
         ["pushTiming", "never"],
         ["draftPullRequest", "late"],
         ["prDescriptionTaskId", "pr"],
+        ["verifyCommands", "pnpm test"],
+        ["worktreeSetupCommand", "two\nlines"],
+        ["unmergedBranchTimeoutMinutes", 0],
       ] as const) {
         expect(issues(TaskDefinition.safeParse({ ...coding, [field]: value }))).toEqual([field]);
       }

@@ -17,11 +17,10 @@ import {
   organizations,
   ralphRuns,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   type LinearRun,
@@ -109,9 +108,8 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
