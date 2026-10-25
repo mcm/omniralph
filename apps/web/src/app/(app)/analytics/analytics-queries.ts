@@ -6,11 +6,16 @@ import { useQueryKeys } from "@/components/query-provider";
 import { DEFAULT_ANALYTICS_RANGE, type AnalyticsParams } from "@/lib/analytics/display";
 import { analyticsResponseSchema } from "@/lib/api/analytics";
 import { api } from "@/lib/api/client";
-import { ANALYTICS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 
 /**
- * The organization's analytics for the page's window and repository: refetched every minute
- * while the tab is visible, and when it regains focus.
+ * Analytics refetch on live run changes at most this often: aggregates over days don't
+ * move in seconds, and each refetch scans them.
+ */
+export const ANALYTICS_LIVE_THROTTLE_MS = 10_000;
+
+/**
+ * The organization's analytics for the page's window and repository: refetched on live
+ * run changes (throttled, `ANALYTICS_LIVE_THROTTLE_MS`), and when the tab regains focus.
  */
 export function useAnalytics(params: AnalyticsParams) {
   const keys = useQueryKeys();
@@ -28,6 +33,6 @@ export function useAnalytics(params: AnalyticsParams) {
       }),
     // The previous window or repository stays (dimmed) while the new one loads.
     placeholderData: keepPreviousData,
-    refetchInterval: ANALYTICS_REFETCH_INTERVAL,
+    meta: { liveThrottleMs: ANALYTICS_LIVE_THROTTLE_MS },
   });
 }

@@ -2,19 +2,23 @@ import type { QueryKey } from "@tanstack/react-query";
 
 /**
  * Areas of the panel with their own queries. A mutation invalidates an area's `all` key
- * to refetch every list and detail of it.
+ * to refetch every list and detail of it. Transcripts are their own area, keyed by run
+ * (`transcripts.detail(runId)`), so a run's live changes don't refetch its transcript.
  */
 export const QUERY_AREAS = [
   "analytics",
   "chatAccounts",
   "connections",
+  "deliveries",
   "harnesses",
+  "inbox",
   "jobs",
   "organization",
   "repositories",
   "reviews",
   "runs",
   "settings",
+  "transcripts",
   "triage",
 ] as const;
 export type QueryArea = (typeof QUERY_AREAS)[number];

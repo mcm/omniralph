@@ -1,12 +1,17 @@
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "./client";
 
-/** How often a mounted query refetches while its tab is visible. */
-export const LIVE_REFETCH_INTERVAL = 3_000;
-/** For settings and definitions, which change rarely and only through the panel. */
+/**
+ * How often a mounted query refetches while live updates are down or off (the realtime
+ * connection is lost, or Ably isn't configured). While connected, queries don't poll:
+ * change events invalidate them (`src/lib/live`).
+ */
+export const FALLBACK_POLL_INTERVAL = 10_000;
+/**
+ * For queries whose changes publish no live change event (agent and task definitions,
+ * review profiles): they keep polling, slowly, even while live updates are connected.
+ */
 export const SETTINGS_REFETCH_INTERVAL = 30_000;
-/** For analytics: aggregates over days don't move in seconds, and each poll scans them. */
-export const ANALYTICS_REFETCH_INTERVAL = 60_000;
 /** Attempts after the first before a query shows its error. */
 const QUERY_RETRIES = 3;
 
@@ -23,19 +28,46 @@ export function shouldRetryQuery(failureCount: number, error: unknown): boolean 
   return true;
 }
 
+/** Each client's switch between "live" (no polling) and fallback polling. */
+const fallbackPolling = new WeakMap<QueryClient, { polling: boolean }>();
+
+/**
+ * Turns the default polling on (`FALLBACK_POLL_INTERVAL`) or off, for every mounted query
+ * at once; the live data layer calls it as the realtime connection comes and goes.
+ * Queries with their own `refetchInterval` keep it.
+ */
+export function setFallbackPolling(client: QueryClient, polling: boolean): void {
+  const state = fallbackPolling.get(client);
+  if (!state || state.polling === polling) return;
+  state.polling = polling;
+  // Observers compute their interval when their options are set or a fetch settles:
+  // setting their own options again reschedules (or clears) the timer now.
+  for (const query of client.getQueryCache().getAll()) {
+    for (const observer of query.observers) observer.setOptions(observer.options);
+  }
+}
+
+/** Whether the client's queries are polling at the fallback interval. */
+export function isFallbackPolling(client: QueryClient): boolean {
+  return fallbackPolling.get(client)?.polling ?? false;
+}
+
 /**
  * The panel's `QueryClient` (one per browser session, provided by `QueryProvider`): every
- * query is live by default, polling every 3s while the tab is visible, refetching when the
- * tab regains focus or the network reconnects, and always stale so a mount refetches.
- * Queries that call an external API (Linear, GitHub, GitLab) opt out with
- * `refetchInterval: false` and refresh explicitly; settings may poll at
- * `SETTINGS_REFETCH_INTERVAL`. Mutations never retry (they may not be idempotent).
+ * query is live by default. Change events invalidate the queries they affect while the
+ * realtime connection is up; while it's down (or realtime is off) mounted queries poll at
+ * `FALLBACK_POLL_INTERVAL`, which is the state a new client starts in. Queries refetch
+ * when the tab regains focus or the network reconnects, and are always stale so a mount
+ * refetches. Queries that call an external API (Linear, GitHub, GitLab) opt out with
+ * `refetchInterval: false` and refresh explicitly. Mutations never retry (they may not be
+ * idempotent).
  */
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const state = { polling: true };
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
-        refetchInterval: LIVE_REFETCH_INTERVAL,
+        refetchInterval: () => (state.polling ? FALLBACK_POLL_INTERVAL : false),
         refetchIntervalInBackground: false,
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
@@ -46,4 +78,6 @@ export function createQueryClient(): QueryClient {
       mutations: { retry: false },
     },
   });
+  fallbackPolling.set(client, state);
+  return client;
 }

@@ -150,4 +150,169 @@ describe("useApiMutation", () => {
     expect(onError).not.toHaveBeenCalled();
     expect(ui.toast).not.toHaveBeenCalled();
   });
+
+  describe("optimistic", () => {
+    type Harness = { name: string };
+
+    it("shows the change while the request is pending", async () => {
+      let finish: (value: unknown) => void = () => {};
+      const { client, mutationFn, result } = setup({
+        optimistic: (name, cache) =>
+          cache.set<Harness>(keys.harnesses.detail("h1"), (previous) => ({ ...previous, name })),
+      });
+      client.setQueryData<Harness>(keys.harnesses.detail("h1"), { name: "build-01" });
+      mutationFn.mockReturnValue(new Promise((resolve) => (finish = resolve)) as never);
+
+      act(() => result.current.mutate("build-02"));
+      await waitFor(() => expect(mutationFn).toHaveBeenCalled());
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+      await act(async () => finish({ ok: true }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+    });
+
+    it("cancels an in-flight fetch so it can't overwrite the change", async () => {
+      const { client, mutationFn, result } = setup({
+        optimistic: (name, cache) =>
+          cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+      });
+      client.setQueryData<Harness>(keys.harnesses.detail("h1"), { name: "build-01" });
+      const unsubscribe = new QueryObserver(client, {
+        queryKey: keys.harnesses.detail("h1"),
+        queryFn: () => new Promise<Harness>(() => {}),
+      }).subscribe(() => {});
+      await waitFor(() =>
+        expect(client.getQueryState(keys.harnesses.detail("h1"))?.fetchStatus).toBe("fetching"),
+      );
+      mutationFn.mockReturnValue(new Promise(() => {}) as never);
+      act(() => result.current.mutate("build-02"));
+      await waitFor(() => expect(mutationFn).toHaveBeenCalled());
+      expect(client.getQueryState(keys.harnesses.detail("h1"))?.fetchStatus).toBe("idle");
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+      unsubscribe();
+    });
+
+    it("rolls back to the exact previous data on a 500, with the danger toast", async () => {
+      const onError = vi.fn();
+      const { client, mutationFn, result } = setup({
+        onError,
+        optimistic: async (name, cache) => {
+          await cache.set<Harness[]>(keys.harnesses.lists, (previous) =>
+            previous?.map(() => ({ name })),
+          );
+          await cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name }));
+          // Not cached before: removed again on rollback.
+          await cache.set<Harness>(keys.harnesses.detail("h2"), () => ({ name }));
+        },
+      });
+      const list = [{ name: "build-01" }];
+      const detail = { name: "build-01" };
+      client.setQueryData(keys.harnesses.list({ page: 1 }), list);
+      client.setQueryData(keys.harnesses.list({ page: 2 }), list);
+      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      const before = {
+        page1: client.getQueryState(keys.harnesses.list({ page: 1 })),
+        detail: client.getQueryState(keys.harnesses.detail("h1")),
+      };
+
+      mutationFn.mockRejectedValue(new ApiError("Couldn't save.", 500));
+      act(() => result.current.mutate("build-02"));
+      await waitFor(() => expect(result.current.isError).toBe(true));
+
+      expect(client.getQueryData(keys.harnesses.list({ page: 1 }))).toBe(list);
+      expect(client.getQueryData(keys.harnesses.list({ page: 2 }))).toBe(list);
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
+      expect(client.getQueryState(keys.harnesses.list({ page: 1 }))?.dataUpdatedAt).toBe(
+        before.page1?.dataUpdatedAt,
+      );
+      expect(client.getQueryState(keys.harnesses.detail("h1"))?.dataUpdatedAt).toBe(
+        before.detail?.dataUpdatedAt,
+      );
+      expect(
+        client.getQueryCache().find({ queryKey: keys.harnesses.detail("h2") }),
+      ).toBeUndefined();
+      expect(ui.toast).toHaveBeenCalledWith("Couldn't save.", { variant: "danger" });
+      expect(onError).toHaveBeenCalledWith(expect.any(ApiError), "build-02", undefined);
+    });
+
+    it("reconciles in the background after success, without blocking onSuccess", async () => {
+      const order: string[] = [];
+      const { client, mutationFn, result } = setup({
+        optimistic: (name, cache) =>
+          cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+        onSuccess: () => order.push("onSuccess"),
+      });
+      let release: () => void = () => {};
+      const unsubscribe = new QueryObserver(client, {
+        queryKey: keys.harnesses.list(),
+        queryFn: async () => {
+          order.push("refetch started");
+          await new Promise<void>((resolve) => (release = resolve));
+          order.push("refetched");
+          return ["new"];
+        },
+      }).subscribe(() => {});
+      await waitFor(() => expect(order).toEqual(["refetch started"]));
+      release();
+      await waitFor(() => expect(order).toEqual(["refetch started", "refetched"]));
+      order.length = 0;
+
+      mutationFn.mockResolvedValue({ ok: true } as never);
+      await act(() => result.current.mutateAsync("build-02"));
+      // onSuccess ran while the reconcile refetch is still pending.
+      expect(order).toEqual(["refetch started", "onSuccess"]);
+      expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
+      release();
+      await waitFor(() => expect(order).toContain("refetched"));
+      unsubscribe();
+    });
+
+    it("rolls back what it wrote when the optimistic update itself throws", async () => {
+      const { client, mutationFn, result } = setup({
+        optimistic: async (name, cache) => {
+          await cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name }));
+          throw new Error("bad update");
+        },
+      });
+      const detail = { name: "build-01" };
+      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      act(() => result.current.mutate("build-02"));
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(mutationFn).not.toHaveBeenCalled();
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
+    });
+  });
+
+  describe("applyResult", () => {
+    it("writes the server's response into the cache before onSuccess", async () => {
+      let seenInOnSuccess: unknown;
+      const { client, mutationFn, result } = setup<{ ok: true; id: string; name: string }>({
+        applyResult: (data, cache) =>
+          cache.set(cache.keys.harnesses.detail(data.id), () => ({ name: data.name })),
+        onSuccess: () => {
+          seenInOnSuccess = client.getQueryData(keys.harnesses.detail("h9"));
+        },
+      });
+      mutationFn.mockResolvedValue({ ok: true, id: "h9", name: "build-09" });
+      await act(() => result.current.mutateAsync("build-09"));
+      expect(client.getQueryData(keys.harnesses.detail("h9"))).toEqual({ name: "build-09" });
+      expect(seenInOnSuccess).toEqual({ name: "build-09" });
+    });
+
+    it("reconciles in the background: the mutation doesn't wait on the refetch", async () => {
+      const { client, mutationFn, result } = setup({
+        applyResult: (_data, cache) =>
+          cache.set(cache.keys.harnesses.detail("h1"), () => ({ name: "saved" })),
+      });
+      const unsubscribe = new QueryObserver(client, {
+        queryKey: keys.harnesses.list(),
+        queryFn: () => new Promise(() => {}),
+      }).subscribe(() => {});
+      mutationFn.mockResolvedValue({ ok: true } as never);
+      // Resolves although the invalidated list's refetch never finishes.
+      await act(() => result.current.mutateAsync("h1"));
+      expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
+      unsubscribe();
+    });
+  });
 });

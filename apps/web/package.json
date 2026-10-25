@@ -31,6 +31,7 @@
     "@tabler/icons-react": "^3.40.0",
     "@tanstack/react-query": "^5.104.3",
     "@vercel/kms": "^0.3.2",
+    "ably": "^2.29.0",
     "ai": "5.0.273",
     "chat": "4.41.1",
     "drizzle-orm": "^0.45.3",

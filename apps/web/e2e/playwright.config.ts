@@ -16,8 +16,9 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   timeout: 300_000,
-  // Live updates poll every 3s; 10s covers a poll, its render and a slow dev compile.
-  expect: { timeout: 10_000 },
+  // Without Ably (no ABLY_API_KEY) live data polls every 10s (FALLBACK_POLL_INTERVAL); 20s
+  // covers a poll, its render and a slow dev compile.
+  expect: { timeout: 20_000 },
   reporter: [["list"]],
   use: {
     baseURL: process.env.E2E_BASE_URL,

@@ -47,6 +47,13 @@ export const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
+/**
+ * Sections of the user's own record a `settings` event names, only on the user's own
+ * channel and not part of the settings history: `profile` (their theme).
+ */
+export const USER_SETTINGS_SECTIONS = ["profile"] as const;
+export type UserSettingsSection = (typeof USER_SETTINGS_SECTIONS)[number];
+
 const id = z.guid();
 
 /** Fields every event has; `ids` are the changed rows' IDs. */
@@ -71,11 +78,13 @@ const base = {
  * - `webhook_event`: a delivery was recorded or replayed (`ids` = webhook event IDs).
  * - `settings`: a tracked settings `section` was saved, for `subjectId` (e.g. the
  *   repository) when the section has one (`ids` = the subject, else the organization).
+ *   Section `profile` is the user's own record (`ids` = the user), on the user's channel.
  * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its
  *   settings, pins, update state or installs changed (`ids` = agent IDs).
  * - `repository`: repositories were connected, disconnected or switched (`ids` = repo IDs).
  * - `connection`: a code host, tracker or chat connection changed (`ids` = connection IDs).
- * - `organization`: the organization, its members, invitations or domains changed.
+ * - `organization`: the organization, its members, invitations or domains changed; on the
+ *   user's own channel, their membership of it did (their organizations changed).
  */
 export const changeEventSchemas = {
   run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
@@ -103,7 +112,7 @@ export const changeEventSchemas = {
   settings: z.strictObject({
     ...base,
     resource: z.literal("settings"),
-    section: z.enum(SETTINGS_SECTIONS),
+    section: z.enum([...SETTINGS_SECTIONS, ...USER_SETTINGS_SECTIONS]),
     subjectId: id.optional(),
   }),
   agent: z.strictObject({ ...base, resource: z.literal("agent") }),
