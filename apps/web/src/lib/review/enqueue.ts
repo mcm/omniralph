@@ -56,6 +56,20 @@ export interface EnqueueReviewInput {
   profileId?: string | null;
 }
 
+/** The longest PR/MR description a review trigger context carries. */
+export const MAX_DESCRIPTION_CHARS = 100_000;
+const TRUNCATED_MARKER = "\n\n[Description truncated: it is longer than 100,000 characters.]";
+
+/**
+ * Cuts a PR/MR description longer than the trigger context allows, ending it
+ * with a marker, so a long description doesn't keep the review from being
+ * enqueued.
+ */
+export function truncateDescription(description: string | null): string | null {
+  if (description === null || description.length <= MAX_DESCRIPTION_CHARS) return description;
+  return description.slice(0, MAX_DESCRIPTION_CHARS - TRUNCATED_MARKER.length) + TRUNCATED_MARKER;
+}
+
 /** One task run of a review run: the review task, its review and its job. */
 export interface ReviewTaskRun {
   taskId: string;
@@ -256,13 +270,13 @@ export async function enqueueReview(
     pr: {
       number: input.prNumber,
       title: input.title.trim(),
-      body: input.description?.trim() || null,
+      body: truncateDescription(input.description?.trim() || null),
     },
     baseSha: input.baseSha,
     headSha: input.headSha,
     changeRequest: {
       title: input.title,
-      description: input.description,
+      description: truncateDescription(input.description),
       author: input.author,
     },
     reviewConfig: {

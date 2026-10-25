@@ -91,7 +91,7 @@ const server = setupServer(
 
 function githubPayload(
   action: string,
-  opts: { number: number; head?: string; draft?: boolean; repoId?: number },
+  opts: { number: number; head?: string; draft?: boolean; repoId?: number; body?: string },
 ) {
   return {
     action,
@@ -102,7 +102,7 @@ function githubPayload(
       state: "open",
       draft: opts.draft ?? false,
       title: "Add login",
-      body: "Please review",
+      body: opts.body ?? "Please review",
       user: { login: "octocat" },
       head: { sha: opts.head ?? nextSha() },
       base: { sha: BASE_SHA },
@@ -293,6 +293,24 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
         status: "queued",
         targetHarnessId: null,
       });
+    });
+
+    it("enqueues an opened PR whose description is over 100,000 characters, truncated", async () => {
+      const number = ++prCounter;
+      const description = "x".repeat(300 * 1024);
+      const res = await github(
+        githubRequest(githubPayload("opened", { number, body: description })),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ status: "enqueued" });
+      const [job] = await prJobs(githubRepoId, number);
+      const context = reviewTriggerContext(job!.payload);
+      for (const text of [context.changeRequest.description, context.pr.body]) {
+        expect(text).toHaveLength(100_000);
+        expect(text).toMatch(
+          /^x+\n\n\[Description truncated: it is longer than 100,000 characters\.\]$/,
+        );
+      }
     });
 
     it("enqueues reopened, ready_for_review and synchronize events", async () => {
