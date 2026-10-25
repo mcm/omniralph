@@ -2253,3 +2253,67 @@ export const webhookDeliveries = pgTable(
     index("webhook_deliveries_created_at_idx").on(t.createdAt),
   ],
 );
+
+export const webhookEventOutcome = pgEnum("webhook_event_outcome", [
+  "started_run",
+  "updated_run",
+  "ignored",
+  "failed",
+  "duplicate",
+]);
+
+/**
+ * The delivery log: every verified code-host and Linear delivery that resolved to an
+ * organization, with what it did (kept 14 days, `pruneWebhookEvents`). Separate from
+ * `webhook_deliveries`, which only de-duplicates. A replay is a new row with
+ * `replay_of_id`. Header values and signatures are never stored.
+ */
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    provider: webhookProvider("provider").notNull(),
+    /** The code-host connection that verified it (GitHub, GitLab). */
+    scmConnectionId: uuid("scm_connection_id").references(() => scmConnections.id, {
+      onDelete: "cascade",
+    }),
+    /** The tracker integration it came through (Linear). */
+    integrationId: uuid("integration_id").references(() => integrations.id, {
+      onDelete: "cascade",
+    }),
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    /** The provider's delivery ID (or, for Linear without one, the body's hash). */
+    deliveryId: text("delivery_id"),
+    /** The event and its action, e.g. `pull_request.synchronize`, `AgentSessionEvent.created`. */
+    event: text("event").notNull(),
+    /** The parsed body; null when it was over the size limit (`payload_truncated`). */
+    payload: jsonb("payload"),
+    payloadTruncated: boolean("payload_truncated").notNull().default(false),
+    outcome: webhookEventOutcome("outcome").notNull(),
+    reasonCode: text("reason_code"),
+    /** `reason_code` in plain language, or a failure's message. */
+    reason: text("reason"),
+    /** The run the delivery started or updated (no FK: a run lives in one of four tables). */
+    runId: uuid("run_id"),
+    runKind: text("run_kind").$type<"epic" | "request" | "review" | "triage" | "ask">(),
+    replayOfId: uuid("replay_of_id").references((): AnyPgColumn => webhookEvents.id, {
+      onDelete: "set null",
+    }),
+    replayedBy: text("replayed_by").references(() => users.id, { onDelete: "set null" }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("webhook_events_scm_connection_received_at_idx").on(t.scmConnectionId, t.receivedAt),
+    index("webhook_events_integration_received_at_idx").on(t.integrationId, t.receivedAt),
+    index("webhook_events_received_at_idx").on(t.receivedAt),
+    check(
+      "webhook_events_source",
+      sql`(${t.scmConnectionId} is null) <> (${t.integrationId} is null)`,
+    ),
+  ],
+);

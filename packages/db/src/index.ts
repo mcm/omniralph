@@ -349,6 +349,28 @@ export {
   type WebhookProvider,
 } from "./webhooks.js";
 export {
+  getWebhookEvent,
+  getWebhookEventSourceOrganizationId,
+  listWebhookEvents,
+  pruneWebhookEvents,
+  recordWebhookEvent,
+  updateWebhookEventOutcome,
+  webhookEventPayload,
+  WEBHOOK_EVENT_OUTCOMES,
+  WEBHOOK_EVENT_PAYLOAD_MAX_BYTES,
+  WEBHOOK_EVENT_PRUNE_BATCH,
+  WEBHOOK_EVENT_RETENTION_DAYS,
+  type NewWebhookEvent,
+  type WebhookEventCursor,
+  type WebhookEventDetail,
+  type WebhookEventListFilter,
+  type WebhookEventOutcome,
+  type WebhookEventOutcomeUpdate,
+  type WebhookEventRun,
+  type WebhookEventSource,
+  type WebhookEventSummary,
+} from "./webhook-events.js";
+export {
   deleteIntegration,
   getIntegration,
   getIntegrationByExternalId,

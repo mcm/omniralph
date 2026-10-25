@@ -52,6 +52,25 @@ export async function resolveOrganizationScope(
 }
 
 /**
+ * For another resource of any of the user's organizations (a connection's delivery log):
+ * the user's membership of `organizationId` (null when the resource doesn't exist), which
+ * must be at least `role`. A missing resource, or one of an organization the user isn't a
+ * member of, is not found.
+ */
+export async function requireOrganizationAccess(
+  user: OrgUser,
+  organizationId: string | null,
+  { role = "member", notFoundMessage }: { role?: Role; notFoundMessage?: string } = {},
+): Promise<ScopedOrganization> {
+  const organization = organizationId && (await membership(user, organizationId));
+  if (!organization) throw ApiRouteError.notFound(notFoundMessage);
+  if (!hasRole(organization, role)) {
+    throw new AuthorizationError(`This action requires the ${role} role.`, "forbidden");
+  }
+  return organization;
+}
+
+/**
  * For a run's detail and actions: the run (by `runId`, which must be a UUID) in any of the
  * user's organizations, with the user's role there, which must be at least `role`. A
  * missing run, or one of an organization the user isn't a member of, is not found

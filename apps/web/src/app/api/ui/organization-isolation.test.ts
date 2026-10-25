@@ -44,8 +44,10 @@ import {
   getJob,
   getRun,
   harnesses,
+  integrations as integrationRows,
   jobs,
   listHarnessHostTools,
+  recordWebhookEvent,
   organizationMembers,
   scmConnections,
   setActiveOrganization,
@@ -196,6 +198,8 @@ const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
 const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
+const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
+const deliveryDetail = await import("./deliveries/[id]/route");
 const organizationSettings = await import("./organization/route");
 const organizationInvitations = await import("./organization/invitations/route");
 const organizationInvitation = await import("./organization/invitations/[id]/route");
@@ -498,6 +502,97 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
     state.userId = null;
     expect((await call(runAnalytics.GET)).status).toBe(401);
+  });
+
+  it("lists and shows each organization's webhook deliveries to its members, and 404s on the other's", async () => {
+    const linear = new Map<string, string>();
+    const deliveries = new Map<string, { scm: string; linear: string }>();
+    try {
+      for (const own of [a, b]) {
+        const integration = await saveIntegration(db, {
+          organizationId: own.orgId,
+          provider: "linear",
+          externalId: `${own.name}-delivery-workspace`,
+          name: `${own.name} workspace`,
+          credentials: { accessToken: "t" },
+          installedByUserId: null,
+        });
+        if (integration === "other_organization") throw new Error("setup");
+        linear.set(own.orgId, integration.id);
+        const record = (source: { scmConnectionId: string } | { integrationId: string }) =>
+          recordWebhookEvent(db, {
+            organizationId: own.orgId,
+            provider: "scmConnectionId" in source ? "github" : "linear",
+            source,
+            repositoryId: "scmConnectionId" in source ? own.repoId : null,
+            event: "pull_request.opened",
+            rawBody: JSON.stringify({ marker: `${own.name}-delivery-payload` }),
+            outcome: "ignored",
+            reasonCode: "draft",
+            reason: "Reviews of draft pull requests are off for this repo",
+          });
+        deliveries.set(own.orgId, {
+          scm: await record({ scmConnectionId: own.connectionId }),
+          linear: await record({ integrationId: integration.id }),
+        });
+      }
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const ownDeliveries = deliveries.get(own.orgId)!;
+        const otherDeliveries = deliveries.get(other.orgId)!;
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const scm = await call(connectionDeliveries.GET, {
+            params: { kind: "scm", id: own.connectionId },
+          });
+          const tracker = await call(connectionDeliveries.GET, {
+            params: { kind: "linear", id: linear.get(own.orgId)! },
+          });
+          const shown = await call(deliveryDetail.GET, { params: { id: ownDeliveries.scm } });
+          expect(scm.status).toBe(200);
+          expect(tracker.status).toBe(200);
+          expect(shown).toMatchObject({
+            status: 200,
+            body: { payload: { marker: `${own.name}-delivery-payload` } },
+          });
+          expect((scm.body.deliveries as { id: string }[]).map((d) => d.id)).toEqual([
+            ownDeliveries.scm,
+          ]);
+          expect((tracker.body.deliveries as { id: string }[]).map((d) => d.id)).toEqual([
+            ownDeliveries.linear,
+          ]);
+          for (const { body } of [scm, tracker, shown]) {
+            for (const marker of [...markers(other), `${other.name}-delivery-payload`]) {
+              expect(JSON.stringify(body)).not.toContain(marker);
+            }
+          }
+          for (const params of [
+            { kind: "scm", id: other.connectionId },
+            { kind: "linear", id: linear.get(other.orgId)! },
+          ]) {
+            expect(await call(connectionDeliveries.GET, { params })).toMatchObject({
+              status: 404,
+            });
+          }
+          for (const id of [otherDeliveries.scm, otherDeliveries.linear]) {
+            expect(await call(deliveryDetail.GET, { params: { id } })).toMatchObject({
+              status: 404,
+            });
+          }
+        }
+      }
+      state.userId = null;
+      expect(
+        (await call(connectionDeliveries.GET, { params: { kind: "scm", id: a.connectionId } }))
+          .status,
+      ).toBe(401);
+    } finally {
+      for (const id of linear.values()) {
+        await db.delete(integrationRows).where(eq(integrationRows.id, id));
+      }
+    }
   });
 
   it("lists each organization's own harnesses to its members, and none of the other's", async () => {
