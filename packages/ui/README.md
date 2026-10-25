@@ -212,6 +212,29 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
 - `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
   and decorative `icon`. There is no hint prop (rule 3).
 
+## Lists
+
+- `DataTable<T>`: `rows`, `getRowId`, `columns` (`{ id, header, cell(row), card?, align?,
+mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
+  `selectedId` and `rowTone(row)`. It renders a real `<table>` (`<caption>`,
+  `<th scope="col">`) in `.or-tblwrap` above 768 px and the same rows as a `<ul>` of
+  stacked cards (`.or-cards`) at 768 px and narrower (Design rule 16). `card` places a
+  column on the phone card: `status` and `time` on the top line, the `title` (the first
+  column when none is marked), then `meta` (the default) badges; `hidden` columns are
+  left out. With `getRowHref`, the title cell and the card title hold the row's one link
+  (through the `UiProvider` link component), stretched over the row, so a click anywhere
+  follows it. Keep links out of the title cell; buttons and checkboxes in other cells stay
+  siblings of the link and above it. `selectedId` marks the row and card with
+  `aria-current="true"` (`--or-sel`); `rowTone` `bad` tints it with `--or-fail-tint`.
+- `RowList` (`aria-label`) and `ListRow`: `href`, `title` (clamped to two lines; it names
+  the row link), `kindLabel` (e.g. "Request · failed", also the `StatusDot`'s name),
+  `tone`, `time?` (fixed-width mono slot), `meta?` badges, `selected?`
+  (`aria-current="true"`), `select?` (`{ checked, onChange, label }`, a `Checkbox`) and
+  `actions?`. The whole row is clickable through an absolutely positioned row link; the
+  checkbox and actions are its siblings. Tab order: checkbox, row link, actions.
+- `nestedInteractiveElements(root)`: every `a`, `button` or `input` inside an `a` or
+  `button`. Lists and tables return none; screen tests can assert the same.
+
 ## Shell
 
 - `AppFrame`: the app layout. Props: `currentPath`, `brandHref`, `nav` (`NavItem[]`),
