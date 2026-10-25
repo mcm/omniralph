@@ -72,6 +72,25 @@ describe("runActions", () => {
     ).toEqual(["a2", "a1"]);
   });
 
+  it("retries only a triage's or ask's newest attempt, each attempt being its own step", () => {
+    const attempts = [
+      { id: "t2", type: "triage.run", status: "failed", step: "t2" },
+      { id: "t1", type: "triage.run", status: "failed", step: "t1" },
+    ];
+    expect(runActions({ kind: "triage", status: "failed" }, "member", { attempts }).retry).toEqual({
+      run: true,
+      storyIds: [],
+      attemptIds: ["t2"],
+    });
+    const asks = [
+      { id: "q2", type: "chat.ask", status: "completed", step: "q2" },
+      { id: "q1", type: "chat.ask", status: "expired", step: "q1" },
+    ];
+    expect(
+      runActions({ kind: "ask", status: "completed" }, "member", { attempts: asks }).retry,
+    ).toEqual({ run: false, storyIds: [], attemptIds: [] });
+  });
+
   it("retries stories of a stopped epic, and re-runs a completed story of a finished one", () => {
     const stories = [
       { id: "done", status: "completed", pullRequest: open },

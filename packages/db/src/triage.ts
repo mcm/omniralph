@@ -268,10 +268,35 @@ export async function takeTriageRunPendingReply(
   return requeueTriageRun(db, runId, null);
 }
 
+/** What `requeueTriageRunForRetry` did. */
+export type TriageRunRetryResult =
+  /** The run is queued again (no current job yet), with its pending replies (may be empty). */
+  | { status: "requeued"; run: TriageRun; reply: string }
+  /** The run is still queued or running: nothing changed. */
+  | { status: "active"; run: TriageRun }
+  /** Another run of the issue is queued or running: nothing changed. */
+  | { status: "conflict"; other: TriageRun | null }
+  /** The run is gone. */
+  | { status: "none" };
+
+/**
+ * Queues a finished run again for a retry from Omniralph, under the run's lock (its current
+ * job cleared, its pending replies taken, as a reply does), unless it is still queued or
+ * running or another run of the issue is unfinished.
+ */
+export async function requeueTriageRunForRetry(
+  db: Database,
+  runId: string,
+): Promise<TriageRunRetryResult> {
+  const result = await requeueTriageRun(db, runId, null, { retry: true });
+  return result.status === "pending" ? { status: "active", run: result.run } : result;
+}
+
 async function requeueTriageRun(
   db: Database,
   runId: string,
   reply: string | null,
+  { retry = false }: { retry?: boolean } = {},
 ): Promise<TriageRunReplyResult> {
   try {
     return await db.transaction(async (tx) => {
@@ -282,6 +307,7 @@ async function requeueTriageRun(
         .for("update");
       if (!run) return { status: "none" } as const;
       if (isActiveStatus(run.status)) {
+        if (retry) return { status: "pending", run } as const;
         if (reply === null || !reply.trim()) return { status: "none" } as const;
         const [row] = await tx
           .update(triageRuns)
@@ -292,7 +318,7 @@ async function requeueTriageRun(
         return { status: "pending", run: row! } as const;
       }
       const combined = joinReplies(run.pendingReply, reply);
-      if (!combined) return { status: "none" } as const;
+      if (!combined && !retry) return { status: "none" } as const;
       const other = await getActiveTriageRun(tx, run.organizationId, run.linearIssueId);
       if (other) return { status: "conflict", other } as const;
       const [row] = await tx

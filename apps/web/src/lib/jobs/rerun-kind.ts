@@ -2,10 +2,11 @@ import { INSTALL_JOB_TYPE, REPO_SYNC_JOB_TYPE, REVIEW_TASK_JOB_TYPE } from "@omn
 import { reviewIdOfJob } from "@/lib/review/job-review";
 
 /**
- * How a failed job is rerun from the Jobs page: `review` re-runs its review on the PR's
+ * How a failed, canceled or expired job is rerun from the Jobs page: `review` re-runs its review on the PR's
  * current head (as the review's Re-run does), `copy` dispatches the same job again (a system
  * RPC to its harness, with no other state behind it). Null: the job can't be rerun from the
- * Jobs page, since its coding task, triage run or conversation decides what runs next.
+ * Jobs page, since its run decides what runs next (retry it from its run:
+ * `POST /api/ui/runs/{id}/retry`).
  */
 export type JobRerunKind = "review" | "copy";
 
@@ -17,7 +18,13 @@ export function jobRerunKind(job: { type: string; payload: unknown }): JobRerunK
   return COPIED_TYPES.includes(job.type) ? "copy" : null;
 }
 
-/** Whether the Jobs page offers to rerun `job`: a failed job of a kind that can be. */
+/** Job statuses a job is rerun from: it ended without succeeding. */
+export const RERUNNABLE_JOB_STATUSES: readonly string[] = ["failed", "canceled", "expired"];
+
+/**
+ * Whether the Jobs page offers to rerun `job`: a failed, canceled or expired job of a kind
+ * that can be.
+ */
 export function isRerunnable(job: { type: string; status: string; payload: unknown }): boolean {
-  return job.status === "failed" && jobRerunKind(job) !== null;
+  return RERUNNABLE_JOB_STATUSES.includes(job.status) && jobRerunKind(job) !== null;
 }

@@ -355,6 +355,18 @@ re-run (its issue goes back to In Progress), and the PR/MR description is writte
 A story whose PR/MR is merged or closed can't be retried. The session gets "Retried from Omniralph
 by {name}". Stop is open to members as well.
 
+The same endpoint retries the other run kinds, whatever their last attempt's status (failed,
+canceled or expired); retrying one of their attempts retries the run:
+
+| Run | Retry |
+| -- | -- |
+| Review | Re-runs the review (every pass and the correlation) on the PR/MR's current head with the run's mode and profile, as a new `manual` review run (the answer is that run's detail). A merged or closed PR/MR, or a review of that head already queued or running, is refused. |
+| Triage | A new `triage.run` attempt on the same run, over the issue's current content, with the retried attempt's reply (and any reply since) and the run's last triage, as a session reply does. The session gets "Retried from Omniralph by {name}". |
+| Ask | A copy of the last `chat.ask` attempt on the same ask, so the answer is relayed to the same chat thread. |
+
+System attempts (`repo.sync`, `install`) that failed, were canceled or expired are rerun from the
+Jobs page (`POST /api/ui/jobs/{id}/rerun`).
+
 **Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls
 a repository's own Claude Code settings `ask` about (for example `"ask": ["Bash(git commit:*)"]` in
 a committed `.claude/settings.json`). Such a call is asked about in the agent session as an
@@ -623,7 +635,8 @@ Reply in the triage session to answer the open questions (or add context): triag
 with your reply and its previous result, folds the answers into the PRD, drops the questions they
 answer and sets the status again. A reply while triage is still running is queued and handled when
 the current job ends. `stop` (or Linear's stop button) stops a running triage and cancels its job.
-Editing the description yourself and triaging again works too.
+Editing the description yourself and triaging again works too, and so does retrying the run from
+Omniralph (see "Retry from Omniralph").
 
 ### Ralph refuses issues with open questions
 
@@ -645,7 +658,7 @@ without one. A new adapter runs the shared contract suite
 (`describeWorkItemTrackerContract` in `apps/web/src/lib/work-items/contract.ts`).
 
 | Method | Linear |
-| --- | --- |
+| -- | -- |
 | `get(ref)` | `getIssue` (an unknown ID or identifier is `WorkItemNotFoundError`) and its blockers |
 | `listCandidates({...})` | `listIssues`: one `issues(filter:)` query per page, blockers included |
 | `create`, `update` | `createIssue`, `updateIssue`, `addIssueLabels`, `removeIssueLabel` (labels by name, created when missing) |

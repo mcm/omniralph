@@ -16,6 +16,7 @@ import {
   setTriageRunSession,
   setTriageRunStatus,
   replyToTriageRun,
+  requeueTriageRunForRetry,
   startTriageRunJob,
   stopTriageRun,
   takeTriageRunPendingReply,
@@ -256,6 +257,39 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
       reply: "answer",
       run: { id: run.id, status: "queued" },
     });
+  });
+
+  it("requeues a finished run for a retry, with or without pending replies", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    const job = await triageJob();
+    await setTriageRunJob(db, run.id, job.id);
+    expect(await requeueTriageRunForRetry(db, run.id)).toMatchObject({
+      status: "active",
+      run: { id: run.id },
+    });
+
+    await finishTriageRunJob(db, run.id, job.id, "failed");
+    expect(await requeueTriageRunForRetry(db, run.id)).toMatchObject({
+      status: "requeued",
+      reply: "",
+      run: { status: "queued", currentJobId: null },
+    });
+
+    await setTriageRunStatus(db, run.id, "stopped");
+    await db.update(triageRuns).set({ pendingReply: "later" }).where(eq(triageRuns.id, run.id));
+    const { run: other } = await createTriageRun(db, runInput());
+    expect(await requeueTriageRunForRetry(db, run.id)).toMatchObject({
+      status: "conflict",
+      other: { id: other.id },
+    });
+    await setTriageRunStatus(db, other.id, "completed");
+    expect(await requeueTriageRunForRetry(db, run.id)).toMatchObject({
+      status: "requeued",
+      reply: "later",
+      run: { pendingReply: null },
+    });
+    await db.delete(triageRuns).where(eq(triageRuns.id, run.id));
+    expect(await requeueTriageRunForRetry(db, run.id)).toEqual({ status: "none" });
   });
 
   it("stops an active run and drops its pending replies", async () => {

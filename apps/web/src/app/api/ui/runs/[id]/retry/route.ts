@@ -10,10 +10,12 @@ import { userDisplayName } from "@/lib/user-display";
 type Params = { id: string };
 
 /**
- * Retries an epic or request run (members of its organization), with an optional body
- * `{target}` (`runRetryRequestSchema`): the run (default), one of an epic's stories (a
- * finished epic re-runs a completed one), or an attempt. Answers the run's detail. 400 when
- * the target can't be retried (its PR/MR merged or closed…), 409 while Om works on the run.
+ * Retries a run of any kind (members of its organization), with an optional body `{target}`
+ * (`runRetryRequestSchema`): the run (default), one of an epic's stories (a finished epic
+ * re-runs a completed one), or an attempt (a review's, triage's or ask's attempt retries its
+ * run). Answers the run's detail; a review's retry is a new review run of the PR's current
+ * head, and answers that run's detail. 400 when the target can't be retried (its PR/MR merged
+ * or closed…), 409 while Om works on the run.
  */
 export const POST = apiHandler<"member", undefined, undefined, Params>(
   { access: RUN_ACTION_ROLES.retry },

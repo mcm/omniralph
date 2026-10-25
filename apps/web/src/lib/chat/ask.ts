@@ -6,8 +6,10 @@ import {
   latestCompletedChatThreadJob,
   listHarnessOverview,
   listHarnessesUsableHostTools,
+  getJob,
   mapThreadRun,
   resolveRepositorySwitches,
+  setThreadRunJob,
   type Database,
   type Repository,
   type ScmConnection,
@@ -275,4 +277,67 @@ export async function enqueueChatAsk(
     jobId: job.id,
   });
   return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
+}
+
+export type RetryChatAskOutcome =
+  | { status: "not_found" }
+  /** The repository is disconnected or gone. */
+  | { status: "unknown_repository" }
+  /** The repository's query tasks are turned off: nothing was enqueued. */
+  | { status: "query_disabled"; repository: Repository }
+  /** The same question is already queued or running in the thread. */
+  | { status: "duplicate"; jobId: string }
+  | { status: "enqueued"; jobId: string };
+
+/**
+ * Retries an ask (`chatThreadRunId`, a `query` thread run) from Omniralph: dispatches a copy
+ * of its attempt `jobId` (a `chat.ask` job that failed, was canceled or expired) linked to
+ * the same run, which then points at the copy, so its answer is relayed to the same thread.
+ */
+export async function retryChatAsk(
+  deps: Pick<EnqueueChatAskDeps, "db" | "dispatcher">,
+  input: { organizationId: string; chatThreadRunId: string; jobId: string },
+): Promise<RetryChatAskOutcome> {
+  const { db } = deps;
+  const job = await getJob(db, input.jobId);
+  if (
+    !job ||
+    job.organizationId !== input.organizationId ||
+    job.type !== CHAT_ASK_JOB_TYPE ||
+    job.chatThreadRunId !== input.chatThreadRunId
+  ) {
+    return { status: "not_found" };
+  }
+  const found = job.repositoryId ? await getRepositoryWithConnection(db, job.repositoryId) : null;
+  if (
+    !found ||
+    found.repository.organizationId !== input.organizationId ||
+    found.repository.disconnectedAt
+  ) {
+    return { status: "unknown_repository" };
+  }
+  if (!(await resolveRepositorySwitches(db, found.repository)).query) {
+    return { status: "query_disabled", repository: found.repository };
+  }
+  const { job: copy, created } = await deps.dispatcher.createAndPublish({
+    organizationId: job.organizationId,
+    type: job.type,
+    taskType: job.taskType,
+    pool: job.pool,
+    taskId: job.taskId,
+    minHarnessVersion: job.minHarnessVersion,
+    requiredInstallables: job.requiredInstallables,
+    requiredHostTools: job.requiredHostTools,
+    payload: job.payload,
+    repositoryId: job.repositoryId,
+    dedupeKey: job.dedupeKey,
+    chatThreadRunId: input.chatThreadRunId,
+  });
+  if (!created) return { status: "duplicate", jobId: copy.id };
+  await setThreadRunJob(db, {
+    organizationId: input.organizationId,
+    chatThreadRunId: input.chatThreadRunId,
+    jobId: copy.id,
+  });
+  return { status: "enqueued", jobId: copy.id };
 }
