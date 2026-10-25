@@ -13,7 +13,6 @@ import {
   organizationMembers,
   organizations,
   ralphRuns,
-  seedReviewProfiles,
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
@@ -142,7 +141,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     await db.insert(users).values([{ id: member.id }, { id: other.id }]);
     await db.insert(organizationMembers).values([
       { organizationId: orgId, userId: member.id, role: "member" },

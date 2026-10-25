@@ -605,7 +605,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "trusted",
     taskTypes: ["review"],
     description:
-      "How thoroughly to review, from the review profile (e.g. `Quick review: look only at the diff. …`).",
+      "How thoroughly to review, from the review depth (e.g. `Quick review: look only at the diff. …`).",
   },
   {
     name: "rubric",

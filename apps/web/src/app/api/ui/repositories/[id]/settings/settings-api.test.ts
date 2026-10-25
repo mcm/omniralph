@@ -10,12 +10,10 @@ import {
   jobs,
   resolveRepositorySwitches,
   setAllowedTaskTypeDefaults,
-  listReviewProfiles,
   upsertScmConnection,
   users,
   type Database,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   DEFAULT_RALPH_SETTINGS,
@@ -35,7 +33,6 @@ import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
-import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
 
@@ -94,10 +91,6 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
-const reviewProfile = await import("@/app/api/ui/review-profiles/[id]/route");
-// Settings › Review profiles' save, under the server action's old name.
-const updateReviewProfile = (id: string, input: unknown) =>
-  callAction(reviewProfile.PUT, "PUT", { id }, input);
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 
@@ -139,7 +132,7 @@ const updateRalphSettings = (id: string, input: RalphSettingsInput) =>
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
 
 const baseSettings: RepositorySettingsInput = {
-  profileId: "standard",
+  depth: "standard",
   triggers: { onOpen: true, onPush: true, drafts: false },
   pathExcludes: [],
   customInstructions: "",
@@ -154,14 +147,7 @@ const baseRalph: RalphSettingsInput = {
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
 };
 
-const standardProfile = {
-  model: "claude-sonnet-5-5",
-  maxTokensPerReview: 200_000,
-  maxFiles: 40,
-  allowRepoExploration: true,
-};
-
-describe.skipIf(!databaseAvailable)("repository settings and review profiles: saves", () => {
+describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
@@ -175,7 +161,6 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.orgId = orgId;
     state.db = db;
@@ -251,10 +236,10 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     return reviewTriggerContext(job!.payload);
   }
 
-  it("saves the profile, triggers, excludes and instructions", async () => {
+  it("saves the depth, triggers, excludes and instructions", async () => {
     expect(
       await updateRepositorySettings(repoId, {
-        profileId: "quick",
+        depth: "quick",
         triggers: { onOpen: true, onPush: false, drafts: true },
         pathExcludes: ["*.snap", "/docs/**"],
         customInstructions: "  Prefer early returns.  ",
@@ -264,7 +249,7 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       }),
     ).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      profileId: "quick",
+      reviewDepth: "quick",
       triggers: { onOpen: true, onPush: false, drafts: true },
       pathExcludes: ["*.snap", "/docs/**"],
       customInstructions: "Prefer early returns.",
@@ -272,7 +257,7 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
 
     expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
     expect(await getRepository(db, repoId)).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       pathExcludes: [],
       customInstructions: null,
     });
@@ -320,14 +305,14 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
-          profileId: "deep",
+          depth: "deep",
           pinnedHarnessIds: [agentA, harnessId],
         }),
       ).toMatchObject({ ok: false, fieldErrors: { pinnedHarnessIds: expect.any(String) } });
     }
     expect(await pinnedHarnessIds()).toEqual([]);
     expect(await db.select().from(jobs)).toHaveLength(0);
-    expect((await getRepository(db, repoId))!.profileId).toBe("standard");
+    expect((await getRepository(db, repoId))!.reviewDepth).toBe("standard");
   });
 
   it("saves the review tasks, and the next review run fans out to them", async () => {
@@ -380,13 +365,13 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
-          profileId: "deep",
+          depth: "deep",
           reviewTaskIds,
         }),
       ).toMatchObject({ ok: false, fieldErrors: { reviewTaskIds: message } });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       reviewTaskIds: ["builtin:review-pr"],
     });
   });
@@ -462,7 +447,7 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
-          profileId: "deep",
+          depth: "deep",
           reviewTaskIds,
         }),
       ).toMatchObject({
@@ -481,13 +466,13 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
-          profileId: "deep",
+          depth: "deep",
           correlationTaskId,
         }),
       ).toMatchObject({ ok: false, fieldErrors: { correlationTaskId: expect.any(String) } });
     }
     expect(await getRepository(db, repoId)).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       reviewTaskIds: ["builtin:review-pr"],
       correlationTaskId: "builtin:correlate-findings",
     });
@@ -521,54 +506,35 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     expect(
       await updateRepositorySettings(repoId, {
         ...baseSettings,
-        profileId: "deep",
+        depth: "deep",
         reviewTaskIds: [SECURITY_TASK_ID, "builtin:review-pr"],
       }),
     ).toMatchObject({ ok: false });
-    expect(await updateReviewProfile("standard", standardProfile)).toMatchObject({ ok: false });
     expect(await getRepository(db, repoId)).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       reviewTaskIds: ["builtin:review-pr"],
     });
   });
 
-  it("edits a profile and rejects a token cap below 5,000", async () => {
-    expect(
-      await updateReviewProfile("quick", {
-        model: "claude-haiku-5-5",
-        maxTokensPerReview: 4999,
-        maxFiles: 15,
-        allowRepoExploration: false,
-      }),
-    ).toEqual({
-      ok: false,
-      error: "Fix the highlighted fields.",
-      fieldErrors: { maxTokensPerReview: "The token cap must be at least 5,000." },
+  it("answers 400 for an unknown depth, or none, without saving anything", async () => {
+    for (const depth of ["thorough", "Deep", null, undefined]) {
+      const response = await repositorySettings.PUT(
+        new Request("http://localhost/api/ui", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...baseSettings, depth, customInstructions: "Changed." }),
+        }),
+        { params: Promise.resolve({ id: repoId }) },
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        fieldErrors: { depth: "Choose a review depth: quick, standard or deep." },
+      });
+    }
+    expect(await getRepository(db, repoId)).toMatchObject({
+      reviewDepth: "standard",
+      customInstructions: null,
     });
-    expect(await updateReviewProfile("turbo", standardProfile)).toMatchObject({
-      ok: false,
-      error: "That profile doesn't exist.",
-    });
-    expect(
-      await updateReviewProfile("quick", {
-        model: "claude-haiku-5-5",
-        maxTokensPerReview: 5000,
-        maxFiles: 10,
-        allowRepoExploration: true,
-      }),
-    ).toEqual({ ok: true });
-    const quick = (await listReviewProfiles(db, orgId)).find((p) => p.id === "quick");
-    expect(quick).toMatchObject({
-      maxTokensPerReview: 5000,
-      maxFiles: 10,
-      allowRepoExploration: true,
-      builtIn: true,
-    });
-    expect((await listReviewProfiles(db, orgId)).map((p) => p.id).sort()).toEqual([
-      "deep",
-      "quick",
-      "standard",
-    ]);
   });
 
   it("applies changes to the next enqueued review job", async () => {
@@ -580,17 +546,9 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
     });
 
     expect(
-      await updateReviewProfile("deep", {
-        model: "claude-opus-5-5",
-        maxTokensPerReview: 123_000,
-        maxFiles: 7,
-        allowRepoExploration: false,
-      }),
-    ).toEqual({ ok: true });
-    expect(
       await updateRepositorySettings(repoId, {
         ...baseSettings,
-        profileId: "deep",
+        depth: "deep",
         pathExcludes: ["*.snap"],
         customInstructions: "Check error handling.",
       }),
@@ -598,12 +556,14 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
 
     const after = await enqueuedPayload();
     expect(after.reviewConfig).toMatchObject({
+      // The Deep preset.
       profile: {
         id: "deep",
+        name: "Deep",
         model: "claude-opus-5-5",
-        maxTokensPerReview: 123_000,
-        maxFiles: 7,
-        allowRepoExploration: false,
+        maxTokensPerReview: 500_000,
+        maxFiles: 100,
+        allowRepoExploration: true,
       },
       pathExcludes: ["*.snap"],
       customInstructions: "Check error handling.",
@@ -655,7 +615,7 @@ describe.skipIf(!databaseAvailable)("repository settings and review profiles: sa
         model: "opus",
         manualLabels: ["manual"],
       },
-      profileId: "standard",
+      reviewDepth: "standard",
     });
   });
 

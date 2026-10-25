@@ -1,4 +1,4 @@
-import { FEEDBACK_REASONS } from "@omniralph/shared";
+import { FEEDBACK_REASONS, ReviewDepthSchema } from "@omniralph/shared";
 import { z } from "zod";
 import {
   FINDING_SEVERITIES,
@@ -34,7 +34,7 @@ export const reviewRowSchema = z.object({
   prUrl: z.string(),
   trigger: z.enum(REVIEW_TRIGGERS),
   status: reviewStatus,
-  profileName: z.string().nullable(),
+  depth: ReviewDepthSchema.nullable(),
   agent: agent.nullable(),
   findingCounts,
   tokensUsed: z.number(),
@@ -104,7 +104,7 @@ export const reviewDetailViewSchema = z.object({
   baseSha: z.string(),
   trigger: z.enum(REVIEW_TRIGGERS),
   status: reviewStatus,
-  profileName: z.string().nullable(),
+  depth: ReviewDepthSchema.nullable(),
   model: z.string().nullable(),
   agent: agent.nullable(),
   tokensIn: z.number(),

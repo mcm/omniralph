@@ -12,24 +12,16 @@ import {
   RalphSettingsInput,
   RepositorySettingsInput,
   RepositoryTaskTypesInput,
-  ReviewProfileInput,
 } from "./settings.js";
 
 const validSettings: RepositorySettingsInput = {
-  profileId: "standard",
+  depth: "standard",
   triggers: { onOpen: true, onPush: false, drafts: false },
   pathExcludes: ["*.lock", "/vendor/**", "src/**/*.{gen,pb}.ts", "docs/[!_]*.md"],
   customInstructions: "Prefer early returns.",
   pinnedHarnessIds: [],
   reviewTaskIds: ["builtin:review-pr"],
   correlationTaskId: "builtin:correlate-findings",
-};
-
-const validProfile: ReviewProfileInput = {
-  model: "claude-sonnet-5-5",
-  maxTokensPerReview: 200_000,
-  maxFiles: 40,
-  allowRepoExploration: true,
 };
 
 describe("pathExcludeGlobError", () => {
@@ -100,16 +92,13 @@ describe("RepositorySettingsInput", () => {
     });
   });
 
-  it("rejects unknown profiles and malformed agent IDs", () => {
+  it("rejects unknown depths and malformed agent IDs", () => {
     const result = RepositorySettingsInput.safeParse({
       ...validSettings,
-      profileId: "turbo",
+      depth: "turbo",
       pinnedHarnessIds: ["not-a-uuid"],
     });
-    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual([
-      "pinnedHarnessIds.0",
-      "profileId",
-    ]);
+    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual(["depth", "pinnedHarnessIds.0"]);
   });
 
   it("requires one to 20 distinct review tasks", () => {
@@ -127,39 +116,19 @@ describe("RepositorySettingsInput", () => {
     });
   });
 
+  it("accepts each review depth and rejects any other", () => {
+    for (const depth of ["quick", "standard", "deep"] as const) {
+      expect(RepositorySettingsInput.parse({ ...validSettings, depth }).depth).toBe(depth);
+    }
+    const result = RepositorySettingsInput.safeParse({ ...validSettings, depth: "thorough" });
+    expect(fieldErrors(result.error!)).toEqual({
+      depth: "Choose a review depth: quick, standard or deep.",
+    });
+  });
+
   it("requires a correlation task", () => {
     const result = RepositorySettingsInput.safeParse({ ...validSettings, correlationTaskId: "" });
     expect(fieldErrors(result.error!)).toEqual({ correlationTaskId: "Choose a correlation task." });
-  });
-});
-
-describe("ReviewProfileInput", () => {
-  it("accepts a valid profile", () => {
-    expect(ReviewProfileInput.parse(validProfile)).toEqual(validProfile);
-  });
-
-  it("rejects a token cap below 5,000", () => {
-    expect(
-      ReviewProfileInput.safeParse({ ...validProfile, maxTokensPerReview: 5000 }).success,
-    ).toBe(true);
-    const result = ReviewProfileInput.safeParse({ ...validProfile, maxTokensPerReview: 4999 });
-    expect(fieldErrors(result.error!)).toEqual({
-      maxTokensPerReview: "The token cap must be at least 5,000.",
-    });
-  });
-
-  it("rejects empty models, fractional numbers and zero max files", () => {
-    const result = ReviewProfileInput.safeParse({
-      ...validProfile,
-      model: "  ",
-      maxTokensPerReview: 10_000.5,
-      maxFiles: 0,
-    });
-    expect(fieldErrors(result.error!)).toEqual({
-      model: "Enter a model.",
-      maxTokensPerReview: "Enter a whole number.",
-      maxFiles: "Max files must be at least 1.",
-    });
   });
 });
 

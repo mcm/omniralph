@@ -38,7 +38,7 @@ function repo(n: number, overrides: Partial<RepositoryRow> = {}): RepositoryRow 
       review: { on: true, inherited: true },
       coding: { on: false, inherited: true },
     },
-    profileName: "Standard",
+    depth: "standard",
     pinnedHarnesses: [],
     lastReviewAt: null,
     ...overrides,

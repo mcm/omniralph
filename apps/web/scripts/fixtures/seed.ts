@@ -31,20 +31,19 @@ import {
   ralphRuns,
   ralphStories,
   repositories,
-  reviewProfiles,
   routingRules,
   reviewRuns,
   reviews,
   rules,
   scmConnections,
   taskDefinitions,
-  seedReviewProfiles,
   runActivities,
   triageRuns,
   users,
   type Database,
 } from "@omniralph/db";
 import { deriveTaskRequirements, getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
 import { inArray, sql } from "drizzle-orm";
 import { FIXTURE_EMAILS, FIXTURE_IDS, fixtureId } from "./ids";
 
@@ -126,19 +125,6 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       invitedBy: U.admin,
       expiresAt: new Date(now.getTime() + 6 * DAY),
       createdAt: ago(DAY),
-    });
-    for (const org of [O.main, O.sandbox]) {
-      await seedReviewProfiles(tx, org);
-    }
-    await tx.insert(reviewProfiles).values({
-      organizationId: O.main,
-      id: "security",
-      name: "Security",
-      description: "Deep review focused on auth, secrets and injection.",
-      model: "claude-opus-5-5",
-      maxTokensPerReview: 400_000,
-      maxFiles: 60,
-      allowRepoExploration: true,
     });
     // A custom agent and a task on it (built-ins can't be edited), copied from built-ins.
     const { id: _agentId, name: _agentName, ...agent } = getBuiltinAgent("builtin:reviewer")!;
@@ -222,7 +208,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       {
         ...githubRepo("fixture-labs/control-panel", 1),
         id: R.controlPanel,
-        profileId: "standard",
+        reviewDepth: "standard",
         ralphEnabled: true,
         pathExcludes: ["**/*.snap", "pnpm-lock.yaml"],
         customInstructions: "Prefer server components; flag any client-side secret.",
@@ -235,7 +221,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       {
         ...githubRepo("fixture-labs/harness", 2),
         id: R.harness,
-        profileId: "deep",
+        reviewDepth: "deep",
         ralphEnabled: true,
         triggers: { onOpen: true, onPush: false, drafts: false },
       },
@@ -246,7 +232,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         externalId: "fixture-project-301",
         fullPath: "fixture-labs/platform/api",
         connectionId: FIXTURE_IDS.scmConnections.gitlab,
-        profileId: "quick",
+        reviewDepth: "quick",
         webhookId: "fixture-hook-301",
         createdAt: ago(60 * DAY),
       },
@@ -942,7 +928,7 @@ const PR_TITLES = [
   "Refactor the job claim query",
   "Fix flaky harness heartbeat test",
   "Support GitLab merge request drafts",
-  "Cache review profiles per request",
+  "Cache review depths per request",
   "Move analytics queries to the db package",
   "Validate task definitions on save",
   "Bump the Postgres image in tests",
@@ -999,13 +985,12 @@ const REVIEW_STATUSES = [
   "completed",
 ] as const;
 
-const PROFILE_BY_REPO: Record<string, string> = {
+const DEPTH_BY_REPO: Record<string, ReviewDepth> = {
   [R.controlPanel]: "standard",
   [R.harness]: "deep",
   [R.platformApi]: "quick",
   [R.legacy]: "standard",
 };
-const BUDGET: Record<string, number> = { quick: 60_000, standard: 200_000, deep: 500_000 };
 
 async function seedReviews(tx: Tx, now: Date): Promise<void> {
   const ago = (ms: number) => new Date(now.getTime() - ms);
@@ -1020,7 +1005,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
     const n = i + 1;
     const featured = n === 1;
     const repositoryId = featured ? R.controlPanel : repos[i % repos.length]!;
-    const profileId = PROFILE_BY_REPO[repositoryId]!;
+    const depth = DEPTH_BY_REPO[repositoryId]!;
     const createdAt = ago(Math.floor((i * 40 * DAY) / COUNT) + (i % 5) * HOUR + 2 * HOUR);
     const status =
       i === 2
@@ -1033,7 +1018,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
     const done = status !== "running" && status !== "queued";
     const prNumber = 300 + ((i * 7) % 60);
     const harnessId = status === "queued" ? null : harnessCycle[i % harnessCycle.length]!;
-    const budget = BUDGET[profileId]!;
+    const budget = REVIEW_DEPTHS[depth].maxTokensPerReview;
     const tokensIn =
       !done || status === "skipped"
         ? 0
@@ -1057,8 +1042,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       baseSha: base,
       trigger: i % 6 === 0 ? "mention" : i % 9 === 0 ? "manual" : "webhook",
       mode: i % 4 === 0 ? "full" : "incremental",
-      profileId,
-      profileName: profileId[0]!.toUpperCase() + profileId.slice(1),
+      depth,
       prAuthor: "fixture-dev",
       status: runStatus,
       summary:
@@ -1101,14 +1085,12 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       baseSha: base,
       trigger: i % 6 === 0 ? "mention" : i % 9 === 0 ? "manual" : "webhook",
       status,
-      profileId,
+      depth,
       tokensIn,
       tokensOut,
       budget,
       durationMs: done && status !== "skipped" ? 60_000 + ((i * 7919) % 180_000) : null,
-      model: done
-        ? `claude-${profileId === "quick" ? "haiku" : profileId === "deep" ? "opus" : "sonnet"}-5-5`
-        : null,
+      model: done ? REVIEW_DEPTHS[depth].model : null,
       harnessId,
       skippedFiles: featured
         ? [

@@ -1,4 +1,8 @@
-import { RALPH_HISTORY_REWRITE_POLICIES, type RalphSettingsInput } from "@omniralph/shared";
+import {
+  RALPH_HISTORY_REWRITE_POLICIES,
+  ReviewDepthSchema,
+  type RalphSettingsInput,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, linearSettingsOptionsSchema, mutationResultSchema } from "./schemas";
 
@@ -15,7 +19,8 @@ export const repositoryRowSchema = z.object({
   webUrl: z.string(),
   /** Query, Reviews and Coding: effective (on/off) and whether that's the organization's default. */
   taskTypes: z.object({ query: taskTypeState, review: taskTypeState, coding: taskTypeState }),
-  profileName: z.string(),
+  /** The depth its reviews run at. */
+  depth: ReviewDepthSchema,
   pinnedHarnesses: z.array(z.object({ id: z.string(), name: z.string() })),
   lastReviewAt: isoDate.nullable(),
 });
@@ -144,7 +149,8 @@ export const repositoryHarnessSchema = z.object({
 export const repositoryDetailSchema = z.object({
   repository: z.object({ id: z.string(), provider, fullPath: z.string(), webUrl: z.string() }),
   settings: z.object({
-    profileId: z.string(),
+    /** The depth its reviews run at (`REVIEW_DEPTHS` in `@omniralph/shared` has the presets). */
+    depth: ReviewDepthSchema,
     triggers: z.object({ onOpen: z.boolean(), onPush: z.boolean(), drafts: z.boolean() }),
     pathExcludes: z.array(z.string()),
     customInstructions: z.string(),
@@ -156,17 +162,6 @@ export const repositoryDetailSchema = z.object({
   reviewTasks: z.array(taskChoiceSchema.extend({ description: z.string() })),
   /** The tasks that can correlate its review runs' findings. */
   correlationTasks: z.array(taskChoiceSchema),
-  profiles: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      description: z.string().nullable(),
-      model: z.string(),
-      maxTokensPerReview: z.number(),
-      maxFiles: z.number(),
-      allowRepoExploration: z.boolean(),
-    }),
-  ),
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: z.array(repositoryHarnessSchema),
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */

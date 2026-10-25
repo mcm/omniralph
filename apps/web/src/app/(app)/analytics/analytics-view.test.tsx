@@ -53,7 +53,7 @@ function response({
       ...window,
       totals: { reviews, tokensIn: 1200, tokensOut: 300 },
       daily: dates.map((date) => ({ date, reviews: 0, tokensIn: 0, tokensOut: 0 })),
-      byProfile: [],
+      byDepth: [],
       reviewsByStatus: { ...zero(REVIEW_STATUSES), completed: reviews },
       findingsBySeverity: { critical: 0, high: 2, medium: 0, low: 0, info: 0 },
       dismissalsByRepository: [],

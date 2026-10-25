@@ -10,7 +10,6 @@ import {
   reviews,
   scmConnections,
   scmCredentialCache,
-  seedReviewProfiles,
   setAllowedTaskTypeDefaults,
   users,
   type Database,
@@ -177,8 +176,6 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       .returning();
     orgId = org!.id;
     otherOrgId = other!.id;
-    await seedReviewProfiles(state.db, orgId);
-    await seedReviewProfiles(state.db, otherOrgId);
     server.listen({ onUnhandledFrame: "error" });
   }, 180_000);
 

@@ -8,7 +8,6 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { connectRepository, deleteScmConnection, upsertScmConnection } from "./repositories.js";
 import { listLatestIssueRuns, listRoutingRules, replaceRoutingRules } from "./routing-rules.js";
 import { organizations, ralphRuns, repositories, routingRules } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -26,7 +25,6 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
 
   const organization = async (name: string) => {
     const [org] = await db.insert(organizations).values({ name }).returning();
-    await seedReviewProfiles(db, org!.id);
     return org!.id;
   };
 

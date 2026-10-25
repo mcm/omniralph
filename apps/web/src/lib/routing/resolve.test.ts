@@ -12,7 +12,6 @@ import {
   recordFollowUpSource,
   repositories,
   replaceRoutingRules,
-  seedReviewProfiles,
   upsertScmConnection,
   upsertStories,
   type Database,
@@ -78,7 +77,6 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

@@ -17,7 +17,6 @@ import {
   type FindingRow,
   type Job,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   QUERY_TASKS_MIN_HARNESS_VERSION,
@@ -120,7 +119,6 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.orgId = orgId;
     state.db = db;
@@ -151,7 +149,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         headSha: SHA(2),
         baseSha: SHA(1),
         trigger: "webhook",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 100_000,
       })

@@ -1,16 +1,14 @@
 /**
- * Forms of the control panel's Repository › Settings and Settings › Profiles
- * pages. The pages validate with these before submitting, and the server
+ * Forms of the control panel's Repository › Settings pages. The pages validate with these before submitting, and the server
  * actions validate again before saving.
  */
 import { z } from "zod";
+import { ReviewDepthSchema } from "./review-depth.js";
 
 export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 4000;
-export const MIN_PROFILE_TOKEN_CAP = 5000;
 export const MAX_PATH_EXCLUDES = 200;
 export const MAX_PATH_EXCLUDE_LENGTH = 500;
 export const MAX_REVIEW_TASKS = 20;
-export const BUILT_IN_PROFILE_IDS = ["quick", "standard", "deep"] as const;
 
 const BRACKETS: Record<string, string> = { "{": "}", "(": ")" };
 const MATCH_ALL = new Set(["*", "**", "**/*", "**/**", "/**", "/**/*", "/**/**"]);
@@ -75,7 +73,8 @@ export function parsePathExcludes(text: string): string[] {
 const TaskId = (message: string) => z.string({ error: message }).min(1, message).max(200);
 
 export const RepositorySettingsInput = z.object({
-  profileId: z.enum(BUILT_IN_PROFILE_IDS, { error: "Choose a profile." }),
+  /** The review depth (`repositories.review_depth`). */
+  depth: ReviewDepthSchema,
   triggers: z.object({
     onOpen: z.boolean(),
     onPush: z.boolean(),
@@ -134,23 +133,6 @@ const ClaudeModel = z
   .min(1, "Enter a model.")
   .max(200, "Model names can be at most 200 characters.")
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/, "Enter a Claude model ID, e.g. claude-sonnet-5-5.");
-
-export const ReviewProfileInput = z.object({
-  model: ClaudeModel,
-  maxTokensPerReview: z
-    .int("Enter a whole number.")
-    .min(
-      MIN_PROFILE_TOKEN_CAP,
-      `The token cap must be at least ${MIN_PROFILE_TOKEN_CAP.toLocaleString("en-US")}.`,
-    )
-    .max(10_000_000, "The token cap can be at most 10,000,000."),
-  maxFiles: z
-    .int("Enter a whole number.")
-    .min(1, "Max files must be at least 1.")
-    .max(10_000, "Max files can be at most 10,000."),
-  allowRepoExploration: z.boolean(),
-});
-export type ReviewProfileInput = z.infer<typeof ReviewProfileInput>;
 
 export const MAX_LINEAR_LABELS = 50;
 export const MAX_SETUP_COMMAND_LENGTH = 4000;

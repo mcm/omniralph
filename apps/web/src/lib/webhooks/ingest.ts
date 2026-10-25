@@ -405,9 +405,7 @@ export async function processVerifiedDelivery(
       author: details.author,
       trigger: "webhook",
     });
-    if (result.status === "repository_unavailable" || result.status === "profile_not_found") {
-      return skipped("repository_disabled");
-    }
+    if (result.status === "repository_unavailable") return skipped("repository_disabled");
     if (result.status === "no_review_tasks") return skipped("no_review_tasks");
     if (delivery) await setWebhookDeliveryJob(db, delivery, result.jobId);
     const run: WebhookEventRun = { id: result.reviewRunId, kind: "review" };

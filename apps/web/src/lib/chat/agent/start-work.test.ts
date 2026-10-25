@@ -20,7 +20,6 @@ import {
   organizations,
   ralphRuns,
   saveChatConnection,
-  seedReviewProfiles,
   claimJob,
   repositories,
   setChatTaskDefaults,
@@ -284,7 +283,6 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const scmConnection = (await upsertScmConnection(
       db,
       {

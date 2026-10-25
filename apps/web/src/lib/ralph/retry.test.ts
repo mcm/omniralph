@@ -16,7 +16,6 @@ import {
   listStories,
   organizations,
   ralphRuns,
-  seedReviewProfiles,
   updateLane,
   updateRepositoryRalphSettings,
   updateRun,
@@ -89,7 +88,6 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

@@ -120,7 +120,7 @@ function render(
           webUrl: "https://github.com/acme/app",
         }}
         settings={{
-          profileId: "standard",
+          depth: "standard",
           triggers: { onOpen: true, onPush: true, drafts: false },
           pathExcludes: [],
           customInstructions: "",
@@ -145,17 +145,6 @@ function render(
         correlationTasks={[
           { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
           { id: CORRELATION_ID, name: "Strict correlation", builtin: false },
-        ]}
-        profiles={[
-          {
-            id: "standard",
-            name: "Standard",
-            description: "Balanced.",
-            model: "claude-sonnet-4-5",
-            maxTokensPerReview: 200000,
-            maxFiles: 50,
-            allowRepoExploration: true,
-          },
         ]}
         harnesses={overrides.harnesses ?? HARNESSES}
         ralph={overrides.ralph ?? ralph}
@@ -271,14 +260,11 @@ describe("RepositorySettingsView tabs", () => {
     expect(html).toMatch(/<h3[^>]*>Scope<\/h3>/);
   });
 
-  it("compares review profiles in a radio table", () => {
+  it("has no review profile control (the depth is set elsewhere)", () => {
     const html = render("settings");
-    expect(html).toContain('class="settings-profile-table"');
-    for (const column of ["Profile", "Model", "Token cap", "Max files", "Exploration"]) {
-      expect(html).toMatch(new RegExp(`<th[^>]*>${column}</th>`));
-    }
-    expect(html).toContain("200,000");
-    expect(html).toContain("Explores the repository");
+    expect(html).not.toContain("settings-profile");
+    expect(html).not.toContain("/settings/profiles");
+    expect(html).not.toMatch(/>Profile</);
   });
 
   it("keeps the settings that rewrite history or delete branches in the red Danger zone", () => {

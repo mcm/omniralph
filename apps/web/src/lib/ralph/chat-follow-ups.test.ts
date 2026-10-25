@@ -18,7 +18,6 @@ import {
   ralphMessages,
   ralphRuns,
   saveChatConnection,
-  seedReviewProfiles,
   claimJob,
   updateRepositoryRalphSettings,
   upsertScmConnection,
@@ -280,7 +279,6 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const scmConnection = (await upsertScmConnection(
       db,
       {

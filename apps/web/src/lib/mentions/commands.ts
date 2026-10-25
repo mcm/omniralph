@@ -3,8 +3,8 @@
  * username, otherwise `BOT_HANDLE`, default `omniralph`):
  *
  * - `@bot review [quick|standard|deep]`: a full review of the current head
- *   (duplicates of the PR's open findings are still dropped), optionally with
- *   another profile.
+ *   (duplicates of the PR's open findings are still dropped), optionally at
+ *   another review depth than the repository's.
  * - `@bot review fresh [quick|standard|deep]`: the same from scratch: nothing
  *   is dropped as a duplicate, and matching earlier findings are superseded.
  * - `@bot dismiss [reason]` in a finding's thread: dismisses the finding. The
@@ -23,12 +23,9 @@
  * inline code), quoted lines (`>`) and HTML comments don't count, so quoting
  * the bot or documenting the commands doesn't trigger them.
  */
-import { MAX_REPLY_QUESTION_LENGTH } from "@omniralph/shared";
+import { isReviewDepth, MAX_REPLY_QUESTION_LENGTH, type ReviewDepth } from "@omniralph/shared";
 
 export const DEFAULT_BOT_HANDLE = "omniralph";
-/** Built-in profiles a `review` command may name (their `review_profiles.id`). */
-export const COMMAND_PROFILES = ["quick", "standard", "deep"] as const;
-export type CommandProfile = (typeof COMMAND_PROFILES)[number];
 /** Longest dismissal note kept from `@bot dismiss`. */
 export const MAX_DISMISS_NOTE_LENGTH = 1000;
 /** Longest request kept from `@bot fix [text]`. */
@@ -37,7 +34,7 @@ export const MAX_FIX_TEXT_LENGTH = 4000;
 export type DismissReason = "false_positive" | "wont_fix" | "not_relevant" | "other";
 
 export type BotCommand =
-  | { kind: "review"; fresh: boolean; profileId: CommandProfile | null }
+  | { kind: "review"; fresh: boolean; depth: ReviewDepth | null }
   | { kind: "dismiss"; reason: DismissReason; note: string | null }
   | { kind: "fix"; text: string | null }
   | { kind: "help" }
@@ -179,11 +176,9 @@ export function parseBotCommand(text: string, handle: string): BotCommand | null
       .map((arg) => arg.toLowerCase().replace(/[.,:;!?]+$/, ""));
     const fresh = args[0] === "fresh";
     if (fresh) args.shift();
-    const profile = args[0];
-    if (args.length === 0) return { kind: "review", fresh, profileId: null };
-    if (args.length === 1 && (COMMAND_PROFILES as readonly string[]).includes(profile!)) {
-      return { kind: "review", fresh, profileId: profile as CommandProfile };
-    }
+    const depth = args[0];
+    if (args.length === 0) return { kind: "review", fresh, depth: null };
+    if (args.length === 1 && isReviewDepth(depth)) return { kind: "review", fresh, depth };
   } else if (word === "dismiss") {
     return dismissCommand(rest);
   } else if (word === "fix") {

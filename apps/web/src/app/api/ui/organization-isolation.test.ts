@@ -14,7 +14,6 @@ import {
   getActiveOrganization,
   getAllowedTaskTypeDefaults,
   getDesiredHarnessVersion,
-  getReviewProfile,
   listHostTools,
   getIntegration,
   getMembership,
@@ -258,8 +257,6 @@ const taskList = await import("./tasks/route");
 const taskDetail = await import("./tasks/[id]/route");
 const taskClone = await import("./tasks/[id]/clone/route");
 const taskFormOptions = await import("./tasks/form-options/route");
-const reviewProfiles = await import("./review-profiles/route");
-const reviewProfile = await import("./review-profiles/[id]/route");
 const harnessDefaults = await import("./harness-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
@@ -385,7 +382,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       headSha: "a".repeat(40),
       baseSha: "b".repeat(40),
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: null,
       budget: 100_000,
     });
@@ -1330,7 +1327,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
   it("refuses every repository settings save on the other organization's repository", async () => {
     const reviewSettings = {
-      profileId: "deep",
+      depth: "deep",
       triggers: { onOpen: false, onPush: false, drafts: false },
       pathExcludes: [],
       customInstructions: "",
@@ -1368,7 +1365,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = b.memberId;
     for (const response of await Promise.all(saves(b.repoId))) expect(response.status).toBe(403);
     expect(await getRepository(db, b.repoId)).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       enabled: null,
       queryEnabled: null,
       ralphEnabled: null,
@@ -1663,7 +1660,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         baseSha: "d".repeat(40),
         trigger: "webhook",
         mode: "full",
-        profileId: "standard",
+        depth: "standard",
       });
       reviewRunIds.push(reviewRun.id);
       await createReview(db, {
@@ -1674,7 +1671,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         headSha: "c".repeat(40),
         baseSha: "d".repeat(40),
         trigger: "webhook",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 100_000,
       });
@@ -2021,7 +2018,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
   it("refuses to re-run the other organization's review, and its own members reach it", async () => {
     const rerun = (id: string) =>
-      call(reviewRerun.POST, { params: { id }, body: { mode: "fresh", profileId: null } });
+      call(reviewRerun.POST, { params: { id }, body: { mode: "fresh", depth: null } });
     state.userId = a.adminId;
     expect(await rerun(b.reviewId)).toMatchObject({
       status: 404,
@@ -2966,31 +2963,18 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(tasks).toContain(own(b).taskId);
     });
   });
-  describe("review profiles and harness defaults", () => {
-    const limits = {
-      model: "claude-haiku-5-5",
-      maxTokensPerReview: 12_345,
-      maxFiles: 3,
-      allowRepoExploration: false,
-    };
-
-    it("shows each organization's own profiles, harness defaults and host tools to its admins only", async () => {
+  describe("harness defaults", () => {
+    it("shows each organization's own harness defaults and host tools to its admins only", async () => {
       for (const [own, other] of [
         [a, b],
         [b, a],
       ] as const) {
         state.userId = own.memberId;
-        for (const handler of [reviewProfiles.GET, harnessDefaults.GET, hostToolCatalog.GET]) {
+        for (const handler of [harnessDefaults.GET, hostToolCatalog.GET]) {
           expect((await call(handler)).status).toBe(403);
         }
 
         state.userId = own.adminId;
-        const profiles = await call(reviewProfiles.GET);
-        expect(profiles.status).toBe(200);
-        const rows = profiles.body.profiles as { id: string }[];
-        expect(rows.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
-        expect(profiles.body.choices).toMatchObject({ harnessCount: expect.any(Number) });
-
         const defaults = await call(harnessDefaults.GET);
         expect(defaults).toMatchObject({ status: 200, body: { packageName: expect.any(String) } });
 
@@ -3000,7 +2984,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           own.hostToolId,
         );
 
-        for (const body of [profiles.body, defaults.body, tools.body]) {
+        for (const body of [defaults.body, tools.body]) {
           const json = JSON.stringify(body);
           for (const marker of markers(other)) expect(json).not.toContain(marker);
         }
@@ -3010,7 +2994,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     it("refuses every change outside the active organization, and to members", async () => {
       state.userId = a.memberId;
       for (const response of [
-        await call(reviewProfile.PUT, { params: { id: "deep" }, method: "PUT", body: limits }),
         await call(harnessDefaults.PUT, { method: "PUT", body: { version: "1.4.0" } }),
         await call(hostToolCatalog.POST, { body: { name: "member-tool" } }),
         await call(hostTool.DELETE, { params: { id: a.hostToolId }, method: "DELETE" }),
@@ -3028,11 +3011,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(await getDesiredHarnessVersion(db, a.orgId)).not.toBe("1.4.0");
     });
 
-    it("changes only the active organization's profiles, harness defaults and host tools", async () => {
+    it("changes only the active organization's harness defaults and host tools", async () => {
       state.userId = a.adminId;
-      expect(
-        await call(reviewProfile.PUT, { params: { id: "deep" }, method: "PUT", body: limits }),
-      ).toEqual({ status: 200, body: { ok: true } });
       expect(
         await call(harnessDefaults.PUT, {
           method: "PUT",
@@ -3049,12 +3029,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         }),
       ).toEqual({ status: 200, body: { ok: true } });
 
-      expect(await getReviewProfile(db, a.orgId, "deep")).toMatchObject({
-        maxTokensPerReview: 12_345,
-      });
-      expect(await getReviewProfile(db, b.orgId, "deep")).not.toMatchObject({
-        maxTokensPerReview: 12_345,
-      });
       expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
       expect(await getDesiredHarnessVersion(db, b.orgId)).not.toBe("1.4.0");
       expect(await getAllowedTaskTypeDefaults(db, a.orgId)).toEqual(["review"]);

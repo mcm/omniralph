@@ -29,18 +29,10 @@ import {
   jobs,
   organizations,
   repositories,
-  reviewProfiles,
   reviews,
   scmConnections,
 } from "./schema.js";
-import {
-  getReviewProfile,
-  listProfileRepositories,
-  listReviewProfiles,
-  seedReviewProfiles,
-  updateRepositorySettings,
-  updateReviewProfile,
-} from "./settings.js";
+import { updateRepositorySettings } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -55,7 +47,6 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
   }, 180_000);
 
@@ -237,7 +228,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       fullPath: "acme/web",
       enabled: true,
       connectionName: "acme",
-      profileId: "standard",
+      reviewDepth: "standard",
       pinnedHarnesses: [{ id: agent!.id, name: "coder-1" }],
       lastReviewAt: reviewedAt,
     });
@@ -330,12 +321,12 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
 
     await db
       .update(repositories)
-      .set({ profileId: "deep" })
+      .set({ reviewDepth: "deep" })
       .where(eq(repositories.id, repos[1]!.id));
-    const byProfile = (await listProfileRepositories(db, orgId)).filter((r) =>
+    const byDepth = (await listRepositoryOverview(db, orgId)).filter((r) =>
       r.fullPath.startsWith("paged/"),
     );
-    expect(byProfile.map((r) => [r.fullPath, r.profileId])).toEqual([
+    expect(byDepth.map((r) => [r.fullPath, r.reviewDepth])).toEqual([
       ["paged/a", "deep"],
       ["paged/b", "standard"],
       ["paged/c", "standard"],
@@ -344,10 +335,9 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
 
-  it("keeps connections, repositories and profiles inside their organization", async () => {
+  it("keeps connections and repositories inside their organization", async () => {
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     const otherId = other!.id;
-    await seedReviewProfiles(db, otherId);
     const input = {
       provider: "github" as const,
       name: "acme",
@@ -379,47 +369,23 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(await disconnectRepository(db, otherId, repo.id)).toBeNull();
     expect((await getRepository(db, repo.id))?.enabled).toBeNull();
 
-    // Profiles are per organization: same slugs, separate rows.
-    expect((await listReviewProfiles(db, otherId)).map((p) => p.id).sort()).toEqual([
-      "deep",
-      "quick",
-      "standard",
-    ]);
-    await updateReviewProfile(db, otherId, "deep", {
-      model: "claude-haiku-5-5",
-      maxTokensPerReview: 1000,
-      maxFiles: 1,
-      allowRepoExploration: false,
-    });
-    expect((await getReviewProfile(db, orgId, "deep"))?.maxTokensPerReview).toBe(500_000);
-
-    // A repository can only use a profile of its own organization.
-    await db.insert(reviewProfiles).values({
-      organizationId: otherId,
-      id: "custom",
-      name: "Custom",
-      model: "claude-haiku-5-5",
-      maxTokensPerReview: 1000,
-      maxFiles: 1,
-      allowRepoExploration: false,
-    });
+    // Another organization can't change the repository's depth.
     const settings = {
-      profileId: "custom",
+      depth: "deep" as const,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       customInstructions: null,
     };
-    await expect(updateRepositorySettings(db, orgId, repo.id, settings)).rejects.toThrow();
     expect(await updateRepositorySettings(db, otherId, repo.id, settings)).toBeNull();
-    expect(
-      await updateRepositorySettings(db, orgId, repo.id, { ...settings, profileId: "deep" }),
-    ).toMatchObject({ profileId: "deep" });
+    expect((await getRepository(db, repo.id))?.reviewDepth).toBe("standard");
+    expect(await updateRepositorySettings(db, orgId, repo.id, settings)).toMatchObject({
+      reviewDepth: "deep",
+    });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
   it("removes a connection with its repositories so another organization can connect it", async () => {
     const [other] = await db.insert(organizations).values({ name: "Removal" }).returning();
     const otherId = other!.id;
-    await seedReviewProfiles(db, otherId);
     const input = {
       provider: "github" as const,
       name: "acme",

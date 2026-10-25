@@ -9,7 +9,6 @@ import { closeDb, createDb, type Database } from "../client.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
 import { jobs, ralphRuns, ralphStories, organizations } from "../schema.js";
 import { getRalphAnalytics } from "./ralph-analytics.js";
-import { seedReviewProfiles } from "../settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -27,7 +26,6 @@ describe.skipIf(!databaseAvailable)("ralph analytics queries", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
 
     const connection = (await upsertScmConnection(

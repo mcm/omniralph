@@ -206,7 +206,7 @@ workflow on `main` (**Actions › Deploy web › Run workflow**) or push again t
 
 The GitHub App, the sign-in OAuth apps and the Linear app configured above are shared by the whole
 deployment. Everything else is per **organization**: code-host connections, repositories,
-profiles, the Linear workspace, harnesses, jobs and ralph runs belong to one organization, and only
+the Linear workspace, harnesses, jobs and ralph runs belong to one organization, and only
 its members see them. Roles (`admin`, `member`) are per organization; nobody is an admin of the
 whole instance. See [ADR 0004](adr/0004-organizations.md).
 
@@ -222,8 +222,8 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
    connection belongs to the organization that connected it.
 4. **Harnesses › Enroll harness** and follow [deploy-harness.md](deploy-harness.md). Harnesses run only their
    organization's jobs.
-5. Optionally tune **Settings › Profiles** and each repository's **Settings** (profile, triggers,
-   path excludes, instructions, pinning) and **Rules**.
+5. Optionally tune each repository's **Settings** (triggers, path excludes, instructions, pinning)
+   and **Rules**. Reviews run at the repository's review depth (Standard by default).
 
 Open a PR in a connected repository: the review appears under **Jobs** and **Reviews**, and the
 summary comment links back to `/reviews/<id>`.

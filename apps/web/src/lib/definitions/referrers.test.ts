@@ -7,7 +7,6 @@ import {
   organizations,
   repositories,
   scmConnections,
-  seedReviewProfiles,
   setChatTaskDefaults,
   type Database,
 } from "@omniralph/db";
@@ -65,7 +64,6 @@ describe.skipIf(!databaseAvailable)("findTaskReferrers", () => {
         encryptedCredentials: "unused",
       })
       .returning();
-    await seedReviewProfiles(db, organizationId);
     await db.insert(repositories).values({
       organizationId,
       provider: "github",

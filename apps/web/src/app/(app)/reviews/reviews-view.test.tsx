@@ -44,7 +44,7 @@ function review(n: number, overrides: Partial<ReviewRow> = {}): ReviewRow {
     prUrl: `https://github.com/fixture-labs/legacy-dashboard/pull/${330 + n}`,
     trigger: "webhook",
     status: "completed",
-    profileName: "Deep",
+    depth: "deep",
     agent: { id: "33333333-3333-4333-8333-333333333333", name: "build-01" },
     findingCounts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
     tokensUsed: 1000,

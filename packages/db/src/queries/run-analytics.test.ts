@@ -21,7 +21,6 @@ import {
   reviews,
   triageRuns,
 } from "../schema.js";
-import { seedReviewProfiles } from "../settings.js";
 import { getAnalytics } from "./analytics.js";
 import { getRalphAnalytics } from "./ralph-analytics.js";
 import { getRunAnalytics, runAnalyticsBucketStarts } from "./run-analytics.js";
@@ -81,8 +80,6 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       .returning();
     acme = acmeOrg!.id;
     beta = betaOrg!.id;
-    await seedReviewProfiles(db, acme);
-    await seedReviewProfiles(db, beta);
 
     const connect = async (organizationId: string, externalId: string, fullPath: string) => {
       const connection = (await upsertScmConnection(
@@ -196,7 +193,7 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       baseSha: "b".repeat(40),
       trigger: "webhook" as const,
       status: "completed" as const,
-      profileId: "standard",
+      depth: "standard" as const,
       budget: 200_000,
       tokensIn,
       tokensOut,

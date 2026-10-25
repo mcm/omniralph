@@ -21,7 +21,6 @@ import {
   upsertScmConnection,
   type Database,
   organizations,
-  seedReviewProfiles,
   users,
 } from "@omniralph/db";
 import { runReview, type ReviewProvider } from "@omniralph/engine";
@@ -295,7 +294,6 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
@@ -552,7 +550,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         agent: { id: "builtin:reviewer" },
         trigger: job.payload.trigger,
         repository: { provider: "github", fullPath: "acme/app" },
-        // Narrowed by the review profile at claim time.
+        // Narrowed by the review depth's preset at claim time.
         model: payload.reviewConfig.profile.model,
         tokenBudget: payload.reviewConfig.profile.maxTokensPerReview,
         maxFiles: payload.reviewConfig.profile.maxFiles,
@@ -603,7 +601,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
       comments: { path: string; line: number; side: string; body: string }[];
     };
     expect(posted.commit_id).toBe(head1);
-    expect(posted.body).toContain("**Profile:** Standard");
+    expect(posted.body).toContain("**Depth:** Standard");
     expect(posted.body).toContain("**Tokens:** 1,500 /");
     expect(posted.body).toContain(`https://omniralph.example.com/reviews/${reviewId}`);
     expect(posted.comments).toHaveLength(1);
@@ -875,7 +873,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         baseSha: base,
         trigger: "webhook",
         mode: "incremental",
-        profileId: "standard",
+        depth: "standard",
         status: "queued",
         correlationJobId: null,
       });
@@ -1118,7 +1116,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         .where(eq(repositories.id, repositoryId));
       expect(
         await saveRepositorySettings(db, dispatcher(), orgId, repositoryId, {
-          profileId: current!.profileId as "standard",
+          depth: current!.reviewDepth,
           triggers: current!.triggers,
           pathExcludes: current!.pathExcludes,
           customInstructions: current!.customInstructions ?? "",

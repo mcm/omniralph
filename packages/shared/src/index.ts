@@ -3,6 +3,7 @@ export * from "./harness-protocol.js";
 export * from "./protocol.js";
 export * from "./pools.js";
 export * from "./review-job.js";
+export * from "./review-depth.js";
 export * from "./settings.js";
 export * from "./feedback.js";
 export * from "./rules.js";

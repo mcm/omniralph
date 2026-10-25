@@ -20,7 +20,7 @@ import {
   type ReviewContextText,
 } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
-import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
+import { FEEDBACK_REASON_LABELS, REVIEW_DEPTHS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
@@ -95,18 +95,12 @@ function helpText(handle: string): string {
     "Here's what I can do:",
     "",
     `- ${cmd("review")}: review the whole diff again for new issues (optionally ${cmd("review quick")}, ${cmd("review standard")} or ${cmd("review deep")}).`,
-    `- ${cmd("review fresh")}: review the whole diff from scratch, raising issues again even if they're already open (also with a profile, e.g. ${cmd("review fresh deep")}).`,
+    `- ${cmd("review fresh")}: review the whole diff from scratch, raising issues again even if they're already open (also at a depth, e.g. ${cmd("review fresh deep")}).`,
     `- ${cmd("dismiss [reason]")} in one of my finding's threads: dismiss the finding (reasons: false positive, won't fix, not relevant, other).`,
     `- ${cmd("fix [what to change]")} on a pull/merge request Omniralph opened: Omniralph makes the change and pushes it (in one of my finding's threads, it fixes that finding).`,
     `- Mention me with a question in a finding's thread and I'll answer it.`,
   ].join("\n");
 }
-
-const PROFILE_NAMES: Record<string, string> = {
-  quick: "Quick",
-  standard: "Standard",
-  deep: "Deep",
-};
 
 /**
  * Runs a `@bot` command from a PR/MR comment and replies in the comment's
@@ -259,15 +253,15 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         author: cr.author,
         trigger: "mention",
         mode: command.fresh ? "fresh" : "full",
-        profileId: command.profileId,
+        depth: command.depth,
       });
       const head = inlineCode(cr.headSha.slice(0, 12));
       switch (result.status) {
         case "enqueued": {
-          const profile = command.profileId ? `**${PROFILE_NAMES[command.profileId]}** ` : "";
+          const depth = command.depth ? `**${REVIEW_DEPTHS[command.depth].label}** ` : "";
           const kind = command.fresh ? "fresh" : "full";
           await respond(
-            `On it, @${author}: a ${kind} ${profile}review of ${head} is queued. I'll post the results here when it's done.`,
+            `On it, @${author}: a ${kind} ${depth}review of ${head} is queued. I'll post the results here when it's done.`,
           );
           return { status: "review_enqueued", ...reviewRunOf(result) };
         }
@@ -275,15 +269,12 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
           await respond(`A review of ${head} is already queued or running, @${author}.`);
           return { status: "review_duplicate", ...reviewRunOf(result) };
         case "repository_unavailable":
-        case "profile_not_found":
         case "no_review_tasks":
           await respond(
             `Sorry @${author}, I can't review this right now: ${
-              result.status === "profile_not_found"
-                ? "that review profile doesn't exist."
-                : result.status === "no_review_tasks"
-                  ? "none of this repository's review tasks reviews on request."
-                  : "reviews are disabled for this repository."
+              result.status === "no_review_tasks"
+                ? "none of this repository's review tasks reviews on request."
+                : "reviews are disabled for this repository."
             }`,
           );
           return { status: "review_unavailable" };

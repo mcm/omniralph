@@ -10,7 +10,6 @@ import {
   upsertScmConnection,
   type Database,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
 import {
@@ -80,7 +79,6 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     const connection = (await upsertScmConnection(db, {

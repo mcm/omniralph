@@ -65,7 +65,7 @@ export function renderSummary(
   if (preamble) lines.push(preamble, "");
 
   lines.push(
-    `- **Profile:** ${result.profile.name}`,
+    `- **Depth:** ${result.profile.name}`,
     `- **Findings:** ${total === 0 ? "none" : total}`,
     `- **Tokens:** ${number.format(used)} / ${number.format(result.budget)}`,
   );

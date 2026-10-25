@@ -11,7 +11,6 @@ import {
   ralphRuns,
   createRun,
   repositories,
-  seedReviewProfiles,
   setAllowedTaskTypeDefaults,
   triageRuns,
   updateRepositoryRalphSettings,
@@ -83,7 +82,6 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

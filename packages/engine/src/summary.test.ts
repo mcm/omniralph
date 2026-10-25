@@ -87,7 +87,7 @@ describe("renderSummary", () => {
     expect(warning).toBeGreaterThan(0);
     expect(preamble).toBe(warning + 2);
     expect(lines[preamble + 2]).toBe("Failed review tasks: Security review");
-    expect(lines[preamble + 4]).toBe("- **Profile:** Standard");
+    expect(lines[preamble + 4]).toBe("- **Depth:** Standard");
     expect(renderSummary(base, url, { preamble: "  " })).toBe(renderSummary(base, url));
   });
 });

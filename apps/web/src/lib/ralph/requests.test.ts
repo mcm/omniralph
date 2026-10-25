@@ -24,7 +24,6 @@ import {
   type Database,
   type Job,
   organizations,
-  seedReviewProfiles,
   type LinearRun,
 } from "@omniralph/db";
 import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
@@ -97,7 +96,6 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

@@ -48,6 +48,7 @@ import {
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repositories/[id]/repository-nav";
 import { RerunReviewDialog } from "./rerun-review-dialog";
+import { REVIEW_DEPTHS } from "@omniralph/shared";
 import { EmptyValue } from "@/components/empty-value";
 import { stateLabel } from "@/lib/state-variants";
 import { useReviewList } from "./review-queries";
@@ -129,7 +130,7 @@ function ReviewTableRow({
         <TableCell className={WIDE_COLUMN}>
           <div className="list-cell-stack">
             <span className="list-text list-text-primary">
-              {review.profileName ?? <EmptyValue />}
+              {review.depth ? REVIEW_DEPTHS[review.depth].label : <EmptyValue />}
             </span>
             {review.agent ? (
               isAdmin ? (
@@ -244,7 +245,7 @@ function ReviewsTable({
                 {repository ? (repository.provider === "gitlab" ? "MR" : "PR") : "PR / MR"}
               </TableHead>
               <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Status / trigger</TableHead>
-              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Profile / agent</TableHead>
+              <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Depth / agent</TableHead>
               <TableHead className={WIDE_COLUMN}>Findings</TableHead>
               <TableHead className={`${WIDE_COLUMN} list-nowrap`}>Tokens / duration</TableHead>
               <TableHead className={WIDE_COLUMN}>Created</TableHead>

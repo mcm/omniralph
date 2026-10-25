@@ -58,7 +58,7 @@ export const BUDGET_FILL_RATIO = 0.7;
 /** Cap on the "highest weight" part of the hotspots (files with signals are always included). */
 export const MAX_TOP_WEIGHT_HOTSPOTS = 10;
 
-/** The profile fields the planner needs (`review_profiles` row or shared `ReviewProfile`). */
+/** The profile fields the planner needs (a review depth's token cap and file limit). */
 export interface PlanProfile {
   maxTokensPerReview: number;
   maxFiles: number;

@@ -181,8 +181,10 @@ trigger context (`ReviewTaskContext`):
 
 The review profile still narrows each review run at claim time (`narrowByReviewProfile` in
 `resolveRunSpec`): the profile's model wins over the task's and the agent's, the token budget is
-the smaller of the profile's maximum and the task's, and `maxFiles` comes from the profile. Review
-run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
+the smaller of the profile's maximum and the task's, and `maxFiles` comes from the profile. (Review
+profiles have since become the three review depth presets, Quick, Standard and Deep, in
+`REVIEW_DEPTHS` of `@omniralph/shared`; a review's `reviewConfig.profile` carries its depth's
+preset.) Review run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
 
 ### Coding runs
 

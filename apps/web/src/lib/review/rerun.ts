@@ -6,17 +6,17 @@ import {
   resolveRepositorySwitches,
 } from "@omniralph/db";
 import type { ChangeRequestState } from "@omniralph/scm";
-import type { RerunReviewInput, ReviewMode } from "@omniralph/shared";
+import type { RerunReviewInput, ReviewDepth, ReviewMode } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { enqueueReview, type ReviewTaskRun } from "./enqueue";
 
 /**
- * What a re-run reviews with: the Re-run dialog's mode and built-in profile, or (a retry of a
- * review run) the run's own mode and profile ID.
+ * What a re-run reviews with: the Re-run dialog's mode and depth, or (a retry of a review
+ * run) the run's own mode and depth.
  */
 export type RerunReviewOptions =
-  RerunReviewInput | { runMode: ReviewMode; profileId: string | null };
+  RerunReviewInput | { runMode: ReviewMode; depth: ReviewDepth | null };
 
 /** The review mode a re-run enqueues. */
 function rerunMode(options: RerunReviewOptions): ReviewMode {
@@ -34,12 +34,12 @@ export type RerunReviewResult =
       jobId: string;
       headSha: string;
     }
-  | { status: "not_found" | "repository_unavailable" | "profile_not_found" | "no_review_tasks" }
+  | { status: "not_found" | "repository_unavailable" | "no_review_tasks" }
   | { status: "not_open"; state: Exclude<ChangeRequestState, "open"> }
   | { status: "scm_error"; error: string };
 
 /**
- * Re-runs a review from the control panel (Re-run button): looks up the PR's
+ * Re-runs a review from the control panel (`POST /api/ui/reviews/{id}/rerun`): looks up the PR's
  * **current** head on the code host and enqueues a `manual` review run of
  * it (every review task of the repository) through `enqueueReview`. Incremental reviews the whole diff for new issues
  * (mode `full`, like `@bot review`: open findings are still dropped as
@@ -95,7 +95,7 @@ export async function rerunReview(
     author: cr.author,
     trigger: "manual",
     mode: rerunMode(input),
-    profileId: input.profileId,
+    depth: input.depth,
   });
   switch (result.status) {
     case "enqueued":

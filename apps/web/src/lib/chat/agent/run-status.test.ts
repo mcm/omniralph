@@ -14,7 +14,6 @@ import {
   ralphRuns,
   runActivities,
   saveChatConnection,
-  seedReviewProfiles,
   upsertScmConnection,
   type ChatThread,
   type Database,
@@ -160,7 +159,6 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     otherOrgId = other!.id;
     const scm = (await upsertScmConnection(

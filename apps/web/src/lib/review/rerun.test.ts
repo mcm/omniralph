@@ -16,7 +16,6 @@ import {
   type FindingRow,
   type Job,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ChangeRequest, ChangeRequestState, InlineComment, ScmAdapter } from "@omniralph/scm";
 import { reviewTriggerContext, type Finding, type ReviewJobResult } from "@omniralph/shared";
@@ -220,7 +219,6 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.orgId = orgId;
     state.db = db;
@@ -263,7 +261,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       headSha: SHA(2),
       baseSha: SHA(1),
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: null,
       budget: 200_000,
     });
@@ -731,7 +729,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
 
     it("enqueues a manual fresh review of the PR's current head", async () => {
       const { number, review } = await reviewedPr();
-      const res = await rerunReview(review.id, { mode: "fresh", profileId: "deep" });
+      const res = await rerunReview(review.id, { mode: "fresh", depth: "deep" });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
 
@@ -740,12 +738,12 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(payload).toMatchObject({ mode: "fresh", headSha: HEAD, previousReview: null });
       expect(payload.reviewConfig.profile.id).toBe("deep");
       const [created] = await db.select().from(reviews).where(eq(reviews.id, res.reviewId));
-      expect(created).toMatchObject({ trigger: "manual", headSha: HEAD, profileId: "deep" });
+      expect(created).toMatchObject({ trigger: "manual", headSha: HEAD, depth: "deep" });
     });
 
-    it("runs Incremental as a full review that keeps the repository's profile", async () => {
+    it("runs Incremental as a full review that keeps the repository's depth", async () => {
       const { review } = await reviewedPr();
-      const res = await rerunReview(review.id, { mode: "incremental", profileId: null });
+      const res = await rerunReview(review.id, { mode: "incremental", depth: null });
       if (!res.ok) throw new Error(res.error);
       const payload = reviewTriggerContext((await reviewJob(res.reviewId)).payload);
       expect(payload.mode).toBe("full");
@@ -756,7 +754,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
     it("lets members re-run a review", async () => {
       const { number, review } = await reviewedPr();
       state.user = member;
-      const res = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      const res = await rerunReview(review.id, { mode: "fresh", depth: null });
       if (!res.ok) throw new Error(res.error);
       expect(await prJobs(number)).toHaveLength(1);
     });
@@ -764,7 +762,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
     it("rejects a signed-out user", async () => {
       const { number, review } = await reviewedPr();
       state.user = null;
-      const res = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      const res = await rerunReview(review.id, { mode: "fresh", depth: null });
       expect(res.ok).toBe(false);
       expect(state.scm.calls.getChangeRequest).toHaveLength(0);
       expect(await prJobs(number)).toHaveLength(0);
@@ -774,7 +772,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       for (const prState of ["closed", "merged"] as const) {
         const { number, review } = await reviewedPr();
         state.scm.pr.state = prState;
-        const res = await rerunReview(review.id, { mode: "incremental", profileId: null });
+        const res = await rerunReview(review.id, { mode: "incremental", depth: null });
         expect(res).toEqual({
           ok: false,
           error: `This change request is ${prState}, so it can't be reviewed again.`,
@@ -785,9 +783,9 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
 
     it("reports an active review of the same head instead of enqueuing a second job", async () => {
       const { number, review } = await reviewedPr();
-      const first = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      const first = await rerunReview(review.id, { mode: "fresh", depth: null });
       if (!first.ok) throw new Error(first.error);
-      const second = await rerunReview(review.id, { mode: "incremental", profileId: null });
+      const second = await rerunReview(review.id, { mode: "incremental", depth: null });
       expect(second).toEqual({
         ok: false,
         error: `A review of ${HEAD.slice(0, 12)} is already queued or running.`,
@@ -800,12 +798,12 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       const { review } = await reviewedPr();
       const bad = await rerunReview(review.id, {
         mode: "sideways" as "fresh",
-        profileId: null,
+        depth: null,
       });
       expect(bad.ok).toBe(false);
       const missing = await rerunReview("00000000-0000-4000-8000-000000000000", {
         mode: "fresh",
-        profileId: null,
+        depth: null,
       });
       expect(missing).toEqual({ ok: false, error: "That review doesn't exist." });
     });

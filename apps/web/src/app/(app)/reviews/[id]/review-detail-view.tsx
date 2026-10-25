@@ -36,7 +36,7 @@ import {
   IconHistory,
   IconRefresh,
 } from "@tabler/icons-react";
-import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
+import { FEEDBACK_REASON_LABELS, REVIEW_DEPTHS } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Fact, FactStrip } from "@/components/fact-strip";
@@ -191,7 +191,7 @@ function ReviewSkeleton() {
   return (
     <>
       <FactStrip label="Review facts">
-        {["Head SHA", "Base SHA", "Profile", "Model", "Harness", "Started", "Duration"].map(
+        {["Head SHA", "Base SHA", "Depth", "Model", "Harness", "Started", "Duration"].map(
           (label) => (
             <Fact key={label} label={label}>
               <Skeleton width="6rem" />
@@ -282,7 +282,9 @@ function ReviewContent({ review, isAdmin }: { review: ReviewDetail; isAdmin: boo
         <Fact label="Base SHA">
           <InlineCode title={review.baseSha}>{review.baseSha.slice(0, 12)}</InlineCode>
         </Fact>
-        <Fact label="Profile">{review.profileName ?? <EmptyValue />}</Fact>
+        <Fact label="Depth">
+          {review.depth ? REVIEW_DEPTHS[review.depth].label : <EmptyValue />}
+        </Fact>
         <Fact label="Model">
           {review.model ? <MonoValue value={review.model} className="fact-mono" /> : <EmptyValue />}
         </Fact>

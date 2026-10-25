@@ -24,7 +24,6 @@ import {
   harnessRepoPins,
   harnesses,
   repositories,
-  reviewProfiles,
   reviews,
   scmConnections,
   type ScmConnectionHealth,
@@ -556,8 +555,8 @@ export interface RepositoryOverview {
   connectionName: string;
   /** Instance URL (GitLab) or API URL (GitHub). */
   baseUrl: string;
-  profileId: string;
-  profileName: string;
+  /** The depth its reviews run at. */
+  reviewDepth: Repository["reviewDepth"];
   pinnedHarnesses: { id: string; name: string }[];
   lastReviewAt: Date | null;
 }
@@ -584,8 +583,7 @@ const overviewColumns = {
   connectionId: repositories.connectionId,
   connectionName: scmConnections.name,
   baseUrl: scmConnections.baseUrl,
-  profileId: repositories.profileId,
-  profileName: reviewProfiles.name,
+  reviewDepth: repositories.reviewDepth,
 };
 
 function connectedIn(organizationId: string, search?: string) {
@@ -602,13 +600,6 @@ function overviewQuery(db: Database, organizationId: string, search?: string) {
     .select(overviewColumns)
     .from(repositories)
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .innerJoin(
-      reviewProfiles,
-      and(
-        eq(reviewProfiles.organizationId, repositories.organizationId),
-        eq(reviewProfiles.id, repositories.profileId),
-      ),
-    )
     .where(connectedIn(organizationId, search))
     .orderBy(asc(repositories.fullPath), asc(repositories.id))
     .$dynamic();
@@ -668,7 +659,7 @@ async function withPinsAndLastReview(
   });
 }
 
-/** The organization's connected (not disconnected) repositories with their profile, pins and latest review. */
+/** The organization's connected (not disconnected) repositories with their depth, pins and latest review. */
 export async function listRepositoryOverview(
   db: Database,
   organizationId: string,

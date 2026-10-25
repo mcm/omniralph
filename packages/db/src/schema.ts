@@ -11,7 +11,6 @@ import {
   type AnyPgColumn,
   boolean,
   check,
-  foreignKey,
   index,
   integer,
   jsonb,
@@ -44,6 +43,8 @@ export const chatPlatform = pgEnum("chat_platform", ["slack", "discord"]);
 /** How a chat identity was linked: by the member (`manual`) or by a matching email (`email`). */
 export const chatIdentitySource = pgEnum("chat_identity_source", ["manual", "email"]);
 export const chatMessageRole = pgEnum("chat_message_role", ["user", "assistant", "tool"]);
+/** A repository's review depth (`REVIEW_DEPTHS` in `@omniralph/shared`). */
+export const reviewDepth = pgEnum("review_depth", ["quick", "standard", "deep"]);
 export const reviewTrigger = pgEnum("review_trigger", ["webhook", "mention", "manual"]);
 export const reviewStatus = pgEnum("review_status", [
   "queued",
@@ -734,31 +735,6 @@ export const chatLinearDelegations = pgTable(
   ],
 );
 
-/**
- * Review profiles of an organization. The built-in ones (`quick`, `standard`,
- * `deep`) are seeded into every new organization (`createOrganization`).
- */
-export const reviewProfiles = pgTable(
-  "review_profiles",
-  {
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    /** Slug, unique per organization, e.g. `quick`, `standard`, `deep`. */
-    id: text("id").notNull(),
-    name: text("name").notNull(),
-    description: text("description"),
-    model: text("model").notNull(),
-    maxTokensPerReview: integer("max_tokens_per_review").notNull(),
-    maxFiles: integer("max_files").notNull(),
-    allowRepoExploration: boolean("allow_repo_exploration").notNull(),
-    builtIn: boolean("built_in").notNull().default(false),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [primaryKey({ columns: [t.organizationId, t.id] })],
-);
-
 // ── Agent and task definitions ───────────────────────────────────────────────
 
 /**
@@ -819,8 +795,6 @@ export const DEFAULT_REPOSITORY_TRIGGERS: RepositoryTriggers = {
   onPush: true,
   drafts: false,
 };
-
-export const DEFAULT_PROFILE_ID = "standard";
 
 /**
  * Per-repository settings of ralph (`repositories.ralph_settings`),
@@ -902,8 +876,8 @@ export const repositories = pgTable(
       .references(() => scmConnections.id, { onDelete: "cascade" }),
     /** Reviews run here; null inherits the organization's allowed task types (`review`). */
     enabled: boolean("enabled"),
-    /** A review profile of the repository's organization (composite foreign key below). */
-    profileId: text("profile_id").notNull().default(DEFAULT_PROFILE_ID),
+    /** The depth its reviews run at: their model, token cap, file limit and exploration. */
+    reviewDepth: reviewDepth("review_depth").notNull().default("standard"),
     triggers: jsonb("triggers")
       .$type<RepositoryTriggers>()
       .notNull()
@@ -951,11 +925,6 @@ export const repositories = pgTable(
   (t) => [
     uniqueIndex("repositories_connection_external_id_uq").on(t.connectionId, t.externalId),
     index("repositories_organization_id_idx").on(t.organizationId),
-    foreignKey({
-      name: "repositories_organization_profile_fk",
-      columns: [t.organizationId, t.profileId],
-      foreignColumns: [reviewProfiles.organizationId, reviewProfiles.id],
-    }),
   ],
 );
 
@@ -1296,8 +1265,8 @@ export const reviewRuns = pgTable(
     baseSha: text("base_sha").notNull(),
     trigger: reviewTrigger("trigger").notNull(),
     mode: text("mode").$type<"incremental" | "full" | "fresh">().notNull(),
-    /** Profile ID (in the repository's organization) the run's reviews use. */
-    profileId: text("profile_id"),
+    /** The depth the run's reviews use; null for runs from before depths were recorded. */
+    depth: reviewDepth("depth"),
     status: reviewRunStatus("status").notNull().default("queued"),
     /** The job of the correlation query task that merges the reviews' results. */
     correlationJobId: uuid("correlation_job_id").references((): AnyPgColumn => jobs.id, {
@@ -1309,8 +1278,6 @@ export const reviewRuns = pgTable(
     summaryCommentId: text("summary_comment_id"),
     /** The PR/MR author when the run was enqueued (a mention the posted text keeps). */
     prAuthor: text("pr_author"),
-    /** The profile's name when the run was enqueued (the posted summary names it). */
-    profileName: text("profile_name"),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1345,11 +1312,11 @@ export const reviews = pgTable(
     baseSha: text("base_sha").notNull(),
     trigger: reviewTrigger("trigger").notNull(),
     status: reviewStatus("status").notNull().default("queued"),
-    /** Profile ID (in the repository's organization) the review ran with. */
-    profileId: text("profile_id"),
+    /** The depth the review ran at; null for reviews from before depths were recorded. */
+    depth: reviewDepth("depth"),
     tokensIn: integer("tokens_in").notNull().default(0),
     tokensOut: integer("tokens_out").notNull().default(0),
-    /** Token budget (the profile's `maxTokensPerReview` at review time). */
+    /** Token budget (the depth's `maxTokensPerReview` at review time). */
     budget: integer("budget").notNull(),
     durationMs: integer("duration_ms"),
     model: text("model"),

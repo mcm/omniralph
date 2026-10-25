@@ -1,7 +1,7 @@
 /**
  * Review history (Repository › Reviews) and review detail pages: paginated,
  * filterable review lists with per-severity finding counts, and a single
- * review with its repository, profile, agent and findings.
+ * review with its repository, depth, agent and findings.
  */
 import { and, asc, count, desc, eq, gt, inArray, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
@@ -12,7 +12,6 @@ import {
   findings,
   findingSeverity,
   repositories,
-  reviewProfiles,
   reviews,
   scmConnections,
 } from "./schema.js";
@@ -53,7 +52,8 @@ export interface ReviewListEntry {
   headSha: string;
   trigger: ReviewTrigger;
   status: Review["status"];
-  profile: { id: string; name: string } | null;
+  /** The depth the review ran at; null for reviews from before depths were recorded. */
+  depth: Review["depth"];
   agent: { id: string; name: string } | null;
   findingCounts: Record<FindingSeverity, number>;
   tokensIn: number;
@@ -80,12 +80,6 @@ export function emptyFindingCounts(): Record<FindingSeverity, number> {
   >;
 }
 
-/** Joins a review's profile, which is one of its repository's organization. */
-const profileOfReview = and(
-  eq(reviewProfiles.organizationId, repositories.organizationId),
-  eq(reviewProfiles.id, reviews.profileId),
-);
-
 const reviewColumns = {
   id: reviews.id,
   prNumber: reviews.prNumber,
@@ -105,8 +99,7 @@ const reviewColumns = {
     fullPath: repositories.fullPath,
     baseUrl: scmConnections.baseUrl,
   },
-  profileId: reviewProfiles.id,
-  profileName: reviewProfiles.name,
+  depth: reviews.depth,
   harnessId: harnesses.id,
   harnessName: harnesses.name,
 };
@@ -137,7 +130,6 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
       .from(reviews)
       .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
       .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-      .leftJoin(reviewProfiles, profileOfReview)
       .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
       .where(where)
       .orderBy(desc(reviews.createdAt), desc(reviews.id))
@@ -165,9 +157,8 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
   }
 
   return {
-    reviews: rows.map(({ profileId, profileName, harnessId, harnessName, ...row }) => ({
+    reviews: rows.map(({ harnessId, harnessName, ...row }) => ({
       ...row,
-      profile: profileId && profileName ? { id: profileId, name: profileName } : null,
       agent: harnessId && harnessName ? { id: harnessId, name: harnessName } : null,
       findingCounts: counts.get(row.id) ?? emptyFindingCounts(),
     })),
@@ -180,7 +171,8 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
 export interface ReviewDetail {
   review: Review;
   repository: ReviewRepositoryRef;
-  profile: { id: string; name: string } | null;
+  /** The depth the review ran at; null for reviews from before depths were recorded. */
+  depth: Review["depth"];
   agent: { id: string; name: string } | null;
   /** In the order the model reported them. */
   findings: FindingRow[];
@@ -196,7 +188,7 @@ export interface ReviewDetail {
 }
 
 /**
- * A review of the organization with its repository, profile, agent and findings; null
+ * A review of the organization with its repository, depth, agent and findings; null
  * if the organization has no such review.
  */
 export async function getReviewDetail(
@@ -213,15 +205,13 @@ export async function getReviewDetail(
         fullPath: repositories.fullPath,
         baseUrl: scmConnections.baseUrl,
       },
-      profileId: reviewProfiles.id,
-      profileName: reviewProfiles.name,
+      depth: reviews.depth,
       harnessId: harnesses.id,
       harnessName: harnesses.name,
     })
     .from(reviews)
     .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .leftJoin(reviewProfiles, profileOfReview)
     .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
     .where(and(eq(reviews.id, reviewId), eq(repositories.organizationId, organizationId)))
     .limit(1);
@@ -260,7 +250,7 @@ export async function getReviewDetail(
   return {
     review: row.review,
     repository: row.repository,
-    profile: row.profileId && row.profileName ? { id: row.profileId, name: row.profileName } : null,
+    depth: row.depth,
     agent: row.harnessId && row.harnessName ? { id: row.harnessId, name: row.harnessName } : null,
     findings: rows,
     feedback: await listFindingFeedback(

@@ -109,7 +109,7 @@ describe("view mapping", () => {
       headSha: "a".repeat(40),
       trigger: "webhook",
       status: "completed",
-      profile: { id: "quick", name: "Quick" },
+      depth: "quick",
       agent: null,
       findingCounts: { critical: 1, high: 0, medium: 0, low: 0, info: 0 },
       tokensIn: 900,
@@ -121,7 +121,7 @@ describe("view mapping", () => {
     };
     expect(reviewRow(entry)).toMatchObject({
       prUrl: "https://gitlab.example.com/group/api/-/merge_requests/7",
-      profileName: "Quick",
+      depth: "quick",
       tokensUsed: 1000,
       createdAt: "2026-10-05T10:00:00.000Z",
     });
@@ -141,7 +141,7 @@ describe("view mapping", () => {
         baseSha: "d".repeat(40),
         trigger: "mention",
         status: "failed",
-        profileId: "deep",
+        depth: "deep",
         tokensIn: 0,
         tokensOut: 0,
         budget: 1,
@@ -158,7 +158,7 @@ describe("view mapping", () => {
         updatedAt: new Date(0),
       },
       repository: { ...repository, provider: "github", baseUrl: "https://api.github.com" },
-      profile: { id: "deep", name: "Deep" },
+      depth: "deep",
       agent: null,
       findings: [finding({})],
       feedback: [],

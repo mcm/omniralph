@@ -15,7 +15,6 @@ import {
   ralphRuns,
   reviewRuns,
   saveIntegration,
-  seedReviewProfiles,
   settingsChanges,
   upsertScmConnection,
   users,
@@ -88,7 +87,7 @@ const admin = person("history-admin", "admin", "Ada Admin");
 const member = person("history-member", "member", "Max Member");
 
 const baseSettings: RepositorySettingsInput = {
-  profileId: "standard",
+  depth: "standard",
   triggers: { onOpen: true, onPush: true, drafts: false },
   pathExcludes: [],
   customInstructions: "",
@@ -136,7 +135,6 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     orgId = org!.id;
     otherOrgId = other!.id;
-    for (const id of [orgId, otherOrgId]) await seedReviewProfiles(db, id);
     await db
       .insert(users)
       .values([admin, member].map(({ id, name, email }) => ({ id, name, email })));
@@ -213,7 +211,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);
 
       // A refused save records nothing either.
-      const refused = await captureChanges(() => save({ ...baseSettings, profileId: "nope" }));
+      const refused = await captureChanges(() => save({ ...baseSettings, depth: "nope" }));
       expect(refused.result).toMatchObject({ ok: false });
       expect(refused.changes).toEqual([]);
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);

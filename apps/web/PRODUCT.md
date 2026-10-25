@@ -19,7 +19,7 @@ panel is where they come to configure it and to look back at what happened.
 The control panel for Omniralph, a self-hosted system that runs unattended coding agents for
 GitHub and GitLab: ralph builds Linear epics story by story, reviews PRs/MRs, triages issues into
 PRDs, and answers in chat. The panel connects code hosts, Linear and chat; enrolls and configures
-harnesses; holds per-repository settings, review profiles and learned rules; and records every
+harnesses; holds per-repository settings (review depth among them) and learned rules; and records every
 run, review, job and outcome.
 
 Success: settings can be changed confidently without breaking a repository's runs, and the history
@@ -39,7 +39,7 @@ record lives.
   invitations.
 - Main areas (see `src/lib/navigation.ts`): Ralph runs, Reviews, Jobs, Analytics, Repositories
   (and per-repository settings, rules and reviews), Harnesses, and Settings (organization,
-  integrations, chat accounts, profiles, harnesses).
+  integrations, chat accounts, harnesses).
 - Runs are long-lived and asynchronous; most visits happen after the fact, but every page stays
   live while open: harnesses, webhooks and crons change runs, reviews, jobs and harnesses
   behind the user's back, and the page shows it within seconds.
@@ -55,7 +55,7 @@ record lives.
 - All UI uses `@iamthemcmaster/ui` (Precision Aurora), `@tabler/icons-react` and `sonner`. No
   other component or styling library. Custom styling uses the library's design tokens only.
 - Terminology to keep: organization, repository, harness, ralph run, story, lane, review run,
-  finding, learned rule, profile, job, triage, follow-up, manual story.
+  finding, learned rule, review depth, job, triage, follow-up, manual story.
 - Settings are dense and interdependent (verify commands, quality gates, task
   choices, caps); mistakes silently break later runs.
 

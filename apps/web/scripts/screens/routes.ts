@@ -495,39 +495,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
       },
     ],
   },
-  {
-    name: "settings-profiles",
-    path: "/settings/profiles",
-    page: "(app)/settings/profiles/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "settings-profiles-model",
-    path: "/settings/profiles",
-    page: "(app)/settings/profiles/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#profile-standard-model" }],
-    viewportOnly: true,
-  },
-  {
-    name: "settings-profiles-unsaved",
-    path: "/settings/profiles",
-    page: "(app)/settings/profiles/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "fill", selector: "#profile-standard-max-tokens", value: "150000" }],
-  },
-  {
-    // A profile's save lists the changes and the repositories using it.
-    name: "settings-profiles-confirm",
-    path: "/settings/profiles",
-    page: "(app)/settings/profiles/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#profile-standard-max-tokens", value: "150000" },
-      { action: "click", selector: 'form[aria-label="Standard"] [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
 ];
 
 /**

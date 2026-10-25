@@ -14,7 +14,7 @@ import {
   organizationMembers,
   ralphRuns,
   ralphStories,
-  reviewProfiles,
+  repositories,
   reviewRuns,
   reviews,
   rules,
@@ -132,7 +132,7 @@ describe("seedFixtures", () => {
     ).toBe(true);
   });
 
-  it("has reviews with open, dismissed and restored findings, rules and profiles", async () => {
+  it("has reviews with open, dismissed and restored findings, rules and every review depth", async () => {
     expect((await db.select().from(reviewRuns)).length).toBeGreaterThan(0);
     const allFindings = await db.select().from(findings);
     expect(values(allFindings, "status")).toContain("open");
@@ -141,11 +141,11 @@ describe("seedFixtures", () => {
     expect(restored.length).toBeGreaterThan(0);
     const allRules = await db.select().from(rules);
     expect(values(allRules, "kind")).toEqual(new Set(["custom", "learned"]));
-    const profiles = await db
-      .select()
-      .from(reviewProfiles)
-      .where(eq(reviewProfiles.organizationId, FIXTURE_IDS.organizations.main));
-    expect(profiles.some((p) => !p.builtIn)).toBe(true);
+    const repos = await db
+      .select({ reviewDepth: repositories.reviewDepth })
+      .from(repositories)
+      .where(eq(repositories.organizationId, FIXTURE_IDS.organizations.main));
+    expect(values(repos, "reviewDepth")).toEqual(new Set(["quick", "standard", "deep"]));
   });
 
   it("routes by valid rules: labels, then project, then team", async () => {

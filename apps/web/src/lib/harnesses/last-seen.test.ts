@@ -8,7 +8,6 @@ import {
   organizations,
   pinnedHarnessFor,
   requestHarnessUpdate,
-  seedReviewProfiles,
   upsertScmConnection,
   type Database,
 } from "@omniralph/db";
@@ -81,7 +80,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     state.orgId = orgId;
   }, 180_000);
 

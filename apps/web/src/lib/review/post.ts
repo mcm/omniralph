@@ -11,7 +11,7 @@ import {
 import type { ReviewResult } from "@omniralph/engine";
 import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
-import { REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
+import { REVIEW_DEPTHS, REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
 import { getAppUrl } from "@/lib/app-url";
 import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
 import { connectionBotHandle } from "@/lib/mentions/commands";
@@ -139,7 +139,7 @@ function runTaskNames(
  * finished task run's was.
  */
 export function reviewRunSummaryInput(
-  run: Pick<ReviewRun, "profileId" | "profileName" | "baseSha" | "headSha">,
+  run: Pick<ReviewRun, "depth" | "baseSha" | "headSha">,
   finished: readonly Review[],
   posted: readonly FindingRow[],
 ): ReviewResult {
@@ -157,10 +157,9 @@ export function reviewRunSummaryInput(
       ? first
       : { mode: "full", baseSha: run.baseSha, headSha: run.headSha };
   return {
-    profile: {
-      id: run.profileId ?? "unknown",
-      name: run.profileName ?? run.profileId ?? "unknown",
-    },
+    profile: run.depth
+      ? { id: run.depth, name: REVIEW_DEPTHS[run.depth].label }
+      : { id: "unknown", name: "unknown" },
     budget: finished.reduce((sum, r) => sum + r.budget, 0),
     findings: posted.map(asFinding),
     usage: {

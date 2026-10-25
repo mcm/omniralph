@@ -14,7 +14,6 @@ import {
   organizations,
   repositories,
   saveChatConnection,
-  seedReviewProfiles,
   updateLane,
   upsertScmConnection,
   upsertStories,
@@ -91,7 +90,6 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
   async function seedOrg(name: string, slug: string): Promise<SeededOrg> {
     const [org] = await db.insert(organizations).values({ name }).returning();
     const id = org!.id;
-    await seedReviewProfiles(db, id);
     const connection = (await upsertScmConnection(
       db,
       {
@@ -160,7 +158,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       headSha: "a".repeat(40),
       baseSha: "b".repeat(40),
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: "test-model",
       budget: 1000,
     });
@@ -404,7 +402,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
         webUrl: "https://github.com/other/api",
         reviewsEnabled: true,
         ralphEnabled: true,
-        reviewProfile: expect.any(String),
+        reviewDepth: "standard",
       }),
     ]);
     expect(list).toMatchObject({ shown: 1, total: 1, more: false });

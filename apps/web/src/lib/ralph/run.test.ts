@@ -42,7 +42,6 @@ import {
   type Database,
   type Job,
   organizations,
-  seedReviewProfiles,
   setAllowedTaskTypeDefaults,
   type LinearRun,
 } from "@omniralph/db";
@@ -147,7 +146,6 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,
@@ -2107,7 +2105,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     await linear.setIssueState(outside.id, { type: "completed" });
     await event(outside.id);
-    expect(storyPayload(await activeJob(run.id))).toMatchObject({ story: { identifier: "ENG-61" } });
+    expect(storyPayload(await activeJob(run.id))).toMatchObject({
+      story: { identifier: "ENG-61" },
+    });
     expect(await getRun(db, run.id)).toMatchObject({ status: "running", waitingOn: null });
   });
 

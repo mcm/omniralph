@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { REVIEW_DEPTHS } from "@omniralph/shared";
 import { Link } from "@/components/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -359,7 +360,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         <TaskTypeBadges taskTypes={repo.taskTypes} />
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
-        <Badge variant="neutral">{repo.profileName}</Badge>
+        <Badge variant="neutral">{REVIEW_DEPTHS[repo.depth].label}</Badge>
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         {repo.pinnedHarnesses.length > 0 ? (
@@ -564,7 +565,7 @@ function RepositoriesTable({
             <TableRow>
               <TableHead>Repository</TableHead>
               <TableHead>Task types</TableHead>
-              <TableHead className={WIDE_COLUMN}>Profile</TableHead>
+              <TableHead className={WIDE_COLUMN}>Review depth</TableHead>
               <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
               <TableHead className={WIDE_COLUMN}>Last review</TableHead>
               <TableHead aria-label="Actions" />

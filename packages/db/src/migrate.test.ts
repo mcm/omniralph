@@ -4,21 +4,19 @@ import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "..
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
-import { seedReviewProfiles } from "./settings.js";
 import {
   appSettings,
   jobs,
   organizationEmailDomains,
   organizations,
   repositories,
-  reviewProfiles,
   scmConnections,
 } from "./schema.js";
 
@@ -42,45 +40,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     await expect(runMigrations(testDb.uri)).resolves.toBeUndefined();
   });
 
-  it("seeds the quick, standard and deep profiles per organization (0031)", async () => {
-    // Profiles belong to organizations now: none survive the migration.
-    expect(await db.select().from(reviewProfiles)).toEqual([]);
-    const [acme] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
-    await seedReviewProfiles(db, acme!.id);
-    await seedReviewProfiles(db, other!.id);
-
-    const profiles = await db
-      .select({
-        id: reviewProfiles.id,
-        model: reviewProfiles.model,
-        maxTokensPerReview: reviewProfiles.maxTokensPerReview,
-        maxFiles: reviewProfiles.maxFiles,
-        allowRepoExploration: reviewProfiles.allowRepoExploration,
-        builtIn: reviewProfiles.builtIn,
-      })
-      .from(reviewProfiles)
-      .where(eq(reviewProfiles.organizationId, acme!.id))
-      .orderBy(asc(reviewProfiles.maxTokensPerReview));
-
-    expect(profiles.map((p) => [p.id, p.allowRepoExploration])).toEqual([
-      ["quick", false],
-      ["standard", true],
-      ["deep", true],
-    ]);
-    for (const profile of profiles) {
-      expect(profile.model).toMatch(/^claude-/);
-      expect(profile.maxTokensPerReview).toBeGreaterThan(0);
-      expect(profile.maxFiles).toBeGreaterThan(0);
-      expect(profile.builtIn).toBe(true);
-    }
-    // IDs are unique per organization, not globally.
-    expect(await db.select().from(reviewProfiles)).toHaveLength(6);
-  });
-
-  it("defaults repositories to the standard profile and default triggers", async () => {
+  it("defaults repositories to the standard review depth and default triggers", async () => {
     const [org] = await db.insert(organizations).values({ name: "Repos" }).returning();
-    await seedReviewProfiles(db, org!.id);
     const [connection] = await db
       .insert(scmConnections)
       .values({
@@ -102,7 +63,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       })
       .returning();
     expect(repo).toMatchObject({
-      profileId: "standard",
+      reviewDepth: "standard",
       // Reviews, coding and queries inherit the organization's allowed task types (0076).
       enabled: null,
       ralphEnabled: null,
@@ -112,18 +73,6 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       storyTaskId: "builtin:implement-story",
       requestTaskId: "builtin:handle-request",
     });
-
-    // The profile must be one of the repository's organization.
-    const [bare] = await db.insert(organizations).values({ name: "No profiles" }).returning();
-    await expect(
-      db.insert(repositories).values({
-        organizationId: bare!.id,
-        provider: "github",
-        externalId: "2",
-        fullPath: "mcm/other",
-        connectionId: connection!.id,
-      }),
-    ).rejects.toThrow();
   });
 
   it("adds the story and request tasks and a request's trigger (0064), without the coding path (0092)", async () => {
@@ -559,7 +508,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const agent = agentRows[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -862,7 +811,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const org = orgs[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -940,7 +889,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const org = orgs[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -1127,6 +1076,189 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     }
   });
 
+  describe("review depth replaces review profiles (0094)", () => {
+    /** A database migrated up to just before 0094, with a connection per organization. */
+    async function beforeReviewDepth(name: string) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0094_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      await migrate(drizzle(client), { migrationsFolder: before });
+
+      /** An organization with the three built-in profiles, as production has them. */
+      const organization = async (orgName: string) => {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ($1) returning id`,
+          [orgName],
+        );
+        const org = rows[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, description, model, max_tokens_per_review, max_files, allow_repo_exploration, built_in) values
+             ($1, 'quick', 'Quick', 'Fast, diff-only review for small changes.', 'claude-haiku-5-5', 60000, 15, false, true),
+             ($1, 'standard', 'Standard', 'Balanced review with repository exploration.', 'claude-sonnet-5-5', 200000, 40, true, true),
+             ($1, 'deep', 'Deep', 'Thorough review for large or high-risk changes.', 'claude-opus-5-5', 500000, 100, true, true)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        return { org, connection: connections[0]!.id };
+      };
+      const cleanup = async () => {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      };
+      return { uri, client, organization, cleanup };
+    }
+
+    it("moves each repository to its profile's depth and keeps the depth of past runs", async () => {
+      const { uri, client, organization, cleanup } = await beforeReviewDepth("review_depth");
+      try {
+        const acme = await organization("Acme");
+        const globex = await organization("Globex");
+        const repository = async (
+          { org, connection }: { org: string; connection: string },
+          path: string,
+          profile: string,
+        ) => {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into repositories (organization_id, provider, external_id, full_path, connection_id, profile_id)
+             values ($1, 'github', $2, $2, $3, $4) returning id`,
+            [org, path, connection, profile],
+          );
+          return rows[0]!.id;
+        };
+        const api = await repository(acme, "acme/api", "standard");
+        await repository(acme, "acme/web", "standard");
+        await repository(globex, "globex/app", "standard");
+        await repository(globex, "globex/core", "deep");
+        // Past review runs and their reviews, all on Standard.
+        const { rows: runs } = await client.query<{ id: string }>(
+          `insert into review_runs (organization_id, repository_id, pr_number, head_sha, base_sha, trigger, mode, profile_id, profile_name, status)
+           values ($1, $2, 7, $3, $4, 'webhook', 'full', 'standard', 'Standard', 'completed'),
+                  ($1, $2, 8, $3, $4, 'mention', 'incremental', 'standard', 'Standard', 'failed')
+           returning id`,
+          [acme.org, api, "a".repeat(40), "b".repeat(40)],
+        );
+        await client.query(
+          `insert into reviews (review_run_id, repository_id, pr_number, head_sha, base_sha, trigger, status, profile_id, budget)
+           values ($1, $2, 7, $3, $4, 'webhook', 'completed', 'standard', 200000)`,
+          [runs[0]!.id, api, "a".repeat(40), "b".repeat(40)],
+        );
+
+        await runMigrations(uri);
+
+        const { rows: repos } = await client.query<Record<string, unknown>>(
+          `select * from repositories order by full_path`,
+        );
+        expect(repos.map((r) => [r.full_path, r.review_depth])).toEqual([
+          ["acme/api", "standard"],
+          ["acme/web", "standard"],
+          ["globex/app", "standard"],
+          ["globex/core", "deep"],
+        ]);
+        for (const row of repos) expect(row).not.toHaveProperty("profile_id");
+        const { rows: runRows } = await client.query<Record<string, unknown>>(
+          `select * from review_runs order by pr_number`,
+        );
+        expect(runRows.map((r) => [r.pr_number, r.depth])).toEqual([
+          [7, "standard"],
+          [8, "standard"],
+        ]);
+        for (const row of runRows) {
+          expect(row).not.toHaveProperty("profile_id");
+          expect(row).not.toHaveProperty("profile_name");
+        }
+        const { rows: reviewRows } =
+          await client.query<Record<string, unknown>>(`select * from reviews`);
+        expect(reviewRows.map((r) => r.depth)).toEqual(["standard"]);
+        expect(reviewRows[0]).not.toHaveProperty("profile_id");
+        const { rows: tables } = await client.query(
+          `select 1 from information_schema.tables where table_name = 'review_profiles'`,
+        );
+        expect(tables).toEqual([]);
+
+        // A new repository starts on Standard, and only the three depths exist.
+        const { rows: created } = await client.query<{ review_depth: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', 'new', 'acme/new', $2) returning review_depth`,
+          [acme.org, acme.connection],
+        );
+        expect(created[0]!.review_depth).toBe("standard");
+        await expect(
+          client.query(`update repositories set review_depth = 'thorough' where id = $1`, [api]),
+        ).rejects.toThrow();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("refuses to drop a profile that differs from its built-in values", async () => {
+      const { uri, client, organization, cleanup } = await beforeReviewDepth("review_depth_edited");
+      try {
+        const acme = await organization("Acme");
+        await organization("Globex");
+        await client.query(
+          `update review_profiles set model = 'claude-opus-5-5' where organization_id = $1 and id = 'quick'`,
+          [acme.org],
+        );
+        await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id, profile_id)
+           values ($1, 'github', '1', 'acme/api', $2, 'quick')`,
+          [acme.org, acme.connection],
+        );
+
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Review profiles differ from the built-in depths and would be lost: organization ${acme.org} profile 'quick'`,
+          },
+        });
+        // Nothing was converted or dropped.
+        const { rows } = await client.query<{ profile_id: string }>(
+          `select profile_id from repositories`,
+        );
+        expect(rows).toEqual([{ profile_id: "quick" }]);
+        const { rows: profiles } = await client.query(`select 1 from review_profiles`);
+        expect(profiles).toHaveLength(6);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("refuses to drop a profile that isn't built in", async () => {
+      const { uri, client, organization, cleanup } = await beforeReviewDepth("review_depth_custom");
+      try {
+        const acme = await organization("Acme");
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'thorough', 'Thorough', 'claude-opus-5-5', 900000, 200, true)`,
+          [acme.org],
+        );
+
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: expect.stringContaining(`organization ${acme.org} profile 'thorough'`),
+          },
+        });
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   it("backfills each lane's harness from its run (0077)", async () => {
     await db.execute(sql`create database lane_harnesses`);
     const uri = testDb.uri.replace(/\/[^/]*$/, "/lane_harnesses");
@@ -1152,7 +1284,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const org = orgs[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -1239,7 +1371,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const org = orgs[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -1400,7 +1532,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         const org = orgs[0]!.id;
         await client.query(
           `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+           values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
           [org],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -1595,7 +1727,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           const org = orgs[0]!.id;
           await client.query(
             `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
-             values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+             values ($1, 'standard', 'Standard', 'claude-sonnet-5-5', 200000, 40, true)`,
             [org],
           );
           const { rows: connections } = await client.query<{ id: string }>(
@@ -1710,7 +1842,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           // Every review belongs to a run; each legacy review got one of its own.
           const { rows: runs } = await client.query(
             `select id, organization_id, repository_id, pr_number, head_sha, base_sha, trigger, mode,
-                    profile_id, status, error, created_at, updated_at
+                    depth, status, error, created_at, updated_at
              from review_runs where id <> $1 order by pr_number`,
             [reviewRun],
           );
@@ -1724,7 +1856,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
               base_sha: "b2",
               trigger: "mention",
               mode: "incremental",
-              profile_id: "deep",
+              depth: "deep",
               status: "failed",
               error: "Out of tokens",
               created_at: new Date("2026-01-01T00:00:00Z"),
@@ -1739,7 +1871,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
               base_sha: "b3",
               trigger: "webhook",
               mode: "incremental",
-              profile_id: null,
+              depth: null,
               status: "completed",
               error: null,
               created_at: new Date("2026-01-02T00:00:00Z"),

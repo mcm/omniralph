@@ -13,7 +13,6 @@ import {
   organizations,
   ralphRuns,
   recordHiddenRef,
-  seedReviewProfiles,
   upsertScmConnection,
   type Database,
   type RalphRunStatus,
@@ -72,7 +71,6 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const connection = (await upsertScmConnection(
       db,
       {

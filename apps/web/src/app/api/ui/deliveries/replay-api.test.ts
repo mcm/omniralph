@@ -13,7 +13,6 @@ import {
   repositories,
   reviewRuns,
   saveIntegration,
-  seedReviewProfiles,
   setTriageRunStatus,
   updateRun,
   upsertScmConnection,
@@ -175,7 +174,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
       { organizationId: acme, userId: member.id, role: "member" },
       { organizationId: acme, userId: "member-2", role: "member" },
     ]);
-    for (const organizationId of [acme, other]) await seedReviewProfiles(db, organizationId);
     github = (await upsertScmConnection(db, {
       organizationId: acme,
       provider: "github",

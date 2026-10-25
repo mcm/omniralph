@@ -7,7 +7,6 @@ import {
   getRepositoryReviewSettings,
   getRepositoryWithConnection,
   getReview,
-  getReviewProfile,
   listActiveJobsByDedupePrefix,
   listActiveReviewRuns,
   listReviewRunReviews,
@@ -23,6 +22,8 @@ import {
   MAX_OPEN_FINDING_BODY_CHARS,
   REVIEW_TASK_JOB_TYPE,
   ReviewTriggerContext,
+  reviewProfileConfigForDepth,
+  type ReviewDepth,
   type ReviewMode,
 } from "@omniralph/shared";
 import type { TaskDefinition, TriggerKind } from "@omniralph/tasks";
@@ -52,8 +53,8 @@ export interface EnqueueReviewInput {
    * resolve the ones they find fixed.
    */
   mode?: ReviewMode;
-  /** Review profile to use instead of the repository's (`@bot review deep`). */
-  profileId?: string | null;
+  /** Review depth to use instead of the repository's (`@bot review deep`, a re-run). */
+  depth?: ReviewDepth | null;
 }
 
 /** The longest PR/MR description a review trigger context carries. */
@@ -90,7 +91,6 @@ export type EnqueueReviewResult =
       canceledJobIds: string[];
     }
   | { status: "repository_unavailable" }
-  | { status: "profile_not_found" }
   /** None of the repository's review tasks is a review task taking this trigger. */
   | { status: "no_review_tasks" };
 
@@ -168,7 +168,7 @@ export async function reviewTasksFor(
  * `queued` review and a `review.task` job running that task (routed by the
  * task: task type `review`). Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
- * (profile, rules, instructions, excludes), the PR text, the mode and the
+ * (the depth's preset, rules, instructions, excludes), the PR text, the mode and the
  * previous review's head SHA (none for a `full` review) and open findings
  * (neither for a `fresh` one), read once for the whole run, as a
  * `ReviewTriggerContext`; the job is claimed as a run spec and its result
@@ -193,11 +193,8 @@ export async function enqueueReview(
   }
   const { repository } = found;
 
-  // Only a profile of the repository's organization.
-  const profile = input.profileId
-    ? await getReviewProfile(db, repository.organizationId, input.profileId)
-    : settings.profile;
-  if (!profile) return { status: "profile_not_found" };
+  const depth = input.depth ?? settings.depth;
+  const profile = reviewProfileConfigForDepth(depth);
 
   const definitions = organizationDefinitions(db, repository.organizationId);
   const tasks = await reviewTasksFor(
@@ -259,8 +256,7 @@ export async function enqueueReview(
     baseSha: input.baseSha,
     trigger: input.trigger,
     mode,
-    profileId: profile.id,
-    profileName: profile.name,
+    depth,
     prAuthor: input.author,
   });
   const context = {
@@ -280,14 +276,7 @@ export async function enqueueReview(
       author: input.author,
     },
     reviewConfig: {
-      profile: {
-        id: profile.id,
-        name: profile.name,
-        model: profile.model,
-        maxTokensPerReview: profile.maxTokensPerReview,
-        maxFiles: profile.maxFiles,
-        allowRepoExploration: profile.allowRepoExploration,
-      },
+      profile,
       customInstructions: settings.customInstructions,
       rules: settings.rules.map((r) => ({ kind: r.kind, text: r.text, enabled: r.enabled })),
       pathExcludes: settings.pathExcludes,
@@ -324,7 +313,7 @@ export async function enqueueReview(
         headSha: input.headSha,
         baseSha: input.baseSha,
         trigger: input.trigger,
-        profileId: profile.id,
+        depth,
         model: profile.model,
         budget: profile.maxTokensPerReview,
       });

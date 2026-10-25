@@ -18,7 +18,6 @@ import {
   findingSeverity,
   jobs,
   repositories,
-  reviewProfiles,
   reviews,
   reviewStatus,
 } from "../schema.js";
@@ -55,10 +54,9 @@ export interface DailyUsage {
   tokensOut: number;
 }
 
-export interface ProfileUsage {
-  /** Null for reviews whose profile was deleted. */
-  profileId: string | null;
-  profileName: string | null;
+export interface DepthUsage {
+  /** Null for reviews from before depths were recorded. */
+  depth: Review["depth"];
   /** Reviews that ran to the end (`completed` or `budget_exhausted`). */
   reviews: number;
   /** Mean tokens in + out of those reviews (0 when there are none). */
@@ -92,8 +90,8 @@ export interface Analytics {
   totals: { reviews: number; tokensIn: number; tokensOut: number };
   /** One entry per UTC day in the window, oldest first, zero-filled. */
   daily: DailyUsage[];
-  /** Profiles that ran at least one review in the window, by name. */
-  byProfile: ProfileUsage[];
+  /** Depths that ran at least one review in the window, Quick to Deep (unknown last). */
+  byDepth: DepthUsage[];
   reviewsByStatus: Record<Review["status"], number>;
   findingsBySeverity: Record<FindingSeverity, number>;
   /** Repositories with findings in the window, highest dismissal rate first. */
@@ -147,7 +145,7 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
       and ${feedback.restoredAt} is null
   )`;
 
-  const [dailyRows, profileRows, statusRows, severityRows, dismissalRows, agentRows] =
+  const [dailyRows, depthRows, statusRows, severityRows, dismissalRows, agentRows] =
     await Promise.all([
       db
         .select({
@@ -161,23 +159,14 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
         .groupBy(day),
       db
         .select({
-          profileId: reviews.profileId,
-          profileName: reviewProfiles.name,
+          depth: reviews.depth,
           reviews: sql<string>`count(*) filter (where ${ran})`,
           averageTokens: sql<string>`avg(${reviews.tokensIn} + ${reviews.tokensOut}) filter (where ${ran})`,
         })
         .from(reviews)
-        .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
-        .leftJoin(
-          reviewProfiles,
-          and(
-            eq(reviewProfiles.organizationId, repositories.organizationId),
-            eq(reviewProfiles.id, reviews.profileId),
-          ),
-        )
         .where(reviewWhere)
-        .groupBy(reviews.profileId, reviewProfiles.name)
-        .orderBy(asc(reviewProfiles.name)),
+        .groupBy(reviews.depth)
+        .orderBy(sql`${reviews.depth} asc nulls last`),
       db
         .select({ status: reviews.status, count: sql<string>`count(*)` })
         .from(reviews)
@@ -250,9 +239,8 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
       tokensOut: daily.reduce((sum, d) => sum + d.tokensOut, 0),
     },
     daily,
-    byProfile: profileRows.map((row) => ({
-      profileId: row.profileId,
-      profileName: row.profileName,
+    byDepth: depthRows.map((row) => ({
+      depth: row.depth,
       reviews: num(row.reviews),
       averageTokens: Math.round(num(row.averageTokens)),
     })),

@@ -8,7 +8,6 @@ import {
   jobs,
   organizationMembers,
   organizations,
-  seedReviewProfiles,
   upsertScmConnection,
   upsertStories,
   updateRun,
@@ -89,7 +88,6 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     ]);
 
     const connect = async (organizationId: string, name: string) => {
-      await seedReviewProfiles(db, organizationId);
       const connection = (await upsertScmConnection(db, {
         organizationId,
         provider: "github",

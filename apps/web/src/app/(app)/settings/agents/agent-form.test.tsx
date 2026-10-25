@@ -98,7 +98,7 @@ describe("AgentForm", () => {
     expect(submitButton(html)).toContain('disabled=""');
     expect(submitButton(html)).toContain("Save agent");
     expect(html).not.toContain("Discard");
-    expect(fieldOf(html, "Default: the profile&#x27;s model.")).toBe("agent-model");
+    expect(fieldOf(html, "Default: the review depth&#x27;s model.")).toBe("agent-model");
     expect(fieldOf(html, "Default: append to the Claude Code system prompt.")).toBe(
       "agent-system-prompt-mode",
     );
@@ -159,7 +159,7 @@ describe("AgentForm", () => {
 
   it("offers no model when no harness reports one", () => {
     const html = render(null, { choices: { models: [], installables: [], harnessCount: 0 } });
-    expect(html).toContain("The profile&#x27;s model");
+    expect(html).toContain("The review depth&#x27;s model");
   });
 });
 
