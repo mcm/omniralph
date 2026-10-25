@@ -5,6 +5,7 @@ import {
   RalphPushPayload,
   RalphRequestPayload,
   RalphStoryPayload,
+  type RalphJobSettings,
   type RalphPushResult,
   type RalphRequestResult,
   type RalphStoryResult,
@@ -121,7 +122,7 @@ export function requestRunPrompt(
 
 /**
  * A coding run's own setup and teardown commands (the task's
- * `setupCommands`/`teardownCommands`, not the repository's setup command,
+ * `setupCommands`/`teardownCommands`, not the playbook's worktree setup command,
  * which runs when the branch worktree is created). Both run in the branch
  * worktree without either job token or the git credential helper in their
  * environment. `setup` runs before the prompt is rendered and returns the
@@ -153,6 +154,26 @@ export function taskCommands(
 }
 
 /**
+ * `payload` with its story or request playbook's coding settings (the run spec's task) over
+ * the payload's: the worktree setup command, model and fallback model. A control panel that
+ * predates them sends a run spec without the setup command and the payload's is kept.
+ */
+export function withPlaybookSettings<T extends { settings: RalphJobSettings }>(
+  spec: Pick<RunSpec, "task" | "model" | "fallbackModel">,
+  payload: T,
+): T {
+  return {
+    ...payload,
+    settings: {
+      ...payload.settings,
+      setupCommand: spec.task.worktreeSetupCommand ?? payload.settings.setupCommand,
+      model: spec.model ?? payload.settings.model,
+      fallbackModel: spec.fallbackModel ?? payload.settings.fallbackModel,
+    },
+  };
+}
+
+/**
  * Runs a `coding` task through the fixed coding lifecycle: a story run
  * (`runStoryRun`), a request run (`runRequestRun`) or a push run
  * (`runPushRun`), told apart by the trigger context (`RalphStoryPayload`,
@@ -164,11 +185,13 @@ export async function runCodingTask(
   options: CodingTaskOptions = {},
 ): Promise<RalphStoryResult | RalphRequestResult | RalphPushResult> {
   const story = RalphStoryPayload.safeParse(spec.trigger.context);
-  if (story.success) return runStoryRun(spec, story.data, ctx, options);
+  if (story.success) return runStoryRun(spec, withPlaybookSettings(spec, story.data), ctx, options);
   const request = RalphRequestPayload.safeParse(spec.trigger.context);
-  if (request.success) return runRequestRun(spec, request.data, ctx, options);
+  if (request.success) {
+    return runRequestRun(spec, withPlaybookSettings(spec, request.data), ctx, options);
+  }
   const push = RalphPushPayload.safeParse(spec.trigger.context);
-  if (push.success) return runPushRun(push.data, ctx, options);
+  if (push.success) return runPushRun(withPlaybookSettings(spec, push.data), ctx, options);
   throw new Error("the coding run's trigger context is neither a story, a request nor a push");
 }
 
@@ -177,7 +200,7 @@ export async function runCodingTask(
  * with no session that pushes a lane's branch once, before its PR/MR is
  * described, for a story task that pushes only at the end (`pushTiming:
  * end`). The lifecycle prepares the lane's branch worktree as a story run
- * does (the repository's setup command when it creates it, the `pre-push`
+ * does (the playbook's worktree setup command when it creates it, the `pre-push`
  * guard), starting from or fast-forwarding to the run's hidden ref when
  * `origin` has it, then pushes the branch with `-u` with the lifecycle token.
  * Uncommitted changes are left alone, and the task's own setup and teardown
@@ -217,7 +240,7 @@ export async function runPushRun(
  * A story run (its
  * trigger context parses as `RalphStoryPayload`, e.g. `builtin:implement-story`)
  * is one attempt at one story (`runStoryAttempt`):
- * the lane's branch worktree with the repository's setup command and the
+ * the lane's branch worktree with the playbook's worktree setup command and the
  * `pre-push` guard, the run's stashes, attachments and progress file, and the
  * task's setup commands (`taskCommands`); then a
  * session with the task's rendered prompt (`storyRunPrompt`), the agent's

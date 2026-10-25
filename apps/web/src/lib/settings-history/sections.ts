@@ -23,13 +23,14 @@ import {
   recordSettingsChange,
   storedCredentialsDigest,
   type Database,
+  type Repository,
   type RunsSinceScope,
   type SettingsActor,
   type SettingsFields,
   type SettingsValues,
   type TrackedSettings,
 } from "@omniralph/db";
-import { parseRalphSettings, REVIEW_DEPTHS, type RalphSettings } from "@omniralph/shared";
+import { REVIEW_DEPTHS } from "@omniralph/shared";
 import type { TaskType } from "@omniralph/tasks";
 import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/tasks";
@@ -116,47 +117,22 @@ export function trackedRepositoryReviews(
 
 // ── repository.coding ───────────────────────────────────────────────────────
 
-const RALPH_SETTING_LABELS = {
-  verifyCommands: "Quality gate commands",
-  runPrdQualityGates: "Run the PRD's quality gates",
-  appendInstruction: "Extra instructions",
-  allowedTools: "Allowed tools",
-  disallowedTools: "Disallowed tools",
-  model: "Model",
-  fallbackModel: "Fallback model",
-  allowPreparation: "Offer to run a manual story's preparation",
-  manualLabels: "Manual labels",
-  blockedLabels: "Blocked labels",
-  historyRewrite: "Rewrite history",
-  respondToReviews: "Fix review findings",
-  maxReviewRounds: "Review rounds",
-  respondToCiFailures: "Fix failed CI",
-  maxFixRounds: "CI fix rounds",
-  cleanupMergedWorktrees: "Clean up after merge",
-  unmergedBranchTimeoutMinutes: "Unmerged branch timeout (minutes)",
-  epicCompletedState: "Epic completed state",
-  openPullRequestEarly: "Open the pull request early",
-  setupCommand: "Setup command",
-} as const satisfies Record<keyof RalphSettings, string>;
+const HISTORY_REWRITE_LABELS: Record<Repository["historyRewrite"], string> = {
+  "when-asked": "When asked",
+  always: "Always",
+  never: "Never",
+};
 
 const REPOSITORY_CODING_FIELDS: SettingsFields = {
   coding: { label: "Coding" },
   query: { label: "Ask about code" },
   storyTask: { label: "Story playbook" },
   requestTask: { label: "Request playbook" },
-  ...Object.fromEntries(
-    Object.entries(RALPH_SETTING_LABELS).map(([key, label]) => [key, { label }]),
-  ),
+  codingInstructions: { label: "Extra instructions" },
+  openPullRequestEarly: { label: "Open the pull request early" },
+  historyRewrite: { label: "Rewrite history" },
+  respondToReviewsAndCi: { label: "Fix review comments and CI failures" },
 };
-
-/** A coding setting's display value: lists of text stay lists, the rest as text. */
-function ralphValue(value: unknown): SettingsValues[string] {
-  if (value === null || value === undefined) return null;
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value === "boolean") return onOff(value);
-  if (typeof value === "number" || typeof value === "string") return value;
-  return JSON.stringify(value);
-}
 
 async function readRepositoryCoding(
   db: Database,
@@ -166,18 +142,15 @@ async function readRepositoryCoding(
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return null;
   const task = await taskNames(db, organizationId);
-  const settings = parseRalphSettings(repository.ralphSettings);
   return {
     coding: switchValue(repository.ralphEnabled),
     query: switchValue(repository.queryEnabled),
     storyTask: task(repository.storyPlaybookId),
     requestTask: task(repository.requestPlaybookId),
-    ...Object.fromEntries(
-      Object.keys(RALPH_SETTING_LABELS).map((key) => [
-        key,
-        ralphValue(settings[key as keyof RalphSettings]),
-      ]),
-    ),
+    codingInstructions: repository.codingInstructions,
+    openPullRequestEarly: onOff(repository.openPullRequestEarly),
+    historyRewrite: HISTORY_REWRITE_LABELS[repository.historyRewrite],
+    respondToReviewsAndCi: onOff(repository.respondToReviewsAndCi),
   };
 }
 

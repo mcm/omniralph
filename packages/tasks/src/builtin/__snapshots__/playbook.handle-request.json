@@ -46,8 +46,8 @@
     "maxRoundsPerStory": 8,
     "stallRounds": 3,
     "maxIterationsPerRun": 50,
-    "maxReviewRounds": 20,
-    "maxFixRounds": 20,
+    "maxReviewRounds": 3,
+    "maxFixRounds": 3,
     "pushTiming": "per-story",
     "prDescriptionTaskId": "builtin:describe-pr"
   }

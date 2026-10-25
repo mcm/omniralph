@@ -17,10 +17,11 @@ import {
   ralphRuns,
   claimJob,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
+  setTrackerLabels,
+  DEFAULT_TRACKER_LABELS,
   updateRun,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   type RalphRun,
@@ -54,6 +55,7 @@ import type { IssueSummary } from "@/lib/linear/gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
+import { bindBuiltinPlaybooks, bindCodingPlaybook } from "./testing";
 import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
@@ -126,9 +128,8 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
@@ -453,10 +454,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(await activeJobs(fresh.id)).toEqual([]);
       expect(await laneCleanup(fresh)).toMatchObject({ status: "done", keepBranch: "stopped" });
 
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, cleanupMergedWorktrees: false },
-      });
+      await bindCodingPlaybook(db, orgId, repoId, "story", { cleanupMergedWorktrees: false });
       try {
         const kept = await delegate(linear.add({ identifier: "ENG-20", title: "Two" }).id);
         const job = await start(kept.id);
@@ -465,10 +463,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         expect(await activeJobs(kept.id)).toEqual([]);
         expect(await laneCleanup(kept)).toBeNull();
       } finally {
-        await updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
-        });
+        await bindBuiltinPlaybooks(db, repoId);
       }
     });
 
@@ -862,10 +857,9 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   describe("preparation", () => {
     it("offers nothing with allowPreparation off: the blocks are plain text", async () => {
       const settings = (allowPreparation: boolean) =>
-        updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, allowPreparation },
-        });
+        allowPreparation
+          ? bindBuiltinPlaybooks(db, repoId)
+          : bindCodingPlaybook(db, orgId, repoId, "story", { allowPreparation });
       await settings(false);
       try {
         const { run } = await manualEpic();
@@ -973,15 +967,22 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     });
 
     describe("in a story's own repository", () => {
-      /** Routes project Web to `acme/web` and sets each repository's manual labels and preparation. */
+      /**
+       * Routes project Web to `acme/web`, sets the organization's manual labels and each
+       * repository's preparation (its story playbook's).
+       */
       async function twoRepositories(
-        api: { manualLabels: string[]; allowPreparation: boolean },
-        web: { manualLabels: string[]; allowPreparation: boolean },
+        manualLabels: string[],
+        api: { allowPreparation: boolean },
+        web: { allowPreparation: boolean },
       ): Promise<string> {
-        await updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...api },
-        });
+        await setTrackerLabels(
+          db,
+          orgId,
+          { manualLabels, blockedLabels: DEFAULT_TRACKER_LABELS.blockedLabels },
+          null,
+        );
+        await bindCodingPlaybook(db, orgId, repoId, "story", api);
         const webId = (
           await connectRepository(db, {
             connectionId,
@@ -990,24 +991,18 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
             fullPath: "acme/web",
           })
         ).id;
-        await updateRepositoryRalphSettings(db, webId, {
-          ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...web },
-        });
+        await updateRepositoryCoding(db, webId, { ralphEnabled: true });
+        await bindCodingPlaybook(db, orgId, webId, "story", web);
         await setRoutingRules(db, orgId, [webId, projectIs("Web")], [repoId, teamIs("ENG")]);
         return webId;
       }
 
       async function restore(webId: string) {
         await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
-        await updateRepositoryRalphSettings(db, webId, {
-          ralphEnabled: false,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
-        });
-        await updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
-        });
+        await setTrackerLabels(db, orgId, null, null);
+        await updateRepositoryCoding(db, webId, { ralphEnabled: false });
+        await bindBuiltinPlaybooks(db, webId);
+        await bindBuiltinPlaybooks(db, repoId);
       }
 
       /**
@@ -1035,18 +1030,18 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         return { bucket, run };
       }
 
-      it("reads each story's manual labels and preparation from the repository it routes to", async () => {
+      it("reads each story's preparation from the repository it routes to, its manual labels from the organization", async () => {
         const webId = await twoRepositories(
-          { manualLabels: ["manual"], allowPreparation: false },
-          { manualLabels: ["by hand"], allowPreparation: true },
+          ["by hand"],
+          { allowPreparation: false },
+          { allowPreparation: true },
         );
         try {
           const { bucket, run } = await twoRepositoryEpic();
-          // `manual` isn't a manual label of acme/web, nor `by hand` of acme/api: both are worked.
+          // `manual` isn't one of the organization's manual labels: ENG-4 is worked.
           expect((await work(run.id, { commitSha: sha(7) })).story.identifier).toBe("ENG-2");
           const web = await work(run.id, { commitSha: sha(8) });
           expect(web).toMatchObject({ story: { identifier: "ENG-4" }, repositoryId: webId });
-          expect((await work(run.id, { commitSha: sha(9) })).story.identifier).toBe("ENG-5");
           const lanes = await listLanes(db, run.id);
           const webLane = lanes.find((l) => l.repositoryId === webId)!;
           expect(
@@ -1055,6 +1050,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
             expect.arrayContaining([
               ["ENG-3", "manual", webLane.id],
               ["ENG-4", "completed", webLane.id],
+              ["ENG-5", "manual", lanes.find((l) => l.repositoryId === repoId)!.id],
             ]),
           );
 
@@ -1094,13 +1090,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
 
       it("offers no preparation for a story whose repository has it off", async () => {
         const webId = await twoRepositories(
-          { manualLabels: ["manual"], allowPreparation: true },
-          { manualLabels: ["by hand", "manual"], allowPreparation: false },
+          ["by hand", "manual"],
+          { allowPreparation: true },
+          { allowPreparation: false },
         );
         try {
           const { run } = await twoRepositoryEpic();
           expect((await work(run.id, { commitSha: sha(7) })).story.identifier).toBe("ENG-2");
-          expect((await work(run.id, { commitSha: sha(9) })).story.identifier).toBe("ENG-5");
           expect(await activeJobs(run.id)).toEqual([]);
           expect(selects(run)).toEqual([]);
           const waiting = (await getRun(db, run.id))!;
@@ -1108,6 +1104,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
           expect(waiting.waitingOn?.manual.map((m) => m.identifier).sort()).toEqual([
             "ENG-3",
             "ENG-4",
+            "ENG-5",
           ]);
         } finally {
           await restore(webId);

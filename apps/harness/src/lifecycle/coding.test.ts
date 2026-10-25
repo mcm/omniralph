@@ -23,7 +23,12 @@ import { firstPrompt } from "../test/fake-query.js";
 import { ENV, git, Remote } from "../test/git-remote.js";
 import { placeInstallable } from "../test/installables.js";
 import { PUSH_GUARD_HOOK, RepoCache } from "../workspace/repoCache.js";
-import { runCodingTask, storyRunPrompt, type CodingTaskOptions } from "./coding.js";
+import {
+  runCodingTask,
+  storyRunPrompt,
+  withPlaybookSettings,
+  type CodingTaskOptions,
+} from "./coding.js";
 import { promptEpic, stashPrefix } from "./story-attempt.js";
 
 /** A coding run of a story task: its result is a story's. */
@@ -88,6 +93,41 @@ const PRD = `# PRD: Ralph core
 
 const engineer = getBuiltinRunSpec("builtin:implement-story")!.agent;
 const storyTask = getBuiltinTask("builtin:implement-story")!;
+
+describe("withPlaybookSettings", () => {
+  const settings = {
+    model: "opus",
+    setupCommand: "npm ci",
+    fallbackModel: null,
+    appendInstruction: "Always rebase.",
+    allowedTools: null,
+    disallowedTools: null,
+  };
+  const story = getBuiltinRunSpec("builtin:implement-story")!;
+
+  it("takes the worktree setup command and models from the story or request playbook", () => {
+    const spec = {
+      task: { ...story.task, worktreeSetupCommand: "pnpm install" },
+      model: "claude-sonnet-5-5",
+      fallbackModel: "claude-haiku-5-5",
+    };
+    expect(withPlaybookSettings(spec, { settings, branch: "b" })).toEqual({
+      branch: "b",
+      settings: {
+        ...settings,
+        setupCommand: "pnpm install",
+        model: "claude-sonnet-5-5",
+        fallbackModel: "claude-haiku-5-5",
+      },
+    });
+  });
+
+  it("keeps the payload's when the run spec has none (an older control panel)", () => {
+    const { worktreeSetupCommand: _none, ...older } = story.task;
+    const spec = { task: older, model: null, fallbackModel: null };
+    expect(withPlaybookSettings(spec, { settings })).toEqual({ settings });
+  });
+});
 
 describe("coding runs of a story task", { timeout: 60_000 }, () => {
   let root: string;

@@ -11,7 +11,6 @@ import {
   createRun,
   createRunPermissionRequest,
   createTriageRun,
-  DEFAULT_RALPH_SETTINGS,
   getMainLane,
   getRun,
   getRunPermissionRequest,
@@ -22,7 +21,7 @@ import {
   ralphRuns,
   triageRuns,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
@@ -191,9 +190,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
         externalId,
         fullPath,
       });
-      await updateRepositoryRalphSettings(db, repository.id, {
+      await updateRepositoryCoding(db, repository.id, {
         ralphEnabled: true,
-        ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
       if (fullPath === "acme/api") repoA = repository.id;
       else repoB = repository.id;

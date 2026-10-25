@@ -205,12 +205,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   {
-    name: "repository-coding",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-  },
-  {
     name: "repository-harnesses",
     path: `/repositories/${ids.repositories.controlPanel}/harnesses`,
     page: "(app)/repositories/[id]/harnesses/page.tsx",
@@ -223,76 +217,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/repositories/[id]/harnesses/page.tsx",
     auth: "signed-in",
     steps: [{ action: "click", selector: "#pinned-harnesses" }],
-    viewportOnly: true,
-  },
-  {
-    // A section's save asks first, listing the changes.
-    name: "repository-settings-confirm",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
-      { action: "fill", selector: "#ralph-setup-command", value: "" },
-      { action: "click", selector: '#coding [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
-  {
-    // The save footer sticks to the viewport bottom and counts the section's changes.
-    name: "repository-settings-unsaved",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#ralph-verify-commands", value: "pnpm typecheck\npnpm test" },
-      { action: "fill", selector: "#ralph-setup-command", value: "pnpm install" },
-    ],
-    viewportOnly: true,
-  },
-  {
-    // Manual labels picked from the fixture workspace.
-    name: "repository-coding-labels",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#ralph-manual-labels" }],
-    viewportOnly: true,
-  },
-  {
-    // Models the harnesses accepting coding report.
-    name: "repository-coding-model",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#ralph-fallback-model" }],
-    viewportOnly: true,
-  },
-  {
-    // The Danger zone always asks first.
-    name: "repository-coding-danger-confirm",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#ralph-unmerged-timeout", value: "120" },
-      { action: "click", selector: '#danger-zone [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
-  {
-    // Switching tabs with unsaved changes asks first.
-    name: "repository-settings-leave",
-    path: `/repositories/${ids.repositories.controlPanel}/coding`,
-    page: "(app)/repositories/[id]/coding/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#ralph-setup-command", value: "pnpm install" },
-      {
-        action: "click",
-        selector: `a[href="/repositories/${ids.repositories.controlPanel}/settings"]`,
-      },
-    ],
     viewportOnly: true,
   },
   { name: "reviews", path: "/reviews", page: "(app)/reviews/page.tsx", auth: "signed-in" },

@@ -108,6 +108,10 @@ export const RepositorySettingsInput = z.object({
    * (`repositories.correlation_playbook_id`); unchanged when left out.
    */
   correlationPlaybookId: PlaybookId("Choose a correlation playbook.").optional(),
+  /** The story playbook of its story runs (`story_playbook_id`); unchanged when left out. */
+  storyPlaybookId: PlaybookId("Choose a story playbook.").optional(),
+  /** The request playbook of its request runs (`request_playbook_id`); unchanged when left out. */
+  requestPlaybookId: PlaybookId("Choose a request playbook.").optional(),
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
@@ -129,297 +133,43 @@ export const RepositoryTaskTypesInput = z.object({
 });
 export type RepositoryTaskTypesInput = z.infer<typeof RepositoryTaskTypesInput>;
 
-const ClaudeModel = z
-  .string()
-  .trim()
-  .min(1, "Enter a model.")
-  .max(200, "Model names can be at most 200 characters.")
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/, "Enter a Claude model ID, e.g. claude-sonnet-5-5.");
-
-export const MAX_LINEAR_LABELS = 50;
-export const MAX_SETUP_COMMAND_LENGTH = 4000;
-export const DEFAULT_RALPH_MODEL = "opus";
-
-const LinearName = z
-  .string()
-  .trim()
-  .min(1, "Enter a name.")
-  .max(255, "Names can be at most 255 characters.")
-  // eslint-disable-next-line no-control-regex
-  .regex(/^[^,\u0000-\u001f\u007f]+$/, "Names can't contain commas or control characters.");
-
-const labelList = (what: string) =>
-  z.array(LinearName).max(MAX_LINEAR_LABELS, `At most ${MAX_LINEAR_LABELS} ${what}.`);
-
-/** Longest `appendInstruction` (text appended to every story and request prompt). */
-export const MAX_APPEND_INSTRUCTION_LENGTH = 10_000;
-export const MAX_VERIFY_COMMANDS = 50;
-export const MAX_TOOL_RULES = 100;
+/** Most review or CI fix rounds a coding playbook may give a PR (`CODING_MAX_FIX_ROUNDS` in `@omniralph/tasks`). */
 export const MAX_FIX_ROUNDS = 20;
-export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
+/** Longest `codingInstructions` (text appended to every story and request prompt). */
+export const MAX_CODING_INSTRUCTIONS_LENGTH = 10_000;
 /**
- * Whether request mode may rebase and `--force-with-lease` (`historyRewrite`):
+ * Whether a repo's coding runs may rebase and `--force-with-lease` (`historyRewrite`):
  * only when a request asks for it, `always` (rebasing instead of ever merging
  * the base branch, without being asked) or `never`.
  */
 export const RALPH_HISTORY_REWRITE_POLICIES = ["when-asked", "always", "never"] as const;
 export type RalphHistoryRewrite = (typeof RALPH_HISTORY_REWRITE_POLICIES)[number];
-/** Linear state types `epicCompletedState` may name instead of a state name. */
+/** Linear state types a playbook's `epicCompletedState` may name instead of a state name. */
 export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;
 
-const ShellCommand = z
-  .string()
-  .trim()
-  .min(1, "Enter a command.")
-  .max(
-    MAX_SETUP_COMMAND_LENGTH,
-    `Commands can be at most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString("en-US")} characters.`,
-  )
-  // eslint-disable-next-line no-control-regex
-  .regex(/^[^\u0000-\u001f\u007f]+$/, "Commands are one line, without control characters.");
-
-/** An Agent SDK tool name or permission rule, e.g. `Read`, `Bash(pnpm test:*)` or `mcp__server__tool`. */
-const ToolRule = z
-  .string()
-  .trim()
-  .min(1, "Enter a tool.")
-  .max(500, "Tool rules can be at most 500 characters.")
-  .regex(
-    // eslint-disable-next-line no-control-regex
-    /^[A-Za-z][A-Za-z0-9_-]*(\([^\u0000-\u001f\u007f]*\))?$/,
-    "Enter a tool name or rule, e.g. Read or Bash(pnpm test:*).",
-  );
-
-const toolRules = (what: string) =>
-  z.array(ToolRule).max(MAX_TOOL_RULES, `At most ${MAX_TOOL_RULES} ${what}.`);
-
-const Rounds = z
-  .int("Enter a whole number.")
-  .min(0, "Enter 0 or more.")
-  .max(MAX_FIX_ROUNDS, `At most ${MAX_FIX_ROUNDS}.`);
-
-const UnmergedBranchTimeout = z
-  .int("Enter a whole number.")
-  .min(1, "Enter at least 1 minute.")
-  .max(
-    MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES,
-    `At most ${MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES.toLocaleString("en-US")} minutes (a week).`,
-  );
-
-const AppendInstruction = z
-  .string()
-  .max(
-    MAX_APPEND_INSTRUCTION_LENGTH,
-    `The instruction can be at most ${MAX_APPEND_INSTRUCTION_LENGTH.toLocaleString("en-US")} characters.`,
-  );
-
-/** `started`, `completed` or a Linear state name, e.g. `In Review`. */
-const EpicState = LinearName;
-
-const SetupCommand = z
-  .string()
-  .max(
-    MAX_SETUP_COMMAND_LENGTH,
-    `The setup command can be at most ${MAX_SETUP_COMMAND_LENGTH.toLocaleString("en-US")} characters.`,
-  );
-
-const manualLabels = () => labelList("manual labels").min(1, "Enter at least one manual label.");
-
-/** Linear labels that keep Omniralph off an issue unless the repository sets its own. */
-export const DEFAULT_BLOCKED_LABELS = ["under-review", "blocked"];
-
-const blockedLabels = () => labelList("blocked labels");
-
 /**
- * Per-repository settings of ralph as stored
- * (`repositories.ralph_settings`; ported from cyralph's `repositories[]`).
- * Every field has its default, so `RalphSettings.parse({})` is the defaults.
+ * A repo's coding policy (`PUT /api/ui/repositories/{id}/coding`): the whole of it, and nothing
+ * else (its work item match is saved on its own; models, commands and round limits are its
+ * story and request playbooks').
  */
-export const RalphSettings = z.object({
-  /** Commands run as quality gates for every story and request in this repository. */
-  verifyCommands: z
-    .array(ShellCommand)
-    .max(MAX_VERIFY_COMMANDS, `At most ${MAX_VERIFY_COMMANDS} commands.`)
-    .default([]),
-  /** Also run the PRD's `## Quality Gates` commands. */
-  runPrdQualityGates: z.boolean().default(true),
-  /** Text appended to every story and request prompt; null for none. */
-  appendInstruction: AppendInstruction.trim().min(1).nullable().default(null),
-  /** Agent SDK tools (or rules) the sessions may use; null: ralph's whole policy. They only narrow it. */
-  allowedTools: toolRules("allowed tools").min(1).nullable().default(null),
-  /** Agent SDK tools (or rules) denied on top of ralph's policy; null for none. */
-  disallowedTools: toolRules("disallowed tools").min(1).nullable().default(null),
-  /** Claude model (alias or ID) of the sessions. */
-  model: ClaudeModel.default(DEFAULT_RALPH_MODEL),
-  /** Model used when `model` is overloaded; null for none. */
-  fallbackModel: ClaudeModel.nullable().default(null),
-  /** Offer to run a manual story's `cyralph-prepare` commands ("Run it"). */
-  allowPreparation: z.boolean().default(true),
-  /** Linear labels marking a story as manual; the first labels the manual stories ralph files. */
-  manualLabels: manualLabels().default(["manual"]),
-  /**
-   * Linear labels (matched ignoring case) that keep Omniralph from working an
-   * issue: a delegation or mention of an issue (or its epic) with one is refused.
-   */
-  blockedLabels: blockedLabels().default(() => [...DEFAULT_BLOCKED_LABELS]),
-  /** Whether request mode may rebase and `--force-with-lease` when asked to. */
-  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES).default("when-asked"),
-  /** Fix Omniralph review findings and `@bot` requests on the run's PR/MR. */
-  respondToReviews: z.boolean().default(true),
-  maxReviewRounds: Rounds.default(3),
-  /** Fix failed CI on the run's PR/MR. */
-  respondToCiFailures: z.boolean().default(true),
-  maxFixRounds: Rounds.default(3),
-  /** Remove the worktree and local branch after the PR/MR merges. */
-  cleanupMergedWorktrees: z.boolean().default(true),
-  /** Unmerged commits' branch is deleted after this long without an answer. */
-  unmergedBranchTimeoutMinutes: UnmergedBranchTimeout.default(60),
-  /**
-   * The state an epic moves to when every story is complete: a state type
-   * (`started` or `completed`) or a state name; null leaves it as it is.
-   */
-  epicCompletedState: EpicState.nullable().default(null),
-  /** Open a draft PR/MR after the first pushed story (updated and marked ready at the end). */
-  openPullRequestEarly: z.boolean().default(false),
-  /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
-  setupCommand: SetupCommand.trim().min(1).nullable().default(null),
-});
-export type RalphSettings = z.output<typeof RalphSettings>;
-
-export const DEFAULT_RALPH_SETTINGS: RalphSettings = RalphSettings.parse({});
-
-/**
- * Stored ralph settings as the orchestrator reads them: missing or invalid
- * fields (an older row) get their default, the rest is kept.
- */
-export function parseRalphSettings(stored: unknown): RalphSettings {
-  const value = stored && typeof stored === "object" ? (stored as Record<string, unknown>) : {};
-  const settings: Record<string, unknown> = {};
-  for (const [key, field] of Object.entries(RalphSettings.shape)) {
-    const parsed = field.safeParse(value[key]);
-    settings[key] = parsed.success ? parsed.data : field.parse(undefined);
-  }
-  return settings as RalphSettings;
-}
-
-/**
- * An optional text field of the Ralph form: empty (after trimming) for none,
- * else valid for `schema`.
- */
-const optionalText = (schema: z.ZodType) =>
-  z
+export const RepositoryCodingInput = z.strictObject({
+  /** Whether work items routed to it are built (`repositories.ralph_enabled`). */
+  codingEnabled: z.boolean({ error: "Choose on or off." }),
+  /** Appended to every story and request prompt; empty or null for none. */
+  codingInstructions: z
     .string()
-    .trim()
-    .superRefine((value, ctx) => {
-      if (!value) return;
-      const parsed = schema.safeParse(value);
-      if (!parsed.success) {
-        ctx.addIssue({ code: "custom", message: parsed.error.issues[0]?.message ?? "Invalid." });
-      }
-    });
-
-/** The Ralph section of Repository › Settings (`repositories.ralph_*`). */
-export const RalphSettingsInput = z.object({
-  /** The story playbook of its story runs (`story_playbook_id`); unchanged when left out. */
-  storyPlaybookId: PlaybookId("Choose a story playbook.").optional(),
-  /** The request playbook of its request runs (`request_playbook_id`); unchanged when left out. */
-  requestPlaybookId: PlaybookId("Choose a request playbook.").optional(),
-
-  // Verification
-  verifyCommands: RalphSettings.shape.verifyCommands.unwrap(),
-  runPrdQualityGates: z.boolean(),
-  /** Run once in a fresh branch worktree; empty for none. */
-  setupCommand: SetupCommand,
-
-  // Prompt and model
-  /** Empty for none. */
-  appendInstruction: AppendInstruction,
-  /** Claude model (alias or ID) the story sessions use. */
-  model: ClaudeModel,
-  /** Empty for none. */
-  fallbackModel: optionalText(ClaudeModel),
-
-  // Tools (empty lists for none)
-  allowedTools: toolRules("allowed tools"),
-  disallowedTools: toolRules("disallowed tools"),
-
-  // PR follow-up
-  /** Open a draft PR/MR after the first pushed story. */
-  openPullRequestEarly: z.boolean(),
+    .max(
+      MAX_CODING_INSTRUCTIONS_LENGTH,
+      `Extra instructions can be at most ${MAX_CODING_INSTRUCTIONS_LENGTH.toLocaleString("en-US")} characters.`,
+    )
+    .nullable(),
+  /** Open a draft PR after the first pushed story (updated and marked ready at the end). */
+  openPullRequestEarly: z.boolean({ error: "Choose on or off." }),
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES, { error: "Choose a policy." }),
-  respondToReviews: z.boolean(),
-  maxReviewRounds: Rounds,
-  respondToCiFailures: z.boolean(),
-  maxFixRounds: Rounds,
-  cleanupMergedWorktrees: z.boolean(),
-  unmergedBranchTimeoutMinutes: UnmergedBranchTimeout,
-
-  // Linear
-  /** Linear labels marking a story as manual; the first labels the manual stories ralph files. */
-  manualLabels: manualLabels(),
-  /** Linear labels that keep Omniralph from working an issue; empty for none. */
-  blockedLabels: blockedLabels(),
-  allowPreparation: z.boolean(),
-  /** Empty to leave the epic's state alone. */
-  epicCompletedState: optionalText(EpicState),
+  /** Fix review comments, `@bot` requests and failed CI on its runs' PRs. */
+  respondToReviewsAndCi: z.boolean({ error: "Choose on or off." }),
 });
-export type RalphSettingsInput = z.infer<typeof RalphSettingsInput>;
-
-/** The stored settings of a valid Ralph form (empty text and lists become null). */
-export function ralphSettingsFromInput(input: RalphSettingsInput): RalphSettings {
-  const text = (value: string) => value.trim() || null;
-  const list = (values: readonly string[]) => (values.length > 0 ? [...values] : null);
-  return RalphSettings.parse({
-    verifyCommands: input.verifyCommands,
-    runPrdQualityGates: input.runPrdQualityGates,
-    appendInstruction: text(input.appendInstruction),
-    allowedTools: list(input.allowedTools),
-    disallowedTools: list(input.disallowedTools),
-    model: input.model,
-    fallbackModel: text(input.fallbackModel),
-    allowPreparation: input.allowPreparation,
-    manualLabels: input.manualLabels,
-    blockedLabels: input.blockedLabels,
-    historyRewrite: input.historyRewrite,
-    respondToReviews: input.respondToReviews,
-    maxReviewRounds: input.maxReviewRounds,
-    respondToCiFailures: input.respondToCiFailures,
-    maxFixRounds: input.maxFixRounds,
-    cleanupMergedWorktrees: input.cleanupMergedWorktrees,
-    unmergedBranchTimeoutMinutes: input.unmergedBranchTimeoutMinutes,
-    epicCompletedState: text(input.epicCompletedState),
-    openPullRequestEarly: input.openPullRequestEarly,
-    setupCommand: text(input.setupCommand),
-  } satisfies z.input<typeof RalphSettings>);
-}
-
-/** The Ralph form's values of stored settings (none becomes empty text or lists). */
-export function ralphSettingsFormValues(
-  settings: RalphSettings,
-): Omit<RalphSettingsInput, "storyPlaybookId" | "requestPlaybookId"> {
-  return {
-    verifyCommands: [...settings.verifyCommands],
-    runPrdQualityGates: settings.runPrdQualityGates,
-    setupCommand: settings.setupCommand ?? "",
-    appendInstruction: settings.appendInstruction ?? "",
-    model: settings.model,
-    fallbackModel: settings.fallbackModel ?? "",
-    allowedTools: [...(settings.allowedTools ?? [])],
-    disallowedTools: [...(settings.disallowedTools ?? [])],
-    openPullRequestEarly: settings.openPullRequestEarly,
-    historyRewrite: settings.historyRewrite,
-    respondToReviews: settings.respondToReviews,
-    maxReviewRounds: settings.maxReviewRounds,
-    respondToCiFailures: settings.respondToCiFailures,
-    maxFixRounds: settings.maxFixRounds,
-    cleanupMergedWorktrees: settings.cleanupMergedWorktrees,
-    unmergedBranchTimeoutMinutes: settings.unmergedBranchTimeoutMinutes,
-    manualLabels: [...settings.manualLabels],
-    blockedLabels: [...settings.blockedLabels],
-    allowPreparation: settings.allowPreparation,
-    epicCompletedState: settings.epicCompletedState ?? "",
-  };
-}
+export type RepositoryCodingInput = z.infer<typeof RepositoryCodingInput>;
 
 /**
  * The Linear target of `epicCompletedState`: a state with that name, else

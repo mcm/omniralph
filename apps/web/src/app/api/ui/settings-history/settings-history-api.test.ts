@@ -26,12 +26,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import {
-  DEFAULT_RALPH_SETTINGS,
-  ralphSettingsFormValues,
-  type RalphSettingsInput,
-  type RepositorySettingsInput,
-} from "@omniralph/shared";
+import { type RepositoryCodingInput, type RepositorySettingsInput } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsHistorySchema, type SettingsHistory } from "@/lib/api/settings-history";
@@ -96,10 +91,12 @@ const baseSettings: RepositorySettingsInput = {
   correlationPlaybookId: "builtin:correlate-findings",
 };
 
-const baseCoding: RalphSettingsInput = {
-  storyPlaybookId: "builtin:implement-story",
-  requestPlaybookId: "builtin:handle-request",
-  ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
+const baseCoding: RepositoryCodingInput = {
+  codingEnabled: true,
+  codingInstructions: null,
+  openPullRequestEarly: false,
+  historyRewrite: "when-asked",
+  respondToReviewsAndCi: true,
 };
 
 async function getHistory(query: Record<string, string>) {
@@ -235,23 +232,29 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       ]);
     });
 
-    it("repository.coding: the Coding tab's changed settings", async () => {
+    it("repository.coding: the coding policy's changed settings", async () => {
       expect(
         await callAction(
           repositoryCoding.PUT,
           "PUT",
           { id: repoId },
-          { ...baseCoding, runPrdQualityGates: false, maxReviewRounds: 5 },
+          { ...baseCoding, historyRewrite: "always", respondToReviewsAndCi: false },
         ),
-      ).toEqual({ ok: true });
+      ).toMatchObject({ historyRewrite: "always", respondToReviewsAndCi: false });
       expect((await entries("repository.coding", repoId))[0]!.changes).toEqual([
+        { field: "coding", label: "Coding", before: "Organization default", after: "On" },
         {
-          field: "runPrdQualityGates",
-          label: "Run the PRD's quality gates",
+          field: "historyRewrite",
+          label: "Rewrite history",
+          before: "When asked",
+          after: "Always",
+        },
+        {
+          field: "respondToReviewsAndCi",
+          label: "Fix review comments and CI failures",
           before: "On",
           after: "Off",
         },
-        { field: "maxReviewRounds", label: "Review rounds", before: 3, after: 5 },
       ]);
     });
 

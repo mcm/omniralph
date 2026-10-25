@@ -19,13 +19,13 @@ import {
   RalphPushResult,
   RunSpecJobPayload,
   STALL_ROUNDS,
-  parseRalphSettings,
   type RalphPushPayload,
   type RalphRequestPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
 import {
   CODING_DEFAULTS,
+  playbookRunSpec,
   type PushTiming,
   type TaskDefinition,
   type TriggerKind,
@@ -131,28 +131,105 @@ export async function jobStoryCaps(
   return task ? taskStoryCaps(task) : DEFAULT_STORY_CAPS;
 }
 
-/** How many review and CI fix rounds a lane's PR/MR gets. */
-export interface RoundLimits {
+/**
+ * The coding settings of a story or request playbook, which its runs (and the run they
+ * belong to) work with: its own, `CODING_DEFAULTS` where it sets none (or when it isn't a
+ * coding playbook).
+ */
+export interface CodingSettings {
+  /** The playbook's model; null for the Claude Code default. */
+  model: string | null;
+  fallbackModel: string | null;
+  /** Quality gates every story and request runs, before the PRD's. */
+  verifyCommands: string[];
+  /** Run once in a fresh branch worktree; null for none. */
+  worktreeSetupCommand: string | null;
+  runPrdQualityGates: boolean;
+  /** Offer to run a manual story's preparation commands. */
+  allowPreparation: boolean;
+  /** The state the epic moves to when every story is complete; null leaves it. */
+  epicCompletedState: string | null;
+  /** Remove the worktree and local branch after the PR/MR merges. */
+  cleanupMergedWorktrees: boolean;
+  unmergedBranchTimeoutMinutes: number;
+  /** Review rounds a lane's PR/MR gets. */
   maxReviewRounds: number;
+  /** CI fix rounds a lane's PR/MR gets. */
   maxFixRounds: number;
 }
 
-/**
- * The repository's `maxReviewRounds`/`maxFixRounds`, capped by those of the
- * run's request task (which runs the rounds).
- */
+/** The coding settings of a playbook that sets none. */
+export const DEFAULT_CODING_SETTINGS: CodingSettings = {
+  model: null,
+  fallbackModel: null,
+  verifyCommands: [],
+  worktreeSetupCommand: CODING_DEFAULTS.worktreeSetupCommand,
+  runPrdQualityGates: CODING_DEFAULTS.runPrdQualityGates,
+  allowPreparation: CODING_DEFAULTS.allowPreparation,
+  epicCompletedState: CODING_DEFAULTS.epicCompletedState,
+  cleanupMergedWorktrees: CODING_DEFAULTS.cleanupMergedWorktrees,
+  unmergedBranchTimeoutMinutes: CODING_DEFAULTS.unmergedBranchTimeoutMinutes,
+  maxReviewRounds: CODING_DEFAULTS.maxReviewRounds,
+  maxFixRounds: CODING_DEFAULTS.maxFixRounds,
+};
+
+/** The coding settings of the playbook `id` (`DEFAULT_CODING_SETTINGS` where it sets none). */
+export async function codingSettings(
+  id: string,
+  definitions: PlaybookSource,
+): Promise<CodingSettings> {
+  const playbook = await definitions.getPlaybook(id);
+  const task = playbook ? playbookRunSpec(playbook).task : null;
+  if (!playbook || task?.taskType !== "coding") return DEFAULT_CODING_SETTINGS;
+  const d = DEFAULT_CODING_SETTINGS;
+  return {
+    model: playbook.model,
+    fallbackModel: playbook.fallbackModel,
+    verifyCommands: [...(task.verifyCommands ?? d.verifyCommands)],
+    worktreeSetupCommand: task.worktreeSetupCommand ?? d.worktreeSetupCommand,
+    runPrdQualityGates: task.runPrdQualityGates ?? d.runPrdQualityGates,
+    allowPreparation: task.allowPreparation ?? d.allowPreparation,
+    epicCompletedState: task.epicCompletedState ?? d.epicCompletedState,
+    cleanupMergedWorktrees: task.cleanupMergedWorktrees ?? d.cleanupMergedWorktrees,
+    unmergedBranchTimeoutMinutes:
+      task.unmergedBranchTimeoutMinutes ?? d.unmergedBranchTimeoutMinutes,
+    maxReviewRounds: task.maxReviewRounds ?? d.maxReviewRounds,
+    maxFixRounds: task.maxFixRounds ?? d.maxFixRounds,
+  };
+}
+
+/** The coding settings of a repository's story playbook, which apply to its runs as a whole. */
+export function storyCodingSettings(
+  repository: Pick<Repository, "storyPlaybookId">,
+  definitions: PlaybookSource,
+): Promise<CodingSettings> {
+  return codingSettings(storyTaskFor(repository), definitions);
+}
+
+/** The coding settings of the playbook a lane's requests run (`requestTaskFor`). */
+export function requestCodingSettings(
+  run: Pick<RalphRun, "codingTaskId">,
+  repository: Pick<Repository, "requestPlaybookId">,
+  definitions: PlaybookSource,
+): Promise<CodingSettings> {
+  return codingSettings(requestTaskFor(run, repository), definitions);
+}
+
+/** How many review and CI fix rounds a lane's PR/MR gets. */
+export type RoundLimits = Pick<CodingSettings, "maxReviewRounds" | "maxFixRounds">;
+
+/** The `maxReviewRounds`/`maxFixRounds` of the run's request playbook (which runs the rounds). */
 export async function roundLimits(
   run: Pick<RalphRun, "codingTaskId">,
-  repository: CodingRepository & { ralphSettings: unknown },
+  repository: Pick<Repository, "requestPlaybookId">,
   definitions: PlaybookSource,
 ): Promise<RoundLimits> {
-  const settings = parseRalphSettings(repository.ralphSettings);
-  const limits = { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds };
-  const task = await codingTask(requestTaskFor(run, repository), definitions);
-  return {
-    maxReviewRounds: Math.min(limits.maxReviewRounds, task?.maxReviewRounds ?? Infinity),
-    maxFixRounds: Math.min(limits.maxFixRounds, task?.maxFixRounds ?? Infinity),
-  };
+  const { maxReviewRounds, maxFixRounds } = await requestCodingSettings(
+    run,
+    repository,
+    definitions,
+  );
+  return { maxReviewRounds, maxFixRounds };
 }
 
 /**
@@ -174,12 +251,12 @@ export async function pushTimingFor(
  * the end never opens one early (there's no branch to open it for until then).
  */
 export async function opensPullRequestEarly(
-  repository: Pick<Repository, "storyPlaybookId"> & { ralphSettings: unknown },
+  repository: Pick<Repository, "storyPlaybookId" | "openPullRequestEarly">,
   definitions: PlaybookSource,
 ): Promise<boolean> {
+  if (!repository.openPullRequestEarly) return false;
   const task = await codingTask(storyTaskFor(repository), definitions);
-  if (task?.pushTiming === "end") return false;
-  return parseRalphSettings(repository.ralphSettings).openPullRequestEarly;
+  return task?.pushTiming !== "end";
 }
 
 /**

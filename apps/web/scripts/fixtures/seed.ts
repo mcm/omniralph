@@ -9,7 +9,6 @@
  */
 import {
   appSettings,
-  DEFAULT_RALPH_SETTINGS,
   DESIRED_HARNESS_VERSION_KEY,
   encrypt,
   feedback,
@@ -209,11 +208,8 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         ralphEnabled: true,
         pathExcludes: ["**/*.snap", "pnpm-lock.yaml"],
         customInstructions: "Prefer server components; flag any client-side secret.",
-        ralphSettings: {
-          ...DEFAULT_RALPH_SETTINGS,
-          verifyCommands: ["pnpm typecheck", "pnpm lint", "pnpm test"],
-          setupCommand: "pnpm install --frozen-lockfile",
-        },
+        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
+        historyRewrite: "always",
       },
       {
         ...githubRepo("fixture-labs/harness", 2),

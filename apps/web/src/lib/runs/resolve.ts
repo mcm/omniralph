@@ -3,14 +3,11 @@ import { getRepositoryWithConnection, type Database, type Job } from "@omniralph
 import {
   ReviewTaskContext,
   RunSpecJobPayload,
-  parseRalphSettings,
   poolForTaskType,
-  ruleTool,
   type JobRepository,
   type JobToken,
   type PoolName,
   type RunSpec,
-  type RunToolRestrictions,
   type ReviewProfileConfig,
 } from "@omniralph/shared";
 import {
@@ -39,9 +36,8 @@ export class RunSpecError extends Error {
  * into the `RunSpec` the harness runs: its playbook (built-in or the job's
  * organization's own, `organizationPlaybooks`) as the run spec's agent and
  * task (`playbookRunSpec`), the trigger (which must be one the playbook's role
- * allows), the repository with its tool settings, the model, the token budget
- * and the job's `tokens`. The playbook's tools are narrowed by the
- * repository's tool settings, never widened.
+ * allows), the repository, the model, the token budget and the job's
+ * `tokens`. The playbook's tools are its runs' tools.
  *
  * Model and budget come from one place per kind of run:
  * - a review run: its depth preset (from its trigger context: the
@@ -79,33 +75,25 @@ export async function resolveRunSpec(
 
   const repositoryId = payload.repositoryId ?? job.repositoryId;
   let repository: JobRepository | null = null;
-  let tools: RunToolRestrictions = { allowedTools: [], disallowedTools: [] };
   if (repositoryId) {
     const found = await getRepositoryWithConnection(db, repositoryId, job.organizationId);
     if (!found) throw new RunSpecError(`Unknown repository ${repositoryId}`);
     repository = jobRepository(found.repository, found.connection);
-    const ralph = parseRalphSettings(found.repository.ralphSettings);
-    tools = {
-      allowedTools: ralph.allowedTools ?? [],
-      disallowedTools: ralph.disallowedTools ?? [],
-    };
   }
 
   const spec: RunSpec = {
     jobId: job.id,
     taskType: task.taskType,
     pool,
-    agent: withLegacyTaskTypes(
-      { ...agent, tools: { ...agent.tools, builtin: narrowTools(agent.tools.builtin, tools) } },
-      task.taskType,
-    ),
+    agent: withLegacyTaskTypes(agent, task.taskType),
     task: withLegacyPool(task, pool),
     trigger: payload.trigger,
     repository,
     repositoryId: repositoryId || null,
     ref: payload.ref ?? null,
     requireCheckout: payload.requireCheckout ?? false,
-    tools,
+    // A playbook's tools are its runs' tools; repositories no longer narrow them.
+    tools: { allowedTools: [], disallowedTools: [] },
     model: playbook.model,
     fallbackModel: playbook.fallbackModel,
     tokenBudget: runTokenBudget(playbook),
@@ -171,18 +159,6 @@ export function narrowByReviewDepth(
     tokenBudget: profile.maxTokensPerReview,
     maxFiles: profile.maxFiles,
   };
-}
-
-/**
- * The agent's built-in tools a repository's tool settings leave: with
- * `allowedTools`, only the tools they name; never a tool `disallowedTools`
- * denies outright (a rule like `Bash(rm:*)` only narrows calls, so the tool
- * stays). Never adds a tool.
- */
-export function narrowTools(builtin: readonly string[], tools: RunToolRestrictions): string[] {
-  const allowed = new Set(tools.allowedTools.map(ruleTool));
-  const denied = new Set(tools.disallowedTools.filter((rule) => ruleTool(rule) === rule));
-  return builtin.filter((tool) => (allowed.size === 0 || allowed.has(tool)) && !denied.has(tool));
 }
 
 /**

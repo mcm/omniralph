@@ -36,7 +36,7 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
       : null,
 }));
 
-const { RunSpecError, narrowByReviewDepth, narrowTools, resolveRunSpec, runTokenBudget } =
+const { RunSpecError, narrowByReviewDepth, resolveRunSpec, runTokenBudget } =
   await import("./resolve");
 const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 const { runSpecJobInput } = await import("./job");
@@ -100,8 +100,8 @@ function job(overrides: Partial<Db.Job> = {}) {
   } as Db.Job;
 }
 
-function repository(ralphSettings: Record<string, unknown> = {}, reviewDepth = "standard") {
-  return { provider: "github", fullPath: "acme/app", ralphSettings, reviewDepth };
+function repository(reviewDepth = "standard") {
+  return { provider: "github", fullPath: "acme/app", reviewDepth };
 }
 
 beforeEach(() => {
@@ -168,17 +168,13 @@ describe("resolveRunSpec", () => {
 
     it("is null when the playbook sets none (the Claude Code default), whatever the repository's depth", async () => {
       for (const depth of ["quick", "standard", "deep"]) {
-        state.repository = repository({}, depth);
+        state.repository = repository(depth);
         const spec = await resolveRunSpec(db, job(), tokens, playbooks({ model: null }));
         expect(spec.model, depth).toBeNull();
       }
     });
 
-    it("ignores the repository's ralph model and fallback model, also for a run a ralph run invokes", async () => {
-      state.repository = repository({
-        model: "claude-opus-5-5",
-        fallbackModel: "claude-haiku-5-5",
-      });
+    it("is the playbook's model and fallback model for a run a ralph run invokes", async () => {
       const invoked = job({
         payload: {
           ...payload,
@@ -196,7 +192,7 @@ describe("resolveRunSpec", () => {
   describe("token budget", () => {
     it("is the playbook's fixed budget, whatever the repository's depth", async () => {
       for (const depth of ["quick", "standard", "deep"]) {
-        state.repository = repository({}, depth);
+        state.repository = repository(depth);
         expect((await resolveRunSpec(db, job(), tokens, playbooks())).tokenBudget).toBe(20_000);
       }
     });
@@ -214,30 +210,10 @@ describe("resolveRunSpec", () => {
     });
   });
 
-  describe("repository narrowing", () => {
-    it("removes a tool the repository's allowedTools don't name, and doesn't add one they do", async () => {
-      state.repository = repository({
-        allowedTools: ["Read", "Grep(src/**)", "Bash(pnpm test:*)"],
-      });
-      const spec = await resolveRunSpec(db, job(), tokens, playbooks());
-      expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
-      expect(spec.tools).toEqual({
-        allowedTools: ["Read", "Grep(src/**)", "Bash(pnpm test:*)"],
-        disallowedTools: [],
-      });
-    });
-
-    it("removes a tool the repository disallows outright, but not one it only restricts", async () => {
-      state.repository = repository({ disallowedTools: ["Glob", "Grep(secrets/**)", "WebFetch"] });
-      const spec = await resolveRunSpec(db, job(), tokens, playbooks());
-      expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
-      expect(spec.tools.disallowedTools).toEqual(["Glob", "Grep(secrets/**)", "WebFetch"]);
-    });
-
-    it("narrowTools never widens", () => {
-      expect(narrowTools([], { allowedTools: ["Bash"], disallowedTools: [] })).toEqual([]);
-      expect(narrowTools(["Read"], { allowedTools: [], disallowedTools: [] })).toEqual(["Read"]);
-    });
+  it("gives the run its playbook's own tools, which repositories don't narrow", async () => {
+    const spec = await resolveRunSpec(db, job(), tokens, playbooks());
+    expect(spec.agent.tools.builtin).toEqual(Playbook.parse(playbookInput).tools.builtin);
+    expect(spec.tools).toEqual({ allowedTools: [], disallowedTools: [] });
   });
 
   describe("failures", () => {
@@ -342,17 +318,6 @@ describe("resolveRunSpec for builtin:review-pr", () => {
     expect(spec.agent.tools.builtin).toEqual(["Read", "Grep", "Glob"]);
   });
 
-  it("still applies the repository's tool settings", async () => {
-    state.repository = repository({ disallowedTools: ["Glob"] });
-    const spec = await resolveRunSpec(
-      db,
-      reviewJob(PROFILES.deep),
-      tokens,
-      BUILTIN_PLAYBOOK_SOURCE,
-    );
-    expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
-  });
-
   it("takes the model and budget only from the depth, never the playbook's", async () => {
     // Validation refuses a review playbook with a model or budget; one that has them never applies.
     const builtin = getBuiltinPlaybook("builtin:review-pr")!;
@@ -425,7 +390,7 @@ describe("model and budget of every built-in playbook", () => {
 
   /** A run of a built-in playbook on a repository of `depth` (a review's preset comes from it). */
   async function resolveBuiltin(taskId: string, depth: ReviewDepth) {
-    state.repository = repository({}, depth);
+    state.repository = repository(depth);
     const playbook = getBuiltinPlaybook(taskId)!;
     const taskType = playbookTaskType(playbook);
     const context =

@@ -1,10 +1,6 @@
-import {
-  RALPH_HISTORY_REWRITE_POLICIES,
-  ReviewDepthSchema,
-  type RalphSettingsInput,
-} from "@omniralph/shared";
+import { RALPH_HISTORY_REWRITE_POLICIES, ReviewDepthSchema } from "@omniralph/shared";
 import { z } from "zod";
-import { isoDate, linearSettingsOptionsSchema, mutationResultSchema } from "./schemas";
+import { isoDate, mutationResultSchema } from "./schemas";
 import { workItemMatchSchema } from "./work-item-matches";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
@@ -159,6 +155,10 @@ export const repositoryDetailSchema = z.object({
     reviewPlaybookIds: z.array(z.string()),
     /** The playbook that correlates its review runs' findings. */
     correlationPlaybookId: z.string(),
+    /** The story playbook its story runs use. */
+    storyPlaybookId: z.string(),
+    /** The request playbook its request runs use. */
+    requestPlaybookId: z.string(),
   }),
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: z.array(repositoryHarnessSchema),
@@ -177,61 +177,22 @@ export const repositoryDetailSchema = z.object({
 });
 export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 
-/** The Coding tab's saved values, as its form edits them (`RalphSettingsInput`). */
-const codingSettingsSchema = z.object({
-  storyPlaybookId: z.string(),
-  requestPlaybookId: z.string(),
-  verifyCommands: z.array(z.string()),
-  runPrdQualityGates: z.boolean(),
-  setupCommand: z.string(),
-  appendInstruction: z.string(),
-  model: z.string(),
-  fallbackModel: z.string(),
-  allowedTools: z.array(z.string()),
-  disallowedTools: z.array(z.string()),
-  openPullRequestEarly: z.boolean(),
-  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
-  respondToReviews: z.boolean(),
-  maxReviewRounds: z.number(),
-  respondToCiFailures: z.boolean(),
-  maxFixRounds: z.number(),
-  cleanupMergedWorktrees: z.boolean(),
-  unmergedBranchTimeoutMinutes: z.number(),
-  manualLabels: z.array(z.string()),
-  blockedLabels: z.array(z.string()),
-  allowPreparation: z.boolean(),
-  epicCompletedState: z.string(),
-}) satisfies z.ZodType<RalphSettingsInput>;
-
 /**
- * `GET /api/ui/repositories/{id}/coding` (admins): the Coding tab's settings and its pickers'
- * choices from the database, polled. The Linear workspace's values are a separate query.
+ * `GET`/`PUT /api/ui/repositories/{id}/coding` (admins): the repo's coding policy, exactly what
+ * `PUT` takes (`RepositoryCodingInput`), and the review and CI fix rounds its story playbook
+ * gives a PR (read-only: they're the playbook's).
  */
 export const repositoryCodingSchema = z.object({
-  settings: codingSettingsSchema,
-  /** The models reported by the harnesses that may run its coding jobs. */
-  models: z.array(
-    z.object({ value: z.string(), displayName: z.string(), harnessIds: z.array(z.string()) }),
-  ),
-  /** How many harnesses may run its coding jobs (its pinned ones, else every one accepting coding). */
-  harnessCount: z.number(),
-  /** Whether those are its pinned harnesses. */
-  pinned: z.boolean(),
-  /** The organization's routing rules that target it: number (1-based, in order) and condition in words. */
-  routingRules: z.array(z.object({ number: z.number(), summary: z.string() })),
+  /** Whether work items routed to it are built. */
+  codingEnabled: z.boolean(),
+  /** Appended to every story and request prompt; null for none. */
+  codingInstructions: z.string().nullable(),
+  /** Open a draft PR after the first pushed story. */
+  openPullRequestEarly: z.boolean(),
+  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
+  /** Fix review comments and CI failures on its runs' PRs. */
+  respondToReviewsAndCi: z.boolean(),
+  /** Read-only: the story playbook's rounds ("up to 3 rounds each"). */
+  roundLimits: z.object({ maxReviewRounds: z.number(), maxFixRounds: z.number() }),
 });
 export type RepositoryCoding = z.infer<typeof repositoryCodingSchema>;
-
-/**
- * `GET /api/ui/repositories/{id}/coding/linear` (admins): the organization's Linear workspace
- * the Coding tab's Linear fields pick from. An external call: not polled.
- */
-export const codingLinearSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("connected"),
-    options: linearSettingsOptionsSchema,
-  }),
-  z.object({ status: z.literal("disconnected") }),
-  z.object({ status: z.literal("unavailable") }),
-]);
-export type CodingLinear = z.infer<typeof codingLinearSchema>;

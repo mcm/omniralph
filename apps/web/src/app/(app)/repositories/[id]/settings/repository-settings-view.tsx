@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Link } from "@/components/link";
-import { notFound, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Badge, Button, Field, Muted, Skeleton, Stack, Textarea } from "@iamthemcmaster/ui";
 import { IconExternalLink, IconX } from "@tabler/icons-react";
 import {
@@ -26,7 +26,7 @@ import { SettingsSection, SettingsSubsection } from "@/components/settings-secti
 import { useApiAction } from "@/components/use-api-action";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
-import type { RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
+import type { RepositoryDetail } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { isHarnessOnline } from "@/lib/harnesses/display";
 import {
@@ -50,17 +50,7 @@ import { HARNESS_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants
 import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
-import {
-  repositoryChanged,
-  useCodingLinear,
-  useRepositoryCoding,
-  useRepositoryDetail,
-} from "../repository-queries";
-import {
-  CodingSettingsSections,
-  type CodingChoices,
-  type RalphSettingsValues,
-} from "./ralph-settings-section";
+import { repositoryChanged, useRepositoryDetail } from "../repository-queries";
 import {
   saveWithTaskTypes,
   TaskTypeSelect,
@@ -71,11 +61,10 @@ import {
 } from "./task-types";
 
 /** The repository's settings tabs, by route segment. */
-export type RepositorySettingsTab = "settings" | "coding" | "harnesses";
+export type RepositorySettingsTab = "settings" | "harnesses";
 
 const TAB_LABELS: Record<RepositorySettingsTab, string> = {
   settings: "Review settings",
-  coding: "Coding",
   harnesses: "Harnesses",
 };
 
@@ -91,14 +80,8 @@ interface RepositorySettingsContentProps {
   };
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: RepositoryHarness[];
-  /** The Coding tab's settings; only passed to admins. */
-  ralph: RalphSettingsValues | null;
-  /** The Coding tab's picker choices; only passed to admins on that tab. */
-  codingChoices: CodingChoices | null;
   /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
   taskTypes: TaskTypesValues;
-  /** Reads the Linear workspace again (Coding tab), when it couldn't be read. */
-  onRetryLinear?: () => void;
 }
 
 /** A harness of the organization, as the Harnesses tab shows it. */
@@ -163,9 +146,8 @@ const onOff = (value: boolean) => formatSettingValue(value);
 const REVIEW_TASK_TYPES = ["review", "query"] as const satisfies readonly TaskTypeSwitch[];
 
 /**
- * The settings of Repository › Review settings, Coding or Harnesses: each tab is one section
- * with one save (the Coding tab adds the Danger zone). Coding is for admins only; others see
- * the rest read-only. Forms are seeded from the (polled) data and re-seeded only while they
+ * The settings of Repository › Review settings or Harnesses: each tab is one section with one
+ * save. Only admins edit them; others see them read-only. Forms are seeded from the (polled) data and re-seeded only while they
  * aren't edited.
  */
 export function RepositorySettingsContent({
@@ -173,10 +155,7 @@ export function RepositorySettingsContent({
   repository,
   settings,
   harnesses,
-  ralph,
-  codingChoices,
   taskTypes,
-  onRetryLinear,
 }: RepositorySettingsContentProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const apiAction = useApiAction();
@@ -508,15 +487,6 @@ export function RepositorySettingsContent({
 
       <div className="settings-sections">
         {tab === "settings" && reviewSection}
-        {tab === "coding" && isAdmin && ralph && codingChoices && (
-          <CodingSettingsSections
-            repositoryId={repository.id}
-            settings={ralph}
-            choices={codingChoices}
-            taskTypes={taskTypes}
-            onRetryLinear={onRetryLinear}
-          />
-        )}
         {tab === "harnesses" && harnessesSection}
       </div>
     </>
@@ -541,42 +511,24 @@ function SettingsSkeleton() {
 }
 
 /**
- * Repository › Review settings, Coding or Harnesses, live (`GET /api/ui/repositories/{id}`, and
- * on Coding its settings and the Linear workspace). Harnesses' online state is computed
- * against the browser's ticking clock. A save invalidates the repository, the repositories
- * list and the harnesses. Coding is for admins only (others get a 404).
+ * Repository › Review settings or Harnesses, live (`GET /api/ui/repositories/{id}`).
+ * Harnesses' online state is computed against the browser's ticking clock. A save invalidates
+ * the repository, the repositories list and the harnesses.
  */
 export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) {
   const { id } = useParams<{ id: string }>();
-  const isAdmin = useCurrentUser().role === "admin";
-  if (tab === "coding" && !isAdmin) notFound();
   const detail = useRepositoryDetail(id);
-  const coding = useRepositoryCoding(id, tab === "coding");
-  const linear = useCodingLinear(id, tab === "coding");
   const now = useNow();
   const repository = detail.data?.repository;
   const skeleton = <SettingsSkeleton />;
 
-  const content = (data: RepositoryDetail, codingData?: { coding: RepositoryCoding }) => (
+  const content = (data: RepositoryDetail) => (
     <RepositorySettingsContent
       tab={tab}
       repository={data.repository}
       settings={data.settings}
       harnesses={data.harnesses.map((harness) => withClientOnline(harness, now))}
-      ralph={codingData?.coding.settings ?? null}
-      codingChoices={
-        codingData
-          ? {
-              linear: linear.data ?? { status: "unavailable" },
-              models: codingData.coding.models,
-              harnessCount: codingData.coding.harnessCount,
-              pinned: codingData.coding.pinned,
-              routingRules: codingData.coding.routingRules,
-            }
-          : null
-      }
       taskTypes={data.taskTypes}
-      onRetryLinear={() => void linear.refetch()}
     />
   );
 
@@ -618,18 +570,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
         <RepositoryNav repositoryId={id} current={tab} />
 
         <QueryBoundary query={detail} skeleton={skeleton} what="the repository">
-          {(data) =>
-            tab === "coding" ? (
-              <QueryBoundary query={coding} skeleton={skeleton} what="the coding settings">
-                {(codingData) =>
-                  // The Linear fields wait for the workspace; a failed read shows them read-only.
-                  linear.data || linear.isError ? content(data, { coding: codingData }) : skeleton
-                }
-              </QueryBoundary>
-            ) : (
-              content(data)
-            )
-          }
+          {(data) => content(data)}
         </QueryBoundary>
       </div>
     </>

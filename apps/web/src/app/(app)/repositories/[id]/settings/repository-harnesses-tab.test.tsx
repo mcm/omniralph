@@ -46,8 +46,6 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         pinnedHarnessIds,
       }}
       harnesses={HARNESSES}
-      ralph={null}
-      codingChoices={null}
       taskTypes={{
         overrides: { query: null, review: null, coding: null },
         inherited: { query: true, review: true, coding: false },

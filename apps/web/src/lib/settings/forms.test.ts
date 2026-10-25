@@ -1,20 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { repositories } from "@omniralph/db";
-import {
-  DEFAULT_RALPH_SETTINGS,
-  DEFAULT_REVIEW_DEPTH,
-  RalphSettingsInput,
-  ralphSettingsFormValues,
-  type RalphSettingsInput as RalphInput,
-} from "@omniralph/shared";
+import { DEFAULT_REVIEW_DEPTH } from "@omniralph/shared";
 import { settingChanges } from "./changes";
 import {
-  pickKeys,
-  CODING_SECTIONS,
-  RALPH_CARDS,
-  ralphDraft,
-  ralphSpecs,
-  ralphValues,
   REPOSITORY_CARDS,
   REPOSITORY_SECTIONS,
   REPOSITORY_SETTING_DEFAULTS,
@@ -22,109 +10,7 @@ import {
   repositoryInput,
   repositorySpecs,
   repositoryValues,
-  type RalphDraft,
 } from "./forms";
-
-const ralph: RalphInput = {
-  storyPlaybookId: "builtin:implement-story",
-  requestPlaybookId: "builtin:handle-request",
-  ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
-  verifyCommands: ["pnpm test"],
-};
-
-/** The change list a Ralph card's confirmation shows after `edit`. */
-function ralphCardChanges(card: keyof typeof RALPH_CARDS, edit: Partial<RalphDraft>) {
-  const saved = ralphDraft(ralph);
-  const specs = ralphSpecs();
-  return settingChanges(
-    RALPH_CARDS[card].map((key) => specs[key]),
-    ralphValues(saved),
-    ralphValues({ ...saved, ...edit }),
-  );
-}
-
-describe("Ralph change lists", () => {
-  it("leaves the playbook bindings out of the draft and the saved values", () => {
-    const values = ralphValues(ralphDraft(ralph));
-    expect(values).not.toHaveProperty("storyPlaybookId");
-    expect(values).not.toHaveProperty("requestPlaybookId");
-  });
-
-  it("lists verify commands one per line", () => {
-    expect(
-      ralphCardChanges("verification", { verifyCommands: "pnpm test\n\n  pnpm lint  \n" }),
-    ).toEqual([
-      {
-        key: "verifyCommands",
-        label: "Verify commands",
-        from: "pnpm test",
-        to: "pnpm test\npnpm lint",
-      },
-    ]);
-  });
-
-  it("lists the model and a cleared fallback model", () => {
-    const saved = { ...ralph, fallbackModel: "sonnet" };
-    const specs = ralphSpecs();
-    expect(
-      settingChanges(
-        RALPH_CARDS.prompt.map((key) => specs[key]),
-        ralphValues(ralphDraft(saved)),
-        ralphValues({ ...ralphDraft(saved), model: " claude-opus-5-5 ", fallbackModel: "" }),
-      ),
-    ).toEqual([
-      { key: "model", label: "Model", from: "opus", to: "claude-opus-5-5" },
-      { key: "fallbackModel", label: "Fallback model", from: "sonnet", to: "Not set" },
-    ]);
-  });
-
-  it("ignores edits that save the same values (text trimmed, numbers as typed)", () => {
-    expect(ralphCardChanges("prompt", { model: " opus " })).toEqual([]);
-    expect(ralphCardChanges("followUp", { maxReviewRounds: "3" })).toEqual([]);
-  });
-
-  it("keeps each card's changes to its own settings", () => {
-    expect(ralphCardChanges("prompt", { verifyCommands: "pnpm lint" })).toEqual([]);
-  });
-
-  it("labels every setting in plain words, never by its config key", () => {
-    const specs = ralphSpecs();
-    for (const spec of Object.values(specs)) {
-      expect(spec.label).not.toMatch(/\b[a-z]+[A-Z]/);
-    }
-  });
-
-  it("saves the saved settings with only the card's changes", () => {
-    const saved = ralphDraft(ralph);
-    const draft = { ...saved, model: "sonnet", verifyCommands: "pnpm lint" };
-    const input = { ...ralphValues(saved), ...pickKeys(ralphValues(draft), RALPH_CARDS.prompt) };
-    const parsed = RalphSettingsInput.parse(input);
-    expect(parsed.model).toBe("sonnet");
-    expect(parsed.verifyCommands).toEqual(["pnpm test"]);
-  });
-
-  /** Every setting the form edits: all but the playbook bindings. */
-  const FORM_KEYS = Object.keys(RalphSettingsInput.shape)
-    .filter((key) => key !== "storyPlaybookId" && key !== "requestPlaybookId")
-    .sort();
-
-  it("covers every Ralph setting with exactly one card", () => {
-    const keys = Object.values(RALPH_CARDS).flat();
-    expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual(FORM_KEYS);
-  });
-
-  it("covers every Coding setting with exactly one section, the destructive ones in the Danger zone", () => {
-    const keys = Object.values(CODING_SECTIONS).flat();
-    expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual(FORM_KEYS);
-    expect([...CODING_SECTIONS.danger].sort()).toEqual([
-      "cleanupMergedWorktrees",
-      "historyRewrite",
-      "unmergedBranchTimeoutMinutes",
-    ]);
-  });
-});
 
 describe("repository sections", () => {
   it("covers every repository setting with exactly one section", () => {

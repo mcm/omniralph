@@ -19,10 +19,9 @@ import {
   ralphRuns,
   saveChatConnection,
   claimJob,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
   webhookDeliveries,
-  DEFAULT_RALPH_SETTINGS,
   type ChatConnection,
   type ChatThread,
   type Database,
@@ -299,9 +298,8 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
         fullPath: "acme/app",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     const saved = await saveChatConnection(
       db,

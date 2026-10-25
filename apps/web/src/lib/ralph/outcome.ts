@@ -30,7 +30,7 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import type { CreateIssueInput, IssueSummary } from "@/lib/linear/gateway";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
-import { repositoryManualLabels, runManualLabels } from "./epic-loader";
+import { runManualLabels } from "./epic-loader";
 import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
 import { postActivity, quietly, quote, tail } from "./notify";
@@ -498,9 +498,7 @@ async function followUpTarget(
     lane && lane.repositoryId !== run.repositoryId
       ? await getRepository(ctx.db, lane.repositoryId)
       : null;
-  const [manualLabel = "manual"] = repository
-    ? repositoryManualLabels(repository)
-    : await runManualLabels(ctx.db, run);
+  const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
   const where = { manualLabel, ...(repository && { repository: repository.fullPath }) };
   const source = await ctx.linear.getRoutingFields(story.linearIssueId).then(
     (fields) => fields.issue,

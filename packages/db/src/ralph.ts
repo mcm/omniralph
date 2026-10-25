@@ -48,7 +48,6 @@ import {
   repositories,
   type RalphGuidance,
   type RalphPendingElicitation,
-  type RalphSettings,
 } from "./schema.js";
 
 export type RalphRun = typeof ralphRuns.$inferSelect;
@@ -112,32 +111,47 @@ export const ACTIVE_RALPH_RUN_STATUSES = [
 
 // ── Repositories ─────────────────────────────────────────────────────────────
 
-export interface RepositoryRalphSettingsUpdate {
-  /** Null inherits the organization's allowed task types (`coding`); omitted: unchanged. */
+/**
+ * A repo's coding policy (`repositories` columns; the work item match is saved on its own).
+ * Each field left out is unchanged.
+ */
+export interface RepositoryCodingUpdate {
+  /** Null inherits the organization's allowed task types (`coding`). */
   ralphEnabled?: boolean | null;
-  ralphSettings: RalphSettings;
-  /** The coding task of its story runs (`story_task_id`); omitted: unchanged. */
-  storyPlaybookId?: string;
-  /** The coding task of its request runs (`request_task_id`); omitted: unchanged. */
-  requestPlaybookId?: string;
+  /** Appended to every story and request prompt; null (or blank) for none. */
+  codingInstructions?: string | null;
+  openPullRequestEarly?: boolean;
+  historyRewrite?: RepositoryHistoryRewrite;
+  respondToReviewsAndCi?: boolean;
 }
 
+export type RepositoryHistoryRewrite = Repository["historyRewrite"];
+
 /**
- * Saves a connected repository's ralph settings. Returns
- * null if the repository is unknown or disconnected.
+ * Saves a connected repository's coding policy. Returns null if the repository is unknown or
+ * disconnected.
  */
-export async function updateRepositoryRalphSettings(
+export async function updateRepositoryCoding(
   db: Executor,
   id: string,
-  input: RepositoryRalphSettingsUpdate,
+  input: RepositoryCodingUpdate,
 ): Promise<Repository | null> {
   const [row] = await db
     .update(repositories)
     .set({
       ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
-      ralphSettings: input.ralphSettings,
-      ...(input.storyPlaybookId && { storyPlaybookId: input.storyPlaybookId }),
-      ...(input.requestPlaybookId && { requestPlaybookId: input.requestPlaybookId }),
+      ...(input.codingInstructions !== undefined && {
+        codingInstructions: input.codingInstructions?.trim() || null,
+      }),
+      ...(input.openPullRequestEarly !== undefined && {
+        openPullRequestEarly: input.openPullRequestEarly,
+      }),
+      ...(input.historyRewrite !== undefined && { historyRewrite: input.historyRewrite }),
+      ...(input.respondToReviewsAndCi !== undefined && {
+        respondToReviewsAndCi: input.respondToReviewsAndCi,
+      }),
+      // Always set, so a save that changes nothing still returns the row.
+      updatedAt: new Date(),
     })
     .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
     .returning();
@@ -657,10 +671,11 @@ export type RalphJobMessage = RalphMessage & {
 export interface RalphLaneDetail {
   lane: RalphLane;
   repository: { id: string; provider: ScmProvider; fullPath: string };
-  /** The repository's stored ralph settings (unparsed: old rows may lack newer fields). */
-  ralphSettings: unknown;
-  /** The repository's coding tasks (the round caps of its request task). */
-  coding: Pick<Repository, "storyPlaybookId" | "requestPlaybookId">;
+  /**
+   * The repository's coding playbooks (the round caps of its request playbook) and whether it
+   * responds to reviews and CI.
+   */
+  coding: Pick<Repository, "storyPlaybookId" | "requestPlaybookId" | "respondToReviewsAndCi">;
   /** The lane of the run's own repository. */
   main: boolean;
 }
@@ -715,10 +730,10 @@ export async function getRunDetail(
           provider: repositories.provider,
           fullPath: repositories.fullPath,
         },
-        ralphSettings: repositories.ralphSettings,
         coding: {
           storyPlaybookId: repositories.storyPlaybookId,
           requestPlaybookId: repositories.requestPlaybookId,
+          respondToReviewsAndCi: repositories.respondToReviewsAndCi,
         },
       })
       .from(ralphLanes)

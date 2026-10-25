@@ -1,33 +1,29 @@
 /**
- * Blocked labels (`ralph_settings.blockedLabels`, default `under-review` and
- * `blocked`): Linear labels that keep Omniralph off an issue. A new run of an
- * issue carrying one (or whose epic carries one) is refused in the repository
- * the issue routes to.
+ * Blocked labels (the organization's `tracker.labels` setting, default `under-review` and
+ * `blocked`): Linear labels that keep Om off a work item. A new run of an issue carrying one
+ * (or whose epic carries one) is refused, whichever repo it routes to: routing applies them
+ * before any repo or playbook is chosen.
  */
-import { DEFAULT_BLOCKED_LABELS } from "@omniralph/shared";
+import { getTrackerLabels, type Database } from "@omniralph/db";
 
-/**
- * The labels keeping Omniralph from working in a repository's issues; the
- * defaults when its settings predate them, none when they're emptied.
- */
-export function repositoryBlockedLabels(repository: {
-  ralphSettings: { blockedLabels?: readonly string[] | null };
-}): string[] {
-  const labels = repository.ralphSettings.blockedLabels;
-  if (!Array.isArray(labels)) return [...DEFAULT_BLOCKED_LABELS];
-  return labels.map((l) => l.trim()).filter(Boolean);
+/** The labels keeping Om from working the organization's work items; none when emptied. */
+export async function organizationBlockedLabels(
+  db: Pick<Database, "select">,
+  organizationId: string,
+): Promise<string[]> {
+  return (await getTrackerLabels(db, organizationId)).blockedLabels;
 }
 
-/** The labels of `issues` that a repository's blocked labels name (matched ignoring case), in order. */
+/** The labels of `issues` that `blocked` names (matched ignoring case), in order. */
 export function blockingLabels(
   issues: readonly { labels: readonly string[] }[],
-  repository: { ralphSettings: { blockedLabels?: readonly string[] | null } },
+  blocked: readonly string[],
 ): string[] {
-  const blocked = new Set(repositoryBlockedLabels(repository).map((l) => l.toLowerCase()));
+  const names = new Set(blocked.map((l) => l.trim().toLowerCase()).filter(Boolean));
   const found: string[] = [];
   for (const label of issues.flatMap((i) => i.labels)) {
     const key = label.trim().toLowerCase();
-    if (blocked.has(key) && !found.some((f) => f.toLowerCase() === key)) found.push(label.trim());
+    if (names.has(key) && !found.some((f) => f.toLowerCase() === key)) found.push(label.trim());
   }
   return found;
 }
@@ -36,15 +32,10 @@ export function blockingLabels(
 export function blockedLabelsMessage(
   issue: { identifier: string },
   labels: readonly string[],
-  repositoryPath?: string,
 ): string {
   const named = labels.map((l) => `\`${l}\``).join(", ");
-  const where = repositoryPath
-    ? `\`${repositoryPath}\` doesn't let me work issues labeled ${named}`
-    : `no repository lets me work issues labeled ${named}`;
   return [
-    `I won't work on **${issue.identifier}**: ${where}.`,
-    "Remove the label (from the issue, or its epic), then delegate it to me again. The labels " +
-      "are set per repository under **Repository › Settings › Coding › Linear › Blocked labels**.",
+    `I won't work on **${issue.identifier}**: work items labeled ${named} are blocked for Om in this organization.`,
+    "Remove the label (from the work item, or its epic), then delegate it to me again.",
   ].join("\n\n");
 }

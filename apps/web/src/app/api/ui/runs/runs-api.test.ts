@@ -33,12 +33,11 @@ import {
   saveChatConnection,
   saveIntegration,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
   upsertStories,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   organizations,
   settleReviewRun,
@@ -245,9 +244,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         fullPath: "acme/web",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoA, {
+    await updateRepositoryCoding(db, repoA, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     [{ id: harnessId }] = (await db
       .insert(harnesses)
@@ -2035,9 +2033,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         fullPath: "other/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, otherRepo, {
+    await updateRepositoryCoding(db, otherRepo, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await saveIntegration(db, {
       organizationId: other!.id,

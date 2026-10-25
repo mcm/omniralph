@@ -23,10 +23,9 @@ import {
   claimJob,
   repositories,
   setChatTaskDefaults,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertChatChannelTaskSetting,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type ChatConnection,
   type ChatThread,
   type Database,
@@ -307,9 +306,8 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
         fullPath,
       });
       if (fullPath === "acme/app") appRepoId = repository.id;
-      await updateRepositoryRalphSettings(db, repository.id, {
+      await updateRepositoryCoding(db, repository.id, {
         ralphEnabled,
-        ralphSettings: DEFAULT_RALPH_SETTINGS,
       });
     }
     const saved = await saveChatConnection(

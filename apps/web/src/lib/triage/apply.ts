@@ -448,7 +448,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
     if (triage.outcome === "prd" && EPIC_SIZES.has(triage.size) && triage.stories.length > 0) {
       if (children.length === 0) {
-        const [manualLabel] = await runManualLabels(db, { repositoryId: job.repositoryId });
+        const [manualLabel] = await runManualLabels(db, { organizationId: job.organizationId });
         created = await createPlannedSubIssues(
           linear,
           issue,

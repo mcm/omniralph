@@ -8,11 +8,6 @@ import {
   connectRepository,
   disconnectRepository,
   createCustomRule,
-  createHarnessEnrollment,
-  enrollHarness,
-  pinRepositoryToHarness,
-  recordHarnessHeartbeat,
-  updateHarnessConfig,
   createDb,
   createOrganization,
   createReview,
@@ -24,7 +19,6 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
-import { DEFAULT_RALPH_SETTINGS, ralphSettingsFormValues } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -78,7 +72,6 @@ const repositoryDetail = await import("@/app/api/ui/repositories/[id]/route");
 const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
-const repositoryLinear = await import("@/app/api/ui/repositories/[id]/coding/linear/route");
 const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
 const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
 
@@ -108,7 +101,8 @@ const updateRepositorySettings = (id: string, input: unknown) =>
   save(repositorySettings.PUT, id, input);
 const updateRepositoryTaskTypes = (id: string, input: unknown) =>
   save(repositoryTaskTypes.PUT, id, input);
-const updateRalphSettings = (id: string, input: unknown) => save(repositoryCoding.PUT, id, input);
+const updateRepositoryCoding = (id: string, input: unknown) =>
+  save(repositoryCoding.PUT, id, input);
 
 /** A Rules tab request (`method` with a JSON `body`) as the `ActionResult` the tab gets. */
 async function ruleRequest<P extends Record<string, string>>(
@@ -240,63 +234,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((rules.body.rules as { id: string }[]).map((r) => r.id)).toEqual([a.ruleId]);
   });
 
-  it("offers the Coding tab the models of its pinned harnesses, else of those accepting coding", async () => {
-    state.userId = a.userId;
-    const harness = async (name: string, models: { value: string; displayName: string }[]) => {
-      const enrollment = await createHarnessEnrollment(db, { organizationId: a.orgId, name });
-      const { harnessId } = (await enrollHarness(db, {
-        enrollmentToken: enrollment.token,
-        name,
-        version: "1.0.0",
-      }))!;
-      await recordHarnessHeartbeat(db, harnessId, { version: "1.0.0", models });
-      return harnessId;
-    };
-    const opus = { value: "opus", displayName: "Opus" };
-    const sonnet = { value: "sonnet", displayName: "Sonnet" };
-    const haiku = { value: "haiku", displayName: "Haiku" };
-    const coder = await harness("coder", [opus, sonnet]);
-    const reviewer = await harness("reviewer", [haiku]);
-    await updateHarnessConfig(db, a.orgId, reviewer, {
-      maxConcurrency: null,
-      acceptedTaskTypes: ["review"],
-      poolLimits: {},
-    });
-    // Another organization's harness never counts.
-    const other = await createHarnessEnrollment(db, { organizationId: b.orgId, name: "other" });
-    const { harnessId: otherId } = (await enrollHarness(db, {
-      enrollmentToken: other.token,
-      name: "other",
-      version: "1.0.0",
-    }))!;
-    await recordHarnessHeartbeat(db, otherId, { version: "1.0.0", models: [haiku] });
-
-    const choices = async () => (await call(repositoryCoding.GET, a.repoId)).body;
-    expect(await call(repositoryLinear.GET, a.repoId)).toEqual({
-      status: 200,
-      body: { status: "disconnected" },
-    });
-    // Unpinned: every harness accepting coding.
-    expect(await choices()).toMatchObject({
-      models: [
-        { ...opus, harnessIds: [coder] },
-        { ...sonnet, harnessIds: [coder] },
-      ],
-      harnessCount: 1,
-      pinned: false,
-    });
-    // Pinned: its pinned harnesses, whatever they accept.
-    await pinRepositoryToHarness(db, { harnessId: reviewer, repositoryId: a.repoId });
-    expect(await choices()).toMatchObject({
-      models: [{ ...haiku, harnessIds: [reviewer] }],
-      harnessCount: 1,
-      pinned: true,
-    });
-    // The other tabs' data doesn't carry them.
-    expect((await call(repositoryDetail.GET, a.repoId)).body).not.toHaveProperty("models");
-  });
-
-  it("lists the organization's routing rules that target the repository on the Coding tab", async () => {
+  it("lists the organization's routing rules that target the repository on its detail", async () => {
     state.userId = a.userId;
     const web = await connectRepository(db, {
       connectionId: a.connectionId,
@@ -312,16 +250,16 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       [a.repoId, projectIs("App")],
     );
     try {
-      expect((await call(repositoryCoding.GET, a.repoId)).body.routingRules).toEqual([
-        { number: 1, summary: "Team is ENG" },
-        { number: 3, summary: "Project is App" },
+      expect((await call(repositoryDetail.GET, a.repoId)).body.routingRules).toEqual([
+        { position: 1, description: "Team is ENG" },
+        { position: 3, description: "Project is App" },
       ]);
-      expect((await call(repositoryCoding.GET, web.id)).body.routingRules).toEqual([
-        { number: 2, summary: "Labels contains any of backend" },
+      expect((await call(repositoryDetail.GET, web.id)).body.routingRules).toEqual([
+        { position: 2, description: "Labels contains any of backend" },
       ]);
       // Another organization's rules never show.
       state.userId = b.userId;
-      expect((await call(repositoryCoding.GET, b.repoId)).body.routingRules).toEqual([]);
+      expect((await call(repositoryDetail.GET, b.repoId)).body.routingRules).toEqual([]);
     } finally {
       state.userId = a.userId;
       await setRoutingRules(db, a.orgId);
@@ -329,7 +267,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     }
   });
 
-  it("shows the Coding tab to admins only; members get a 403 but see the other tabs", async () => {
+  it("shows the coding policy to admins only; members get a 403 but see the repository", async () => {
     const [member] = await db
       .insert(users)
       .values({ id: "alpha-member", email: "member@alpha.io" })
@@ -340,7 +278,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     await setActiveOrganization(db, { userId: member!.id, organizationId: a.orgId });
     state.userId = member!.id;
     expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 403 });
-    expect(await call(repositoryLinear.GET, a.repoId)).toMatchObject({ status: 403 });
     expect(await call(repositoryDetail.GET, a.repoId)).toMatchObject({ status: 200 });
     state.userId = a.userId;
     expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 200 });
@@ -348,12 +285,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
   it("returns 404 for another organization's repository pages", async () => {
     state.userId = a.userId;
-    for (const handler of [
-      repositoryDetail.GET,
-      repositoryCoding.GET,
-      repositoryLinear.GET,
-      repositoryRules.GET,
-    ]) {
+    for (const handler of [repositoryDetail.GET, repositoryCoding.GET, repositoryRules.GET]) {
       expect(await call(handler, b.repoId)).toMatchObject({ status: 404 });
     }
   });
@@ -376,10 +308,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       }),
     ).toEqual(refused);
     expect(
-      await updateRalphSettings(b.repoId, {
-        storyPlaybookId: "builtin:implement-story",
-        requestPlaybookId: "builtin:handle-request",
-        ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),
+      await updateRepositoryCoding(b.repoId, {
+        codingEnabled: true,
+        codingInstructions: "Sneaky.",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
       }),
     ).toEqual(refused);
     expect(await getRepository(db, b.repoId)).toMatchObject({
@@ -387,6 +321,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       disconnectedAt: null,
       reviewDepth: "standard",
       ralphEnabled: null,
+      codingInstructions: null,
+      historyRewrite: "when-asked",
     });
 
     expect(await addCustomRule(b.repoId, { text: "Sneaky rule" })).toEqual(refused);

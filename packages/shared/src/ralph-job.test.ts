@@ -354,7 +354,8 @@ describe("the coding tasks' limits", () => {
     expect(CODING_DEFAULTS.maxRoundsPerStory).toBe(MAX_ROUNDS_PER_STORY);
     expect(CODING_DEFAULTS.stallRounds).toBe(STALL_ROUNDS);
     expect(CODING_MAX_FIX_ROUNDS).toBe(MAX_FIX_ROUNDS);
-    expect(CODING_DEFAULTS.maxReviewRounds).toBe(MAX_FIX_ROUNDS);
-    expect(CODING_DEFAULTS.maxFixRounds).toBe(MAX_FIX_ROUNDS);
+    // Three review and CI fix rounds each, as every production repo had.
+    expect(CODING_DEFAULTS.maxReviewRounds).toBe(3);
+    expect(CODING_DEFAULTS.maxFixRounds).toBe(3);
   });
 });

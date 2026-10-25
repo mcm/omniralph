@@ -65,13 +65,12 @@ import {
   updateOrganization,
   updatePlaybook,
   updateRule,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRepositorySettings,
   updateRun,
   updateStory,
   upsertScmConnection,
   upsertStories,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
 } from "@omniralph/db";
 import {
@@ -607,9 +606,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         ),
       ).toEqual([settingsEvent("repository.reviews", repoId)]);
       expect(
-        await published(() =>
-          updateRepositoryRalphSettings(db, repoId, { ralphSettings: DEFAULT_RALPH_SETTINGS }),
-        ),
+        await published(() => updateRepositoryCoding(db, repoId, { historyRewrite: "always" })),
       ).toEqual([settingsEvent("repository.coding", repoId)]);
       expect(
         await published(() =>

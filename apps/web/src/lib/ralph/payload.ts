@@ -22,7 +22,6 @@ import {
   type Story,
 } from "@omniralph/ralph";
 import {
-  parseRalphSettings,
   RalphDescribePrPayload,
   RalphPreparePayload,
   RalphPushPayload,
@@ -33,6 +32,7 @@ import {
   type RalphStoryListItem,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
+import type { CodingSettings } from "./coding";
 
 /** Guidance replies passed to a story (the latest ones), as cyralph does. */
 export const MAX_GUIDANCE_IN_PROMPT = 10;
@@ -57,16 +57,22 @@ function headOf(text: string, max = MAX_DOCUMENT_LENGTH): string {
   return text.length > max ? text.slice(0, max) : text;
 }
 
-/** The repository's ralph settings a job runs with (`settings` of every ralph payload). */
-export function jobSettings(repository: Pick<Repository, "ralphSettings">): RalphJobSettings {
-  const settings = parseRalphSettings(repository.ralphSettings);
+/**
+ * What a ralph job runs with (`settings` of every ralph payload): the repository's coding
+ * instructions, and its story or request playbook's model and worktree setup command (agents
+ * read those from the run spec; older agents and the worktree RPCs from here).
+ */
+export function jobSettings(
+  repository: Pick<Repository, "codingInstructions">,
+  coding: Pick<CodingSettings, "model" | "fallbackModel" | "worktreeSetupCommand">,
+): RalphJobSettings {
   return {
-    model: settings.model || null,
-    setupCommand: settings.setupCommand,
-    fallbackModel: settings.fallbackModel,
-    appendInstruction: settings.appendInstruction,
-    allowedTools: settings.allowedTools,
-    disallowedTools: settings.disallowedTools,
+    model: coding.model,
+    setupCommand: coding.worktreeSetupCommand,
+    fallbackModel: coding.fallbackModel,
+    appendInstruction: repository.codingInstructions?.trim() || null,
+    allowedTools: null,
+    disallowedTools: null,
   };
 }
 
@@ -84,18 +90,18 @@ export function prdGatesFor(
 
 /**
  * A story's quality gates (cyralph's `verifyCommands` of `runStory`): the
- * repository's `verifyCommands`, then the PRD's gates for the repository
- * (`prdGatesFor`) when `runPrdQualityGates` is on, duplicates removed. A
+ * playbook's `verifyCommands`, then the PRD's gates for the repository
+ * (`prdGatesFor`) when its `runPrdQualityGates` is on, duplicates removed. A
  * single issue has no PRD: only `verifyCommands`.
  */
 export function storyQualityGates(
   kind: RalphRun["kind"],
   epic: Pick<Epic, "qualityGates" | "repositoryQualityGates">,
-  repository: Pick<Repository, "ralphSettings" | "fullPath">,
+  repository: Pick<Repository, "fullPath">,
+  coding: Pick<CodingSettings, "verifyCommands" | "runPrdQualityGates">,
 ): string[] {
-  const settings = parseRalphSettings(repository.ralphSettings);
-  const prd = kind !== "single" && settings.runPrdQualityGates ? prdGatesFor(epic, repository) : [];
-  return uniqueCommands([...settings.verifyCommands, ...prd]).slice(0, 100);
+  const prd = kind !== "single" && coding.runPrdQualityGates ? prdGatesFor(epic, repository) : [];
+  return uniqueCommands([...coding.verifyCommands, ...prd]).slice(0, 100);
 }
 
 const url = (value: string | undefined) => (value && /^https?:\/\//.test(value) ? value : null);
@@ -113,6 +119,8 @@ export function storyList(epic: Epic, stories: readonly Story[]): RalphStoryList
 }
 
 export interface StoryPayloadInput {
+  /** The coding settings of the story playbook (the request playbook for requests). */
+  coding: CodingSettings;
   run: RalphRun;
   /** The lane the job works in (its branch and base branch). */
   lane: Pick<RalphLane, "branch" | "baseBranch">;
@@ -136,7 +144,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(repository, input.coding),
     storyId: row.id,
     attempt: row.attempts + 1,
     epic: {
@@ -155,7 +163,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     },
     stories: storyList(epic, input.stories).slice(0, 500),
     commitMessage: storyCommitMessage(run.kind, identifier, story.title),
-    qualityGates: storyQualityGates(run.kind, epic, repository),
+    qualityGates: storyQualityGates(run.kind, epic, repository, input.coding),
     prdQualityGates: run.kind === "single" ? [] : prdGatesFor(epic, repository).slice(0, 50),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     lastFeedback: row.lastFeedback ? row.lastFeedback.slice(-20_000) : null,
@@ -165,6 +173,8 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
 }
 
 export interface DescribePrPayloadInput {
+  /** The coding settings of the story playbook (the request playbook for requests). */
+  coding: CodingSettings;
   run: RalphRun;
   /** The lane the job works in (its branch and base branch). */
   lane: Pick<RalphLane, "branch" | "baseBranch">;
@@ -188,7 +198,7 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(repository, input.coding),
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),
@@ -202,11 +212,13 @@ export function buildDescribePrPayload(input: DescribePrPayloadInput): RalphDesc
       commitSha: r.commitSha,
     })),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
-    qualityGates: storyQualityGates(run.kind, epic, repository),
+    qualityGates: storyQualityGates(run.kind, epic, repository, input.coding),
   });
 }
 
 export interface PushPayloadInput {
+  /** The coding settings of the story playbook. */
+  coding: CodingSettings;
   run: Pick<RalphRun, "id">;
   /** The lane whose branch is pushed (and its base branch). */
   lane: Pick<RalphLane, "branch" | "baseBranch">;
@@ -228,12 +240,14 @@ export function buildPushPayload(input: PushPayloadInput): RalphPushPayload {
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(repository, input.coding),
     hiddenRef: input.hiddenRef,
   });
 }
 
 export interface PreparePayloadInput {
+  /** The coding settings of the story playbook (the request playbook for requests). */
+  coding: CodingSettings;
   run: RalphRun;
   /** The lane the job works in (its branch and base branch). */
   lane: Pick<RalphLane, "branch" | "baseBranch">;
@@ -258,7 +272,7 @@ export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePay
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(repository, input.coding),
     story: { identifier: story.identifier ?? story.storyId, title: story.title.slice(0, 1000) },
     commands: story.preparation ?? [],
     commandsHash: approved.commandsHash,
@@ -267,6 +281,8 @@ export function buildPreparePayload(input: PreparePayloadInput): RalphPreparePay
 }
 
 export interface RequestPayloadInput {
+  /** The coding settings of the story playbook (the request playbook for requests). */
+  coding: CodingSettings;
   run: RalphRun;
   /** The lane the requests are for (its branch, base branch and PR/MR). */
   lane: Pick<RalphLane, "branch" | "baseBranch" | "prUrl">;
@@ -292,7 +308,6 @@ export interface RequestPayloadInput {
  */
 export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPayload {
   const { run, lane, repository, connection, epic } = input;
-  const settings = parseRalphSettings(repository.ralphSettings);
   const requests = input.requests.slice(0, 50);
   return RalphRequestPayload.parse({
     runId: run.id,
@@ -300,7 +315,7 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(repository, input.coding),
     source: run.origin,
     epic: {
       identifier: epic.identifier,
@@ -313,8 +328,8 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     requests: requests.map((r) => ({ id: r.id, text: r.text.slice(0, 20_000) })),
     prUrl: url(lane.prUrl ?? undefined),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
-    qualityGates: storyQualityGates(run.kind, epic, repository),
-    historyRewrite: settings.historyRewrite,
+    qualityGates: storyQualityGates(run.kind, epic, repository, input.coding),
+    historyRewrite: repository.historyRewrite,
     resumeSessionId: input.resumeSessionId,
     attachments: input.attachments ?? [],
     ship: requests.some((r) => r.ship === true),

@@ -240,6 +240,14 @@ trigger, a template that uses `epic.prd` or `story` outside an optional section.
 ralph settings (verify commands, model, tools, history rewrites, review and CI rounds, cleanup)
 still apply to every run.
 
+_Since TOOL-601 `ralph_settings` is gone (migration `0098_repository_coding_policy`, which refuses to
+run while a repo has a value that would be lost). A repo keeps six coding fields: `ralph_enabled`,
+its work item match, `coding_instructions`, `open_pull_request_early`, `history_rewrite` and
+`respond_to_reviews_and_ci`. The rest moved to the story and request playbooks' `coding` (verify
+and worktree setup commands, PRD gates, preparation, epic completed state, cleanup, and the review
+and CI rounds, 3 by default, no longer capped by a repo value) and to the organization's
+`tracker.labels` (manual and blocked labels). See [definitions](../definitions.md#coding-settings)._
+
 **Pushing at the end.** With `pushTiming: end` every story commit goes to the run's hidden ref
 `refs/omniralph/runs/<run>` (the `pre-push` guard allows that ref and no other), so another harness
 continues from it; once every story is done a `ralph.push` job pushes the branch, then the PR/MR

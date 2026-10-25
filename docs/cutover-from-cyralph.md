@@ -26,7 +26,8 @@ orchestrates runs).
   **Coding tasks**); harnesses keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
   **Settings › Integrations** (Linear), **Settings › Harnesses** (harness version), **Harnesses › <harness>**
-  (concurrency, accepted task types, pool limits) and **Repository › Settings › Coding** (everything per repository).
+  (concurrency, accepted task types, pool limits), each repository's coding policy and its story
+  and request playbooks.
   Changes apply from a run's next decision, without restarts.
 - **Two Linear apps.** Omniralph is its own Linear app (OAuth application). An issue is handled by
   whichever app it's delegated to (or @mentioned); each app's routing only picks the repository.
@@ -69,13 +70,13 @@ always behaves like cyralph's default and has no setting for it.
 | `materializeStories` | Fixed: on | A PRD in an issue's description is always turned into sub-issues first. |
 | `commitPerStory`, `pushPerStory` | Fixed: on | Every finished story is committed and pushed; the remote branch is the only state between jobs (harnesses can change). On the **Coding tasks** path the story task's `pushTiming` can be `end`: stories are then pushed to a hidden ref (`refs/omniralph/runs/<run>`) and the branch once at the end. |
 | `createPullRequest` | Fixed: on | The control panel opens the PR/MR through the GitHub App or GitLab bot. |
-| `openPullRequestEarly` | **Open the pull request early** per repository | Same default (off). On the **Coding tasks** path the story task's `draftPullRequest` wins when set. |
+| `openPullRequestEarly` | **Open the pull request early** per repository (`openPullRequestEarly`) | Same default (off). |
 | `describePullRequest` | Fixed: on | A read-only `ralph.describe-pr` job writes the title and body (on the **Coding tasks** path, a run of the story task's PR description task, `builtin:describe-pr`). |
 | `markPrReadyWhenComplete` | Fixed: on | |
-| `historyRewrite` | **History rewrites** per repository | Same values and default (`when-asked`), plus `always`: rebase (and push with `--force-with-lease`) without being asked, never merging the base branch. |
-| `allowPreparation` | **Offer to run preparation** per repository | Same default (on). |
-| `manualLabels` | **Manual labels** per repository | Same default (`manual`). |
-| `epicCompletedStateType`, `epicCompletedStateName` | **Epic completed state** per repository | One field: `started` / `completed` (a state type) or a state name such as `In Review`. Empty leaves the epic alone. |
+| `historyRewrite` | **Rewrite history** per repository (`historyRewrite`) | Same values and default (`when-asked`), plus `always`: rebase (and push with `--force-with-lease`) without being asked, never merging the base branch. |
+| `allowPreparation` | The story playbook's `allowPreparation` | Same default (on). |
+| `manualLabels` | The organization's tracker labels (`app_settings` `tracker.labels`) | Same default (`manual`), for every repository. |
+| `epicCompletedStateType`, `epicCompletedStateName` | The story playbook's `epicCompletedState` | One field: `started` / `completed` (a state type) or a state name such as `In Review`. Empty leaves the epic alone. |
 
 ### `github`
 
@@ -84,14 +85,14 @@ always behaves like cyralph's default and has no setting for it.
 | `webhookSecret` | Not needed (`GITHUB_WEBHOOK_SECRET` is the GitHub App's) | cyralph's separate `/github-webhook` webhook goes away; the GitHub App's webhook delivers everything ([github-app.md](github-app.md)). Remove cyralph's webhook in [step 6](#6-stop-cyralph-and-remove-its-linear-app-and-webhooks). |
 | `reviewBots` | Not needed | Omniralph acts on its **own** reviews of ralph PRs/MRs and on `@omniralph fix` / `@omniralph` requests from people with write access. Third-party review bots (e.g. cubic) are no longer acted on; turn the Omniralph review on for the repository instead. |
 | `reviewPollMinutes` | Not needed | A finished Omniralph review hands its findings to the run directly; there is nothing to poll. |
-| `maxReviewRounds` | **Max review rounds** per repository | Same default (3). **Fix review findings** (`respondToReviews`) turns it off. |
+| `maxReviewRounds` | The request playbook's `maxReviewRounds` | Same default (3). The repository's **Fix review comments and CI failures** (`respondToReviewsAndCi`) turns it off. |
 
 ### `ci`
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
-| `pollMinutes` | Not needed | Failed CI arrives by webhook (GitHub `workflow_run`, GitLab **Pipeline events**), with `/api/cron/ralph-reconcile` (every 10 minutes) as the fallback. `0` (off) becomes **Fix failed CI** (`respondToCiFailures`) off per repository. |
-| `maxFixRounds` | **Max CI fix rounds** per repository | Same default (3). |
+| `pollMinutes` | Not needed | Failed CI arrives by webhook (GitHub `workflow_run`, GitLab **Pipeline events**), with `/api/cron/ralph-reconcile` (every 10 minutes) as the fallback. `0` (off) becomes **Fix review comments and CI failures** (`respondToReviewsAndCi`) off per repository. |
+| `maxFixRounds` | The request playbook's `maxFixRounds` | Same default (3). |
 
 ### `autoUpdate`
 
@@ -105,8 +106,10 @@ always behaves like cyralph's default and has no setting for it.
 ### `repositories[]`
 
 Each cyralph repository becomes a connected repository (**Repositories › Connect GitHub** or
-**Connect GitLab**) with coding on. All settings below are on **Repository › Settings › Coding**
-unless noted.
+**Connect GitLab**) with coding on. A repository's own coding policy is its on/off switch, work item
+match, extra instructions, open PR early, history rewrite and responding to reviews and CI
+(`/api/ui/repositories/{id}/coding`); the rest is its story and request playbooks' (see
+[definitions](definitions.md#coding-settings)).
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
@@ -117,17 +120,17 @@ unless noted.
 | `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Routing** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
 | `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead. |
 | `isActive` | **Task types › Coding** | On by default (the organization's default): only repositories that opted in are routed to, offered in the repository question or pushed to. |
-| `verifyCommands` | **Verify commands** | One per line. |
-| `runPrdQualityGates` | **Run the PRD's quality gates** | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
+| `verifyCommands` | The story and request playbooks' `verifyCommands` | |
+| `runPrdQualityGates` | The playbooks' `runPrdQualityGates` | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
 | `forge`, `gitlabHost` | Not needed | Known from the connection the repository belongs to. |
-| `setupCommand` | **Setup command** | |
-| `model` | **Model** | |
-| `allowedTools`, `disallowedTools` | **Allowed tools**, **Disallowed tools** | They can only narrow ralph's tool policy. |
-| `appendInstruction` | **Appended instruction** | Also appended to request prompts. |
-| `historyRewrite`, `allowPreparation` | **History rewrites**, **Offer to run preparation** | Per repository only (no global value to override). |
-| `promptTemplatePath` | Not supported | Custom templates aren't ported; move what the template added into **Appended instruction**. |
-| `respondToReviews` | **Fix review findings** | Applies to Omniralph's own reviews and `@bot` requests. |
-| `respondToCiFailures` | **Fix failed CI** | |
+| `setupCommand` | The playbooks' `worktreeSetupCommand` | |
+| `model` | The playbooks' `model` | |
+| `allowedTools`, `disallowedTools` | The playbooks' `tools` | A playbook's tools are its runs' tools. |
+| `appendInstruction` | **Extra instructions** (`codingInstructions`) | Also appended to request prompts. |
+| `historyRewrite`, `allowPreparation` | **Rewrite history**, the story playbook's `allowPreparation` | No global value to override. |
+| `promptTemplatePath` | Not supported | Custom templates aren't ported; move what the template added into **Extra instructions**. |
+| `respondToReviews` | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | One switch for reviews (Omniralph's own and `@bot` requests) and CI: on when either was. |
+| `respondToCiFailures` | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | |
 | `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes` | **Clean up after the merge**, **Unmerged branch timeout** | Same defaults (on, 60 minutes). |
 
 Repository › Settings › Harness pinning has no cyralph equivalent: pin a repository to a harness
@@ -182,10 +185,11 @@ For every entry in cyralph's `repositories[]`:
 
 1. Make sure the repository is connected (**Repositories**), and enable the Omniralph review on it
    if cyralph relied on review bots: review responses only come from Omniralph's own reviews.
-2. On **Repository › Settings › Coding**, enter the settings from the [mapping](#config-mapping)
-   (verify commands, setup command, model, tools, appended instruction, follow-up settings, manual
-   labels, epic completed state, and **Run the PRD's quality gates** off if cyralph had
-   `runPrdQualityGates` unset).
+2. Enter the settings from the [mapping](#config-mapping): the repository's coding policy (extra
+   instructions, open PR early, history rewrite, responding to reviews and CI), the organization's
+   manual labels, and, where they differ from the built-ins, a custom story and request playbook
+   (verify commands, setup command, model, tools, rounds, epic completed state, and
+   `runPrdQualityGates` off if cyralph had it unset).
 3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but add no
    rule targeting it on **Settings › Routing** for now: routing moves in step 4.
 4. Leave **Story task** and **Request task** on the built-ins: they run cyralph's loop as coding

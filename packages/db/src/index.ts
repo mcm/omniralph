@@ -254,9 +254,14 @@ export {
   setChatTaskDefaults,
   setDesiredHarnessVersion,
   setLatestHarnessVersionCheck,
+  DEFAULT_TRACKER_LABELS,
+  TRACKER_LABELS_KEY,
+  getTrackerLabels,
+  setTrackerLabels,
   type AppSetting,
   type ChatTasks,
   type LatestHarnessVersionCheck,
+  type TrackerLabels,
 } from "./app-settings.js";
 export {
   claimJob,
@@ -592,7 +597,7 @@ export {
   lockRun,
   RALPH_RUN_PAGE_SIZE,
   RUN_DETAIL_MESSAGE_LIMIT,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   setJobRalphStory,
@@ -643,7 +648,8 @@ export {
   type RalphStoryStatus,
   type RalphStoryUpdate,
   type RalphTransaction,
-  type RepositoryRalphSettingsUpdate,
+  type RepositoryCodingUpdate,
+  type RepositoryHistoryRewrite,
 } from "./ralph.js";
 export {
   ACTIVE_TRIAGE_RUN_STATUSES,

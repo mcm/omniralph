@@ -69,8 +69,10 @@ import {
   MAX_ITERATIONS_PER_RUN,
   pushJobInput,
   pushTimingFor,
+  requestCodingSettings,
   requestTaskFor,
   requestTrigger,
+  storyCodingSettings,
   storyLimits,
   storyTaskFor,
 } from "./coding";
@@ -575,7 +577,9 @@ async function enqueueStory(
   if ("action" in found) return found;
 
   const attachments = await gatherRunAttachments(deps.linear, tx, run, epic);
+  const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const payload = buildStoryPayload({
+    coding: await storyCodingSettings(found.repository, playbooks),
     run,
     lane: found.lane,
     repository: found.repository,
@@ -587,11 +591,7 @@ async function enqueueStory(
     attachments: payloadAttachments(attachments, story.key),
   });
   const taskId = storyTaskFor(found.repository);
-  const routed = await codingJobInput(
-    { taskId, trigger: "linear.delegated" },
-    payload,
-    organizationPlaybooks(deps.db, run.organizationId),
-  );
+  const routed = await codingJobInput({ taskId, trigger: "linear.delegated" }, payload, playbooks);
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, found.repository, "stories"));
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
@@ -732,10 +732,18 @@ async function pushLane(
   },
 ): Promise<AdvanceResult | string> {
   const { lane, repository, connection } = input;
+  const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const routing = await pushJobInput(
     repository,
-    buildPushPayload({ run, lane, repository, connection, hiddenRef: ralphHiddenRef(run.id) }),
-    organizationPlaybooks(deps.db, run.organizationId),
+    buildPushPayload({
+      coding: await storyCodingSettings(repository, playbooks),
+      run,
+      lane,
+      repository,
+      connection,
+      hiddenRef: ralphHiddenRef(run.id),
+    }),
+    playbooks,
   );
   if (!routing) {
     return `I couldn't push \`${lane.branch}\`: ${notACodingTask(storyTaskFor(repository), repository, "stories")}`;
@@ -791,9 +799,11 @@ async function describeLane(
   const { lane, repository, connection } = input;
   const main = input.lanes.find((l) => l.repositoryId === run.repositoryId) ?? null;
   const term = changeRequestTerm(repository.provider);
+  const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const routing = await describePrJobInput(
     repository,
     buildDescribePrPayload({
+      coding: await storyCodingSettings(repository, playbooks),
       run,
       lane,
       repository,
@@ -801,7 +811,7 @@ async function describeLane(
       epic: input.epic,
       rows: laneRows(input.rows, lane, main),
     }),
-    organizationPlaybooks(deps.db, run.organizationId),
+    playbooks,
   );
   if (typeof routing === "string") {
     return `I couldn't open the ${term}: writing its description failed: ${routing}.`;
@@ -857,6 +867,10 @@ async function enqueuePreparation(
     type: WORKTREE_EXEC_JOB_TYPE,
     ...legacyJobRouting(WORKTREE_EXEC_JOB_TYPE),
     payload: buildPreparePayload({
+      coding: await storyCodingSettings(
+        found.repository,
+        organizationPlaybooks(deps.db, run.organizationId),
+      ),
       run,
       ...found,
       story,
@@ -909,7 +923,9 @@ async function enqueueRequest(
   const attachments = isLinearRun(run)
     ? await gatherRunAttachments(deps.linear, tx, run, input.epic)
     : [];
+  const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const payload = buildRequestPayload({
+    coding: await requestCodingSettings(run, repository, playbooks),
     run,
     lane,
     repository,
@@ -920,8 +936,7 @@ async function enqueueRequest(
     resumeSessionId: resume,
     attachments: payloadAttachments(attachments),
     // Story commits may only be on the run's hidden ref yet: the request starts from them.
-    ...((await pushTimingFor(repository, organizationPlaybooks(deps.db, run.organizationId))) ===
-      "end" && {
+    ...((await pushTimingFor(repository, playbooks)) === "end" && {
       hiddenRef: ralphHiddenRef(run.id),
     }),
   });
@@ -929,7 +944,7 @@ async function enqueueRequest(
   const routed = await codingJobInput(
     { taskId, trigger: requestTrigger(input.requests) },
     payload,
-    organizationPlaybooks(deps.db, run.organizationId),
+    playbooks,
   );
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, repository, "requests"));
   const { job, created } = await deps.dispatcher.createAndPublish({

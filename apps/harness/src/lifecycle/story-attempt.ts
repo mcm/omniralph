@@ -220,7 +220,7 @@ export interface StoryAttemptArgs {
 
 /**
  * Runs one attempt at one story (ported from cyralph's `EpicEngine.runStory`):
- * in the epic's branch worktree (with the repository's setup command and the
+ * in the epic's branch worktree (with the playbook's worktree setup command and the
  * `pre-push` guard), set aside leftover work (`pre-run`), offer the story's
  * stashes, download the attachments, write the progress file and run the
  * Claude session `args.session` describes, then on `complete` run the quality

@@ -35,10 +35,11 @@ import {
   ralphRuns,
   repositories,
   claimJob,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
+  setTrackerLabels,
+  DEFAULT_TRACKER_LABELS,
   updateRun,
   upsertScmConnection,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   organizations,
@@ -77,6 +78,7 @@ import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { taskSink } from "@/lib/sinks";
 import { describePrPayload, ralphJobPayload } from "./coding";
+import { bindBuiltinPlaybooks, bindCodingPlaybook } from "./testing";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
 import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
@@ -172,10 +174,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
-      ralphEnabled: true,
-      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
-    });
+    await updateRepositoryCoding(db, repoId, { ralphEnabled: true });
     const gitlab = (await upsertScmConnection(
       db,
       {
@@ -196,9 +195,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         fullPath: "group/app",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, gitlabRepoId, {
+    await updateRepositoryCoding(db, gitlabRepoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     await setRoutingRules(
       db,
@@ -497,7 +495,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         },
         branch: "feat/epic",
         baseBranch: "develop",
-        settings: { model: "opus", setupCommand: "pnpm install" },
+        settings: { model: "opus", setupCommand: null },
         attempt: 1,
         epic: { identifier: "ENG-1", title: "Epic", kind: "children" },
         story: { identifier: "ENG-4", title: "Gamma", linearIssueId: gamma.id },
@@ -1221,14 +1219,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   describe("push and draft PR timing", () => {
     const setEarly = (openPullRequestEarly: boolean) =>
-      updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: {
-          ...DEFAULT_RALPH_SETTINGS,
-          setupCommand: "pnpm install",
-          openPullRequestEarly,
-        },
-      });
+      updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly });
 
     afterEach(async () => {
       vi.restoreAllMocks();
@@ -1433,7 +1424,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         repository: { fullPath: "acme/api" },
         branch: "feat/widgets",
         baseBranch: "develop",
-        settings: { setupCommand: "pnpm install" },
+        settings: { setupCommand: null },
         hiddenRef: ralphHiddenRef(run.id),
       });
 
@@ -2161,13 +2152,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
   });
 
-  it("uses the repository's manual labels for selection, waiting and follow-ups", async () => {
-    const settings = { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" };
+  it("uses the organization's manual labels for selection, waiting and follow-ups", async () => {
     const withLabels = (manualLabels: string[]) =>
-      updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...settings, manualLabels },
-      });
+      setTrackerLabels(
+        db,
+        orgId,
+        { manualLabels, blockedLabels: DEFAULT_TRACKER_LABELS.blockedLabels },
+        null,
+      );
     await withLabels(["by hand"]);
     try {
       const epic = linear.add({ identifier: "ENG-150", title: "Epic" });
@@ -2225,10 +2217,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ]),
       );
     } finally {
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: settings,
-      });
+      await setTrackerLabels(db, orgId, null, null);
     }
   });
 
@@ -2325,9 +2314,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("treats a story whose rule routes to a repository with coding off like a manual step", async () => {
       const setCoding = (ralphEnabled: boolean) =>
-        updateRepositoryRalphSettings(db, gitlabRepoId, {
+        updateRepositoryCoding(db, gitlabRepoId, {
           ralphEnabled,
-          ralphSettings: DEFAULT_RALPH_SETTINGS,
         });
       await setCoding(false);
       try {
@@ -2577,21 +2565,27 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api", "group/app"]);
     });
 
-    /** Runs `body` with the GitLab repository's ralph settings changed. */
-    async function withAppSettings(
-      settings: Partial<typeof DEFAULT_RALPH_SETTINGS>,
-      body: () => Promise<void>,
-    ) {
-      const update = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
-        updateRepositoryRalphSettings(db, gitlabRepoId, {
-          ralphEnabled: true,
-          ralphSettings,
-        });
-      await update({ ...DEFAULT_RALPH_SETTINGS, ...settings });
+    /** Runs `body` with the GitLab repository opening its drafts early. */
+    async function withAppDraftsEarly(body: () => Promise<void>) {
+      await updateRepositoryCoding(db, gitlabRepoId, { openPullRequestEarly: true });
       try {
         await body();
       } finally {
-        await update(DEFAULT_RALPH_SETTINGS);
+        await updateRepositoryCoding(db, gitlabRepoId, { openPullRequestEarly: false });
+      }
+    }
+
+    /** Runs `body` with the GitLab repository on a story playbook of its own. */
+    async function withAppPlaybook(
+      coding: PlaybookCoding,
+      fields: { model?: string },
+      body: () => Promise<void>,
+    ) {
+      await bindCodingPlaybook(db, orgId, gitlabRepoId, "story", coding, fields);
+      try {
+        await body();
+      } finally {
+        await bindBuiltinPlaybooks(db, gitlabRepoId);
       }
     }
 
@@ -2603,7 +2597,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
 
     it("files a secondary lane's follow-ups so they're worked in that lane", async () => {
-      await withAppSettings({ manualLabels: ["ops"] }, async () => {
+      await setTrackerLabels(
+        db,
+        orgId,
+        { manualLabels: ["ops"], blockedLabels: DEFAULT_TRACKER_LABELS.blockedLabels },
+        null,
+      );
+      try {
         const t = crossRepo("Web");
         const run = await delegate(t.epic.id);
         const web = (await listLanes(db, run.id)).find((l) => l.repositoryId === gitlabRepoId)!;
@@ -2622,7 +2622,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ).toBe("ENG-3");
         const style = [...linear.issues.values()].find((i) => i.title === "Style the badge")!;
         const icon = [...linear.issues.values()].find((i) => i.title === "Upload the icon")!;
-        // The story's project (not the epic's), and the app repository's manual label.
+        // The story's project (not the epic's), and the organization's manual label.
         expect(style).toMatchObject({ parentId: t.epic.id, projectName: "Web", labels: [] });
         expect(icon).toMatchObject({ projectName: "Web", labels: ["ops"] });
         expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
@@ -2643,7 +2643,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           [style.identifier, "completed", web.id],
           [icon.identifier, "manual", web.id],
         ]);
-      });
+      } finally {
+        await setTrackerLabels(db, orgId, null, null);
+      }
     });
 
     it("files the follow-ups of a story routed by team or label with its team and labels", async () => {
@@ -2829,7 +2831,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("works a story whose project routes to another repository there, on its own branch and PR", async () => {
-      await withAppSettings({ verifyCommands: ["npm run check"], model: "sonnet" }, async () => {
+      const story = { verifyCommands: ["npm run check"], worktreeSetupCommand: "npm ci" };
+      await withAppPlaybook(story, { model: "sonnet" }, async () => {
         const t = crossRepo("Web");
         const run = await delegate(t.epic.id);
         const lanes = await listLanes(db, run.id);
@@ -2842,7 +2845,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           repository: { fullPath: "acme/api" },
           branch: main.branch,
           baseBranch: "develop",
-          settings: { setupCommand: "pnpm install" },
+          settings: { setupCommand: null },
           qualityGates: [],
         });
         expect(first.stories.map((s) => [s.identifier, s.repository])).toEqual([
@@ -2864,7 +2867,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           repository: { provider: "gitlab", fullPath: "group/app" },
           branch: web.branch,
           baseBranch: web.baseBranch,
-          settings: { model: "sonnet", setupCommand: null },
+          settings: { model: "sonnet", setupCommand: "npm ci" },
           qualityGates: ["npm run check"],
           story: { identifier: "ENG-3" },
         });
@@ -2989,7 +2992,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("applies openPullRequestEarly per lane", async () => {
-      await withAppSettings({ openPullRequestEarly: true }, async () => {
+      await withAppDraftsEarly(async () => {
         const t = crossRepo("Web");
         const run = await delegate(t.epic.id);
         await work(run.id, { commitSha: sha(48) });
@@ -3010,12 +3013,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("ticks pushed stories in each lane's own draft", async () => {
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
-      });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
       try {
-        await withAppSettings({ openPullRequestEarly: true }, async () => {
+        await withAppDraftsEarly(async () => {
           const t = crossRepo("Web");
           const run = await delegate(t.epic.id);
           await work(run.id, { commitSha: sha(51) });
@@ -3039,9 +3039,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           expect(app!.body).toBe(appBody);
         });
       } finally {
-        await updateRepositoryRalphSettings(db, repoId, {
+        await updateRepositoryCoding(db, repoId, {
           ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+          openPullRequestEarly: false,
         });
       }
     });
@@ -3151,10 +3151,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("opens a draft with a templated body after the first story with openPullRequestEarly", async () => {
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
-      });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
       try {
         const epic = linear.add({
           identifier: "ENG-110",
@@ -3207,18 +3204,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           "Updated [Pull request #1]",
         );
       } finally {
-        await updateRepositoryRalphSettings(db, repoId, {
+        await updateRepositoryCoding(db, repoId, {
           ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+          openPullRequestEarly: false,
         });
       }
     });
 
     it("retries an early draft that failed to open after the next story", async () => {
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: true,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true },
-      });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
       try {
         const epic = linear.add({ identifier: "ENG-115", title: "Doohickeys" });
         linear.add({ identifier: "ENG-116", title: "First", parentId: epic.id, priority: 1 });
@@ -3243,25 +3237,23 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await describePr(run.id);
         expect(scm.changeRequests).toEqual([expect.objectContaining({ number: 1, draft: false })]);
       } finally {
-        await updateRepositoryRalphSettings(db, repoId, {
+        await updateRepositoryCoding(db, repoId, {
           ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+          openPullRequestEarly: false,
         });
       }
     });
 
     /** Runs `body` with early drafts on the GitHub repository. */
     async function withEarlyDrafts(body: () => Promise<void>) {
-      const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
-        updateRepositoryRalphSettings(db, repoId, {
-          ralphEnabled: true,
-          ralphSettings,
-        });
-      await settings({ ...DEFAULT_RALPH_SETTINGS, openPullRequestEarly: true });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
       try {
         await body();
       } finally {
-        await settings({ ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" });
+        await updateRepositoryCoding(db, repoId, {
+          ralphEnabled: true,
+          openPullRequestEarly: false,
+        });
       }
     }
 
@@ -3339,17 +3331,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     describe("epicCompletedState", () => {
-      /** Runs `body` with the GitHub repository's `epicCompletedState` set. */
+      /** Runs `body` with the built-in story playbook's `epicCompletedState` set. */
       async function withEpicCompletedState(state: string | null, body: () => Promise<void>) {
-        const settings = (ralphSettings: typeof DEFAULT_RALPH_SETTINGS) =>
-          updateRepositoryRalphSettings(db, repoId, {
-            ralphEnabled: true,
-            ralphSettings,
-          });
-        await settings({
-          ...DEFAULT_RALPH_SETTINGS,
-          setupCommand: "pnpm install",
-          epicCompletedState: state,
+        const builtin = getBuiltinPlaybook("builtin:implement-story")!;
+        changedBuiltins.set(builtin.id, {
+          ...builtin,
+          coding: { ...builtin.coding, epicCompletedState: state },
         });
         linear.workflowStates = [
           { id: "s-todo", name: "Todo", type: "unstarted", position: 0 },
@@ -3361,7 +3348,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         try {
           await body();
         } finally {
-          await settings({ ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" });
+          changedBuiltins.delete(builtin.id);
         }
       }
 
@@ -3590,16 +3577,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("posts the failure to the thread", async () => {
       const issue = linear.add({ identifier: "ENG-141", title: "Doomed" });
       const run = await delegateFromChat(issue.id);
-      await updateRepositoryRalphSettings(db, repoId, {
-        ralphEnabled: false,
-        ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
-      });
+      await updateRepositoryCoding(db, repoId, { ralphEnabled: false });
       try {
         await work(run.id, { jobError: "the agent crashed" });
       } finally {
-        await updateRepositoryRalphSettings(db, repoId, {
+        await updateRepositoryCoding(db, repoId, {
           ralphEnabled: true,
-          ralphSettings: { ...DEFAULT_RALPH_SETTINGS, setupCommand: "pnpm install" },
+          openPullRequestEarly: false,
         });
       }
 

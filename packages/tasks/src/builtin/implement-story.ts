@@ -179,7 +179,7 @@ export const IMPLEMENT_STORY_PLAYBOOK: PlaybookInput = {
   promptTemplate: STORY_TEMPLATE,
   toolSettings: { shell: true, linearRead: false, network: true },
   // Its runs go back to the ralph run (the role's `ralph-run` sink), which records the attempt.
-  // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
+  // Ralph's story model (`DEFAULT_STORY_MODEL`). Its coding settings are `CODING_DEFAULTS`.
   model: "opus",
   tokenBudget: null,
 };

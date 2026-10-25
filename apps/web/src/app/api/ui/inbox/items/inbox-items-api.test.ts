@@ -13,13 +13,12 @@ import {
   organizationMembers,
   organizations,
   ralphRuns,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
   upsertStories,
   users,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type NewLinearRalphRunInput,
 } from "@omniralph/db";
@@ -166,9 +165,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryRalphSettings(db, repoId, {
+    await updateRepositoryCoding(db, repoId, {
       ralphEnabled: true,
-      ralphSettings: DEFAULT_RALPH_SETTINGS,
     });
     [{ id: agentId }] = (await db
       .insert(harnesses)

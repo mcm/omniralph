@@ -152,7 +152,7 @@ function sessionError(session: SessionResult): string {
 /**
  * Does what a lane's pending requests ask (ported from cyralph's
  * `EpicEngine.runRequests`): one Claude session in the lane's branch
- * worktree (with the repository's setup command and the `pre-push` guard),
+ * worktree (with the playbook's worktree setup command and the `pre-push` guard),
  * after setting aside what an earlier session left (`pre-run`), with the
  * attachments and progress file and the session `args.session` describes.
  * PR/MR changes come back as `pullRequest` for the control panel to make.

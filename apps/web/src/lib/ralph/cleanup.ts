@@ -69,7 +69,6 @@ import {
 } from "@omniralph/ralph";
 import type { ChangeRequestStatus } from "@omniralph/scm";
 import {
-  parseRalphSettings,
   WORKTREE_CLEANUP_JOB_TYPE,
   WorktreeCleanupPayload,
   WorktreeCleanupResult,
@@ -78,6 +77,8 @@ import {
   legacyJobRouting,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
+import { organizationPlaybooks } from "@/lib/playbooks";
+import { DEFAULT_CODING_SETTINGS, storyCodingSettings } from "./coding";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
@@ -185,7 +186,10 @@ async function enqueueCleanupJob(
     repository: jobRepository(repository, connection),
     branch: lane.branch,
     baseBranch: lane.baseBranch,
-    settings: jobSettings(repository),
+    settings: jobSettings(
+      repository,
+      await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId)),
+    ),
     epic: { identifier: runReference(run) },
     action,
   });
@@ -269,9 +273,11 @@ async function beginCleanup(
     }
     const found = await getRepositoryWithConnection(deps.db, current.repositoryId);
     if (!found) return { status: "ignored", reason: "repository_unavailable" };
-    if (!parseRalphSettings(found.repository.ralphSettings).cleanupMergedWorktrees) {
-      return { status: "ignored", reason: "opted_out" };
-    }
+    const coding = await storyCodingSettings(
+      found.repository,
+      organizationPlaybooks(deps.db, run.organizationId),
+    );
+    if (!coding.cleanupMergedWorktrees) return { status: "ignored", reason: "opted_out" };
     if (!current.harnessId) {
       await updateLane(tx, laneId, { cleanup: { ...state, status: "done", at: now() } });
       return { status: "nothing" };
@@ -552,7 +558,9 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
         return true;
       }
       let questions = rest.questions;
-      const settings = parseRalphSettings(repository?.ralphSettings);
+      const settings = repository
+        ? await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId))
+        : DEFAULT_CODING_SETTINGS;
       if (result.removedWorktree || result.hadBranch) {
         await notify(
           deps,
@@ -835,6 +843,7 @@ export async function reconcileCleanup(
     }
   };
   const optedIn = new Map<string, boolean>();
+  const playbooks = organizationPlaybooks(deps.db, deps.organizationId);
   const cleansUp = async (repositoryId: string) => {
     if (!optedIn.has(repositoryId)) {
       const found = await getRepositoryWithConnection(deps.db, repositoryId);
@@ -842,7 +851,7 @@ export async function reconcileCleanup(
         repositoryId,
         !!found &&
           !found.repository.disconnectedAt &&
-          parseRalphSettings(found.repository.ralphSettings).cleanupMergedWorktrees,
+          (await storyCodingSettings(found.repository, playbooks)).cleanupMergedWorktrees,
       );
     }
     return optedIn.get(repositoryId) ?? false;

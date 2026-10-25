@@ -15,10 +15,9 @@ import {
   repositories,
   claimJob,
   updateLane,
-  updateRepositoryRalphSettings,
+  updateRepositoryCoding,
   upsertScmConnection,
   webhookDeliveries,
-  DEFAULT_RALPH_SETTINGS,
   type Database,
   type Job,
   organizations,
@@ -40,6 +39,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
+import type { PlaybookCoding } from "@omniralph/tasks";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
@@ -51,6 +51,7 @@ import { cleanupLabel } from "./display";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { handleReply } from "./reply";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { bindCodingPlaybook } from "./testing";
 
 vi.mock("server-only", () => ({}));
 
@@ -90,11 +91,15 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     adapterFor: () => scm.asAdapter(),
   });
 
-  const ralphOn = (settings: Partial<typeof DEFAULT_RALPH_SETTINGS> = {}) =>
-    updateRepositoryRalphSettings(db, repoId, {
-      ralphEnabled: true,
-      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, ...settings },
-    });
+  /** Coding on, with the built-in story playbook, or one with `coding` settings. */
+  const ralphOn = async (coding?: PlaybookCoding) => {
+    await db
+      .update(repositories)
+      .set({ storyPlaybookId: "builtin:implement-story" })
+      .where(eq(repositories.id, repoId));
+    if (coding) await bindCodingPlaybook(db, orgId, repoId, "story", coding);
+    return updateRepositoryCoding(db, repoId, { ralphEnabled: true });
+  };
 
   beforeAll(async () => {
     testDb = await createTestDatabase();

@@ -41,14 +41,15 @@ import {
 import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository, type Router } from "@/lib/routing/resolve";
-import { blockedLabelsMessage, blockingLabels } from "./blocked-labels";
+import { blockedLabelsMessage, blockingLabels, organizationBlockedLabels } from "./blocked-labels";
 import { notifyRunThread } from "./chat-notify";
 import { linearConversation } from "./conversation";
 import {
   loadEpic,
+  organizationManualLabels,
   repositoryAllowsPreparation,
-  repositoryManualLabels,
   type LoadedEpic,
 } from "./epic-loader";
 import { routeStories } from "./lanes";
@@ -188,11 +189,10 @@ async function refuseOpenQuestions(
 }
 
 /**
- * Refuses a new run of an issue that routes to a repository with coding off,
- * or that carries (itself, or through its epic) a blocked label of the
- * repository it routes to (posting why). Unrouted, the repositories that don't
- * block it are the ones a person may pick, and it's refused when every one
- * does. Throws when Linear can't be read.
+ * Refuses a new run of an issue that routes to a repository with coding off, or that carries
+ * (itself, or through its epic) one of the organization's blocked labels, whichever repository
+ * it routes to (posting why). Otherwise every repository may be picked when it's unrouted.
+ * Throws when Linear can't be read.
  */
 async function refuseUnbuildable(
   deps: RalphDeps,
@@ -208,22 +208,16 @@ async function refuseUnbuildable(
   const chosen = await chooseRepository(root, repositories, previous, router);
   if (chosen && "manual" in chosen) return { refused: await refuseManual(deps, event, chosen) };
   if (repositories.length === 0) return { candidates: [] };
-  const refuse = async (labels: string[], repositoryPath?: string) => {
-    await post(deps, event.sessionId, {
-      type: "response",
-      body: blockedLabelsMessage(issue, labels, repositoryPath),
-    });
-    return { refused: { status: "blocked_labels", labels } as StartOutcome };
-  };
-  if (chosen) {
-    const labels = blockingLabels(issues, chosen.repository);
-    return labels.length > 0
-      ? refuse(labels, chosen.repository.fullPath)
-      : { candidates: [...repositories] };
-  }
-  const candidates = repositories.filter((r) => blockingLabels(issues, r).length === 0);
-  if (candidates.length > 0) return { candidates };
-  return refuse(blockingLabels(issues, repositories[0]!));
+  const labels = blockingLabels(
+    issues,
+    await organizationBlockedLabels(deps.db, deps.organizationId),
+  );
+  if (labels.length === 0) return { candidates: [...repositories] };
+  await post(deps, event.sessionId, {
+    type: "response",
+    body: blockedLabelsMessage(issue, labels),
+  });
+  return { refused: { status: "blocked_labels", labels } };
 }
 
 /** Posts why an issue that routes to a repository with coding off isn't built. */
@@ -621,14 +615,13 @@ async function startNewRun(
   try {
     // An issue that was never run may hold a PRD whose materialization stopped half way.
     const completePrd = epicMode && !(await getRunByIssue(db, deps.organizationId, event.issueId));
-    // Which stories are manual depends on the repository the epic routes to.
-    const manualLabels = async (root: IssueSummary) => {
-      const repository = routedRepository(await router.resolve(root.id));
-      return repository ? repositoryManualLabels(repository) : [];
-    };
+    // Manual labels are the organization's; preparation is the routed repository's choice.
+    const manualLabels = await organizationManualLabels(db, deps.organizationId);
     const allowPreparation = async (root: IssueSummary) => {
       const repository = routedRepository(await router.resolve(root.id));
-      return repository ? repositoryAllowsPreparation(repository) : true;
+      return repository
+        ? repositoryAllowsPreparation(repository, organizationPlaybooks(db, deps.organizationId))
+        : true;
     };
     loaded = await loadEpic(linear, event.issueId, {
       completePrd,

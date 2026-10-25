@@ -258,3 +258,59 @@ export async function setDefaultMaxConcurrency(
   }
   await setAppSetting(db, organizationId, DEFAULT_MAX_CONCURRENCY_KEY, maxConcurrency, updatedBy);
 }
+
+/**
+ * The organization's tracker labels (`TrackerLabels`), which routing applies before any
+ * playbook is chosen. Absent: `DEFAULT_TRACKER_LABELS`.
+ */
+export const TRACKER_LABELS_KEY = "tracker.labels";
+
+export interface TrackerLabels {
+  /** Labels marking a story as a manual step (matched ignoring case); the first labels those Om files. */
+  manualLabels: string[];
+  /**
+   * Labels (matched ignoring case) that keep Om off a work item: a delegation or mention of an
+   * issue (or its epic) with one is refused, whichever repo it routes to.
+   */
+  blockedLabels: string[];
+}
+
+/** The tracker labels when the organization hasn't chosen any. */
+export const DEFAULT_TRACKER_LABELS: TrackerLabels = {
+  manualLabels: ["manual"],
+  blockedLabels: ["under-review", "blocked"],
+};
+
+function labelList(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.every((label) => typeof label === "string")) return null;
+  return value.map((label: string) => label.trim()).filter(Boolean);
+}
+
+/**
+ * The organization's tracker labels; a list not set (or not a list of strings) is its default,
+ * and an empty manual list is the default too (manual stories need a label).
+ */
+export async function getTrackerLabels(
+  db: Pick<Database, "select">,
+  organizationId: string,
+): Promise<TrackerLabels> {
+  const setting = await getAppSetting(db, organizationId, TRACKER_LABELS_KEY);
+  const value = (
+    typeof setting?.value === "object" && setting.value !== null ? setting.value : {}
+  ) as { manualLabels?: unknown; blockedLabels?: unknown };
+  const manual = labelList(value.manualLabels);
+  return {
+    manualLabels: manual?.length ? manual : [...DEFAULT_TRACKER_LABELS.manualLabels],
+    blockedLabels: labelList(value.blockedLabels) ?? [...DEFAULT_TRACKER_LABELS.blockedLabels],
+  };
+}
+
+/** Sets (or, with null, clears back to the defaults) the organization's tracker labels. */
+export async function setTrackerLabels(
+  db: Database,
+  organizationId: string,
+  labels: TrackerLabels | null,
+  updatedBy: string | null,
+): Promise<void> {
+  await setAppSetting(db, organizationId, TRACKER_LABELS_KEY, labels, updatedBy);
+}

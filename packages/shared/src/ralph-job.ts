@@ -76,19 +76,23 @@ export const GitBranch = z
 
 const TokenUsage = z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) });
 
-/** Repository settings a ralph job runs with (`repositories.ralph_settings`). */
+/**
+ * What a ralph job runs with besides its run spec: the repo's coding instructions, and (for
+ * agents that predate playbook coding settings, and the `worktree.exec` and `worktree.cleanup`
+ * RPCs, which have no run spec) its story or request playbook's model and worktree setup command.
+ */
 export const RalphJobSettings = z.object({
-  /** Null uses the Claude Code default model. */
+  /** The playbook's model; null uses the Claude Code default model. */
   model: z.string().min(1).max(200).nullable(),
-  /** Run once in a fresh branch worktree (e.g. `pnpm install`). */
+  /** The playbook's `worktreeSetupCommand`: run once in a fresh branch worktree (e.g. `pnpm install`). */
   setupCommand: z.string().min(1).max(4000).nullable(),
-  /** Used when `model` is overloaded; null for none. */
+  /** The playbook's fallback model, used when `model` is overloaded; null for none. */
   fallbackModel: z.string().min(1).max(200).nullable().default(null),
-  /** Appended to every story and request prompt; null for none. */
+  /** The repo's coding instructions, appended to every story and request prompt; null for none. */
   appendInstruction: z.string().min(1).max(10_000).nullable().default(null),
-  /** Agent SDK tools (or rules) the sessions are narrowed to; null: ralph's whole policy. */
+  /** Always null: a playbook's tools set the session's tools. Kept for older agents. */
   allowedTools: z.array(z.string().min(1).max(500)).max(100).nullable().default(null),
-  /** Agent SDK tools (or rules) denied on top of ralph's policy; null for none. */
+  /** Always null: a playbook's tools set the session's tools. Kept for older agents. */
   disallowedTools: z.array(z.string().min(1).max(500)).max(100).nullable().default(null),
 });
 export type RalphJobSettings = z.infer<typeof RalphJobSettings>;
@@ -182,8 +186,8 @@ export const RalphStoryPayload = RalphJobBase.extend({
   /** The commit message, e.g. `feat(TOOL-83): <title>` (or `TOOL-83: <title>` for a single issue). */
   commitMessage: z.string().min(1).max(2000),
   /**
-   * The story's quality gates, run by the job after the session: the
-   * repository's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's.
+   * The story's quality gates, run by the job after the session: the story
+   * playbook's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's.
    */
   qualityGates: z.array(z.string().min(1).max(4000)).max(100),
   /** The PRD's `## Quality Gates` commands, shown in the prompt (those the job runs aren't repeated). */
@@ -393,9 +397,9 @@ export const RalphRequestPayload = RalphJobBase.extend({
   prUrl: z.url().nullable().default(null),
   /** The run's progress log so far. */
   progress: z.string().max(MAX_DOCUMENT_LENGTH),
-  /** The repository's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's gates. */
+  /** The request playbook's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's gates. */
   qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
-  /** Whether an explicit request may rebase and `--force-with-lease` the branch. */
+  /** Whether an explicit request may rebase and `--force-with-lease` the branch (the repo's). */
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES).default("when-asked"),
   /**
    * The lane's last request session, resumed for a follow-up. Only set when

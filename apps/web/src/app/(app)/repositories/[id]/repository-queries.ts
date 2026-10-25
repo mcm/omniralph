@@ -5,11 +5,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import type { QueryKeys } from "@/lib/api/keys";
-import {
-  codingLinearSchema,
-  repositoryCodingSchema,
-  repositoryDetailSchema,
-} from "@/lib/api/repositories";
+import { repositoryDetailSchema } from "@/lib/api/repositories";
 import { repositoryRulesSchema } from "@/lib/api/rules";
 
 /** The page asking, so a repository of another organization switches to it and comes back here. */
@@ -46,47 +42,6 @@ export function useRepositoryRules(repositoryId: string) {
         organizationId: organization.id,
         signal,
       }),
-  });
-}
-
-/**
- * The Coding tab's settings and its database choices (admins), live through the repository's
- * settings changes (the tab's live parts, the task types, come with the repository).
- */
-export function useRepositoryCoding(repositoryId: string, enabled: boolean) {
-  const keys = useQueryKeys();
-  const { organization } = useCurrentUser();
-  return useQuery({
-    queryKey: keys.repositories.part(repositoryId, "coding"),
-    queryFn: ({ signal }) =>
-      api.get(`/api/ui/repositories/${repositoryId}/coding`, repositoryCodingSchema, {
-        params: { next: currentPage() },
-        organizationId: organization.id,
-        signal,
-      }),
-    enabled,
-  });
-}
-
-/**
- * The Linear workspace the Coding tab picks from. It calls Linear, so it isn't polled nor
- * refetched on focus; it lives in the `connections` area so a repository save doesn't ask
- * Linear again. The tab offers a retry when Linear couldn't be read.
- */
-export function useCodingLinear(repositoryId: string, enabled: boolean) {
-  const keys = useQueryKeys();
-  const { organization } = useCurrentUser();
-  return useQuery({
-    queryKey: keys.connections.part("linear", "settings-options"),
-    queryFn: ({ signal }) =>
-      api.get(`/api/ui/repositories/${repositoryId}/coding/linear`, codingLinearSchema, {
-        organizationId: organization.id,
-        signal,
-      }),
-    enabled,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    staleTime: 5 * 60_000,
   });
 }
 

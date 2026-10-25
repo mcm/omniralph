@@ -107,38 +107,45 @@ expires) and from the same browser.
 
 ## 4. Configure routing
 
-Ralph only builds in repositories with coding on: **Repository › Settings › Task types › Coding** (by default it uses the organization's default, which is on unless an admin changed it under **Settings › Harnesses**). Its coding settings are on **Repository › Settings › Coding**. Which issues build where is
-decided by each repository's [work item match](#work-item-matches) and, when the organization has
-any, its [routing rules](#routing-rules), which apply first. The Coding tab's **Routing**
-subsection lists the rules that target the repository (number and conditions) and links to
-**Settings › Routing**; `GET /api/ui/repositories/{id}` reports them too (`routingRules`), beside
-its match (`workItemMatch`).
+Ralph only builds in repositories with coding on. Which issues build where is decided by each
+repository's [work item match](#work-item-matches) and, when the organization has any, its
+[routing rules](#routing-rules), which apply first. `GET /api/ui/repositories/{id}` reports both:
+the rules that target the repository (`routingRules`, position and condition) beside its match
+(`workItemMatch`).
 
-| Setting | What it does |
-| -- | -- |
-| **Open the pull request early** (`openPullRequestEarly`) | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. The story task's `draftPullRequest` (`early` or `end`) wins when it's set, and a story task that pushes only at the end never opens one early. |
-| **Story task** (`storyPlaybookId`) and **Request task** (`requestPlaybookId`) | The coding tasks stories and requests run as (by default `builtin:implement-story` and `builtin:handle-request`). The story task's `pushTiming` says when the branch is pushed: `per-story` (the default) after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
+A repository's coding policy is six settings: on/off, the work item match and the four below.
+Admins read and save it with `GET`/`PUT /api/ui/repositories/{id}/coding` (the match has its own
+endpoint, `PUT /api/ui/repositories/{id}/work-item-match`). `PUT` takes exactly
+`{ codingEnabled, codingInstructions, openPullRequestEarly, historyRewrite, respondToReviewsAndCi }`
+and answers 400 for any other key; both answer the saved policy plus `roundLimits`, the story
+playbook's review and CI fix rounds (read-only).
 
-The rest of the section holds cyralph's per-repository settings (`repositories[]` in cyralph's
-config), with the same names and defaults, grouped as on the page:
+| Setting | Default | What it does |
+| -- | -- | -- |
+| **Coding** (`codingEnabled`) | the organization's default | Whether work items routed to the repository are built. |
+| **Extra instructions** (`codingInstructions`) | none | Text appended to every story and request prompt. |
+| **Open the pull request early** (`openPullRequestEarly`) | off | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. A story playbook that pushes only at the end never opens one early. |
+| **Rewrite history** (`historyRewrite`) | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
+| **Fix review comments and CI failures** (`respondToReviewsAndCi`) | on | Omniralph's review findings and `@bot` requests on the run's PR/MR, and a failed CI run on its head commit, become requests, up to the playbook's rounds. |
 
-| Group | Setting | Default | What it does |
+Everything else a run works with lives in one place: the repository's story and request playbooks
+(`storyPlaybookId`, `requestPlaybookId`, by default `builtin:implement-story` and
+`builtin:handle-request`; see [definitions](definitions.md#coding-settings)) or the organization's
+tracker labels.
+
+| Where | Setting | Default | What it does |
 | -- | -- | -- | -- |
-| Verification | **Verify commands** (`verifyCommands`) | none | One per line. The story job runs them as quality gates after the session reports a story complete; a failing one sends its output back for the next attempt. |
-| Verification | **Run the PRD's quality gates** (`runPrdQualityGates`) | on | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
-| Verification | **Setup command** (`setupCommand`) | none | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
-| Prompt and model | **Appended instruction** (`appendInstruction`) | none | Text appended to every story (and request) prompt. |
-| Prompt and model | **Model** (`model`) / **Fallback model** (`fallbackModel`) | `opus` / none | The Claude model alias or ID the sessions use, and the one used when it's overloaded. |
-| Tools | **Allowed tools** (`allowedTools`) | none | Agent SDK tools or permission rules, one per line (`Read`, `Bash(pnpm test:*)`). Empty: ralph's whole tool policy. Otherwise only these tools are available and only calls matching them run (the session switches from `bypassPermissions` to `dontAsk`). They can only narrow ralph's policy. |
-| Tools | **Disallowed tools** (`disallowedTools`) | none | Always denied, on top of ralph's policy. |
-| PR follow-up | **History rewrites** (`historyRewrite`) | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
-| PR follow-up | **Fix review findings** (`respondToReviews`) / **Max review rounds** (`maxReviewRounds`) | on / 3 | Omniralph's review findings and `@bot` requests on the run's PR/MR become requests, for at most this many reviews. |
-| PR follow-up | **Fix failed CI** (`respondToCiFailures`) / **Max CI fix rounds** (`maxFixRounds`) | on / 3 | A failed CI run on the PR/MR's head commit becomes a request, at most this many times. |
-| PR follow-up | **Clean up after the merge** (`cleanupMergedWorktrees`) / **Unmerged branch timeout** (`unmergedBranchTimeoutMinutes`) | on / 60 | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer. |
-| Linear | **Manual labels** (`manualLabels`) | `manual` | Comma-separated Linear labels that mark a story as a step for a person (at least one). Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
-| Linear | **Blocked labels** (`blockedLabels`) | `under-review`, `blocked` | Linear labels, picked from your workspace, that keep Omniralph off an issue (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear. The labels of the repository the issue routes to apply; when routing has to ask, only repositories whose labels don't block it are offered, and it's refused when every one does. A mention handed to a run that is already working is unaffected. |
-| Linear | **Offer to run preparation** (`allowPreparation`) | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
-| Linear | **Epic completed state** (`epicCompletedState`) | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
+| Story or request playbook | `model` / `fallbackModel` | `opus` / none | The Claude model alias or ID the sessions use, and the one used when it's overloaded. |
+| Story or request playbook | `verifyCommands` | none | Quality gates the job runs after the session reports a story (or request) done; a failing one sends its output back for the next attempt. |
+| Story or request playbook | `runPrdQualityGates` | on | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
+| Story or request playbook | `worktreeSetupCommand` | none | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
+| Request playbook | `maxReviewRounds` / `maxFixRounds` | 3 / 3 | How many reviews and failed CI runs of a PR/MR become requests. |
+| Story playbook | `pushTiming` | `per-story` | When the branch is pushed: after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
+| Story playbook | `allowPreparation` | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
+| Story playbook | `epicCompletedState` | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
+| Story playbook | `cleanupMergedWorktrees` / `unmergedBranchTimeoutMinutes` | on / 60 | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer. |
+| Organization (`app_settings` `tracker.labels`) | `manualLabels` | `manual` | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
+| Organization (`app_settings` `tracker.labels`) | `blockedLabels` | `under-review`, `blocked` | Linear labels that keep Om off a work item (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear, whichever repository it routes to. A mention handed to a run that is already working is unaffected. |
 
 Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
 also changes running epics from their next story on (for example which stories are manual).
@@ -651,7 +658,7 @@ Metrics) with a t-shirt size, then:
 | Size | Result |
 | -- | -- |
 | XS, S, M | A single issue: the description carries the user story and its acceptance criteria. |
-| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the repository's first **Manual label**, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so ralph builds the epic as `children` without rewriting it. |
+| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so ralph builds the epic as `children` without rewriting it. |
 
 An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
