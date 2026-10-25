@@ -1292,6 +1292,15 @@ export type RalphStoryUpdate = Partial<
   >
 >;
 
+/** Links a `ralph.story` job to the story it works on. */
+export async function setJobRalphStory(
+  db: Executor,
+  jobId: string,
+  ralphStoryId: string,
+): Promise<void> {
+  await db.update(jobs).set({ ralphStoryId }).where(eq(jobs.id, jobId));
+}
+
 /** Updates a story (e.g. its status after an attempt). Returns null if it's gone. */
 export async function updateStory(
   db: Executor,

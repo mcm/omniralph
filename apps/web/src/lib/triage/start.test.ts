@@ -200,6 +200,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       organizationId: orgId,
       status: "queued",
       targetHarnessId: null,
+      triageRunId: run!.id,
       dedupeKey: `triage:${run!.id}`,
     });
 

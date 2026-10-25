@@ -1188,6 +1188,250 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     }
   });
 
+  it(
+    "gives legacy reviews a review run and links every job to its run (0084)",
+    { timeout: 30_000 },
+    async () => {
+      await db.execute(sql`create database job_runs`);
+      const uri = testDb.uri.replace(/\/[^/]*$/, "/job_runs");
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      try {
+        cpSync(migrationsFolder, before, { recursive: true });
+        const journalPath = join(before, "meta", "_journal.json");
+        const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+          entries: { tag: string }[];
+        };
+        const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0084_"));
+        writeFileSync(
+          journalPath,
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+        );
+        const client = new pg.Client({ connectionString: uri });
+        await client.connect();
+        try {
+          await migrate(drizzle(client), { migrationsFolder: before });
+          const { rows: orgs } = await client.query<{ id: string }>(
+            `insert into organizations (name) values ('Acme') returning id`,
+          );
+          const org = orgs[0]!.id;
+          await client.query(
+            `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+             values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+            [org],
+          );
+          const { rows: connections } = await client.query<{ id: string }>(
+            `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+             values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+            [org],
+          );
+          const { rows: repos } = await client.query<{ id: string }>(
+            `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+             values ($1, 'github', '1', 'acme/api', $2) returning id`,
+            [org, connections[0]!.id],
+          );
+          const repo = repos[0]!.id;
+
+          // A review run with one review task, and two legacy reviews with no run.
+          const { rows: reviewRuns } = await client.query<{ id: string }>(
+            `insert into review_runs (organization_id, repository_id, pr_number, head_sha, base_sha, trigger, mode, profile_id, status)
+             values ($1, $2, 1, 'h1', 'b1', 'webhook', 'full', 'standard', 'completed') returning id`,
+            [org, repo],
+          );
+          const reviewRun = reviewRuns[0]!.id;
+          const { rows: reviewRows } = await client.query<{ id: string }>(
+            `insert into reviews (review_run_id, repository_id, pr_number, head_sha, base_sha, trigger, status, profile_id, budget, error, created_at, updated_at)
+             values ($1, $2, 1, 'h1', 'b1', 'webhook', 'completed', 'standard', 1, null, now(), now()),
+                    (null, $2, 2, 'h2', 'b2', 'mention', 'budget_exhausted', 'deep', 1, 'Out of tokens',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:05:00Z'),
+                    (null, $2, 3, 'h3', 'b3', 'webhook', 'completed', null, 1, null,
+                     '2026-01-02T00:00:00Z', '2026-01-02T00:05:00Z')
+             returning id`,
+            [reviewRun, repo],
+          );
+          const [taskReview, legacyExhausted, legacyDone] = reviewRows.map((r) => r.id) as [
+            string,
+            string,
+            string,
+          ];
+
+          const { rows: triageRuns } = await client.query<{ id: string }>(
+            `insert into triage_runs (organization_id, linear_issue_id, linear_agent_session_id, trigger, status)
+             values ($1, 'i-1', 's-1', 'label', 'completed') returning id`,
+            [org],
+          );
+          const triageRun = triageRuns[0]!.id;
+          const { rows: ralphRuns } = await client.query<{ id: string }>(
+            `insert into ralph_runs (organization_id, kind, mode, status, linear_issue_id, linear_identifier, linear_agent_session_id)
+             values ($1, 'children', 'epic', 'completed', 'i-2', 'ENG-2', 's-2') returning id`,
+            [org],
+          );
+          const ralphRun = ralphRuns[0]!.id;
+          const { rows: stories } = await client.query<{ id: string }>(
+            `insert into ralph_stories (run_id, linear_issue_id, identifier, title)
+             values ($1, 'st-1', 'ENG-3', 'Legacy story'), ($1, 'st-2', 'ENG-4', 'Task story')
+             returning id`,
+            [ralphRun],
+          );
+          const [legacyStory, taskStory] = stories.map((s) => s.id) as [string, string];
+
+          const context = (value: Record<string, unknown>) =>
+            JSON.stringify({ trigger: { kind: "x", context: value } });
+          const { rows: jobRows } = await client.query<{ id: string; dedupe_key: string }>(
+            `insert into jobs (organization_id, type, task_type, pool, task_id, status, payload, dedupe_key, ralph_run_id) values
+               ($1, 'review.task', 'review', 'short', 'builtin:review-pr', 'completed', $2, 'review-task', null),
+               ($1, 'review.run', 'review', 'short', null, 'completed', $3, 'legacy-review', null),
+               ($1, 'review.run', 'review', 'short', null, 'canceled', $4, 'legacy-review-2', null),
+               ($1, 'review.correlate', 'query', 'short', 'builtin:correlate', 'completed', '{}', 'correlation', null),
+               ($1, 'review.reply', 'query', 'short', 'builtin:reply', 'completed', $2, 'reply', null),
+               ($1, 'triage.run', 'query', 'short', 'builtin:triage', 'failed', $5, 'triage', null),
+               ($1, 'triage.run', 'query', 'short', 'builtin:triage', 'failed', $6, 'triage-bad-id', null),
+               ($1, 'chat.ask', 'query', 'short', 'builtin:ask', 'expired', $7, 'ask', null),
+               ($1, 'ralph.story', 'coding', 'long', null, 'completed', $8, 'legacy-story', $10),
+               ($1, 'ralph.story', 'coding', 'long', 'builtin:story', 'failed', $9, 'task-story', $10),
+               ($1, 'ralph.request', 'coding', 'long', null, 'completed', $8, 'request', $10),
+               ($1, 'repo.sync', 'system', null, null, 'failed', '{}', 'sync', null)
+             returning id, dedupe_key`,
+            [
+              org,
+              context({ reviewId: taskReview }),
+              JSON.stringify({ reviewId: legacyExhausted }),
+              JSON.stringify({ reviewId: legacyDone }),
+              context({ triageRunId: triageRun }),
+              context({ triageRunId: "nope" }),
+              context({ chatThreadId: "t" }),
+              JSON.stringify({ storyId: legacyStory }),
+              context({ storyId: taskStory }),
+              ralphRun,
+            ],
+          );
+          const jobId = (key: string) => jobRows.find((j) => j.dedupe_key === key)!.id;
+          await client.query(`update review_runs set correlation_job_id = $1 where id = $2`, [
+            jobId("correlation"),
+            reviewRun,
+          ]);
+          const { rows: chatConnections } = await client.query<{ id: string }>(
+            `insert into chat_connections (organization_id, platform, external_id, name)
+             values ($1, 'slack', 'T1', 'Acme') returning id`,
+            [org],
+          );
+          const { rows: threads } = await client.query<{ id: string }>(
+            `insert into chat_threads (organization_id, connection_id, platform, external_thread_id, channel_id, started_by_external_user_id)
+             values ($1, $2, 'slack', 'slack:C1:1', 'slack:C1', 'U1') returning id`,
+            [org, chatConnections[0]!.id],
+          );
+          const { rows: threadRuns } = await client.query<{ id: string }>(
+            `insert into chat_thread_runs (organization_id, chat_thread_id, kind, job_id)
+             values ($1, $2, 'query', $3) returning id`,
+            [org, threads[0]!.id, jobId("ask")],
+          );
+
+          await runMigrations(uri);
+
+          // Every review belongs to a run; each legacy review got one of its own.
+          const { rows: runs } = await client.query(
+            `select id, organization_id, repository_id, pr_number, head_sha, base_sha, trigger, mode,
+                    profile_id, status, error, created_at, updated_at
+             from review_runs where id <> $1 order by pr_number`,
+            [reviewRun],
+          );
+          expect(runs).toEqual([
+            {
+              id: legacyExhausted,
+              organization_id: org,
+              repository_id: repo,
+              pr_number: 2,
+              head_sha: "h2",
+              base_sha: "b2",
+              trigger: "mention",
+              mode: "incremental",
+              profile_id: "deep",
+              status: "failed",
+              error: "Out of tokens",
+              created_at: new Date("2026-01-01T00:00:00Z"),
+              updated_at: new Date("2026-01-01T00:05:00Z"),
+            },
+            {
+              id: legacyDone,
+              organization_id: org,
+              repository_id: repo,
+              pr_number: 3,
+              head_sha: "h3",
+              base_sha: "b3",
+              trigger: "webhook",
+              mode: "incremental",
+              profile_id: null,
+              status: "completed",
+              error: null,
+              created_at: new Date("2026-01-02T00:00:00Z"),
+              updated_at: new Date("2026-01-02T00:05:00Z"),
+            },
+          ]);
+          const { rows: reviewLinks } = await client.query(
+            `select id, review_run_id from reviews order by pr_number`,
+          );
+          expect(reviewLinks).toEqual([
+            { id: taskReview, review_run_id: reviewRun },
+            { id: legacyExhausted, review_run_id: legacyExhausted },
+            { id: legacyDone, review_run_id: legacyDone },
+          ]);
+
+          // Each job with a run is linked to exactly that run; the others to none.
+          const { rows: links } = await client.query<Record<string, string | null>>(
+            `select dedupe_key, ralph_run_id, ralph_story_id, review_run_id, triage_run_id, chat_thread_run_id
+             from jobs order by dedupe_key`,
+          );
+          const link = (
+            key: string,
+            columns: Partial<
+              Record<
+                | "ralph_run_id"
+                | "ralph_story_id"
+                | "review_run_id"
+                | "triage_run_id"
+                | "chat_thread_run_id",
+                string
+              >
+            > = {},
+          ) => ({
+            dedupe_key: key,
+            ralph_run_id: null,
+            ralph_story_id: null,
+            review_run_id: null,
+            triage_run_id: null,
+            chat_thread_run_id: null,
+            ...columns,
+          });
+          expect(links).toEqual([
+            link("ask", { chat_thread_run_id: threadRuns[0]!.id }),
+            link("correlation", { review_run_id: reviewRun }),
+            link("legacy-review", { review_run_id: legacyExhausted }),
+            link("legacy-review-2", { review_run_id: legacyDone }),
+            link("legacy-story", { ralph_run_id: ralphRun, ralph_story_id: legacyStory }),
+            link("reply"),
+            link("request", { ralph_run_id: ralphRun }),
+            link("review-task", { review_run_id: reviewRun }),
+            link("sync"),
+            link("task-story", { ralph_run_id: ralphRun, ralph_story_id: taskStory }),
+            link("triage", { triage_run_id: triageRun }),
+            link("triage-bad-id"),
+          ]);
+
+          // The links are cleared, not cascaded, when their run goes.
+          await client.query(`delete from triage_runs where id = $1`, [triageRun]);
+          const { rows: kept } = await client.query(
+            `select triage_run_id from jobs where id = $1`,
+            [jobId("triage")],
+          );
+          expect(kept).toEqual([{ triage_run_id: null }]);
+        } finally {
+          await client.end();
+        }
+      } finally {
+        rmSync(before, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("creates the triage_runs table (0046, pending_reply from 0047)", async () => {
     const { rows } = await db.$client.query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable from information_schema.columns

@@ -588,6 +588,10 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
         jobId: first.id,
         ralphRunId: null,
       });
+      // The job is linked to its run.
+      expect((await db.select().from(jobs).where(eq(jobs.id, first.id)))[0]?.chatThreadRunId).toBe(
+        query!.id,
+      );
       // Idempotent: mapping it again returns the same row.
       expect(
         await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: first.id }),

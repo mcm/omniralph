@@ -540,6 +540,7 @@ export {
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
+  setJobRalphStory,
   upsertStories,
   copyLanes,
   ensureLane,

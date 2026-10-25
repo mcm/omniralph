@@ -67,6 +67,14 @@ export interface NewJobInput {
   dedupeKey?: string | null;
   /** The ralph run a `ralph.*` job belongs to. */
   ralphRunId?: string | null;
+  /** The ralph story a `ralph.story` job works on. */
+  ralphStoryId?: string | null;
+  /** The review run a review task's or correlation job belongs to. */
+  reviewRunId?: string | null;
+  /** The triage run a `triage.run` job belongs to. */
+  triageRunId?: string | null;
+  /** The chat thread's query run a `chat.ask` job answers. */
+  chatThreadRunId?: string | null;
   /** Only this agent may claim the job; null: any agent of the organization. */
   targetHarnessId?: string | null;
 }
@@ -96,6 +104,10 @@ export async function insertJob(
         repositoryId: input.repositoryId ?? null,
         dedupeKey: input.dedupeKey ?? null,
         ralphRunId: input.ralphRunId ?? null,
+        ralphStoryId: input.ralphStoryId ?? null,
+        reviewRunId: input.reviewRunId ?? null,
+        triageRunId: input.triageRunId ?? null,
+        chatThreadRunId: input.chatThreadRunId ?? null,
         targetHarnessId: input.targetHarnessId ?? null,
       })
       .onConflictDoNothing({
