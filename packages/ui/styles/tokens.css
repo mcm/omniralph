@@ -1,0 +1,96 @@
+/*
+ * Ultraviolet tokens (values from the canvas ui.css). Dark is the default; the theme
+ * attribute sits on <html> (data-theme="dark" | "light").
+ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --or-page: #0a0810;
+  --or-side: #0d0b14;
+  --or-surf: #110e1a;
+  --or-raised: #17131f;
+  --or-sel: #1c1729;
+  --or-hover: #15111f;
+
+  /* Lines */
+  --or-line: #1b1726;
+  --or-border: #2a2338;
+  --or-ctl: #7a6e94;
+
+  /* Text */
+  --or-text: #ece8f4;
+  --or-sec: #a79fba;
+  --or-ter: #8a82a0;
+
+  /* Accent: needs you */
+  --or-acc: #b294ff;
+  --or-acc-ink: #0a0810;
+  --or-acc-hover: #c7b0ff;
+  --or-halo: rgba(178, 148, 255, 0.2);
+  --or-glow: 0 0 22px rgba(178, 148, 255, 0.32);
+
+  /* Status */
+  --or-run: #5ee6d0;
+  --or-run-glow: rgba(94, 230, 208, 0.16);
+  --or-fail: #ff6b5e;
+  --or-fail-tint: #1c1216;
+  --or-done: #5e5578;
+
+  /* Solid neutral button */
+  --or-solid: #ece8f4;
+  --or-solid-ink: #0a0810;
+  --or-solid-hover: #ffffff;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --or-page: #f5f3ee;
+  --or-side: #efece6;
+  --or-surf: #ffffff;
+  --or-raised: #f5f3ee;
+  --or-sel: #e9e4ef;
+  --or-hover: #ece8ef;
+
+  --or-line: #e5e1da;
+  --or-border: #ddd7d0;
+  --or-ctl: #85808f;
+
+  --or-text: #17151c;
+  --or-sec: #57535f;
+  --or-ter: #67636f;
+
+  --or-acc: #6236d6;
+  --or-acc-ink: #ffffff;
+  --or-acc-hover: #5229c2;
+  --or-halo: rgba(98, 54, 214, 0.14);
+  --or-glow: 0 4px 14px rgba(98, 54, 214, 0.25);
+
+  --or-run: #087064;
+  --or-run-glow: rgba(8, 112, 100, 0.14);
+  --or-fail: #c42b2b;
+  --or-fail-tint: #fbedec;
+  --or-done: #968fa1;
+
+  --or-solid: #17151c;
+  --or-solid-ink: #ffffff;
+  --or-solid-hover: #000000;
+}
+
+/* Theme-independent tokens */
+:root {
+  /* The families load from fonts.css; without it the system fallbacks apply. */
+  --or-font-sans: "Instrument Sans Variable", "Instrument Sans", system-ui, sans-serif;
+  --or-font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  --or-font-size: 14px;
+  --or-line-height: 1.4;
+
+  --or-radius-sm: 6px;
+  --or-radius: 8px;
+  --or-radius-lg: 12px;
+
+  --or-side-w: 232px;
+  --or-rail-w: 64px;
+}

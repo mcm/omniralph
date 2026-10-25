@@ -1,0 +1,12 @@
+/* Base type for anything rendered inside an Ultraviolet root (.or-root). */
+.or-root {
+  font-family: var(--or-font-sans);
+  font-size: var(--or-font-size);
+  line-height: var(--or-line-height);
+  color: var(--or-text);
+  background: var(--or-page);
+}
+
+.or-mono {
+  font-family: var(--or-font-mono);
+}
