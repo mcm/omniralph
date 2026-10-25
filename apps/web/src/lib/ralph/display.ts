@@ -1,9 +1,8 @@
 /**
- * Client-safe parts of the Ralph runs pages: filter values, list URLs,
+ * Client-safe parts of the Ralph runs pages: filter values,
  * view-prop types and formatting. Server-side mapping lives in `./history`.
  */
 import type { RalphLaneCleanup, RalphRunStatus, RalphStoryStatus } from "@omniralph/db";
-import { parsePage } from "@/lib/pagination";
 
 /** Client-safe copies of the DB enums (the views can't import `@omniralph/db`). */
 export const RALPH_RUN_STATUSES = [
@@ -30,44 +29,6 @@ export const STOPPABLE_RALPH_RUN_STATUSES: readonly RalphRunStatus[] = [
   "running",
   "waiting",
 ];
-
-export interface RalphRunListParams {
-  status: RalphRunStatus | null;
-  repositoryId: string | null;
-  /** 1-based. */
-  page: number;
-}
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function single(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-/** The list's filters and page from URL search params; unknown values are ignored. */
-export function parseRalphRunListParams(params: SearchParams): RalphRunListParams {
-  const status = single(params.status);
-  const repository = single(params.repository);
-  return {
-    status: (RALPH_RUN_STATUSES as readonly string[]).includes(status ?? "")
-      ? (status as RalphRunStatus)
-      : null,
-    repositoryId: repository && UUID.test(repository) ? repository.toLowerCase() : null,
-    page: parsePage(params.page),
-  };
-}
-
-/** `pathname` with the filters and page as search params (defaults omitted). */
-export function ralphRunListHref(pathname: string, params: RalphRunListParams): string {
-  const search = new URLSearchParams();
-  if (params.status) search.set("status", params.status);
-  if (params.repositoryId) search.set("repository", params.repositoryId);
-  if (params.page > 1) search.set("page", String(params.page));
-  const query = search.toString();
-  return query ? `${pathname}?${query}` : pathname;
-}
 
 export interface RalphRepositoryRef {
   id: string;

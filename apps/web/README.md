@@ -185,7 +185,7 @@ database, at 1440px and 390px in the dark and light themes:
 
 ```sh
 pnpm --filter @omniralph/web verify:screens
-pnpm --filter @omniralph/web verify:screens --routes "settings-*,/coding/**" --theme dark --viewport 390
+pnpm --filter @omniralph/web verify:screens --routes "settings-*,/reviews/**" --theme dark --viewport 390
 ```
 
 **Prerequisites:** Docker only (a local or remote daemon). No secrets, no OAuth, no browser on

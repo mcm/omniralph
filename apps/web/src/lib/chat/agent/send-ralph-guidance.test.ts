@@ -217,7 +217,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
 
     expect(result).toMatchObject({
       status: "applied",
-      run: { id: run.id, url: `${APP_URL}/coding/${run.id}` },
+      run: { id: run.id, url: `${APP_URL}/runs/${run.id}` },
     });
     expect(result.message).toContain("once the job it is running finishes");
     // Applied like a Linear reply: guidance for the next attempt, and a pending request.

@@ -250,7 +250,7 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
       expect(shown).toMatchObject({
         runType: "coding",
         id: run.id,
-        url: `${APP_URL}/coding/${run.id}`,
+        url: `${APP_URL}/runs/${run.id}`,
         task: "builtin:handle-request",
         status: "running",
         repository: "acme/api",

@@ -406,7 +406,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     expect(toolOutput(calls[1]!)).toMatchObject({
       status: "started",
       runId: run.id,
-      url: `${APP_URL}/coding/${run.id}`,
+      url: `${APP_URL}/runs/${run.id}`,
       task: "builtin:handle-request",
       repository: "acme/app",
       followUp: false,
