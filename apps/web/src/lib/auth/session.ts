@@ -37,6 +37,11 @@ export interface CurrentUser {
   image: string | null;
   /** Remembered control panel theme; `null` follows the OS preference. */
   theme: UiTheme | null;
+  /**
+   * Whether the control panel shows advanced settings. Read only by the `(app)` layout
+   * (and `useShowAdvanced`): no API handler, routing or run code reads it.
+   */
+  showAdvanced: boolean;
 }
 
 /** A signed-in user working in an organization. */
@@ -59,7 +64,7 @@ async function resolveOrganization(userId: string) {
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, name, email, image, theme } = session.user;
+  const { id, name, email, image, theme, showAdvanced } = session.user;
   const organization = await resolveOrganization(id);
   return {
     id,
@@ -69,6 +74,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     email: email ?? null,
     image: image ?? null,
     theme,
+    showAdvanced,
   };
 });
 

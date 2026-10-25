@@ -200,6 +200,11 @@ export const users = pgTable("users", {
   ),
   /** The user's chosen control panel theme; `null` follows the OS preference. */
   theme: uiTheme("theme"),
+  /**
+   * Whether the control panel shows advanced settings (routing rules, playbooks, chat
+   * overrides). A UI preference only: no API, routing or run code reads it.
+   */
+  showAdvanced: boolean("show_advanced").notNull().default(false),
   createdAt: createdAt(),
 });
 

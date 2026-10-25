@@ -26,7 +26,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/auth", () => ({
   auth: async () => ({
-    user: { id: "user-1", name: "Ada", email: null, image: null, theme: null },
+    user: { id: "user-1", name: "Ada", email: null, image: null, theme: null, showAdvanced: false },
   }),
 }));
 vi.mock("next/navigation", () => ({

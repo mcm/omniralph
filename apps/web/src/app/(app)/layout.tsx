@@ -35,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       themePreference={themePreference(user.theme)}
       organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
       scopeCookie={jar.get(ORGANIZATION_SCOPE_COOKIE)?.value ?? null}
+      showAdvanced={user.showAdvanced}
     >
       <LegacyFrame>{children}</LegacyFrame>
     </AppShell>

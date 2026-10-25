@@ -20,6 +20,7 @@ export {
   getUserById,
   listUsers,
   normalizeEmail,
+  setUserShowAdvanced,
   setUserTheme,
   type NewUser,
   type UiTheme,

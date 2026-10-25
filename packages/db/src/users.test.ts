@@ -9,6 +9,7 @@ import {
   getUserById,
   listUsers,
   normalizeEmail,
+  setUserShowAdvanced,
   setUserTheme,
 } from "./users.js";
 
@@ -61,6 +62,17 @@ describe.skipIf(!databaseAvailable)("user queries", () => {
     expect((await getUserById(db, user.id))?.theme).toBe("dark");
     await setUserTheme(db, user.id, null);
     expect((await getUserById(db, user.id))?.theme).toBeNull();
+  });
+
+  it("remembers whether a user shows advanced settings, hidden by default, for that user only", async () => {
+    const user = await createUser(db, { email: "advanced@example.com" });
+    const other = await createUser(db, { email: "other-advanced@example.com" });
+    expect(user.showAdvanced).toBe(false);
+    await setUserShowAdvanced(db, user.id, true);
+    expect(await getUserById(db, user.id)).toMatchObject({ showAdvanced: true, theme: null });
+    expect((await getUserById(db, other.id))?.showAdvanced).toBe(false);
+    await setUserShowAdvanced(db, user.id, false);
+    expect((await getUserById(db, user.id))?.showAdvanced).toBe(false);
   });
 
   it("deletes users with their accounts and sessions", async () => {

@@ -1,6 +1,6 @@
 "use server";
 
-import { setUserTheme } from "@omniralph/db";
+import { setUserShowAdvanced, setUserTheme } from "@omniralph/db";
 import { recordChange } from "@omniralph/db/changes";
 import type { ThemePreference } from "@omniralph/ui";
 import type { ActionResult } from "@/lib/action-result";
@@ -29,5 +29,16 @@ export async function saveThemePreference(preference: ThemePreference): Promise<
         userId: user.id,
       });
     }
+  });
+}
+
+/**
+ * Remembers whether the signed-in user's control panel shows advanced settings (see
+ * `useShowAdvanced`). A UI preference only: it never changes what anything does.
+ */
+export async function saveShowAdvancedPreference(value: boolean): Promise<ActionResult> {
+  return runSignedInAction(async (user) => {
+    if (typeof value !== "boolean") return { ok: false, error: "Unknown setting." };
+    await setUserShowAdvanced(getDb(), user.id, value);
   });
 }

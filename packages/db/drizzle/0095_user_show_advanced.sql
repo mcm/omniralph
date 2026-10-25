@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "show_advanced" boolean DEFAULT false NOT NULL;
