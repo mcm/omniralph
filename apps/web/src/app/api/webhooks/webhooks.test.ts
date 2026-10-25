@@ -427,13 +427,15 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       expect(await closed.json()).toEqual({ status: "ignored", reason: "not_ralph" });
       for (const [event, action] of [
         ["pull_request", "edited"],
-        ["pull_request", "converted_to_draft"],
         ["issue_comment", "created"],
       ] as const) {
         const res = await github(githubRequest(githubPayload(action, { number }), { event }));
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ status: "ignored", reason: "unsupported_event" });
       }
+      // A draft or review state change is only recorded when it's a ralph run's PR.
+      const drafted = await github(githubRequest(githubPayload("converted_to_draft", { number })));
+      expect(await drafted.json()).toEqual({ status: "ignored", reason: "not_ralph" });
       expect(await prJobs(githubRepoId, number)).toHaveLength(0);
     });
 

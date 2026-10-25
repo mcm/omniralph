@@ -324,7 +324,12 @@ async function openEarlyLanePullRequest(
     });
     return;
   }
-  await updateLane(tx, lane.id, { prNumber: pr.number, prUrl: pr.url });
+  await updateLane(tx, lane.id, {
+    prNumber: pr.number,
+    prUrl: pr.url,
+    // An open one found for the branch keeps the state its webhooks give it.
+    ...(pr.created ? { prDraft: true, prStateUpdatedAt: new Date() } : {}),
+  });
   const label = await sessionLinkLabel(tx, run, found.repository, pr.number);
   const conversation = conversationFor(run, deps);
   await quietly(`Adding the ${term} to ${conversation.name}`, () =>
@@ -488,6 +493,9 @@ export async function applyPullRequestJob(
   await updateLane(tx, lane.id, {
     prNumber: pr.number,
     prUrl: pr.url,
+    // `publishPullRequest` marked it ready.
+    prDraft: false,
+    prStateUpdatedAt: new Date(),
     publish: { status: "published", created: pr.created },
   });
   const label = await sessionLinkLabel(

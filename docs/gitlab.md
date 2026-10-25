@@ -84,6 +84,9 @@ nothing to configure: `BOT_HANDLE` only applies to GitHub.
    SSL verification on and a generated secret (checked against `X-Gitlab-Token`). Projects that
    fail are named in a warning with GitLab's message and aren't connected; the others are.
 
+Merge request events also tell Omniralph where each merge request that Om opened stands: draft or
+not, waiting for its reviewers, approved (approvals by the bot user don't count), merged or closed.
+
 The picker is the only way to choose projects. To change them later, use **Repositories ›
 Code-host connections › Choose projects**: ticking a project connects it (or re-enables it),
 unticking a connected one disables its reviews (its webhook stays, so re-enabling is instant).

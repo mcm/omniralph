@@ -350,6 +350,7 @@ export async function recordClosedPullRequest(
   await updateLane(deps.db, lane.id, {
     prClosed: true,
     prMerged: state.state === "merged",
+    prStateUpdatedAt: new Date(),
     mergeSha: state.mergeSha,
   });
   try {

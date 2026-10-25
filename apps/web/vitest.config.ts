@@ -16,6 +16,7 @@ export default mergeConfig(
       server: { deps: { inline: [/\/node_modules\/ai\//] } },
       // One Postgres container for the run; each test file clones a migrated database.
       globalSetup: ["../../packages/db/testing/global-setup.ts"],
+      setupFiles: ["./vitest.setup.ts"],
     },
   }),
 );

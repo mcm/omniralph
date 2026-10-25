@@ -289,6 +289,198 @@ export function parseGitLabCommentEvent(
   };
 }
 
+/** Where a PR/MR's human review stands (`ralph_lanes.pr_review_state`). */
+export type PullRequestReviewState =
+  "none" | "review_requested" | "commented" | "changes_requested" | "approved";
+
+/**
+ * A change to an open PR/MR's draft or review state (GitHub `pull_request`
+ * and `pull_request_review`, GitLab Merge Request Hook), for ralph lanes.
+ */
+export interface PullRequestStateEvent {
+  number: number;
+  /** Whether it's a draft now. */
+  draft: boolean;
+  /**
+   * The review state it moves to, if any; `from` limits the move to those
+   * states (a comment doesn't undo an approval, say).
+   */
+  reviewState?: { to: PullRequestReviewState; from?: readonly PullRequestReviewState[] };
+  /** Who reviewed, approved or unapproved, for review events: the bot's own are ignored. */
+  reviewer: { username: string; isBot: boolean } | null;
+}
+
+const GitHubStatePullRequest = z.object({
+  number: z.number().int().positive(),
+  state: z.string(),
+  draft: z.boolean().optional(),
+  requested_reviewers: z.array(z.unknown()).nullish(),
+  requested_teams: z.array(z.unknown()).nullish(),
+});
+const GitHubPullRequestStateEvent = z.object({
+  action: z.string(),
+  pull_request: GitHubStatePullRequest,
+});
+const GitHubPullRequestReviewEvent = z.object({
+  action: z.string(),
+  review: z.object({ state: z.string(), user: GitHubUser.nullish() }),
+  pull_request: GitHubStatePullRequest,
+});
+
+/** Whether a GitHub PR still has reviewers (users or teams) asked to review it. */
+const githubAwaitsReview = (pr: z.infer<typeof GitHubStatePullRequest>) =>
+  (pr.requested_reviewers?.length ?? 0) + (pr.requested_teams?.length ?? 0) > 0;
+
+type ReviewMove = PullRequestStateEvent["reviewState"];
+
+const GITHUB_PULL_REQUEST_STATE_ACTIONS: Record<string, (awaitsReview: boolean) => ReviewMove> = {
+  opened: (awaits) => ({ to: awaits ? "review_requested" : "none" }),
+  reopened: (awaits) => (awaits ? { to: "review_requested", from: ["none"] } : undefined),
+  ready_for_review: (awaits) => (awaits ? { to: "review_requested", from: ["none"] } : undefined),
+  converted_to_draft: () => undefined,
+  review_requested: () => ({ to: "review_requested" }),
+  review_request_removed: (awaits) =>
+    awaits ? undefined : { to: "none", from: ["review_requested"] },
+};
+
+const GITHUB_REVIEW_STATES: Record<string, NonNullable<ReviewMove>> = {
+  approved: { to: "approved" },
+  changes_requested: { to: "changes_requested" },
+  // A comment doesn't undo an approval or a change request.
+  commented: { to: "commented", from: ["none", "review_requested"] },
+};
+
+/**
+ * The draft or review state change of a GitHub delivery (`X-GitHub-Event`
+ * `pull_request` or `pull_request_review`) on an open PR, or null.
+ */
+export function parseGitHubPullRequestStateEvent(
+  eventName: string | null,
+  body: unknown,
+): PullRequestStateEvent | null {
+  if (eventName === "pull_request") {
+    const parsed = GitHubPullRequestStateEvent.safeParse(body);
+    if (!parsed.success) return null;
+    const { action, pull_request: pr } = parsed.data;
+    const move = Object.hasOwn(GITHUB_PULL_REQUEST_STATE_ACTIONS, action)
+      ? GITHUB_PULL_REQUEST_STATE_ACTIONS[action]
+      : undefined;
+    if (!move || pr.state !== "open") return null;
+    return {
+      number: pr.number,
+      draft: pr.draft ?? false,
+      reviewState: move(githubAwaitsReview(pr)),
+      reviewer: null,
+    };
+  }
+  if (eventName === "pull_request_review") {
+    const parsed = GitHubPullRequestReviewEvent.safeParse(body);
+    if (!parsed.success) return null;
+    const { action, review, pull_request: pr } = parsed.data;
+    if (pr.state !== "open") return null;
+    const awaits = githubAwaitsReview(pr);
+    let reviewState: ReviewMove;
+    if (action === "submitted") {
+      const state = review.state.toLowerCase();
+      if (!Object.hasOwn(GITHUB_REVIEW_STATES, state)) return null;
+      reviewState = GITHUB_REVIEW_STATES[state];
+    } else if (action === "dismissed") {
+      reviewState = {
+        to: awaits ? "review_requested" : "none",
+        from: ["approved", "changes_requested"],
+      };
+    } else return null;
+    return {
+      number: pr.number,
+      draft: pr.draft ?? false,
+      reviewState,
+      reviewer: review.user ? githubAuthor(review.user) : null,
+    };
+  }
+  return null;
+}
+
+const GitLabUser = z.object({ id: z.number().int().optional(), username: z.string().min(1) });
+const ReviewersChange = z.object({
+  previous: z.array(GitLabUser).nullish(),
+  current: z.array(GitLabUser).nullish(),
+});
+const GitLabMergeRequestStateEvent = z.object({
+  object_kind: z.literal("merge_request"),
+  user: GitLabUser.nullish(),
+  reviewers: z.array(GitLabUser).nullish(),
+  object_attributes: z.object({
+    iid: z.number().int().positive(),
+    action: z.string().optional(),
+    state: z.string(),
+    draft: z.boolean().optional(),
+    work_in_progress: z.boolean().optional(),
+  }),
+  changes: z
+    .object({
+      draft: DraftChange.optional(),
+      work_in_progress: DraftChange.optional(),
+      reviewers: ReviewersChange.optional(),
+    })
+    .optional(),
+});
+
+const gitlabUserKey = (user: z.infer<typeof GitLabUser>) => user.id ?? user.username;
+
+/**
+ * The draft or review state change of a GitLab delivery (`X-Gitlab-Event:
+ * Merge Request Hook`) on an open MR, or null: approvals, opening and
+ * reopening, and updates that change the draft flag or the reviewers.
+ */
+export function parseGitLabPullRequestStateEvent(
+  eventName: string | null,
+  body: unknown,
+): PullRequestStateEvent | null {
+  if (eventName !== "Merge Request Hook") return null;
+  const parsed = GitLabMergeRequestStateEvent.safeParse(body);
+  if (!parsed.success) return null;
+  const { object_attributes: mr, changes, user } = parsed.data;
+  if (mr.state !== "opened") return null;
+  const awaits = (parsed.data.reviewers?.length ?? 0) > 0;
+  const actor = user ? { username: user.username, isBot: false } : null;
+  const event = (reviewState: ReviewMove, reviewer: PullRequestStateEvent["reviewer"] = null) => ({
+    number: mr.iid,
+    draft: mr.draft ?? mr.work_in_progress ?? false,
+    reviewState,
+    reviewer,
+  });
+  switch (mr.action) {
+    case "open":
+      return event({ to: awaits ? "review_requested" : "none" });
+    case "reopen":
+      return event(awaits ? { to: "review_requested", from: ["none"] } : undefined);
+    case "approved":
+    case "approval":
+      return event({ to: "approved" }, actor);
+    case "unapproved":
+    case "unapproval":
+      return event({ to: awaits ? "review_requested" : "none", from: ["approved"] }, actor);
+    case "update": {
+      const draftChanged = Boolean(changes?.draft ?? changes?.work_in_progress);
+      const reviewers = changes?.reviewers;
+      if (!draftChanged && !reviewers) return null;
+      let reviewState: ReviewMove;
+      if (reviewers) {
+        const before = new Set((reviewers.previous ?? []).map(gitlabUserKey));
+        const current = reviewers.current ?? [];
+        if (current.some((r) => !before.has(gitlabUserKey(r)))) {
+          reviewState = { to: "review_requested" };
+        } else if (current.length === 0) {
+          reviewState = { to: "none", from: ["review_requested"] };
+        }
+      }
+      return event(reviewState);
+    }
+    default:
+      return null;
+  }
+}
+
 /**
  * A finished CI run (GitHub `workflow_run` completed, GitLab Pipeline Hook)
  * that may need fixing on a ralph PR/MR.

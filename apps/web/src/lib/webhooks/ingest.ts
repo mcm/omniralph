@@ -8,6 +8,7 @@ import {
   findScmConnectionsByExternalId,
   releaseWebhookDelivery,
   setWebhookDeliveryJob,
+  updatePullRequestState,
   type Database,
   type Repository,
   type ScmConnection,
@@ -34,15 +35,18 @@ import {
   parseGitHubEvent,
   parseGitHubInstallationDeleted,
   parseGitHubClosedEvent,
+  parseGitHubPullRequestStateEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
   parseGitLabEvent,
   parseGitLabClosedEvent,
+  parseGitLabPullRequestStateEvent,
   webhookRepositoryId,
   type ChangeRequestEvent,
   type CiEvent,
   type CommentEvent,
   type ClosedEvent,
+  type PullRequestStateEvent,
 } from "./events";
 
 /** Code-host lookups a handler may make stay well inside the 3s webhook budget. */
@@ -55,6 +59,7 @@ interface ProviderSpec {
   parseComment(eventName: string | null, body: unknown): CommentEvent | null;
   parseCi(eventName: string | null, body: unknown): CiEvent | null;
   parseClosed(eventName: string | null, body: unknown): ClosedEvent | null;
+  parseState(eventName: string | null, body: unknown): PullRequestStateEvent | null;
 }
 
 const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
@@ -65,6 +70,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parseComment: parseGitHubCommentEvent,
     parseCi: parseGitHubCiEvent,
     parseClosed: parseGitHubClosedEvent,
+    parseState: parseGitHubPullRequestStateEvent,
   },
   gitlab: {
     eventHeader: "x-gitlab-event",
@@ -73,6 +79,7 @@ const PROVIDERS: Record<ScmProvider, ProviderSpec> = {
     parseComment: parseGitLabCommentEvent,
     parseCi: parseGitLabCiEvent,
     parseClosed: parseGitLabClosedEvent,
+    parseState: parseGitLabPullRequestStateEvent,
   },
 };
 
@@ -98,7 +105,7 @@ type Outcome =
   | { status: "enqueued"; reviewId: string; jobId: string }
   | { status: "duplicate"; jobId?: string }
   | { status: "accepted"; command: string }
-  | { status: "accepted"; event: "ci_failure" | "merged" | "closed" }
+  | { status: "accepted"; event: "ci_failure" | "merged" | "closed" | "pull_request_state" }
   | { status: "removed"; connections: number }
   | { status: "ignored"; reason: string };
 
@@ -138,7 +145,8 @@ async function handleInstallationDeleted(
  * publishes (no review work), so it answers well within the code host's
  * timeout. Unknown, disabled or disconnected repos and irrelevant events get
  * 200 without side effects; a delivery ID that was already acted on is a no-op.
- * A GitHub App uninstall removes the installation's connection.
+ * A GitHub App uninstall removes the installation's connection. Draft and
+ * review state changes of a ralph PR/MR are recorded on its lane.
  */
 export async function handleWebhook(
   provider: ScmProvider,
@@ -198,6 +206,24 @@ export async function handleWebhook(
   const reviewsOff = async () =>
     !!repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).review;
   const event = spec.parse(eventName, body);
+  const prState = spec.parseState(eventName, body);
+  if (prState) {
+    // Opening, reopening and ready-for-review also trigger reviews, which go on as before.
+    const stateOutcome = await applyPullRequestState({ ...deps, ...match }, prState).catch(
+      (error: unknown) => {
+        console.error(
+          `${provider} webhook ${deliveryId ?? "(no delivery ID)"} failed to record the state of ${repository.fullPath}#${prState.number}`,
+          error,
+        );
+        return null;
+      },
+    );
+    if (!event) {
+      return stateOutcome
+        ? reply(stateOutcome)
+        : Response.json({ error: "internal_error" }, { status: 500 });
+    }
+  }
   if (!event) {
     const comment = spec.parseComment(eventName, body);
     if (!comment) return ignored("unsupported_event");
@@ -391,6 +417,34 @@ async function handleClosed(
   const defer = input.defer ?? ((run: () => Promise<void>) => run());
   await defer(task);
   return reply({ status: "accepted", event: closed.merged ? "merged" : "closed" });
+}
+
+/**
+ * A PR/MR's draft or review state: recorded on its ralph lanes (others are
+ * ignored as `not_ralph`), whatever the repository's switches, so the Inbox
+ * knows which of Om's PRs/MRs wait on a person. Reviews and approvals by the
+ * connection's bot (or any bot) are ignored. Redeliveries just apply the
+ * same state again.
+ */
+async function applyPullRequestState(
+  input: WebhookDeps & { repository: Repository; connection: ScmConnection },
+  event: PullRequestStateEvent,
+): Promise<Outcome> {
+  const { db, repository } = input;
+  if (
+    event.reviewer &&
+    isOwnComment(event.reviewer, connectionBotHandle(input.connection, input.handle))
+  ) {
+    return { status: "ignored", reason: "own_review" };
+  }
+  if (!(await findLaneByPullRequest(db, repository.id, event.number))) {
+    return { status: "ignored", reason: "not_ralph" };
+  }
+  await updatePullRequestState(db, repository.id, event.number, {
+    draft: event.draft,
+    reviewState: event.reviewState,
+  });
+  return { status: "accepted", event: "pull_request_state" };
 }
 
 /**

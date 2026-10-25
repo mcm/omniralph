@@ -1005,6 +1005,104 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     }
   });
 
+  it("gives existing lanes no review state and no draft (0087)", async () => {
+    await db.execute(sql`create database lane_review_state`);
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/lane_review_state");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0087_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        await client.query(
+          `insert into review_profiles (organization_id, id, name, model, max_tokens_per_review, max_files, allow_repo_exploration)
+           values ($1, 'standard', 'Standard', 'm', 1, 1, false)`,
+          [org],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const { rows: repos } = await client.query<{ id: string }>(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', '1', 'acme/main', $2) returning id`,
+          [org, connections[0]!.id],
+        );
+        const { rows: runs } = await client.query<{ id: string }>(
+          `insert into ralph_runs (organization_id, kind, repository_id, status,
+             linear_issue_id, linear_identifier, linear_agent_session_id)
+           values ($1, 'prd', $2, 'completed', 'i1', 'ENG-1', 's1'),
+                  ($1, 'prd', $2, 'completed', 'i2', 'ENG-2', 's2'),
+                  ($1, 'prd', $2, 'running', 'i3', 'ENG-3', 's3')
+           returning id`,
+          [org, repos[0]!.id],
+        );
+        // Production's lane shapes: a merged PR, an open PR, no PR yet.
+        await client.query(
+          `insert into ralph_lanes (run_id, repository_id, branch, base_branch, pr_number, pr_url, pr_closed, pr_merged)
+           values ($1, $4, 'a', 'main', 1, 'https://github.com/acme/main/pull/1', true, true),
+                  ($2, $4, 'b', 'main', 2, 'https://github.com/acme/main/pull/2', false, false),
+                  ($3, $4, 'c', 'main', null, null, false, false)`,
+          [runs[0]!.id, runs[1]!.id, runs[2]!.id, repos[0]!.id],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query(
+          `select branch, pr_closed, pr_merged, pr_draft, pr_review_state, pr_state_updated_at
+           from ralph_lanes order by branch`,
+        );
+        expect(rows).toEqual([
+          {
+            branch: "a",
+            pr_closed: true,
+            pr_merged: true,
+            pr_draft: false,
+            pr_review_state: "none",
+            pr_state_updated_at: null,
+          },
+          {
+            branch: "b",
+            pr_closed: false,
+            pr_merged: false,
+            pr_draft: false,
+            pr_review_state: "none",
+            pr_state_updated_at: null,
+          },
+          {
+            branch: "c",
+            pr_closed: false,
+            pr_merged: false,
+            pr_draft: false,
+            pr_review_state: "none",
+            pr_state_updated_at: null,
+          },
+        ]);
+        await expect(
+          client.query(`update ralph_lanes set pr_review_state = 'merged'`),
+        ).rejects.toThrow();
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("cancels legacy review.run jobs and renames review task jobs (0063)", async () => {
     await db.execute(sql`create database legacy_review_jobs`);
     const uri = testDb.uri.replace(/\/[^/]*$/, "/legacy_review_jobs");

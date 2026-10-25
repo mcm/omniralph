@@ -4,9 +4,11 @@ import {
   parseGitHubCommentEvent,
   parseGitHubInstallationDeleted,
   parseGitHubClosedEvent,
+  parseGitHubPullRequestStateEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
   parseGitLabClosedEvent,
+  parseGitLabPullRequestStateEvent,
 } from "./events";
 
 const user = { login: "octocat", type: "User" };
@@ -246,5 +248,210 @@ describe("parseGitHubInstallationDeleted", () => {
     expect(parseGitHubInstallationDeleted("installation", body("created"))).toBeNull();
     expect(parseGitHubInstallationDeleted("pull_request", body("deleted"))).toBeNull();
     expect(parseGitHubInstallationDeleted("installation", { action: "deleted" })).toBeNull();
+  });
+});
+
+describe("parseGitHubPullRequestStateEvent", () => {
+  const pr = (overrides: Record<string, unknown> = {}) => ({
+    number: 7,
+    state: "open",
+    draft: false,
+    requested_reviewers: [],
+    requested_teams: [],
+    ...overrides,
+  });
+  const parse = (action: string, overrides: Record<string, unknown> = {}) =>
+    parseGitHubPullRequestStateEvent("pull_request", { action, pull_request: pr(overrides) });
+
+  it("reads the draft flag and requested reviewers of pull_request actions", () => {
+    expect(parse("opened", { draft: true })).toEqual({
+      number: 7,
+      draft: true,
+      reviewState: { to: "none" },
+      reviewer: null,
+    });
+    expect(parse("opened", { requested_reviewers: [user] })?.reviewState).toEqual({
+      to: "review_requested",
+    });
+    expect(parse("reopened", { requested_teams: [{ slug: "web" }] })?.reviewState).toEqual({
+      to: "review_requested",
+      from: ["none"],
+    });
+    expect(parse("reopened")?.reviewState).toBeUndefined();
+    expect(parse("ready_for_review", { requested_reviewers: [user] })).toEqual({
+      number: 7,
+      draft: false,
+      reviewState: { to: "review_requested", from: ["none"] },
+      reviewer: null,
+    });
+    expect(parse("converted_to_draft", { draft: true })).toEqual({
+      number: 7,
+      draft: true,
+      reviewState: undefined,
+      reviewer: null,
+    });
+    expect(parse("review_requested", { requested_reviewers: [user] })?.reviewState).toEqual({
+      to: "review_requested",
+    });
+    // Removing the last requested reviewer: nobody is asked any more.
+    expect(parse("review_request_removed")?.reviewState).toEqual({
+      to: "none",
+      from: ["review_requested"],
+    });
+    expect(
+      parse("review_request_removed", { requested_reviewers: [user] })?.reviewState,
+    ).toBeUndefined();
+  });
+
+  it("ignores other actions, closed PRs and other events", () => {
+    expect(parse("synchronize")).toBeNull();
+    expect(parse("closed", { state: "closed" })).toBeNull();
+    expect(parse("labeled")).toBeNull();
+    expect(parse("constructor")).toBeNull();
+    expect(parse("review_requested", { state: "closed" })).toBeNull();
+    expect(
+      parseGitHubPullRequestStateEvent("issues", { action: "opened", pull_request: pr() }),
+    ).toBeNull();
+    expect(parseGitHubPullRequestStateEvent("pull_request", { action: "opened" })).toBeNull();
+  });
+
+  const review = (action: string, state: string, overrides: Record<string, unknown> = {}) =>
+    parseGitHubPullRequestStateEvent("pull_request_review", {
+      action,
+      review: { state, user },
+      pull_request: pr(overrides),
+    });
+
+  it("reads submitted and dismissed reviews with their reviewer", () => {
+    expect(review("submitted", "approved")).toEqual({
+      number: 7,
+      draft: false,
+      reviewState: { to: "approved" },
+      reviewer: { username: "octocat", isBot: false },
+    });
+    expect(review("submitted", "CHANGES_REQUESTED")?.reviewState).toEqual({
+      to: "changes_requested",
+    });
+    expect(review("submitted", "commented")?.reviewState).toEqual({
+      to: "commented",
+      from: ["none", "review_requested"],
+    });
+    expect(review("dismissed", "dismissed")?.reviewState).toEqual({
+      to: "none",
+      from: ["approved", "changes_requested"],
+    });
+    expect(review("dismissed", "dismissed", { requested_reviewers: [user] })?.reviewState).toEqual({
+      to: "review_requested",
+      from: ["approved", "changes_requested"],
+    });
+    expect(
+      parseGitHubPullRequestStateEvent("pull_request_review", {
+        action: "submitted",
+        review: { state: "approved", user: { login: "omniralph[bot]", type: "Bot" } },
+        pull_request: pr(),
+      })?.reviewer,
+    ).toEqual({ username: "omniralph[bot]", isBot: true });
+  });
+
+  it("ignores pending and edited reviews and reviews of closed PRs", () => {
+    expect(review("submitted", "pending")).toBeNull();
+    expect(review("submitted", "constructor")).toBeNull();
+    expect(review("edited", "approved")).toBeNull();
+    expect(review("submitted", "approved", { state: "closed" })).toBeNull();
+  });
+});
+
+describe("parseGitLabPullRequestStateEvent", () => {
+  const reviewer = { id: 3, username: "reviewer" };
+  const hook = (
+    action: string,
+    overrides: { attributes?: Record<string, unknown>; [key: string]: unknown } = {},
+  ) => {
+    const { attributes, ...rest } = overrides;
+    return parseGitLabPullRequestStateEvent("Merge Request Hook", {
+      object_kind: "merge_request",
+      user: { id: 9, username: "approver" },
+      reviewers: [],
+      object_attributes: { iid: 4, action, state: "opened", draft: false, ...attributes },
+      ...rest,
+    });
+  };
+
+  it("reads approvals with their approver", () => {
+    for (const action of ["approved", "approval"]) {
+      expect(hook(action)).toEqual({
+        number: 4,
+        draft: false,
+        reviewState: { to: "approved" },
+        reviewer: { username: "approver", isBot: false },
+      });
+    }
+    for (const action of ["unapproved", "unapproval"]) {
+      expect(hook(action)?.reviewState).toEqual({ to: "none", from: ["approved"] });
+      expect(hook(action, { reviewers: [reviewer] })?.reviewState).toEqual({
+        to: "review_requested",
+        from: ["approved"],
+      });
+    }
+  });
+
+  it("reads opening and reopening, with reviewers", () => {
+    expect(hook("open", { attributes: { draft: true } })).toEqual({
+      number: 4,
+      draft: true,
+      reviewState: { to: "none" },
+      reviewer: null,
+    });
+    expect(hook("reopen", { reviewers: [reviewer] })?.reviewState).toEqual({
+      to: "review_requested",
+      from: ["none"],
+    });
+    expect(hook("reopen")).toMatchObject({ reviewState: undefined, reviewer: null });
+    // Older GitLab versions: work_in_progress.
+    expect(hook("open", { attributes: { draft: undefined, work_in_progress: true } })?.draft).toBe(
+      true,
+    );
+  });
+
+  it("reads updates that change the draft flag or the reviewers", () => {
+    expect(
+      hook("update", {
+        attributes: { draft: true },
+        changes: { draft: { previous: false, current: true } },
+      }),
+    ).toEqual({ number: 4, draft: true, reviewState: undefined, reviewer: null });
+    expect(
+      hook("update", {
+        reviewers: [reviewer],
+        changes: { reviewers: { previous: [], current: [reviewer] } },
+      })?.reviewState,
+    ).toEqual({ to: "review_requested" });
+    expect(
+      hook("update", { changes: { reviewers: { previous: [reviewer], current: [] } } })
+        ?.reviewState,
+    ).toEqual({ to: "none", from: ["review_requested"] });
+    // One of two reviewers removed: still waiting on the other.
+    expect(
+      hook("update", {
+        reviewers: [reviewer],
+        changes: {
+          reviewers: { previous: [reviewer, { id: 5, username: "other" }], current: [reviewer] },
+        },
+      }),
+    ).toMatchObject({ reviewState: undefined });
+  });
+
+  it("ignores other updates, other actions, closed MRs and other hooks", () => {
+    expect(hook("update", { changes: { title: { previous: "a", current: "b" } } })).toBeNull();
+    expect(hook("update")).toBeNull();
+    expect(hook("merge", { attributes: { state: "merged" } })).toBeNull();
+    expect(hook("approved", { attributes: { state: "closed" } })).toBeNull();
+    expect(hook("close")).toBeNull();
+    expect(
+      parseGitLabPullRequestStateEvent("Note Hook", {
+        object_kind: "merge_request",
+        object_attributes: { iid: 4, action: "approved", state: "opened" },
+      }),
+    ).toBeNull();
   });
 });

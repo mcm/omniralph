@@ -53,6 +53,7 @@ import {
 
 export type RalphRun = typeof ralphRuns.$inferSelect;
 export type RalphLane = typeof ralphLanes.$inferSelect;
+export type PullRequestReviewState = RalphLane["prReviewState"];
 export type RalphStory = typeof ralphStories.$inferSelect;
 export type RalphRunKind = RalphRun["kind"];
 export type RalphRunStatus = RalphRun["status"];
@@ -1168,7 +1169,81 @@ export async function updateLane(
 }
 
 /** Lane columns whose change is the pull or merge request's (a `pull_request` change too). */
-const PULL_REQUEST_LANE_FIELDS = ["prNumber", "prUrl", "prClosed", "prMerged"] as const;
+const PULL_REQUEST_LANE_FIELDS = [
+  "prNumber",
+  "prUrl",
+  "prClosed",
+  "prMerged",
+  "prDraft",
+  "prReviewState",
+] as const;
+
+/**
+ * A change to a PR/MR's draft or review state, as a code-host webhook reports
+ * it. `reviewState.from` limits the move to lanes in one of those states (a
+ * comment doesn't undo an approval, say); without it, any state moves.
+ */
+export interface PullRequestStateUpdate {
+  draft?: boolean;
+  reviewState?: { to: PullRequestReviewState; from?: readonly PullRequestReviewState[] };
+}
+
+/**
+ * Applies a PR/MR's draft or review state to every open lane of it in the
+ * repository (a re-delegation carries a PR/MR forward to the new run's lane).
+ * Lanes it doesn't change are left alone, `pr_state_updated_at` included.
+ * Returns the lanes it changed.
+ */
+export async function updatePullRequestState(
+  db: Executor,
+  repositoryId: string,
+  prNumber: number,
+  update: PullRequestStateUpdate,
+): Promise<RalphLane[]> {
+  const { draft, reviewState } = update;
+  const reviewMoves = reviewState
+    ? and(
+        sql`${ralphLanes.prReviewState} <> ${reviewState.to}`,
+        reviewState.from ? inArray(ralphLanes.prReviewState, [...reviewState.from]) : undefined,
+      )!
+    : undefined;
+  const draftMoves = draft === undefined ? undefined : sql`${ralphLanes.prDraft} <> ${draft}`;
+  const changes = [draftMoves, reviewMoves].filter((c): c is SQL => c !== undefined);
+  if (changes.length === 0) return [];
+  const now = new Date();
+  const rows = await db
+    .update(ralphLanes)
+    .set({
+      ...(draft === undefined ? {} : { prDraft: draft }),
+      ...(reviewMoves
+        ? {
+            prReviewState: sql`case when ${reviewMoves} then ${reviewState!.to}::pr_review_state else ${ralphLanes.prReviewState} end`,
+          }
+        : {}),
+      prStateUpdatedAt: now,
+      updatedAt: now,
+    })
+    .from(ralphRuns)
+    .where(
+      and(
+        eq(ralphRuns.id, ralphLanes.runId),
+        eq(ralphLanes.repositoryId, repositoryId),
+        eq(ralphLanes.prNumber, prNumber),
+        eq(ralphLanes.prClosed, false),
+        or(...changes),
+      ),
+    )
+    .returning({ lane: getTableColumns(ralphLanes), organizationId: ralphRuns.organizationId });
+  for (const row of rows) {
+    await recordLaneChange(
+      db,
+      row.lane,
+      { prReviewState: row.lane.prReviewState },
+      row.organizationId,
+    );
+  }
+  return rows.map((row) => row.lane);
+}
 
 /**
  * Records a lane's live changes: its run's, and its pull request's when `update`

@@ -102,6 +102,14 @@ export const ralphRunStatus = pgEnum("ralph_run_status", [
   "failed",
   "stopped",
 ]);
+/** Where a ralph PR/MR's human review stands (`ralph_lanes.pr_review_state`). */
+export const prReviewState = pgEnum("pr_review_state", [
+  "none",
+  "review_requested",
+  "commented",
+  "changes_requested",
+  "approved",
+]);
 export const ralphStoryStatus = pgEnum("ralph_story_status", [
   "pending",
   "running",
@@ -2030,6 +2038,12 @@ export const ralphLanes = pgTable(
     prClosed: boolean("pr_closed").notNull().default(false),
     /** Whether the closed PR/MR was merged (false: closed without merging). */
     prMerged: boolean("pr_merged").notNull().default(false),
+    /** Whether the open PR/MR is a draft, as its code host last said. */
+    prDraft: boolean("pr_draft").notNull().default(false),
+    /** Its human review state, from the code host's webhooks (the bot's own reviews don't count). */
+    prReviewState: prReviewState("pr_review_state").notNull().default("none"),
+    /** When the draft, review or merge state last changed. */
+    prStateUpdatedAt: timestamp("pr_state_updated_at", { withTimezone: true }),
     mergeSha: text("merge_sha"),
     /** Omniralph reviews acted on for this PR/MR (capped by `maxReviewRounds`). */
     reviewRounds: integer("review_rounds").notNull().default(0),
