@@ -13,8 +13,11 @@ import type {
   Cycle,
   IssueComment,
   IssueLabel,
+  IssuePage,
   IssueSummary,
+  IssueWithBlockers,
   LinearDocument,
+  ListIssuesFilter,
   LinearGateway,
   PlanStep,
   Project,
@@ -68,6 +71,10 @@ export class FakeLinearGateway implements LinearGateway {
   viewer: Viewer = { id: "app-user", name: "Omniralph" };
   /** Every delegation, by `delegateIssue` or `createIssue` with `delegateId`, in order. */
   delegations: Array<{ issueId: string; delegateId: string }> = [];
+  /** Workflow states of particular teams, in position order (others have `workflowStates`). */
+  workflowStatesByTeam = new Map<string, WorkflowState[]>();
+  /** Every `listIssues` filter, in order. */
+  issueLists: ListIssuesFilter[] = [];
   /** Every team's workflow states, in position order. */
   workflowStates: WorkflowState[] = [
     "backlog",
@@ -141,6 +148,46 @@ export class FakeLinearGateway implements LinearGateway {
     return teamKey ? { teamKey } : {};
   }
 
+  private statesOf(teamId: string): WorkflowState[] {
+    return this.workflowStatesByTeam.get(teamId) ?? this.workflowStates;
+  }
+
+  /** The issue's workflow state: its `stateId`, else its team's state of its name and type. */
+  private stateIdOf(issue: IssueSummary): string | undefined {
+    if (issue.stateId) return issue.stateId;
+    const states = this.statesOf(issue.teamId);
+    return (
+      states.find((s) => s.type === issue.stateType && s.name === issue.stateName) ??
+      states.find((s) => s.type === issue.stateType)
+    )?.id;
+  }
+
+  /** The issue's project ID: its `projectId`, else the listed project of its name. */
+  private projectIdOf(issue: IssueSummary): string | undefined {
+    return (
+      issue.projectId ??
+      (issue.projectName ? this.projects.find((p) => p.name === issue.projectName)?.id : undefined)
+    );
+  }
+
+  /** A copy of the issue with what Linear also returns: its state's ID, team name and project ID. */
+  private summaryOf(issue: IssueSummary): IssueSummary {
+    const stateId = this.stateIdOf(issue);
+    const teamName = issue.teamName ?? this.teams.find((t) => t.id === issue.teamId)?.name;
+    const projectId = this.projectIdOf(issue);
+    return {
+      ...issue,
+      ...(stateId && { stateId }),
+      ...(teamName && { teamName }),
+      ...(projectId && { projectId }),
+    };
+  }
+
+  /** Who the issue is delegated to: its latest delegation. */
+  delegateOf(issueId: string): string | undefined {
+    return this.delegations.findLast((d) => d.issueId === issueId)?.delegateId;
+  }
+
   private fail(method: string): void {
     const error = this.failures.get(method);
     if (error) throw error;
@@ -168,7 +215,7 @@ export class FakeLinearGateway implements LinearGateway {
   }
   async getIssue(idOrIdentifier: string) {
     this.fail("getIssue");
-    return { ...this.find(idOrIdentifier) };
+    return this.summaryOf(this.find(idOrIdentifier));
   }
   private routingFieldsOf(issue: IssueSummary): RoutingIssueFields {
     const parent = issue.parentId ? this.issues.get(issue.parentId) : undefined;
@@ -237,6 +284,10 @@ export class FakeLinearGateway implements LinearGateway {
     return { ...document };
   }
   async getBlockers(issueId: string): Promise<Blocker[]> {
+    this.fail("getBlockers");
+    return this.blockersOf(issueId);
+  }
+  private blockersOf(issueId: string): Blocker[] {
     return (this.blocks.get(issueId) ?? []).map((id) => {
       const blocker = this.find(id);
       return {
@@ -244,11 +295,48 @@ export class FakeLinearGateway implements LinearGateway {
         identifier: blocker.identifier,
         title: blocker.title,
         stateType: blocker.stateType,
+        ...(blocker.stateName && { stateName: blocker.stateName }),
       };
     });
   }
-  async getWorkflowStates(_teamId: string): Promise<WorkflowState[]> {
-    return this.workflowStates.map((s) => ({ ...s }));
+  /** Like Linear's: issues matching every condition, in creation order, `first` per page. */
+  async listIssues(filter: ListIssuesFilter): Promise<IssuePage> {
+    this.fail("listIssues");
+    this.issueLists.push(structuredClone(filter));
+    const labelNames = filter.labelIds?.map((id) => this.labelName(id).toLowerCase());
+    const matches = [...this.issues.values()].filter((issue) => {
+      if (filter.teamId && issue.teamId !== filter.teamId) return false;
+      if (filter.projectId && this.projectIdOf(issue) !== filter.projectId) return false;
+      if (labelNames && labelNames.length > 0) {
+        if (!issue.labels.some((l) => labelNames.includes(l.toLowerCase()))) return false;
+      }
+      const delegate = this.delegateOf(issue.id);
+      if (filter.delegateId && delegate !== filter.delegateId) return false;
+      if (filter.notDelegateId && delegate === filter.notDelegateId) return false;
+      if (filter.stateTypes && !filter.stateTypes.includes(issue.stateType)) return false;
+      if (filter.stateMatch) {
+        const { types, typesExceptTeamIds, ids } = filter.stateMatch;
+        const stateId = this.stateIdOf(issue);
+        const byType =
+          types.includes(issue.stateType) && !typesExceptTeamIds.includes(issue.teamId);
+        if (!byType && !(stateId && ids.includes(stateId))) return false;
+      }
+      return true;
+    });
+    const offset = filter.after ? Number(filter.after) : 0;
+    const page = matches.slice(offset, offset + filter.first);
+    const next = offset + page.length;
+    return {
+      issues: page.map((issue): IssueWithBlockers => ({
+        ...this.summaryOf(issue),
+        blockers: this.blockersOf(issue.id),
+      })),
+      endCursor: next < matches.length ? String(next) : null,
+    };
+  }
+  async getWorkflowStates(teamId: string): Promise<WorkflowState[]> {
+    this.fail("getWorkflowStates");
+    return this.statesOf(teamId).map((s) => ({ ...s }));
   }
   async findLabel(teamId: string, name: string) {
     return this.labels.find((l) => l.name.toLowerCase() === name.toLowerCase()) ?? null;
@@ -305,8 +393,15 @@ export class FakeLinearGateway implements LinearGateway {
       priority: input.priority ?? 0,
       subIssueSortOrder: input.subIssueSortOrder,
       labels: input.labels ?? [],
-      projectName: input.projectName,
+      projectName:
+        input.projectName ??
+        (input.projectId ? this.projects.find((p) => p.id === input.projectId)?.name : undefined),
+      projectId: input.projectId,
     });
+    // Like Linear's: a label the team doesn't have yet is created for it.
+    for (const name of input.labels ?? []) {
+      if (!(await this.findLabel(input.teamId, name))) await this.createLabel(input.teamId, name);
+    }
     this.created.push({ ...input });
     if (input.projectId || input.projectMilestoneId || input.cycleId) {
       this.routingFields.set(issue.id, {
@@ -328,13 +423,15 @@ export class FakeLinearGateway implements LinearGateway {
     this.fail("setIssueState");
     this.stateChanges.push({ issueId, target });
     const issue = this.find(issueId);
+    const states = this.statesOf(issue.teamId);
     const name = target.name?.toLowerCase();
     const state =
-      (name && this.workflowStates.find((s) => s.name.toLowerCase() === name)) ||
-      (target.type && this.workflowStates.find((s) => s.type === target.type));
+      (name && states.find((s) => s.name.toLowerCase() === name)) ||
+      (target.type && states.find((s) => s.type === target.type));
     if (!state) return;
     issue.stateType = state.type;
     issue.stateName = state.name;
+    if (issue.stateId !== undefined) issue.stateId = state.id;
   }
   async updateIssue(issueId: string, input: UpdateIssueInput) {
     this.fail("updateIssue");
@@ -377,6 +474,7 @@ export class FakeLinearGateway implements LinearGateway {
     return sessionId;
   }
   async addComment(issueId: string, body: string) {
+    this.fail("addComment");
     this.comments.push({ issueId, body });
   }
   async createActivity(sessionId: string, content: ActivityContent, options?: ActivityOptions) {

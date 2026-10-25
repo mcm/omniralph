@@ -2,18 +2,27 @@ import { randomBytes } from "node:crypto";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
+import { captureChanges } from "./changes.js";
 import { decrypt } from "./crypto.js";
 import {
   consumeOAuthState,
   deleteIntegration,
   getIntegration,
   getIntegrationByExternalId,
+  getIntegrationById,
   getIntegrationWithCredentials,
   listIntegratedOrganizationIds,
   saveIntegration,
+  setIntegrationStateMapping,
   updateIntegrationCredentials,
 } from "./integrations.js";
-import { integrations, oauthStateUses, organizations, users } from "./schema.js";
+import {
+  DEFAULT_TRACKER_STATE_MAPPING,
+  integrations,
+  oauthStateUses,
+  organizations,
+  users,
+} from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -227,6 +236,33 @@ describe.skipIf(!databaseAvailable)("integration queries", () => {
       organizationId: otherOrgId,
     });
     expect(await getIntegration(db, otherOrgId, "linear")).toMatchObject({ externalId: "ws-1" });
+  });
+
+  it("starts with the default state mapping and saves a new one with a connection change", async () => {
+    const saved = await install("org-1", "Acme", "t1");
+    expect(saved.stateMapping).toEqual(DEFAULT_TRACKER_STATE_MAPPING);
+    expect(await getIntegrationById(db, saved.id)).toMatchObject({
+      id: saved.id,
+      organizationId: orgId,
+      stateMapping: DEFAULT_TRACKER_STATE_MAPPING,
+    });
+    const mapping = {
+      ready: { types: ["unstarted", "started"] },
+      needsRefining: { types: ["triage", "backlog"] },
+      teams: { "team-1": { ready: ["state-a"], needsRefining: ["state-b"] } },
+    };
+    const { result, changes } = await captureChanges(() =>
+      setIntegrationStateMapping(db, saved.id, mapping),
+    );
+    expect(result?.stateMapping).toEqual(mapping);
+    expect((await getIntegrationById(db, saved.id))?.stateMapping).toEqual(mapping);
+    expect(changes).toEqual([
+      expect.objectContaining({ resource: "connection", ids: [saved.id], organizationId: orgId }),
+    ]);
+    // Reinstalling the workspace keeps its mapping.
+    expect((await install("org-1", "Acme", "t2")).stateMapping).toEqual(mapping);
+    expect(await setIntegrationStateMapping(db, crypto.randomUUID(), mapping)).toBeNull();
+    expect(await getIntegrationById(db, crypto.randomUUID())).toBeNull();
   });
 
   it("deletes the integration and returns its credentials", async () => {

@@ -1103,6 +1103,59 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     }
   });
 
+  it("gives existing Linear integrations the default readiness state mapping (0089)", async () => {
+    await db.execute(sql`create database integration_state_mapping`);
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/integration_state_mapping");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0089_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme'), ('Frakinship') returning id`,
+        );
+        // Production's two Linear integrations, one per organization.
+        await client.query(
+          `insert into integrations (organization_id, provider, external_id, name, encrypted_credentials)
+           values ($1, 'linear', 'ws-1', 'Acme', 'x'), ($2, 'linear', 'ws-2', 'Frakinship', 'y')`,
+          [orgs[0]!.id, orgs[1]!.id],
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query(
+          `select external_id, state_mapping from integrations order by external_id`,
+        );
+        const mapping = {
+          ready: { types: ["unstarted"] },
+          needsRefining: { types: ["backlog"] },
+          teams: {},
+        };
+        expect(rows).toEqual([
+          { external_id: "ws-1", state_mapping: mapping },
+          { external_id: "ws-2", state_mapping: mapping },
+        ]);
+        await expect(
+          client.query(`update integrations set state_mapping = null`),
+        ).rejects.toThrow();
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("cancels legacy review.run jobs and renames review task jobs (0063)", async () => {
     await db.execute(sql`create database legacy_review_jobs`);
     const uri = testDb.uri.replace(/\/[^/]*$/, "/legacy_review_jobs");

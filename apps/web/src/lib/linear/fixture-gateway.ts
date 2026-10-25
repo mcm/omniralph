@@ -57,5 +57,39 @@ export function fixtureLinearGateway(): FakeLinearGateway {
     type: type!,
     position,
   }));
+  // Work items for the Backlog: ready, needing refinement, and one blocked by work in progress.
+  const issue = (
+    identifier: string,
+    title: string,
+    state: string,
+    extra: Partial<Parameters<FakeLinearGateway["add"]>[0]> = {},
+  ) => {
+    const { name, type } = linear.workflowStates.find((s) => s.name === state)!;
+    return linear.add({
+      id: `fixture-issue-${identifier.toLowerCase()}`,
+      identifier,
+      title,
+      url: `https://linear.app/fixtures/issue/${identifier}`,
+      teamId: "fixture-team-fix",
+      teamKey: "FIX",
+      stateName: name,
+      stateType: type,
+      projectName: "Control panel",
+      ...extra,
+    });
+  };
+  issue("FIX-101", "Export runs as CSV", "Todo", { labels: ["backend"], priority: 2 });
+  issue("FIX-102", "Explain why a review was skipped", "Backlog", { labels: ["frontend"] });
+  const blocker = issue("FIX-103", "Add the runs export endpoint", "In Progress", {
+    labels: ["api"],
+  });
+  const blocked = issue("FIX-104", "Download a run's transcript", "Todo", { priority: 3 });
+  void linear.createBlocksRelation(blocker.id, blocked.id);
+  issue("OPS-21", "Rotate the agents' tokens", "Backlog", {
+    teamId: "fixture-team-ops",
+    teamKey: "OPS",
+    projectName: undefined,
+    labels: ["infra"],
+  });
   return linear;
 }

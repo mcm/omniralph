@@ -1,0 +1,1 @@
+ALTER TABLE "integrations" ADD COLUMN "state_mapping" jsonb DEFAULT '{"ready":{"types":["unstarted"]},"needsRefining":{"types":["backlog"]},"teams":{}}'::jsonb NOT NULL;

@@ -609,6 +609,45 @@ The same goes for `/coding` switching a mention's run to the story loop (in a re
 mention): the run stays in request mode until the questions are answered. Request-mode @mentions
 and epic runs that are already going aren't affected.
 
+## Work item tracker and readiness
+
+Code that creates, updates, triages or cancels a work item goes through the tracker-neutral
+`WorkItemTracker` interface (`apps/web/src/lib/work-items/tracker.ts`), never `LinearGateway`
+directly. `getWorkItemTracker({db, organizationId})` returns the organization's tracker (its
+Linear connection, `apps/web/src/lib/work-items/linear.ts`) and throws `TrackerNotConnectedError`
+without one. A new adapter runs the shared contract suite
+(`describeWorkItemTrackerContract` in `apps/web/src/lib/work-items/contract.ts`).
+
+| Method | Linear |
+| --- | --- |
+| `get(ref)` | `getIssue` (an unknown ID or identifier is `WorkItemNotFoundError`) and its blockers |
+| `listCandidates({...})` | `listIssues`: one `issues(filter:)` query per page, blockers included |
+| `create`, `update` | `createIssue`, `updateIssue`, `addIssueLabels`, `removeIssueLabel` (labels by name, created when missing) |
+| `setState(ref, state)` | the team's first workflow state of type `backlog`, `unstarted` (todo), `started` (in progress), `completed` (done) or `canceled` |
+| `cancel(ref, {comment})` | the canceled state, then the comment |
+| `startTriage(ref)` | adds the `coding:triage` label, so the label webhook starts triage |
+| `delegateToOmniralph(ref)` | delegates the issue to the app user |
+
+Every work item carries its `readiness`, from the integration's **state mapping**
+(`integrations.state_mapping`): which workflow states mean **Ready to start** and which **Needs
+refining**. By default it goes by state type: Todo (`unstarted`) is ready and Backlog (`backlog`)
+needs refining, for every team. A team can override it with its own workflow states, which replace
+the type rule for that team only:
+
+```json
+{
+  "ready": { "types": ["unstarted"] },
+  "needsRefining": { "types": ["backlog"] },
+  "teams": { "<team ID>": { "ready": ["<state ID>"], "needsRefining": ["<state ID>"] } }
+}
+```
+
+Types may only be `triage`, `backlog`, `unstarted` and `started`; no list may be empty, and no type
+or state may be in both. Members read the mapping, with every team's workflow states, from
+`GET /api/ui/trackers/{integrationId}/state-mapping`; admins save it with `PUT` (400 with field
+errors for an invalid one). Work items also carry `blockedBy` (open issues with a "blocks"
+relation to it; done and canceled ones left out) and `blocked`.
+
 ## Harnesses and concurrency
 
 Ralph jobs are `coding` tasks in the `long` pool: they run on harnesses that accept the `coding`

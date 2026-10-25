@@ -388,6 +388,24 @@ export const scmConnections = pgTable(
  * An installed issue-tracker app, e.g. the Omniralph Linear app in one Linear
  * workspace (`external_id` = the workspace/organization ID).
  */
+/**
+ * Which tracker workflow states mean "Ready to start" and which "Needs refining": by state
+ * type (`triage`, `backlog`, `unstarted`, `started`), except in a team listed in `teams`,
+ * whose workflow state IDs replace the type rule for that team only.
+ */
+export interface TrackerStateMapping {
+  ready: { types: string[] };
+  needsRefining: { types: string[] };
+  teams: Record<string, { ready: string[]; needsRefining: string[] }>;
+}
+
+/** Linear's Todo (`unstarted`) is Ready to start and its Backlog (`backlog`) Needs refining. */
+export const DEFAULT_TRACKER_STATE_MAPPING: TrackerStateMapping = {
+  ready: { types: ["unstarted"] },
+  needsRefining: { types: ["backlog"] },
+  teams: {},
+};
+
 export const integrations = pgTable(
   "integrations",
   {
@@ -404,6 +422,11 @@ export const integrations = pgTable(
     installedByUserId: text("installed_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /** The tracker's readiness state mapping. */
+    stateMapping: jsonb("state_mapping")
+      .$type<TrackerStateMapping>()
+      .notNull()
+      .default(DEFAULT_TRACKER_STATE_MAPPING),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

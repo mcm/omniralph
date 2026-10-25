@@ -1,0 +1,173 @@
+/**
+ * The tracker-neutral work item interface: everything that creates, updates, triages or
+ * cancels a work item goes through a `WorkItemTracker`, never a tracker's SDK directly.
+ * Linear is the first adapter (`./linear.ts`); `getWorkItemTracker` (`./get-tracker.ts`)
+ * returns an organization's.
+ */
+import type { TrackerStateMapping } from "@omniralph/db";
+
+/** The trackers an adapter exists for. */
+export type TrackerKind = "linear";
+
+/** A work item's state, the same in every tracker. */
+export const WORK_ITEM_STATES = ["backlog", "todo", "in_progress", "done", "canceled"] as const;
+export type WorkItemState = (typeof WORK_ITEM_STATES)[number];
+
+/**
+ * The category of a work item's state: a `WorkItemState`, or `triage` for an item a tracker
+ * holds in triage (Linear's Triage). Nothing sets an item to `triage`.
+ */
+export type WorkItemStateCategory = WorkItemState | "triage";
+
+/** Whether a work item is ready to start, still needs refining, or neither (the mapping). */
+export const WORK_ITEM_READINESS = ["ready", "needs_refining"] as const;
+export type WorkItemReadiness = (typeof WORK_ITEM_READINESS)[number] | "other";
+
+/** An open work item that blocks another. */
+export interface WorkItemBlocker {
+  /** Its ID, a `ref` for the tracker's methods. */
+  ref: string;
+  identifier: string;
+  title: string;
+  state: { category: WorkItemStateCategory; name: string };
+}
+
+export interface WorkItem {
+  tracker: TrackerKind;
+  id: string;
+  /** The human-readable key, e.g. `SOC-1719`. */
+  identifier: string;
+  title: string;
+  /** Markdown. */
+  description: string;
+  url: string;
+  state: { category: WorkItemStateCategory; name: string };
+  team: { id: string; key: string; name: string };
+  project: { id: string | null; name: string } | null;
+  /** Label names. */
+  labels: string[];
+  parentId: string | null;
+  /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+  priority: number;
+  /** From the tracker's state mapping: the team's override first, then the state's type. */
+  readiness: WorkItemReadiness;
+  /** The open work items blocking it (done and canceled blockers left out). */
+  blockedBy: WorkItemBlocker[];
+  /** True when `blockedBy` isn't empty. */
+  blocked: boolean;
+}
+
+/** An ID or an identifier such as `SOC-1719`. */
+export type WorkItemRef = string;
+
+export const LIST_CANDIDATES_MAX_LIMIT = 50;
+
+export interface ListCandidatesInput {
+  teamId?: string;
+  projectId?: string;
+  /** Items carrying any of these labels (by ID). */
+  labelIds?: string[];
+  /** True: only items delegated to Omniralph; false: only items that aren't. */
+  delegatedToOmniralph?: boolean;
+  /** Items in one of these states. */
+  states?: WorkItemState[];
+  /** Items of one of these readiness values (from the state mapping). */
+  readiness?: Array<(typeof WORK_ITEM_READINESS)[number]>;
+  /** The previous page's `nextCursor`. */
+  cursor?: string;
+  /** Items per page, 1 to `LIST_CANDIDATES_MAX_LIMIT`. */
+  limit: number;
+}
+
+export interface WorkItemPage {
+  items: WorkItem[];
+  /** The next page's `cursor`; null on the last page. */
+  nextCursor: string | null;
+}
+
+export interface CreateWorkItemInput {
+  teamId: string;
+  projectId?: string;
+  parentId?: string;
+  title: string;
+  description: string;
+  /** Label names; a label the team doesn't have yet is created. */
+  labels?: string[];
+  priority?: number;
+}
+
+export interface UpdateWorkItemInput {
+  title?: string;
+  description?: string;
+  priority?: number;
+  /** Label names to add; a label the team doesn't have yet is created. */
+  addLabels?: string[];
+  /** Label names to remove; one the item doesn't carry is ignored. */
+  removeLabels?: string[];
+}
+
+/** A team of the tracker. */
+export interface TrackerTeam {
+  id: string;
+  key: string;
+  name: string;
+}
+
+/** One of a team's workflow states. */
+export interface TrackerWorkflowState {
+  id: string;
+  name: string;
+  /** The tracker's state type (Linear: `triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`). */
+  type: string;
+  category: WorkItemStateCategory;
+}
+
+export interface WorkItemTracker {
+  readonly kind: TrackerKind;
+  /** The tracker's integration (connection) ID. */
+  readonly integrationId: string;
+  /** Throws `WorkItemNotFoundError` for an unknown ref. */
+  get(ref: WorkItemRef): Promise<WorkItem>;
+  /** A page of work items matching every given condition. */
+  listCandidates(input: ListCandidatesInput): Promise<WorkItemPage>;
+  create(input: CreateWorkItemInput): Promise<WorkItem>;
+  update(ref: WorkItemRef, input: UpdateWorkItemInput): Promise<void>;
+  /** Moves the item to its team's first workflow state of that kind. */
+  setState(ref: WorkItemRef, state: WorkItemState): Promise<void>;
+  /** Sets the item `canceled`, with a comment when given. */
+  cancel(ref: WorkItemRef, options?: { comment?: string }): Promise<void>;
+  /** Starts Omniralph's triage of the item. */
+  startTriage(ref: WorkItemRef): Promise<void>;
+  /** Hands the item to Omniralph, which starts working on it. */
+  delegateToOmniralph(ref: WorkItemRef): Promise<void>;
+  /** Every team of the tracker. */
+  listTeams(): Promise<TrackerTeam[]>;
+  /** A team's workflow states, in order. */
+  listWorkflowStates(teamId: string): Promise<TrackerWorkflowState[]>;
+  /** Which states mean "Ready to start" and "Needs refining". */
+  getStateMapping(): Promise<TrackerStateMapping>;
+  /** Validates and saves the mapping; throws `StateMappingError` with field errors. */
+  setStateMapping(mapping: TrackerStateMapping): Promise<TrackerStateMapping>;
+}
+
+export class WorkItemNotFoundError extends Error {
+  constructor(readonly ref: string) {
+    super(`This work item doesn't exist or isn't visible to Omniralph: ${ref}.`);
+    this.name = "WorkItemNotFoundError";
+  }
+}
+
+export class TrackerNotConnectedError extends Error {
+  constructor() {
+    super("This organization has no work item tracker connected (Settings › Connections).");
+    this.name = "TrackerNotConnectedError";
+  }
+}
+
+/** A state mapping `setStateMapping` refused, with a message per field path. */
+export class StateMappingError extends Error {
+  constructor(readonly fieldErrors: Record<string, string>) {
+    super(Object.values(fieldErrors)[0] ?? "This state mapping is invalid.");
+    this.name = "StateMappingError";
+  }
+}
