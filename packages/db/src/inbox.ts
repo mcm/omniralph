@@ -485,7 +485,10 @@ async function permissionRequests(db: Queryable, scope: Scope): Promise<InboxCan
   }));
 }
 
-/** Triage runs that wrote (or reformatted) a PRD nobody has started a run of since. */
+/**
+ * Triage runs that wrote (or reformatted) a PRD with no open questions (triage left the
+ * item Ready to start) that nobody has started a run of since.
+ */
 async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]> {
   const result = await db.execute<{
     id: string;
@@ -504,6 +507,7 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
     ) tj on true
     where t.organization_id in (${scope.orgs}) and t.status = 'completed'
       and t.last_result -> 'outcome' ->> 'outcome' in ('prd', 'reformat')
+      and coalesce(jsonb_array_length(t.last_result -> 'outcome' -> 'openQuestions'), 0) = 0
       and coalesce(tj.finished_at, t.updated_at) >= ${scope.cutoff}::timestamptz
       and not exists (
         select 1 from ralph_runs r

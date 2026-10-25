@@ -1,7 +1,10 @@
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
+import { randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
+import { connectRepository, upsertScmConnection } from "./repositories.js";
+import { getResourceOrganizationId } from "./resource-organization.js";
 import {
   listRunIndex,
   RUN_KINDS,
@@ -12,17 +15,23 @@ import {
   type RunKind,
 } from "./run-index.js";
 import {
+  chatConnections,
+  chatThreadRuns,
+  chatThreads,
+  jobs,
   jobStatus,
   organizations,
   ralphRunMode,
   ralphRunOrigin,
   ralphRunStatus,
+  reviewRuns,
   reviewRunStatus,
   reviewTrigger,
   triageRuns,
   triageRunStatus,
   triageRunTrigger,
 } from "./schema.js";
+import { seedReviewProfiles } from "./settings.js";
 
 /** Every source status of every kind, and what it maps to (PRD "Unified run model"). */
 const EXPECTED: Record<RunKind, [readonly string[], Record<string, string>]> = {
@@ -133,5 +142,69 @@ describe.skipIf(!databaseAvailable)("run index", () => {
 
   it("lists nothing without organizations", async () => {
     expect(await listRunIndex(db, { organizationIds: [] })).toEqual({ runs: [], next: null });
+  });
+
+  it("resolves the organization of a review run and an ask (getResourceOrganizationId)", async () => {
+    await seedReviewProfiles(db, orgId);
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: orgId,
+        provider: "github",
+        name: "acme",
+        baseUrl: "https://api.github.com",
+        externalId: "resource-1",
+        credentials: {},
+      },
+      randomBytes(32),
+    ))!;
+    const repository = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "resource-repo",
+      fullPath: "acme/api",
+    });
+    const [review] = await db
+      .insert(reviewRuns)
+      .values({
+        organizationId: orgId,
+        repositoryId: repository.id,
+        prNumber: 1,
+        headSha: "h",
+        baseSha: "b",
+        trigger: "webhook",
+        mode: "full",
+      })
+      .returning();
+    const [chat] = await db
+      .insert(chatConnections)
+      .values({ organizationId: orgId, platform: "slack", externalId: "T-res", name: "Acme" })
+      .returning();
+    const [thread] = await db
+      .insert(chatThreads)
+      .values({
+        organizationId: orgId,
+        connectionId: chat!.id,
+        platform: "slack",
+        externalThreadId: "thread-res",
+        channelId: "C1",
+        startedByExternalUserId: "U1",
+      })
+      .returning();
+    const [job] = await db
+      .insert(jobs)
+      .values({ organizationId: orgId, type: "chat.ask", taskType: "query", pool: "short" })
+      .returning();
+    const [ask] = await db
+      .insert(chatThreadRuns)
+      .values({ organizationId: orgId, chatThreadId: thread!.id, kind: "query", jobId: job!.id })
+      .returning();
+
+    expect(await getResourceOrganizationId(db, "review_run", review!.id)).toBe(orgId);
+    expect(await getResourceOrganizationId(db, "ask_run", ask!.id)).toBe(orgId);
+    // Unknown IDs, and IDs of another resource, resolve to nothing.
+    expect(await getResourceOrganizationId(db, "review_run", ask!.id)).toBeNull();
+    expect(await getResourceOrganizationId(db, "ask_run", review!.id)).toBeNull();
+    expect(await getResourceOrganizationId(db, "ask_run", crypto.randomUUID())).toBeNull();
   });
 });

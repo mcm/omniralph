@@ -360,8 +360,14 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         finding(pass!.id, "low", "resolved"),
         finding(oldPass!.id, "low", "open"),
       ]);
-    // Triage: a PRD nobody started (an item), one whose run started since, one unchanged.
-    const triage = async (name: string, outcome: string, issue = `triage-${name}`) => {
+    // Triage: a PRD nobody started (an item), one whose run started since, one unchanged,
+    // one with open questions (left Needs refining, so not ready).
+    const triage = async (
+      name: string,
+      outcome: string,
+      issue = `triage-${name}`,
+      openQuestions: string[] = [],
+    ) => {
       const [row] = await db
         .insert(triageRuns)
         .values({
@@ -370,7 +376,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
           linearAgentSessionId: `triage-session-${name}`,
           trigger: "label",
           status: "completed",
-          lastResult: { summary: "s", error: null, outcome: { outcome } },
+          lastResult: { summary: "s", error: null, outcome: { outcome, openQuestions } },
           createdAt: ago(100),
           updatedAt: ago(90),
         })
@@ -382,6 +388,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     await triage("prdStarted", "reformat", "issue-prdRun");
     await ralphRun("prdRun", { createdAt: ago(80) });
     await triage("unchanged", "unchanged");
+    await triage("prdQuestions", "prd", "triage-prdQuestions", ["Which team owns it?"]);
 
     // ── Problems ──
     await ralphRun("failed", { status: "failed", mode: "request", error: "The agent crashed." });

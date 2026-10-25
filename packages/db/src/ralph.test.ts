@@ -1102,6 +1102,39 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       expect(await getLane(db, web.id)).toMatchObject({ prDraft: false, prReviewState: "none" });
     });
 
+    it("ignores a PR state change older than the lane's state", async () => {
+      const { run } = await createRun(db, runInput());
+      const lane = (await updateLane(db, (await getMainLane(db, run))!.id, { prNumber: 7 }))!;
+      const t1 = new Date("2026-10-25T10:00:00Z");
+      const t2 = new Date("2026-10-25T10:05:00Z");
+      const approved = await updatePullRequestState(db, repoA, 7, {
+        reviewState: { to: "approved" },
+        occurredAt: t2,
+      });
+      expect(approved.map((l) => [l.prReviewState, l.prStateUpdatedAt])).toEqual([
+        ["approved", t2],
+      ]);
+      // The review request from before the approval arrives late: it changes nothing.
+      expect(
+        await updatePullRequestState(db, repoA, 7, {
+          draft: true,
+          reviewState: { to: "review_requested" },
+          occurredAt: t1,
+        }),
+      ).toEqual([]);
+      expect(await getLane(db, lane.id)).toMatchObject({
+        prDraft: false,
+        prReviewState: "approved",
+        prStateUpdatedAt: t2,
+      });
+      // A change at the same time or later applies.
+      const later = await updatePullRequestState(db, repoA, 7, {
+        reviewState: { to: "changes_requested" },
+        occurredAt: t2,
+      });
+      expect(later.map((l) => l.prReviewState)).toEqual(["changes_requested"]);
+    });
+
     it("has no lane without a repository", async () => {
       const { run } = await createRun(db, runInput({ repositoryId: null, status: "waiting" }));
       expect(await getMainLane(db, run)).toBeNull();

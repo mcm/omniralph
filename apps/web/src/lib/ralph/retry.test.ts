@@ -5,6 +5,7 @@ import {
   completeJob,
   connectRepository,
   createDb,
+  expireQueuedJobs,
   failJob,
   getJob,
   getMainLane,
@@ -334,6 +335,41 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
       const payload = await work(run.id);
       expect(payload).toMatchObject({ story: { identifier: "ENG-3" }, attempt: 1 });
     });
+
+    it.each(["canceled", "expired"] as const)(
+      "retries a story whose last attempt was %s",
+      async (status) => {
+        const { epic, alpha } = twoStoryEpic();
+        const run = await session(epic.id);
+        const job = await activeJob(run.id);
+        if (status === "expired") {
+          // Nobody picked it up: the expiry cron fails it through the job's hooks.
+          expect(await expireQueuedJobs(db, new Date(Date.now() + 60_000))).toContain(job.id);
+          await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+        }
+        // Stopped (a queued attempt is canceled at once).
+        await stopRun(deps(), run, undefined);
+        expect((await getRun(db, run.id))!.status).toBe("stopped");
+        if (status === "canceled") expect((await getJob(db, job.id))!.status).toBe("canceled");
+        expect(await activeJobs(run.id)).toEqual([]);
+        // The attempt was the first story's.
+        const [alphaRow] = await listStories(db, run.id);
+        expect(job.ralphStoryId).toBe(alphaRow!.id);
+
+        expect(await retry(run, { kind: "story", storyId: alphaRow!.id })).toMatchObject({
+          status: "retried",
+          advanced: { action: "enqueued", story: { identifier: "ENG-2" } },
+        });
+        expect(await getRun(db, run.id)).toMatchObject({
+          status: "running",
+          focusStoryId: alpha.id,
+        });
+        expect(thoughts(run)).toContain("Retried **ENG-2** from Omniralph by Ada Admin.");
+        expect((await storyStates(run.id))[0]).toEqual(["ENG-2", "running", 0]);
+        const payload = await work(run.id);
+        expect(payload).toMatchObject({ story: { identifier: "ENG-2" }, attempt: 1 });
+      },
+    );
 
     it("re-runs a completed story of a finished epic, then describes the PR again", async () => {
       const { epic, alpha } = twoStoryEpic();

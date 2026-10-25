@@ -32,10 +32,7 @@ export async function rerunJob(
   }
   const kind = jobRerunKind(job);
   if (kind === null) {
-    return {
-      ok: false,
-      error: "This job can't be rerun from here: retry it from its run.",
-    };
+    return { ok: false, error: "Retry this from its run." };
   }
 
   if (kind === "review") {

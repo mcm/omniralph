@@ -360,12 +360,15 @@ canceled or expired); retrying one of their attempts retries the run:
 
 | Run | Retry |
 | -- | -- |
-| Review | Re-runs the review (every pass and the correlation) on the PR/MR's current head with the run's mode and profile, as a new `manual` review run (the answer is that run's detail). A merged or closed PR/MR, or a review of that head already queued or running, is refused. |
+| Review | Re-runs the review (every pass and the correlation) on the PR/MR's current head with the run's mode and profile, as a new `manual` review run (the answer is that run's detail). When a review of that head is already queued or running, nothing new starts: the answer is that run's detail with a `warning` ("A review of … is already queued or running."), as the review's Re-run does. A merged or closed PR/MR is refused. |
 | Triage | A new `triage.run` attempt on the same run, over the issue's current content, with the retried attempt's reply (and any reply since) and the run's last triage, as a session reply does. The session gets "Retried from Omniralph by {name}". |
 | Ask | A copy of the last `chat.ask` attempt on the same ask, so the answer is relayed to the same chat thread. |
 
+The answer's `warning` is null otherwise. A completed or skipped run or attempt can't be retried
+(400).
+
 System attempts (`repo.sync`, `install`) that failed, were canceled or expired are rerun from the
-Jobs page (`POST /api/ui/jobs/{id}/rerun`).
+Jobs page (`POST /api/ui/jobs/{id}/rerun`); any other job there answers "Retry this from its run.".
 
 **From the Inbox.** Any member acts on an Inbox item with `POST /api/ui/inbox/items/{key}`
 (`{action, until?}`). Done on a manual story moves its issue to a completed state, and Skip to a
@@ -383,10 +386,10 @@ is in its detail (`GET /api/ui/runs/{id}`, `details.question`) and in its Inbox 
 with a `key`, a plain-language `prompt` and the offered `options`. Any member answers it with
 `POST /api/ui/runs/{id}/answer` (`{questionKey, optionId}`): the option becomes the reply the
 question offered (the repo's full path, "Run it", "Push to origin", "Allow"…) and goes through the
-same code as a reply in the session or chat thread, after a note "{name} answered from Omniralph:
-{option}" there, so the conversation stays a complete record. The run goes on as after the reply.
-A triage, review or ask run's tool permission is answered on its stored request, which its agent
-polls. A key that no longer matches the open question (answered elsewhere, expired or replaced)
+same code as a reply in the session or chat thread. Once the answer is taken, a note "{name}
+answered from Omniralph: {option}" goes there, so the conversation stays a complete record (a
+refused answer leaves no note). The run goes on as after the reply. A tool permission is also
+recorded on its stored request, which the agent polls; a triage run's note goes to its session. A key that no longer matches the open question (answered elsewhere, expired or replaced)
 answers 409 "This question was already answered.".
 
 **Permission questions.** Request sessions skip Claude Code's permission prompts, except for calls

@@ -23,6 +23,8 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
+import type { ChangeMessage } from "@/lib/live/publisher";
+import { withLiveChanges } from "@/lib/live/request";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "./ingest";
 
@@ -149,7 +151,7 @@ describe.skipIf(!databaseAvailable)("PR/MR review and merge state from webhooks"
   const pullRequest = (
     action: string,
     number: number,
-    pr: { draft?: boolean; requested_reviewers?: object[] } = {},
+    pr: { draft?: boolean; requested_reviewers?: object[]; updated_at?: string } = {},
   ) =>
     send("github", "pull_request", {
       action,
@@ -168,11 +170,23 @@ describe.skipIf(!databaseAvailable)("PR/MR review and merge state from webhooks"
       },
     });
 
-  const review = (action: string, number: number, state: string, user: object = human) =>
+  const review = (
+    action: string,
+    number: number,
+    state: string,
+    user: object = human,
+    times: { submitted_at?: string; updated_at?: string } = {},
+  ) =>
     send("github", "pull_request_review", {
       action,
-      review: { state, user },
-      pull_request: { number, state: "open", draft: false, requested_reviewers: [] },
+      review: { state, user, submitted_at: times.submitted_at },
+      pull_request: {
+        number,
+        state: "open",
+        draft: false,
+        requested_reviewers: [],
+        updated_at: times.updated_at,
+      },
     });
 
   const stateOf = async (lane: RalphLane) => {
@@ -232,6 +246,83 @@ describe.skipIf(!databaseAvailable)("PR/MR review and merge state from webhooks"
     expect(await review("submitted", 9, "pending")).toEqual({
       status: "ignored",
       reason: "unsupported_event",
+    });
+  });
+
+  it("ignores deliveries older than the lane's state (out of order)", async () => {
+    const lane = await ralphLane(githubRepo, 11);
+    expect(
+      await review("submitted", 11, "approved", human, { submitted_at: "2026-10-25T10:05:00Z" }),
+    ).toEqual(accepted);
+    expect((await getLane(db, lane.id))!.prStateUpdatedAt).toEqual(
+      new Date("2026-10-25T10:05:00Z"),
+    );
+    // The review request and draft flip from before the approval arrive late.
+    expect(
+      await pullRequest("review_requested", 11, {
+        requested_reviewers: [human],
+        updated_at: "2026-10-25T10:01:00Z",
+      }),
+    ).toEqual(accepted);
+    expect(
+      await pullRequest("converted_to_draft", 11, {
+        draft: true,
+        updated_at: "2026-10-25T10:02:00Z",
+      }),
+    ).toEqual(accepted);
+    expect(await stateOf(lane)).toEqual([false, "approved"]);
+    // A dismissal after the approval applies (it has the PR's update time).
+    expect(
+      await review("dismissed", 11, "dismissed", human, { updated_at: "2026-10-25T10:09:00Z" }),
+    ).toEqual(accepted);
+    expect(await stateOf(lane)).toEqual([false, "none"]);
+
+    // GitLab's `updated_at` reads "2026-10-25 10:00:00 UTC".
+    const mr = await ralphLane(gitlabRepo, 12);
+    const gitlab = (action: string, updatedAt: string) =>
+      send("gitlab", "Merge Request Hook", {
+        object_kind: "merge_request",
+        user: { id: 5, username: "alice" },
+        reviewers: [],
+        object_attributes: { iid: 12, action, state: "opened", updated_at: updatedAt },
+      });
+    expect(await gitlab("approved", "2026-10-25 10:05:00 UTC")).toEqual(accepted);
+    expect(await gitlab("unapproved", "2026-10-25 10:01:00 UTC")).toEqual(accepted);
+    expect(await stateOf(mr)).toEqual([false, "approved"]);
+    expect(await gitlab("unapproved", "2026-10-25 10:06:00 UTC")).toEqual(accepted);
+    expect(await stateOf(mr)).toEqual([false, "none"]);
+  });
+
+  it("publishes a pull_request change with the lane's and run's IDs", async () => {
+    const lane = await ralphLane(githubRepo, 13);
+    const published: ChangeMessage[] = [];
+    const scheduled: Array<() => Promise<void>> = [];
+    await withLiveChanges(
+      () => pullRequest("review_requested", 13, { requested_reviewers: [human] }),
+      {
+        publisher: {
+          publish: async (messages) => {
+            published.push(...messages);
+          },
+        },
+        schedule: (task) => scheduled.push(task),
+      },
+    );
+    for (const task of scheduled) await task();
+    expect(published.filter((m) => m.event.resource === "pull_request")).toEqual([
+      {
+        channel: `org:${orgId}:changes`,
+        event: expect.objectContaining({
+          resource: "pull_request",
+          ids: [lane.id],
+          runId: lane.runId,
+          organizationId: orgId,
+        }),
+      },
+    ]);
+    expect(published).toContainEqual({
+      channel: `org:${orgId}:changes`,
+      event: expect.objectContaining({ resource: "run", ids: [lane.runId] }),
     });
   });
 

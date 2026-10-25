@@ -328,7 +328,9 @@ async function openEarlyLanePullRequest(
     prNumber: pr.number,
     prUrl: pr.url,
     // An open one found for the branch keeps the state its webhooks give it.
-    ...(pr.created ? { prDraft: true, prStateUpdatedAt: new Date() } : {}),
+    // `pr_state_updated_at` stays for the webhooks: it orders their deliveries
+    // by the code host's clock, which this write doesn't know.
+    ...(pr.created ? { prDraft: true } : {}),
   });
   const label = await sessionLinkLabel(tx, run, found.repository, pr.number);
   const conversation = conversationFor(run, deps);
@@ -493,9 +495,8 @@ export async function applyPullRequestJob(
   await updateLane(tx, lane.id, {
     prNumber: pr.number,
     prUrl: pr.url,
-    // `publishPullRequest` marked it ready.
+    // `publishPullRequest` marked it ready (its webhook stamps `pr_state_updated_at`).
     prDraft: false,
-    prStateUpdatedAt: new Date(),
     publish: { status: "published", created: pr.created },
   });
   const label = await sessionLinkLabel(

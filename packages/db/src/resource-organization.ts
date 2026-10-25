@@ -1,9 +1,11 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
+  chatThreadRuns,
   harnesses,
   ralphRuns,
   repositories,
+  reviewRuns,
   reviews,
   scmConnections,
   triageRuns,
@@ -11,7 +13,14 @@ import {
 
 /** Resources with their own URL in the control panel. */
 export type OrganizationResource =
-  "harness" | "ralph_run" | "repository" | "review" | "scm_connection" | "triage_run";
+  | "ask_run"
+  | "harness"
+  | "ralph_run"
+  | "repository"
+  | "review"
+  | "review_run"
+  | "scm_connection"
+  | "triage_run";
 
 /**
  * The organization a resource belongs to, whichever organization the caller is
@@ -25,6 +34,11 @@ export async function getResourceOrganizationId(
 ): Promise<string | null> {
   const query = () => {
     switch (resource) {
+      case "ask_run":
+        return db
+          .select({ organizationId: chatThreadRuns.organizationId })
+          .from(chatThreadRuns)
+          .where(and(eq(chatThreadRuns.id, id), eq(chatThreadRuns.kind, "query")));
       case "harness":
         return db
           .select({ organizationId: harnesses.organizationId })
@@ -46,6 +60,11 @@ export async function getResourceOrganizationId(
           .from(reviews)
           .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
           .where(eq(reviews.id, id));
+      case "review_run":
+        return db
+          .select({ organizationId: reviewRuns.organizationId })
+          .from(reviewRuns)
+          .where(eq(reviewRuns.id, id));
       case "scm_connection":
         return db
           .select({ organizationId: scmConnections.organizationId })

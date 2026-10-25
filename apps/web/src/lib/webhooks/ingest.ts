@@ -649,6 +649,7 @@ async function applyPullRequestState(
   await updatePullRequestState(db, repository.id, event.number, {
     draft: event.draft,
     reviewState: event.reviewState,
+    occurredAt: event.occurredAt,
   });
   return handled(
     { status: "accepted", event: "pull_request_state" },

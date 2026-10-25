@@ -9,6 +9,7 @@ import "server-only";
 import {
   answerRunPermissionRequest,
   getRun,
+  getTriageRun,
   listRunQuestions,
   loadInboxReferences,
   type Database,
@@ -30,7 +31,9 @@ import {
 } from "@omniralph/ralph";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RunAnswerRequest, RunQuestion } from "@/lib/api/runs";
-import { conversationFor } from "@/lib/ralph/conversation";
+import type { ActivityContent } from "@/lib/linear/gateway";
+import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { conversationFor, linearConversation } from "@/lib/ralph/conversation";
 import { truncate } from "@/lib/ralph/display";
 import { postActivity } from "@/lib/ralph/notify";
 import { answerRunQuestion, type RunQuestionAnswer } from "@/lib/ralph/reply";
@@ -163,13 +166,21 @@ export async function loadRunQuestion(
 
 const closed = () => new ApiRouteError(409, QUESTION_CLOSED_MESSAGE, "question_closed");
 
+/** The note an accepted answer leaves in the run's conversation, where the reply would have been. */
+const answeredNote = (answeredBy: string, option: QuestionOption): ActivityContent => ({
+  type: "thought",
+  body: `${answeredBy} answered from Omniralph: ${option.label}`,
+});
+
 /**
  * Answers the run's open question `questionKey` with option `optionId`, as `answeredBy`: 409
  * when the key isn't an open question of the run anymore (answered elsewhere, expired or
  * replaced), 400 for an option it doesn't offer. An epic's or request's question goes through
- * `answerRunQuestion`, after a note "{name} answered from Omniralph: {option}" in the run's
- * conversation (where the reply would have been); another run's tool permission is answered
- * on its stored request, which its agent polls.
+ * `answerRunQuestion`; a tool permission's answer is also recorded on the job's stored request
+ * (`run_permission_requests`), which the agent polls. Another run's tool permission is answered
+ * on its stored request alone. Once the answer is taken, a note "{name} answered from
+ * Omniralph: {option}" goes to the run's conversation (a triage run's Linear session); a
+ * refused answer leaves none.
  */
 export async function answerQuestion(
   db: Database,
@@ -196,16 +207,13 @@ export async function answerQuestion(
       answeredBy,
     });
     if (!answered) throw closed();
+    await noteStoredAnswer(db, run, answeredNote(answeredBy, option));
     return;
   }
 
   const ralphRun = await getRun(db, run.id);
   if (!ralphRun) throw ApiRouteError.notFound("That run doesn't exist.");
   const deps = await ralphDepsOf(db, run.organizationId);
-  await postActivity(conversationFor(ralphRun, deps), {
-    type: "thought",
-    body: `${answeredBy} answered from Omniralph: ${option.label}`,
-  });
   const result = await answerRunQuestion(
     deps,
     ralphRun,
@@ -216,7 +224,39 @@ export async function answerQuestion(
     },
     answeredBy,
   );
+  if (subject.kind === "permission" && result?.outcome === "answered") {
+    // The agent reads the stored request on its next poll: settle it now, not on that poll.
+    const permission = (await getRun(db, run.id))?.permission;
+    if (permission?.requestId === subject.requestId && permission.answer) {
+      await answerRunPermissionRequest(db, {
+        jobId: subject.jobId,
+        requestId: subject.requestId,
+        answer: permission.answer,
+        answeredBy: permission.answeredBy ?? answeredBy,
+        answeredAt: permission.answeredAt ? new Date(permission.answeredAt) : new Date(),
+      });
+    }
+  }
+  if (result?.outcome === "answered" || result?.outcome === "failed") {
+    // A notice: a chat run relays it in its thread too.
+    await postActivity(conversationFor(ralphRun, deps), answeredNote(answeredBy, option), {
+      notice: true,
+    });
+  }
   throwUnlessAnswered(result);
+}
+
+/** Notes a stored request's answer in its run's conversation: a triage run's Linear session. */
+async function noteStoredAnswer(
+  db: Database,
+  run: RunIndexEntry,
+  note: ActivityContent,
+): Promise<void> {
+  if (run.kind !== "triage") return;
+  const triage = await getTriageRun(db, run.id);
+  if (!triage) return;
+  const linear = () => getLinearGatewayOrDisconnected({ db, organizationId: run.organizationId });
+  await postActivity(linearConversation(linear, triage.linearAgentSessionId), note);
 }
 
 function throwUnlessAnswered(result: RunQuestionAnswer | null): void {

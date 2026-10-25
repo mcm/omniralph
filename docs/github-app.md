@@ -86,7 +86,8 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 - **Upgrading an existing App** (created before Omniralph tracked review state): subscribe to the
   **Pull request review** event under **Permissions & events** (no new permission is needed).
   Until then, a PR that Om opened shows only whether it's a draft, waiting for review, merged or
-  closed: approvals and change requests aren't seen.
+  closed: approvals and change requests aren't seen. The production App's subscription is added
+  at cutover, by a person in the App's settings.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
   GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the

@@ -1,6 +1,15 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  acceptInvitation,
   addMember,
+  deleteChatChannelTaskSetting,
+  deleteChatConnection,
+  removeMember,
+  removeOrganizationDomain,
+  requestHarnessUpdate,
+  revokeInvitation,
+  setHarnessDesiredVersion,
+  upsertChatChannelTaskSetting,
   addOrganizationDomain,
   captureChanges,
   claimJob,
@@ -490,6 +499,18 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([agentEvent(harnessId)]);
     });
 
+    it("a desired version or an update request from the control panel publishes the agent", async () => {
+      expect(
+        await published(() => setHarnessDesiredVersion(db, orgId, harnessId, "1.2.0")),
+      ).toEqual([agentEvent(harnessId)]);
+      expect(await published(() => requestHarnessUpdate(db, orgId, harnessId, "1.2.0"))).toEqual([
+        agentEvent(harnessId),
+      ]);
+      expect(await published(() => setHarnessDesiredVersion(db, orgId, harnessId, null))).toEqual([
+        agentEvent(harnessId),
+      ]);
+    });
+
     it("an install job targeted at an agent publishes the agent", async () => {
       const events = await published(() =>
         insertJob(db, {
@@ -605,6 +626,49 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([connectionEvent(integrationId)]);
     });
 
+    it("chat connections and their channel task settings publish the connection", async () => {
+      const connectionEvent = (id: string) => ({
+        channel: orgChannel,
+        v: 1,
+        resource: "connection",
+        ids: [id],
+        organizationId: orgId,
+      });
+      let chatId = "";
+      expect(
+        await published(async () => {
+          const saved = await saveChatConnection(db, {
+            organizationId: orgId,
+            platform: "slack",
+            externalId: "T-live",
+            name: "Acme Slack",
+            credentials: { botToken: "xoxb-secret" },
+            installedByUserId: userId,
+          });
+          if (saved === "other_organization") throw new Error("setup");
+          chatId = saved.id;
+        }),
+      ).toEqual([connectionEvent(chatId)]);
+      expect(
+        await published(() =>
+          upsertChatChannelTaskSetting(db, {
+            organizationId: orgId,
+            connectionId: chatId,
+            channelId: "slack:C1",
+            askAboutCodeTaskId: null,
+            startWorkTaskId: null,
+            updatedBy: userId,
+          }),
+        ),
+      ).toEqual([connectionEvent(chatId)]);
+      expect(
+        await published(() => deleteChatChannelTaskSetting(db, orgId, chatId, "slack:C1")),
+      ).toEqual([connectionEvent(chatId)]);
+      expect(await published(() => deleteChatConnection(db, orgId, chatId))).toEqual([
+        connectionEvent(chatId),
+      ]);
+    });
+
     it("organization, member, invitation and domain changes publish the organization", async () => {
       const orgEvent = {
         channel: orgChannel,
@@ -640,6 +704,50 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(await published(() => addOrganizationDomain(db, orgId, "example.com"))).toEqual([
         orgEvent,
       ]);
+    });
+
+    it("member removal, invitation revoke and accept, and domain removal publish the organization", async () => {
+      const orgEvent = {
+        channel: orgChannel,
+        v: 1,
+        resource: "organization",
+        ids: [orgId],
+        organizationId: orgId,
+      };
+      const memberEvent = (id: string) => ({ ...orgEvent, channel: `user:${id}:changes` });
+      const dave = await createUser(db, { email: "dave@example.com", name: "Dave" });
+      await addMember(db, { organizationId: orgId, userId: dave.id, role: "member" });
+      // The removed member hears it on their own channel: their next live token drops the org.
+      expect(
+        await published(() => removeMember(db, { organizationId: orgId, userId: dave.id })),
+      ).toEqual([orgEvent, memberEvent(dave.id)]);
+
+      const invite = async (email: string) => {
+        const result = await createInvitation(db, {
+          organizationId: orgId,
+          email,
+          role: "member",
+          invitedBy: userId,
+        });
+        if (result.status !== "created") throw new Error(`setup: ${result.status}`);
+        return result.invitation.id;
+      };
+      const revoked = await invite("erin@example.com");
+      expect(
+        await published(() =>
+          revokeInvitation(db, { organizationId: orgId, invitationId: revoked }),
+        ),
+      ).toEqual([orgEvent]);
+      const frank = await createUser(db, { email: "frank@example.com", name: "Frank" });
+      const accepted = await invite("frank@example.com");
+      expect(
+        await published(() => acceptInvitation(db, { invitationId: accepted, userId: frank.id })),
+      ).toEqual([orgEvent, memberEvent(frank.id)]);
+
+      await addOrganizationDomain(db, orgId, "removed.example.com");
+      expect(
+        await published(() => removeOrganizationDomain(db, orgId, "removed.example.com")),
+      ).toEqual([orgEvent]);
     });
   });
 

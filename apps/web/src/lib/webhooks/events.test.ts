@@ -269,6 +269,7 @@ describe("parseGitHubPullRequestStateEvent", () => {
       draft: true,
       reviewState: { to: "none" },
       reviewer: null,
+      occurredAt: null,
     });
     expect(parse("opened", { requested_reviewers: [user] })?.reviewState).toEqual({
       to: "review_requested",
@@ -283,12 +284,14 @@ describe("parseGitHubPullRequestStateEvent", () => {
       draft: false,
       reviewState: { to: "review_requested", from: ["none"] },
       reviewer: null,
+      occurredAt: null,
     });
     expect(parse("converted_to_draft", { draft: true })).toEqual({
       number: 7,
       draft: true,
       reviewState: undefined,
       reviewer: null,
+      occurredAt: null,
     });
     expect(parse("review_requested", { requested_reviewers: [user] })?.reviewState).toEqual({
       to: "review_requested",
@@ -328,6 +331,7 @@ describe("parseGitHubPullRequestStateEvent", () => {
       draft: false,
       reviewState: { to: "approved" },
       reviewer: { username: "octocat", isBot: false },
+      occurredAt: null,
     });
     expect(review("submitted", "CHANGES_REQUESTED")?.reviewState).toEqual({
       to: "changes_requested",
@@ -351,6 +355,24 @@ describe("parseGitHubPullRequestStateEvent", () => {
         pull_request: pr(),
       })?.reviewer,
     ).toEqual({ username: "omniralph[bot]", isBot: true });
+  });
+
+  it("reads when the change happened", () => {
+    expect(parse("review_requested", { updated_at: "2026-10-25T10:01:00Z" })?.occurredAt).toEqual(
+      new Date("2026-10-25T10:01:00Z"),
+    );
+    expect(
+      parseGitHubPullRequestStateEvent("pull_request_review", {
+        action: "submitted",
+        review: { state: "approved", user, submitted_at: "2026-10-25T10:05:00Z" },
+        pull_request: pr({ updated_at: "2026-10-25T10:06:00Z" }),
+      })?.occurredAt,
+    ).toEqual(new Date("2026-10-25T10:05:00Z"));
+    // A dismissal has no time of its own: the PR's update time.
+    expect(
+      review("dismissed", "dismissed", { updated_at: "2026-10-25T10:09:00Z" })?.occurredAt,
+    ).toEqual(new Date("2026-10-25T10:09:00Z"));
+    expect(parse("review_requested", { updated_at: "not a time" })?.occurredAt).toBeNull();
   });
 
   it("ignores pending and edited reviews and reviews of closed PRs", () => {
@@ -384,6 +406,7 @@ describe("parseGitLabPullRequestStateEvent", () => {
         draft: false,
         reviewState: { to: "approved" },
         reviewer: { username: "approver", isBot: false },
+        occurredAt: null,
       });
     }
     for (const action of ["unapproved", "unapproval"]) {
@@ -395,18 +418,32 @@ describe("parseGitLabPullRequestStateEvent", () => {
     }
   });
 
+  it("reads when the change happened, in either of GitLab's formats", () => {
+    expect(
+      hook("approved", { attributes: { updated_at: "2026-10-25 10:05:00 UTC" } })?.occurredAt,
+    ).toEqual(new Date("2026-10-25T10:05:00Z"));
+    expect(
+      hook("approved", { attributes: { updated_at: "2026-10-25T10:05:00.000Z" } })?.occurredAt,
+    ).toEqual(new Date("2026-10-25T10:05:00Z"));
+  });
+
   it("reads opening and reopening, with reviewers", () => {
     expect(hook("open", { attributes: { draft: true } })).toEqual({
       number: 4,
       draft: true,
       reviewState: { to: "none" },
       reviewer: null,
+      occurredAt: null,
     });
     expect(hook("reopen", { reviewers: [reviewer] })?.reviewState).toEqual({
       to: "review_requested",
       from: ["none"],
     });
-    expect(hook("reopen")).toMatchObject({ reviewState: undefined, reviewer: null });
+    expect(hook("reopen")).toMatchObject({
+      reviewState: undefined,
+      reviewer: null,
+      occurredAt: null,
+    });
     // Older GitLab versions: work_in_progress.
     expect(hook("open", { attributes: { draft: undefined, work_in_progress: true } })?.draft).toBe(
       true,
@@ -419,7 +456,7 @@ describe("parseGitLabPullRequestStateEvent", () => {
         attributes: { draft: true },
         changes: { draft: { previous: false, current: true } },
       }),
-    ).toEqual({ number: 4, draft: true, reviewState: undefined, reviewer: null });
+    ).toEqual({ number: 4, draft: true, reviewState: undefined, reviewer: null, occurredAt: null });
     expect(
       hook("update", {
         reviewers: [reviewer],

@@ -187,7 +187,10 @@ describe("rerunJob", () => {
       error: "Only failed, canceled or expired jobs can be rerun.",
     });
     const story = job({ id: "77777777-7777-4777-8777-777777777777", type: RALPH_STORY_JOB_TYPE });
-    expect(await rerunJob({} as never, d, ORG, story.id)).toMatchObject({ ok: false });
+    expect(await rerunJob({} as never, d, ORG, story.id)).toEqual({
+      ok: false,
+      error: "Retry this from its run.",
+    });
     const other = job({
       id: "88888888-8888-4888-8888-888888888888",
       organizationId: "99999999-9999-4999-8999-999999999999",

@@ -358,6 +358,14 @@ export const runRetryRequestSchema = z.object({
 });
 export type RunRetryRequest = z.input<typeof runRetryRequestSchema>;
 
+/**
+ * `POST /api/ui/runs/{id}/retry` answer: the retried run's detail (a review's: the review run of
+ * the PR's current head) and a `warning` when nothing new started (that head's review is
+ * already queued or running).
+ */
+export const runRetryResultSchema = runDetailSchema.extend({ warning: z.string().nullable() });
+export type RunRetryResult = z.infer<typeof runRetryResultSchema>;
+
 /** Longest question key and option ID `POST /api/ui/runs/{id}/answer` takes. */
 const ANSWER_FIELD_MAX_LENGTH = 500;
 

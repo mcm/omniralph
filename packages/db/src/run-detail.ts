@@ -83,8 +83,10 @@ export async function listRunAttempts(
       coalesce((j.result -> 'usage' ->> 'inputTokens')::bigint, 0)::text as tokens_in,
       coalesce((j.result -> 'usage' ->> 'outputTokens')::bigint, 0)::text as tokens_out,
       j.error, j.ralph_story_id,
+      -- Legacy review.run jobs carry the review ID at the payload's top level.
       (case when j.type in ('review.task', 'review.run')
-        then j.payload -> 'trigger' -> 'context' ->> 'reviewId' end) as review_id,
+        then coalesce(j.payload -> 'trigger' -> 'context' ->> 'reviewId', j.payload ->> 'reviewId')
+        end) as review_id,
       (select count(*) from run_activities a where a.job_id = j.id)::text as activities
     from jobs j
     left join harnesses h on h.id = j.harness_id
