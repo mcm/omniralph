@@ -281,6 +281,21 @@ describe("useApiMutation", () => {
       expect(mutationFn).not.toHaveBeenCalled();
       expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
     });
+
+    it("rolls back the optimistic update when the caller's onMutate throws", async () => {
+      const { client, mutationFn, result } = setup({
+        optimistic: (name, cache) => cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+        onMutate: async () => {
+          throw new Error("bad context");
+        },
+      });
+      const detail = { name: "build-01" };
+      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      act(() => result.current.mutate("build-02"));
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(mutationFn).not.toHaveBeenCalled();
+      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
+    });
   });
 
   describe("applyResult", () => {
