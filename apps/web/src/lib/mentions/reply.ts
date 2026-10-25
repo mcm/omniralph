@@ -1,13 +1,12 @@
 import "server-only";
 import {
-  getRepositoryReviewSettings,
   getRepositoryWithConnection,
   type Database,
   type FindingRow,
   type Review,
   resolveRepositorySwitches,
 } from "@omniralph/db";
-import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
+import { MAX_REPLY_QUESTION_LENGTH, REVIEW_DEPTHS, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import { runTokenBudget } from "@/lib/runs/resolve";
@@ -90,15 +89,16 @@ export async function enqueueReply(
   const { finding, review } = input;
   if (!finding.scmCommentId) return { status: "no_thread" };
   const found = await getRepositoryWithConnection(db, review.repositoryId);
-  const settings = found && (await getRepositoryReviewSettings(db, review.repositoryId));
   const switches = found && (await resolveRepositorySwitches(db, found.repository));
-  if (!found || !settings || !switches || found.repository.disconnectedAt || !switches.review) {
+  if (!found || !switches || found.repository.disconnectedAt || !switches.review) {
     return { status: "repository_unavailable" };
   }
   if (!switches.query) return { status: "query_disabled" };
   const definitions = organizationDefinitions(db, found.repository.organizationId);
   const task = await definitions.getTask(REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);
+  // The repository's review depth caps the reply's budget when the task sets none.
+  const depth = REVIEW_DEPTHS[found.repository.reviewDepth];
   const context = replyContext({
     finding,
     review,
@@ -106,7 +106,7 @@ export async function enqueueReply(
     question: input.question,
     askedBy: input.askedBy,
     threadCommentId: finding.scmCommentId,
-    budgetTokens: runTokenBudget(task, settings.profile) ?? settings.profile.maxTokensPerReview,
+    budgetTokens: runTokenBudget(task, depth) ?? depth.maxTokensPerReview,
   });
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,

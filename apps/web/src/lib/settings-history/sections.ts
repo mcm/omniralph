@@ -18,7 +18,6 @@ import {
   listPendingInvitationsForOrganization,
   listRepositoryOverview,
   listRepositoryPinnedHarnessNames,
-  listReviewProfiles,
   listRoutingRules,
   getOrganization,
   recordSettingsChange,
@@ -30,7 +29,7 @@ import {
   type SettingsValues,
   type TrackedSettings,
 } from "@omniralph/db";
-import { parseRalphSettings, type RalphSettings } from "@omniralph/shared";
+import { parseRalphSettings, REVIEW_DEPTHS, type RalphSettings } from "@omniralph/shared";
 import type { TaskType } from "@omniralph/tasks";
 import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/tasks";
@@ -71,7 +70,7 @@ async function taskNames(db: Database, organizationId: string) {
 
 const REPOSITORY_REVIEWS_FIELDS: SettingsFields = {
   reviews: { label: "Reviews" },
-  profile: { label: "Review profile" },
+  depth: { label: "Review depth" },
   onOpen: { label: "Review when opened" },
   onPush: { label: "Review on push" },
   drafts: { label: "Review drafts" },
@@ -88,13 +87,10 @@ async function readRepositoryReviews(
 ): Promise<SettingsValues | null> {
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return null;
-  const [profiles, task] = await Promise.all([
-    listReviewProfiles(db, organizationId),
-    taskNames(db, organizationId),
-  ]);
+  const task = await taskNames(db, organizationId);
   return {
     reviews: switchValue(repository.enabled),
-    profile: profiles.find((p) => p.id === repository.profileId)?.name ?? repository.profileId,
+    depth: REVIEW_DEPTHS[repository.reviewDepth].label,
     onOpen: onOff(repository.triggers.onOpen),
     onPush: onOff(repository.triggers.onPush),
     drafts: onOff(repository.triggers.drafts),

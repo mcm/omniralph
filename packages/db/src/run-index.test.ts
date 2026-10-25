@@ -31,7 +31,6 @@ import {
   triageRunStatus,
   triageRunTrigger,
 } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 
 /** Every source status of every kind, and what it maps to (PRD "Unified run model"). */
 const EXPECTED: Record<RunKind, [readonly string[], Record<string, string>]> = {
@@ -145,7 +144,6 @@ describe.skipIf(!databaseAvailable)("run index", () => {
   });
 
   it("resolves the organization of a review run and an ask (getResourceOrganizationId)", async () => {
-    await seedReviewProfiles(db, orgId);
     const connection = (await upsertScmConnection(
       db,
       {

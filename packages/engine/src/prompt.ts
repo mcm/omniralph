@@ -4,7 +4,7 @@ import type { PlanProfile } from "./plan.js";
 import { DEFAULT_RISK_WEIGHT, type FileRisk } from "./riskScan.js";
 import { languagesForPaths, renderRubric, type RubricLanguage } from "./rubric/index.js";
 
-/** The profile fields a review needs (`review_profiles` row). */
+/** The profile fields a review needs (its depth's preset, `reviewProfileConfigForDepth`). */
 export interface ReviewProfileConfig extends PlanProfile {
   /** Slug, e.g. `quick`, `standard`, `deep`. */
   id: string;

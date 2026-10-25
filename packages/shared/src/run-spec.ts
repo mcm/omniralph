@@ -93,15 +93,15 @@ export const RunSpec = z.object({
   /** The repository's tool settings, applied on top of the agent's tools (they never widen them). */
   tools: RunToolRestrictions,
   /**
-   * The task's model, else the repository profile's, else the agent's (for a
-   * review run: its review profile's, else the task's, else the agent's);
+   * The task's model, else the repository review depth's, else the agent's (for a
+   * review run: its review depth's, else the task's, else the agent's);
    * null for the Claude Code default.
    */
   model: z.string().min(1).nullable(),
   fallbackModel: z.string().min(1).nullable(),
   /** Token cap of the run; null for none. */
   tokenBudget: z.int().min(1).nullable(),
-  /** Most files a review run covers (its review profile's `maxFiles`); null or absent for other runs. */
+  /** Most files a review run covers (its review depth's `maxFiles`); null or absent for other runs. */
   maxFiles: z.int().min(1).nullable().optional(),
   tokens: z.object({ lifecycle: JobToken, session: JobToken }),
 });

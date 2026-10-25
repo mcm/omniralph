@@ -1,18 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_REVIEW_PROFILES, repositories } from "@omniralph/db";
+import { repositories } from "@omniralph/db";
 import {
   DEFAULT_RALPH_SETTINGS,
+  DEFAULT_REVIEW_DEPTH,
   RalphSettingsInput,
-  ReviewProfileInput,
   ralphSettingsFormValues,
   type RalphSettingsInput as RalphInput,
 } from "@omniralph/shared";
 import { settingChanges } from "./changes";
 import {
   pickKeys,
-  PROFILE_SPECS,
-  profileDraft,
-  profileValues,
   CODING_SECTIONS,
   RALPH_CARDS,
   RALPH_REPOSITORY_DEFAULTS,
@@ -21,7 +18,6 @@ import {
   ralphValues,
   REPOSITORY_CARDS,
   REPOSITORY_SECTIONS,
-  regroupTyped,
   REPOSITORY_SETTING_DEFAULTS,
   repositoryDraft,
   repositoryInput,
@@ -143,7 +139,6 @@ describe("repository sections", () => {
 
 describe("repository change lists", () => {
   const settings = {
-    profileId: "standard",
     triggers: { onOpen: true, onPush: true, drafts: false },
     pathExcludes: ["*.snap"],
     customInstructions: "",
@@ -153,10 +148,6 @@ describe("repository change lists", () => {
   };
   const context = { reviewTaskIds: ["builtin:review-pr", "t2"], harnessIds: ["h1", "h2"] };
   const specs = repositorySpecs({
-    profiles: new Map([
-      ["standard", "Standard"],
-      ["deep", "Deep"],
-    ]),
     tasks: new Map([
       ["builtin:review-pr", "Review PR"],
       ["t2", "Security review"],
@@ -175,10 +166,7 @@ describe("repository change lists", () => {
     );
   };
 
-  it("names profiles, tasks and harnesses", () => {
-    expect(changes("profile", { profileId: "deep" })).toEqual([
-      { key: "profileId", label: "Review profile", from: "Standard", to: "Deep" },
-    ]);
+  it("names tasks and harnesses", () => {
     expect(changes("tasks", { reviewTaskIds: ["t2", "builtin:review-pr"] })).toEqual([
       {
         key: "reviewTaskIds",
@@ -215,78 +203,17 @@ describe("repository change lists", () => {
     expect(changes("files", { pathExcludes: "*.snap\n\n" })).toEqual([]);
   });
 
-  it("nests the trigger switches for the server", () => {
+  it("nests the trigger switches for the server and keeps the repository's depth", () => {
     const values = repositoryValues(repositoryDraft(settings), context);
-    expect(repositoryInput({ ...values, onPush: false }).triggers).toEqual({
-      onOpen: true,
-      onPush: false,
-      drafts: false,
-    });
-  });
-});
-
-describe("profile change lists", () => {
-  it("saves a profile left unedited as it was", () => {
-    for (const { model, maxTokensPerReview, maxFiles, allowRepoExploration } of [
-      ...BUILT_IN_REVIEW_PROFILES,
-      {
-        model: "claude-sonnet-5-5[1m]",
-        maxTokensPerReview: 1_234_567,
-        maxFiles: 1,
-        allowRepoExploration: false,
-      },
-    ]) {
-      const profile = { model, maxTokensPerReview, maxFiles, allowRepoExploration };
-      const values = profileValues(profileDraft(profile));
-      expect(values).toEqual(profile);
-      expect(ReviewProfileInput.parse(values)).toEqual(profile);
-      expect(settingChanges(PROFILE_SPECS, values, profile)).toEqual([]);
-    }
-  });
-
-  it("lists the token cap and model old → new", () => {
-    const saved = profileDraft({
-      model: "claude-sonnet-5-5",
-      maxTokensPerReview: 200_000,
-      maxFiles: 40,
-      allowRepoExploration: true,
-    });
-    expect(
-      settingChanges(
-        PROFILE_SPECS,
-        profileValues(saved),
-        profileValues({ ...saved, maxTokensPerReview: "150000", allowRepoExploration: false }),
-      ),
-    ).toEqual([
-      { key: "maxTokensPerReview", label: "Token cap per review", from: "200,000", to: "150,000" },
-      { key: "allowRepoExploration", label: "Allow repository exploration", from: "On", to: "Off" },
-    ]);
-  });
-});
-
-describe("profile token cap", () => {
-  it("shows the cap with separators and reads it back with or without them", () => {
-    const saved = profileDraft({
-      model: "claude-haiku-5-5",
-      maxTokensPerReview: 60_000,
-      maxFiles: 15,
-      allowRepoExploration: false,
-    });
-    expect(saved.maxTokensPerReview).toBe("60,000");
-    expect(profileValues(saved).maxTokensPerReview).toBe(60_000);
-    for (const typed of ["70000", "70,000", "70 000", " 70_000 "]) {
-      expect(profileValues({ ...saved, maxTokensPerReview: typed }).maxTokensPerReview).toBe(
-        70_000,
-      );
-    }
-    expect(profileValues({ ...saved, maxTokensPerReview: "" }).maxTokensPerReview).toBeNaN();
-    expect(profileValues({ ...saved, maxTokensPerReview: "7o,000" }).maxTokensPerReview).toBeNaN();
+    const input = repositoryInput({ ...values, onPush: false }, "deep");
+    expect(input.triggers).toEqual({ onOpen: true, onPush: false, drafts: false });
+    expect(input.depth).toBe("deep");
   });
 });
 
 describe("stated defaults", () => {
   it("match the repository column defaults", () => {
-    expect(repositories.profileId.default).toBe(REPOSITORY_SETTING_DEFAULTS.profileId);
+    expect(repositories.reviewDepth.default).toBe(DEFAULT_REVIEW_DEPTH);
     expect(repositories.triggers.default).toEqual(REPOSITORY_SETTING_DEFAULTS.triggers);
     expect(repositories.correlationTaskId.default).toBe(
       REPOSITORY_SETTING_DEFAULTS.correlationTaskId,
@@ -295,23 +222,5 @@ describe("stated defaults", () => {
     expect(repositories.ralphEnabled.default).toBeUndefined();
     expect(repositories.storyTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.storyTaskId);
     expect(repositories.requestTaskId.default).toBe(RALPH_REPOSITORY_DEFAULTS.requestTaskId);
-  });
-});
-
-describe("regroupTyped", () => {
-  it("regroups a typed count and keeps the caret after the same digit", () => {
-    // "15000|" + "0" typed at the end.
-    expect(regroupTyped("150000", 6)).toEqual({ value: "150,000", caret: 7 });
-    // A digit typed after "1" in "1,000": "12|,000".
-    expect(regroupTyped("12,000", 2)).toEqual({ value: "12,000", caret: 2 });
-    // "1|,000" → "1|0,000" after typing "0" behind the 1.
-    expect(regroupTyped("10,000", 2)).toEqual({ value: "10,000", caret: 2 });
-    expect(regroupTyped("100,00", 4)).toEqual({ value: "10,000", caret: 4 });
-  });
-
-  it("leaves text that isn't a count, and empties an empty one", () => {
-    expect(regroupTyped("15k", 3)).toEqual({ value: "15k", caret: 3 });
-    expect(regroupTyped("", 0)).toEqual({ value: "", caret: 0 });
-    expect(regroupTyped("007", 3)).toEqual({ value: "7", caret: 1 });
   });
 });

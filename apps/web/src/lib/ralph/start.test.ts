@@ -33,7 +33,6 @@ import {
   type RepositoryRalphSettingsUpdate,
   organizations,
   replaceRoutingRules,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { RoutingQuery } from "@omniralph/shared";
@@ -178,7 +177,6 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,
@@ -1259,7 +1257,6 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     it("routes only to repositories of the organization that connected the workspace", async () => {
       // Another organization, with its own workspace and a repository matching team OPS.
       const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
-      await seedReviewProfiles(db, other!.id);
       const otherConnection = (await upsertScmConnection(
         db,
         {

@@ -10,8 +10,6 @@ import {
   Field,
   Label,
   Muted,
-  RadioGroup,
-  RadioGroupItem,
   Skeleton,
   Stack,
   Textarea,
@@ -23,11 +21,12 @@ import {
   RepositorySettingsInput,
   RepositoryTaskTypesInput,
   type FieldErrors,
+  type ReviewDepth,
 } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
 import { Freshness } from "@/components/freshness";
-import { MonoPath, MonoValue } from "@/components/mono-value";
+import { MonoPath } from "@/components/mono-value";
 import { MultiSelect } from "@/components/pickers";
 import { PageHeader } from "@/components/page-header";
 import { QueryBoundary } from "@/components/query-boundary";
@@ -61,7 +60,6 @@ import { HARNESS_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants
 import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
-import type { ProfileSummary } from "../../../settings/profiles/profile-facts";
 import {
   repositoryChanged,
   useCodingLinear,
@@ -96,7 +94,7 @@ interface RepositorySettingsContentProps {
   tab: RepositorySettingsTab;
   repository: RepositoryDetail["repository"];
   settings: {
-    profileId: string;
+    depth: ReviewDepth;
     triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
     pathExcludes: string[];
     customInstructions: string;
@@ -108,7 +106,6 @@ interface RepositorySettingsContentProps {
   reviewTasks: (TaskChoiceOption & { description: string })[];
   /** The tasks that can correlate its review runs' findings. */
   correlationTasks: TaskChoiceOption[];
-  profiles: ProfileSummary[];
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: RepositoryHarness[];
   /** The Coding tab's settings; only passed to admins. */
@@ -196,7 +193,6 @@ export function RepositorySettingsContent({
   settings,
   reviewTasks,
   correlationTasks,
-  profiles,
   harnesses,
   ralph,
   codingChoices,
@@ -227,11 +223,10 @@ export function RepositorySettingsContent({
   const specs = React.useMemo(
     () =>
       repositorySpecs({
-        profiles: new Map(profiles.map((p) => [p.id, p.name])),
         tasks: new Map([...reviewTasks, ...correlationTasks].map((t) => [t.id, t.name])),
         harnesses: new Map(harnesses.map((h) => [h.id, h.name])),
       }),
-    [profiles, reviewTasks, correlationTasks, harnesses],
+    [reviewTasks, correlationTasks, harnesses],
   );
   const taskName = (id: string) =>
     [...reviewTasks, ...correlationTasks].find((t) => t.id === id)?.name ?? id;
@@ -266,7 +261,7 @@ export function RepositorySettingsContent({
       prepare: () => {
         // The saved settings with this section's changes only.
         const parsed = RepositorySettingsInput.safeParse(
-          repositoryInput({ ...savedValues, ...pickKeys(draftValues, keys) }),
+          repositoryInput({ ...savedValues, ...pickKeys(draftValues, keys) }, settings.depth),
         );
         const parsedTypes = RepositoryTaskTypesInput.safeParse(typesDraft);
         if (!parsed.success || !parsedTypes.success) {
@@ -312,8 +307,6 @@ export function RepositorySettingsContent({
 
   const excludeErrors = pathExcludeErrors(draft.pathExcludes, errors);
   const instructionsLength = draft.customInstructions.length;
-  const defaultProfile =
-    profiles.find((p) => p.id === REPOSITORY_SETTING_DEFAULTS.profileId)?.name ?? "Standard";
   const reviewsOn = taskTypeOn(taskTypes, "review", typesDraft.review);
 
   const reviewSection = (
@@ -388,107 +381,8 @@ export function RepositorySettingsContent({
       <SettingsSubsection
         id="review-who"
         title="Who reviews"
-        description={
-          <>
-            The profile trades review depth against token usage; the reviewers run in parallel and
-            their findings are posted as one review.
-            {isAdmin && (
-              <>
-                {" "}
-                Edit the profiles themselves in{" "}
-                <Link href="/settings/profiles" className="settings-link">
-                  Settings › Profiles
-                </Link>
-                .
-              </>
-            )}
-          </>
-        }
+        description="The reviewers run in parallel and their findings are posted as one review."
       >
-        <div className="settings-group" role="group" aria-labelledby="profile-label">
-          <span id="profile-label" className="settings-group-label">
-            Profile
-          </span>
-          <Muted>Default: {defaultProfile}.</Muted>
-          <RadioGroup
-            value={draft.profileId}
-            onValueChange={(value) => set("profileId", value)}
-            disabled={disabled}
-            aria-labelledby="profile-label"
-            aria-invalid={Boolean(errors.profileId)}
-            className="settings-profile-table-wrap"
-          >
-            <table className="settings-profile-table">
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="sr-only">Selected</span>
-                  </th>
-                  <th scope="col">Profile</th>
-                  <th scope="col">Model</th>
-                  <th scope="col" className="numeric settings-profile-wide">
-                    Token cap
-                  </th>
-                  <th scope="col" className="numeric settings-profile-wide">
-                    Max files
-                  </th>
-                  <th scope="col" className="settings-profile-wide">
-                    Exploration
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => (
-                  <tr
-                    key={profile.id}
-                    data-selected={profile.id === draft.profileId ? "" : undefined}
-                    data-disabled={disabled ? "" : undefined}
-                    // The radio in the row is the keyboard control; the row is a bigger target.
-                    // The radio's hidden form input dispatches a bubbling click whenever its
-                    // checked state changes (e.g. on Discard): that isn't the person choosing.
-                    onClick={(e) => {
-                      if (disabled || (e.target as Element).tagName === "INPUT") return;
-                      set("profileId", profile.id);
-                    }}
-                  >
-                    <td>
-                      <RadioGroupItem
-                        id={`profile-${profile.id}`}
-                        value={profile.id}
-                        aria-describedby={
-                          profile.description ? `profile-${profile.id}-desc` : undefined
-                        }
-                      />
-                    </td>
-                    <td>
-                      <Label htmlFor={`profile-${profile.id}`} className="settings-profile-name">
-                        {profile.name}
-                      </Label>
-                      {profile.description && (
-                        <Muted id={`profile-${profile.id}-desc`} className="settings-profile-desc">
-                          {profile.description}
-                        </Muted>
-                      )}
-                    </td>
-                    <td className="settings-profile-model">
-                      <MonoValue value={profile.model} />
-                    </td>
-                    <td className="numeric text-numeric settings-profile-wide">
-                      {profile.maxTokensPerReview.toLocaleString()}
-                    </td>
-                    <td className="numeric text-numeric settings-profile-wide">
-                      {profile.maxFiles.toLocaleString()}
-                    </td>
-                    <td className="settings-profile-wide">
-                      {profile.allowRepoExploration ? "Explores the repository" : "Diff only"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RadioGroup>
-          <InlineError message={errors.profileId} />
-        </div>
         <div className="settings-group" role="group" aria-labelledby="review-tasks-label">
           <span id="review-tasks-label" className="settings-group-label">
             Reviewers
@@ -750,7 +644,6 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
       settings={data.settings}
       reviewTasks={data.reviewTasks}
       correlationTasks={data.correlationTasks}
-      profiles={data.profiles}
       harnesses={data.harnesses.map((harness) => withClientOnline(harness, now))}
       ralph={codingData?.coding.settings ?? null}
       codingChoices={

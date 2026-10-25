@@ -26,12 +26,12 @@ import {
   type Database,
   type Job,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
   MAX_REPLY_ANSWER_LENGTH,
   QUERY_TASKS_MIN_HARNESS_VERSION,
+  reviewProfileConfigForDepth,
   reviewTriggerContext,
   RunSpecJobPayload,
   type QueryRunResult,
@@ -153,6 +153,7 @@ const { getDispatcher } = await import("@/lib/dispatch");
 const { onReviewJobStarted } = await import("@/lib/review/jobs");
 const { jobHooks } = await import("@/lib/sinks");
 const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
+const { resolveRunSpec } = await import("@/lib/runs/resolve");
 
 /** The thread-reply sink's hooks for a `review.reply` job. */
 async function replyHooks(job: Job) {
@@ -183,7 +184,6 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     const connection = (await upsertScmConnection(db, {
@@ -268,7 +268,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       headSha,
       baseSha: SHA(1),
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: null,
       budget: 200_000,
     });
@@ -324,7 +324,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       });
       expect(payload.reviewConfig.profile.id).toBe("standard");
       const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));
-      expect(review).toMatchObject({ trigger: "mention", status: "queued", profileId: "standard" });
+      expect(review).toMatchObject({ trigger: "mention", status: "queued", depth: "standard" });
 
       expect(state.scm.calls.hasWriteAccess).toEqual(["maintainer"]);
       expect(state.scm.calls.postComment).toHaveLength(1);
@@ -333,7 +333,38 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(payload.mode).toBe("full");
     });
 
-    it("applies a profile override", async () => {
+    it("reviews with the Quick model and token cap for @bot review quick", async () => {
+      const { number } = await reviewedPr();
+      await conversationComment(number, "@omniralph review quick");
+      const [job] = await prReviewJobs(number);
+      const payload = reviewTriggerContext(job!.payload);
+      // The repository is on Standard; the command overrides the depth for this review only.
+      expect(payload.reviewConfig.profile).toEqual(reviewProfileConfigForDepth("quick"));
+      const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));
+      expect(review).toMatchObject({
+        depth: "quick",
+        model: "claude-haiku-5-5",
+        budget: 60_000,
+      });
+      const [run] = await db
+        .select()
+        .from(reviewRuns)
+        .where(eq(reviewRuns.id, review!.reviewRunId!));
+      expect(run!.depth).toBe("quick");
+      // The agent runs it with the Quick preset's model, cap and file limit, without exploring.
+      const token = { jobId: job!.id, token: "t", expiresIn: 900 };
+      const spec = await resolveRunSpec(db, job!, {
+        lifecycle: { ...token, kind: "lifecycle" },
+        session: { ...token, kind: "session" },
+      });
+      expect(spec).toMatchObject({ model: "claude-haiku-5-5", tokenBudget: 60_000, maxFiles: 15 });
+      expect(spec.agent.tools.builtin).not.toContain("Grep");
+      expect(state.scm.calls.postComment[0]!.body).toContain("a full **Quick** review");
+      const [repo] = await db.select().from(repositories).where(eq(repositories.id, repoId));
+      expect(repo!.reviewDepth).toBe("standard");
+    });
+
+    it("applies a depth override", async () => {
       const { number } = await reviewedPr();
       await conversationComment(number, "@OmniRalph  Review   DEEP");
       const [job] = await prReviewJobs(number);
@@ -343,7 +374,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         maxTokensPerReview: 500_000,
       });
       const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));
-      expect(review).toMatchObject({ profileId: "deep", budget: 500_000 });
+      expect(review).toMatchObject({ depth: "deep", budget: 500_000 });
       expect(state.scm.calls.postComment[0]!.body).toContain("**Deep**");
     });
 
@@ -401,7 +432,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(payload.previousReview).toBeNull();
       expect(payload.reviewConfig.profile.id).toBe("quick");
       const [review] = await db.select().from(reviews).where(eq(reviews.id, payload.reviewId));
-      expect(review).toMatchObject({ trigger: "mention", profileId: "quick" });
+      expect(review).toMatchObject({ trigger: "mention", depth: "quick" });
       expect(state.scm.calls.postComment[0]!.body).toContain("a fresh **Quick** review");
 
       const [agent] = await db
@@ -896,7 +927,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         headSha: SHA(2),
         baseSha: SHA(1),
         trigger: "webhook",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 200_000,
       });

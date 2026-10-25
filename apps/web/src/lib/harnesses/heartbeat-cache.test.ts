@@ -12,7 +12,6 @@ import {
   jobs,
   organizations,
   ralphRuns,
-  seedReviewProfiles,
   upsertScmConnection,
   users,
   type Database,
@@ -155,7 +154,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
   const admin = (orgId: string) => ({ id: userId, organization: { id: orgId } });
 
   async function newRepository(orgId: string): Promise<string> {
-    await seedReviewProfiles(db, orgId);
     const connection = (await upsertScmConnection(db, {
       organizationId: orgId,
       provider: "gitlab",
@@ -270,7 +268,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
           orgId,
           repositoryId!,
           {
-            profileId: "standard",
+            depth: "standard",
             triggers: { onOpen: true, onPush: true, drafts: false },
             pathExcludes: [],
             customInstructions: "",

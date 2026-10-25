@@ -45,6 +45,7 @@ import {
   dayLabel,
   falsePositivesNoun,
   formatRate,
+  depthLabel,
   overallAverageTokens,
   parseAnalyticsParams,
   RALPH_RUN_OUTCOME_LABELS,
@@ -440,13 +441,13 @@ export function AnalyticsContent({
     tokensOut: d.tokensOut,
     reviews: d.reviews,
   }));
-  const profiles = analytics.byProfile.map((p) => ({
-    profile: p.profileName ?? "Deleted profile",
-    averageTokens: p.averageTokens,
+  const depths = analytics.byDepth.map((d) => ({
+    depth: depthLabel(d.depth),
+    averageTokens: d.averageTokens,
   }));
   const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
   const noReviews = totals.reviews === 0;
-  const averageTokens = overallAverageTokens(analytics.byProfile);
+  const averageTokens = overallAverageTokens(analytics.byDepth);
 
   return (
     <>
@@ -520,18 +521,18 @@ export function AnalyticsContent({
         <Card>
           <CardHeader>
             <CardTitle as="h2">Average tokens per review</CardTitle>
-            <CardDescription>By profile, completed and budget-exhausted reviews</CardDescription>
+            <CardDescription>By depth, completed and budget-exhausted reviews</CardDescription>
           </CardHeader>
           <CardContent className="analytics-card-stack">
-            {profiles.length === 0 ? (
+            {depths.length === 0 ? (
               <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" titleAs="h3" />
             ) : (
               <>
                 <BarChart
-                  aria-label="Average tokens per review by profile"
+                  aria-label="Average tokens per review by depth"
                   height={160}
-                  data={profiles}
-                  xKey="profile"
+                  data={depths}
+                  xKey="depth"
                   tickFormatter={formatTokens}
                   bars={[
                     {
@@ -544,17 +545,15 @@ export function AnalyticsContent({
                 <Table className="list-table">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Profile</TableHead>
+                      <TableHead>Depth</TableHead>
                       <TableHead className="analytics-num">Reviews</TableHead>
                       <TableHead className="analytics-num">Average</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analytics.byProfile.map((p) => (
-                      <TableRow key={p.profileId ?? "deleted"}>
-                        <TableCell className="analytics-cell-text">
-                          {p.profileName ?? "Deleted profile"}
-                        </TableCell>
+                    {analytics.byDepth.map((p) => (
+                      <TableRow key={p.depth ?? "unknown"}>
+                        <TableCell className="analytics-cell-text">{depthLabel(p.depth)}</TableCell>
                         <TableCell className="analytics-num text-numeric">
                           {p.reviews.toLocaleString()}
                         </TableCell>
@@ -609,7 +608,7 @@ export function AnalyticsContent({
           <CardTitle as="h2">Dismissal rate per repository</CardTitle>
           <CardDescription>
             Dismissed findings out of all findings (superseded ones excluded). A high rate points to
-            a noisy repository: check its learned rules and profile.
+            a noisy repository: check its learned rules and review depth.
           </CardDescription>
         </CardHeader>
         <CardContent>

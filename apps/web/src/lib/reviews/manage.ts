@@ -26,9 +26,9 @@ export type RerunOutcome =
 
 /**
  * Re-runs a review of `organizationId` on its PR's current head (admins: the caller checks):
- * Incremental reviews the whole diff for new issues, Fresh from scratch; the profile is the
- * repository's default or a built-in override (a review run's retry passes the run's own mode
- * and profile). Closed or merged PRs and heads with an active review get an error and no job.
+ * Incremental reviews the whole diff for new issues, Fresh from scratch; the depth is the
+ * repository's or the one asked for (a review run's retry passes the run's own mode and
+ * depth). Closed or merged PRs and heads with an active review get an error and no job.
  */
 export async function rerunOrganizationReview(
   db: Database,
@@ -57,8 +57,6 @@ export async function rerunOrganizationReview(
       return { ok: false, error: REVIEW_NOT_FOUND, notFound: true };
     case "repository_unavailable":
       return { ok: false, error: "Reviews are disabled or the repository is disconnected." };
-    case "profile_not_found":
-      return { ok: false, error: "That review profile doesn't exist." };
     case "no_review_tasks":
       return { ok: false, error: "None of the repository's review tasks can be re-run." };
     case "scm_error":

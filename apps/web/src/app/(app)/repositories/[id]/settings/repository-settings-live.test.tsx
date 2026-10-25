@@ -46,7 +46,7 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
       webUrl: "https://github.com/acme/app",
     },
     settings: {
-      profileId: "standard",
+      depth: "standard",
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       customInstructions: "",
@@ -60,17 +60,6 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
     ],
     correlationTasks: [
       { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-    ],
-    profiles: [
-      {
-        id: "standard",
-        name: "Standard",
-        description: null,
-        model: "sonnet",
-        maxTokensPerReview: 200_000,
-        maxFiles: 50,
-        allowRepoExploration: true,
-      },
     ],
     harnesses: [
       {

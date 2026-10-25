@@ -1,7 +1,7 @@
 /**
  * The settings forms' drafts (what the inputs hold), their parsed values and
- * the cards they are saved in: repository review settings, the Ralph section
- * and review profiles. Pure, so the change lists can be tested.
+ * the cards they are saved in: repository review settings and the Ralph
+ * section. Pure, so the change lists can be tested.
  */
 import {
   DEFAULT_RALPH_SETTINGS,
@@ -10,7 +10,7 @@ import {
   type RalphHistoryRewrite,
   type RalphSettingsInput,
   type RepositorySettingsInput,
-  type ReviewProfileInput,
+  type ReviewDepth,
 } from "@omniralph/shared";
 import { formatSettingValue, type SettingSpec, type SettingValue } from "./changes";
 
@@ -22,31 +22,6 @@ export function typedNumber(value: string): number {
 /** A large count as the form shows it, with separators: 60000 → "60,000". */
 export function groupedNumber(value: number): string {
   return value.toLocaleString("en-US");
-}
-
-/**
- * Regroups a count as it is typed ("150000" → "150,000"), keeping the caret after the same
- * digit. Text that isn't only digits and separators is left alone, so validation can flag it.
- */
-export function regroupTyped(value: string, caret: number): { value: string; caret: number } {
-  if (!/^[\d,_\s]*$/.test(value)) return { value, caret };
-  const digits = value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-  if (digits === "") return { value: "", caret: 0 };
-  const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  // Digits before the caret, counted in the regrouped text.
-  const stripped = value.replace(/\D/g, "").length - digits.length;
-  let before = Math.max(0, value.slice(0, caret).replace(/\D/g, "").length - stripped);
-  let next = 0;
-  while (before > 0 && next < grouped.length) {
-    if (grouped[next] !== ",") before--;
-    next++;
-  }
-  return { value: grouped, caret: next };
-}
-
-/** A typed count that may have separators ("60,000", "60 000", "60_000"); NaN when empty. */
-export function typedGroupedNumber(value: string): number {
-  return typedNumber(value.replace(/[,_\s]/g, ""));
 }
 
 /** `keys` of `source`. */
@@ -79,7 +54,6 @@ const lines = (value: SettingValue): string =>
  * `repositories` column defaults in `@omniralph/db`; a test keeps them in step).
  */
 export const REPOSITORY_SETTING_DEFAULTS = {
-  profileId: "standard",
   triggers: { onOpen: true, onPush: true, drafts: false },
   reviewTaskIds: ["builtin:review-pr"],
   correlationTaskId: "builtin:correlate-findings",
@@ -87,7 +61,6 @@ export const REPOSITORY_SETTING_DEFAULTS = {
 
 /** The repository review settings form. */
 export interface RepositoryDraft {
-  profileId: string;
   onOpen: boolean;
   onPush: boolean;
   drafts: boolean;
@@ -101,7 +74,6 @@ export interface RepositoryDraft {
 
 /** The repository review settings as saved. */
 export interface RepositorySettingsValues {
-  profileId: string;
   triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
   pathExcludes: readonly string[];
   customInstructions: string;
@@ -112,7 +84,6 @@ export interface RepositorySettingsValues {
 
 export function repositoryDraft(settings: RepositorySettingsValues): RepositoryDraft {
   return {
-    profileId: settings.profileId,
     ...settings.triggers,
     pathExcludes: settings.pathExcludes.join("\n"),
     customInstructions: settings.customInstructions,
@@ -132,7 +103,6 @@ export interface RepositoryFormContext {
 
 export function repositoryValues(draft: RepositoryDraft, context: RepositoryFormContext) {
   return {
-    profileId: draft.profileId,
     onOpen: draft.onOpen,
     onPush: draft.onPush,
     drafts: draft.drafts,
@@ -147,9 +117,13 @@ export function repositoryValues(draft: RepositoryDraft, context: RepositoryForm
 }
 export type RepositoryValues = ReturnType<typeof repositoryValues>;
 
-export function repositoryInput(values: RepositoryValues): RepositorySettingsInput {
+/** The settings to save: the form's values, with the review depth the repository has. */
+export function repositoryInput(
+  values: RepositoryValues,
+  depth: ReviewDepth,
+): RepositorySettingsInput {
   return {
-    profileId: values.profileId as RepositorySettingsInput["profileId"],
+    depth,
     triggers: { onOpen: values.onOpen, onPush: values.onPush, drafts: values.drafts },
     pathExcludes: [...values.pathExcludes],
     customInstructions: values.customInstructions,
@@ -161,7 +135,6 @@ export function repositoryInput(values: RepositoryValues): RepositorySettingsInp
 
 /** The repository settings page's cards and the settings each one saves. */
 export const REPOSITORY_CARDS = {
-  profile: ["profileId"],
   tasks: ["reviewTaskIds", "correlationTaskId"],
   triggers: ["onOpen", "onPush", "drafts"],
   files: ["pathExcludes", "customInstructions"],
@@ -170,23 +143,16 @@ export const REPOSITORY_CARDS = {
 
 /** The repository settings tabs' sections and the settings each one saves. */
 export const REPOSITORY_SECTIONS = {
-  review: [
-    ...REPOSITORY_CARDS.triggers,
-    ...REPOSITORY_CARDS.profile,
-    ...REPOSITORY_CARDS.tasks,
-    ...REPOSITORY_CARDS.files,
-  ],
+  review: [...REPOSITORY_CARDS.triggers, ...REPOSITORY_CARDS.tasks, ...REPOSITORY_CARDS.files],
   harnesses: REPOSITORY_CARDS.pinning,
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
-/** The repository settings' labels, showing profiles, tasks and harnesses by name. */
+/** The repository settings' labels, showing tasks and harnesses by name. */
 export function repositorySpecs(names: {
-  profiles: ReadonlyMap<string, string>;
   tasks: ReadonlyMap<string, string>;
   harnesses: ReadonlyMap<string, string>;
 }): Record<keyof RepositoryValues, SettingSpec<keyof RepositoryValues>> {
   return {
-    profileId: { key: "profileId", label: "Review profile", format: byName(names.profiles) },
     reviewTaskIds: { key: "reviewTaskIds", label: "Review tasks", format: byName(names.tasks) },
     correlationTaskId: {
       key: "correlationTaskId",
@@ -382,38 +348,3 @@ export const RALPH_DEFAULT_TEXT = {
   historyRewrite: HISTORY_REWRITE_LABELS[DEFAULT_RALPH_SETTINGS.historyRewrite],
   onOff: (value: boolean) => formatSettingValue(value),
 };
-
-// ── Review profiles ──────────────────────────────────────────────────────────
-
-/** A review profile's form. */
-export interface ProfileDraft {
-  model: string;
-  maxTokensPerReview: string;
-  maxFiles: string;
-  allowRepoExploration: boolean;
-}
-
-export function profileDraft(profile: ReviewProfileInput): ProfileDraft {
-  return {
-    model: profile.model,
-    maxTokensPerReview: groupedNumber(profile.maxTokensPerReview),
-    maxFiles: String(profile.maxFiles),
-    allowRepoExploration: profile.allowRepoExploration,
-  };
-}
-
-export function profileValues(draft: ProfileDraft): ReviewProfileInput {
-  return {
-    model: draft.model.trim(),
-    maxTokensPerReview: typedGroupedNumber(draft.maxTokensPerReview),
-    maxFiles: typedNumber(draft.maxFiles),
-    allowRepoExploration: draft.allowRepoExploration,
-  };
-}
-
-export const PROFILE_SPECS: readonly SettingSpec<keyof ReviewProfileInput>[] = [
-  { key: "model", label: "Model" },
-  { key: "maxTokensPerReview", label: "Token cap per review" },
-  { key: "maxFiles", label: "Max files" },
-  { key: "allowRepoExploration", label: "Allow repository exploration" },
-];

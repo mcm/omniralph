@@ -7,7 +7,6 @@ import {
   organizations,
   recordWebhookEvent,
   saveIntegration,
-  seedReviewProfiles,
   upsertScmConnection,
   users,
   webhookEvents,
@@ -115,7 +114,6 @@ describe.skipIf(!databaseAvailable)("webhook delivery log endpoints", () => {
     ]);
 
     const connect = async (organizationId: string, name: string) => {
-      await seedReviewProfiles(db, organizationId);
       const connection = (await upsertScmConnection(db, {
         organizationId,
         provider: "github",

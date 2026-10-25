@@ -9,7 +9,6 @@ import { closeDb, createDb, type Database } from "../client.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
 import { harnesses, feedback, findings, jobs, reviews, organizations } from "../schema.js";
 import { analyticsWindow, getAnalytics, listAnalyticsRepositories } from "./analytics.js";
-import { seedReviewProfiles } from "../settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -41,7 +40,6 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
 
     const connection = (await upsertScmConnection(
@@ -85,7 +83,7 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
     const review = (
       repositoryId: string,
       createdAt: string,
-      profileId: string,
+      depth: (typeof reviews.$inferInsert)["depth"],
       status: (typeof reviews.$inferInsert)["status"],
       tokensIn: number,
       tokensOut: number,
@@ -97,7 +95,7 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
       baseSha: "b".repeat(40),
       trigger: "webhook" as const,
       status,
-      profileId,
+      depth,
       budget: 200_000,
       tokensIn,
       tokensOut,
@@ -215,19 +213,20 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
     );
   });
 
-  it("averages tokens per review by profile over reviews that ran", async () => {
-    const { byProfile } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
-    expect(byProfile).toEqual([
-      { profileId: "quick", profileName: "Quick", reviews: 2, averageTokens: 600 },
+  it("averages tokens per review by depth over reviews that ran", async () => {
+    const { byDepth } = await getAnalytics(db, { organizationId: orgId, days: 7, now });
+    expect(byDepth).toEqual([
+      { depth: "quick", reviews: 2, averageTokens: 600 },
       // r1 (1,200), r5 (2,300) and s1 (3,300); the failed and queued reviews don't count.
-      { profileId: "standard", profileName: "Standard", reviews: 3, averageTokens: 2267 },
+      { depth: "standard", reviews: 3, averageTokens: 2267 },
     ]);
 
+    // Quick to Deep, whatever the counts.
     const month = await getAnalytics(db, { organizationId: orgId, days: 30, now });
-    expect(month.byProfile.map((p) => [p.profileId, p.reviews, p.averageTokens])).toEqual([
-      ["deep", 1, 5500],
+    expect(month.byDepth.map((d) => [d.depth, d.reviews, d.averageTokens])).toEqual([
       ["quick", 2, 600],
       ["standard", 3, 2267],
+      ["deep", 1, 5500],
     ]);
   });
 
@@ -297,9 +296,7 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
       repositoryId: repoB,
     });
     expect(analytics.totals).toEqual({ reviews: 2, tokensIn: 3000, tokensOut: 300 });
-    expect(analytics.byProfile).toEqual([
-      { profileId: "standard", profileName: "Standard", reviews: 1, averageTokens: 3300 },
-    ]);
+    expect(analytics.byDepth).toEqual([{ depth: "standard", reviews: 1, averageTokens: 3300 }]);
     expect(analytics.reviewsByStatus).toMatchObject({ completed: 1, queued: 1, failed: 0 });
     expect(analytics.findingsBySeverity).toMatchObject({ high: 2, critical: 0 });
     expect(analytics.dismissalsByRepository.map((d) => d.repository.id)).toEqual([repoB]);
@@ -316,7 +313,7 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
     });
     expect(analytics.totals).toEqual({ reviews: 0, tokensIn: 0, tokensOut: 0 });
     expect(analytics.daily.every((d) => d.reviews === 0)).toBe(true);
-    expect(analytics.byProfile).toEqual([]);
+    expect(analytics.byDepth).toEqual([]);
     expect(analytics.dismissalsByRepository).toEqual([]);
     expect(analytics.jobsByHarness).toEqual([]);
     expect(Object.values(analytics.findingsBySeverity).every((n) => n === 0)).toBe(true);
@@ -333,7 +330,7 @@ describe.skipIf(!databaseAvailable)("analytics queries", () => {
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
     const analytics = await getAnalytics(db, { organizationId: other!.id, days: 90, now });
     expect(analytics.totals).toEqual({ reviews: 0, tokensIn: 0, tokensOut: 0 });
-    expect(analytics.byProfile).toEqual([]);
+    expect(analytics.byDepth).toEqual([]);
     expect(Object.values(analytics.reviewsByStatus).every((n) => n === 0)).toBe(true);
     expect(Object.values(analytics.findingsBySeverity).every((n) => n === 0)).toBe(true);
     expect(analytics.dismissalsByRepository).toEqual([]);

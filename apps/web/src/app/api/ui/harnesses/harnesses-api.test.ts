@@ -24,7 +24,6 @@ import {
   writeHarnessAudit,
   type Database,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import type { HeartbeatResponse } from "@omniralph/shared";
 import {
@@ -221,7 +220,6 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.orgId = orgId;
     state.db = db;

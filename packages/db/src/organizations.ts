@@ -17,7 +17,6 @@ import {
   organizations,
   users,
 } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 import { normalizeEmail } from "./users.js";
 
 export type Organization = typeof organizations.$inferSelect;
@@ -91,8 +90,8 @@ async function countOrgAdmins(tx: Tx, organizationId: string): Promise<number> {
 // ── Organizations ────────────────────────────────────────────────────────────
 
 /**
- * Creates an organization with its creator as its first `admin`, the built-in
- * review profiles, and makes it the creator's active organization.
+ * Creates an organization with its creator as its first `admin`, and makes it
+ * the creator's active organization.
  */
 export async function createOrganization(
   db: Database,
@@ -107,7 +106,6 @@ export async function createOrganization(
     await tx
       .insert(organizationMembers)
       .values({ organizationId: organization.id, userId: input.createdBy, role: "admin" });
-    await seedReviewProfiles(tx, organization.id);
     await tx
       .update(users)
       .set({ activeOrganizationId: organization.id })

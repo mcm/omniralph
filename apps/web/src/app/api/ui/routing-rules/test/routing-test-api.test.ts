@@ -10,7 +10,6 @@ import {
   ralphRuns,
   rateLimits,
   recordFollowUpSource,
-  seedReviewProfiles,
   setRepositorySwitches,
   upsertScmConnection,
   type Database,
@@ -107,7 +106,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     testDb = await createTestDatabase();
     state.db = createDb(testDb.uri);
     const [org] = await state.db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(state.db, org!.id);
     state.orgId = org!.id;
     const connection = (await upsertScmConnection(
       state.db,

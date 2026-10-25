@@ -36,7 +36,7 @@ import { recordHarnessHeartbeat } from "./jobs.js";
 import { getResourceOrganizationId } from "./resource-organization.js";
 import { connectRepository, pinRepositoryToHarness } from "./repositories.js";
 import { harnesses, jobs, organizations, scmConnections } from "./schema.js";
-import { filterActiveHarnessIds, listPinnableHarnesses, seedReviewProfiles } from "./settings.js";
+import { filterActiveHarnessIds, listPinnableHarnesses } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -62,8 +62,6 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const [b] = await db.insert(organizations).values({ name: "B" }).returning();
     orgA = a!.id;
     orgB = b!.id;
-    await seedReviewProfiles(db, orgA);
-    await seedReviewProfiles(db, orgB);
   }, 180_000);
 
   afterAll(async () => {
@@ -346,7 +344,6 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
   it("lists a repository's coding harnesses: its pinned ones, else those accepting coding", async () => {
     const [row] = await db.insert(organizations).values({ name: "Coding harnesses" }).returning();
     const org = row!.id;
-    await seedReviewProfiles(db, org);
     const [connection] = await db
       .insert(scmConnections)
       .values({

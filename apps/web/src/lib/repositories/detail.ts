@@ -6,7 +6,6 @@ import {
   listReportedModels,
   listRepositoryCodingHarnessIds,
   listRepositoryPinnedHarnessIds,
-  listReviewProfiles,
   listRoutingRules,
   repositorySwitchOverrides,
 } from "@omniralph/db";
@@ -49,7 +48,6 @@ export async function loadRepositoryDetail(
   const db = getDb();
   const { repository, connection } = await connectedRepository(organizationId, id);
   const [
-    profiles,
     harnesses,
     organizationVersion,
     pinnedHarnessIds,
@@ -57,7 +55,6 @@ export async function loadRepositoryDetail(
     correlationTasks,
     allowedTaskTypes,
   ] = await Promise.all([
-    listReviewProfiles(db, organizationId),
     listHarnessOverview(db, organizationId).then(withLastSeen),
     organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRepositoryPinnedHarnessIds(db, id),
@@ -74,7 +71,7 @@ export async function loadRepositoryDetail(
       webUrl: repositoryWebUrl(repository.provider, connection.baseUrl, repository.fullPath),
     },
     settings: {
-      profileId: repository.profileId,
+      depth: repository.reviewDepth,
       triggers: repository.triggers,
       pathExcludes: repository.pathExcludes,
       customInstructions: repository.customInstructions ?? "",
@@ -89,15 +86,6 @@ export async function loadRepositoryDetail(
       builtin,
     })),
     correlationTasks,
-    profiles: profiles.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      model: p.model,
-      maxTokensPerReview: p.maxTokensPerReview,
-      maxFiles: p.maxFiles,
-      allowRepoExploration: p.allowRepoExploration,
-    })),
     harnesses: harnesses.map((harness) => {
       const row = harnessRow(harness, now, organizationVersion.version);
       return {

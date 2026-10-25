@@ -7,6 +7,7 @@ import {
   dayLabel,
   falsePositivesNoun,
   formatRate,
+  depthLabel,
   overallAverageTokens,
   parseAnalyticsParams,
   ralphAnalyticsData,
@@ -86,14 +87,18 @@ describe("formatting", () => {
   });
 
   it("weights the overall average by reviews", () => {
-    const profile = (reviews: number, averageTokens: number) => ({
-      profileId: "p",
-      profileName: "P",
+    const depth = (reviews: number, averageTokens: number) => ({
+      depth: "standard" as const,
       reviews,
       averageTokens,
     });
     expect(overallAverageTokens([])).toBe(0);
-    expect(overallAverageTokens([profile(2, 600), profile(3, 2267)])).toBe(1600);
+    expect(overallAverageTokens([depth(2, 600), depth(3, 2267)])).toBe(1600);
+  });
+
+  it("labels depths, and reviews from before depths were recorded", () => {
+    expect(depthLabel("deep")).toBe("Deep");
+    expect(depthLabel(null)).toBe("Not recorded");
   });
 
   it("serializes the window dates", () => {
@@ -102,7 +107,7 @@ describe("formatting", () => {
       to: new Date("2026-10-06T00:00:00Z"),
       totals: { reviews: 0, tokensIn: 0, tokensOut: 0 },
       daily: [],
-      byProfile: [],
+      byDepth: [],
       reviewsByStatus: {
         queued: 0,
         running: 0,

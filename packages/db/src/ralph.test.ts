@@ -76,7 +76,6 @@ import {
   organizations,
   repositories,
 } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -94,7 +93,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,
@@ -1258,7 +1256,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
 
   it("keeps another organization's repositories and runs out of every query", async () => {
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
-    await seedReviewProfiles(db, other!.id);
     const otherConnection = (await upsertScmConnection(
       db,
       {

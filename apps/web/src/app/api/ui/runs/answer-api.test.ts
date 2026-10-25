@@ -20,7 +20,6 @@ import {
   jobs,
   organizations,
   ralphRuns,
-  seedReviewProfiles,
   triageRuns,
   updateLane,
   updateRepositoryRalphSettings,
@@ -172,7 +171,6 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     const github = (await upsertScmConnection(db, {

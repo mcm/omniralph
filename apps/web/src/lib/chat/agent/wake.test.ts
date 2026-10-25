@@ -15,7 +15,6 @@ import {
   organizationMembers,
   organizations,
   saveChatConnection,
-  seedReviewProfiles,
   upsertScmConnection,
   users,
   type ChatConnection,
@@ -155,7 +154,6 @@ describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     await db.insert(users).values({ id: "ada", email: "ada@acme.test", name: "Ada" });
     await db.insert(organizationMembers).values({ organizationId: orgId, userId: "ada" });
     const scm = (await upsertScmConnection(

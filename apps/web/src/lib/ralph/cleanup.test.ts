@@ -22,7 +22,6 @@ import {
   type Database,
   type Job,
   organizations,
-  seedReviewProfiles,
   type LinearRun,
   ralphLanes,
 } from "@omniralph/db";
@@ -101,7 +100,6 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

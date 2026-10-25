@@ -483,7 +483,7 @@ export const listReviewsTool = defineChatTool({
           prUrl: review.prUrl,
           trigger: review.trigger,
           status: review.status,
-          profile: review.profileName,
+          depth: review.depth,
           harness: review.agent?.name ?? null,
           findingCounts: review.findingCounts,
           error: review.error,
@@ -532,7 +532,7 @@ export const getReviewTool = defineChatTool({
       status: review.status,
       stopReason: review.stopReason,
       error: review.error,
-      profile: review.profileName,
+      depth: review.depth,
       model: review.model,
       harness: review.agent?.name ?? null,
       durationMs: review.durationMs,
@@ -634,7 +634,7 @@ export const listHarnessesTool = defineChatTool({
 
 export const listRepositoriesTool = defineChatTool({
   tier: "read",
-  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and coding are on, the review profile, pinned harnesses and the latest review.`,
+  description: `Lists the organization's connected repositories by path, at most ${CHAT_TOOL_RESULT_LIMIT}: whether reviews and coding are on, the review depth, pinned harnesses and the latest review.`,
   inputSchema: z.object({}),
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const page = await listRepositoryOverviewPage(db, organizationId, {
@@ -649,7 +649,7 @@ export const listRepositoriesTool = defineChatTool({
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
         reviewsEnabled: repo.enabled,
         ralphEnabled: repo.ralphEnabled,
-        reviewProfile: repo.profileName,
+        reviewDepth: repo.reviewDepth,
         pinnedHarnesses: repo.pinnedHarnesses.map((a) => a.name),
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       })),

@@ -39,7 +39,7 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         webUrl: "https://github.com/acme/app",
       }}
       settings={{
-        profileId: "standard",
+        depth: "standard",
         triggers: { onOpen: true, onPush: true, drafts: false },
         pathExcludes: [],
         customInstructions: "",
@@ -51,7 +51,6 @@ function renderTab(pinnedHarnessIds: string[] = []) {
       correlationTasks={[
         { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
       ]}
-      profiles={[]}
       harnesses={HARNESSES}
       ralph={null}
       codingChoices={null}

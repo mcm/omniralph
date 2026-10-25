@@ -159,7 +159,7 @@ describe("rerunJob", () => {
     expect(await rerunJob({} as never, d, ORG, failed.id)).toEqual({ ok: true });
     expect(reviews.rerunOrganizationReview).toHaveBeenCalledWith({}, d, ORG, REVIEW_ID, {
       mode: "incremental",
-      profileId: null,
+      depth: null,
     });
 
     reviews.rerunOrganizationReview.mockResolvedValue({

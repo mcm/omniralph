@@ -41,7 +41,7 @@ a Linear workspace, about 30 harnesses online, offline, outdated, updating and r
 control panel pinned to four of them, one revoked), ralph runs in
 every status with stories in every status (attempts, progress logs, follow-ups, a run waiting
 on a manual story), reviews over the last 40 days with findings open, dismissed and restored,
-learned and custom rules, a custom review profile, a custom agent and task (editable,
+learned and custom rules, repositories at every review depth, a custom agent and task (editable,
 unlike the built-ins), and jobs in every status.
 
 All data is fake: emails are `@fixtures.example`, hosts `*.fixtures.example`, external IDs

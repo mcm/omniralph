@@ -13,7 +13,7 @@ async function runningReview(db: Database, prefix: string) {
     headSha: "e".repeat(40),
     baseSha: "f".repeat(40),
     trigger: "webhook",
-    profileId: "standard",
+    depth: "standard",
     model: null,
     budget: 100_000,
   });

@@ -6,7 +6,6 @@ import {
   listRoutingRules,
   organizations,
   repositories,
-  seedReviewProfiles,
   setRepositorySwitches,
   upsertScmConnection,
   users,
@@ -135,8 +134,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
     state.db = createDb(testDb.uri);
     const [org] = await state.db.insert(organizations).values({ name: "Acme" }).returning();
     const [other] = await state.db.insert(organizations).values({ name: "Other" }).returning();
-    await seedReviewProfiles(state.db, org!.id);
-    await seedReviewProfiles(state.db, other!.id);
     state.orgId = org!.id;
     // The signed-in user, whom the history entries name.
     await state.db.insert(users).values({ id: "user-1", name: "Ada" });

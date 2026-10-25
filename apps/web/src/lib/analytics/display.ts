@@ -11,6 +11,7 @@ import type {
   RunAnalytics,
   RunAnalyticsBucket,
 } from "@omniralph/db";
+import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
 import { formatTokens } from "@/lib/reviews/display";
 
 /** Client-safe copy of the DB's `ANALYTICS_RANGES`. */
@@ -170,11 +171,16 @@ export function tokenTick(value: number): string {
   return formatTokens(value).padStart(TOKEN_TICK_WIDTH, "\u2007");
 }
 
-/** Mean tokens per review across profiles, weighted by their review counts. */
-export function overallAverageTokens(byProfile: Analytics["byProfile"]): number {
-  const reviews = byProfile.reduce((sum, p) => sum + p.reviews, 0);
+/** A review depth's label; reviews from before depths were recorded have none. */
+export function depthLabel(depth: ReviewDepth | null): string {
+  return depth ? REVIEW_DEPTHS[depth].label : "Not recorded";
+}
+
+/** Mean tokens per review across depths, weighted by their review counts. */
+export function overallAverageTokens(byDepth: Analytics["byDepth"]): number {
+  const reviews = byDepth.reduce((sum, p) => sum + p.reviews, 0);
   if (reviews === 0) return 0;
-  return Math.round(byProfile.reduce((sum, p) => sum + p.averageTokens * p.reviews, 0) / reviews);
+  return Math.round(byDepth.reduce((sum, p) => sum + p.averageTokens * p.reviews, 0) / reviews);
 }
 
 /** A 0–1 rate as a percentage, e.g. "37%" (one decimal under 10%). */

@@ -10,7 +10,7 @@
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queryKeys, type QueryKeys } from "@/lib/api/keys";
-import { definitionKeys, reviewProfilesKey } from "@/lib/api/settings-keys";
+import { definitionKeys } from "@/lib/api/settings-keys";
 import type {
   ChangeEvent,
   ChangeEventOf,
@@ -42,8 +42,7 @@ const SETTINGS_INVALIDATIONS: Record<
   SettingsSection | UntrackedSettingsSection | UserSettingsSection,
   (keys: QueryKeys, subjectId: string | undefined) => QueryKey[]
 > = {
-  // Review profiles list the repositories using each.
-  "repository.reviews": (keys, id) => [...repositoryKeys(keys, id), reviewProfilesKey(keys)],
+  "repository.reviews": (keys, id) => repositoryKeys(keys, id),
   "repository.coding": (keys, id) => repositoryKeys(keys, id),
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.harnesses.all],
@@ -60,8 +59,6 @@ const SETTINGS_INVALIDATIONS: Record<
   ],
   agent_definitions: (keys) => definitionsKeys(keys),
   task_definitions: (keys) => definitionsKeys(keys),
-  // A repository's Settings tab shows its profile's limits.
-  review_profiles: (keys) => [reviewProfilesKey(keys), keys.repositories.all],
   // The user's own record (their theme): no query shows it, the shell applies it.
   profile: () => [],
 };
@@ -121,19 +118,16 @@ export const LIVE_INVALIDATIONS = {
   agent: (event, keys) => [
     keys.harnesses.lists,
     ...event.ids.map((agentId) => keys.harnesses.detail(agentId)),
-    // The agent and task forms and review profiles offer the models and installables the
-    // organization's agents report, and count its agents.
+    // The agent and task forms offer the models and installables the organization's agents
+    // report, and count its agents.
     definitionKeys(keys).agents.formOptions,
     definitionKeys(keys).tasks.formOptions,
-    reviewProfilesKey(keys),
   ],
   repository: (event, keys) => [
     keys.repositories.lists,
     ...event.ids.map((repositoryId) => keys.repositories.detail(repositoryId)),
     // A connection's setup and selectable repositories show which are connected.
     keys.connections.all,
-    // Review profiles list the connected repositories using each.
-    reviewProfilesKey(keys),
   ],
   connection: (_event, keys) => [keys.connections.all, keys.repositories.lists],
   organization: (_event, keys) => [keys.organization.all],

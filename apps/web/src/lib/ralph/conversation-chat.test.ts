@@ -12,7 +12,6 @@ import {
   listRunEvents,
   organizations,
   saveChatConnection,
-  seedReviewProfiles,
   updateRun,
   upsertScmConnection,
   type Database,
@@ -58,7 +57,6 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const scm = (await upsertScmConnection(
       db,
       {

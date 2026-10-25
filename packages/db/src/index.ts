@@ -331,7 +331,6 @@ export {
   type ReviewRun,
   type ReviewRunStatus,
   type ReviewOutcomeInput,
-  type ReviewProfile,
   type ReviewStatus,
   type Rule,
   type ReviewTarget,
@@ -465,19 +464,12 @@ export {
   type SaveChatUserProfileInput,
 } from "./chat.js";
 export {
-  BUILT_IN_REVIEW_PROFILES,
   filterActiveHarnessIds,
   listPinnableHarnesses,
   listRepositoryPinnedHarnessIds,
   listRepositoryPinnedHarnessNames,
-  listReviewProfiles,
-  listProfileRepositories,
-  getReviewProfile,
   updateRepositorySettings,
-  seedReviewProfiles,
-  updateReviewProfile,
   type RepositorySettingsUpdate,
-  type ReviewProfileUpdate,
 } from "./settings.js";
 export {
   emptyFindingCounts,
@@ -526,7 +518,7 @@ export {
   type AnalyticsRange,
   type AnalyticsRepositoryRef,
   type DailyUsage,
-  type ProfileUsage,
+  type DepthUsage,
   type RepositoryDismissals,
 } from "./queries/analytics.js";
 export {

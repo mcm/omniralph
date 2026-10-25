@@ -1,7 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import {
-  getRepositoryReviewSettings,
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
   listHarnessOverview,
@@ -20,6 +19,7 @@ import {
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
   QueryRunResult,
+  REVIEW_DEPTHS,
   RunSpecJobPayload,
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
@@ -188,16 +188,16 @@ export async function enqueueChatAsk(
 ): Promise<EnqueueChatAskOutcome> {
   const { db } = deps;
   const found = await getRepositoryWithConnection(db, input.repositoryId);
-  const settings = found && (await getRepositoryReviewSettings(db, input.repositoryId));
   if (
     !found ||
-    !settings ||
     found.repository.organizationId !== input.organizationId ||
     found.repository.disconnectedAt
   ) {
     return { status: "unknown_repository" };
   }
   const { repository, connection } = found;
+  // The repository's review depth caps the question's budget when the task sets none.
+  const depth = REVIEW_DEPTHS[repository.reviewDepth];
   if (!(await resolveRepositorySwitches(db, repository)).query) {
     return { status: "query_disabled", repository };
   }
@@ -252,7 +252,7 @@ export async function enqueueChatAsk(
     chatThreadId: input.chatThreadId,
     // Trimmed, as `buildChatAskPrompt` quoted it.
     chat: { context: context?.trim() || null },
-    budgetTokens: runTokenBudget(task, settings.profile) ?? settings.profile.maxTokensPerReview,
+    budgetTokens: runTokenBudget(task, depth) ?? depth.maxTokensPerReview,
   } satisfies ChatThreadContext & Record<string, unknown>;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,

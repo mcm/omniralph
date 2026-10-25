@@ -71,12 +71,6 @@ export async function updateRepositoryReviewSettings(
   switch (result.status) {
     case "unknown_repository":
       return NOT_CONNECTED;
-    case "unknown_profile":
-      return {
-        ok: false,
-        error: "That profile doesn't exist.",
-        fieldErrors: { profileId: "That profile doesn't exist." },
-      };
     case "unknown_agents":
       return {
         ok: false,

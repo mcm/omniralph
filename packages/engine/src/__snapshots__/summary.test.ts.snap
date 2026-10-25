@@ -3,7 +3,7 @@
 exports[`renderSummary > renders profile, severity counts, tokens, skipped files and the link 1`] = `
 "## Omniralph review
 
-- **Profile:** Standard
+- **Depth:** Standard
 - **Findings:** 4
 - **Tokens:** 43,345 / 200,000
 

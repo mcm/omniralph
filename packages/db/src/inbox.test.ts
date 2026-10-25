@@ -32,7 +32,6 @@ import {
   runPermissionRequests,
   triageRuns,
 } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 import { createUser } from "./users.js";
 
 const databaseAvailable = testDatabaseAvailable();
@@ -104,7 +103,6 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       .returning();
     acme = a!.id;
     beta = b!.id;
-    await seedReviewProfiles(db, acme);
     const connection = (await upsertScmConnection(
       db,
       {

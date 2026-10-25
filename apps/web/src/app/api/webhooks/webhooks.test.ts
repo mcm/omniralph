@@ -17,7 +17,6 @@ import {
   webhookDeliveries,
   type Database,
   organizations,
-  seedReviewProfiles,
   setAllowedTaskTypeDefaults,
 } from "@omniralph/db";
 import { reviewTriggerContext } from "@omniralph/shared";
@@ -192,7 +191,6 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
@@ -713,7 +711,6 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       // Another organization connects the same GitLab project and GitHub repository with
       // its own token user (and webhook secret) and its own GitHub App installation.
       const [beta] = await db.insert(organizations).values({ name: "Beta" }).returning();
-      await seedReviewProfiles(db, beta!.id);
       const betaGitlab = (await upsertScmConnection(db, {
         organizationId: beta!.id,
         provider: "gitlab",

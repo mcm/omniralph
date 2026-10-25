@@ -3,7 +3,6 @@ import {
   filterActiveHarnessIds,
   getRepository,
   listRepositoryPinnedHarnessIds,
-  listReviewProfiles,
   unpinRepositoryFromHarness,
   updateRepositorySettings,
   type Database,
@@ -39,14 +38,13 @@ export type SaveRepositorySettingsResult =
       syncJobIds: string[];
     }
   | { status: "unknown_repository" }
-  | { status: "unknown_profile" }
   | { status: "unknown_agents"; harnessIds: string[] }
   | { status: "unknown_review_tasks"; taskIds: string[] }
   | { status: "unknown_correlation_task" };
 
 /**
- * Saves a repository's review settings (a repository of the organization; its profile
- * must be one of the organization's too, its review tasks tasks of the organization
+ * Saves a repository's review settings, its review depth among them (a repository of
+ * the organization; its review tasks tasks of the organization
  * (built-in or its own) passing `REVIEW_TASKS`, and its correlation task one passing
  * `CORRELATION_TASKS`) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through
  * `pinRepository`, which enqueues a `repo.sync` job for that agent.
@@ -59,12 +57,10 @@ export async function saveRepositorySettings(
   repositoryId: string,
   input: RepositorySettingsInput,
 ): Promise<SaveRepositorySettingsResult> {
-  // Only the organization's repositories, with one of its own profiles.
+  // Only the organization's repositories.
   if (!(await getRepository(db, repositoryId, organizationId))) {
     return { status: "unknown_repository" };
   }
-  const profiles = await listReviewProfiles(db, organizationId);
-  if (!profiles.some((p) => p.id === input.profileId)) return { status: "unknown_profile" };
   const reviewTasks = await Promise.all(
     input.reviewTaskIds.map((id) => getTaskChoice(db, organizationId, id, REVIEW_TASKS)),
   );
@@ -82,7 +78,7 @@ export async function saveRepositorySettings(
   if (unknown.length > 0) return { status: "unknown_agents", harnessIds: unknown };
 
   const saved = await updateRepositorySettings(db, organizationId, repositoryId, {
-    profileId: input.profileId,
+    depth: input.depth,
     triggers: input.triggers,
     pathExcludes: input.pathExcludes,
     customInstructions: input.customInstructions,

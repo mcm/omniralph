@@ -43,7 +43,7 @@ export const GET = apiHandler(
           review: { on: repo.enabled, inherited: repo.overrides.review === null },
           coding: { on: repo.ralphEnabled, inherited: repo.overrides.coding === null },
         },
-        profileName: repo.profileName,
+        depth: repo.reviewDepth,
         pinnedHarnesses: repo.pinnedHarnesses,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       })),

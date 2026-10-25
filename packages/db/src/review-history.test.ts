@@ -5,7 +5,6 @@ import { closeDb, createDb, type Database } from "./client.js";
 import { connectRepository, upsertScmConnection } from "./repositories.js";
 import { emptyFindingCounts, getReviewDetail, listReviews } from "./review-history.js";
 import { harnesses, findings, reviews, organizations } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -25,7 +24,6 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
 
     const connection = (await upsertScmConnection(
@@ -72,7 +70,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
       trigger: i % 3 === 0 ? ("mention" as const) : ("webhook" as const),
       status: i % 5 === 0 ? ("failed" as const) : ("completed" as const),
       error: i % 5 === 0 ? "boom" : null,
-      profileId: "standard",
+      depth: "standard" as const,
       harnessId,
       budget: 200_000,
       tokensIn: 1000 + i,
@@ -137,7 +135,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
     ).toBe(1);
   });
 
-  it("returns the row's PR, repository, profile, agent, usage and per-severity counts", async () => {
+  it("returns the row's PR, repository, depth, agent, usage and per-severity counts", async () => {
     const { reviews: rows } = await listReviews(db, {
       organizationId: orgId,
       repositoryId: repoId,
@@ -154,7 +152,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
         fullPath: "acme/api",
         baseUrl: "https://gitlab.example.com",
       },
-      profile: { id: "standard", name: "Standard" },
+      depth: "standard",
       agent: { id: harnessId, name: "coder-1" },
       tokensIn: 1029,
       tokensOut: 100,
@@ -219,7 +217,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
     expect(detail).toMatchObject({
       review: { id: newestFirst[0], prNumber: 30, model: null },
       repository: { id: repoId, fullPath: "acme/api" },
-      profile: { id: "standard", name: "Standard" },
+      depth: "standard",
       agent: { id: harnessId, name: "coder-1" },
     });
     expect(detail!.findings.map((f) => f.title)).toEqual(["Finding 1", "Finding 2", "Finding 3"]);

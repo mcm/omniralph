@@ -13,7 +13,6 @@ import {
   organizations,
   repositories,
   saveChatConnection,
-  seedReviewProfiles,
   updateStory,
   upsertScmConnection,
   upsertStories,
@@ -141,7 +140,6 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
 
   async function seedOrg(name: string, slug: string) {
     const [org] = await db.insert(organizations).values({ name }).returning();
-    await seedReviewProfiles(db, org!.id);
     const connection = (await upsertScmConnection(
       db,
       {

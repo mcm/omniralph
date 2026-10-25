@@ -6,7 +6,6 @@ import {
   createDb,
   organizations,
   scmConnections,
-  seedReviewProfiles,
   updateScmConnectionCredentials,
   upsertScmConnection,
   type Database,
@@ -109,7 +108,6 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/gitlab-maintenance", () => {
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     server.listen({ onUnhandledFrame: "error" });
   }, 120_000);
 

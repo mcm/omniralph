@@ -41,8 +41,6 @@ const HARNESS = {
   acceptedTaskTypes: ["review", "coding"],
 };
 
-const PROFILE = { maxTokensPerReview: 200000, maxFiles: 50, allowRepoExploration: true };
-
 function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
   return render(
     <RepositorySettingsContent
@@ -54,7 +52,7 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         webUrl: "https://github.com/acme/app",
       }}
       settings={{
-        profileId: "standard",
+        depth: "deep",
         triggers: { onOpen: true, onPush: true, drafts: false },
         pathExcludes: [],
         customInstructions: "",
@@ -72,10 +70,6 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
       ]}
       correlationTasks={[
         { id: "builtin:correlate-findings", name: "Correlate findings", builtin: true },
-      ]}
-      profiles={[
-        { id: "standard", name: "Standard", description: null, model: "sonnet", ...PROFILE },
-        { id: "deep", name: "Deep", description: null, model: "opus", ...PROFILE },
       ]}
       harnesses={[
         { ...HARNESS, id: "h1", name: "build-01" },
@@ -112,19 +106,19 @@ beforeEach(() => {
 });
 
 describe("repository settings sections", () => {
-  it("selects a review profile by clicking its row, and Discard reverts it", async () => {
+  it("saves review settings with the repository's depth, which it can't change", async () => {
     const user = userEvent.setup();
     view("settings");
-    const checked = (name: RegExp) =>
-      screen.getByRole("radio", { name }).getAttribute("aria-checked") === "true";
-    expect(checked(/Deep/)).toBe(false);
-    // The model cell, not the radio: the whole row is the target.
-    await user.click(screen.getByText("opus"));
-    expect(checked(/Deep/)).toBe(true);
-    expect(screen.getByText("1 unsaved change")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Discard" }));
-    expect(checked(/Deep/)).toBe(false);
-    expect(checked(/Standard/)).toBe(true);
+    expect(screen.queryByRole("radio", { name: /Deep|Standard|Quick/ })).toBeNull();
+    await user.click(document.getElementById("trigger-drafts")!);
+    await user.click(screen.getByRole("button", { name: "Save review settings" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save 1 change" }));
+    await waitFor(() => expect(saves("settings")).toHaveLength(1));
+    expect(saves("settings")[0]!.body).toMatchObject({
+      depth: "deep",
+      triggers: { onOpen: true, onPush: true, drafts: true },
+    });
   });
 
   it("confirms the Coding section's change list before saving", async () => {

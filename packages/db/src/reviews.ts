@@ -9,12 +9,12 @@
  * per review.
  */
 import { and, asc, desc, eq, inArray, lt, ne, notInArray } from "drizzle-orm";
+import type { ReviewDepth } from "@omniralph/shared";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
   findings,
   repositories,
-  reviewProfiles,
   reviewRuns,
   reviews,
   rules,
@@ -28,7 +28,6 @@ export type ReviewRun = typeof reviewRuns.$inferSelect;
 export type ReviewRunStatus = ReviewRun["status"];
 export type ReviewStatus = Review["status"];
 export type FindingRow = typeof findings.$inferSelect;
-export type ReviewProfile = typeof reviewProfiles.$inferSelect;
 export type Rule = typeof rules.$inferSelect;
 export type StickyComment = typeof stickyComments.$inferSelect;
 
@@ -51,11 +50,10 @@ export interface NewReviewRunInput {
   baseSha: string;
   trigger: ReviewRun["trigger"];
   mode: ReviewRun["mode"];
-  profileId: string;
+  /** The depth the run's reviews use (the posted summary names it). */
+  depth: ReviewDepth;
   /** The PR/MR author (a mention the posted review keeps). */
   prAuthor?: string | null;
-  /** The profile's name (the posted summary names it). */
-  profileName?: string | null;
 }
 
 export async function createReviewRun(db: Database, input: NewReviewRunInput): Promise<ReviewRun> {
@@ -439,7 +437,7 @@ export interface NewReviewInput {
   headSha: string;
   baseSha: string;
   trigger: Review["trigger"];
-  profileId: string;
+  depth: ReviewDepth;
   model: string | null;
   budget: number;
   /** The review run the review is one task of. */
@@ -593,26 +591,19 @@ export async function previousReviewState(
   return { headSha: latest?.headSha ?? null, openFindings };
 }
 
-/** The repository's review settings: its profile and enabled rules (creation order). */
+/** The repository's review settings: its depth and enabled rules (creation order). */
 export async function getRepositoryReviewSettings(
   db: Database,
   repositoryId: string,
 ): Promise<{
-  profile: ReviewProfile;
+  depth: ReviewDepth;
   customInstructions: string | null;
   pathExcludes: string[];
   rules: Rule[];
 } | null> {
   const [row] = await db
-    .select({ repository: repositories, profile: reviewProfiles })
+    .select({ repository: repositories })
     .from(repositories)
-    .innerJoin(
-      reviewProfiles,
-      and(
-        eq(reviewProfiles.organizationId, repositories.organizationId),
-        eq(reviewProfiles.id, repositories.profileId),
-      ),
-    )
     .where(eq(repositories.id, repositoryId))
     .limit(1);
   if (!row) return null;
@@ -622,7 +613,7 @@ export async function getRepositoryReviewSettings(
     .where(and(eq(rules.repositoryId, repositoryId), eq(rules.enabled, true)))
     .orderBy(asc(rules.createdAt), asc(rules.id));
   return {
-    profile: row.profile,
+    depth: row.repository.reviewDepth,
     customInstructions: row.repository.customInstructions,
     pathExcludes: row.repository.pathExcludes,
     rules: repoRules,

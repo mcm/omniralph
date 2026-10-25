@@ -2,7 +2,7 @@ import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import { queryKeys } from "@/lib/api/keys";
-import { definitionKeys, reviewProfilesKey } from "@/lib/api/settings-keys";
+import { definitionKeys } from "@/lib/api/settings-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
   changesUserRecord,
@@ -96,7 +96,6 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.reviews", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
-      reviewProfilesKey(keys),
     ]);
     expect(settings("repository.coding", ID)).toEqual([
       keys.repositories.lists,
@@ -136,13 +135,6 @@ describe("LIVE_INVALIDATIONS", () => {
     );
   });
 
-  it("settings: review profiles refetch the profiles and the repositories showing them", () => {
-    expect(liveInvalidations(event({ resource: "settings", section: "review_profiles" }))).toEqual([
-      reviewProfilesKey(keys),
-      keys.repositories.all,
-    ]);
-  });
-
   it("agent: the agents list, each agent, and the forms offering what agents report", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.harnesses.lists,
@@ -150,16 +142,14 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.harnesses.detail(RUN),
       definitions.agents.formOptions,
       definitions.tasks.formOptions,
-      reviewProfilesKey(keys),
     ]);
   });
 
-  it("repository: the list, each repository and the connections and profiles showing them", () => {
+  it("repository: the list, each repository and the connections showing them", () => {
     expect(liveInvalidations(event({ resource: "repository" }))).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.connections.all,
-      reviewProfilesKey(keys),
     ]);
   });
 
@@ -239,14 +229,14 @@ describe("createLiveInvalidator", () => {
     ]);
   });
 
-  it("a definition save refetches agent and task queries, not review profiles", () => {
+  it("a definition save refetches agent and task queries, not other settings", () => {
     seed(
       definitions.agents.list,
       definitions.agents.detail(ID),
       definitions.agents.formOptions,
       definitions.tasks.list,
       definitions.tasks.formOptions,
-      reviewProfilesKey(keys),
+      keys.settings.detail("routing"),
     );
     const invalidator = createLiveInvalidator(client);
     invalidator.apply(event({ resource: "settings", section: "task_definitions" }), scope);
@@ -257,9 +247,6 @@ describe("createLiveInvalidator", () => {
       definitions.tasks.list,
       definitions.tasks.formOptions,
     ]);
-
-    invalidator.apply(event({ resource: "settings", section: "review_profiles" }), scope);
-    expect(invalidated()).toContainEqual(reviewProfilesKey(keys));
   });
 
   it("ignores an event for an organization outside the scope", () => {

@@ -11,7 +11,6 @@ import {
   mapThreadRun,
   organizations,
   saveChatConnection,
-  seedReviewProfiles,
   upsertScmConnection,
   type ChatThread,
   type Database,
@@ -77,7 +76,6 @@ describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const scm = (await upsertScmConnection(
       db,
       {

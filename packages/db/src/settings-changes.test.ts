@@ -29,7 +29,6 @@ import {
   type SettingsFields,
   type SettingsValues,
 } from "./settings-changes.js";
-import { seedReviewProfiles } from "./settings.js";
 
 /** An arbitrary section: nothing in the recorder knows it. */
 const FIELDS: SettingsFields = {
@@ -83,7 +82,6 @@ describe.skipIf(!databaseAvailable)("settings changes", () => {
 
   const organization = async (name: string) => {
     const [org] = await db.insert(organizations).values({ name }).returning();
-    await seedReviewProfiles(db, org!.id);
     return org!.id;
   };
 

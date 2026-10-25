@@ -19,7 +19,6 @@ import {
   findings,
   getRepository,
   getRepositoryReviewSettings,
-  getReviewProfile,
   listRepositoryRules,
   upsertScmConnection,
   users,
@@ -32,7 +31,6 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { callAction } from "@/lib/api/test-call";
 import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -82,8 +80,6 @@ const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/rou
 const repositoryLinear = await import("@/app/api/ui/repositories/[id]/coding/linear/route");
 const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
 const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
-const reviewProfiles = await import("@/app/api/ui/review-profiles/route");
-const reviewProfile = await import("@/app/api/ui/review-profiles/[id]/route");
 
 type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
 
@@ -141,9 +137,6 @@ const setRuleEnabled = (id: string, ruleId: string, enabled: boolean) =>
   ruleRequest(repositoryRule.PATCH, "PATCH", { id, ruleId }, { enabled });
 const deleteRule = (id: string, ruleId: string) =>
   ruleRequest(repositoryRule.DELETE, "DELETE", { id, ruleId });
-// Settings › Review profiles' save, under the server action's old name.
-const updateReviewProfile = (id: string, input: unknown) =>
-  callAction(reviewProfile.PUT, "PUT", { id }, input);
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -195,7 +188,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       headSha: "h",
       baseSha: "b",
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: null,
       budget: 1,
     });
@@ -237,15 +230,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     await testDb?.stop();
   });
 
-  it("lists only the active organization's repositories and profiles", async () => {
+  it("lists only the active organization's repositories", async () => {
     state.userId = a.userId;
-    const profiles = await call(reviewProfiles.GET, a.repoId);
-    expect(profiles.status).toBe(200);
-    const rows = profiles.body.profiles as { id: string; repositories: { id: string }[] }[];
-    expect(rows.map((p) => p.id)).toEqual(["quick", "standard", "deep"]);
-    // Only this organization's repositories use its profiles.
-    expect(JSON.stringify(profiles.body)).not.toContain(b.repoId);
-
     const settings = await call(repositoryDetail.GET, a.repoId);
     expect(settings).toMatchObject({ status: 200, body: { repository: { id: a.repoId } } });
     const rules = await call(repositoryRules.GET, a.repoId);
@@ -379,7 +365,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ).toEqual(refused);
     expect(
       await updateRepositorySettings(b.repoId, {
-        profileId: "deep",
+        depth: "deep",
         triggers: { onOpen: false, onPush: false, drafts: false },
         pathExcludes: [],
         customInstructions: "",
@@ -398,7 +384,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect(await getRepository(db, b.repoId)).toMatchObject({
       enabled: null,
       disconnectedAt: null,
-      profileId: "standard",
+      reviewDepth: "standard",
       ralphEnabled: null,
     });
 
@@ -411,39 +397,21 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ]);
   });
 
-  it("edits only the active organization's review profiles", async () => {
+  it("sets the depth of the active organization's repositories only", async () => {
     state.userId = a.userId;
-    const limits = {
-      model: "claude-haiku-5-5",
-      maxTokensPerReview: 12_345,
-      maxFiles: 3,
-      allowRepoExploration: false,
+    const settings = {
+      depth: "deep" as const,
+      triggers: { onOpen: true, onPush: true, drafts: false },
+      pathExcludes: [],
+      customInstructions: "",
+      pinnedHarnessIds: [],
+      reviewTaskIds: ["builtin:review-pr"],
+      correlationTaskId: "builtin:correlate-findings",
     };
-    expect(await updateReviewProfile("deep", limits)).toEqual({ ok: true });
-    expect(await getReviewProfile(db, a.orgId, "deep")).toMatchObject({
-      maxTokensPerReview: 12_345,
-    });
-    expect(await getReviewProfile(db, b.orgId, "deep")).toMatchObject({
-      maxTokensPerReview: 500_000,
-    });
-
-    // Reviews of this organization's repositories use its own copy of the profile.
-    expect(
-      await updateRepositorySettings(a.repoId, {
-        profileId: "deep",
-        triggers: { onOpen: true, onPush: true, drafts: false },
-        pathExcludes: [],
-        customInstructions: "",
-        pinnedHarnessIds: [],
-        reviewTaskIds: ["builtin:review-pr"],
-        correlationTaskId: "builtin:correlate-findings",
-      }),
-    ).toEqual({ ok: true });
-    expect((await getRepositoryReviewSettings(db, a.repoId))!.profile).toMatchObject({
-      organizationId: a.orgId,
-      id: "deep",
-      maxTokensPerReview: 12_345,
-    });
-    expect((await getRepository(db, a.repoId))!.profileId).toBe("deep");
+    expect(await updateRepositorySettings(a.repoId, settings)).toEqual({ ok: true });
+    expect((await getRepositoryReviewSettings(db, a.repoId))!.depth).toBe("deep");
+    expect((await getRepository(db, b.repoId))!.reviewDepth).toBe("standard");
+    const detail = await call(repositoryDetail.GET, a.repoId);
+    expect(detail.body.settings).toMatchObject({ depth: "deep" });
   });
 });

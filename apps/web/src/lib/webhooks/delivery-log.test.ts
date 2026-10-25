@@ -13,7 +13,6 @@ import {
   repositories,
   reviews,
   saveIntegration,
-  seedReviewProfiles,
   setRepositorySwitches,
   updateLane,
   updateRun,
@@ -77,7 +76,6 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const key = randomBytes(32);
     github = (await upsertScmConnection(
       db,

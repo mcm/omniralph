@@ -41,7 +41,6 @@ import {
   DEFAULT_RALPH_SETTINGS,
   type Database,
   organizations,
-  seedReviewProfiles,
   settleReviewRun,
   type LinearRun,
   type NewLinearRalphRunInput,
@@ -212,7 +211,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     const github = (await upsertScmConnection(db, {
@@ -369,7 +367,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       baseSha: "b".repeat(40),
       trigger: "mention",
       mode: "full",
-      profileId: "standard",
+      depth: "standard",
     });
     await db
       .update(reviewRuns)
@@ -384,7 +382,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         headSha: "a".repeat(40),
         baseSha: "b".repeat(40),
         trigger: "mention",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 100_000,
       });
@@ -1128,7 +1126,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       headSha: "e".repeat(40),
       baseSha: "b".repeat(40),
       trigger: "webhook",
-      profileId: "standard",
+      depth: "standard",
       model: null,
       budget: 100_000,
     });
@@ -1141,7 +1139,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       baseSha: "b".repeat(40),
       trigger: "webhook",
       mode: "fresh",
-      profileId: "standard",
+      depth: "standard",
       status: "completed",
     });
     await db
@@ -1516,7 +1514,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         baseSha: "b".repeat(40),
         trigger: "webhook",
         mode: "fresh",
-        profileId: "standard",
+        depth: "standard",
       });
       const { job: pass } = await insertJob(db, {
         organizationId: orgId,
@@ -1699,7 +1697,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         baseSha: "b".repeat(40),
         trigger: "webhook",
         mode: "fresh",
-        profileId: "deep",
+        depth: "deep",
       });
       const review = await createReview(db, {
         reviewRunId: run.id,
@@ -1709,7 +1707,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         headSha: "a".repeat(40),
         baseSha: "b".repeat(40),
         trigger: "webhook",
-        profileId: "deep",
+        depth: "deep",
         model: null,
         budget: 100_000,
       });
@@ -1769,7 +1767,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         expect(retried).toMatchObject({
           headSha: HEAD,
           mode: "fresh",
-          profileId: "deep",
+          depth: "deep",
           prNumber: 9,
         });
         const queued = await queuedReviewJobs(view.id);
@@ -2021,7 +2019,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   it("keeps another organization's runs out: not listed, 404 and can't be stopped", async () => {
     // Another organization with its own repository, Linear workspace and run.
     const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
-    await seedReviewProfiles(db, other!.id);
     const connection = (await upsertScmConnection(db, {
       organizationId: other!.id,
       provider: "github",

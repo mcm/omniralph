@@ -20,7 +20,6 @@ import {
   reviewRuns,
   saveChatConnection,
   saveIntegration,
-  seedReviewProfiles,
   settingsChanges,
   taskDefinitions,
   triageRuns,
@@ -175,7 +174,6 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       .values([{ name: "Acme" }, { name: "Runs" }, { name: "Other" }])
       .returning();
     [orgId, runsOrgId, otherOrgId] = created.map((o) => o.id) as [string, string, string];
-    for (const id of [orgId, runsOrgId, otherOrgId]) await seedReviewProfiles(db, id);
     await db.insert(users).values({ id: admin.id, name: admin.name, email: admin.email });
     await db.insert(organizationMembers).values([
       { organizationId: orgId, userId: admin.id, role: "admin" },

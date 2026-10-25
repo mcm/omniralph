@@ -281,8 +281,8 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
                     label="Model"
                     htmlFor="agent-model"
                     description={withDefault(
-                      "From the models your harnesses report. The profile's model leaves it to the repository's review profile.",
-                      "the profile's model",
+                      "From the models your harnesses report. The review depth's model leaves it to the repository's review depth.",
+                      "the review depth's model",
                     )}
                     error={errors.model}
                   >
@@ -294,7 +294,7 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
                       options={choices.models}
                       harnessCount={choices.harnessCount}
                       allowNone
-                      noneLabel="The profile's model"
+                      noneLabel="The review depth's model"
                     />
                   </Field>
                   <Field

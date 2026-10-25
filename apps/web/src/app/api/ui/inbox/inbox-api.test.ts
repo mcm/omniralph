@@ -13,7 +13,6 @@ import {
   ralphStories,
   reviewRuns,
   reviews,
-  seedReviewProfiles,
   triageRuns,
   upsertScmConnection,
   users,
@@ -115,7 +114,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     state.db = db;
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     state.orgId = org!.id;
-    await seedReviewProfiles(db, state.orgId);
     await db.insert(users).values([{ id: alice.id }, { id: bob.id }]);
     const connection = (await upsertScmConnection(
       db,

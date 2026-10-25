@@ -159,7 +159,7 @@ the link's lifetime, in the same browser:
   organization; to move it, an admin of that organization removes it first (see below).
 - "GitHub installation not connected" means the callback didn't come from a **Connect GitHub**
   started in your active organization, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
-repository's profile (Standard by default).
+repository's review depth (Standard by default).
 
 ### Removing an installation
 

@@ -55,7 +55,7 @@ redelivers it after that delay. A job gives up after its 3rd delivery. To keep r
 interactive work apart:
 
 - lower the harness's **Max concurrency** under **Harnesses › <harness>** (central config, no restart),
-- use cheaper profiles (Quick) on busy repositories (**Repository › Settings**), or
+- use a cheaper review depth (Quick) on busy repositories, or
 - give the harness its own credentials: an `ANTHROPIC_API_KEY` in its environment, or a separate
   subscription's `claude` login for a dedicated harness user.
 

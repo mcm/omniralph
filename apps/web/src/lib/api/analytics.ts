@@ -1,3 +1,4 @@
+import { ReviewDepthSchema } from "@omniralph/shared";
 import { z } from "zod";
 import {
   ANALYTICS_RANGES,
@@ -43,10 +44,9 @@ export const analyticsDataSchema = z.object({
       tokensOut: z.number(),
     }),
   ),
-  byProfile: z.array(
+  byDepth: z.array(
     z.object({
-      profileId: z.string().nullable(),
-      profileName: z.string().nullable(),
+      depth: ReviewDepthSchema.nullable(),
       reviews: z.number(),
       averageTokens: z.number(),
     }),

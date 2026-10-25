@@ -110,8 +110,8 @@ function capSummary(summaries: readonly string[]): string | undefined {
  *    it, plans the review with the repository's path excludes and reads
  *    `CLAUDE.md` from the base commit, which become the task-type variables
  *    `diff`, `plan`, `risk`, `conventions` and `previousFindings`.
- *    The run spec's `maxFiles` (the review profile's, resolved at claim
- *    time) caps the plan. With the profile's depth (`depth`), the rubric for
+ *    The run spec's `maxFiles` (the review depth's, resolved at claim
+ *    time) caps the plan. With the depth's guidance (`depth`), the rubric for
  *    the diff's languages from the agent's reference docs (`rubric`) and the
  *    repository's rules (`repositoryRules`), a template has what
  *    `buildPrompt` assembles.
@@ -176,7 +176,7 @@ export async function runReviewTask(
       cwd,
       baseSha,
       headSha,
-      // The plan covers at most the run's `maxFiles` (its review profile's).
+      // The plan covers at most the run's `maxFiles` (its review depth's).
       reviewConfig: {
         ...reviewConfig,
         profile: {

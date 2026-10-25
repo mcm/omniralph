@@ -11,7 +11,6 @@ import {
   upsertScmConnection,
   type Database,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import {
   type CloneCredentialResponse,
@@ -133,7 +132,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     state.db = db;
     server.listen({ onUnhandledFrame: "error" });
@@ -433,9 +431,9 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           const forged: JobTokenScope[] = [...JOB_TOKEN_SCOPES];
           expect(await passwordFor(codingTask, forged, "session")).toBe("ghs_contents_read");
           for (const taskType of ["query", "review"] as const) {
-            expect(
-              await passwordFor({ ...codingTask, taskType }, forged, "session"),
-            ).toBe("ghs_contents_read");
+            expect(await passwordFor({ ...codingTask, taskType }, forged, "session")).toBe(
+              "ghs_contents_read",
+            );
           }
           // Even a legacy ralph job never pushes with a session token.
           expect(await passwordFor({ ...ralphJob, taskId: null }, forged, "session")).toBe(
@@ -445,9 +443,9 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
         it("keeps lifecycle tokens of non-coding run-spec jobs read-only", async () => {
           for (const taskType of ["query", "review"] as const) {
-            expect(
-              await passwordFor({ ...codingTask, taskType }, WRITE, "lifecycle"),
-            ).toBe("ghs_contents_read");
+            expect(await passwordFor({ ...codingTask, taskType }, WRITE, "lifecycle")).toBe(
+              "ghs_contents_read",
+            );
           }
         });
 

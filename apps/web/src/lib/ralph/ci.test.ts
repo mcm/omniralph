@@ -23,7 +23,6 @@ import {
   type Job,
   type RalphRun,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import type { CiFailedJob, CiStatus } from "@omniralph/scm";
@@ -100,7 +99,6 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

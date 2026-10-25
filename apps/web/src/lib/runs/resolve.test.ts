@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
   repository: null as unknown,
-  profile: null as unknown,
+  depth: null as string | null,
 }));
 vi.mock("@omniralph/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
@@ -32,7 +32,7 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
         }
       : null,
   getRepositoryReviewSettings: async (_db: unknown, id: string) =>
-    state.profile && id === REPO_ID ? { profile: state.profile, rules: [] } : null,
+    state.depth && id === REPO_ID ? { depth: state.depth, rules: [] } : null,
 }));
 
 const { RunSpecError, narrowTools, resolveRunSpec, runTokenBudget } = await import("./resolve");
@@ -107,7 +107,7 @@ function repository(ralphSettings: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   state.repository = repository();
-  state.profile = { model: "opus", maxTokensPerReview: 200_000 };
+  state.depth = "standard";
 });
 
 describe("resolveRunSpec", () => {
@@ -141,8 +141,10 @@ describe("resolveRunSpec", () => {
       expect(spec.model).toBe("sonnet");
     });
 
-    it("then the repository profile's", async () => {
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).model).toBe("opus");
+    it("then the repository depth's", async () => {
+      expect((await resolveRunSpec(db, job(), tokens, definitions())).model).toBe(
+        "claude-sonnet-5-5",
+      );
     });
 
     it("then the agent's, without a repository", async () => {
@@ -202,10 +204,10 @@ describe("resolveRunSpec", () => {
   });
 
   describe("token budget", () => {
-    it("resolves a fraction against the repository profile's budget", async () => {
+    it("resolves a fraction against the repository depth's token cap", async () => {
       expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(20_000);
-      state.profile = { model: "opus", maxTokensPerReview: 33_333 };
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(3_333);
+      state.depth = "deep";
+      expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(50_000);
     });
 
     it("keeps a fixed budget and no budget as they are", async () => {

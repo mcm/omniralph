@@ -3,7 +3,7 @@
  * view-prop types and formatting. Server-side mapping lives in `./history`.
  */
 import type { FindingSeverity, ReviewStatus, ReviewTrigger } from "@omniralph/db";
-import type { FeedbackReasonValue } from "@omniralph/shared";
+import type { FeedbackReasonValue, ReviewDepth } from "@omniralph/shared";
 import { parsePage } from "@/lib/pagination";
 
 /** Client-safe copies of the DB enums (the views can't import `@omniralph/db`). */
@@ -73,7 +73,8 @@ export interface ReviewRow {
   prUrl: string;
   trigger: ReviewTrigger;
   status: ReviewStatus;
-  profileName: string | null;
+  /** The depth the review ran at; null for reviews from before depths were recorded. */
+  depth: ReviewDepth | null;
   agent: { id: string; name: string } | null;
   findingCounts: Record<FindingSeverity, number>;
   tokensUsed: number;
@@ -130,7 +131,8 @@ export interface ReviewDetailView {
   baseSha: string;
   trigger: ReviewTrigger;
   status: ReviewStatus;
-  profileName: string | null;
+  /** The depth the review ran at; null for reviews from before depths were recorded. */
+  depth: ReviewDepth | null;
   model: string | null;
   agent: { id: string; name: string } | null;
   tokensIn: number;

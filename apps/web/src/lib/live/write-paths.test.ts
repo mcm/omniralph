@@ -57,7 +57,6 @@ import {
   revokeHarness,
   saveChatConnection,
   saveIntegration,
-  seedReviewProfiles,
   setDefaultMaxConcurrency,
   setHarnessHostToolPath,
   setRepositorySwitches,
@@ -70,7 +69,6 @@ import {
   updateRule,
   updateRepositoryRalphSettings,
   updateRepositorySettings,
-  updateReviewProfile,
   updateRun,
   updateTaskDefinition,
   updateStory,
@@ -125,7 +123,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
     orgChannel = `org:${orgId}:changes`;
-    await seedReviewProfiles(db, orgId);
     const connection = (await upsertScmConnection(db, {
       organizationId: orgId,
       provider: "github",
@@ -246,7 +243,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
               baseSha: "b".repeat(40),
               trigger: "mention",
               mode: "full",
-              profileId: "standard",
+              depth: "standard",
             })
           ).id;
         }),
@@ -263,7 +260,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
               headSha: "a".repeat(40),
               baseSha: "b".repeat(40),
               trigger: "mention",
-              profileId: "standard",
+              depth: "standard",
               model: null,
               budget: 100_000,
             })
@@ -289,7 +286,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         baseSha: "d".repeat(40),
         trigger: "mention",
         mode: "full",
-        profileId: "standard",
+        depth: "standard",
       });
       const review = await createReview(db, {
         reviewRunId: reviewRun.id,
@@ -299,7 +296,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         headSha: "c".repeat(40),
         baseSha: "d".repeat(40),
         trigger: "mention",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 100_000,
       });
@@ -605,7 +602,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(
         await published(() =>
           updateRepositorySettings(db, orgId, repoId, {
-            profileId: "standard",
+            depth: "standard",
             triggers: { onOpen: true, onPush: false, onMention: true },
             pathExcludes: [],
             customInstructions: "",
@@ -692,19 +689,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           await deleteTaskDefinition(db, orgId, taskId);
         }),
       ).toEqual([]);
-    });
-
-    it("review profile saves publish their section", async () => {
-      const limits = {
-        model: "claude-sonnet-5-5",
-        maxTokensPerReview: 120_000,
-        maxFiles: 40,
-        allowRepoExploration: false,
-      };
-      expect(await published(() => updateReviewProfile(db, orgId, "standard", limits))).toEqual([
-        settingsEvent("review_profiles"),
-      ]);
-      expect(await published(() => updateReviewProfile(db, orgId, "missing", limits))).toEqual([]);
     });
 
     it("connections and integrations publish the connection", async () => {

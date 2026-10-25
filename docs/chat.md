@@ -402,8 +402,8 @@ built-in runs in a read-only sandbox:
 - The Claude session gets only **Read, Grep and Glob**, limited to the worktree: it can't write
   files, run commands or push. No project settings are loaded; the branch's `CLAUDE.md` is passed
   as quoted data, as in reviews.
-- Up to 30 turns and a token budget of 25% of the repository's review profile's **max tokens per
-  review**, with the profile's model.
+- Up to 30 turns and a token budget of 25% of the token cap of the repository's review depth
+  (Quick, Standard or Deep), with the depth's model.
 - If the repository pins jobs to specific harnesses, only those harnesses take it.
 - When the default branch doesn't exist (e.g. an empty repository), the run finishes without a
   session and the bot says there's no branch to read.

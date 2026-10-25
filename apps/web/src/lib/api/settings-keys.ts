@@ -14,6 +14,3 @@ export function definitionKeys(keys: QueryKeys) {
   });
   return { agents: kind("agents"), tasks: kind("tasks") };
 }
-
-/** The key of Settings › Review profiles. */
-export const reviewProfilesKey = (keys: QueryKeys) => keys.settings.detail("review-profiles");

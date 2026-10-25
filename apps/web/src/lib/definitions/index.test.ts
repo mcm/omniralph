@@ -11,7 +11,6 @@ import {
   organizations,
   repositories,
   scmConnections,
-  seedReviewProfiles,
   type Database,
 } from "@omniralph/db";
 import { REVIEW_TASKS_MIN_HARNESS_VERSION } from "@omniralph/shared";
@@ -283,7 +282,6 @@ describe.skipIf(!databaseAvailable)("definition resolver", () => {
         encryptedCredentials: "unused",
       })
       .returning();
-    await seedReviewProfiles(db, orgId);
     const [repo] = await db
       .insert(repositories)
       .values({

@@ -25,7 +25,6 @@ import {
   type Job,
   type RalphRun,
   organizations,
-  seedReviewProfiles,
   type LinearRun,
 } from "@omniralph/db";
 import { projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
@@ -105,7 +104,6 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,

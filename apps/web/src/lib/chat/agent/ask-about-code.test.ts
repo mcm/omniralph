@@ -19,7 +19,6 @@ import {
   repositories,
   saveChatConnection,
   setAllowedTaskTypeDefaults,
-  seedReviewProfiles,
   upsertChatChannelTaskSetting,
   upsertScmConnection,
   type ChatConnection,
@@ -281,7 +280,6 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
   async function seedOrg(name: string, slug: string) {
     const [org] = await db.insert(organizations).values({ name }).returning();
-    await seedReviewProfiles(db, org!.id);
     const connection = (await upsertScmConnection(
       db,
       {

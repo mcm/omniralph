@@ -12,7 +12,10 @@ export const REVIEW_TASK_JOB_TYPE = "review.task";
 
 export const CommitSha = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
 
-/** The `review_profiles` fields a review runs with. */
+/**
+ * The model and limits a review runs with: its depth's preset
+ * (`reviewProfileConfigForDepth`), with the depth as `id` and its label as `name`.
+ */
 export const ReviewProfileConfig = z.object({
   id: z.string().min(1).max(64),
   name: z.string().min(1).max(200),

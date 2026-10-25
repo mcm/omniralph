@@ -50,13 +50,9 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 /**
  * Organization settings sections a `settings` event names that keep no change history (not
  * part of `SETTINGS_SECTIONS` or the settings history API): the organization's agent and
- * task definitions (Settings › Agents, Settings › Tasks) and its review profiles.
+ * task definitions (Settings › Agents, Settings › Tasks).
  */
-export const UNTRACKED_SETTINGS_SECTIONS = [
-  "agent_definitions",
-  "task_definitions",
-  "review_profiles",
-] as const;
+export const UNTRACKED_SETTINGS_SECTIONS = ["agent_definitions", "task_definitions"] as const;
 export type UntrackedSettingsSection = (typeof UNTRACKED_SETTINGS_SECTIONS)[number];
 
 /**
@@ -90,7 +86,7 @@ const base = {
  * - `webhook_event`: a delivery was recorded or replayed (`ids` = webhook event IDs).
  * - `settings`: a settings `section` was saved, for `subjectId` (e.g. the repository) when
  *   the section has one (`ids` = the subject, else the organization). Agent and task
- *   definitions and review profiles are sections without a subject.
+ *   definitions are sections without a subject.
  *   Section `profile` is the user's own record (`ids` = the user), on the user's channel.
  * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its
  *   settings, pins, update state or installs changed (`ids` = agent IDs).

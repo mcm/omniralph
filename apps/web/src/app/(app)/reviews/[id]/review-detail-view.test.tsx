@@ -59,7 +59,7 @@ function detail(overrides: Partial<ReviewView> = {}): ReviewDetail {
       baseSha: "b".repeat(40),
       trigger: "webhook",
       status: "completed",
-      profileName: "Standard",
+      depth: "standard",
       model: null,
       agent: null,
       tokensIn: 100,
@@ -188,7 +188,7 @@ describe("ReviewDetailView", () => {
     await userEvent.click(within(dialog).getByLabelText("Fresh"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Re-run" }));
     await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith(`/reviews/${NEW_REVIEW_ID}`));
-    expect(seen.find((r) => r.method === "POST")!.body).toEqual({ mode: "fresh", profileId: null });
+    expect(seen.find((r) => r.method === "POST")!.body).toEqual({ mode: "fresh", depth: null });
   });
 
   it("opens the review already running when a re-run finds one", async () => {

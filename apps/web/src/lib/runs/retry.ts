@@ -159,7 +159,7 @@ async function retryReview(
   if (!pass) throw notRetryable("This review has no passes to run again.");
   const result = await rerunOrganizationReview(db, getDispatcher(), run.organizationId, pass.id, {
     runMode: reviewRun.mode,
-    profileId: reviewRun.profileId,
+    depth: reviewRun.depth,
   });
   if (result.ok) {
     return { entry: (await getRunIndexEntry(db, result.reviewRunId)) ?? notFound(), warning: null };

@@ -11,7 +11,6 @@ import {
   organizations,
   ralphRuns,
   saveChatConnection,
-  seedReviewProfiles,
   updateRepositoryRalphSettings,
   upsertScmConnection,
   DEFAULT_RALPH_SETTINGS,
@@ -71,7 +70,6 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, orgId);
     const scmConnection = (await upsertScmConnection(
       db,
       {

@@ -35,7 +35,6 @@ import {
   updateOrganization,
 } from "./organizations.js";
 import { organizationInvitations, users } from "./schema.js";
-import { listReviewProfiles } from "./settings.js";
 
 describe("emailDomain / normalizeDomain", () => {
   it("lower-cases and strips", () => {
@@ -119,14 +118,6 @@ describe.skipIf(!databaseAvailable)("organization queries", () => {
       [second.id, "Alpha", "admin"],
       [org.id, "Zeta", "admin"],
     ]);
-    // Each organization gets its own copy of the built-in review profiles.
-    for (const id of [org.id, second.id]) {
-      expect((await listReviewProfiles(db, id)).map((p) => [p.id, p.builtIn])).toEqual([
-        ["quick", true],
-        ["standard", true],
-        ["deep", true],
-      ]);
-    }
   });
 
   it("adds members, changes roles and removes members", async () => {

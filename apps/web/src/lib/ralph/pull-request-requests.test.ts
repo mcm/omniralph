@@ -29,7 +29,6 @@ import {
   type Job,
   type RalphRun,
   organizations,
-  seedReviewProfiles,
 } from "@omniralph/db";
 import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import {
@@ -98,7 +97,6 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     orgId = org!.id;
     const connection = (await upsertScmConnection(
       db,
@@ -257,7 +255,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       headSha: options.headSha ?? "head1",
       baseSha: sha(9),
       trigger: "webhook" as const,
-      profileId: "standard",
+      depth: "standard" as const,
     };
     const reviewRun = await createReviewRun(db, {
       ...target,

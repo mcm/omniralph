@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { decrypt } from "./crypto.js";
 import { organizations, repositories, scmConnections, scmCredentialCache } from "./schema.js";
-import { seedReviewProfiles } from "./settings.js";
 import { createScmCredentialCache } from "./scm-credentials.js";
 
 const databaseAvailable = testDatabaseAvailable();
@@ -21,7 +20,6 @@ describe.skipIf(!databaseAvailable)("scm credential cache", () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
-    await seedReviewProfiles(db, org!.id);
     const organizationId = org!.id;
     const [connection] = await db
       .insert(scmConnections)

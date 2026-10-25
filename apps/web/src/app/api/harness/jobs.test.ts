@@ -21,7 +21,6 @@ import {
   scmConnections,
   type Database,
   organizations,
-  seedReviewProfiles,
   setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
 } from "@omniralph/db";
@@ -158,7 +157,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
 
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    await seedReviewProfiles(db, org!.id);
     const [connection] = await db
       .insert(scmConnections)
       .values({
@@ -1002,7 +1000,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           headSha: sha(2),
           baseSha: sha(1),
           trigger: "webhook",
-          profileId: "standard",
+          depth: "standard",
           model: null,
           budget: 100_000,
         });
@@ -1135,7 +1133,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         headSha: sha(2),
         baseSha: sha(1),
         trigger: "webhook",
-        profileId: "standard",
+        depth: "standard",
         model: null,
         budget: 200_000,
       });
@@ -1559,7 +1557,6 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     beforeAll(async () => {
       const [org] = await db.insert(organizations).values({ name: "Globex" }).returning();
       otherOrgId = org!.id;
-      await seedReviewProfiles(db, otherOrgId);
       const [connection] = await db
         .insert(scmConnections)
         .values({

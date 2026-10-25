@@ -12,22 +12,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  Field,
   Label,
   Muted,
-  NativeSelect,
   RadioGroup,
   RadioGroupItem,
   Stack,
 } from "@iamthemcmaster/ui";
 import { toast } from "@omniralph/ui";
 import { IconRefresh } from "@tabler/icons-react";
-import {
-  RERUN_MODES,
-  RERUN_PROFILES,
-  type RerunMode,
-  type RerunReviewInput,
-} from "@omniralph/shared";
+import { RERUN_MODES, type RerunMode, type RerunReviewInput } from "@omniralph/shared";
 import { useCurrentUser } from "@/components/current-user";
 import { useApiMutation } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
@@ -44,15 +37,9 @@ const MODE_LABELS: Record<RerunMode, { label: string; hint: string }> = {
   },
 };
 
-const PROFILE_LABELS: Record<(typeof RERUN_PROFILES)[number], string> = {
-  quick: "Quick",
-  standard: "Standard",
-  deep: "Deep",
-};
-
 /**
  * Re-run (admins only; hidden for members): a dialog to pick Incremental or
- * Fresh and a profile, then a review of the PR's current head is enqueued and
+ * Fresh, then a review of the PR's current head is enqueued at the repository's depth and
  * its page opens (or the page of the review of that head already queued or running).
  */
 export function RerunReviewDialog({
@@ -70,7 +57,6 @@ export function RerunReviewDialog({
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<RerunMode>("incremental");
-  const [profile, setProfile] = React.useState("");
   const rerun = useApiMutation({
     mutationFn: (input: RerunReviewInput, { organizationId }) =>
       api.post(`/api/ui/reviews/${reviewId}/rerun`, rerunResultSchema, {
@@ -94,18 +80,12 @@ export function RerunReviewDialog({
 
   const onOpenChange = (next: boolean) => {
     setOpen(next);
-    if (!next) {
-      setMode("incremental");
-      setProfile("");
-    }
+    if (!next) setMode("incremental");
   };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const profileId = (RERUN_PROFILES as readonly string[]).includes(profile)
-      ? (profile as (typeof RERUN_PROFILES)[number])
-      : null;
-    rerun.mutate({ mode, profileId });
+    rerun.mutate({ mode, depth: null });
   };
 
   return (
@@ -156,20 +136,6 @@ export function RerunReviewDialog({
                   </div>
                 ))}
               </RadioGroup>
-              <Field label="Profile" htmlFor={`rerun-${reviewId}-profile`}>
-                <NativeSelect
-                  id={`rerun-${reviewId}-profile`}
-                  value={profile}
-                  onChange={(e) => setProfile(e.target.value)}
-                >
-                  <option value="">Repository default</option>
-                  {RERUN_PROFILES.map((id) => (
-                    <option key={id} value={id}>
-                      {PROFILE_LABELS[id]}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
             </DialogBody>
           </Stack>
           <DialogFooter>
