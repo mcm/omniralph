@@ -1,6 +1,7 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { IconCheck } from "@tabler/icons-react";
 import type { ReactElement } from "react";
 import { useLinkComponent } from "../provider/index.js";
 import type { ButtonIcon } from "./button.js";
@@ -14,6 +15,11 @@ interface MenuItemBase {
    */
   destructive?: boolean;
   disabled?: boolean;
+  /**
+   * Makes the item a checkable choice (`menuitemcheckbox`) with a check after its label
+   * when `true`, e.g. the current organization in a picker. Omit for a plain action.
+   */
+  checked?: boolean;
 }
 
 /** A menu action: runs `onSelect`, or navigates to `href` through the `UiProvider` link. */
@@ -71,7 +77,15 @@ export function Menu({ items, trigger, align = "end", disabled = false }: MenuPr
                 <DropdownMenu.Separator key={`separator-${index}`} className="or-menu__separator" />
               );
             }
-            const { label, icon: Icon, destructive, disabled: itemDisabled, href, onSelect } = item;
+            const {
+              label,
+              icon: Icon,
+              destructive,
+              disabled: itemDisabled,
+              checked,
+              href,
+              onSelect,
+            } = item;
             const className = destructive ? "or-menu__item or-menu__item--danger" : "or-menu__item";
             const content = (
               <>
@@ -79,22 +93,29 @@ export function Menu({ items, trigger, align = "end", disabled = false }: MenuPr
                   <Icon className="or-menu__icon" size={16} stroke={1.75} aria-hidden="true" />
                 ) : null}
                 <span className="or-menu__label">{label}</span>
+                {checked !== undefined ? (
+                  <DropdownMenu.ItemIndicator className="or-menu__check">
+                    <IconCheck size={16} stroke={2} aria-hidden="true" />
+                  </DropdownMenu.ItemIndicator>
+                ) : null}
               </>
             );
-            return (
-              <DropdownMenu.Item
+            const itemProps = {
+              className,
+              disabled: itemDisabled,
+              onSelect: onSelect ? () => onSelect() : undefined,
+              asChild: href !== undefined,
+              children:
+                href !== undefined ? <LinkComponent href={href}>{content}</LinkComponent> : content,
+            };
+            return checked !== undefined ? (
+              <DropdownMenu.CheckboxItem
                 key={`${label}-${index}`}
-                className={className}
-                disabled={itemDisabled}
-                onSelect={onSelect ? () => onSelect() : undefined}
-                asChild={href !== undefined}
-              >
-                {href !== undefined ? (
-                  <LinkComponent href={href}>{content}</LinkComponent>
-                ) : (
-                  content
-                )}
-              </DropdownMenu.Item>
+                checked={checked}
+                {...itemProps}
+              />
+            ) : (
+              <DropdownMenu.Item key={`${label}-${index}`} {...itemProps} />
             );
           })}
         </DropdownMenu.Content>

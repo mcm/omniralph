@@ -132,6 +132,9 @@ importers:
       '@omniralph/tasks':
         specifier: workspace:*
         version: link:../../packages/tasks
+      '@omniralph/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tabler/icons-react':
         specifier: ^3.40.0
         version: 3.48.0(react@19.3.0)

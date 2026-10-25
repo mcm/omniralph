@@ -1,9 +1,11 @@
-import { listOrganizationsForUser } from "@omniralph/db";
 import { cookies } from "next/headers";
 import { AppShell } from "@/components/app-shell";
-import { ORGANIZATION_COOKIE } from "@/lib/auth/routes";
-import { requirePageUser } from "@/lib/auth/session";
-import { getDb } from "@/lib/db";
+import { ORGANIZATION_COOKIE, ORGANIZATION_SCOPE_COOKIE } from "@/lib/auth/routes";
+import {
+  getOrganizationMemberships,
+  getOrganizationScope,
+  requirePageUser,
+} from "@/lib/auth/session";
 
 /**
  * Signed-in area: every page below requires a session and an active organization
@@ -11,13 +13,25 @@ import { getDb } from "@/lib/db";
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
-  const organizations = await listOrganizationsForUser(getDb(), user.id);
-  const organizationCookie = (await cookies()).get(ORGANIZATION_COOKIE)?.value ?? null;
+  const [organizations, scope, jar] = await Promise.all([
+    getOrganizationMemberships(),
+    getOrganizationScope(),
+    cookies(),
+  ]);
   return (
     <AppShell
-      user={user}
-      organizations={organizations.map((o) => ({ id: o.id, name: o.name }))}
-      organizationCookie={organizationCookie}
+      user={{
+        id: user.id,
+        organization: user.organization,
+        role: user.role,
+        scope: scope?.kind ?? "single",
+        organizations,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+      }}
+      organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
+      scopeCookie={jar.get(ORGANIZATION_SCOPE_COOKIE)?.value ?? null}
     >
       {children}
     </AppShell>

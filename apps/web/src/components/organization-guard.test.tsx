@@ -4,7 +4,7 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
-import { ORGANIZATION_COOKIE } from "@/lib/auth/routes";
+import { ORGANIZATION_COOKIE, ORGANIZATION_SCOPE_COOKIE } from "@/lib/auth/routes";
 import { ORGANIZATION_SWITCHED } from "@/lib/api/schemas";
 import {
   OrganizationGuard,
@@ -21,6 +21,13 @@ const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 function setCookie(value: string) {
   document.cookie = `${ORGANIZATION_COOKIE}=${value}; path=/`;
+}
+
+function setScopeCookie(value: "all" | null) {
+  document.cookie =
+    value === null
+      ? `${ORGANIZATION_SCOPE_COOKIE}=; path=/; max-age=0`
+      : `${ORGANIZATION_SCOPE_COOKIE}=${value}; path=/`;
 }
 
 const STALE_TITLE = "You switched organizations in another tab";
@@ -48,21 +55,33 @@ function Probe({
   return null;
 }
 
-function renderGuard(renderedCookie: string, children?: React.ReactNode) {
+function renderGuard(
+  renderedCookie: string,
+  children?: React.ReactNode,
+  renderedScopeCookie: string | null = null,
+) {
   const client = createTestQueryClient();
-  const shell = (cookie: string) => (
+  const shell = (cookie: string, scope: string | null) => (
     <QueryClientProvider client={client}>
-      <OrganizationGuard organizationName="Alpha" renderedCookie={cookie}>
+      <OrganizationGuard
+        organizationName="Alpha"
+        renderedCookie={cookie}
+        renderedScopeCookie={scope}
+      >
         {children}
       </OrganizationGuard>
     </QueryClientProvider>
   );
-  const view = render(shell(renderedCookie));
-  return { client, rerender: (cookie: string) => view.rerender(shell(cookie)) };
+  const view = render(shell(renderedCookie, renderedScopeCookie));
+  return {
+    client,
+    rerender: (cookie: string, scope: string | null = null) => view.rerender(shell(cookie, scope)),
+  };
 }
 
 beforeEach(() => {
   setCookie(A);
+  setScopeCookie(null);
   router.push.mockReset();
   router.refresh.mockReset();
 });
@@ -111,6 +130,22 @@ describe("OrganizationGuard", () => {
     // Once it has re-rendered in B, a switch in another tab is noticed again.
     rerender(B);
     setCookie(A);
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+  });
+
+  it("blocks the tab when another tab changed the organization scope", async () => {
+    const { rerender } = renderGuard(A);
+    setScopeCookie("all");
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(screen.getByText(STALE_TITLE)).toBeTruthy();
+
+    // Re-rendered under "All organizations": back to one organization elsewhere is noticed too.
+    rerender(A, "all");
+    expect(screen.queryByText(STALE_TITLE)).toBeNull();
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(screen.queryByText(STALE_TITLE)).toBeNull();
+    setScopeCookie(null);
     act(() => void window.dispatchEvent(new Event("focus")));
     expect(screen.getByText(STALE_TITLE)).toBeTruthy();
   });

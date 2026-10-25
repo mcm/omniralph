@@ -129,4 +129,24 @@ describe("Menu", () => {
     await user.click(trigger);
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("renders checkable choices as menuitemcheckbox with a check on the checked one", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const trigger = renderMenu([
+      { label: "Acme", onSelect: noop, checked: true },
+      { label: "Beta", onSelect, checked: false },
+      "separator",
+      { label: "New organization", href: "/onboarding" },
+    ]);
+    await user.click(trigger);
+    const acme = await screen.findByRole("menuitemcheckbox", { name: "Acme", checked: true });
+    expect(acme.querySelector(".or-menu__check svg")).not.toBeNull();
+    const beta = screen.getByRole("menuitemcheckbox", { name: "Beta", checked: false });
+    expect(beta.querySelector(".or-menu__check")).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "New organization" })).toBeTruthy();
+    await user.click(beta);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

@@ -2081,7 +2081,7 @@ body {
   color: var(--text-tertiary);
 }
 
-/* sidebar, auth, org-switcher, legal, onboarding: shell, brand and auth-page layout */
+/* sidebar, auth, legal, onboarding: shell, brand and auth-page layout */
 .sidebar-header {
   height: 52px;
   display: flex;
@@ -2150,14 +2150,6 @@ body {
   font-size: var(--text-ui-xs);
   background: var(--bg-raised);
   color: var(--text-secondary);
-}
-.org-switcher-trigger {
-  width: 100%;
-  justify-content: flex-start;
-  gap: var(--space-2);
-}
-.org-switcher-menu {
-  min-width: 220px;
 }
 .auth-main {
   position: relative;

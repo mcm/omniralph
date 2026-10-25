@@ -11,6 +11,8 @@ export const testUser: SessionUser = {
   id: "user-1",
   organization: { id: TEST_ORGANIZATION_ID, name: "Acme" },
   role: "admin",
+  scope: "single",
+  organizations: [{ id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" }],
   name: "Ada",
   email: "ada@example.com",
   image: null,

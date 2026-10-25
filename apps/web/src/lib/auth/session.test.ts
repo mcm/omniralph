@@ -1,6 +1,6 @@
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ORGANIZATION_COOKIE } from "./routes";
+import { ORGANIZATION_COOKIE, ORGANIZATION_SCOPE_COOKIE } from "./routes";
 
 vi.mock("server-only", () => ({}));
 vi.mock("react", async (importOriginal) => ({
@@ -18,6 +18,7 @@ const organizations = {
 
 const state = vi.hoisted(() => ({
   cookie: undefined as string | undefined,
+  scopeCookie: undefined as string | undefined,
   /** The organizations the user is a member of. */
   memberOf: [] as string[],
   /** The one they last picked on any device. */
@@ -28,13 +29,23 @@ vi.mock("@/auth", () => ({
     user: { id: "user-1", name: "Ada", email: null, image: null, theme: null },
   }),
 }));
+vi.mock("next/navigation", () => ({
+  redirect: (path: string) => {
+    throw new Error(`redirect ${path}`);
+  },
+}));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
-    get: (name: string) =>
-      name === ORGANIZATION_COOKIE && state.cookie !== undefined
-        ? { name, value: state.cookie }
-        : undefined,
+    get: (name: string) => {
+      const value =
+        name === ORGANIZATION_COOKIE
+          ? state.cookie
+          : name === ORGANIZATION_SCOPE_COOKIE
+            ? state.scopeCookie
+            : undefined;
+      return value === undefined ? undefined : { name, value };
+    },
   }),
 }));
 vi.mock("@omniralph/db", () => {
@@ -44,10 +55,13 @@ vi.mock("@omniralph/db", () => {
     getMemberOrganization: async (_db: unknown, input: { organizationId: string }) =>
       member(input.organizationId),
     getActiveOrganization: async () => member(state.lastPicked),
+    listOrganizationsForUser: async () =>
+      state.memberOf.map((id) => organizations[id as keyof typeof organizations]),
   };
 });
 
-const { getCurrentUser } = await import("./session");
+const { getCurrentUser, getOrganizationScope, requirePageUser, requireUser } =
+  await import("./session");
 
 describe("getCurrentUser", () => {
   beforeEach(() => {
@@ -81,5 +95,50 @@ describe("getCurrentUser", () => {
 
     state.memberOf = [];
     expect(await getCurrentUser()).toMatchObject({ organization: null, role: null });
+  });
+});
+
+describe("getOrganizationScope", () => {
+  beforeEach(() => {
+    state.cookie = BETA;
+    state.scopeCookie = undefined;
+    state.memberOf = [ALPHA, BETA];
+    state.lastPicked = ALPHA;
+  });
+
+  it("is every organization under the all scope with two or more memberships", async () => {
+    state.scopeCookie = "all";
+    expect(await getOrganizationScope()).toEqual({
+      kind: "all",
+      organizations: [organizations[ALPHA], organizations[BETA]],
+    });
+  });
+
+  it("is the active organization without the scope cookie, or with another value", async () => {
+    for (const scope of [undefined, "", "single", "ALL"]) {
+      state.scopeCookie = scope;
+      expect(await getOrganizationScope(), String(scope)).toEqual({
+        kind: "single",
+        organization: organizations[BETA],
+      });
+    }
+  });
+
+  it("falls back to the active organization once only one membership is left", async () => {
+    state.scopeCookie = "all";
+    state.memberOf = [ALPHA];
+    expect(await getOrganizationScope()).toEqual({
+      kind: "single",
+      organization: organizations[ALPHA],
+    });
+  });
+
+  it("leaves pages, actions and /api/ui on the single active organization under all", async () => {
+    state.scopeCookie = "all";
+    expect(await requirePageUser()).toMatchObject({
+      organization: { id: BETA, name: "Beta" },
+      role: "member",
+    });
+    expect(await requireUser()).toMatchObject({ organization: { id: BETA }, role: "member" });
   });
 });

@@ -53,8 +53,14 @@ export const memberChangeSchema = z.object({ role: z.string() });
 
 export const domainInputSchema = z.object({ domain: z.string() });
 
-/** `POST /api/ui/organizations/switch`. */
-export const switchOrganizationSchema = z.object({ organizationId: z.string() });
+/**
+ * `POST /api/ui/organizations/switch`: one organization (`organizationId`) or all of the
+ * caller's (`scope: "all"`).
+ */
+export const switchOrganizationSchema = z.union([
+  z.object({ organizationId: z.string() }),
+  z.object({ scope: z.literal("all") }),
+]);
 
 /** `GET /api/ui/chat-accounts`: the caller's linked chat accounts, in every organization. */
 export const chatAccountSchema = z.object({

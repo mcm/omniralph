@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "@iamthemcmaster/ui/styles";
 import "@iamthemcmaster/ui/styles/fonts";
+import "@omniralph/ui/fonts.css";
+import "@omniralph/ui/styles.css";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/auth/session";
 import { THEME_BOOTSTRAP } from "@/lib/theme";
