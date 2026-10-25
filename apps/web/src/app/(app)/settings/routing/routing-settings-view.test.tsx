@@ -408,6 +408,7 @@ describe("Test an issue", () => {
     issue: { identifier: "OPS-1", title: "Infra" },
     outcome: "ask",
     repository: null,
+    matched: "default",
     rule: { kind: "default", number: 3 },
     by: null,
   };
@@ -437,6 +438,7 @@ describe("Test an issue", () => {
         issue: { identifier: "ENG-11", title: "Story" },
         outcome: "repository",
         repository: { id: API, fullPath: "mcm/api" },
+        matched: "default",
         rule: { kind: "default", number: 2 },
         by: "sub-issue of ENG-10 → rule 1 (Team is ENG)",
       } satisfies RoutingTestResult),
@@ -456,12 +458,34 @@ describe("Test an issue", () => {
     ]);
   });
 
+  it("shows a route by a work item match", async () => {
+    serveTests([labelsRule, teamRule], () =>
+      jsonResponse({
+        issue: { identifier: "SOC-1", title: "Portal" },
+        outcome: "repository",
+        repository: { id: API, fullPath: "mcm/api" },
+        matched: "match",
+        rule: null,
+        by: "work item match (Team is SOC, label product:portal)",
+      } satisfies RoutingTestResult),
+    );
+    renderView();
+    await screen.findByRole("listitem", { name: "Rule 2" });
+    await testIssue("SOC-1");
+    const route = await screen.findByLabelText("Route of SOC-1");
+    expect(route.textContent).toContain("Work item match");
+    expect(route.textContent).toContain(
+      "work item match (Team is SOC, label product:portal) → mcm/api",
+    );
+  });
+
   it("sends the draft, not the saved rules, and says when it changed since", async () => {
     const seen = serveTests([labelsRule, teamRule], () =>
       jsonResponse({
         issue: { identifier: "ENG-1", title: "Docs" },
         outcome: "manual",
         repository: { id: WEB, fullPath: "mcm/web" },
+        matched: "rule",
         rule: { kind: "custom", number: 1, summary: "Team is ENG" },
         by: "rule 1 (Team is ENG)",
       } satisfies RoutingTestResult),

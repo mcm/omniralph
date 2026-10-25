@@ -2,6 +2,7 @@ import "server-only";
 import {
   getAllowedTaskTypeDefaults,
   getRepositoryWithConnection,
+  getWorkItemMatch,
   listHarnessOverview,
   listReportedModels,
   listRepositoryCodingHarnessIds,
@@ -29,6 +30,7 @@ import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 import { repositoryManualLabels } from "@/lib/ralph/epic-loader";
 import { describeQuery } from "@/lib/routing/describe";
 import { repositoryWebUrl } from "./web-url";
+import { workItemMatchRow } from "./work-item-match";
 
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
 const NPM_TIMEOUT_MS = 2_000;
@@ -54,6 +56,8 @@ export async function loadRepositoryDetail(
     reviewTasks,
     correlationTasks,
     allowedTaskTypes,
+    workItemMatch,
+    rules,
   ] = await Promise.all([
     listHarnessOverview(db, organizationId).then(withLastSeen),
     organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
@@ -61,6 +65,8 @@ export async function loadRepositoryDetail(
     listTaskDefinitions(db, organizationId, REVIEW_TASKS),
     listTaskChoices(db, organizationId, CORRELATION_TASKS),
     getAllowedTaskTypeDefaults(db, organizationId),
+    getWorkItemMatch(db, organizationId, id),
+    listRoutingRules(db, organizationId),
   ]);
   const now = new Date();
   return {
@@ -106,6 +112,12 @@ export async function loadRepositoryDetail(
         coding: allowedTaskTypes.includes("coding"),
       },
     },
+    workItemMatch: workItemMatch ? workItemMatchRow(workItemMatch) : null,
+    routingRules: rules.flatMap((rule, index) =>
+      rule.repositoryId === id
+        ? [{ position: index + 1, description: describeQuery(rule.query, LINEAR_ROUTING_FIELDS) }]
+        : [],
+    ),
   };
 }
 

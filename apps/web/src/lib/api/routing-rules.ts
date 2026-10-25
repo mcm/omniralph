@@ -1,6 +1,7 @@
 import type { RoutingQuery } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, linearSettingsOptionsSchema } from "./schemas";
+import type { WorkItemMatchInput } from "./work-item-matches";
 
 /** Settings › Routing (`/api/ui/routing-rules`: members read, admins save). */
 
@@ -73,10 +74,16 @@ export const savedRoutingRulesSchema = z.object({
 });
 export type SavedRoutingRules = z.infer<typeof savedRoutingRulesSchema>;
 
-/** `POST /api/ui/routing-rules/test`'s body: an issue and the rules to route it by (unsaved). */
+/**
+ * `POST /api/ui/routing-rules/test`'s body: an issue, the rules to route it by (unsaved) and,
+ * optionally, a repository's unsaved work item match (null: cleared) applied to the saved ones.
+ */
 export const routingTestRequestSchema = z.object({
   identifier: z.string(),
   rules: z.array(z.object({ repositoryId: z.string(), query: z.custom<RoutingQuery>() })),
+  workItemMatch: z
+    .object({ repositoryId: z.string(), match: z.custom<WorkItemMatchInput>().nullable() })
+    .optional(),
 });
 export type RoutingTestRequest = z.infer<typeof routingTestRequestSchema>;
 
@@ -86,15 +93,28 @@ export const routingTestResultSchema = z.object({
   /** `repository` builds there (coding on), `manual` is for a person (coding off), `ask` asks. */
   outcome: z.enum(["repository", "manual", "ask"]),
   repository: z.object({ id: z.string(), fullPath: z.string() }).nullable(),
-  /** The rule the issue itself matched: a custom one (1-based) or a default one (1–3). */
-  rule: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("custom"), number: z.number(), summary: z.string() }),
-    z.object({
-      kind: z.literal("default"),
-      number: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-    }),
-  ]),
-  /** The route's `routed_by`, e.g. `sub-issue of ENG-10 → rule 2 (Team is ENG)`; null when it asks. */
+  /**
+   * What the issue itself matched: a routing rule, a work item match (or a tie of the most
+   * specific ones, which asks) or a default rule.
+   */
+  matched: z.enum(["rule", "match", "default"]),
+  /**
+   * The rule the issue itself matched: a custom one (1-based) or a default one (1–3); null for
+   * a work item match.
+   */
+  rule: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("custom"), number: z.number(), summary: z.string() }),
+      z.object({
+        kind: z.literal("default"),
+        number: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      }),
+    ])
+    .nullable(),
+  /**
+   * The route's `routed_by`, e.g. `sub-issue of ENG-10 → rule 2 (Team is ENG)`; null when it
+   * asks, except for a tie of work item matches, which names their repositories.
+   */
   by: z.string().nullable(),
 });
 export type RoutingTestResult = z.infer<typeof routingTestResultSchema>;

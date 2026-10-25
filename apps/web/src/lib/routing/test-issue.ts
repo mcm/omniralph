@@ -1,15 +1,21 @@
 import "server-only";
 import { InvalidInputLinearError } from "@linear/sdk";
-import { listLatestIssueRuns, type Database, type RoutingRule } from "@omniralph/db";
+import {
+  listLatestIssueRuns,
+  listWorkItemMatches,
+  type Database,
+  type RoutingRule,
+} from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RoutingPreviewItem, RoutingTestResult } from "@/lib/api/routing-rules";
+import type { WorkItemMatchInput } from "@/lib/api/work-item-matches";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import { fixtureLinearEnabled, fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
 import type { LinearGateway, RoutingIssue } from "@/lib/linear/gateway";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
-import { createRouter, type RouteDeps } from "./resolve";
+import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
 
 /** Most "Test an issue" and routing preview requests one user may make a minute (shared). */
 export const ROUTING_TEST_LIMIT = 30;
@@ -22,18 +28,38 @@ type Rules = readonly Pick<RoutingRule, "repositoryId" | "query">[];
 /** A work item's route (`routeIssues`), as the preview answers it. */
 export type RoutedIssue = Exclude<RoutingPreviewItem, { outcome: "not_found" }>;
 
+/** A repository's unsaved work item match (null: cleared) to test with. */
+export interface UnsavedWorkItemMatch {
+  repositoryId: string;
+  match: WorkItemMatchInput | null;
+}
+
+/** The saved work item matches with `unsaved` applied: its repository's replaced or cleared. */
+async function matchesWith(
+  deps: Pick<RouteDeps, "db" | "organizationId">,
+  unsaved: UnsavedWorkItemMatch,
+): Promise<RouteWorkItemMatch[]> {
+  const saved = await listWorkItemMatches(deps.db, deps.organizationId);
+  const others = saved.filter((m) => m.repositoryId !== unsaved.repositoryId);
+  return unsaved.match
+    ? [...others, { ...unsaved.match, repositoryId: unsaved.repositoryId }]
+    : others;
+}
+
 /**
  * Where each of `identifiers` routes under `rules` (the saved list, or Settings › Routing's
- * unsaved one, already validated), by the same router delegation, triage, story lanes and
- * follow-ups use, in the order sent. An issue Linear doesn't know is a `not_found` result.
+ * unsaved one, already validated) and the work item matches, with `unsaved` applied when
+ * given, by the same router delegation, triage, story lanes and follow-ups use, in the order
+ * sent. An issue Linear doesn't know is a `not_found` result.
  *
  * Linear is asked once per issue in the request: the issues sent are loaded first, and
  * every later lookup (a parent, a follow-up's source, an issue sent twice) reuses them.
  */
 export async function routeIssues(
-  deps: Omit<RouteDeps, "rules">,
+  deps: Omit<RouteDeps, "rules" | "matches">,
   identifiers: readonly string[],
   rules: Rules,
+  unsaved?: UnsavedWorkItemMatch,
 ): Promise<RoutingPreviewItem[]> {
   const linear = dedupedRoutingFields(deps.linear);
   const loaded = new Map(
@@ -43,7 +69,8 @@ export async function routeIssues(
       ),
     ),
   );
-  const router = await createRouter({ ...deps, linear, rules });
+  const matches = unsaved ? await matchesWith(deps, unsaved) : undefined;
+  const router = await createRouter({ ...deps, linear, rules, ...(matches && { matches }) });
   const issueIds = [...loaded.values()].flatMap((l) => (l ? [l.issue.id] : []));
   const runs = await listLatestIssueRuns(deps.db, deps.organizationId, issueIds);
 
@@ -61,34 +88,54 @@ export async function routeIssues(
         run: runs.get(issue.id) ?? null,
       };
       if ("ask" in route) {
-        return {
-          ...base,
-          outcome: "ask",
-          repository: null,
-          rule: { kind: "default", number: 3 },
-          by: null,
-        };
+        // `by` is set only when work item matches tie.
+        return route.by
+          ? {
+              ...base,
+              outcome: "ask",
+              repository: null,
+              matched: "match",
+              rule: null,
+              by: route.by,
+            }
+          : {
+              ...base,
+              outcome: "ask",
+              repository: null,
+              matched: "default",
+              rule: { kind: "default", number: 3 },
+              by: null,
+            };
       }
       const manual = "manual" in route;
       const repository = manual ? route.manual : route.repository;
       const ruleQuery = route.rule === undefined ? undefined : rules[route.rule - 1]?.query;
-      return {
+      const routed = {
         ...base,
-        outcome: manual ? "manual" : "repository",
+        outcome: manual ? ("manual" as const) : ("repository" as const),
         repository: {
           id: repository.id,
           fullPath: repository.fullPath,
           codingEnabled: repository.effective.coding,
         },
-        rule:
-          route.rule !== undefined && ruleQuery
-            ? {
-                kind: "custom",
-                number: route.rule,
-                summary: describeQuery(ruleQuery, LINEAR_ROUTING_FIELDS),
-              }
-            : { kind: "default", number: route.defaultRule ?? 3 },
         by: route.by,
+      };
+      if (route.rule !== undefined && ruleQuery) {
+        return {
+          ...routed,
+          matched: "rule",
+          rule: {
+            kind: "custom",
+            number: route.rule,
+            summary: describeQuery(ruleQuery, LINEAR_ROUTING_FIELDS),
+          },
+        };
+      }
+      if (route.workItemMatch) return { ...routed, matched: "match", rule: null };
+      return {
+        ...routed,
+        matched: "default",
+        rule: { kind: "default", number: route.defaultRule ?? 3 },
       };
     }),
   );
@@ -96,22 +143,25 @@ export async function routeIssues(
 
 /**
  * Settings › Routing's "Test an issue": where `identifier` routes under `rules` (the unsaved
- * list, already validated), by `routeIssues`. An issue Linear doesn't know answers 404.
+ * list, already validated) and the work item matches, with `unsaved` applied when given, by
+ * `routeIssues`. An issue Linear doesn't know answers 404.
  */
 export async function testRoutingRules(
-  deps: Omit<RouteDeps, "rules">,
+  deps: Omit<RouteDeps, "rules" | "matches">,
   identifier: string,
   rules: Rules,
+  unsaved?: UnsavedWorkItemMatch,
 ): Promise<RoutingTestResult> {
-  const [result] = await routeIssues(deps, [identifier], rules);
+  const [result] = await routeIssues(deps, [identifier], rules, unsaved);
   if (!result || result.outcome === "not_found") {
     throw new ApiRouteError(404, unknownIssueMessage(identifier), "not_found");
   }
-  const { issue, outcome, repository, rule, by } = result;
+  const { issue, outcome, repository, matched, rule, by } = result;
   return {
     issue,
     outcome,
     repository: repository && { id: repository.id, fullPath: repository.fullPath },
+    matched,
     rule,
     by,
   };

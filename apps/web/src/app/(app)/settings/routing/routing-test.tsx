@@ -50,9 +50,11 @@ function Outcome({ result }: { result: RoutingTestResult }) {
 function Result({ result, defaults }: { result: RoutingTestResult; defaults: DefaultLabels }) {
   const { rule } = result;
   const matched =
-    rule.kind === "custom"
-      ? `Rule ${rule.number}: ${rule.summary}`
-      : `Default rule: ${defaults[rule.number - 1]}`;
+    rule === null
+      ? "Work item match"
+      : rule.kind === "custom"
+        ? `Rule ${rule.number}: ${rule.summary}`
+        : `Default rule: ${defaults[rule.number - 1]}`;
   return (
     <dl className="routing-test-result" aria-label={`Route of ${result.issue.identifier}`}>
       <dt>Issue</dt>

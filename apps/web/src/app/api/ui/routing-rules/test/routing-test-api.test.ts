@@ -10,9 +10,12 @@ import {
   ralphRuns,
   rateLimits,
   recordFollowUpSource,
+  saveWorkItemMatch,
   setRepositorySwitches,
   upsertScmConnection,
+  workItemMatches,
   type Database,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { RoutingQuery } from "@omniralph/shared";
@@ -144,6 +147,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     await state.db.delete(ralphRuns);
     await state.db.delete(followUpSources);
     await state.db.delete(rateLimits);
+    await state.db.delete(workItemMatches);
     await setRoutingRules(state.db, state.orgId);
     linear = new FakeLinearGateway();
     state.linear = linear;
@@ -161,6 +165,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       issue: { identifier: "ENG-1", title: "UI" },
       outcome: "repository",
       repository: { id: web, fullPath: "acme/web" },
+      matched: "rule",
       rule: { kind: "custom", number: 2, summary: "Labels contains any of frontend" },
       by: "rule 2 (Labels contains any of frontend)",
     } satisfies RoutingTestResult);
@@ -178,6 +183,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       issue: { identifier: "ENG-11", title: "Story" },
       outcome: "manual",
       repository: { id: docs, fullPath: "acme/docs" },
+      matched: "default",
       rule: { kind: "default", number: 2 },
       by: "sub-issue of ENG-10 → rule 1 (Labels contains any of docs)",
     } satisfies RoutingTestResult);
@@ -185,9 +191,115 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       issue: { identifier: "OPS-1", title: "Infra" },
       outcome: "ask",
       repository: null,
+      matched: "default",
       rule: { kind: "default", number: 3 },
       by: null,
     } satisfies RoutingTestResult);
+  });
+
+  describe("work item matches", () => {
+    const fields = (partial: Partial<WorkItemMatchFields> = {}): WorkItemMatchFields => ({
+      tracker: "linear",
+      team: "ENG",
+      project: null,
+      withoutProject: false,
+      labels: [],
+      ...partial,
+    });
+    const saveMatch = (repositoryId: string, partial: Partial<WorkItemMatchFields> = {}) =>
+      saveWorkItemMatch(state.db, {
+        organizationId: state.orgId,
+        repositoryId,
+        userId: null,
+        match: fields(partial),
+      });
+
+    it("routes by the saved matches after the rules", async () => {
+      await saveMatch(api, { labels: ["backend"] });
+      linear.add({ identifier: "ENG-1", title: "API", labels: ["Backend"] });
+      expect((await test("ENG-1", [])).body).toEqual({
+        issue: { identifier: "ENG-1", title: "API" },
+        outcome: "repository",
+        repository: { id: api, fullPath: "acme/api" },
+        matched: "match",
+        rule: null,
+        by: "work item match (Team is ENG, label backend)",
+      } satisfies RoutingTestResult);
+      // A rule that matches comes first.
+      expect((await test("ENG-1", [[web, labelsInclude("backend")]])).body).toMatchObject({
+        matched: "rule",
+        repository: { id: web },
+      });
+    });
+
+    it("applies an unsaved match, replacing or clearing its repo's saved one, and saves nothing", async () => {
+      await saveMatch(api, {});
+      linear.add({ identifier: "ENG-1", title: "UI", labels: ["frontend"] });
+      const withUnsaved = await post({
+        identifier: "ENG-1",
+        rules: [],
+        workItemMatch: {
+          repositoryId: web,
+          match: { tracker: "linear", team: "eng", labels: ["frontend"] },
+        },
+      });
+      expect(withUnsaved.body).toMatchObject({
+        outcome: "repository",
+        repository: { id: web },
+        matched: "match",
+        by: "work item match (Team is eng, label frontend)",
+      });
+      // Replacing api's own match with one for another team leaves nothing to match.
+      const replaced = await post({
+        identifier: "ENG-1",
+        rules: [],
+        workItemMatch: { repositoryId: api, match: { tracker: "linear", team: "OPS" } },
+      });
+      expect(replaced.body).toMatchObject({ outcome: "ask", matched: "default", by: null });
+      const cleared = await post({
+        identifier: "ENG-1",
+        rules: [],
+        workItemMatch: { repositoryId: api, match: null },
+      });
+      expect(cleared.body).toMatchObject({ outcome: "ask", matched: "default" });
+      expect(await state.db.select().from(workItemMatches)).toEqual([
+        expect.objectContaining({ repositoryId: api, team: "ENG", labels: [] }),
+      ]);
+    });
+
+    it("asks on a tie, naming the tied repos", async () => {
+      await saveMatch(api, { labels: ["backend"] });
+      linear.add({ identifier: "ENG-1", title: "Both", labels: ["backend", "docs"] });
+      const { body } = await post({
+        identifier: "ENG-1",
+        rules: [],
+        workItemMatch: {
+          repositoryId: docs,
+          match: { tracker: "linear", team: "ENG", labels: ["docs"] },
+        },
+      });
+      expect(body).toEqual({
+        issue: { identifier: "ENG-1", title: "Both" },
+        outcome: "ask",
+        repository: null,
+        matched: "match",
+        rule: null,
+        by: "work item matches of acme/api, acme/docs tie",
+      } satisfies RoutingTestResult);
+    });
+
+    it("validates the unsaved match", async () => {
+      linear.add({ identifier: "ENG-1", title: "UI" });
+      const invalid = await post({
+        identifier: "ENG-1",
+        rules: [],
+        workItemMatch: { repositoryId: web, match: { tracker: "linear", team: "" } },
+      });
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.fieldErrors).toEqual({
+        "workItemMatch.match.team": "Enter the team's key, e.g. ENG.",
+      });
+    });
   });
 
   it("answers 404 for an unknown issue and 409 without Linear", async () => {
@@ -291,6 +403,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       expect(tested).toMatchObject({
         outcome: "repository",
         repository: { id: api },
+        matched: "default",
         rule: { kind: "default", number: 1 },
         by: "follow-up of ENG-20 → rule 3 (Title equals Source)",
       });

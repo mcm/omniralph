@@ -1,6 +1,8 @@
 /**
  * Which repository an issue routes to (`resolveRoute`): the organization's routing rules in
- * order (the first match wins), then the default rules, which aren't stored:
+ * order (the first match wins), whenever it has any; then the work item matches of its
+ * connected repositories (`match.ts`: the most specific one wins, and a tie asks); then the
+ * default rules, which aren't stored:
  *
  *   1. follow-up   route it the same as the issue it was filed from (its source)
  *   2. sub-issue   route it the same as its parent
@@ -21,11 +23,13 @@ import {
   getIssueRepository,
   listRoutingRepositories,
   listRoutingRules,
+  listWorkItemMatches,
   type Database,
   type RepositoryWithSwitches,
   type RoutingRule,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import type { LinearGateway, RoutingIssueFields } from "@/lib/linear/gateway";
 import {
   LINEAR_ROUTING_FIELDS,
   LINEAR_ROUTING_FIELD_TYPES,
@@ -33,6 +37,7 @@ import {
 } from "@/lib/linear/routing-fields";
 import { describeRule } from "./describe";
 import { evaluateQuery } from "./evaluate";
+import { describeMatchRoute, describeMatchTie, matchesWorkItem, specificity } from "./match";
 
 /** Most "route the same as another issue" steps one resolution takes. */
 export const MAX_ROUTE_HOPS = 5;
@@ -42,8 +47,11 @@ export type RouteOutcome<R = RepositoryWithSwitches> =
   | ({ repository: R } & RouteMatch)
   /** The issue routes to `manual`, whose coding is off: it's for a person. */
   | ({ manual: R } & RouteMatch)
-  /** Nothing routes it: ask which repository to use. */
-  | { ask: true };
+  /**
+   * Nothing routes it: ask which repository to use. `by` is set when the most specific work
+   * item matches tie: it names their repositories.
+   */
+  | { ask: true; by?: string };
 
 /** How an issue's own rules routed it. */
 export interface RouteMatch {
@@ -53,6 +61,8 @@ export interface RouteMatch {
   rule?: number;
   /** The default rule the issue itself matched: 1 follow-up, 2 sub-issue (3 asks). */
   defaultRule?: 1 | 2;
+  /** The issue itself matched its repository's work item match. */
+  workItemMatch?: true;
 }
 
 /** A route to a repository (coding on or off), with `rule` set for a direct custom-rule match. */
@@ -72,11 +82,19 @@ export interface RouteDeps {
   linear: Pick<LinearGateway, "getRoutingFields">;
   /** Rules to route by instead of the saved ones, in order (Settings › Routing's unsaved list). */
   rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
+  /** Work item matches to route by instead of the saved ones (an unsaved match applied). */
+  matches?: readonly RouteWorkItemMatch[];
 }
 
+/** A repository's work item match, as routing reads it. */
+export type RouteWorkItemMatch = WorkItemMatchFields & { repositoryId: string };
+
 export interface Router {
-  /** Whether the organization has custom rules (without any, only the default rules route). */
-  readonly hasCustomRules: boolean;
+  /**
+   * Whether the organization has routing rules or work item matches (without any, only the
+   * default rules route).
+   */
+  readonly hasCustomRoutes: boolean;
   /** The route of an issue (by ID or identifier), memoized for the router's lifetime. */
   resolve(issueId: string): Promise<RouteOutcome>;
 }
@@ -88,11 +106,17 @@ const ASK = { ask: true } as const;
  * decision, so every lookup in it sees the same rules.
  */
 export async function createRouter(deps: RouteDeps): Promise<Router> {
-  const [rules, repositories] = await Promise.all([
+  const [rules, savedMatches, repositories] = await Promise.all([
     deps.rules ?? listRoutingRules(deps.db, deps.organizationId),
+    deps.matches ?? listWorkItemMatches(deps.db, deps.organizationId),
     listRoutingRepositories(deps.db, deps.organizationId),
   ]);
   const byId = new Map(repositories.map((r) => [r.id, r]));
+  // A match whose repository is disconnected routes nothing.
+  const matches = savedMatches.flatMap((match) => {
+    const repository = byId.get(match.repositoryId);
+    return repository ? [{ match, repository }] : [];
+  });
   const memo = new Map<string, Promise<RouteOutcome>>();
 
   const outcome = (repository: RepositoryWithSwitches, by: string, rule?: number): RoutedOutcome =>
@@ -112,7 +136,32 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     return null;
   };
 
-  /** The route of `issueId` itself: the rules, then the defaults. */
+  /** The most specific work item match of `issue`; a tie asks, naming the tied repositories. */
+  const matchWorkItem = (issue: RoutingIssueFields): RouteOutcome | null => {
+    let best: typeof matches = [];
+    let bestSpecificity = -1;
+    for (const candidate of matches) {
+      if (!matchesWorkItem(candidate.match, issue)) continue;
+      const value = specificity(candidate.match);
+      if (value > bestSpecificity) {
+        best = [candidate];
+        bestSpecificity = value;
+      } else if (value === bestSpecificity) {
+        best.push(candidate);
+      }
+    }
+    const [winner, ...tied] = best;
+    if (!winner) return null;
+    if (tied.length > 0) {
+      return { ask: true, by: describeMatchTie(best.map((c) => c.repository.fullPath)) };
+    }
+    const by = describeMatchRoute(winner.match);
+    return winner.repository.effective.coding
+      ? { repository: winner.repository, by, workItemMatch: true }
+      : { manual: winner.repository, by, workItemMatch: true };
+  };
+
+  /** The route of `issueId` itself: the rules, the work item matches, then the defaults. */
   const resolveIssue = async (
     issueId: string,
     seen: ReadonlySet<string>,
@@ -126,7 +175,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     const sourceId = await getFollowUpSource(deps.db, deps.organizationId, issue.id);
     const source = sourceId ? await sourceFields(issue.identifier, sourceId) : null;
 
-    const matched = matchRules(linearRoutingValues(routing, source));
+    const matched = matchRules(linearRoutingValues(routing, source)) ?? matchWorkItem(issue);
     if (matched) return matched;
 
     // Default rule 1: a follow-up routes the same as its source.
@@ -188,7 +237,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     describeRule(index + 1, rule.query, LINEAR_ROUTING_FIELDS);
 
   return {
-    hasCustomRules: rules.length > 0,
+    hasCustomRoutes: rules.length > 0 || matches.length > 0,
     resolve(issueId) {
       let route = memo.get(issueId);
       if (!route) {

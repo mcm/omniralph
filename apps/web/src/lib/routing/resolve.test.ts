@@ -12,9 +12,12 @@ import {
   recordFollowUpSource,
   repositories,
   replaceRoutingRules,
+  saveWorkItemMatch,
   upsertScmConnection,
   upsertStories,
+  workItemMatches,
   type Database,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -58,6 +61,22 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       list.map(([repositoryId, query]) => ({ repositoryId, query })),
     );
     expect(saved.ok).toBe(true);
+  };
+  const match = async (repositoryId: string, fields: Partial<WorkItemMatchFields>) => {
+    const saved = await saveWorkItemMatch(db, {
+      organizationId: orgId,
+      repositoryId,
+      userId: null,
+      match: {
+        tracker: "linear",
+        team: "ENG",
+        project: null,
+        withoutProject: false,
+        labels: [],
+        ...fields,
+      },
+    });
+    expect(saved).not.toBeNull();
   };
   const runOf = (issueId: string, identifier: string, repositoryId: string, routedBy: string) =>
     createRun(db, {
@@ -113,6 +132,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
   beforeEach(async () => {
     await db.delete(ralphRuns);
     await db.delete(followUpSources);
+    await db.delete(workItemMatches);
     await rules();
     linear = new FakeLinearGateway();
   });
@@ -120,9 +140,9 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
   it("asks when there are no rules", async () => {
     const issue = linear.add({ title: "Anything", labels: ["backend"] });
     expect(await resolveRoute(deps(), issue.id)).toEqual({ ask: true });
-    expect((await createRouter(deps())).hasCustomRules).toBe(false);
+    expect((await createRouter(deps())).hasCustomRoutes).toBe(false);
     await rules([api, labels("backend")]);
-    expect((await createRouter(deps())).hasCustomRules).toBe(true);
+    expect((await createRouter(deps())).hasCustomRoutes).toBe(true);
   });
 
   it("takes the first rule that matches, in order", async () => {
@@ -160,6 +180,151 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     await disconnectRepository(db, orgId, gone);
     const issue = linear.add({ title: "Any" });
     expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: web } });
+  });
+
+  describe("work item matches", () => {
+    it("routes by a repository's match when no rule matches", async () => {
+      await match(api, { team: "eng" });
+      const issue = linear.add({ title: "API" });
+      expect(await resolveRoute(deps(), issue.id)).toEqual({
+        repository: expect.objectContaining({ id: api }),
+        by: "work item match (Team is eng)",
+        workItemMatch: true,
+      });
+      expect((await createRouter(deps())).hasCustomRoutes).toBe(true);
+      // Another team's work item matches nothing and asks.
+      const other = linear.add({ title: "Ops", teamKey: "OPS" });
+      expect(await resolveRoute(deps(), other.id)).toEqual({ ask: true });
+    });
+
+    it("takes the most specific match", async () => {
+      await match(api, {});
+      await match(web, { labels: ["product:portal"] });
+      await match(docs, { project: "Portal", labels: ["product:portal"] });
+      const plain = linear.add({ title: "Plain" });
+      const labelled = linear.add({ title: "Labelled", labels: ["Product:Portal"] });
+      const both = linear.add({
+        title: "Both",
+        labels: ["product:portal"],
+        projectName: "portal",
+      });
+      expect(await resolveRoute(deps(), plain.id)).toMatchObject({ repository: { id: api } });
+      expect(await resolveRoute(deps(), labelled.id)).toMatchObject({
+        repository: { id: web },
+        by: "work item match (Team is ENG, label product:portal)",
+      });
+      // Coding off there: manual.
+      expect(await resolveRoute(deps(), both.id)).toEqual({
+        manual: expect.objectContaining({ id: docs }),
+        by: "work item match (Team is ENG, project Portal, label product:portal)",
+        workItemMatch: true,
+      });
+    });
+
+    it("asks when the most specific matches tie, naming their repositories", async () => {
+      await match(api, { labels: ["backend"] });
+      await match(web, { withoutProject: true });
+      await match(docs, {});
+      const issue = linear.add({ title: "Tie", labels: ["backend"] });
+      expect(await resolveRoute(deps(), issue.id)).toEqual({
+        ask: true,
+        by: "work item matches of acme/api, acme/web tie",
+      });
+    });
+
+    it("tries the routing rules first, even over a more specific match", async () => {
+      await rules([web, team("ENG")]);
+      await match(api, { project: "Portal", labels: ["backend"] });
+      const issue = linear.add({ title: "API", labels: ["backend"], projectName: "Portal" });
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({
+        repository: { id: web },
+        rule: 1,
+      });
+      // An issue no rule matches still routes by the matches.
+      await rules([web, labels("frontend")]);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({
+        repository: { id: api },
+        workItemMatch: true,
+      });
+    });
+
+    it("comes before the default rules", async () => {
+      await match(web, { labels: ["ui"] });
+      const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
+      const story = linear.add({
+        identifier: "ENG-11",
+        title: "Story",
+        parentId: epic.id,
+        labels: ["ui"],
+      });
+      const plain = linear.add({ identifier: "ENG-12", title: "Plain", parentId: epic.id });
+      await runOf(epic.id, "ENG-10", api, ROUTED_BY_SELECTION);
+      expect(await resolveRoute(deps(), story.id)).toMatchObject({
+        repository: { id: web },
+        workItemMatch: true,
+      });
+      // Without a match of its own, a sub-issue still routes as its parent.
+      expect(await resolveRoute(deps(), plain.id)).toMatchObject({
+        repository: { id: api },
+        defaultRule: 2,
+      });
+    });
+
+    it("skips a disconnected repository's match", async () => {
+      const { id: gone } = await connectRepository(db, {
+        connectionId: (await db.select().from(repositories).where(eq(repositories.id, api)))[0]!
+          .connectionId,
+        provider: "github",
+        externalId: "gone-match",
+        fullPath: "acme/gone-match",
+      });
+      await match(gone, { labels: ["backend"] });
+      await match(web, {});
+      const issue = linear.add({ title: "Any", labels: ["backend"] });
+      // Disconnected after its match was saved: only web's match is left.
+      await disconnectRepository(db, orgId, gone);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: web } });
+      // An unsaved override is filtered the same way.
+      const route = await resolveRoute(
+        {
+          ...deps(),
+          matches: [
+            {
+              repositoryId: gone,
+              tracker: "linear",
+              team: "ENG",
+              project: null,
+              withoutProject: false,
+              labels: [],
+            },
+          ],
+        },
+        issue.id,
+      );
+      expect(route).toEqual({ ask: true });
+    });
+
+    it("routes by unsaved matches instead of the saved ones", async () => {
+      await match(api, {});
+      const issue = linear.add({ title: "Any" });
+      const route = await resolveRoute(
+        {
+          ...deps(),
+          matches: [
+            {
+              repositoryId: web,
+              tracker: "linear",
+              team: "ENG",
+              project: null,
+              withoutProject: false,
+              labels: [],
+            },
+          ],
+        },
+        issue.id,
+      );
+      expect(route).toMatchObject({ repository: { id: web }, workItemMatch: true });
+    });
   });
 
   it("tests the parent's fields", async () => {
