@@ -1,5 +1,9 @@
 import "server-only";
-import { consumeOAuthState, saveChatConnection } from "@omniralph/db";
+import {
+  consumeOAuthState,
+  getChatConnectionByExternalId,
+  saveChatConnection,
+} from "@omniralph/db";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   createSignedState,
@@ -7,6 +11,7 @@ import {
   SIGNED_STATE_TTL_SECONDS,
 } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
+import { connectingWithHistory, settingsActor } from "@/lib/settings-history/sections";
 import { INTEGRATIONS_PATH, requireInstallAdmin } from "./install-auth";
 import {
   exchangeSlackCode,
@@ -104,14 +109,23 @@ export async function slackCallback(
       { code, redirectUri: slackRedirectUri() },
       deps.fetch,
     );
-    saved = await saveChatConnection<SlackCredentials>(db, {
+    const existing = await getChatConnectionByExternalId(db, "slack", installation.externalId);
+    saved = await connectingWithHistory(
+      db,
+      settingsActor(admin),
       organizationId,
-      platform: "slack",
-      externalId: installation.externalId,
-      name: installation.name,
-      credentials: installation.credentials,
-      installedByUserId: admin.id,
-    });
+      existing?.organizationId === organizationId ? existing.id : null,
+      (tx) =>
+        saveChatConnection<SlackCredentials>(tx, {
+          organizationId,
+          platform: "slack",
+          externalId: installation.externalId,
+          name: installation.name,
+          credentials: installation.credentials,
+          installedByUserId: admin.id,
+        }),
+      (result) => (result === "other_organization" ? null : result.id),
+    );
   } catch (error) {
     console.error("Slack OAuth callback failed", {
       name: error instanceof Error ? error.name : typeof error,

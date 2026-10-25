@@ -1,8 +1,9 @@
-import { consumeOAuthState, saveIntegration } from "@omniralph/db";
+import { consumeOAuthState, getIntegration, saveIntegration } from "@omniralph/db";
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser } from "@/lib/auth/session";
+import { connectingWithHistory, settingsActor } from "@/lib/settings-history/sections";
 import { readSignedState } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
 import { SdkLinearGateway } from "@/lib/linear/gateway";
@@ -66,14 +67,23 @@ async function get(request: NextRequest) {
   try {
     const credentials = await exchangeCode(config, { code, redirectUri: linearRedirectUri() });
     const workspace = await new SdkLinearGateway(credentials.accessToken).getOrganization();
-    saved = await saveIntegration(db, {
+    const existing = await getIntegration(db, organizationId, "linear");
+    saved = await connectingWithHistory(
+      db,
+      settingsActor(admin),
       organizationId,
-      provider: "linear",
-      externalId: workspace.id,
-      name: workspace.name,
-      credentials,
-      installedByUserId: admin.id,
-    });
+      existing?.id ?? null,
+      (tx) =>
+        saveIntegration(tx, {
+          organizationId,
+          provider: "linear",
+          externalId: workspace.id,
+          name: workspace.name,
+          credentials,
+          installedByUserId: admin.id,
+        }),
+      (result) => (result === "other_organization" ? null : result.id),
+    );
   } catch (error) {
     console.error("Linear OAuth callback failed", {
       name: error instanceof Error ? error.name : typeof error,

@@ -39,6 +39,13 @@ vi.mock("@omniralph/db", async () => {
   const { HOST_TOOL_NAME_PATTERN } = await import("@omniralph/shared");
   const { TASK_TYPES } = await import("@omniralph/tasks");
   return {
+    // The change history is covered by its own tests: a save just runs.
+    withSettingsChanges: async (
+      db: unknown,
+      _actor: unknown,
+      _tracked: unknown,
+      save: (tx: unknown) => Promise<unknown>,
+    ) => save(db),
     TRACK_LATEST_HARNESS_VERSION: "latest",
     DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
     DEFAULT_ALLOWED_TASK_TYPES: ["query", "review", "coding"],

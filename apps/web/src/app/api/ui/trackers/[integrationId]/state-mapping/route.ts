@@ -1,4 +1,4 @@
-import { getIntegrationById } from "@omniralph/db";
+import { getIntegrationById, withSettingsChanges } from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import { requireOrganizationAccess, type ScopedOrganization } from "@/lib/api/scope";
@@ -6,6 +6,7 @@ import { stateMappingRequestSchema, type TrackerStateMappingView } from "@/lib/a
 import type { Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import { settingsActor, trackedConnection } from "@/lib/settings-history/sections";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
 import { READINESS_STATE_TYPES } from "@/lib/work-items/readiness";
 import {
@@ -77,7 +78,20 @@ export const PUT = apiHandler<"member", typeof stateMappingRequestSchema, undefi
   async ({ user, params, body }) => {
     const { tracker, organization } = await trackerFor(user, params.integrationId, "admin");
     try {
-      await tracker.setStateMapping(body);
+      // Saved through a tracker on the transaction that records it in the change history.
+      await withSettingsChanges(
+        getDb(),
+        settingsActor(user),
+        trackedConnection(organization.id, tracker.integrationId),
+        async (tx) => {
+          const writer = await getWorkItemTracker({ db: tx, organizationId: organization.id });
+          await writer.setStateMapping(body);
+        },
+      );
+      return await view(
+        await getWorkItemTracker({ db: getDb(), organizationId: organization.id }),
+        organization,
+      );
     } catch (error) {
       if (error instanceof StateMappingError) {
         throw new ApiRouteError(400, error.message, "invalid_request", error.fieldErrors);
@@ -85,6 +99,5 @@ export const PUT = apiHandler<"member", typeof stateMappingRequestSchema, undefi
       if (error instanceof TrackerNotConnectedError) throw ApiRouteError.notFound(NOT_FOUND);
       throw error;
     }
-    return view(tracker, organization);
   },
 );

@@ -12,6 +12,7 @@ import {
   revokeInvitation,
   updateMemberRole,
   updateOrganization,
+  withSettingsChanges,
   type CreateInvitationResult,
   type Database,
 } from "@omniralph/db";
@@ -21,6 +22,7 @@ import type { OrganizationChange, OrganizationSettings } from "@/lib/api/organiz
 import { isValidEmail } from "@/lib/auth/allowlist";
 import { checkUserChange, hasRole, isRole, type Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
+import { settingsActor, trackedOrganization } from "@/lib/settings-history/sections";
 import { activateOrganization } from "./active";
 import { checkOrganizationName } from "./name";
 
@@ -34,6 +36,20 @@ const INVITE_ERRORS: Record<Exclude<CreateInvitationResult["status"], "created">
   email_not_allowed: "That email isn't in one of this organization's email domains.",
   unknown_organization: ORGANIZATION_GONE,
 };
+
+/** Runs a save of the organization's settings, recording what it changed in its change history. */
+function savingOrganization<T>(
+  db: Database,
+  user: OrgUser,
+  save: (tx: Database) => Promise<T>,
+): Promise<T> {
+  return withSettingsChanges(
+    db,
+    settingsActor(user),
+    trackedOrganization(user.organization.id),
+    save,
+  );
+}
 
 /**
  * Settings › Organization: the caller's active organization with its members and email
@@ -87,7 +103,9 @@ export async function renameOrganization(
 ): Promise<ActionResult> {
   const checked = checkOrganizationName(name);
   if ("error" in checked) return { ok: false, error: checked.error };
-  const result = await updateOrganization(db, admin.organization.id, { name: checked.name });
+  const result = await savingOrganization(db, admin, (tx) =>
+    updateOrganization(tx, admin.organization.id, { name: checked.name }),
+  );
   if (result === "not_found") return { ok: false, error: ORGANIZATION_GONE };
   return { ok: true };
 }
@@ -98,9 +116,9 @@ export async function setAllowDomainJoin(
   admin: OrgUser,
   enabled: boolean,
 ): Promise<ActionResult> {
-  const result = await updateOrganization(db, admin.organization.id, {
-    allowDomainJoin: enabled === true,
-  });
+  const result = await savingOrganization(db, admin, (tx) =>
+    updateOrganization(tx, admin.organization.id, { allowDomainJoin: enabled === true }),
+  );
   if (result === "no_domains") {
     return { ok: false, error: "Add an email domain before allowing people to join." };
   }
@@ -130,12 +148,14 @@ export async function inviteMember(
     return { ok: false, error: "Enter a valid email address." };
   }
   if (!isRole(role)) return { ok: false, error: "Unknown role." };
-  const result = await createInvitation(db, {
-    organizationId: admin.organization.id,
-    email,
-    role,
-    invitedBy: admin.id,
-  });
+  const result = await savingOrganization(db, admin, (tx) =>
+    createInvitation(tx, {
+      organizationId: admin.organization.id,
+      email,
+      role,
+      invitedBy: admin.id,
+    }),
+  );
   if (result.status !== "created") return { ok: false, error: INVITE_ERRORS[result.status] };
   return { ok: true };
 }
@@ -146,10 +166,9 @@ export async function revokeOrganizationInvitation(
   admin: OrgUser,
   invitationId: string,
 ): Promise<ActionResult> {
-  const result = await revokeInvitation(db, {
-    organizationId: admin.organization.id,
-    invitationId,
-  });
+  const result = await savingOrganization(db, admin, (tx) =>
+    revokeInvitation(tx, { organizationId: admin.organization.id, invitationId }),
+  );
   if (result === "not_found") return { ok: false, error: "That invitation no longer exists." };
   if (result === "not_pending") {
     return { ok: false, error: "That invitation was already accepted, revoked or expired." };
@@ -175,10 +194,11 @@ async function applyMemberChange(
     adminCount: members.filter((m) => m.role === "admin").length,
   });
   if (error) return { ok: false, error };
-  const result =
+  const result = await savingOrganization(db, admin, (tx) =>
     newRole === null
-      ? await removeMember(db, { organizationId, userId })
-      : await updateMemberRole(db, { organizationId, userId, role: newRole });
+      ? removeMember(tx, { organizationId, userId })
+      : updateMemberRole(tx, { organizationId, userId, role: newRole }),
+  );
   if (result === "last_admin") return { ok: false, error: LAST_ADMIN };
   if (result === "not_member") return { ok: false, error: NOT_MEMBER };
   return { ok: true };
@@ -209,7 +229,9 @@ export async function addDomain(
   domain: string,
 ): Promise<ActionResult> {
   if (typeof domain !== "string") return { ok: false, error: "Enter a domain." };
-  const result = await addOrganizationDomain(db, admin.organization.id, domain);
+  const result = await savingOrganization(db, admin, (tx) =>
+    addOrganizationDomain(tx, admin.organization.id, domain),
+  );
   if (result === "invalid") return { ok: false, error: "Enter a valid domain, like example.com." };
   if (result === "already_added") return { ok: false, error: "That domain is already listed." };
   if (result === "not_found") return { ok: false, error: ORGANIZATION_GONE };
@@ -226,7 +248,9 @@ export async function removeDomain(
   domain: string,
 ): Promise<ActionResult> {
   if (typeof domain !== "string") return { ok: false, error: "Unknown domain." };
-  const result = await removeOrganizationDomain(db, admin.organization.id, domain);
+  const result = await savingOrganization(db, admin, (tx) =>
+    removeOrganizationDomain(tx, admin.organization.id, domain),
+  );
   if (result === "not_found") return { ok: false, error: "That domain is no longer listed." };
   return { ok: true };
 }
@@ -236,10 +260,9 @@ export async function removeDomain(
  * and switches to another of their organizations, if any.
  */
 export async function leaveOrganization(db: Database, user: OrgUser): Promise<ActionResult> {
-  const result = await removeMember(db, {
-    organizationId: user.organization.id,
-    userId: user.id,
-  });
+  const result = await savingOrganization(db, user, (tx) =>
+    removeMember(tx, { organizationId: user.organization.id, userId: user.id }),
+  );
   if (result === "last_admin") {
     return {
       ok: false,

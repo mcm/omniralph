@@ -47,6 +47,17 @@ vi.mock("@omniralph/scm", () => ({
     return { ...installation, accountType: "Organization", repositorySelection: "selected" };
   },
 }));
+// The change history is covered by the settings-history tests; here a connect just saves.
+vi.mock("@/lib/settings-history/sections", () => ({
+  settingsActor: () => ({ userId: null, name: "Admin" }),
+  connectingWithHistory: <T>(
+    db: unknown,
+    _actor: unknown,
+    _organizationId: string,
+    _existingId: string | null,
+    save: (tx: unknown) => Promise<T>,
+  ) => save(db),
+}));
 vi.mock("@omniralph/db", () => ({
   consumeOAuthState: async (_db: unknown, nonce: string) => {
     if (state.usedNonces.has(nonce)) return false;

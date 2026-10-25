@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser } from "@/lib/auth/session";
+import { connectingWithHistory, settingsActor } from "@/lib/settings-history/sections";
 import { readSignedState } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
 import {
@@ -81,15 +82,24 @@ async function get(request: NextRequest) {
     );
     return to(`/repositories?github=${status === 404 ? "invalid" : "error"}`);
   }
-  const connection = await upsertScmConnection(db, {
+  const existing = await findScmConnection(db, "github", githubApiUrl(), String(installation.id));
+  const connection = await connectingWithHistory(
+    db,
+    settingsActor(admin),
     organizationId,
-    provider: "github",
-    name: installation.account,
-    baseUrl: githubApiUrl(),
-    externalId: String(installation.id),
-    credentials: {},
-    createdBy: admin.id,
-  });
+    existing?.organizationId === organizationId ? existing.id : null,
+    (tx) =>
+      upsertScmConnection(tx, {
+        organizationId,
+        provider: "github",
+        name: installation.account,
+        baseUrl: githubApiUrl(),
+        externalId: String(installation.id),
+        credentials: {},
+        createdBy: admin.id,
+      }),
+    (saved) => saved?.id ?? null,
+  );
   if (!connection) return to("/repositories?github=other_organization");
   return to(`/repositories/github/${connection.id}`);
 }

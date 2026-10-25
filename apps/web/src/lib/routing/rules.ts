@@ -3,14 +3,17 @@ import {
   listRepositoryOverview,
   listRoutingRules,
   replaceRoutingRules,
+  withSettingsChanges,
   type Database,
   type RoutingRule,
+  type SettingsActor,
 } from "@omniralph/db";
 import type { RoutingRuleInput } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RoutingRuleRow, RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { trackedRoutingRules } from "@/lib/settings-history/sections";
 
 /** Shown on a rule whose repository isn't one of the organization's. */
 export const UNKNOWN_ROUTING_REPOSITORY = "Pick one of your organization's repositories.";
@@ -67,14 +70,17 @@ export async function loadRoutingRules(
 /**
  * Replaces the organization's rules with `rules` (already validated against the catalog),
  * atomically. A rule whose repository isn't the organization's fails the whole save with an
- * error on its `rules.{index}.repositoryId`.
+ * error on its `rules.{index}.repositoryId`. Records the changed rules in the change history.
  */
 export async function saveRoutingRules(
   db: Database,
   organizationId: string,
   rules: readonly RoutingRuleInput[],
+  actor: SettingsActor,
 ): Promise<SavedRoutingRules> {
-  const result = await replaceRoutingRules(db, organizationId, rules);
+  const result = await withSettingsChanges(db, actor, trackedRoutingRules(organizationId), (tx) =>
+    replaceRoutingRules(tx, organizationId, rules),
+  );
   if (!result.ok) {
     throw new ApiRouteError(
       400,

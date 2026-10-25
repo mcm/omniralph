@@ -15,6 +15,7 @@ import {
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   TRACK_LATEST_HARNESS_VERSION,
+  withSettingsChanges,
   type Database,
 } from "@omniralph/db";
 import { HARNESS_PACKAGE, HarnessVersion } from "@omniralph/shared";
@@ -27,6 +28,7 @@ import type {
   HarnessDefaultsSave,
   HostToolCatalogRow,
 } from "@/lib/api/harness-defaults";
+import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sections";
 import { organizationHarnessVersion, recordLatestHarnessVersion } from "./desired-version";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
 import { saveInOrder } from "./manage";
@@ -165,9 +167,25 @@ export async function setOrganizationDefaults(
 /**
  * The Defaults tab's save, as one request: the task-type and concurrency defaults, then the
  * desired version, each only when sent. It stops at the first that fails; the error names
- * what it didn't save.
+ * what it didn't save. What it saved is recorded in the change history.
  */
 export async function saveHarnessDefaults(
+  db: Database,
+  admin: DefaultsActor & { name: string | null; email: string | null },
+  save: HarnessDefaultsSave,
+): Promise<ActionResult> {
+  const result = await withSettingsChanges(
+    db,
+    settingsActor(admin),
+    trackedAgentDefaults(admin.organization.id),
+    (tx) => saveDefaultsInOrder(tx, admin, save),
+  );
+  // The bumps in the transaction ran before its commit: bump again once it's visible.
+  await bumpOrganizationHeartbeat(admin.organization.id);
+  return result;
+}
+
+function saveDefaultsInOrder(
   db: Database,
   admin: DefaultsActor,
   save: HarnessDefaultsSave,

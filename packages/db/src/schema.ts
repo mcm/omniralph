@@ -2374,3 +2374,47 @@ export const inboxItemStates = pgTable(
     ),
   ],
 );
+
+// ── Settings change history ──────────────────────────────────────────────────
+
+/** A changed field of a settings save: its display values before and after ("changed" for secrets). */
+export interface SettingsFieldChange {
+  field: string;
+  label: string;
+  before: SettingsDisplayValue;
+  after: SettingsDisplayValue;
+}
+
+/** A field's value as a person reads it: text, a number, a switch, a list, or none. */
+export type SettingsDisplayValue = string | number | boolean | null | string[];
+
+/**
+ * Who changed a tracked settings section (`section`, e.g. `repository.reviews`), when, and
+ * which fields (`settings-changes.ts`). `subject_id` is the section's subject (a repository,
+ * a connection) or null for organization-wide sections; it has no FK, so the history of a
+ * removed connection stays readable. Written in the save's own transaction.
+ */
+export const settingsChanges = pgTable(
+  "settings_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    section: text("section").notNull(),
+    subjectId: uuid("subject_id"),
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** The actor's name when they saved, kept when the user is gone. */
+    actorName: text("actor_name").notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+    changes: jsonb("changes").$type<SettingsFieldChange[]>().notNull(),
+  },
+  (t) => [
+    index("settings_changes_organization_section_subject_changed_at_idx").on(
+      t.organizationId,
+      t.section,
+      t.subjectId,
+      t.changedAt,
+    ),
+  ],
+);

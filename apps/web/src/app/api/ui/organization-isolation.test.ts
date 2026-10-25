@@ -53,6 +53,7 @@ import {
   ralphRuns,
   scmConnections,
   setActiveOrganization,
+  settingsChanges,
   updateRun,
   upsertScmConnection,
   upsertStories,
@@ -203,6 +204,7 @@ const triageList = await import("./triage/route");
 const triageDetail = await import("./triage/[id]/route");
 const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
+const settingsHistory = await import("./settings-history/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
@@ -511,6 +513,53 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
     state.userId = null;
     expect((await call(runAnalytics.GET)).status).toBe(401);
+  });
+
+  it("lists only each organization's own settings history, to members, and 404s on the other's", async () => {
+    for (const tenant of [a, b]) {
+      await db.insert(settingsChanges).values({
+        organizationId: tenant.orgId,
+        section: "repository.reviews",
+        subjectId: tenant.repoId,
+        actorName: `Admin of ${tenant.name}`,
+        changes: [{ field: "onPush", label: "Review on push", before: "On", after: "Off" }],
+      });
+    }
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        const path = (subject: string, extra = "") =>
+          `/api/ui?section=repository.reviews&subject=${subject}${extra}`;
+        const mine = await call(settingsHistory.GET, { path: path(own.repoId) });
+        expect(mine).toMatchObject({
+          status: 200,
+          body: {
+            latest: { organization: { id: own.orgId }, actor: { name: `Admin of ${own.name}` } },
+          },
+        });
+        // The other's repository as the subject finds nothing, even with every organization.
+        for (const extra of ["", "&organization=all"]) {
+          expect(
+            await call(settingsHistory.GET, { path: path(other.repoId, extra) }),
+          ).toMatchObject({ status: 200, body: { latest: null, entries: [], next: null } });
+        }
+        for (const marker of markers(other)) {
+          expect(JSON.stringify(mine.body)).not.toContain(marker);
+        }
+        expect(
+          await call(settingsHistory.GET, {
+            path: path(other.repoId, `&organization=${other.orgId}`),
+          }),
+        ).toMatchObject({ status: 404 });
+      }
+    }
+    state.userId = null;
+    expect(
+      (await call(settingsHistory.GET, { path: "/api/ui?section=routing_rules" })).status,
+    ).toBe(401);
   });
 
   it("lists only each organization's own Inbox items and counts, and 404s on the other's", async () => {
