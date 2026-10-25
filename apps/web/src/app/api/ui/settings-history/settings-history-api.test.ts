@@ -66,7 +66,6 @@ const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings
 const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
 const repository = await import("@/app/api/ui/repositories/[id]/route");
-const harnessSettings = await import("@/app/api/ui/harnesses/[id]/settings/route");
 const routingRules = await import("@/app/api/ui/routing-rules/route");
 const organization = await import("@/app/api/ui/organization/route");
 const members = await import("@/app/api/ui/organization/members/[userId]/route");
@@ -258,7 +257,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       ]);
     });
 
-    it("repository.agents: pins from the repository's and the agent's settings", async () => {
+    it("repository.agents: pins from the repository's settings", async () => {
       expect(
         await callAction(
           repositorySettings.PUT,
@@ -277,16 +276,18 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         { field: "agents", label: "Pinned agents", before: [], after: ["coder-a"] },
       ]);
 
-      const result = await callAction(
-        harnessSettings.PUT,
-        "PUT",
-        { id: agentB },
-        {
-          pin: [repoId, otherRepoId],
-          unpin: [],
-        },
-      );
-      expect(result).toMatchObject({ ok: true });
+      expect(
+        await callAction(
+          repositorySettings.PUT,
+          "PUT",
+          { id: repoId },
+          {
+            ...baseSettings,
+            triggers: { ...baseSettings.triggers, onPush: false },
+            pinnedHarnessIds: [agentA, agentB],
+          },
+        ),
+      ).toEqual({ ok: true });
       expect((await entries("repository.agents", repoId))[0]!.changes).toEqual([
         {
           field: "agents",
@@ -295,7 +296,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
           after: ["coder-a", "coder-b"],
         },
       ]);
-      expect(await entries("repository.agents", otherRepoId)).toHaveLength(1);
+      expect(await entries("repository.agents", otherRepoId)).toHaveLength(0);
     });
 
     it("routing_rules: describes each changed rule", async () => {

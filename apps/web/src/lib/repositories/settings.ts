@@ -48,8 +48,8 @@ export type SaveRepositorySettingsResult =
  * Saves a repository's review settings (a repository of the organization; its profile
  * must be one of the organization's too, its review tasks tasks of the organization
  * (built-in or its own) passing `REVIEW_TASKS`, and its correlation task one passing
- * `CORRELATION_TASKS`) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through the Agents
- * page's `pinRepository`, which enqueues a `repo.sync` job for that agent.
+ * `CORRELATION_TASKS`) (validated with `RepositorySettingsInput`) and reconciles its agent pins: newly pinned agents go through
+ * `pinRepository`, which enqueues a `repo.sync` job for that agent.
  * The next review job enqueued for the repository picks the settings up.
  */
 export async function saveRepositorySettings(

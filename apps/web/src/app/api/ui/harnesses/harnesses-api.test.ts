@@ -14,11 +14,11 @@ import {
   listHarnessHostTools,
   listHarnessOverview,
   listRecentHarnessAudit,
-  scmConnections,
   setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   setHarnessHostToolPath,
+  unpinRepositoryFromHarness,
   upsertScmConnection,
   users,
   writeHarnessAudit,
@@ -78,7 +78,8 @@ const harnessUpdate = await import("@/app/api/ui/harnesses/[id]/update/route");
 const harnessRevoke = await import("@/app/api/ui/harnesses/[id]/revoke/route");
 const harnessInstalls = await import("@/app/api/ui/harnesses/[id]/installs/route");
 const harnessHostTools = await import("@/app/api/ui/harnesses/[id]/host-tools/route");
-const pinnable = await import("@/app/api/ui/harnesses/pinnable-repositories/route");
+const pins = await import("@/lib/harnesses/pins");
+const { bumpHarnessHeartbeat } = await import("@/lib/harnesses/heartbeat-cache");
 const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
 const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
 // Settings › Harness defaults › Host tools requests, under the server actions' old names.
@@ -175,10 +176,21 @@ const updateHarnessConfig = (
 ) => ui(harnessSettings.PUT, id, { method: "PUT", body: { config } });
 const setHarnessDesiredVersion = (id: string, version: string) =>
   ui(harnessSettings.PUT, id, { method: "PUT", body: { version } });
-const pinRepository = (id: string, repositoryId: string) =>
-  ui(harnessSettings.PUT, id, { method: "PUT", body: { pin: [repositoryId] } });
-const unpinRepository = (id: string, repositoryId: string) =>
-  ui(harnessSettings.PUT, id, { method: "PUT", body: { unpin: [repositoryId] } });
+// Pins are edited from the repository's settings; these call the same pin logic directly.
+async function pinRepository(harnessId: string, repositoryId: string) {
+  const dispatcher = new PostgresDispatcher({ db: state.db! });
+  const { result } = await pins.pinRepository(state.db!, dispatcher, { harnessId, repositoryId });
+  return result === "pinned" || result === "already_pinned"
+    ? { ok: true as const }
+    : { ok: false as const, error: result };
+}
+async function unpinRepository(harnessId: string, repositoryId: string) {
+  if (!(await unpinRepositoryFromHarness(state.db!, { harnessId, repositoryId }))) {
+    return { ok: false as const };
+  }
+  await bumpHarnessHeartbeat(harnessId);
+  return { ok: true as const };
+}
 const requestHarnessUpdate = (id: string) => ui(harnessUpdate.POST, id);
 const revokeHarness = (id: string) => ui(harnessRevoke.POST, id);
 const cancelJob = (id: string) => ui(jobCancel.POST, id);
@@ -195,17 +207,6 @@ const installInstallable = (id: string, body: { name: string; version?: string }
   ui(harnessInstalls.POST, id, { body });
 const setHostToolPath = (id: string, hostToolId: string, path: string) =>
   ui(harnessHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
-async function searchPinnableRepositories(query: string) {
-  const response = await pinnable.GET(
-    new Request(`http://localhost/api/ui?${new URLSearchParams({ query })}`),
-    { params: Promise.resolve({}) },
-  );
-  const json = (await response.json()) as Record<string, unknown>;
-  return response.ok
-    ? { ok: true as const, repositories: json.repositories as { fullPath: string }[] }
-    : { ok: false as const, error: json.error as string };
-}
-
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
 
 describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", () => {
@@ -381,62 +382,6 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await unpinRepository(harnessId, repoA)).toEqual({ ok: true });
       const unpinned = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(unpinned.pinnedRepoIds).toEqual([]);
-    });
-
-    it("searches the connected repositories to pin, for admins only", async () => {
-      expect(await searchPinnableRepositories("")).toEqual({
-        ok: true,
-        repositories: [
-          { id: repoA, provider: "gitlab", fullPath: "acme/api" },
-          { id: repoB, provider: "gitlab", fullPath: "acme/web" },
-        ],
-      });
-      expect(await searchPinnableRepositories("WEB")).toEqual({
-        ok: true,
-        repositories: [{ id: repoB, provider: "gitlab", fullPath: "acme/web" }],
-      });
-      expect(await searchPinnableRepositories("nothing")).toEqual({ ok: true, repositories: [] });
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await searchPinnableRepositories("")).toMatchObject({ ok: false });
-    });
-
-    it("returns at most 20 repositories per search, only the organization's", async () => {
-      const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
-      await seedReviewProfiles(db, otherOrg!.id);
-      const otherConnection = (await upsertScmConnection(db, {
-        organizationId: otherOrg!.id,
-        provider: "gitlab",
-        name: "other bot",
-        baseUrl: "https://gitlab.other.example.com",
-        externalId: "6",
-        credentials: { token: "glpat-other", webhookSecret: "hook" },
-      }))!;
-      await connectRepository(db, {
-        connectionId: otherConnection.id,
-        provider: "gitlab",
-        externalId: "201",
-        fullPath: "bulk/other-org",
-      });
-      expect(await searchPinnableRepositories("bulk/")).toEqual({ ok: true, repositories: [] });
-
-      const [connection] = await db
-        .select()
-        .from(scmConnections)
-        .where(eq(scmConnections.organizationId, orgId));
-      for (let i = 0; i < 25; i += 1) {
-        await connectRepository(db, {
-          connectionId: connection!.id,
-          provider: "gitlab",
-          externalId: `bulk-${i}`,
-          fullPath: `bulk/repo-${String(i).padStart(2, "0")}`,
-        });
-      }
-      const result = await searchPinnableRepositories("bulk/");
-      expect(result.ok).toBe(true);
-      expect(result.repositories).toHaveLength(20);
-      expect(result.repositories!.map((r) => r.fullPath)).toEqual(
-        Array.from({ length: 20 }, (_, i) => `bulk/repo-${String(i).padStart(2, "0")}`),
-      );
     });
 
     it("saves the accepted task types and they reach the harness", async () => {
@@ -765,7 +710,6 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await updateHarnessConfig(randomUUID(), valid)).toMatchObject({ ok: false });
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await updateHarnessConfig(harnessId, valid)).toMatchObject({ ok: false });
-      expect(await pinRepository(harnessId, repoA)).toMatchObject({ ok: false });
       const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
       // Unchanged: still inheriting.
       expect(harness!.maxConcurrency).toBeNull();
@@ -778,21 +722,19 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const config = { maxConcurrency: 3, acceptedTaskTypes: ["review"], poolLimits: {} };
       const save = (body: object) => ui(harnessSettings.PUT, harnessId, { method: "PUT", body });
 
-      expect(await save({ config, version: "nope", pin: [repoA] })).toEqual({
+      expect(await save({ config, version: "nope" })).toEqual({
         ok: false,
-        error:
-          "Enter a version like 1.4.0, or leave it blank. Not saved: the desired version and pinned repositories.",
+        error: "Enter a version like 1.4.0, or leave it blank. Not saved: the desired version.",
       });
       // What came before the failure is saved; what came after isn't.
       let harness = (await getHarnessOverview(db, orgId, harnessId))!;
       expect(harness).toMatchObject({ maxConcurrency: 3, desiredVersion: null });
-      expect(harness.pinnedRepositories).toEqual([]);
 
       const response = await harnessSettings.PUT(
         new Request("http://localhost/api/ui", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "1.4.0", pin: [repoA, repoB], unpin: [] }),
+          body: JSON.stringify({ version: "1.4.0" }),
         }),
         { params: Promise.resolve({ id: harnessId }) },
       );
@@ -803,17 +745,36 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(Date.parse(body.savedAt)).toBeLessThanOrEqual(Date.now());
       harness = (await getHarnessOverview(db, orgId, harnessId))!;
       expect(harness.desiredVersion).toBe("1.4.0");
-      expect(harness.pinnedRepositories.map((repo) => repo.id).sort()).toEqual(
-        [repoA, repoB].sort(),
-      );
 
       // A single change keeps its own message.
-      expect(await save({ unpin: [randomUUID()] })).toEqual({
+      expect(await save({ version: "nope" })).toEqual({
         ok: false,
-        error: "That repository isn't pinned to this harness.",
+        error: "Enter a version like 1.4.0, or leave it blank.",
       });
-      // Other tests expect the repositories unpinned.
-      expect(await save({ unpin: [repoA, repoB] })).toEqual({ ok: true });
+    });
+
+    it("refuses pins and unpins: they are edited from the repository's settings", async () => {
+      const { harnessId } = await enrolledHarness();
+      for (const body of [
+        { pin: [repoA] },
+        { unpin: [repoA] },
+        { pins: [repoA] },
+        { unpins: [repoA] },
+        { version: "1.4.0", pin: [repoA] },
+      ]) {
+        const response = await harnessSettings.PUT(
+          new Request("http://localhost/api/ui", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }),
+          { params: Promise.resolve({ id: harnessId }) },
+        );
+        expect(response.status).toBe(400);
+      }
+      // Nothing was saved, not even the version sent alongside a pin.
+      const harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      expect(harness).toMatchObject({ desiredVersion: null, pinnedRepositories: [] });
     });
 
     it("names the host tool paths it didn't save", async () => {

@@ -135,14 +135,15 @@ describe("HarnessSettingsSection", () => {
     expect(tag(html, "desired-version")).toContain('value="1.3.2"');
   });
 
-  it("saves concurrency, task types, pins and the version with one save", () => {
+  it("saves concurrency, task types and the version with one save", () => {
     const html = render(inheriting);
     expect(html.match(/<form/g)).toHaveLength(1);
     expect(html.match(/type="submit"/g)).toHaveLength(1);
     expect(html).toContain("Save settings");
-    for (const title of ["Concurrency", "Task types", "Pinned repositories", "Version"]) {
+    for (const title of ["Concurrency", "Task types", "Version"]) {
       expect(html).toContain(`>${title}</h3>`);
     }
+    expect(html).not.toContain("Pinned repositories");
     expect(html).toContain("Update now</button>");
   });
 
@@ -181,8 +182,6 @@ describe("HarnessSettingsSection", () => {
       expect(saves(inheriting.id)).toEqual([
         {
           config: { maxConcurrency: 3, acceptedTaskTypes: null, poolLimits: {} },
-          unpin: [],
-          pin: [],
         },
       ]),
     );
@@ -206,9 +205,7 @@ describe("HarnessSettingsSection", () => {
     await userEvent.click(
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
-    await waitFor(() =>
-      expect(saves(overriding.id)).toEqual([{ version: "", unpin: [], pin: [] }]),
-    );
+    await waitFor(() => expect(saves(overriding.id)).toEqual([{ version: "" }]));
   });
 
   it("needs a version to override the organization's", async () => {
@@ -227,12 +224,10 @@ describe("HarnessSettingsSection", () => {
     await userEvent.click(
       [...dialog.querySelectorAll("button")].find((b) => /^Save/.test(b.textContent ?? ""))!,
     );
-    await waitFor(() =>
-      expect(saves(inheriting.id)).toEqual([{ version: "1.5.0", unpin: [], pin: [] }]),
-    );
+    await waitFor(() => expect(saves(inheriting.id)).toEqual([{ version: "1.5.0" }]));
   });
 
-  it("shows the pinned repositories as chips in a searchable picker", () => {
+  it("has no pinned repositories picker: pins are edited from the repository's settings", () => {
     const html = render({
       ...inheriting,
       pinnedRepositories: [
@@ -244,10 +239,8 @@ describe("HarnessSettingsSection", () => {
         },
       ],
     } as HarnessRow);
-    expect(tag(html, "pinned-repositories")).toContain('role="combobox"');
-    expect(html).toContain("acme/api");
-    expect(html).toMatch(/Jobs for this repository only go to the harnesses/);
-    expect(render(inheriting)).toMatch(/None: this harness serves every repository/);
+    expect(html).not.toContain('id="pinned-repositories"');
+    expect(html).not.toContain("acme/api");
   });
 
   it("is read-only on a revoked harness", () => {

@@ -3,18 +3,13 @@ import {
   getDefaultMaxConcurrency,
   getDesiredHarnessVersion,
   getHarnessOverview,
-  getRepository,
   listHarnessHostTools,
-  listRepositoryOverviewPage,
   requestHarnessUpdate as requestHarnessUpdateRow,
   setHarnessDesiredVersion as setHarnessDesiredVersionRow,
   setHarnessHostToolPath,
   TRACK_LATEST_HARNESS_VERSION,
-  unpinRepositoryFromHarness,
   updateHarnessConfig as updateHarnessConfigRow,
-  withSettingsChanges,
   type Database,
-  type SettingsActor,
 } from "@omniralph/db";
 import { HarnessVersion, HostToolPath, POOLS } from "@omniralph/shared";
 import { TASK_TYPES } from "@omniralph/tasks";
@@ -24,19 +19,16 @@ import type {
   HarnessConfigForm,
   HarnessSettingsSave,
   HostToolPathsSave,
-  PinnableRepository,
 } from "@/lib/api/harnesses";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
   deleteHarness as deleteHarnessWithRevoke,
   revokeHarness as revokeHarnessWithJobs,
 } from "@/lib/harness-auth/revoke";
-import { trackedRepositoryAgents } from "@/lib/settings-history/sections";
 import { recordLatestHarnessVersion } from "./desired-version";
 import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
-import { pinRepository as pinRepositoryWithSync } from "./pins";
 
 /**
  * An admin's changes to one harness of their organization (its detail pages): the logic
@@ -109,41 +101,6 @@ export async function setHarnessDesiredVersion(
   return { ok: true };
 }
 
-/** Pins a repository to a harness; the harness pre-clones it via a `repo.sync` job. */
-export async function pinRepository(
-  db: Database,
-  dispatcher: JobDispatcher,
-  organizationId: string,
-  harnessId: string,
-  repositoryId: string,
-): Promise<ActionResult> {
-  const notConnected: Failure = { ok: false, error: "That repository isn't connected." };
-  if (!z.uuid().safeParse(repositoryId).success) return notConnected;
-  if (!(await getRepository(db, repositoryId, organizationId))) return notConnected;
-  const { result } = await pinRepositoryWithSync(db, dispatcher, { harnessId, repositoryId });
-  if (result === "unknown_agent") return UNKNOWN_HARNESS;
-  if (result === "unknown_repository") return notConnected;
-  return { ok: true };
-}
-
-/** Unpins a repository from a harness (any harness may then serve it, unless other pins remain). */
-export async function unpinRepository(
-  db: Database,
-  organizationId: string,
-  harnessId: string,
-  repositoryId: string,
-): Promise<ActionResult> {
-  if (
-    !z.uuid().safeParse(repositoryId).success ||
-    !(await getRepository(db, repositoryId, organizationId)) ||
-    !(await unpinRepositoryFromHarness(db, { harnessId, repositoryId }))
-  ) {
-    return { ok: false, error: "That repository isn't pinned to this harness." };
-  }
-  await bumpHarnessHeartbeat(harnessId);
-  return { ok: true };
-}
-
 const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
 
 /** A failure part-way through a save, naming what it didn't save: "… Not saved: x and y." */
@@ -175,34 +132,16 @@ export async function saveInOrder(steps: readonly SaveStep[]): Promise<ActionRes
 }
 
 /**
- * The Settings tab's save, as one request: the config, then the desired version, then the
- * unpins and the pins, in that order. It stops at the first that fails; the error names the
- * changes it didn't save (those before it are saved). Each pin and unpin is recorded in its
- * repository's change history.
+ * The Settings tab's save, as one request: the config, then the desired version, in that
+ * order. It stops at the first that fails; the error names the changes it didn't save (those
+ * before it are saved).
  */
 export async function saveHarnessSettings(
   db: Database,
-  dispatcher: JobDispatcher,
   organizationId: string,
   harnessId: string,
   save: HarnessSettingsSave,
-  actor: SettingsActor,
 ): Promise<ActionResult> {
-  const pins = "pinned repositories";
-  const tracked =
-    (repositoryId: string, run: (db: Database) => Promise<ActionResult>) => async () => {
-      // An ID that isn't one is refused by the step itself.
-      if (!z.uuid().safeParse(repositoryId).success) return run(db);
-      const result = await withSettingsChanges(
-        db,
-        actor,
-        trackedRepositoryAgents(organizationId, repositoryId),
-        run,
-      );
-      // The bump in the transaction ran before its commit: bump again once it's visible.
-      await bumpHarnessHeartbeat(harnessId);
-      return result;
-    };
   return saveInOrder([
     ...(save.config
       ? [
@@ -220,14 +159,6 @@ export async function saveHarnessSettings(
           },
         ]
       : []),
-    ...save.unpin.map((id) => ({
-      label: pins,
-      run: tracked(id, (tx) => unpinRepository(tx, organizationId, harnessId, id)),
-    })),
-    ...save.pin.map((id) => ({
-      label: pins,
-      run: tracked(id, (tx) => pinRepository(tx, dispatcher, organizationId, harnessId, id)),
-    })),
   ]);
 }
 
@@ -419,23 +350,4 @@ export async function saveHostToolPaths(
       };
     }),
   );
-}
-
-/** Most repositories one search returns: the picker asks people to type more past it. */
-export const REPOSITORY_SEARCH_LIMIT = 20;
-
-/**
- * The organization's connected repositories whose path contains `query` (all of them when it's
- * blank), in path order, at most `REPOSITORY_SEARCH_LIMIT`: the choices of a harness's pins.
- */
-export async function searchPinnableRepositories(
-  db: Database,
-  organizationId: string,
-  query: string,
-): Promise<PinnableRepository[]> {
-  const page = await listRepositoryOverviewPage(db, organizationId, {
-    search: query.slice(0, 200),
-    pageSize: REPOSITORY_SEARCH_LIMIT,
-  });
-  return page.repositories.map(({ id, provider, fullPath }) => ({ id, provider, fullPath }));
 }

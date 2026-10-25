@@ -98,15 +98,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    // Pinned repositories are searched on the server.
-    name: "harness-settings-pins",
-    path: `/harnesses/${ids.harnesses.online}/settings`,
-    page: "(app)/harnesses/[id]/settings/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#pinned-repositories" }],
-    viewportOnly: true,
-  },
-  {
     // One save for every setting of the harness, confirmed with the change list.
     name: "harness-settings-confirm",
     path: `/harnesses/${ids.harnesses.online}/settings`,

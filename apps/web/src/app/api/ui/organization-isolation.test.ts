@@ -194,7 +194,6 @@ const harnessRevoke = await import("./harnesses/[id]/revoke/route");
 const harnessInstallables = await import("./harnesses/[id]/installables/route");
 const harnessInstalls = await import("./harnesses/[id]/installs/route");
 const harnessHostTools = await import("./harnesses/[id]/host-tools/route");
-const pinnableRepositories = await import("./harnesses/pinnable-repositories/route");
 const repositoryList = await import("./repositories/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
@@ -1113,19 +1112,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           status: 404,
         });
       }
-      // The pins picker only finds the active organization's repositories.
-      const search = await call(pinnableRepositories.GET, { path: "/api/ui?query=app" });
-      expect(search).toMatchObject({
-        status: 200,
-        body: { repositories: [{ id: own.repoId, fullPath: own.repoPath }] },
-      });
-
       // Harness pages are admin-only.
       state.userId = own.memberId;
       for (const handler of [harnessDetail.GET, harnessInstallables.GET, harnessHostTools.GET]) {
         expect(await call(handler, { params: ownParams })).toMatchObject({ status: 403 });
       }
-      expect(await call(pinnableRepositories.GET)).toMatchObject({ status: 403 });
     }
   });
 
@@ -1139,18 +1130,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         method: "PUT",
         params: theirs,
         body: { version: "9.9.9" },
-      }),
-      // Neither the other's harness with our repository nor our harness with the other's repository.
-      await call(harnessSettings.PUT, { method: "PUT", params: theirs, body: { pin: [a.repoId] } }),
-      await call(harnessSettings.PUT, {
-        method: "PUT",
-        params: { id: a.harnessId },
-        body: { pin: [b.repoId] },
-      }),
-      await call(harnessSettings.PUT, {
-        method: "PUT",
-        params: theirs,
-        body: { unpin: [b.repoId] },
       }),
       await call(harnessUpdate.POST, { method: "POST", params: theirs }),
       await call(harnessInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
@@ -1194,7 +1173,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await call(harnessSettings.PUT, {
         method: "PUT",
         params: { id: a.harnessId },
-        body: { config, pin: [a.repoId] },
+        body: { config },
       }),
     ).toMatchObject({ status: 200, body: { ok: true, savedAt: expect.any(String) } });
     expect(
