@@ -197,6 +197,10 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   "Dismiss" button. Success, info and warning leave after 5 s and danger after 8 s
   (`TOAST_DURATIONS`), paused while the toast is hovered or focused; at most 3 show
   (`MAX_TOASTS`), the oldest leaving first. No accent: a toast never means "needs you".
+- `LiveNotice` (`onRetry`): the one connection status an app shows (Design rule 9). A
+  `role="status"` strip saying "Live updates stopped. Retrying…" (`LIVE_NOTICE_MESSAGE`) with a
+  neutral dot and a "Retry now" button. Render it above the page content only once live updates
+  have been down for a while (the web shell waits 5 s); there is no "connected" counterpart.
 
 ## Surfaces
 

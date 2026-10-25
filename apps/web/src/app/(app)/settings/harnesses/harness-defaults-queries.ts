@@ -6,7 +6,6 @@ import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import { harnessDefaultsSchema, hostToolCatalogSchema } from "@/lib/api/harness-defaults";
 import type { QueryKeys } from "@/lib/api/keys";
-import { SETTINGS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 
 /** The keys of Settings › Harness defaults' tabs. */
 export const harnessDefaultsKeys = (keys: QueryKeys) => ({
@@ -25,7 +24,6 @@ export function useHarnessDefaults() {
         organizationId: organization.id,
         signal,
       }),
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
   });
 }
 
@@ -40,7 +38,6 @@ export function useHostToolCatalog() {
         organizationId: organization.id,
         signal,
       }),
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
   });
 }
 

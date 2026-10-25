@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import * as React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { queryKeys } from "@/lib/api/keys";
+import { isFallbackPolling } from "@/lib/api/query-client";
 import { CurrentUserProvider } from "./current-user";
 import { QueryProvider, useQueryKeys } from "./query-provider";
 import { testUser } from "./query-test-utils";
@@ -40,10 +41,11 @@ describe("QueryProvider", () => {
   it("provides one client with the live defaults", () => {
     const { client } = renderClient(A);
     expect(client().getDefaultOptions().queries).toMatchObject({
-      refetchInterval: 3_000,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
     });
+    // Polls only as a fallback, until live updates connect.
+    expect(isFallbackPolling(client())).toBe(true);
   });
 
   it("drops the previous organization's queries when the organization switches", () => {

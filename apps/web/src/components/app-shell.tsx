@@ -6,6 +6,8 @@ import { navItems } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
+import { LiveNoticeSlot } from "./live/live-notice-slot";
+import { LiveProvider } from "./live/live-provider";
 import { OrganizationGuard } from "./organization-guard";
 import { ALL_ORGANIZATIONS_LABEL, OrganizationPicker } from "./organization-picker";
 import { QueryProvider } from "./query-provider";
@@ -43,33 +45,37 @@ export function AppShell({
   return (
     <SavedThemeProvider preference={themePreference}>
       <CurrentUserProvider user={user}>
-        {/* Live data for every page (src/lib/api, README "Data fetching"). Keyed by the
-      organization and scope: any change of either starts over with an empty cache. */}
+        {/* Live data for every page (src/lib/api, src/lib/live, README "Data fetching").
+      Keyed by the organization and scope: any change of either starts over with an empty
+      cache, subscribed to the new scope's change channels. */}
         <QueryProvider
           key={`${user.organization.id}:${user.scope}`}
           organizationId={user.organization.id}
         >
-          <OrganizationGuard
-            organizationName={
-              user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
-            }
-            renderedCookie={organizationCookie}
-            renderedScopeCookie={scopeCookie}
-          >
-            <UiProvider linkComponent={Link}>
-              <AppFrame
-                currentPath={pathname}
-                brandHref="/"
-                nav={navItems}
-                orgPicker={<OrganizationPicker />}
-                user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
-                userMenu={(trigger) => <UserMenu trigger={trigger} />}
-              >
-                {children}
-              </AppFrame>
-              <Toaster />
-            </UiProvider>
-          </OrganizationGuard>
+          <LiveProvider>
+            <OrganizationGuard
+              organizationName={
+                user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
+              }
+              renderedCookie={organizationCookie}
+              renderedScopeCookie={scopeCookie}
+            >
+              <UiProvider linkComponent={Link}>
+                <AppFrame
+                  currentPath={pathname}
+                  brandHref="/"
+                  nav={navItems}
+                  orgPicker={<OrganizationPicker />}
+                  user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
+                  userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                >
+                  <LiveNoticeSlot />
+                  {children}
+                </AppFrame>
+                <Toaster />
+              </UiProvider>
+            </OrganizationGuard>
+          </LiveProvider>
         </QueryProvider>
       </CurrentUserProvider>
     </SavedThemeProvider>

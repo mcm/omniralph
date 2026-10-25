@@ -76,3 +76,28 @@
     width: auto;
   }
 }
+
+/*
+ * The live-updates notice: a quiet neutral strip above the page content, shown only
+ * while live updates have stopped.
+ */
+.or-live-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  margin: 12px 20px 0;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-live-notice__message {
+  flex: 1;
+  min-width: 0;
+}

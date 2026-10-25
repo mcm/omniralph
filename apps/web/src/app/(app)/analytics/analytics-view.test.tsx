@@ -13,9 +13,9 @@ import {
 } from "@/components/query-test-utils";
 import type { AnalyticsResponse } from "@/lib/api/analytics";
 import { queryKeys } from "@/lib/api/keys";
-import { ANALYTICS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { AnalyticsView } from "./analytics-view";
+import { ANALYTICS_LIVE_THROTTLE_MS } from "./analytics-queries";
 
 const nav = vi.hoisted(() => ({
   search: new URLSearchParams(),
@@ -131,15 +131,16 @@ describe("AnalyticsView", () => {
     expect(screen.queryByText("No coding tasks")).toBeNull();
   });
 
-  it("polls every minute, not at the live pages' 3s", async () => {
+  it("throttles live invalidations to one per 10s and sets no polling of its own", async () => {
     mockFetch({ "GET /api/ui/analytics": response() });
     const { client } = renderView();
     await waitFor(() => expect(metrics()).toContain("Reviews3"));
     const [query] = client
       .getQueryCache()
       .findAll({ queryKey: queryKeys(TEST_ORGANIZATION_ID).analytics.all });
-    expect(ANALYTICS_REFETCH_INTERVAL).toBe(60_000);
-    expect(query?.observers[0]?.options.refetchInterval).toBe(ANALYTICS_REFETCH_INTERVAL);
+    expect(ANALYTICS_LIVE_THROTTLE_MS).toBe(10_000);
+    expect(query?.meta).toEqual({ liveThrottleMs: ANALYTICS_LIVE_THROTTLE_MS });
+    expect(query?.observers[0]?.options.refetchInterval).toBe(false);
   });
 
   it("shows the chosen window at once and dims the old figures until the new ones arrive", async () => {

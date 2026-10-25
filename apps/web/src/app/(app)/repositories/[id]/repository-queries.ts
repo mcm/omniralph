@@ -5,7 +5,6 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import type { QueryKeys } from "@/lib/api/keys";
-import { SETTINGS_REFETCH_INTERVAL } from "@/lib/api/query-client";
 import {
   codingLinearSchema,
   repositoryCodingSchema,
@@ -51,8 +50,8 @@ export function useRepositoryRules(repositoryId: string) {
 }
 
 /**
- * The Coding tab's settings and its database choices (admins), polled at the settings pace
- * (the tab's live parts, the task types, come with the repository).
+ * The Coding tab's settings and its database choices (admins), live through the repository's
+ * settings changes (the tab's live parts, the task types, come with the repository).
  */
 export function useRepositoryCoding(repositoryId: string, enabled: boolean) {
   const keys = useQueryKeys();
@@ -66,7 +65,6 @@ export function useRepositoryCoding(repositoryId: string, enabled: boolean) {
         signal,
       }),
     enabled,
-    refetchInterval: SETTINGS_REFETCH_INTERVAL,
   });
 }
 

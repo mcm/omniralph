@@ -98,12 +98,46 @@ the previous page stays, dimmed, while the next one loads (`repositories-view.ts
 select shows the chosen value at once: hold the choice in state keyed to the URL it was made on,
 query with it, and `router.push` the new URL (`useRunListParams` in `coding/ralph-runs-view.tsx`).
 
-**Polling defaults** (`src/lib/api/query-client.ts`). Every query is live: it refetches every 3s
-while its tab is visible (`refetchInterval: 3000`, `refetchIntervalInBackground: false`), when the
-tab regains focus or the network reconnects, and on every mount (`staleTime: 0`). Network and 5xx
-failures retry with backoff; 4xx answers don't. Settings and definitions may poll at
-`SETTINGS_REFETCH_INTERVAL` (30s), analytics at `ANALYTICS_REFETCH_INTERVAL` (60s). Each poll is a function invocation on Vercel, so polled handlers stay
-cheap: paginated, indexed, `getDb()` on the Node runtime.
+**Live updates** (`src/lib/live`, `src/components/live`). The UI is live without polling:
+the server publishes a change event (IDs only, `src/lib/live/events.ts`) on Ably for every write,
+on `org:<id>:changes` or on the user's own `user:<id>:changes`. `LiveProvider` (mounted by
+`AppShell` inside `QueryProvider`) connects with a subscribe-only token from
+`GET /api/ui/live/token`, subscribes to the channel of every organization in the current scope (one,
+or every membership under "All organizations") plus the user's own, and invalidates exactly the
+queries each event affects, as mapped in `src/lib/live/invalidations.ts`. Changes to the user's own
+record (their theme, their memberships) re-render the shell from the server (`router.refresh()`).
+
+- **Polling is a fallback** (`src/lib/api/query-client.ts`). While connected, the default
+  `refetchInterval` is `false`; while the connection is down (or the token endpoint fails), and
+  when realtime isn't configured (no `ABLY_API_KEY`, as in local development), mounted queries poll
+  every `FALLBACK_POLL_INTERVAL` (10s). Returning after a drop refetches the active queries once.
+  Queries still refetch when the tab regains focus or the network reconnects, and on every mount
+  (`staleTime: 0`). Network and 5xx failures retry with backoff; 4xx answers don't. Queries whose
+  writes publish no event yet (agent and task definitions, review profiles) poll at
+  `SETTINGS_REFETCH_INTERVAL` (30s). Handlers stay cheap all the same (paginated, indexed,
+  `getDb()` on the Node runtime): every event refetches every open tab's matching queries.
+- **Throttling.** A query that refetches an expensive aggregate sets `meta: { liveThrottleMs: n }`:
+  events invalidate it at most once per `n` ms, the last one of a burst delivered when the window
+  ends (Analytics: `ANALYTICS_LIVE_THROTTLE_MS`, 10s).
+- **Status.** `useLiveStatus()` (`live`, `connecting`, `down`, `off`) is there for screens; the
+  shell shows `LiveNotice` ("Live updates stopped. Retrying…", with Retry now) only after the
+  connection has been down for more than 5s (Design rule 9). Never show a "connected" or "Live"
+  indicator.
+
+**The convention every screen follows:**
+
+1. All data goes through TanStack queries keyed by `queryKeys` (`useQueryKeys()`), never fetched
+   outside the cache, so change events can reach it.
+2. Every new change event, resource or settings section is mapped in
+   `src/lib/live/invalidations.ts` to the queries that show it, narrowed by `ids`, `runId`,
+   `section` and `subjectId` (the map is exhaustive: an unmapped resource fails typecheck), with a
+   unit test of its keys.
+3. Every mutation declares `optimistic` or `applyResult` (see Mutations), so the view never waits
+   on a refetch.
+4. Every screen adds two tests: a published change event (delivered through the fake Ably client
+   in `src/components/live/live-test-utils.ts`, or applied with `createLiveInvalidator`)
+   invalidates the screen's queries, and each mutation updates the view without waiting on a
+   refetch.
 
 **External APIs are not polled.** A query that calls Linear, GitHub or GitLab (the repository
 pickers, Linear lookups) is its own query with `refetchInterval: false` and `refetchOnWindowFocus:
@@ -111,31 +145,43 @@ false`, refreshed by an explicit button; polled handlers never call an external 
 `useSelectableRepositories` in `src/app/(app)/repositories/repo-selection-view.tsx` (its handler
 answers 502 `listing_failed` with the code host's error, which the picker explains).
 
-**Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`:
+**Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`. `invalidate` is
+required: list every list and detail the mutation can affect, by key prefix. Declare how the view
+shows the change at once, too:
 
 ```ts
 const rename = useApiMutation({
   mutationFn: (name: string, { organizationId }) =>
     api.patch(`/api/ui/harnesses/${id}`, mutationResultSchema, { body: { name }, organizationId }),
-  invalidate: (keys) => [keys.harnesses.all, keys.repositories.all],
+  optimistic: (name, cache) =>
+    cache.set<Harness>(
+      cache.keys.harnesses.detail(id),
+      (harness) => harness && { ...harness, name },
+    ),
+  invalidate: (keys) => [keys.harnesses.all],
   success: "Harness renamed",
 });
 ```
 
-`invalidate` is required: list every list and detail the mutation can affect, by key prefix.
-They are invalidated, and their refetch awaited, before `onSuccess` runs, so a `router.push` from
-`onSuccess` never lands on cached-stale data. Only mounted queries refetch: when `onSuccess`
-navigates to a page whose list isn't mounted (a picker's Save going back to `/repositories`), pass
-`{ queryKey: keys.repositories.lists, refetchType: "all" }` so its cached copy is refetched too and
-the page shows the change on arrival. The hook shows the success toast (or the result's
-`warning` as a warning toast), the server's message as a danger toast on failure (`onError` gets
-the `ApiError`, with `fieldErrors` for inline errors), and refuses to run once another tab has
-switched organizations. Optimistic updates go in `onMutate`; roll back in `onError` with its
-`context`. On a polled page, where a refetch in flight could overwrite an edited cache, show the
-change from the mutation instead: give it a `mutationKey` and overlay the pending mutations'
-variables (`useMutationState` with `status: "pending"`) on the query data. The overlay goes away
-by itself on failure, and only after the invalidated refetch on success, so it never flickers
-(`useFindingFeedback` in `reviews/[id]/finding-feedback.tsx`).
+- `optimistic(variables, cache)` runs before the request: `cache.set(prefix, updater)` cancels the
+  in-flight fetches of every cached query under the prefix (so a fetch that started earlier can't
+  overwrite the change), snapshots them and writes the updater's result. On failure every snapshot
+  is restored exactly, with the danger toast.
+- `applyResult(data, cache)` writes the server's response (`cache.set`) before `onSuccess`, for what
+  the view can't predict (a created ID, a computed field).
+- With either, the `invalidate` keys are refetched in the background once the mutation settles
+  (reconcile), and nothing waits on that refetch.
+
+Without either (older code), the keys are invalidated and their refetch awaited before
+`onSuccess` runs, so a `router.push` from `onSuccess` never lands on cached-stale data. Only mounted
+queries refetch: when `onSuccess` navigates to a page whose list isn't mounted (a picker's Save
+going back to `/repositories`), pass `{ queryKey: keys.repositories.lists, refetchType: "all" }` so
+its cached copy is refetched too and the page shows the change on arrival. The hook shows the
+success toast (or the result's `warning` as a warning toast), the server's message as a danger
+toast on failure (`onError` gets the `ApiError`, with `fieldErrors` for inline errors), and refuses
+to run once another tab has switched organizations. A mutation shown as a pending overlay instead
+gives itself a `mutationKey` and overlays the pending mutations' variables (`useMutationState` with
+`status: "pending"`) on the query data (`useFindingFeedback` in `reviews/[id]/finding-feedback.tsx`).
 
 **Loading, errors and freshness.** Wrap a query's content in `QueryBoundary`
 (`src/components/query-boundary.tsx`) with a `Skeleton` shaped like it: it shows the skeleton while
@@ -168,7 +214,8 @@ the new page's skeleton then shows within a frame, since pages render on the cli
 with Retry, inside the shell.
 
 **Tests** render with `createTestQueryClient()` and `queryWrapper(client)` from
-`src/components/query-test-utils.tsx` (no polling, no retries) and mock `fetch` (`mockFetch`
+`src/components/query-test-utils.tsx` (no polling, no retries; live data tests use
+`createQueryClient()` and the fake Ably client in `src/components/live/live-test-utils.ts`) and mock `fetch` (`mockFetch`
 there answers routes by `"METHOD /path"` and records the requests); handler tests
 mock `@/lib/auth/session` or use `@omniralph/db/testing`. `src/app/api/ui/organization-isolation.test.ts`
 drives every `/api/ui` endpoint (and the signed-in layout, and the enter-organization round
@@ -279,6 +326,6 @@ The fixtures and helpers there:
 
 Tests run one at a time (one worker) on one seed, so a spec that changes shared fixture rows
 puts them back, or creates its own rows instead (e.g. a new harness with a unique name).
-Live data polls every 3s: assert with `expect(...).toBeVisible()` and friends, which retry
-for 10s, rather than reloading. The first visit of each route waits for `next dev` to
+Without Ably, live data polls every 10s (changes made in the browser show at once): assert with
+`expect(...).toBeVisible()` and friends, which retry for 20s, rather than reloading. The first visit of each route waits for `next dev` to
 compile it (navigation timeout 3 minutes).
