@@ -23,6 +23,9 @@ function appPages(dir = APP_DIR, segments: string[] = []): Map<string, string> {
 
 const pages = appPages();
 
+/** Entries whose 2.0 page doesn't exist yet: Runs (`/runs`) comes with Epic 5. */
+const PAGES_TO_COME = ["/runs"];
+
 /** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
 function pageFor(href: string): string | undefined {
   const exact = pages.get(href);
@@ -49,8 +52,12 @@ describe("navItems", () => {
     expect(pageFor("/nowhere")).toBeUndefined();
   });
 
-  it("points every entry at an existing page", () => {
+  it("points every entry at an existing page, except the pages later epics build", () => {
     for (const item of navItems) {
+      if (PAGES_TO_COME.includes(item.href)) {
+        expect(pageFor(item.href), item.href).toBeUndefined();
+        continue;
+      }
       const page = pageFor(item.href);
       expect(page, item.href).toBeDefined();
       expect(existsSync(page!)).toBe(true);
@@ -67,7 +74,7 @@ describe("navItems", () => {
         phone,
       })),
     ).toEqual([
-      { id: "runs", label: "Runs", href: "/reviews", placement: "main", phone: "tab" },
+      { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repositories", placement: "main", phone: "drawer" },
       { id: "fleet", label: "Fleet", href: "/harnesses", placement: "main", phone: "drawer" },
       {
@@ -115,6 +122,7 @@ describe("navItems", () => {
   it("only links pages every member may open", () => {
     for (const item of navItems) {
       expect(item).not.toHaveProperty("adminOnly");
+      if (PAGES_TO_COME.includes(item.href)) continue;
       // An admin-only page sends members to access-denied; the entry's page and the views
       // beside it must not.
       const dir = path.dirname(pageFor(item.href)!);

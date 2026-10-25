@@ -74,14 +74,14 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Runs, Repos and Fleet, then Settings, each linking today's page", () => {
+  it("lists Runs, Repos and Fleet, then Settings, each linking its 2.0 page", () => {
     renderShell("/reviews");
     const links = within(sidebar())
       .getAllByRole("link")
       .filter((link) => link.classList.contains("or-nav__item"))
       .map((link) => [link.getAttribute("aria-label"), link.getAttribute("href")]);
     expect(links).toEqual([
-      ["Runs", "/reviews"],
+      ["Runs", "/runs"],
       ["Repos", "/repositories"],
       ["Fleet", "/harnesses"],
       ["Settings", "/settings/organization"],
@@ -89,6 +89,7 @@ describe("AppShell", () => {
   });
 
   it.each([
+    ["/runs/123", "Runs"],
     ["/reviews/123", "Runs"],
     ["/triage", "Runs"],
     ["/analytics", "Runs"],
