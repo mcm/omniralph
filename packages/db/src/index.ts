@@ -728,3 +728,20 @@ export {
   type RunRepository,
   type RunStatus,
 } from "./run-index.js";
+export {
+  getRalphRunDetailFacts,
+  getReviewRunDetailFacts,
+  isRunAttempt,
+  listAttemptTranscript,
+  listRunAttempts,
+  type FindingSeverityCounts,
+  type RalphRunDetailFacts,
+  type ReviewPassEntry,
+  type ReviewRunDetailFacts,
+  type RunAttemptEntry,
+  type RunLaneEntry,
+  type RunStoryEntry,
+  type TranscriptCursor,
+  type TranscriptEvent,
+  type TranscriptPage,
+} from "./run-detail.js";

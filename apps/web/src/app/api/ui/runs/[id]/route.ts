@@ -1,45 +1,25 @@
-import { getIntegration, getRunDetail } from "@omniralph/db";
-import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
-import { requireResourceInActiveOrganization } from "@/lib/api/resource";
+import type { RunDetail } from "@/lib/api/runs";
+import { requireRunAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
-import { organizationDefinitions } from "@/lib/definitions";
-import type { RalphRunDetailView } from "@/lib/ralph/display";
-import { ralphRunDetailView } from "@/lib/ralph/history";
+import { loadRunDetail } from "@/lib/runs/detail";
 
 type Params = { id: string };
 
-/** A coding run's detail (until the unified run detail replaces it). */
-export interface RunDetail {
-  run: RalphRunDetailView;
-  /** False while no Linear workspace is connected. */
-  linearConnected: boolean;
-}
-
-const detailQuery = z.object({ next: z.string().max(2000).optional() });
-
 /**
- * A coding run of the active organization with its stories, lanes, requests, messages,
- * guidance, progress log and jobs: polled by its page. `?next=` is the page asking: when the
- * run is another of the user's organizations', the 409 that switches to it comes back there.
+ * A run of any kind (epic, request, review, triage, ask) in any of the user's
+ * organizations: its list row plus its steps, attempts (newest first) and details, with
+ * the actions open to the user. Transcripts are served per attempt
+ * (`…/attempts/{attemptId}/transcript`). A run outside the user's memberships is not found.
  */
-export const GET = apiHandler<"member", undefined, typeof detailQuery, Params>(
-  { query: detailQuery },
-  async ({ user, params, query }): Promise<RunDetail> => {
-    await requireResourceInActiveOrganization(user, "ralph_run", params.id, {
-      pathPrefix: `/runs/${params.id}`,
-      next: query.next,
+export const GET = apiHandler<"member", undefined, undefined, Params>(
+  {},
+  async ({ user, params }): Promise<RunDetail> => {
+    const { run, organization } = await requireRunAccess(user, params.id, {
+      notFoundMessage: "That run doesn't exist.",
     });
-    const db = getDb();
-    const organizationId = user.organization.id;
-    const [detail, integration] = await Promise.all([
-      getRunDetail(db, organizationId, params.id),
-      getIntegration(db, organizationId, "linear"),
-    ]);
-    if (!detail) throw ApiRouteError.notFound();
-    return {
-      run: await ralphRunDetailView(detail, organizationDefinitions(db, organizationId)),
-      linearConnected: integration !== null,
-    };
+    const detail = await loadRunDetail(getDb(), run, organization);
+    if (!detail) throw ApiRouteError.notFound("That run doesn't exist.");
+    return detail;
   },
 );
