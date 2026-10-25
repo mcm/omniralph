@@ -46,6 +46,7 @@ import {
   harnesses,
   integrations as integrationRows,
   jobs,
+  runActivities,
   listHarnessHostTools,
   recordWebhookEvent,
   organizationMembers,
@@ -62,7 +63,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -184,6 +185,7 @@ const selectable = await import("./scm-connections/[id]/repositories/route");
 const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
+const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
@@ -1225,6 +1227,28 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   });
 
   it("lists and shows each organization's own runs to its members, and 404s on the other's", async () => {
+    // An attempt of each epic, with a transcript.
+    const attempts = new Map<string, string>();
+    for (const tenant of [a, b]) {
+      const [job] = await db
+        .insert(jobs)
+        .values({
+          organizationId: tenant.orgId,
+          type: "ralph.story",
+          taskType: "coding",
+          pool: "long",
+          ralphRunId: tenant.runId,
+          ralphStoryId: tenant.storyId,
+        })
+        .returning();
+      await db.insert(runActivities).values({
+        jobId: job!.id,
+        organizationId: tenant.orgId,
+        type: "thought",
+        body: tenant.name,
+      });
+      attempts.set(tenant.orgId, job!.id);
+    }
     for (const [own, other] of [
       [a, b],
       [b, a],
@@ -1264,20 +1288,38 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         }
 
         const detail = await call(runDetail.GET, { params: { id: own.runId } });
-        expect(detail).toMatchObject({ status: 200, body: { run: { id: own.runId } } });
+        expect(detail).toMatchObject({
+          status: 200,
+          body: { id: own.runId, organization: { id: own.orgId, name: own.name, role } },
+        });
         expect(JSON.stringify(detail.body)).toContain(own.storyId);
-        for (const { body } of [list, detail]) {
+        const triageDetail = await call(runDetail.GET, { params: { id: own.triageRunId } });
+        expect(triageDetail).toMatchObject({ status: 200, body: { id: own.triageRunId } });
+        const ownAttempt = attempts.get(own.orgId)!;
+        const otherAttempt = attempts.get(other.orgId)!;
+        const transcript = await call(runTranscript.GET, {
+          params: { id: own.runId, attemptId: ownAttempt },
+        });
+        expect(transcript).toMatchObject({ status: 200, body: { events: [{ body: own.name }] } });
+        for (const { body } of [list, detail, triageDetail, transcript]) {
           for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         }
 
-        expect(await call(runDetail.GET, { params: { id: other.runId } })).toMatchObject({
-          status: 404,
-        });
-        expect(await call(runDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
-          status: 404,
-        });
+        for (const id of [other.runId, other.triageRunId, "not-a-uuid"]) {
+          expect(await call(runDetail.GET, { params: { id } })).toMatchObject({ status: 404 });
+        }
+        // The other's attempt, through their run or through one's own.
+        for (const [id, attemptId] of [
+          [other.runId, otherAttempt],
+          [own.runId, otherAttempt],
+        ] as const) {
+          expect(await call(runTranscript.GET, { params: { id, attemptId } })).toMatchObject({
+            status: 404,
+          });
+        }
       }
     }
+    await db.delete(jobs).where(inArray(jobs.id, [...attempts.values()]));
   });
 
   it("refuses to stop the other organization's run, and members can't stop runs", async () => {
@@ -1327,7 +1369,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.linear.clear();
   });
 
-  it("sends a member of both organizations to switch to the run's organization", async () => {
+  it("shows a member of both organizations a run of either, with its organization", async () => {
     const [user] = await db
       .insert(users)
       .values({ id: "both-runs-member", email: "both-runs@alpha.io" })
@@ -1339,19 +1381,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
     state.userId = user!.id;
 
-    const page = `/runs/${b.runId}`;
-    const { status, body } = await call(runDetail.GET, {
-      params: { id: b.runId },
-      path: `/api/ui?${new URLSearchParams({ next: page })}`,
+    // The other organization's run, without switching to it.
+    const { status, body } = await call(runDetail.GET, { params: { id: b.runId } });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      id: b.runId,
+      organization: { id: b.orgId, name: b.name, role: "member" },
     });
-    expect(status).toBe(409);
-    expect(body).toMatchObject({ code: "enter_organization" });
-    expect(JSON.stringify(body)).not.toContain(b.name);
-    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-      organizationId: b.orgId,
-      next: page,
-    });
+    expect(JSON.stringify(body)).toContain(b.storyId);
+    for (const marker of markers(a)) expect(JSON.stringify(body)).not.toContain(marker);
 
     // The run list covers either organization, or both, without switching.
     const own = await call(runList.GET, { path: `/api/ui?organization=${b.orgId}` });

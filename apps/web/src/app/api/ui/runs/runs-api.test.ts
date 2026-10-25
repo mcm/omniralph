@@ -16,6 +16,8 @@ import {
   createRun,
   ensureChatThread,
   ensureLane,
+  findings,
+  insertRunActivity,
   getJob,
   getMainLane,
   getRun,
@@ -24,13 +26,10 @@ import {
   integrations,
   jobs,
   listStories,
-  ralphMessages,
   ralphRuns,
-  RUN_DETAIL_MESSAGE_LIMIT,
   saveChatConnection,
   saveIntegration,
   updateLane,
-  updateMessage,
   updateRepositoryRalphSettings,
   updateRun,
   updateStory,
@@ -55,7 +54,7 @@ import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { runListSchema, type RunList, type RunRow } from "@/lib/api/runs";
-import type { RunDetail } from "@/app/api/ui/runs/[id]/route";
+import { runDetailSchema, transcriptPageSchema, type RunDetail } from "@/lib/api/runs";
 
 vi.mock("server-only", () => ({}));
 
@@ -85,6 +84,8 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const runList = await import("@/app/api/ui/runs/route");
 const runDetail = await import("@/app/api/ui/runs/[id]/route");
 const runStop = await import("@/app/api/ui/runs/[id]/stop/route");
+const transcriptRoute =
+  await import("@/app/api/ui/runs/[id]/attempts/[attemptId]/transcript/route");
 const { disconnectedLinearGateway } = await import("@/lib/linear/client");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -137,7 +138,7 @@ const ids = (list: RunList) => list.runs.map((r) => r.id);
 async function detailPage(id: string): Promise<RunDetail> {
   const { status, body } = await call<RunDetail>(runDetail.GET, { id });
   if (status !== 200) throw new Error(`HTTP ${status}`);
-  return body;
+  return runDetailSchema.parse(body);
 }
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -241,17 +242,6 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       ...overrides,
     });
     return linearRun(run);
-  }
-
-  async function connectLinear() {
-    await saveIntegration(db, {
-      organizationId: orgId,
-      provider: "linear",
-      externalId: "org-1",
-      name: "Acme",
-      credentials: { accessToken: "lin_x" },
-      installedByUserId: null,
-    });
   }
 
   /** Sets a run's `created_at` (in any source table) to day `day` of October 2026. */
@@ -630,313 +620,600 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect((await getRun(db, request.id))!.status).toBe("stopped");
   });
 
-  it("shows a chat run's detail with its platform and channel instead of a Linear issue", async () => {
-    const thread = await slackThread();
-    const { run } = await createRun(db, {
-      origin: "chat",
-      organizationId: orgId,
-      chatThreadId: thread.id,
-      repositoryId: repoA,
-      branch: "omniralph/readme-typo",
-      baseBranch: "main",
-    });
-
-    const { run: view } = await detailPage(run.id);
-    expect(view).toMatchObject({
-      origin: "chat",
-      linearIdentifier: null,
-      chatThread: { platform: "slack", channelId: "slack:C0123" },
-      branch: "omniralph/readme-typo",
-    });
-  });
-
   it("is empty with no runs", async () => {
     expect(await listPage()).toEqual({ runs: [], nextCursor: null });
   });
 
-  it("loads a run's detail: header, stories, guidance, progress and jobs", async () => {
-    const run = await newRun();
-    const [s1, s2] = await upsertStories(db, run.id, [
-      { linearIssueId: "d-1", identifier: "ENG-21", title: "First" },
-      { linearIssueId: "d-2", identifier: "ENG-22", title: "Second" },
-    ]);
+  /** A job of the run, set to `finish` (status, times, usage, agent…) once inserted. */
+  async function attempt(
+    input: Omit<Parameters<typeof insertJob>[1], "organizationId" | "taskType" | "pool"> & {
+      taskType?: "coding" | "query" | "review";
+    },
+    finish: Partial<typeof jobs.$inferInsert> = {},
+  ) {
+    const taskType = input.taskType ?? "coding";
     const { job } = await insertJob(db, {
       organizationId: orgId,
-      type: "ralph.story",
-      taskType: "coding",
-      pool: "long",
-      ralphRunId: run.id,
+      pool: taskType === "coding" ? "long" : "short",
+      ...input,
+      taskType,
     });
-    await db
-      .update(jobs)
-      .set({ status: "completed", harnessId, finishedAt: new Date() })
-      .where(eq(jobs.id, job.id));
-    await updateStory(db, s1!.id, {
-      status: "completed",
-      attempts: 2,
-      commitSha: "a".repeat(40),
-      lastJobId: job.id,
-    });
-    await updateStory(db, s2!.id, {
-      status: "blocked",
-      attempts: 1,
-      lastFeedback: "Gates failed.",
-    });
-    await updateRun(db, run.id, {
-      status: "waiting",
-      harnessId,
-      waitingOn: {
-        blockers: [{ id: "x", identifier: "OPS-1", title: "Provision DB" }],
-        manual: [],
-      },
-      guidance: [{ text: "Use pnpm.", at: "2026-10-06T01:00:00.000Z" }],
-      progress: "## Progress\n- did ENG-21",
-    });
-    await connectLinear();
+    if (Object.keys(finish).length) await db.update(jobs).set(finish).where(eq(jobs.id, job.id));
+    return job;
+  }
 
-    const { run: view, linearConnected } = await detailPage(run.id);
-    expect(linearConnected).toBe(true);
-    expect(view).toMatchObject({
-      id: run.id,
-      linearIdentifier: run.linearIdentifier,
-      linearTitle: run.linearTitle,
-      linearUrl: run.linearUrl,
-      status: "waiting",
-      repository: { id: repoA, fullPath: "acme/api" },
-      branch: `eng-${session}`,
-      baseBranch: "main",
-      agent: { id: harnessId, name: "agent-a" },
-      pullRequest: null,
-      waitingOn: { blockers: [{ identifier: "OPS-1", title: "Provision DB" }], manual: [] },
-      guidance: [{ text: "Use pnpm.", at: "2026-10-06T01:00:00.000Z" }],
-      progress: "## Progress\n- did ENG-21",
-      storyCounts: { total: 2, completed: 1 },
-    });
-    expect(view.stories).toEqual([
-      {
-        id: s1!.id,
-        identifier: "ENG-21",
-        title: "First",
-        status: "completed",
-        attempts: 2,
-        lastFeedback: null,
-        commitSha: "a".repeat(40),
-        lastJobId: job.id,
-        laneId: null,
-        elsewhere: null,
-        recommendations: [],
-      },
-      {
-        id: s2!.id,
-        identifier: "ENG-22",
-        title: "Second",
-        status: "blocked",
-        attempts: 1,
-        lastFeedback: "Gates failed.",
-        commitSha: null,
-        lastJobId: null,
-        laneId: null,
-        elsewhere: null,
-        recommendations: [],
-      },
-    ]);
-    expect(view.jobs).toMatchObject([
-      { id: job.id, type: "ralph.story", status: "completed", agent: { name: "agent-a" } },
-    ]);
+  const at = (hour: number, minute = 0) => new Date(Date.UTC(2026, 9, 1, hour, minute));
 
-    // One section per lane: the main lane first, each with its branch, PR/MR and stories.
+  it("shows a multi-story epic: stories with their attempts, lanes, PR and actions", async () => {
+    const run = await newRun();
     const main = (await getMainLane(db, run))!;
+    await updateLane(db, main.id, { prNumber: 7, prUrl: "https://github.com/acme/api/pull/7" });
     const web = await ensureLane(db, {
       runId: run.id,
       repositoryId: repoB,
-      branch: main.branch,
+      branch: "eng-web",
       baseBranch: "develop",
     });
-    await updateLane(db, web.id, {
-      prNumber: 8,
-      prUrl: "https://gitlab.com/acme/web/-/merge_requests/8",
+    await updateLane(db, web.id, { prNumber: 4, prClosed: true, prMerged: true });
+    const [built, retried, merged, manual] = await upsertStories(db, run.id, [
+      { linearIssueId: "e-1", identifier: "ENG-41", title: "Built", laneId: main.id },
+      { linearIssueId: "e-2", identifier: "ENG-42", title: "Retried", laneId: main.id },
+      { linearIssueId: "e-3", identifier: "ENG-43", title: "Web", laneId: web.id },
+      { linearIssueId: "e-4", identifier: "ENG-44", title: "By hand" },
+    ]);
+    await updateStory(db, built!.id, { status: "completed", attempts: 1, commitSha: "abc123" });
+    await updateStory(db, retried!.id, {
+      status: "exhausted",
+      attempts: 2,
+      lastFeedback: "The tests still fail.",
     });
-    await upsertStories(db, run.id, [
-      { linearIssueId: "d-1", identifier: "ENG-21", title: "First", laneId: main.id },
-      { linearIssueId: "d-2", identifier: "ENG-22", title: "Second", laneId: web.id },
+    await updateStory(db, merged!.id, { status: "exhausted", attempts: 1 });
+    await updateStory(db, manual!.id, { status: "manual" });
+    await updateRun(db, run.id, {
+      status: "failed",
+      error: "A story ran out of attempts.",
+      harnessId,
+    });
+
+    const builtJob = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: built!.id },
       {
-        linearIssueId: "d-3",
-        identifier: "ENG-23",
-        title: "Docs",
-        elsewhere: "it's in project Docs",
+        status: "completed",
+        harnessId,
+        deliveryCount: 1,
+        createdAt: at(9),
+        startedAt: at(9),
+        finishedAt: at(9, 30),
+        result: { usage: { inputTokens: 100, outputTokens: 10 } },
       },
-    ]);
-    const laned = (await detailPage(run.id)).run;
-    expect(laned.lanes).toEqual([
+    );
+    const firstTry = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: retried!.id },
       {
-        id: main.id,
-        repository: { id: repoA, provider: "github", fullPath: "acme/api" },
-        main: true,
-        branch: main.branch,
-        baseBranch: "main",
-        pullRequest: null,
-        cleanup: null,
-        reviewRounds: { done: 0, max: 3 },
-        ciFixRounds: { done: 0, max: 3 },
+        status: "failed",
+        error: "Tests failed.",
+        harnessId,
+        deliveryCount: 2,
+        createdAt: at(10),
+        startedAt: at(10),
+        finishedAt: at(10, 10),
       },
+    );
+    const secondTry = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: retried!.id },
+      { status: "expired", createdAt: at(11), startedAt: at(11), finishedAt: at(11, 5) },
+    );
+    const webJob = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: merged!.id },
+      { status: "failed", createdAt: at(12) },
+    );
+    const describe = await attempt(
+      { type: "ralph.describe-pr", ralphRunId: run.id },
+      { status: "completed", createdAt: at(13) },
+    );
+    for (const body of ["Reading the code", "Running tests"]) {
+      await insertRunActivity(db, {
+        jobId: builtJob.id,
+        organizationId: orgId,
+        type: "thought",
+        body,
+      });
+    }
+
+    const view = await detailPage(run.id);
+    expect(view).toMatchObject({
+      id: run.id,
+      kind: "epic",
+      status: "failed",
+      organization: { id: orgId, name: "Acme", role: "admin" },
+      progress: { done: 1, total: 4 },
+    });
+    expect(view.steps).toEqual([
       {
-        id: web.id,
-        repository: { id: repoB, provider: "gitlab", fullPath: "acme/web" },
-        main: false,
-        branch: main.branch,
-        baseBranch: "develop",
-        pullRequest: {
-          number: 8,
-          url: "https://gitlab.com/acme/web/-/merge_requests/8",
-          label: "!8",
+        kind: "story",
+        id: built!.id,
+        workItem: {
+          tracker: "linear",
+          identifier: "ENG-41",
+          url: "https://linear.app/acme/issue/ENG-41",
         },
-        cleanup: null,
-        reviewRounds: { done: 0, max: 3 },
-        ciFixRounds: { done: 0, max: 3 },
+        title: "Built",
+        status: "completed",
+        attempts: 1,
+        durationMs: 30 * 60_000,
+        commit: "abc123",
+        lastFeedback: null,
+        lane: {
+          id: main.id,
+          repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+          branch: main.branch,
+        },
+      },
+      expect.objectContaining({
+        id: retried!.id,
+        status: "exhausted",
+        attempts: 2,
+        // Both attempts: 10 + 5 minutes.
+        durationMs: 15 * 60_000,
+        lastFeedback: "The tests still fail.",
+      }),
+      expect.objectContaining({
+        id: merged!.id,
+        durationMs: 0,
+        lane: {
+          id: web.id,
+          repository: { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+          branch: "eng-web",
+        },
+      }),
+      expect.objectContaining({ id: manual!.id, status: "manual", lane: null }),
+    ]);
+
+    // Newest first, each with its story.
+    expect(view.attempts.map((a) => [a.id, a.step])).toEqual([
+      [describe.id, null],
+      [webJob.id, merged!.id],
+      [secondTry.id, retried!.id],
+      [firstTry.id, retried!.id],
+      [builtJob.id, built!.id],
+    ]);
+    expect(view.attempts.at(-1)).toEqual({
+      id: builtJob.id,
+      label: "Built ENG-41",
+      type: "ralph.story",
+      status: "completed",
+      agent: { id: harnessId, name: "agent-a" },
+      deliveries: 1,
+      cancelRequested: false,
+      createdAt: at(9).toISOString(),
+      startedAt: at(9).toISOString(),
+      finishedAt: at(9, 30).toISOString(),
+      tokens: { in: 100, out: 10 },
+      error: null,
+      step: built!.id,
+      transcriptEvents: 2,
+    });
+    expect(view.attempts.find((a) => a.id === firstTry.id)).toMatchObject({
+      label: "Couldn't build ENG-42",
+      error: "Tests failed.",
+      deliveries: 2,
+      transcriptEvents: 0,
+    });
+    expect(view.attempts[0]!.label).toBe(
+      "Wrote the pull request description for " + run.linearIdentifier,
+    );
+    for (const a of view.attempts) expect(a.label).not.toContain("ralph");
+
+    expect(view.details).toEqual({
+      repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+      branch: main.branch,
+      baseBranch: "main",
+      routedBy: null,
+      agent: { id: harnessId, name: "agent-a" },
+      tokens: { in: 100, out: 10 },
+      attemptCount: 5,
+      pullRequest: {
+        provider: "github",
+        number: 7,
+        url: "https://github.com/acme/api/pull/7",
+        merged: false,
+        closed: false,
+      },
+      lanes: [
+        {
+          id: main.id,
+          repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+          branch: main.branch,
+          baseBranch: "main",
+          pullRequest: {
+            provider: "github",
+            number: 7,
+            url: "https://github.com/acme/api/pull/7",
+            merged: false,
+            closed: false,
+            draft: false,
+            reviewState: "none",
+          },
+        },
+        {
+          id: web.id,
+          repository: { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+          branch: "eng-web",
+          baseBranch: "develop",
+          pullRequest: {
+            provider: "gitlab",
+            number: 4,
+            url: "https://gitlab.example.com/acme/web/-/merge_requests/4",
+            merged: true,
+            closed: true,
+            draft: false,
+            reviewState: "none",
+          },
+        },
+      ],
+      error: "A story ran out of attempts.",
+      waitingOn: null,
+      actions: {
+        // Members can't stop runs yet; a failed run doesn't stop anyway.
+        stop: false,
+        retry: {
+          run: true,
+          // Not the story whose merge request is merged, nor the manual one.
+          storyIds: [built!.id, retried!.id],
+          // The newest attempt of each story that didn't succeed.
+          attemptIds: [webJob.id, secondTry.id],
+        },
+      },
+    });
+
+    // A finished epic re-runs only a completed story.
+    await updateRun(db, run.id, { status: "completed" });
+    expect((await detailPage(run.id)).details.actions.retry).toEqual({
+      run: false,
+      storyIds: [built!.id],
+      attemptIds: [],
+    });
+    // A running one can be stopped (by an admin), and retries nothing.
+    await updateRun(db, run.id, { status: "running" });
+    expect((await detailPage(run.id)).details.actions).toEqual({
+      stop: true,
+      retry: { run: false, storyIds: [], attemptIds: [] },
+    });
+    state.user = member;
+    state.orgId = orgId;
+    expect((await detailPage(run.id)).details.actions.stop).toBe(false);
+  });
+
+  it("shows what a waiting epic waits for", async () => {
+    const run = await newRun();
+    await updateRun(db, run.id, {
+      status: "waiting",
+      routedBy: "team `ENG`",
+      waitingOn: {
+        blockers: [{ id: "b-1", identifier: "OPS-3", title: "Infra" }],
+        manual: [{ id: "m-1", identifier: "ENG-50", title: "By hand" }],
+      },
+    });
+    const view = await detailPage(run.id);
+    expect(view.details).toMatchObject({
+      routedBy: "team `ENG`",
+      waitingOn: {
+        blockers: [
+          { tracker: "linear", identifier: "OPS-3", url: "https://linear.app/acme/issue/OPS-3" },
+        ],
+        manual: [
+          { tracker: "linear", identifier: "ENG-50", url: "https://linear.app/acme/issue/ENG-50" },
+        ],
+      },
+      pullRequest: null,
+      actions: { stop: true, retry: { run: true, storyIds: [], attemptIds: [] } },
+    });
+    expect(view.steps).toEqual([]);
+  });
+
+  it("shows a request run's attempts as its steps", async () => {
+    const run = await newRun({ mode: "request", kind: "single" });
+    await updateRun(db, run.id, { status: "stopped" });
+    const first = await attempt(
+      { type: "ralph.request", ralphRunId: run.id },
+      { status: "completed", createdAt: at(9), startedAt: at(9), finishedAt: at(9, 2) },
+    );
+    const second = await attempt(
+      { type: "ralph.request", ralphRunId: run.id },
+      { status: "canceled", createdAt: at(10) },
+    );
+    const view = await detailPage(run.id);
+    expect(view.steps).toEqual([
+      {
+        kind: "attempt",
+        id: first.id,
+        label: `Worked on a request in ${run.linearIdentifier}`,
+        status: "completed",
+        durationMs: 120_000,
+      },
+      {
+        kind: "attempt",
+        id: second.id,
+        label: `Couldn't work on a request in ${run.linearIdentifier}`,
+        status: "canceled",
+        durationMs: null,
       },
     ]);
-    expect(laned.stories.map((s) => [s.identifier, s.laneId, s.elsewhere])).toEqual([
-      ["ENG-21", main.id, null],
-      ["ENG-22", web.id, null],
-      ["ENG-23", null, "it's in project Docs"],
+    expect(view.attempts.map((a) => [a.id, a.step])).toEqual([
+      [second.id, second.id],
+      [first.id, first.id],
     ]);
+    expect(view.details.actions.retry).toEqual({
+      run: true,
+      storyIds: [],
+      attemptIds: [second.id],
+    });
+  });
 
-    // waiting_on is only shown while waiting.
-    await updateRun(db, run.id, { status: "running" });
-    expect((await detailPage(run.id)).run.waitingOn).toBeNull();
+  it("shows a review run: two passes with their open findings, and the correlation", async () => {
+    const { reviewRun } = await runOfEachKind();
+    const passes = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.reviewRunId, reviewRun.id))
+      .orderBy(reviews.createdAt, reviews.id);
+    const [security, style] = passes;
+    await db
+      .update(reviews)
+      .set({ taskId: "builtin:review-pr", durationMs: 4000 })
+      .where(eq(reviews.id, security!.id));
+    await db.update(reviews).set({ status: "failed" }).where(eq(reviews.id, style!.id));
+    const finding = (severity: "high" | "low", status: "open" | "dismissed" = "open") => ({
+      reviewId: security!.id,
+      path: "src/a.ts",
+      startLine: 1,
+      endLine: 2,
+      severity,
+      category: "bug",
+      title: "A finding",
+      body: "Body",
+      confidence: 0.9,
+      status,
+    });
+    await db
+      .insert(findings)
+      .values([finding("high"), finding("high"), finding("low"), finding("low", "dismissed")]);
+    const passJobs = [];
+    for (const pass of [security!, style!]) {
+      passJobs.push(
+        await attempt(
+          {
+            type: "review.task",
+            taskType: "review",
+            reviewRunId: reviewRun.id,
+            repositoryId: repoB,
+            payload: { trigger: { kind: "pr.mention", context: { reviewId: pass.id } } },
+          },
+          { status: pass === security ? "completed" : "failed", harnessId },
+        ),
+      );
+    }
+    const correlation = await attempt(
+      { type: "review.correlate", taskType: "query", reviewRunId: reviewRun.id },
+      {
+        status: "running",
+        startedAt: at(9),
+        result: { usage: { inputTokens: 7, outputTokens: 3 } },
+      },
+    );
+    await db
+      .update(reviewRuns)
+      .set({ correlationJobId: correlation.id })
+      .where(eq(reviewRuns.id, reviewRun.id));
 
-    await expect(detailPage("00000000-0000-4000-8000-000000000000")).rejects.toThrow("HTTP 404");
+    const view = await detailPage(reviewRun.id);
+    expect(view).toMatchObject({ kind: "review", status: "running", progress: { total: 3 } });
+    expect(view.steps).toEqual([
+      {
+        kind: "review_pass",
+        id: security!.id,
+        taskName: "Review a pull request",
+        status: "completed",
+        tokens: { in: 50, out: 5 },
+        durationMs: 4000,
+        openFindings: { critical: 0, high: 2, medium: 0, low: 1, info: 0 },
+      },
+      {
+        kind: "review_pass",
+        id: style!.id,
+        taskName: "Review",
+        status: "failed",
+        tokens: { in: 51, out: 5 },
+        durationMs: null,
+        openFindings: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+      },
+      {
+        kind: "correlation",
+        id: correlation.id,
+        label: "Combining the review findings for merge request !3 in web",
+        status: "running",
+        tokens: { in: 7, out: 3 },
+        durationMs: null,
+      },
+    ]);
+    expect(view.attempts.map((a) => [a.id, a.step])).toEqual([
+      [correlation.id, correlation.id],
+      [passJobs[1]!.id, style!.id],
+      [passJobs[0]!.id, security!.id],
+    ]);
+    expect(view.attempts.map((a) => a.label)).toEqual([
+      "Combining the review findings for merge request !3 in web",
+      expect.stringContaining("Couldn't"),
+      expect.not.stringContaining("Couldn't"),
+    ]);
+    expect(view.details).toMatchObject({
+      repository: { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+      routedBy: null,
+      lanes: [],
+      attemptCount: 3,
+      pullRequest: {
+        provider: "gitlab",
+        number: 3,
+        url: "https://gitlab.example.com/acme/web/-/merge_requests/3",
+        // Not a merge request Om opened: unknown.
+        merged: null,
+        closed: null,
+      },
+      // Correlating: nothing to retry or stop.
+      actions: { stop: false, retry: { run: false, storyIds: [], attemptIds: [] } },
+    });
+
+    await db.update(reviewRuns).set({ status: "failed" }).where(eq(reviewRuns.id, reviewRun.id));
+    expect((await detailPage(reviewRun.id)).details.actions.retry).toEqual({
+      run: true,
+      storyIds: [],
+      attemptIds: [passJobs[1]!.id],
+    });
+  });
+
+  it("shows a triage run's turns, and an ask", async () => {
+    const { triage, ask } = await runOfEachKind();
+    const [firstTurn] = await db.select().from(jobs).where(eq(jobs.triageRunId, triage.id));
+    await db
+      .update(jobs)
+      .set({ status: "completed", createdAt: at(8), startedAt: at(8), finishedAt: at(8, 1) })
+      .where(eq(jobs.id, firstTurn!.id));
+    const secondTurn = await attempt(
+      { type: "triage.run", taskType: "query", triageRunId: triage.id, repositoryId: repoA },
+      { status: "running", harnessId, startedAt: at(9), createdAt: at(9) },
+    );
+
+    const triageView = await detailPage(triage.id);
+    expect(triageView.steps).toEqual([
+      {
+        kind: "attempt",
+        id: firstTurn!.id,
+        label: "Triaged ENG-90",
+        status: "completed",
+        durationMs: 60_000,
+      },
+      {
+        kind: "attempt",
+        id: secondTurn.id,
+        label: "Triaging ENG-90",
+        status: "running",
+        durationMs: null,
+      },
+    ]);
+    expect(triageView.attempts.map((a) => [a.id, a.step, a.agent?.name ?? null])).toEqual([
+      [secondTurn.id, secondTurn.id, "agent-a"],
+      [firstTurn!.id, firstTurn!.id, null],
+    ]);
+    expect(triageView.details).toMatchObject({
+      attemptCount: 2,
+      pullRequest: null,
+      lanes: [],
+      actions: { stop: false, retry: { run: false, storyIds: [], attemptIds: [] } },
+    });
+
+    const askView = await detailPage(ask.id);
+    const [askJob] = askView.attempts;
+    expect(askView).toMatchObject({
+      kind: "ask",
+      status: "stopped",
+      title: "Where is auth handled?",
+      steps: [{ kind: "attempt", id: askJob!.id, label: "Couldn't answer a question about api" }],
+    });
+    expect(askJob).toMatchObject({ type: "chat.ask", status: "canceled", step: askJob!.id });
+    expect(askView.details).toMatchObject({
+      attemptCount: 1,
+      actions: { stop: false, retry: { run: true, attemptIds: [askJob!.id] } },
+    });
+  });
+
+  it("is 404 for an unknown run", async () => {
+    await expect(detailPage(randomUUID())).rejects.toThrow("HTTP 404");
     await expect(detailPage("nope")).rejects.toThrow("HTTP 404");
   });
 
-  it("shows each lane's review/CI rounds, the pending requests and the live messages", async () => {
-    // acme/web turned CI fixes off and allows 5 review rounds.
-    await updateRepositoryRalphSettings(db, repoB, {
-      ralphEnabled: true,
-      ralphSettings: { ...DEFAULT_RALPH_SETTINGS, maxReviewRounds: 5, respondToCiFailures: false },
-    });
+  async function transcript(id: string, attemptId: string, search: Record<string, string> = {}) {
+    const response = await transcriptRoute.GET(
+      new Request(`http://localhost/api/ui?${new URLSearchParams(search)}`),
+      { params: Promise.resolve({ id, attemptId }) },
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  it("pages an attempt's transcript oldest first, and 404s on another run's attempt", async () => {
     const run = await newRun();
-    const main = (await getMainLane(db, run))!;
-    await updateLane(db, main.id, { reviewRounds: 2, ciFixRounds: 3 });
-    const web = await ensureLane(db, {
-      runId: run.id,
-      repositoryId: repoB,
-      branch: main.branch,
-      baseBranch: "main",
-    });
-    await updateLane(db, web.id, { reviewRounds: 1, ciFixRounds: 1 });
-
-    // Pending: no job, not consumed (lane null: the main lane's). Consumed ones aren't listed.
-    const at = (minute: number) => new Date(Date.UTC(2026, 9, 6, 10, minute));
-    const ask = await insertMessage(db, {
-      runId: run.id,
-      kind: "request",
-      text: "Open the PR",
-      author: "Ada",
-    });
-    const fix = await insertMessage(db, {
-      runId: run.id,
-      laneId: web.id,
-      kind: "request",
-      text: "Fix the CI",
-    });
-    const done = await insertMessage(db, { runId: run.id, kind: "request", text: "Done already" });
-    await updateMessage(db, done.id, { consumedAt: new Date() });
-
-    // Live messages: delivered, rejected (kept as guidance), still waiting.
-    const { job: story } = await insertJob(db, {
-      organizationId: orgId,
-      type: "ralph.story",
-      taskType: "coding",
-      pool: "long",
-      ralphRunId: run.id,
-    });
-    await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, story.id));
-    const live = async (
-      minute: number,
-      text: string,
-      update: Parameters<typeof updateMessage>[2],
-    ) => {
-      const message = await insertMessage(db, {
-        runId: run.id,
-        jobId: story.id,
-        kind: "guidance",
-        text,
-        author: "Bob",
+    const job = await attempt({ type: "ralph.story", ralphRunId: run.id });
+    const base = Date.UTC(2026, 9, 1, 9);
+    const activities = [];
+    for (let i = 0; i < 5; i++) {
+      const activity = await insertRunActivity(db, {
+        jobId: job.id,
+        organizationId: orgId,
+        type: i % 2 ? "action" : "thought",
+        body: i % 2 ? "Bash" : `Thought ${i}`,
+        parameter: i % 2 ? `cmd ${i}` : null,
       });
-      await db
-        .update(ralphMessages)
-        .set({ createdAt: at(minute) })
-        .where(eq(ralphMessages.id, message.id));
-      if (Object.keys(update).length > 0) await updateMessage(db, message.id, update);
-      return message;
-    };
-    const delivered = await live(1, "Use pnpm", { deliveredAt: at(2), consumedAt: at(2) });
-    const rejected = await live(3, "Skip the docs", { consumedAt: at(4) });
-    const waiting = await live(5, "Also add a test", {});
+      activities.push(activity);
+    }
+    // Two share an instant, to the microsecond.
+    for (const [i, activity] of activities.entries()) {
+      const when = new Date(base + Math.min(i, 3) * 1000).toISOString();
+      await db.execute(
+        sql`update run_activities set created_at = ${when}::timestamptz where id = ${activity.id}`,
+      );
+    }
 
-    const view = (await detailPage(run.id)).run;
-    expect(view.lanes.map((l) => [l.repository.fullPath, l.reviewRounds, l.ciFixRounds])).toEqual([
-      ["acme/api", { done: 2, max: 3 }, { done: 3, max: 3 }],
-      ["acme/web", { done: 1, max: 5 }, { done: 1, max: null }],
-    ]);
-    expect(view.pendingRequests).toEqual([
-      {
-        id: ask.id,
-        laneId: null,
-        text: "Open the PR",
-        author: "Ada",
-        createdAt: ask.createdAt.toISOString(),
-      },
-      {
-        id: fix.id,
-        laneId: web.id,
-        text: "Fix the CI",
-        author: null,
-        createdAt: fix.createdAt.toISOString(),
-      },
-    ]);
-    expect(view.messageLimit).toBe(RUN_DETAIL_MESSAGE_LIMIT);
-    const job = { id: story.id, type: "ralph.story", status: "running" };
-    expect(view.messages).toEqual([
-      {
-        id: waiting.id,
-        kind: "guidance",
-        text: "Also add a test",
-        author: "Bob",
-        job,
-        state: "waiting",
-        createdAt: at(5).toISOString(),
-        deliveredAt: null,
-        consumedAt: null,
-      },
-      {
-        id: rejected.id,
-        kind: "guidance",
-        text: "Skip the docs",
-        author: "Bob",
-        job,
-        state: "guidance",
-        createdAt: at(3).toISOString(),
-        deliveredAt: null,
-        consumedAt: at(4).toISOString(),
-      },
-      {
-        id: delivered.id,
-        kind: "guidance",
-        text: "Use pnpm",
-        author: "Bob",
-        job,
-        state: "delivered",
-        createdAt: at(1).toISOString(),
-        deliveredAt: at(2).toISOString(),
-        consumedAt: at(2).toISOString(),
-      },
-    ]);
+    const all = await transcript(run.id, job.id);
+    expect(all.status).toBe(200);
+    const page = transcriptPageSchema.parse(all.body);
+    expect(page.nextCursor).toBeNull();
+    expect(page.events[0]).toEqual({
+      id: activities[0]!.id,
+      type: "thought",
+      body: "Thought 0",
+      parameter: null,
+      at: new Date(base).toISOString(),
+    });
+    expect(page.events[1]).toMatchObject({ type: "action", body: "Bash", parameter: "cmd 1" });
+    const order = page.events.map((e) => e.id);
 
-    // A run without requests or messages.
-    const empty = (await detailPage((await newRun()).id)).run;
-    expect(empty).toMatchObject({ pendingRequests: [], messages: [] });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const { body } = await transcript(run.id, job.id, {
+        limit: "2",
+        ...(cursor ? { cursor } : {}),
+      });
+      const next = transcriptPageSchema.parse(body);
+      seen.push(...next.events.map((e) => e.id));
+      cursor = next.nextCursor;
+      pages += 1;
+    } while (cursor && pages < 10);
+    expect(pages).toBe(3);
+    expect(seen).toEqual(order);
+    expect(new Set(seen)).toEqual(new Set(activities.map((a) => a.id)));
+
+    const refused: Record<string, string>[] = [
+      { limit: "0" },
+      { limit: "501" },
+      { limit: "x" },
+      { cursor: "bad" },
+    ];
+    for (const search of refused) {
+      expect((await transcript(run.id, job.id, search)).status).toBe(400);
+    }
+    expect((await transcript(run.id, job.id, { limit: "500" })).status).toBe(200);
+
+    // Another run's attempt, an unknown one and an unknown run.
+    const other = await newRun();
+    const otherJob = await attempt({ type: "ralph.story", ralphRunId: other.id });
+    expect(await transcript(run.id, otherJob.id)).toMatchObject({
+      status: 404,
+      body: { error: "That attempt doesn't exist." },
+    });
+    expect((await transcript(run.id, randomUUID())).status).toBe(404);
+    expect((await transcript(run.id, "nope")).status).toBe(404);
+    expect((await transcript(randomUUID(), job.id)).status).toBe(404);
   });
 
   async function runningRun(): Promise<{ run: LinearRun; jobId: string }> {
@@ -979,9 +1256,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, jobId));
     expect(await stopRalphRun(run.id)).toEqual({ ok: true });
 
-    const { run: view } = await detailPage(run.id);
+    const view = await detailPage(run.id);
     expect(view.status).toBe("stopped");
-    expect(view.jobs).toMatchObject([{ id: jobId, status: "running", cancelRequested: true }]);
+    expect(view.attempts).toMatchObject([{ id: jobId, status: "running", cancelRequested: true }]);
   });
 
   it("only lets admins stop a run", async () => {
@@ -1067,7 +1344,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     // Their members see it.
     state.orgId = other!.id;
     expect(ids(await listPage())).toEqual([theirs.id]);
-    expect((await detailPage(theirs.id)).run).toMatchObject({ id: theirs.id });
+    expect(await detailPage(theirs.id)).toMatchObject({ id: theirs.id });
     await expect(detailPage(ours.id)).rejects.toThrow("HTTP 404");
   });
 });

@@ -89,3 +89,228 @@ export const runListSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type RunList = z.infer<typeof runListSchema>;
+
+// ── Run detail ───────────────────────────────────────────────────────────────
+
+/** `jobs.status`: an attempt's status. */
+export const ATTEMPT_STATUSES = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+  "expired",
+  "skipped",
+] as const;
+
+const tokens = z.object({ in: z.number(), out: z.number() });
+
+/** One attempt (job) of a run. `type` is the raw job type, for filtering only. */
+export const runAttemptSchema = z.object({
+  id: z.string(),
+  /** What it did, in plain language (`describeAttempt`). */
+  label: z.string(),
+  type: z.string(),
+  status: z.enum(ATTEMPT_STATUSES),
+  agent: agentRefSchema.nullable(),
+  /** How often it was handed to an agent. */
+  deliveries: z.number(),
+  /** Stop asked a running attempt to cancel; its agent hasn't confirmed yet. */
+  cancelRequested: z.boolean(),
+  createdAt: isoDate,
+  startedAt: isoDate.nullable(),
+  finishedAt: isoDate.nullable(),
+  tokens,
+  error: z.string().nullable(),
+  /** The `id` of the step it belongs to; null for work outside the steps (e.g. the PR step). */
+  step: z.string().nullable(),
+  /** Its transcript's length (`GET …/attempts/{id}/transcript`). */
+  transcriptEvents: z.number(),
+});
+export type RunAttempt = z.infer<typeof runAttemptSchema>;
+
+const laneRefSchema = z.object({
+  id: z.string(),
+  repository: repositoryRefSchema,
+  branch: z.string(),
+});
+
+export const STORY_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "blocked",
+  "exhausted",
+  "manual",
+  "canceled",
+] as const;
+export const REVIEW_PASS_STATUSES = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "budget_exhausted",
+  "skipped",
+] as const;
+
+/** An epic's story. */
+export const storyStepSchema = z.object({
+  kind: z.literal("story"),
+  id: z.string(),
+  workItem: workItemRefSchema,
+  title: z.string(),
+  status: z.enum(STORY_STATUSES),
+  /** Finished attempts. */
+  attempts: z.number(),
+  /** Sum of its attempts' start → finish, in milliseconds. */
+  durationMs: z.number(),
+  /** The commit it was built in. */
+  commit: z.string().nullable(),
+  /** Why its last attempt didn't complete. */
+  lastFeedback: z.string().nullable(),
+  lane: laneRefSchema.nullable(),
+});
+
+export const findingCountsSchema = z.object({
+  critical: z.number(),
+  high: z.number(),
+  medium: z.number(),
+  low: z.number(),
+  info: z.number(),
+});
+
+/** A review run's pass: one review task. */
+export const reviewPassStepSchema = z.object({
+  kind: z.literal("review_pass"),
+  id: z.string(),
+  taskName: z.string(),
+  status: z.enum(REVIEW_PASS_STATUSES),
+  tokens,
+  durationMs: z.number().nullable(),
+  /** Its findings still open, by severity. */
+  openFindings: findingCountsSchema,
+});
+
+/** A review run's correlation: merging its passes' results (its attempt's ID). */
+export const correlationStepSchema = z.object({
+  kind: z.literal("correlation"),
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(ATTEMPT_STATUSES),
+  tokens,
+  durationMs: z.number().nullable(),
+});
+
+/** A request's, triage's or ask's step: one attempt (a turn), by the attempt's ID. */
+export const attemptStepSchema = z.object({
+  kind: z.literal("attempt"),
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(ATTEMPT_STATUSES),
+  durationMs: z.number().nullable(),
+});
+
+export const runStepSchema = z.discriminatedUnion("kind", [
+  storyStepSchema,
+  reviewPassStepSchema,
+  correlationStepSchema,
+  attemptStepSchema,
+]);
+export type RunStep = z.infer<typeof runStepSchema>;
+
+/** A PR/MR of the run, with what its code host last said about it. */
+export const runPullRequestSchema = pullRequestRefSchema.extend({
+  /** Null when unknown (a review of a PR/MR Om didn't open). */
+  merged: z.boolean().nullable(),
+  closed: z.boolean().nullable(),
+});
+
+/** A lane of an epic or request: one repo's branch and PR/MR. */
+export const runLaneSchema = z.object({
+  id: z.string(),
+  repository: repositoryRefSchema,
+  branch: z.string(),
+  baseBranch: z.string(),
+  pullRequest: runPullRequestSchema
+    .extend({
+      draft: z.boolean(),
+      reviewState: z.enum([
+        "none",
+        "review_requested",
+        "commented",
+        "changes_requested",
+        "approved",
+      ]),
+    })
+    .nullable(),
+});
+
+/** What this user may do with the run (`POST …/retry` targets and `POST …/stop`). */
+export const runActionsSchema = z.object({
+  stop: z.boolean(),
+  retry: z.object({
+    /** `{kind: "run"}`. */
+    run: z.boolean(),
+    /** `{kind: "story", storyId}`. */
+    storyIds: z.array(z.string()),
+    /** `{kind: "attempt", attemptId}`. */
+    attemptIds: z.array(z.string()),
+  }),
+});
+export type RunActions = z.infer<typeof runActionsSchema>;
+export type RunLane = z.infer<typeof runLaneSchema>;
+
+export const runDetailsSchema = z.object({
+  repository: repositoryRefSchema.nullable(),
+  branch: z.string().nullable(),
+  baseBranch: z.string().nullable(),
+  /** How the repo was chosen, e.g. "team `ENG`". */
+  routedBy: z.string().nullable(),
+  agent: agentRefSchema.nullable(),
+  tokens,
+  attemptCount: z.number(),
+  pullRequest: runPullRequestSchema.nullable(),
+  /** Every lane of an epic or request (more than one for a multi-repo epic). */
+  lanes: z.array(runLaneSchema),
+  /** Why it failed or stopped. */
+  error: z.string().nullable(),
+  /** What a waiting epic waits for. */
+  waitingOn: z
+    .object({ blockers: z.array(workItemRefSchema), manual: z.array(workItemRefSchema) })
+    .nullable(),
+  actions: runActionsSchema,
+});
+export type RunDetails = z.infer<typeof runDetailsSchema>;
+
+/**
+ * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its steps (in order),
+ * attempts (newest first) and details.
+ */
+export const runDetailSchema = runRowSchema.extend({
+  steps: z.array(runStepSchema),
+  attempts: z.array(runAttemptSchema),
+  details: runDetailsSchema,
+});
+export type RunDetail = z.infer<typeof runDetailSchema>;
+
+/** Default and largest page of `GET /api/ui/runs/{id}/attempts/{attemptId}/transcript`. */
+export const TRANSCRIPT_DEFAULT_LIMIT = 200;
+export const TRANSCRIPT_MAX_LIMIT = 500;
+
+export const transcriptEventSchema = z.object({
+  id: z.string(),
+  /** Claude's text (`thought`) or a tool call (`action`). */
+  type: z.enum(["thought", "action"]),
+  /** A thought's text, or an action's name. */
+  body: z.string(),
+  /** An action's parameter (e.g. the command); null for thoughts. */
+  parameter: z.string().nullable(),
+  at: isoDate,
+});
+
+/** `GET /api/ui/runs/{id}/attempts/{attemptId}/transcript?cursor=&limit=`: oldest first. */
+export const transcriptPageSchema = z.object({
+  events: z.array(transcriptEventSchema),
+  nextCursor: z.string().nullable(),
+});
+export type TranscriptPageView = z.infer<typeof transcriptPageSchema>;
