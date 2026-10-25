@@ -1,47 +1,44 @@
-import {
-  getIntegration,
-  listRalphRunRepositories,
-  listRuns,
-  RALPH_RUN_PAGE_SIZE,
-} from "@omniralph/db";
-import { z } from "zod";
-import { apiHandler } from "@/lib/api/handler";
+import { fieldErrors } from "@omniralph/shared";
+import { listRunIndex, loadRunListEntries } from "@omniralph/db";
+import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { RunList } from "@/lib/api/runs";
+import { resolveOrganizationScope } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
-import { parseRalphRunListParams } from "@/lib/ralph/display";
-import { ralphRunRow } from "@/lib/ralph/history";
-
-const listQuery = z.object({
-  status: z.string().optional(),
-  repository: z.string().optional(),
-  page: z.string().optional(),
-});
+import { encodeRunCursor, runListQuerySchema, runListSearch, runRow } from "@/lib/runs/list";
 
 /**
- * A page of the active organization's coding runs, newest first, filtered by status and
- * repository (unknown values are ignored), with the repositories to filter by: the Coding
- * tasks page, polled.
+ * A page of runs of every kind (epic, request, review, triage, ask), newest first: the
+ * active organization's, one of the user's organizations' (`organization=<id>`) or all of
+ * them (`organization=all`). Filters combine; an unknown filter value answers 400.
  */
-export const GET = apiHandler({ query: listQuery }, async ({ user, query }): Promise<RunList> => {
+export const GET = apiHandler({}, async ({ user, request }): Promise<RunList> => {
+  const parsed = runListQuerySchema.safeParse(runListSearch(new URL(request.url).searchParams));
+  if (!parsed.success) {
+    const errors = fieldErrors(parsed.error);
+    throw new ApiRouteError(
+      400,
+      Object.values(errors)[0] ?? "The request is invalid.",
+      "invalid_request",
+      errors,
+    );
+  }
+  const query = parsed.data;
+  const organizations = await resolveOrganizationScope(user, query.organization);
   const db = getDb();
-  const organizationId = user.organization.id;
-  const params = parseRalphRunListParams(query);
-  const [page, repositories, integration] = await Promise.all([
-    listRuns(db, organizationId, {
-      status: params.status ?? undefined,
-      repositoryId: params.repositoryId ?? undefined,
-      page: params.page,
-      pageSize: RALPH_RUN_PAGE_SIZE,
-    }),
-    listRalphRunRepositories(db, organizationId),
-    getIntegration(db, organizationId, "linear"),
-  ]);
+  const page = await listRunIndex(db, {
+    organizationIds: organizations.map((o) => o.id),
+    kinds: query.kind,
+    statuses: query.status,
+    origins: query.origin,
+    repositoryId: query.repository,
+    harnessId: query.agent,
+    cursor: query.cursor,
+    limit: query.limit,
+  });
+  const byId = new Map(organizations.map((o) => [o.id, o]));
+  const entries = await loadRunListEntries(db, page.runs);
   return {
-    runs: page.runs.map(ralphRunRow),
-    repositories: repositories.map(({ id, provider, fullPath }) => ({ id, provider, fullPath })),
-    page: params.page,
-    pageSize: page.pageSize,
-    total: page.total,
-    linearConnected: integration !== null,
+    runs: entries.map((entry) => runRow(entry, byId.get(entry.organizationId)!)),
+    nextCursor: page.next && encodeRunCursor(page.next),
   };
 });

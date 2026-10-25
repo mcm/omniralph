@@ -25,7 +25,6 @@ import {
   IconListCheck,
   IconMessageCircleUser,
   IconPlugConnected,
-  IconRepeat,
   IconRobot,
   IconRoute,
   IconServer,
@@ -42,7 +41,6 @@ export type { OrganizationOption };
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
   reviews: IconHistory,
-  ralph: IconRepeat,
   triage: IconClipboardText,
   harnesses: IconServer,
   jobs: IconListCheck,

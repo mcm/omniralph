@@ -109,11 +109,6 @@ const ALLOWED: Allowed[] = [
     files: ["packages/ralph/src/triage.ts", "packages/tasks/src/builtin/triage.ts"],
     reason: "tells triage to drop the legacy `## Ralph Metadata` section from issues",
   },
-  {
-    text: /^ralph$/g,
-    files: ["apps/web/src/lib/navigation.ts"],
-    reason: "the navigation icon key (an identifier); its label is “Coding tasks”",
-  },
 ];
 
 const WORD = /\bralph\b/i;
@@ -212,7 +207,7 @@ describe("user-facing wording", () => {
   const { hits, used } = scan(files);
 
   it("scans the pages, components and message builders", () => {
-    expect(files).toContain("apps/web/src/app/(app)/coding/page.tsx");
+    expect(files).toContain("apps/web/src/app/(app)/triage/page.tsx");
     expect(files).toContain("apps/web/src/lib/linear/webhook.ts");
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });

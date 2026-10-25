@@ -48,7 +48,7 @@ import {
   type TriageRunRow,
 } from "@/lib/triage/display";
 import { ProviderIcon } from "@/components/provider-icon";
-import { AgentName } from "../coding/ralph-runs-view";
+import { AgentName } from "@/components/agent-name";
 import { useTriageRunList } from "./triage-queries";
 
 /** What triage decided: the outcome and size, and how many questions it left open. */

@@ -51,7 +51,7 @@ import {
   type TriageRunDetailView as TriageRunDetail,
 } from "@/lib/triage/display";
 import { ProviderIcon } from "@/components/provider-icon";
-import { AgentName } from "../../coding/ralph-runs-view";
+import { AgentName } from "@/components/agent-name";
 import { useTriageRunDetail } from "../triage-queries";
 
 type TriageOutcome = NonNullable<TriageResultView["outcome"]>;

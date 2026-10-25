@@ -1000,22 +1000,44 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
   });
 
-  it("lists and shows each organization's own coding runs to its members, and 404s on the other's", async () => {
+  it("lists and shows each organization's own runs to its members, and 404s on the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
     ] as const) {
-      for (const userId of [own.adminId, own.memberId]) {
+      for (const [userId, role] of [
+        [own.adminId, "admin"],
+        [own.memberId, "member"],
+      ] as const) {
         state.userId = userId;
         const list = await call(runList.GET);
         expect(list.status).toBe(200);
-        expect((list.body.runs as { id: string }[]).map((r) => r.id)).toEqual([own.runId]);
-        expect(list.body.repositories).toMatchObject([{ id: own.repoId }]);
+        // Its triage run (newer) and its epic; the legacy review job has no run.
+        expect((list.body.runs as { id: string }[]).map((r) => r.id)).toEqual([
+          own.triageRunId,
+          own.runId,
+        ]);
+        expect(list.body.runs).toMatchObject([
+          { kind: "triage", organization: { id: own.orgId, name: own.name, role } },
+          { kind: "epic", organization: { id: own.orgId, name: own.name, role } },
+        ]);
         // The other's repository as the filter finds nothing.
         const filtered = await call(runList.GET, {
           path: `/api/ui?repository=${other.repoId}`,
         });
-        expect(filtered).toMatchObject({ status: 200, body: { runs: [], total: 0 } });
+        expect(filtered).toMatchObject({ status: 200, body: { runs: [], nextCursor: null } });
+        // The other organization isn't one of theirs; all of theirs is only their own.
+        expect(
+          await call(runList.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
+        const all = await call(runList.GET, { path: "/api/ui?organization=all" });
+        expect((all.body.runs as { id: string }[]).map((r) => r.id)).toEqual([
+          own.triageRunId,
+          own.runId,
+        ]);
+        for (const { body } of [filtered, all]) {
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
 
         const detail = await call(runDetail.GET, { params: { id: own.runId } });
         expect(detail).toMatchObject({ status: 200, body: { run: { id: own.runId } } });
@@ -1037,9 +1059,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   it("refuses to stop the other organization's run, and members can't stop runs", async () => {
     state.userId = a.adminId;
     expect(await call(runStop.POST, { method: "POST", params: { id: b.runId } })).toMatchObject({
-      status: 400,
+      status: 404,
       body: { error: "That run doesn't exist." },
     });
+    expect(
+      await call(runStop.POST, { method: "POST", params: { id: b.triageRunId } }),
+    ).toMatchObject({ status: 404 });
     expect(
       await call(runStop.POST, { method: "POST", params: { id: "not-a-uuid" } }),
     ).toMatchObject({ status: 404 });
@@ -1075,6 +1100,19 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       organizationId: b.orgId,
       next: page,
     });
+
+    // The run list covers either organization, or both, without switching.
+    const own = await call(runList.GET, { path: `/api/ui?organization=${b.orgId}` });
+    expect((own.body.runs as { id: string }[]).map((r) => r.id)).toEqual([b.triageRunId, b.runId]);
+    const all = await call(runList.GET, { path: "/api/ui?organization=all" });
+    expect(all.status).toBe(200);
+    expect(new Set((all.body.runs as { id: string }[]).map((r) => r.id))).toEqual(
+      new Set([a.triageRunId, a.runId, b.triageRunId, b.runId]),
+    );
+    for (const run of all.body.runs as { id: string; organization: unknown }[]) {
+      const tenant = [a.runId, a.triageRunId].includes(run.id) ? a : b;
+      expect(run.organization).toEqual({ id: tenant.orgId, name: tenant.name, role: "member" });
+    }
   });
 
   it("lists and shows each organization's own reviews to its members, and 404s on the other's", async () => {

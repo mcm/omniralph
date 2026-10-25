@@ -7,7 +7,6 @@ describe("navGroups", () => {
     expect(labels).toEqual([
       "Repositories",
       "Reviews",
-      "Coding tasks",
       "Triage",
       "Harnesses",
       "Jobs",
@@ -65,7 +64,7 @@ describe("navGroupsForRole", () => {
     expect(labels("admin")).toEqual([
       [
         "Operations",
-        ["Repositories", "Reviews", "Coding tasks", "Triage", "Harnesses", "Jobs", "Analytics"],
+        ["Repositories", "Reviews", "Triage", "Harnesses", "Jobs", "Analytics"],
       ],
       [
         "Settings",
@@ -87,7 +86,7 @@ describe("navGroupsForRole", () => {
     expect(labels("member")).toEqual([
       [
         "Operations",
-        ["Repositories", "Reviews", "Coding tasks", "Triage", "Harnesses", "Jobs", "Analytics"],
+        ["Repositories", "Reviews", "Triage", "Harnesses", "Jobs", "Analytics"],
       ],
       ["Settings", ["Organization", "Agents", "Tasks", "Routing", "Chat accounts"]],
     ]);
