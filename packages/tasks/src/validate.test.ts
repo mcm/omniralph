@@ -317,6 +317,23 @@ describe("validateTaskDefinition", () => {
     });
   });
 
+  it("rejects a model or token budget on a review task: its review depth sets them", () => {
+    const review = getBuiltinTask("builtin:review-pr")!;
+    const custom = { ...review, id: TASK_ID };
+    expect(errors(custom)).toEqual({});
+    expect(errors({ ...custom, model: "claude-opus-5-5", tokenBudget: { tokens: 1000 } })).toEqual({
+      model: "Review tasks can't set a model; the repo's review depth sets it.",
+      tokenBudget: "Review tasks can't set a token budget; the repo's review depth sets it.",
+    });
+    expect(errors({ ...custom, tokenBudget: { tokens: 1000 } })).toEqual({
+      tokenBudget: expect.stringContaining("review depth sets it"),
+    });
+    // Other task types keep theirs.
+    expect(errors({ ...query, model: "claude-opus-5-5", tokenBudget: { tokens: 1000 } })).toEqual(
+      {},
+    );
+  });
+
   it("rejects pushing only at the end with an early draft PR on a coding task", () => {
     expect(errors({ ...coding, pushTiming: "end", draftPullRequest: "early" })).toEqual({
       draftPullRequest: expect.stringContaining("An early draft PR"),

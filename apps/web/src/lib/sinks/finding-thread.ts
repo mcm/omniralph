@@ -12,6 +12,7 @@ import { reviewUrl } from "@/lib/review/post";
 import { sanitizeCapped, MAX_BODY_CHARS, type SanitizeContext } from "@/lib/review/sanitize";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { tokenCount } from "./budget";
 import type { Sink, SinkResult } from "./index";
 
 /** What the sink needs from the trigger context `enqueueReply` stores. */
@@ -23,8 +24,8 @@ export const FindingThreadContext = z.object({
   askedBy: z.string().min(1).max(255),
   /** The finding's SCM comment (thread) the answer is posted in. */
   threadCommentId: z.string().min(1).max(255),
-  /** The run's token budget when it was enqueued, quoted when it runs out. */
-  budgetTokens: z.int().min(1),
+  /** The run's token budget when it was enqueued, quoted when it runs out; null for "No limit". */
+  budgetTokens: z.int().min(1).nullable(),
 });
 export type FindingThreadContext = z.infer<typeof FindingThreadContext>;
 
@@ -88,7 +89,7 @@ export async function applyThreadReply(
     }
     const text =
       result.outcome === "budget_exhausted"
-        ? `Sorry, I couldn't finish an answer within this repository's reply budget (${context.budgetTokens.toLocaleString("en-US")} tokens).`
+        ? `Sorry, I couldn't finish an answer within this repo's reply budget${tokenCount(context.budgetTokens)}.`
         : failureNote(context);
     return `${sanitizeCapped(text, ctx, MAX_BODY_CHARS)}\n\n${footer(context)}`;
   });

@@ -51,7 +51,8 @@ describe("builtin:ask-about-code", () => {
       agentId: "builtin:code-explainer",
       triggers: ["chat.request"],
       sink: "chat-thread",
-      tokenBudget: { profileFraction: 0.25 },
+      model: "claude-sonnet-5-5",
+      tokenBudget: { tokens: 50_000 },
       maxTurns: 30,
       toolSettings: { shell: false, linearRead: false, network: false },
     });

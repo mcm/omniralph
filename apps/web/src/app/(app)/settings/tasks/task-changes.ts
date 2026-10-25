@@ -29,7 +29,8 @@ import {
 } from "./task-form-sections";
 import { TASK_TYPE_LABELS } from "./task-parts";
 
-export type BudgetMode = "profile" | "tokens" | "profileFraction";
+/** A fixed number of tokens, or "No limit" (a null budget). */
+export type BudgetMode = "none" | "tokens";
 
 /** Everything the task form edits, as typed. */
 export interface TaskDraft {
@@ -53,13 +54,12 @@ export interface TaskDraft {
 }
 
 function budgetMode(budget: TokenBudget | undefined): BudgetMode {
-  if (!budget) return "profile";
-  return "tokens" in budget ? "tokens" : "profileFraction";
+  return budget ? "tokens" : "none";
 }
 
 function budgetAmount(budget: TokenBudget | undefined): string {
   if (!budget) return "";
-  return "tokens" in budget ? String(budget.tokens) : String(budget.profileFraction * 100);
+  return String(budget.tokens);
 }
 
 /** The draft of `task`, or of a new task when null. */
@@ -88,16 +88,14 @@ export function taskDraft(task: TaskDefinition | null): TaskDraft {
 }
 
 export function tokenBudget(mode: BudgetMode, amount: string): TokenBudget {
-  if (mode === "profile") return null;
-  const value = Number(amount.trim() || Number.NaN);
-  return mode === "tokens" ? { tokens: value } : { profileFraction: value / 100 };
+  if (mode === "none") return null;
+  return { tokens: Number(amount.trim() || Number.NaN) };
 }
 
-/** The token budget as the form words it: "Profile budget", "50,000 tokens", "40% of the profile budget". */
+/** The token budget as the form words it: "No limit" or "50,000 tokens". */
 export function formatTokenBudget(budget: TokenBudget): string {
-  if (!budget) return "Profile budget";
-  if ("tokens" in budget) return `${formatSettingValue(budget.tokens)} tokens`;
-  return `${formatSettingValue(budget.profileFraction * 100)}% of the profile budget`;
+  if (!budget) return "No limit";
+  return `${formatSettingValue(budget.tokens)} tokens`;
 }
 
 /** A command in one line: `name: command`, then what it sets beyond the defaults. */

@@ -64,7 +64,8 @@ describe("builtin:reply-to-finding", () => {
       agentId: "builtin:reviewer",
       triggers: ["finding.mention"],
       sink: "finding-thread",
-      tokenBudget: { profileFraction: 0.1 },
+      model: "claude-sonnet-5-5",
+      tokenBudget: { tokens: 20_000 },
       maxTurns: 10,
       toolSettings: { shell: false, linearRead: false, network: false },
     });

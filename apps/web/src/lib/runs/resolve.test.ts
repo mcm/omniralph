@@ -5,12 +5,16 @@ import {
   QUERY_TASKS_MIN_HARNESS_VERSION,
   REVIEW_TASKS_MIN_HARNESS_VERSION,
   SETUP_COMMANDS_MIN_HARNESS_VERSION,
+  reviewProfileConfigForDepth,
   type JobToken,
+  type ReviewDepth,
   type ReviewProfileConfig,
   type RunSpecJobPayload,
 } from "@omniralph/shared";
 import {
   AgentDefinition,
+  BUILTIN_TASKS,
+  getBuiltinTask,
   TaskDefinition,
   type AgentDefinitionInput,
   type TaskDefinitionInput,
@@ -18,10 +22,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-const state = vi.hoisted(() => ({
-  repository: null as unknown,
-  depth: null as string | null,
-}));
+const state = vi.hoisted(() => ({ repository: null as unknown }));
 vi.mock("@omniralph/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   getRepositoryWithConnection: async (_db: unknown, id: string, organizationId: string) =>
@@ -31,11 +32,10 @@ vi.mock("@omniralph/db", async (importOriginal) => ({
           connection: { baseUrl: "https://api.github.com" },
         }
       : null,
-  getRepositoryReviewSettings: async (_db: unknown, id: string) =>
-    state.depth && id === REPO_ID ? { depth: state.depth, rules: [] } : null,
 }));
 
-const { RunSpecError, narrowTools, resolveRunSpec, runTokenBudget } = await import("./resolve");
+const { RunSpecError, narrowByReviewDepth, narrowTools, resolveRunSpec, runTokenBudget } =
+  await import("./resolve");
 const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("./job");
 
@@ -62,7 +62,7 @@ const taskInput: TaskDefinitionInput = {
   triggers: ["finding.mention"],
   promptTemplate: "{{question}}",
   sink: "finding-thread",
-  tokenBudget: { profileFraction: 0.1 },
+  tokenBudget: { tokens: 20_000 },
 };
 
 const tokens: { lifecycle: JobToken; session: JobToken } = {
@@ -101,13 +101,12 @@ function job(overrides: Partial<Db.Job> = {}) {
   } as Db.Job;
 }
 
-function repository(ralphSettings: Record<string, unknown> = {}) {
-  return { provider: "github", fullPath: "acme/app", ralphSettings };
+function repository(ralphSettings: Record<string, unknown> = {}, reviewDepth = "standard") {
+  return { provider: "github", fullPath: "acme/app", ralphSettings, reviewDepth };
 }
 
 beforeEach(() => {
   state.repository = repository();
-  state.depth = "standard";
 });
 
 describe("resolveRunSpec", () => {
@@ -138,21 +137,16 @@ describe("resolveRunSpec", () => {
   describe("model precedence", () => {
     it("takes the task's model first", async () => {
       const spec = await resolveRunSpec(db, job(), tokens, definitions({ model: "sonnet" }));
-      expect(spec.model).toBe("sonnet");
+      expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
     });
 
-    it("then the repository depth's", async () => {
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).model).toBe(
-        "claude-sonnet-5-5",
-      );
-    });
-
-    it("then the agent's, without a repository", async () => {
+    it("then the agent's, with or without a repository", async () => {
+      expect((await resolveRunSpec(db, job(), tokens, definitions())).model).toBe("haiku");
       const spec = await resolveRunSpec(
         db,
         job({ repositoryId: null, payload: { trigger: payload.trigger } }),
         tokens,
-        definitions({ tokenBudget: null }),
+        definitions(),
       );
       expect(spec).toMatchObject({
         model: "haiku",
@@ -163,77 +157,51 @@ describe("resolveRunSpec", () => {
       expect(spec.requireCheckout).toBe(false);
     });
 
-    it("is null when nothing sets one (the Claude Code default)", async () => {
-      const spec = await resolveRunSpec(
-        db,
-        job({ repositoryId: null, payload: { trigger: payload.trigger } }),
-        tokens,
-        definitions({ tokenBudget: null }, { model: null }),
-      );
-      expect(spec.model).toBeNull();
+    it("is null when neither sets one (the Claude Code default), whatever the repository's depth", async () => {
+      for (const depth of ["quick", "standard", "deep"]) {
+        state.repository = repository({}, depth);
+        const spec = await resolveRunSpec(db, job(), tokens, definitions({}, { model: null }));
+        expect(spec.model, depth).toBeNull();
+      }
     });
 
-    describe("a query run a ralph run invokes (its PR description)", () => {
-      const invoked = (context: Record<string, unknown>) =>
-        job({
-          payload: { ...payload, trigger: { kind: "run.invoked", context } },
-        });
-      const ralphRun = { invoker: { kind: "ralph-run", id: JOB_ID } };
-      const describePr = (task: Partial<TaskDefinitionInput> = {}) =>
-        definitions({ triggers: ["run.invoked"], sink: "run-result", model: "sonnet", ...task });
-
-      it("takes the repository's ralph model and fallback model when they are set", async () => {
-        state.repository = repository({ model: "claude-opus-5-5", fallbackModel: "haiku" });
-        const spec = await resolveRunSpec(db, invoked(ralphRun), tokens, describePr());
-        expect(spec).toMatchObject({ model: "claude-opus-5-5", fallbackModel: "haiku" });
+    it("ignores the repository's ralph model and fallback model, also for a run a ralph run invokes", async () => {
+      state.repository = repository({
+        model: "claude-opus-5-5",
+        fallbackModel: "claude-haiku-5-5",
       });
-
-      it("takes the task's model when the repository sets none", async () => {
-        state.repository = repository();
-        const spec = await resolveRunSpec(db, invoked(ralphRun), tokens, describePr());
-        expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
+      const invoked = job({
+        payload: {
+          ...payload,
+          trigger: { kind: "run.invoked", context: { invoker: { kind: "ralph-run", id: JOB_ID } } },
+        },
       });
-
-      it("ignores the ralph model for a run another kind of run invokes", async () => {
-        state.repository = repository({ model: "claude-opus-5-5", fallbackModel: "haiku" });
-        const review = { invoker: { kind: "review-run", id: JOB_ID } };
-        const spec = await resolveRunSpec(db, invoked(review), tokens, describePr());
-        expect(spec).toMatchObject({ model: "sonnet", fallbackModel: "sonnet" });
+      const describePr = definitions({ triggers: ["run.invoked"], sink: "run-result" });
+      expect(await resolveRunSpec(db, invoked, tokens, describePr)).toMatchObject({
+        model: "haiku",
+        fallbackModel: "sonnet",
       });
     });
   });
 
   describe("token budget", () => {
-    it("resolves a fraction against the repository depth's token cap", async () => {
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(20_000);
-      state.depth = "deep";
-      expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(50_000);
+    it("is the task's fixed budget, whatever the repository's depth", async () => {
+      for (const depth of ["quick", "standard", "deep"]) {
+        state.repository = repository({}, depth);
+        expect((await resolveRunSpec(db, job(), tokens, definitions())).tokenBudget).toBe(20_000);
+      }
     });
 
-    it("keeps a fixed budget and no budget as they are", async () => {
-      const fixed = definitions({ tokenBudget: { tokens: 5000 } });
-      expect((await resolveRunSpec(db, job(), tokens, fixed)).tokenBudget).toBe(5000);
+    it("is null (No limit) when the task sets none", async () => {
       const none = definitions({ tokenBudget: null });
       expect((await resolveRunSpec(db, job(), tokens, none)).tokenBudget).toBeNull();
+      const noRepository = job({ repositoryId: null, payload: { trigger: payload.trigger } });
+      expect((await resolveRunSpec(db, noRepository, tokens, none)).tokenBudget).toBeNull();
     });
 
-    it("is what runTokenBudget computes, at least 1", () => {
-      const task = { id: "builtin:reply-to-finding", tokenBudget: { profileFraction: 0.1 } };
-      expect(runTokenBudget(task, { maxTokensPerReview: 200_000 })).toBe(20_000);
-      expect(runTokenBudget(task, { maxTokensPerReview: 5 })).toBe(1);
-      expect(runTokenBudget({ id: "builtin:x", tokenBudget: null }, null)).toBeNull();
-      expect(() => runTokenBudget(task, null)).toThrow(RunSpecError);
-    });
-
-    it("fails a fractional budget without a repository", async () => {
-      await expect(
-        resolveRunSpec(
-          db,
-          job({ repositoryId: null, payload: { trigger: payload.trigger } }),
-          tokens,
-          definitions(),
-        ),
-      ).rejects.toThrow(RunSpecError);
+    it("is what runTokenBudget returns", () => {
+      expect(runTokenBudget({ tokenBudget: { tokens: 5000 } })).toBe(5000);
+      expect(runTokenBudget({ tokenBudget: null })).toBeNull();
     });
   });
 
@@ -362,20 +330,37 @@ describe("resolveRunSpec for builtin:review-pr", () => {
     expect(spec.agent.tools.builtin).toEqual(["Read", "Grep"]);
   });
 
-  it("falls back to the task's then the agent's model, and caps the budget by the task's", async () => {
-    const review = getReviewDefinitions({ model: "sonnet", tokenBudget: { tokens: 50_000 } });
+  it("takes the model and budget only from the depth, never the task's or the agent's", async () => {
+    // Validation refuses a review task with a model or budget; a stored one still never applies.
+    const review = getReviewDefinitions(
+      { model: "sonnet", tokenBudget: { tokens: 50_000 } },
+      {
+        model: "haiku",
+      },
+    );
+    expect(await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, review)).toMatchObject({
+      model: "claude-opus-5-5",
+      tokenBudget: 600_000,
+      maxFiles: 100,
+    });
+    // A preset without a model runs on the Claude Code default.
     const noModel = { ...PROFILES.deep, model: null };
     expect(await resolveRunSpec(db, reviewJob(noModel), tokens, review)).toMatchObject({
-      model: "sonnet",
-      tokenBudget: 50_000,
+      model: null,
+      tokenBudget: 600_000,
     });
-    const fraction = getReviewDefinitions(
-      { tokenBudget: { profileFraction: 0.5 } },
-      { model: "haiku" },
+  });
+
+  it("narrowByReviewDepth ignores the run's model and budget", async () => {
+    const spec = await resolveRunSpec(db, reviewJob(PROFILES.quick), tokens, BUILTIN_DEFINITIONS);
+    const narrowed = narrowByReviewDepth(
+      { ...spec, model: "sonnet", tokenBudget: 1 },
+      PROFILES.deep,
     );
-    expect(await resolveRunSpec(db, reviewJob(noModel), tokens, fraction)).toMatchObject({
-      model: "haiku",
-      tokenBudget: 300_000,
+    expect(narrowed).toMatchObject({
+      model: "claude-opus-5-5",
+      tokenBudget: 600_000,
+      maxFiles: 100,
     });
   });
 
@@ -406,6 +391,77 @@ describe("resolveRunSpec for builtin:review-pr", () => {
       getAgent: (id: string) => (id === a.id ? a : null),
     };
   }
+});
+
+describe("model and budget of every built-in task", () => {
+  /**
+   * Each built-in's model and token budget on a Standard repository before the
+   * precedence fix (TOOL-587), written out so a change shows here. Null budget: "No limit".
+   */
+  const STANDARD: Record<string, { model: string | null; tokenBudget: number | null }> = {
+    "builtin:learn-rule": { model: "claude-sonnet-5-5", tokenBudget: 5_000 },
+    "builtin:reply-to-finding": { model: "claude-sonnet-5-5", tokenBudget: 20_000 },
+    "builtin:review-pr": { model: "claude-sonnet-5-5", tokenBudget: 200_000 },
+    "builtin:summarize-pr": { model: "claude-sonnet-5-5", tokenBudget: 200_000 },
+    "builtin:ask-about-code": { model: "claude-sonnet-5-5", tokenBudget: 50_000 },
+    "builtin:triage": { model: "opus", tokenBudget: null },
+    "builtin:correlate-findings": { model: "claude-sonnet-5-5", tokenBudget: 100_000 },
+    "builtin:implement-story": { model: "opus", tokenBudget: null },
+    "builtin:handle-request": { model: "opus", tokenBudget: null },
+    "builtin:describe-pr": { model: "opus", tokenBudget: null },
+  };
+
+  /** A run of a built-in task on a repository of `depth` (a review's preset comes from it). */
+  async function resolveBuiltin(taskId: string, depth: ReviewDepth) {
+    state.repository = repository({}, depth);
+    const task = getBuiltinTask(taskId)!;
+    const context =
+      task.taskType === "review"
+        ? {
+            reviewConfig: {
+              profile: reviewProfileConfigForDepth(depth),
+              customInstructions: null,
+              rules: [],
+              pathExcludes: [],
+            },
+          }
+        : {};
+    return resolveRunSpec(
+      db,
+      job({
+        taskType: task.taskType,
+        taskId,
+        payload: { trigger: { kind: task.triggers[0]!, context }, repositoryId: REPO_ID },
+      }),
+      tokens,
+      BUILTIN_DEFINITIONS,
+    );
+  }
+
+  it("covers every built-in task", () => {
+    expect(Object.keys(STANDARD).sort()).toEqual(BUILTIN_TASKS.map((task) => task.id).sort());
+  });
+
+  it.each(Object.entries(STANDARD))(
+    "keeps %s's model and budget on a Standard repository",
+    async (taskId, expected) => {
+      const spec = await resolveBuiltin(taskId, "standard");
+      expect({ model: spec.model, tokenBudget: spec.tokenBudget }).toEqual(expected);
+      expect(spec.fallbackModel).toBeNull();
+    },
+  );
+
+  it("changes only review tasks on a Deep repository", async () => {
+    for (const [taskId, expected] of Object.entries(STANDARD)) {
+      const spec = await resolveBuiltin(taskId, "deep");
+      const actual = { model: spec.model, tokenBudget: spec.tokenBudget };
+      if (spec.taskType === "review") {
+        expect(actual, taskId).toEqual({ model: "claude-opus-5-5", tokenBudget: 500_000 });
+      } else {
+        expect(actual, taskId).toEqual(expected);
+      }
+    }
+  });
 });
 
 describe("runSpecJobInput", () => {

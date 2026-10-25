@@ -168,7 +168,7 @@ describe("TaskForm", () => {
     }
     for (const [field, text] of [
       ["task-sink", "What applies the run&#x27;s output."],
-      ["task-token-budget", "Default: the profile budget."],
+      ["task-token-budget", "Default: no limit."],
       ["task-model", "Default: the agent&#x27;s model."],
     ]) {
       expect(fieldOf(html, text!)).toBe(field);

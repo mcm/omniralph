@@ -72,6 +72,8 @@ export const LEARN_RULE_TASK: TaskDefinitionInput = {
     additionalProperties: false,
   },
   sink: "learned-rule",
+  // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
+  model: "claude-sonnet-5-5",
   tokenBudget: { tokens: 5000 },
   // Keeps the prompt far below the token budget, as `buildLearnRulePrompt` does.
   variableLimits: { "finding.body": 2000, hunk: 5000, "dismissal.note": 1000 },

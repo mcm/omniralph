@@ -19,7 +19,6 @@ import {
   MAX_CHAT_ASK_CONTEXT_LENGTH,
   MAX_CHAT_ASK_QUESTION_LENGTH,
   QueryRunResult,
-  REVIEW_DEPTHS,
   RunSpecJobPayload,
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
@@ -43,7 +42,7 @@ import { ChatThreadContext } from "@/lib/sinks/chat-thread";
  * the channel's "ask about code" query task (`chatTasksFor`; the built-in
  * `builtin:ask-about-code` unless chosen otherwise, job type `chat.ask`),
  * answered on a harness from a read-only checkout of the default branch,
- * within the task's share of the profile budget; the built-in's `chat-thread`
+ * within the task's fixed token budget (or none); the built-in's `chat-thread`
  * sink (`lib/sinks/chat-thread.ts`) records the answer as a run event of the
  * thread, for the chat responder to relay. The control panel never reads the
  * code itself.
@@ -196,8 +195,6 @@ export async function enqueueChatAsk(
     return { status: "unknown_repository" };
   }
   const { repository, connection } = found;
-  // The repository's review depth caps the question's budget when the task sets none.
-  const depth = REVIEW_DEPTHS[repository.reviewDepth];
   if (!(await resolveRepositorySwitches(db, repository)).query) {
     return { status: "query_disabled", repository };
   }
@@ -252,7 +249,7 @@ export async function enqueueChatAsk(
     chatThreadId: input.chatThreadId,
     // Trimmed, as `buildChatAskPrompt` quoted it.
     chat: { context: context?.trim() || null },
-    budgetTokens: runTokenBudget(task, depth) ?? depth.maxTokensPerReview,
+    budgetTokens: runTokenBudget(task),
   } satisfies ChatThreadContext & Record<string, unknown>;
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: input.organizationId,

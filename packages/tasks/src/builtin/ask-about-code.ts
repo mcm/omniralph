@@ -66,7 +66,10 @@ export const ASK_ABOUT_CODE_TASK: TaskDefinitionInput = {
   systemAppend: ASK_ABOUT_CODE_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
   sink: "chat-thread",
-  tokenBudget: { profileFraction: 0.25 },
+  // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
+  model: "claude-sonnet-5-5",
+  // A quarter of the Standard depth's 200,000, as before the precedence fix.
+  tokenBudget: { tokens: 50_000 },
   // More than a thread reply: the session starts from nothing.
   maxTurns: 30,
   // As `buildChatAskPrompt` quotes them.

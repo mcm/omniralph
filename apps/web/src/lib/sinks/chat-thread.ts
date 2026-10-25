@@ -12,6 +12,7 @@ import {
 import { recordChatRunEvent, type ChatRunEventBody } from "@/lib/chat/run-events";
 import { fileWebUrl } from "@/lib/repositories/web-url";
 import { inlineCode } from "@/lib/review/sanitize";
+import { tokenCount } from "./budget";
 import type { Sink, SinkResult } from "./index";
 
 /** What the sink needs from the trigger context `enqueueChatAsk` stores. */
@@ -24,8 +25,8 @@ export const ChatThreadContext = z.object({
   provider: z.enum(["github", "gitlab"]),
   /** The chat thread (`chat_threads.id`) the answer is recorded for. */
   chatThreadId: z.uuid(),
-  /** The run's token budget when it was enqueued, quoted when it runs out. */
-  budgetTokens: z.int().min(1),
+  /** The run's token budget when it was enqueued, quoted when it runs out; null for "No limit". */
+  budgetTokens: z.int().min(1).nullable(),
 });
 export type ChatThreadContext = z.infer<typeof ChatThreadContext>;
 
@@ -112,7 +113,7 @@ export async function applyChatAnswer(
       case "budget_exhausted":
         return {
           ...details,
-          text: `Sorry, I couldn't finish an answer about ${repo} within the token budget for code questions (${context.budgetTokens.toLocaleString("en-US")} tokens). Try a narrower question.`,
+          text: `Sorry, I couldn't finish an answer about ${repo} within the token budget for code questions${tokenCount(context.budgetTokens)}. Try a narrower question.`,
         };
       case "no_checkout":
         return {

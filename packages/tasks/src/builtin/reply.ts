@@ -53,7 +53,10 @@ export const REPLY_TASK: TaskDefinitionInput = {
   systemAppend: REPLY_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: false, network: false },
   sink: "finding-thread",
-  tokenBudget: { profileFraction: 0.1 },
+  // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
+  model: "claude-sonnet-5-5",
+  // A tenth of the Standard depth's 200,000, as before the precedence fix.
+  tokenBudget: { tokens: 20_000 },
   // Turns with file tools; without them (no checkout) the model answers in one.
   maxTurns: 10,
   // As `buildReplyPrompt` quotes them.

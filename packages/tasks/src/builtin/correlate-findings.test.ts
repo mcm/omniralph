@@ -62,6 +62,8 @@ describe("builtin:correlate-findings", () => {
       sink: "run-result",
       toolSettings: { shell: false, linearRead: false, network: false },
       setupCommands: [],
+      model: "claude-sonnet-5-5",
+      tokenBudget: { tokens: 100_000 },
     });
     expect(
       validateTemplate(task.promptTemplate, availableVariables("query", task.triggers)),

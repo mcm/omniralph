@@ -6,7 +6,7 @@ import {
   type Review,
   resolveRepositorySwitches,
 } from "@omniralph/db";
-import { MAX_REPLY_QUESTION_LENGTH, REVIEW_DEPTHS, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
+import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
 import { runTokenBudget } from "@/lib/runs/resolve";
@@ -15,7 +15,7 @@ import type { FindingThreadContext } from "@/lib/sinks/finding-thread";
 /**
  * Thread replies: a question asked by mentioning the bot in a finding's
  * thread enqueues a run of the built-in query task `builtin:reply-to-finding`
- * (read-only, capped at 10% of the profile budget); its `finding-thread`
+ * (read-only, with the task's fixed token budget); its `finding-thread`
  * sink (`lib/sinks/finding-thread.ts`) posts the answer in the thread.
  */
 
@@ -42,7 +42,7 @@ export function replyContext(input: {
   question: string;
   askedBy: string;
   threadCommentId: string;
-  budgetTokens: number;
+  budgetTokens: number | null;
 }): Record<string, unknown> & FindingThreadContext {
   const { finding, review } = input;
   const context = {
@@ -97,8 +97,6 @@ export async function enqueueReply(
   const definitions = organizationDefinitions(db, found.repository.organizationId);
   const task = await definitions.getTask(REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);
-  // The repository's review depth caps the reply's budget when the task sets none.
-  const depth = REVIEW_DEPTHS[found.repository.reviewDepth];
   const context = replyContext({
     finding,
     review,
@@ -106,7 +104,7 @@ export async function enqueueReply(
     question: input.question,
     askedBy: input.askedBy,
     threadCommentId: finding.scmCommentId,
-    budgetTokens: runTokenBudget(task, depth) ?? depth.maxTokensPerReview,
+    budgetTokens: runTokenBudget(task),
   });
   const { job, created } = await dispatcher.createAndPublish({
     organizationId: found.repository.organizationId,

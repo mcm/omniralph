@@ -184,7 +184,10 @@ The review profile still narrows each review run at claim time (`narrowByReviewP
 the smaller of the profile's maximum and the task's, and `maxFiles` comes from the profile. (Review
 profiles have since become the three review depth presets, Quick, Standard and Deep, in
 `REVIEW_DEPTHS` of `@omniralph/shared`; a review's `reviewConfig.profile` carries its depth's
-preset.) Review run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
+preset. Since TOOL-587 the depth alone sets a review's model and token cap, in
+`narrowByReviewDepth`; review tasks can't set either, and other runs' budgets are a fixed number of
+tokens or none, never a fraction of the depth's: see [definitions](../definitions.md#model-and-token-budget).)
+Review run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnesses leave them queued.
 
 ### Coding runs
 

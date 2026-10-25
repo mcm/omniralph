@@ -603,7 +603,7 @@ export function TaskForm({
                 <Field
                   label="Token budget"
                   htmlFor="task-token-budget"
-                  description={withDefault("The most tokens a run may use.", "the profile budget")}
+                  description={withDefault("The most tokens a run may use.", "no limit")}
                   error={budgetError}
                 >
                   <div className="task-budget">
@@ -614,18 +614,16 @@ export function TaskForm({
                       value={draft.budgetMode}
                       onChange={(e) => set({ budgetMode: e.target.value as BudgetMode })}
                     >
-                      <option value="profile">Profile budget</option>
+                      <option value="none">No limit</option>
                       <option value="tokens">Tokens</option>
-                      <option value="profileFraction">% of the profile budget</option>
                     </NativeSelect>
-                    {draft.budgetMode !== "profile" && (
+                    {draft.budgetMode === "tokens" && (
                       <Input
                         id="task-token-budget-amount"
-                        aria-label={draft.budgetMode === "tokens" ? "Tokens" : "Percent"}
+                        aria-label="Tokens"
                         type="number"
                         className="input-number-wide"
                         min={1}
-                        max={draft.budgetMode === "tokens" ? undefined : 100}
                         disabled={pending}
                         error={Boolean(budgetError)}
                         aria-invalid={Boolean(budgetError)}
