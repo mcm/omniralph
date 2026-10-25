@@ -179,7 +179,7 @@ export interface StoryAttemptPrepared {
   cwd: string;
 }
 
-/** The session settings that differ between the legacy `ralph.story` job and a coding run. */
+/** The session settings a coding run gives its story attempt. */
 export type StorySessionSettings = Pick<
   SessionRequest,
   | "prompt"
@@ -232,8 +232,8 @@ export interface StoryAttemptArgs {
  * `wip(<ID>): …` and pushed. A failed push resets the commit, so the work is
  * stashed. Activities are relayed to the agent session while the session
  * runs. A Claude rate limit throws `RetryableJobError`; a canceled job
- * stashes its work and rejects. Shared by `ralph.story` jobs (`runStory`) and
- * coding runs of story tasks (`runCodingTask`).
+ * stashes its work and rejects. Run by coding runs of story tasks
+ * (`runCodingTask`).
  */
 export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStoryResult> {
   const { payload, ctx, options } = args;

@@ -5,8 +5,7 @@ import type { Sink } from "./index";
 
 /**
  * `ralph-run`: hands a coding run's result (`builtin:implement-story`,
- * `builtin:handle-request`) to its ralph run, through the same hooks as the
- * legacy `ralph.story`/`ralph.request` jobs: the delivery makes its harness
+ * `builtin:handle-request`) to its ralph run: the delivery makes its harness
  * the run's sticky harness (or is skipped once the run is over), and
  * `advanceRun` applies the outcome it finds through the story's `last_job_id`,
  * the run's `request_job_id` or (a lane's `ralph.push` run) its `pr_job_id`,

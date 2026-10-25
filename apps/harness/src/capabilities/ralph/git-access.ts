@@ -66,7 +66,7 @@ export async function jobGitAccess(
 
 /**
  * Git access for a Claude session that fetches and pushes itself (a
- * `ralph.request` session; story sessions leave pushing to the job): like
+ * request session; story sessions leave pushing to the run): like
  * `jobGitAccess`, with only the agent's `git-credential` helper and no
  * askpass or prompts, so pushes late in a long session still authenticate;
  * `OMNIRALPH_JOB_TOKEN` itself stays out of the session. The file holds

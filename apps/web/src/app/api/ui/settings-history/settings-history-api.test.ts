@@ -99,7 +99,6 @@ const baseSettings: RepositorySettingsInput = {
 };
 
 const baseCoding: RalphSettingsInput = {
-  codingPath: "legacy",
   storyTaskId: "builtin:implement-story",
   requestTaskId: "builtin:handle-request",
   ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),

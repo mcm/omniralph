@@ -2,20 +2,11 @@ import "server-only";
 import type { Database, Job } from "@omniralph/db";
 import {
   RALPH_CLEANUP_JOB_TYPE,
-  RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
-  RALPH_REQUEST_JOB_TYPE,
-  RALPH_STORY_JOB_TYPE,
   RalphCleanupPayload,
   RalphCleanupResult,
-  RalphDescribePrPayload,
-  RalphDescribePrResult,
   RalphPreparePayload,
   RalphPrepareResult,
-  RalphRequestPayload,
-  RalphRequestResult,
-  RalphStoryPayload,
-  RalphStoryResult,
   WORKTREE_CLEANUP_JOB_TYPE,
   WORKTREE_EXEC_JOB_TYPE,
   WorktreeCleanupPayload,
@@ -78,15 +69,6 @@ export function jobOutcomeHandler(
   return handler.payload.safeParse(job.payload).success ? handler : undefined;
 }
 
-registerJobOutcomeHandler(RALPH_DESCRIBE_PR_JOB_TYPE, {
-  payload: RalphDescribePrPayload,
-  onStarted: onRalphJobStarted,
-  isValidResult: (result) => RalphDescribePrResult.safeParse(result).success,
-  onCompleted: (db, job) => onRalphJobFinished(db, job),
-  onFailed: (db, job) => onRalphJobFinished(db, job),
-  onCanceled: (db, job) => onRalphJobFinished(db, job),
-});
-
 // Legacy `ralph.prepare` jobs queued before preparations ran as `worktree.exec`.
 registerJobOutcomeHandler(RALPH_PREPARE_JOB_TYPE, {
   payload: RalphPreparePayload,
@@ -102,24 +84,6 @@ registerJobOutcomeHandler(WORKTREE_EXEC_JOB_TYPE, {
   payload: WorktreeExecPayload,
   onStarted: onRalphJobStarted,
   isValidResult: (result) => WorktreeExecResult.safeParse(result).success,
-  onCompleted: (db, job) => onRalphJobFinished(db, job),
-  onFailed: (db, job) => onRalphJobFinished(db, job),
-  onCanceled: (db, job) => onRalphJobFinished(db, job),
-});
-
-registerJobOutcomeHandler(RALPH_REQUEST_JOB_TYPE, {
-  payload: RalphRequestPayload,
-  onStarted: onRalphJobStarted,
-  isValidResult: (result) => RalphRequestResult.safeParse(result).success,
-  onCompleted: (db, job) => onRalphJobFinished(db, job),
-  onFailed: (db, job) => onRalphJobFinished(db, job),
-  onCanceled: (db, job) => onRalphJobFinished(db, job),
-});
-
-registerJobOutcomeHandler(RALPH_STORY_JOB_TYPE, {
-  payload: RalphStoryPayload,
-  onStarted: onRalphJobStarted,
-  isValidResult: (result) => RalphStoryResult.safeParse(result).success,
   onCompleted: (db, job) => onRalphJobFinished(db, job),
   onFailed: (db, job) => onRalphJobFinished(db, job),
   onCanceled: (db, job) => onRalphJobFinished(db, job),

@@ -259,8 +259,8 @@ export async function linkPullRequestToIssue(
 }
 
 /**
- * `openPullRequestEarly` (per lane, with its repository's setting, or on the
- * `tasks` path its story task's `draftPullRequest`: `opensPullRequestEarly`):
+ * `openPullRequestEarly` (per lane: its story task's `draftPullRequest`, else
+ * its repository's setting, `opensPullRequestEarly`):
  * once a story of a lane is pushed, opens a draft PR/MR with a templated body (or
  * adopts the one open for the branch, as it is). Lanes without the setting,
  * with a PR/MR already or without a pushed story, and runs with every story
@@ -426,8 +426,8 @@ export async function moveCompletedEpic(
 }
 
 /**
- * Applies the outcome of the run's describe job (a `ralph.describe-pr` job,
- * or on the `tasks` path a query run of the PR description task), once it has
+ * Applies the outcome of the run's describe job (a `ralph.describe-pr` query
+ * run of the PR description task), once it has
  * finished (inside the run's row lock): opens or updates its lane's PR/MR
  * with the agent's title and body (`describePrText`), marks it ready, stores it on the lane and
  * adds it to the agent session. A failed job or PR/MR call is recorded on the

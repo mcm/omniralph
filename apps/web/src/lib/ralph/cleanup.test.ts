@@ -255,9 +255,12 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     const run = linearRun((await getRunBySession(db, sessionId))!);
     await finish(await start(run.id), storyResult({ commitSha: sha(1) }));
     await finish(await start(run.id, "ralph.describe-pr"), {
-      title: "Build the epic",
-      body: "Builds it.",
+      outcome: "answered",
+      answer: null,
+      structured: { title: "Build the epic", body: "Builds it." },
+      references: [],
       usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
     });
     expect((await getRun(db, run.id))?.status).toBe("completed");
     const request = scm.changeRequests.at(-1)!;
@@ -418,33 +421,6 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect((await getLane(db, other!.id))?.cleanup?.error).toBe(
       "the agent that holds the branch in `acme/web` can't take coding jobs anymore",
     );
-  });
-
-  it("runs the cleanup as worktree.cleanup on the tasks coding path too", async () => {
-    const { run, branch } = await epicWithPullRequest();
-    await db.update(repositories).set({ codingPath: "tasks" }).where(eq(repositories.id, repoId));
-    try {
-      merge();
-      await reconcileCleanup(deps());
-      const [job, ...more] = await cleanupJobs(run.id);
-      expect(more).toEqual([]);
-      expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system", taskId: null });
-      expect(job!.targetHarnessId).toBe(agentA);
-      await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ unmerged: 1 }));
-      expect((await lane(run)).cleanup).toMatchObject({ status: "done" });
-      expect(optionsOf(selects(run).at(-1))).toEqual(["Push to origin", "Delete"]);
-      // The answer runs another worktree.cleanup.
-      await reply(run, "Delete");
-      const answer = await start(run.id, "worktree.cleanup");
-      expect(actionOf(answer)).toEqual({ kind: "branch", push: false });
-      await finish(answer, cleanupResult());
-      expect(responses(run).at(-1)).toContain(`\`${branch}\``);
-    } finally {
-      await db
-        .update(repositories)
-        .set({ codingPath: "legacy" })
-        .where(eq(repositories.id, repoId));
-    }
   });
 
   it("still applies a ralph.cleanup job queued before cleanups ran as worktree.cleanup", async () => {

@@ -111,7 +111,6 @@ export {
   type ConnectRepositoryInput,
   type PinRepositoryResult,
   type Repository,
-  type RepositoryCodingPath,
   REPOSITORY_PAGE_SIZE,
   type RepositoryOverview,
   type RepositoryOverviewPage,

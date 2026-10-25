@@ -62,7 +62,7 @@ const { PostgresDispatcher } = await import("@/lib/dispatch");
 const { pinRepository } = await import("@/lib/harnesses/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
-const { ralphJobInput } = await import("@/lib/ralph/coding");
+const { codingJobInput } = await import("@/lib/ralph/coding");
 const { BUILTIN_DEFINITIONS } = await import("@/lib/definitions");
 const { runSpecJobInput } = await import("@/lib/runs/job");
 const { signJobTokens } = await import("@/lib/harness-api/jobs");
@@ -283,8 +283,9 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         "run:activity",
         "run:attachments",
       ];
+      // A legacy ralph job (no task): a `ralph.cleanup` queued before cleanups ran as `worktree.cleanup`.
       const ralphJob = {
-        type: "ralph.story",
+        type: "ralph.cleanup",
         taskType: "coding",
         pool: "long",
       } as const;
@@ -506,26 +507,19 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
         /**
          * Enqueues a job like `advanceRun`'s `enqueueStory`/`enqueueRequest`
-         * (`ralphJobInput` on the repository's coding path), claims it through
+         * (`codingJobInput`), claims it through
          * the claim route and returns the tokens the harness got.
          */
-        async function claimRalphJob(
-          type: "ralph.story" | "ralph.request",
-          codingPath: "legacy" | "tasks",
-        ) {
+        async function claimRalphJob(type: "ralph.story" | "ralph.request") {
           const runId = randomUUID();
           const routed =
             type === "ralph.story"
-              ? await ralphJobInput(
-                  type,
-                  { codingPath },
+              ? await codingJobInput(
                   { taskId: "builtin:implement-story", trigger: "linear.delegated" },
                   storyPayload(runId),
                   BUILTIN_DEFINITIONS,
                 )
-              : await ralphJobInput(
-                  type,
-                  { codingPath },
+              : await codingJobInput(
                   { taskId: "builtin:handle-request", trigger: "linear.mention" },
                   requestPayload(runId),
                   BUILTIN_DEFINITIONS,
@@ -582,7 +576,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         it.each(["ralph.story", "ralph.request"] as const)(
           "gives a %s coding run's lifecycle token write and its session token read",
           async (type) => {
-            const { harnessId, jobId, started } = await claimRalphJob(type, "tasks");
+            const { harnessId, jobId, started } = await claimRalphJob(type);
             expect(started.job).toMatchObject({
               type,
               taskType: "coding",
@@ -603,17 +597,6 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
             expect((await issued(harnessId)).every((e) => e.detail.jobId === jobId)).toBe(true);
           },
         );
-
-        it("gives a legacy ralph.story job's single token write", async () => {
-          const { harnessId, started } = await claimRalphJob("ralph.story", "legacy");
-          expect(started.job).toMatchObject({ type: "ralph.story", taskId: null });
-          expect(started.sessionToken).toBeUndefined();
-          expect(await issuedFor(started.jobToken.token, harnessId)).toEqual({
-            password: "ghs_contents_write",
-            access: "write",
-            tokenKind: "legacy",
-          });
-        });
 
         it("gives a worktree.cleanup system RPC's lifecycle token write", async () => {
           const runId = randomUUID();

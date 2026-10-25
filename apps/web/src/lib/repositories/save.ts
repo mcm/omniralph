@@ -129,7 +129,7 @@ export async function updateRepositoryTaskTypes(
 }
 
 /**
- * Saves a repository's Coding tab: whether its runs use the legacy jobs or coding tasks (`coding_path`) and which story and request tasks (built-in
+ * Saves a repository's Coding tab: which story and request tasks (built-in
  * or the organization's own), and how its runs work (cyralph's
  * per-repository settings). New Linear values must exist in the connected workspace
  * (`ralphLinearErrors`). The next job and decision of every run pick it up.
@@ -142,7 +142,7 @@ export async function updateRepositoryCodingSettings(
   const parsed = RalphSettingsInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
   const organizationId = user.organization.id;
-  const { codingPath, storyTaskId, requestTaskId } = parsed.data;
+  const { storyTaskId, requestTaskId } = parsed.data;
   const db = getDb();
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return NOT_CONNECTED;
@@ -167,7 +167,6 @@ export async function updateRepositoryCodingSettings(
     (tx) =>
       updateRepositoryRalphSettings(tx, repositoryId, {
         ralphSettings: ralphSettingsFromInput(parsed.data),
-        codingPath,
         storyTaskId,
         requestTaskId,
       }),

@@ -50,6 +50,7 @@ import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted, onReviewForRalph } from "./jobs";
+import { ralphJobPayload } from "./coding";
 import { exchangeJobMessages } from "./messages";
 import { respondToReview } from "./pull-request-requests";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
@@ -228,9 +229,12 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     const describe = await start(run.id);
     expect(describe.type).toBe("ralph.describe-pr");
     await finish(describe, {
-      title: "Build the epic",
-      body: "Builds it.",
+      outcome: "answered",
+      answer: null,
+      structured: { title: "Build the epic", body: "Builds it." },
+      references: [],
       usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
     });
     expect((await getRun(db, run.id))?.status).toBe("completed");
     expect(scm.changeRequests).toHaveLength(1);
@@ -316,7 +320,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
 
     const [job] = await requestJobs(run.id);
     expect(job).toBeDefined();
-    const payload = RalphRequestPayload.parse(job!.payload);
+    const payload = RalphRequestPayload.parse(ralphJobPayload(job!));
     expect(payload.requests).toHaveLength(1);
     const text = payload.requests[0]!.text;
     expect(text).toContain(
@@ -371,7 +375,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     await onReviewForRalph(db, reviewed.id, deps());
 
     const [job] = await requestJobs(run.id);
-    const text = RalphRequestPayload.parse(job!.payload).requests[0]!.text;
+    const text = RalphRequestPayload.parse(ralphJobPayload(job!)).requests[0]!.text;
     expect(text).toContain(`[finding \`${fixed.id}\`]`);
     expect(text).toContain("structured result's `findings`");
 
@@ -539,7 +543,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     const { run } = await reviewedEpic();
     await respondToReview(deps(), (await review({ count: 27 })).id);
     const [job] = await requestJobs(run.id);
-    const text = RalphRequestPayload.parse(job!.payload).requests[0]!.text;
+    const text = RalphRequestPayload.parse(ralphJobPayload(job!)).requests[0]!.text;
     expect(text).toContain("left 27 open findings");
     expect(text).toContain("25. `src/a.ts:27`");
     expect(text).toContain("(2 more findings not shown; see the review on the pull request.)");

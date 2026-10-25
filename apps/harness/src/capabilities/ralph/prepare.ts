@@ -2,7 +2,7 @@ import { RalphPreparePayload, type RalphPrepareResult, type JobPayload } from "@
 import type { JobContext } from "../index.js";
 import { runApprovedCommands } from "../../rpc/worktree-exec.js";
 import { ActivityRelay } from "../../tools/activities.js";
-import type { StoryOptions } from "./story.js";
+import type { StoryOptions } from "../../lifecycle/story-attempt.js";
 
 /**
  * Runs a legacy `ralph.prepare` job: the approved `cyralph-prepare` commands of

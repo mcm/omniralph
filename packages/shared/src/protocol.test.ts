@@ -101,17 +101,15 @@ describe("protocol", () => {
 
   it("routes every legacy job type to its task type and pool", () => {
     const routing = (type: string) => legacyJobRouting(type);
-    for (const type of [
-      "review.reply",
-      "review.learn-rule",
-      "chat.ask",
-      "triage.run",
-      "ralph.describe-pr",
-    ]) {
+    for (const type of ["review.reply", "review.learn-rule", "chat.ask", "triage.run"]) {
       expect(routing(type)).toEqual({ taskType: "query", pool: "short" });
     }
-    for (const type of ["ralph.story", "ralph.request", "ralph.prepare", "ralph.cleanup"]) {
+    for (const type of ["ralph.prepare", "ralph.cleanup"]) {
       expect(routing(type)).toEqual({ taskType: "coding", pool: "long" });
+    }
+    // Stories, requests and PR/MR descriptions are task runs, never legacy jobs.
+    for (const type of ["ralph.story", "ralph.request", "ralph.describe-pr"]) {
+      expect(() => routing(type)).toThrow(/Unknown legacy job type/);
     }
     expect(routing("repo.sync")).toEqual({ taskType: "system", pool: null });
     expect(routing("worktree.exec")).toEqual({ taskType: "system", pool: null });

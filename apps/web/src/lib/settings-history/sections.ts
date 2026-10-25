@@ -146,15 +146,12 @@ const RALPH_SETTING_LABELS = {
 const REPOSITORY_CODING_FIELDS: SettingsFields = {
   coding: { label: "Coding" },
   query: { label: "Ask about code" },
-  codingPath: { label: "Coding path" },
   storyTask: { label: "Story task" },
   requestTask: { label: "Request task" },
   ...Object.fromEntries(
     Object.entries(RALPH_SETTING_LABELS).map(([key, label]) => [key, { label }]),
   ),
 };
-
-const CODING_PATH_LABELS = { legacy: "Legacy jobs", tasks: "Coding tasks" } as const;
 
 /** A coding setting's display value: lists of text stay lists, the rest as text. */
 function ralphValue(value: unknown): SettingsValues[string] {
@@ -177,7 +174,6 @@ async function readRepositoryCoding(
   return {
     coding: switchValue(repository.ralphEnabled),
     query: switchValue(repository.queryEnabled),
-    codingPath: CODING_PATH_LABELS[repository.codingPath],
     storyTask: task(repository.storyTaskId),
     requestTask: task(repository.requestTaskId),
     ...Object.fromEntries(

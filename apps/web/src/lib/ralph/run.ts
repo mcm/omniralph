@@ -64,11 +64,11 @@ import {
   ralphHiddenRef,
 } from "@omniralph/shared";
 import {
+  codingJobInput,
   describePrJobInput,
   MAX_ITERATIONS_PER_RUN,
   pushJobInput,
   pushTimingFor,
-  ralphJobInput,
   requestTaskFor,
   requestTrigger,
   storyLimits,
@@ -527,7 +527,7 @@ async function laneRepository(
   return { ...found, lane };
 }
 
-/** Why a run on the `tasks` path can't enqueue its story or request run. */
+/** Why a run can't enqueue its story or request run. */
 function notACodingTask(
   taskId: string,
   repository: Pick<Repository, "fullPath">,
@@ -555,10 +555,9 @@ async function usableRepository(
  * settings and quality gates): its sub-issue moves to started and a
  * `ralph.story` job goes to the lane's harness (`laneHarnessId`: the agent
  * that started the lane's last job, else the lane repository's pinned agent,
- * else any ralph agent of its organization). On the lane
- * repository's `tasks` coding path the job is a coding run of its story task
- * (trigger `linear.delegated`, the same payload as its context); attempts are
- * capped by that task.
+ * else any ralph agent of its organization). The job is a coding run of the
+ * lane repository's story task (trigger `linear.delegated`, the payload as
+ * its context); attempts are capped by that task.
  */
 async function enqueueStory(
   deps: RalphDeps,
@@ -588,9 +587,7 @@ async function enqueueStory(
     attachments: payloadAttachments(attachments, story.key),
   });
   const taskId = storyTaskFor(found.repository);
-  const routed = await ralphJobInput(
-    RALPH_STORY_JOB_TYPE,
-    found.repository,
+  const routed = await codingJobInput(
     { taskId, trigger: "linear.delegated" },
     payload,
     organizationDefinitions(deps.db, run.organizationId),
@@ -772,9 +769,9 @@ async function pushLane(
 
 /**
  * One lane's describe job (on the lane's harness), with the stories
- * worked in that lane: it writes the lane's PR/MR title and body. On the
- * `tasks` path a query run of the story task's `prDescriptionTaskId`
- * (`describePrJobInput`), otherwise a `ralph.describe-pr` job. Returns the
+ * worked in that lane: it writes the lane's PR/MR title and body, as a
+ * query run of the story task's `prDescriptionTaskId`
+ * (`describePrJobInput`). Returns the
  * lane's problem when the repository's description task can't run.
  */
 async function describeLane(
@@ -838,7 +835,7 @@ async function describeLane(
 
 /**
  * Runs an approved manual-story preparation: a `worktree.exec` system RPC (the
- * run's one job, in the story's lane, on that lane's agent, `laneHarnessId`; on both coding paths)
+ * run's one job, in the story's lane, on that lane's agent, `laneHarnessId`)
  * with the story's commands as they are now and the approval they must match. Its outcome is
  * applied by `applyPreparationJob`.
  */
@@ -890,9 +887,9 @@ async function enqueuePreparation(
  * job in the lane's branch worktree, on the lane's harness. It resumes
  * the lane's last request conversation only when it goes to the agent that
  * holds it. Its outcome is applied by `applyRequestJob`. Request jobs don't
- * count towards the iteration cap. On the repository's `tasks` coding path
- * the job is a coding run of `requestTaskFor` (triggered by the oldest
- * request's origin, the same payload as its context).
+ * count towards the iteration cap. The job is a coding run of
+ * `requestTaskFor` (triggered by the oldest request's origin, the payload as
+ * its context).
  */
 async function enqueueRequest(
   deps: RalphDeps,
@@ -929,9 +926,7 @@ async function enqueueRequest(
     }),
   });
   const taskId = requestTaskFor(run, repository);
-  const routed = await ralphJobInput(
-    RALPH_REQUEST_JOB_TYPE,
-    repository,
+  const routed = await codingJobInput(
     { taskId, trigger: requestTrigger(input.requests) },
     payload,
     organizationDefinitions(deps.db, run.organizationId),

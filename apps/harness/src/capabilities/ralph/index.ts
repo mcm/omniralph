@@ -1,27 +1,16 @@
 import {
   RALPH_CLEANUP_JOB_TYPE,
-  RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_JOB_TYPES,
   RALPH_PREPARE_JOB_TYPE,
-  RALPH_REQUEST_JOB_TYPE,
-  RALPH_STORY_JOB_TYPE,
 } from "@omniralph/shared";
 import type { Capability } from "../index.js";
-import {
-  RALPH_CLEANUP_TOOL_POLICY,
-  RALPH_DESCRIBE_PR_TOOL_POLICY,
-  RALPH_PREPARE_TOOL_POLICY,
-  RALPH_TOOL_POLICY,
-} from "./policy.js";
+import type { StoryOptions } from "../../lifecycle/story-attempt.js";
+import { RALPH_CLEANUP_TOOL_POLICY, RALPH_PREPARE_TOOL_POLICY } from "./policy.js";
 import { runCleanup } from "./cleanup.js";
-import { runDescribePr } from "./describe-pr.js";
 import { runPrepare } from "./prepare.js";
-import { runRequest } from "./request.js";
-import { runStory, type StoryOptions } from "./story.js";
 
 export {
   RALPH_CLEANUP_TOOL_POLICY,
-  RALPH_DESCRIBE_PR_TOOL_POLICY,
   RALPH_PREPARE_TOOL_POLICY,
   RALPH_TOOL_POLICY,
 } from "./policy.js";
@@ -32,28 +21,21 @@ export class NotImplementedJobError extends Error {
 }
 
 /**
- * Builds a delegated Linear epic story by story (ported from cyralph). The
- * control panel orchestrates the run; this capability runs its jobs:
- * `ralph.story`, `ralph.describe-pr`, `ralph.prepare`, `ralph.request` and
- * `ralph.cleanup`.
+ * Ralph's remaining legacy jobs, `ralph.prepare` and `ralph.cleanup` (the
+ * control panel now runs both as system RPCs). Stories, requests and PR/MR
+ * descriptions run as coding and query tasks (`lifecycle/`).
  */
 export function createRalphCapability(options: StoryOptions = {}): Capability {
   return {
     name: "ralph",
     jobTypes: RALPH_JOB_TYPES,
-    toolPolicy: RALPH_TOOL_POLICY,
+    toolPolicy: RALPH_PREPARE_TOOL_POLICY,
     jobToolPolicies: {
-      [RALPH_STORY_JOB_TYPE]: RALPH_TOOL_POLICY,
-      [RALPH_DESCRIBE_PR_JOB_TYPE]: RALPH_DESCRIBE_PR_TOOL_POLICY,
       [RALPH_PREPARE_JOB_TYPE]: RALPH_PREPARE_TOOL_POLICY,
-      [RALPH_REQUEST_JOB_TYPE]: RALPH_TOOL_POLICY,
       [RALPH_CLEANUP_JOB_TYPE]: RALPH_CLEANUP_TOOL_POLICY,
     },
     run(job, ctx) {
-      if (job.type === RALPH_STORY_JOB_TYPE) return runStory(job, ctx, options);
-      if (job.type === RALPH_DESCRIBE_PR_JOB_TYPE) return runDescribePr(job, ctx, options);
       if (job.type === RALPH_PREPARE_JOB_TYPE) return runPrepare(job, ctx, options);
-      if (job.type === RALPH_REQUEST_JOB_TYPE) return runRequest(job, ctx, options);
       if (job.type === RALPH_CLEANUP_JOB_TYPE) return runCleanup(job, ctx);
       return Promise.reject(
         new NotImplementedJobError(`${job.type} jobs are not supported by this agent yet`),

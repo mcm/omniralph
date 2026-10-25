@@ -110,7 +110,7 @@ export type JobOutput = Record<string, unknown>;
 
 export interface Capability {
   name: string;
-  /** Job types (`jobs.type`) this capability runs, e.g. `ralph.story`. */
+  /** Job types (`jobs.type`) this capability runs, e.g. `ralph.prepare`. */
   jobTypes: readonly string[];
   toolPolicy: ToolPolicy;
   /** Job types whose sessions run with a different policy than `toolPolicy`. */

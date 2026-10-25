@@ -505,7 +505,7 @@ interface StorySpec {
   attempts?: number;
   rounds?: number;
   lastFeedback?: string;
-  /** The last attempt's result status (`ralph.story` job), when it ran. */
+  /** The last attempt's result status (`ralph.story` coding run), when it ran. */
   result?: "complete" | "incomplete" | "blocked" | "failed";
   /** The last attempt is still running. */
   running?: boolean;
@@ -815,7 +815,13 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
           type: "ralph.story",
           taskType: "coding",
           pool: "long",
-          payload: { story: { identifier, title: story.title }, attempt },
+          taskId: "builtin:implement-story",
+          payload: {
+            trigger: {
+              kind: "linear.delegated",
+              context: { story: { identifier, title: story.title }, attempt },
+            },
+          },
           status,
           repositoryId: run.repositoryId,
           harnessId: H.online,
@@ -887,15 +893,19 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
         type: "ralph.describe-pr",
         taskType: "query",
         pool: "short",
+        taskId: "builtin:describe-pr",
         payload: {},
         status: "completed",
         repositoryId: run.repositoryId,
         harnessId: H.online,
         ralphRunId: run.id,
         result: {
-          title: run.title,
-          body: "Fixture PR description.",
+          outcome: "answered",
+          answer: null,
+          structured: { title: run.title, body: "Fixture PR description." },
+          references: [],
           usage: { inputTokens: 22_000, outputTokens: 1_800 },
+          durationMs: 180_000,
         },
         createdAt: at(minute),
         startedAt: at(minute),

@@ -441,27 +441,21 @@ response carries them (`jobMessages`) and the harness acknowledges them in its n
 Jobs download the run's Linear attachments through the control panel and cache them in
 `<workspaceRoot>/.attachments/`.
 
-### Coding path: legacy jobs or coding tasks
+### Coding runs
 
-**Repository › Settings › Coding › Coding path** picks how a repository's runs work stories and
-requests; it applies from the run's next job, and both paths share all run state:
-
-- **Legacy jobs** (the default): `ralph.story`, `ralph.request` and `ralph.describe-pr` run the
-  harness's built-in ralph code, with one job token that can push. A request session can push the
-  branch by itself.
-- **Coding tasks**: the same jobs are coding runs of the built-in tasks `builtin:implement-story`
-  and `builtin:handle-request` (agent `builtin:engineer`), and the PR/MR description a query run
-  of `builtin:describe-pr` (see
-  [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#coding-runs)). Only the harness's own git
-  commands can push: the session's git gets a read-only credential, and a request session
-  publishes its work by calling the `ship` tool, which makes the harness commit, push and return
-  what happened. A story task that pushes only at the end pushes story commits to a hidden ref and
-  the branch once, with a `ralph.push` job, before the PR/MR is described.
+A repository's runs work stories and requests as coding runs of its story and request tasks
+(**Repository › Settings › Coding › Story task** and **Request task**, by default the built-in
+`builtin:implement-story` and `builtin:handle-request`, agent `builtin:engineer`), and write each
+PR/MR description with a query run of `builtin:describe-pr` (see
+[ADR 0008](adr/0008-agents-tasks-and-the-harness.md#coding-runs)). Only the harness's own git
+commands can push: the session's git gets a read-only credential, and a request session publishes
+its work by calling the `ship` tool, which makes the harness commit, push and return what happened.
+A story task that pushes only at the end pushes story commits to a hidden ref and the branch once,
+with a `ralph.push` job, before the PR/MR is described.
 
 Coding runs are only claimed by harnesses on 0.11.0 or later; older ones leave them queued. Each
-lane of a run sticks to the harness that ran its last job, so update a repository's harnesses (its pinned ones,
-or any accepting `coding`) before switching it to **Coding tasks**, or a run started on an older
-one waits for it to update. The repository's ralph **Model** isn't applied to the description run
+lane of a run sticks to the harness that ran its last job, so update a repository's harnesses (its
+pinned ones, or any accepting `coding`), or a run started on an older one waits for it to update. The repository's ralph **Model** isn't applied to the description run
 yet (it uses `opus`).
 
 ### Enabling ralph
@@ -519,10 +513,9 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
 
 Claude Code sessions in a ralph job load the harness user's `~/.claude/` settings, skills and
 `CLAUDE.md` plus the repository's `.claude/` settings and `CLAUDE.md`
-(`settingSources: ["user", "project", "local"]`) like a local session would. On the **Coding tasks**
-path their git credential helper uses the run's session token, which only ever gets a read
-credential, so only the harness's own git commands (and `ship`) can push. On the legacy path a
-story session never sees the job token, but a request session's git uses it and can push.
+(`settingSources: ["user", "project", "local"]`) like a local session would. Their git credential
+helper uses the run's session token, which only ever gets a read credential, so only the harness's
+own git commands (and `ship`) can push.
 
 ### Branch worktrees
 

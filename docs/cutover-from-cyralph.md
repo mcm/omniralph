@@ -188,10 +188,9 @@ For every entry in cyralph's `repositories[]`:
    `runPrdQualityGates` unset).
 3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but add no
    rule targeting it on **Settings › Routing** for now: routing moves in step 4.
-4. Leave **Coding path** on **Legacy jobs** (the default), which behaves like cyralph. **Coding
-   tasks** runs the same loop as coding runs of built-in tasks, where sessions can't push by
-   themselves ([deploy-harness.md](deploy-harness.md#coding-path-legacy-jobs-or-coding-tasks));
-   switch to it per repository once the move from cyralph is done.
+4. Leave **Story task** and **Request task** on the built-ins: they run cyralph's loop as coding
+   runs, where sessions can't push by themselves
+   ([deploy-harness.md](deploy-harness.md#coding-runs)).
 
 **Verify:** the form saves without errors, and the repository is listed as ralph-enabled. Nothing
 is delegated to Omniralph yet, so nothing runs.

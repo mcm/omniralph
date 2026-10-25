@@ -615,19 +615,18 @@ TOOL-307 installables and host tools. Not built yet:
 
 - Adding or changing a query or review task is a change to definitions in `packages/tasks`, with
   no harness code. The harness's `capabilities/` no longer has `chat-ask.ts`, `reply.ts`,
-  `learn-rule.ts`, `triage/` or `review.ts`; only `ralph` is left, as thin wrappers around the
-  coding lifecycle and system RPCs, for repositories on the legacy coding path.
-- Two coding paths coexist until the legacy one is deleted: a repository's **Coding path** decides
-  which one its runs' next jobs take, and both share all run state, so it can be switched between
-  jobs.
+  `learn-rule.ts`, `triage/` or `review.ts`; only `ralph` is left, running the legacy
+  `ralph.prepare` and `ralph.cleanup` jobs queued before they became system RPCs.
+- Two coding paths coexisted until TOOL-576 (2026-10-25) deleted the legacy one: every repository's
+  stories, requests and PR/MR descriptions are coding and query runs, `repositories.coding_path` is
+  gone (migration `0084`, which also cancels active legacy story, request and describe jobs), and
+  the harness no longer runs `ralph.story`, `ralph.request` or `ralph.describe-pr` jobs.
 - A PR/MR with several review tasks costs a session per task plus one correlation session per
   head, and its review waits for the slowest task. Reviews need harnesses on 0.10.0 or later.
 - Trust, concurrency and persona are configured separately: **Harnesses › <harness>** sets
   accepted task types and pool limits, and the task definition sets the agent and pool.
 - The claim route does more work (resolving and signing two tokens per run-spec job).
-- A Claude session of a run-spec job never holds a push credential. On the legacy coding path a
-  `ralph.request` session's git still authenticates with the job's single, write-scoped token (it
-  pushes by itself); that ends with the legacy path.
+- A Claude session of a run-spec job never holds a push credential.
 - The rename needed a one-time reinstall of every host (`@omniralph/harness`, the new config
   path), since hosts on 0.8.0 can't self-update across it; see
   [deploy-harness.md](../deploy-harness.md#reinstalling-a-host-after-the-rename).

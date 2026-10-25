@@ -33,7 +33,6 @@ import {
   recordRepositorySettingsChange,
   switchedOn,
   type Repository,
-  type RepositoryCodingPath,
   type RepositoryWithSwitches,
   type ScmProvider,
 } from "./repositories.js";
@@ -117,8 +116,6 @@ export interface RepositoryRalphSettingsUpdate {
   /** Null inherits the organization's allowed task types (`coding`); omitted: unchanged. */
   ralphEnabled?: boolean | null;
   ralphSettings: RalphSettings;
-  /** Omitted: unchanged. */
-  codingPath?: RepositoryCodingPath;
   /** The coding task of its story runs (`story_task_id`); omitted: unchanged. */
   storyTaskId?: string;
   /** The coding task of its request runs (`request_task_id`); omitted: unchanged. */
@@ -139,7 +136,6 @@ export async function updateRepositoryRalphSettings(
     .set({
       ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
       ralphSettings: input.ralphSettings,
-      ...(input.codingPath && { codingPath: input.codingPath }),
       ...(input.storyTaskId && { storyTaskId: input.storyTaskId }),
       ...(input.requestTaskId && { requestTaskId: input.requestTaskId }),
     })
@@ -663,8 +659,8 @@ export interface RalphLaneDetail {
   repository: { id: string; provider: ScmProvider; fullPath: string };
   /** The repository's stored ralph settings (unparsed: old rows may lack newer fields). */
   ralphSettings: unknown;
-  /** The repository's coding path and tasks (the round caps of its request task). */
-  coding: Pick<Repository, "codingPath" | "storyTaskId" | "requestTaskId">;
+  /** The repository's coding tasks (the round caps of its request task). */
+  coding: Pick<Repository, "storyTaskId" | "requestTaskId">;
   /** The lane of the run's own repository. */
   main: boolean;
 }
@@ -721,7 +717,6 @@ export async function getRunDetail(
         },
         ralphSettings: repositories.ralphSettings,
         coding: {
-          codingPath: repositories.codingPath,
           storyTaskId: repositories.storyTaskId,
           requestTaskId: repositories.requestTaskId,
         },

@@ -390,7 +390,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ).toEqual(refused);
     expect(
       await updateRalphSettings(b.repoId, {
-        codingPath: "legacy",
         storyTaskId: "builtin:implement-story",
         requestTaskId: "builtin:handle-request",
         ...ralphSettingsFormValues(DEFAULT_RALPH_SETTINGS),

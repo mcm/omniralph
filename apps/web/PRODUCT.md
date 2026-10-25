@@ -56,7 +56,7 @@ record lives.
   other component or styling library. Custom styling uses the library's design tokens only.
 - Terminology to keep: organization, repository, harness, ralph run, story, lane, review run,
   finding, learned rule, profile, job, triage, follow-up, manual story.
-- Settings are dense and interdependent (verify commands, quality gates, coding path, task
+- Settings are dense and interdependent (verify commands, quality gates, task
   choices, caps); mistakes silently break later runs.
 
 ## Brand Commitments

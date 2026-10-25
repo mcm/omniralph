@@ -48,6 +48,7 @@ import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { ralphJobPayload } from "./coding";
 import {
   DELIVERED_NOTE,
   exchangeJobMessages,
@@ -264,7 +265,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     const job = await start(runId);
     expect(job.type).toBe("ralph.story");
     await finish(job, storyResult(outcome));
-    return RalphStoryPayload.parse(job.payload);
+    return RalphStoryPayload.parse(ralphJobPayload(job));
   }
 
   /** Plays the run's queued describe job. */
@@ -272,9 +273,12 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     const job = await start(runId);
     expect(job.type).toBe("ralph.describe-pr");
     await finish(job, {
-      title: "Build the epic",
-      body: "Builds it.",
+      outcome: "answered",
+      answer: null,
+      structured: { title: "Build the epic", body: "Builds it." },
+      references: [],
       usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 10,
     });
   }
 
@@ -296,7 +300,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     const job = await start(runId, harnessId);
     expect(job.type).toBe("ralph.request");
     await finish(job, "jobError" in outcome ? outcome : requestResult(outcome), harnessId);
-    return RalphRequestPayload.parse(job.payload);
+    return RalphRequestPayload.parse(ralphJobPayload(job));
   }
 
   const last = (sessionId: string, type: "thought" | "response" | "elicitation" | "error") =>

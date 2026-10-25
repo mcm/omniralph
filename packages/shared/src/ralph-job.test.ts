@@ -67,14 +67,8 @@ const storyResult = {
 };
 
 describe("ralph jobs", () => {
-  it("have the ralph.* job types", () => {
-    expect(RALPH_JOB_TYPES).toEqual([
-      "ralph.story",
-      "ralph.describe-pr",
-      "ralph.prepare",
-      "ralph.request",
-      "ralph.cleanup",
-    ]);
+  it("leave only the legacy prepare and cleanup jobs to the agent's ralph capability", () => {
+    expect(RALPH_JOB_TYPES).toEqual(["ralph.prepare", "ralph.cleanup"]);
   });
 
   it("parses ralph.cleanup payloads and results", () => {

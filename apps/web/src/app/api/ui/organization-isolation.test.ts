@@ -1327,7 +1327,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
       state.userId = own.adminId;
       const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
-      expect(coding).toMatchObject({ status: 200, body: { settings: { codingPath: "legacy" } } });
+      expect(coding).toMatchObject({
+        status: 200,
+        body: { settings: { storyTaskId: "builtin:implement-story" } },
+      });
       for (const marker of markers(other))
         expect(JSON.stringify(coding.body)).not.toContain(marker);
       expect(await call(repositoryLinear.GET, { params: { id: own.repoId } })).toEqual({
@@ -1372,7 +1375,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       call(repositoryCoding.PUT, {
         method: "PUT",
         params: { id },
-        body: { ...(coding.settings as object), codingPath: "tasks" },
+        body: { ...(coding.settings as object), storyTaskId: "builtin:handle-request" },
       }),
     ];
     state.userId = a.adminId;
@@ -1393,7 +1396,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       enabled: null,
       queryEnabled: null,
       ralphEnabled: null,
-      codingPath: "legacy",
+      storyTaskId: "builtin:implement-story",
     });
   });
 

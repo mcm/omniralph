@@ -4,7 +4,7 @@
  * issue, an @mention, a chat thread), the rendered prompt and the
  * `builtin:engineer` system prompt never talk about epics, PRDs or stories.
  * The trigger contexts are shaped like the `RalphRequestPayload`s `advanceRun`
- * builds on the `tasks` coding path (`buildRequestPayload`), with request
+ * builds (`buildRequestPayload`), with request
  * texts from the builders the control panel uses.
  */
 import { randomUUID } from "node:crypto";

@@ -4,7 +4,6 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "../../testing/index.js";
-import { legacyJobRouting } from "@omniralph/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "../client.js";
 import { connectRepository, upsertScmConnection } from "../repositories.js";
@@ -93,7 +92,10 @@ describe.skipIf(!databaseAvailable)("ralph analytics queries", () => {
       id: randomUUID(),
       organizationId: orgId,
       type,
-      ...legacyJobRouting(type),
+      // Coding runs, and the PR/MR description's query run.
+      ...(type === "ralph.describe-pr"
+        ? { taskType: "query" as const, pool: "short", taskId: "builtin:describe-pr" }
+        : { taskType: "coding" as const, pool: "long", taskId: "builtin:implement-story" }),
       repositoryId,
       ralphRunId: runId,
       status: "completed" as const,

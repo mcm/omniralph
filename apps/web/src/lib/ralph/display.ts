@@ -217,7 +217,7 @@ export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   guidance: { text: string; at: string }[];
   progress: string;
   iterations: number;
-  /** The attempts a story of the run gets (its main repository's story task, else the legacy cap). */
+  /** The attempts a story of the run gets (its main repository's story task's, else the default cap). */
   maxAttemptsPerStory: number;
   storyCounts: { total: number; completed: number };
   stories: RalphStoryView[];

@@ -36,6 +36,13 @@ describe("job outcome handlers", () => {
     ).toBeUndefined();
   });
 
+  it("has no story, request or describe handler: those coding and query runs use their sinks", () => {
+    // Registering one doesn't throw: none is registered yet.
+    for (const type of ["ralph.story", "ralph.request", "ralph.describe-pr"]) {
+      expect(() => registerJobOutcomeHandler(type, { payload: z.never() })).not.toThrow();
+    }
+  });
+
   it("has no triage handler: triage runs are builtin:triage runs with the triage sink", () => {
     expect(jobOutcomeHandler(job({ type: "triage.run", taskType: "query", pool: "short" }))).toBe(
       undefined,
@@ -53,7 +60,7 @@ describe("job outcome handlers", () => {
     expect(() => registerJobOutcomeHandler("test.thing", { payload: z.object({}) })).toThrow(
       /twice/,
     );
-    expect(() => registerJobOutcomeHandler("ralph.story", { payload: z.object({}) })).toThrow(
+    expect(() => registerJobOutcomeHandler("worktree.exec", { payload: z.object({}) })).toThrow(
       /twice/,
     );
   });
