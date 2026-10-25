@@ -39,8 +39,8 @@ export async function getUserById(db: Database, id: string): Promise<User | unde
   return user;
 }
 
-/** Remembers the user's control panel theme. */
-export async function setUserTheme(db: Database, id: string, theme: UiTheme): Promise<void> {
+/** Remembers the user's control panel theme; `null` follows the OS (System). */
+export async function setUserTheme(db: Database, id: string, theme: UiTheme | null): Promise<void> {
   await db.update(users).set({ theme }).where(eq(users.id, id));
 }
 

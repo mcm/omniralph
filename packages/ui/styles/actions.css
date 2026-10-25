@@ -185,6 +185,39 @@
   color: var(--or-text);
 }
 
+.or-menu__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.or-menu__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-menu__heading-title,
+.or-menu__heading-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-menu__heading-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--or-text);
+}
+
+.or-menu__heading-detail {
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+  color: var(--or-ter);
+}
+
 .or-menu__item {
   display: flex;
   align-items: center;

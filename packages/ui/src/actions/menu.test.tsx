@@ -150,3 +150,61 @@ describe("Menu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 });
+
+describe("Menu header", () => {
+  function renderWithHeader(onPick = vi.fn()) {
+    const user = userEvent.setup();
+    render(
+      <Menu
+        trigger={<Button>Account</Button>}
+        header={
+          <div>
+            <span>Ada Lovelace</span>
+            <button type="button" onClick={() => onPick("a")}>
+              Alpha
+            </button>
+            <button type="button" onClick={() => onPick("b")}>
+              Beta
+            </button>
+          </div>
+        }
+        items={[{ label: "Sign out", onSelect: noop }]}
+      />,
+    );
+    return { user, trigger: screen.getByRole("button", { name: "Account" }) };
+  }
+
+  it("renders above the items and stays open when its controls are used", async () => {
+    const onPick = vi.fn();
+    const { user, trigger } = renderWithHeader(onPick);
+    await user.click(trigger);
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByText("Ada Lovelace")).toBeTruthy();
+    await user.click(within(menu).getByRole("button", { name: "Beta" }));
+    expect(onPick).toHaveBeenCalledWith("b");
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("moves between the header's controls and the items with Tab and Shift+Tab", async () => {
+    const { user, trigger } = renderWithHeader();
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    const signOut = screen.getByRole("menuitem", { name: "Sign out" });
+    expect(document.activeElement).toBe(signOut);
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Alpha" }));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Beta" }));
+    // Typing in the header doesn't jump to an item by typeahead.
+    await user.keyboard("s");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Beta" }));
+    await user.tab();
+    expect(document.activeElement).toBe(signOut);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Beta" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+});

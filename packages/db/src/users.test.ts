@@ -55,6 +55,14 @@ describe.skipIf(!databaseAvailable)("user queries", () => {
     expect((await getUserById(db, user.id))?.theme).toBe("light");
   });
 
+  it("goes back to following the OS when the theme is cleared", async () => {
+    const user = await createUser(db, { email: "system@example.com" });
+    await setUserTheme(db, user.id, "dark");
+    expect((await getUserById(db, user.id))?.theme).toBe("dark");
+    await setUserTheme(db, user.id, null);
+    expect((await getUserById(db, user.id))?.theme).toBeNull();
+  });
+
   it("deletes users with their accounts and sessions", async () => {
     const user = await createUser(db, { email: "gone@example.com" });
     await db.insert(accounts).values({
