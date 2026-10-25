@@ -1,6 +1,7 @@
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
 import { pruneRateLimitCounters } from "@/lib/rate-limit";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Vercel Cron (`vercel.json`): deletes `rate_limits` counters whose window
@@ -9,8 +10,10 @@ import { pruneRateLimitCounters } from "@/lib/rate-limit";
  * Redis counting (hot state on), it skips Postgres unless a Redis outage left
  * rows there.
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const pruned = await pruneRateLimitCounters(getDb());
   return Response.json({ pruned });
 }
+
+export const GET = liveRoute(get);

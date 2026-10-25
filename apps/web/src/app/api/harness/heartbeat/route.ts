@@ -6,6 +6,7 @@ import {
   recordHarnessHostTools,
   renewJobLeases,
   resolveHarnessConfig,
+  type Database,
 } from "@omniralph/db";
 import {
   DEFAULT_POOLS,
@@ -32,12 +33,14 @@ import {
   type HeartbeatChanges,
 } from "@/lib/harnesses/heartbeat-cache";
 import { recordHeartbeat, type HeartbeatReport } from "@/lib/harnesses/last-seen";
+import { noteAgentOnline } from "@/lib/harnesses/liveness";
 import { readHarnessOrganization } from "@/lib/harnesses/organization";
 import { hasDueJob, renewJobsDue } from "@/lib/dispatch/due";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
+import { liveRoute } from "@/lib/live/request";
 
 /** Longest a heartbeat waits for npm when the organization's `latest` is due to be read again. */
 const NPM_TIMEOUT_MS = 5_000;
@@ -61,8 +64,10 @@ const NPM_TIMEOUT_MS = 5_000;
  * A heartbeat with no running jobs or acknowledgements is answered from Redis when
  * nothing its last response was built from changed (`heartbeat-cache`): no Postgres
  * query, unless it asked about `claimablePools` and its organization has a due job.
+ * Either way, an agent the live change events last had offline is announced online
+ * (`noteAgentOnline`: a Redis read while it stays online).
  */
-export async function POST(req: Request): Promise<Response> {
+async function post(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
   if (principal instanceof Response) return principal;
   const body = Heartbeat.safeParse(await readJson(req));
@@ -95,6 +100,7 @@ export async function POST(req: Request): Promise<Response> {
       (body.data.claimablePools === undefined || !(await hasDueJob(db, cached.organizationId)))
     ) {
       const claimable = body.data.claimablePools === undefined ? undefined : false;
+      await announceOnline(db, harnessId);
       return Response.json(await withRequestFields(cached, harnessId, body.data, claimable));
     }
   }
@@ -107,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   const agent = await recordHeartbeat(db, harnessId, report);
   if (!agent) return badRequest("unknown_agent");
+  await announceOnline(db, harnessId);
   await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
   const [pinnedRepoIds, poolNames, running, organizationVersion, hostTools, config] =
     await Promise.all([
@@ -200,6 +207,18 @@ export async function POST(req: Request): Promise<Response> {
   return Response.json(await withRequestFields(response, harnessId, body.data, claimable));
 }
 
+/**
+ * Announces the agent online in the live change events when it was offline (a steady
+ * heartbeat publishes nothing). A failure never fails the heartbeat.
+ */
+async function announceOnline(db: Database, harnessId: string): Promise<void> {
+  try {
+    await noteAgentOnline(db, harnessId);
+  } catch (error) {
+    console.error(`Announcing agent ${harnessId} online failed`, error);
+  }
+}
+
 /** The response with the fields that depend on the request: `ably` and `claimable`. */
 async function withRequestFields(
   response: CachedHeartbeatResponse,
@@ -220,3 +239,5 @@ async function withRequestFields(
     ...(claimable === undefined ? {} : { claimable }),
   } satisfies HeartbeatResponse;
 }
+
+export const POST = liveRoute(post);

@@ -1061,6 +1061,12 @@ export const harnesses = pgTable(
     updateRequestVersion: text("update_request_version"),
     updateRequestedAt: timestamp("update_requested_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    /**
+     * Whether the live change events last announced the agent online: a heartbeat sets it
+     * (and publishes) when it was false, the `agent-liveness` cron clears it (and publishes)
+     * once the last heartbeat is older than the online window.
+     */
+    liveOnline: boolean("live_online").notNull().default(false),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     /** Soft delete (always after revoking): deleted harnesses are hidden everywhere. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

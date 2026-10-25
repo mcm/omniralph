@@ -6,9 +6,10 @@
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
-import type { Job } from "./jobs.js";
+import { recordJobChanges, type Job } from "./jobs.js";
 import {
   harnessAudit,
   harnessEnrollments,
@@ -174,6 +175,11 @@ export async function enrollHarness(
       tokenHash: hashToken(refreshToken),
       createdAt: now,
     });
+    recordChange(tx, {
+      resource: "agent",
+      ids: [harnessId],
+      organizationId: enrollment.organizationId,
+    });
     return { harnessId, refreshToken };
   });
 }
@@ -290,8 +296,9 @@ export async function revokeHarness(
           options.organizationId ? eq(harnesses.organizationId, options.organizationId) : undefined,
         ),
       )
-      .returning({ id: harnesses.id });
+      .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
     if (!agent) return null;
+    recordChange(tx, { resource: "agent", ids: [agent.id], organizationId: agent.organizationId });
     await tx
       .update(harnessRefreshTokens)
       .set({ revokedAt: now })
@@ -320,6 +327,16 @@ export async function revokeHarness(
       .delete(harnessRepoPins)
       .where(eq(harnessRepoPins.harnessId, harnessId))
       .returning({ repositoryId: harnessRepoPins.repositoryId });
+    recordJobChanges(tx, [...canceledJobs, ...failedJobs, ...requeuedJobs]);
+    for (const repositoryId of unpinned.map((p) => p.repositoryId)) {
+      recordChange(tx, {
+        resource: "settings",
+        section: "repository.agents",
+        ids: [repositoryId],
+        subjectId: repositoryId,
+        organizationId: agent.organizationId,
+      });
+    }
     return {
       requeuedJobs,
       failedJobs,

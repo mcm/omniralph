@@ -397,6 +397,15 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     expect(rows).toEqual([{ reported_models: [] }]);
   });
 
+  it("adds live_online to harnesses, false by default (0086)", async () => {
+    const [org] = await db.insert(organizations).values({ name: "Live" }).returning();
+    const { rows } = await db.$client.query<{ live_online: unknown }>(
+      `insert into harnesses (organization_id, name) values ($1, 'h') returning live_online`,
+      [org!.id],
+    );
+    expect(rows).toEqual([{ live_online: false }]);
+  });
+
   it("adds reported installables to harnesses, empty by default (0071)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Installables" }).returning();
     const { rows } = await db.$client.query<{ reported_installables: unknown }>(

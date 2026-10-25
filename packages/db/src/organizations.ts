@@ -8,6 +8,7 @@
  * - invitations are pending until accepted, revoked or {@link INVITATION_TTL_MS} after creation.
  */
 import { and, asc, count, eq, exists, gt, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
   organizationEmailDomains,
@@ -115,6 +116,17 @@ export async function createOrganization(
       .where(eq(users.id, input.createdBy));
     return organization;
   });
+}
+
+/**
+ * Records a live `organization` change. A membership change (`userId`) is also told to
+ * that user on their own channel: their organizations, and so their live token, changed.
+ */
+function recordOrganizationChange(db: unknown, organizationId: string, userId?: string): void {
+  recordChange(db, { resource: "organization", ids: [organizationId], organizationId });
+  if (userId) {
+    recordChange(db, { resource: "organization", ids: [organizationId], organizationId, userId });
+  }
 }
 
 export async function getOrganization(db: Database, id: string): Promise<Organization | null> {
@@ -242,6 +254,7 @@ export async function updateOrganization(
         updatedAt: new Date(),
       })
       .where(eq(organizations.id, id));
+    recordOrganizationChange(tx, id);
     return "updated";
   });
 }
@@ -285,6 +298,7 @@ export async function setOrganizationDomains(
         .set({ allowDomainJoin: false, updatedAt: new Date() })
         .where(eq(organizations.id, organizationId));
     }
+    recordOrganizationChange(tx, organizationId);
     return unique;
   });
 }
@@ -306,6 +320,7 @@ export async function addOrganizationDomain(
       .values({ organizationId, domain: normalized })
       .onConflictDoNothing()
       .returning({ domain: organizationEmailDomains.domain });
+    if (inserted.length > 0) recordOrganizationChange(tx, organizationId);
     return inserted.length > 0 ? "added" : "already_added";
   });
 }
@@ -339,6 +354,7 @@ export async function removeOrganizationDomain(
         .set({ allowDomainJoin: false, updatedAt: new Date() })
         .where(eq(organizations.id, organizationId));
     }
+    recordOrganizationChange(tx, organizationId);
     return "removed";
   });
 }
@@ -432,6 +448,7 @@ export async function addMember(
       .values(input)
       .onConflictDoNothing()
       .returning({ userId: organizationMembers.userId });
+    if (inserted.length > 0) recordOrganizationChange(tx, input.organizationId, input.userId);
     return inserted.length > 0 ? "added" : "already_member";
   });
 }
@@ -456,6 +473,7 @@ export async function updateMemberRole(
       return "last_admin";
     }
     await tx.update(organizationMembers).set({ role: input.role }).where(where);
+    recordOrganizationChange(tx, input.organizationId, input.userId);
     return "updated";
   });
 }
@@ -479,6 +497,7 @@ export async function removeMember(
       return "last_admin";
     }
     await tx.delete(organizationMembers).where(where);
+    recordOrganizationChange(tx, input.organizationId, input.userId);
     return "removed";
   });
 }
@@ -551,6 +570,7 @@ export async function createInvitation(
       })
       .returning();
     if (!invitation) throw new Error("Failed to create invitation");
+    recordOrganizationChange(tx, input.organizationId);
     return { status: "created", invitation };
   });
 }
@@ -651,6 +671,7 @@ export async function acceptInvitation(
       .update(organizationInvitations)
       .set({ acceptedAt: now, acceptedBy: input.userId })
       .where(eq(organizationInvitations.id, invitation.id));
+    recordOrganizationChange(tx, invitation.organizationId, input.userId);
     return "accepted";
   });
 }
@@ -675,6 +696,7 @@ export async function revokeInvitation(
       .set({ revokedAt: now })
       .where(and(byId, pendingInvitation(now)))
       .returning({ id: organizationInvitations.id });
+    if (revoked.length > 0) recordOrganizationChange(tx, input.organizationId);
     return revoked.length > 0 ? "revoked" : "not_pending";
   });
 }
@@ -702,7 +724,11 @@ export async function declineInvitation(
         pendingInvitation(now),
       ),
     )
-    .returning({ id: organizationInvitations.id });
+    .returning({
+      id: organizationInvitations.id,
+      organizationId: organizationInvitations.organizationId,
+    });
+  for (const row of declined) recordOrganizationChange(db, row.organizationId);
   return declined.length > 0 ? "declined" : "not_found";
 }
 
@@ -773,6 +799,7 @@ export async function joinOrganization(
       .values({ organizationId: input.organizationId, userId: input.userId, role: "member" })
       .onConflictDoNothing()
       .returning({ userId: organizationMembers.userId });
+    if (inserted.length > 0) recordOrganizationChange(tx, input.organizationId, input.userId);
     return inserted.length > 0 ? "joined" : "already_member";
   });
 }

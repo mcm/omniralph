@@ -1,0 +1,145 @@
+/**
+ * The live change-event catalogue: what the control panel publishes on Ably after a
+ * committed write that changes what a screen shows, and what the client live data layer
+ * subscribes to and maps to the queries it invalidates. Events carry IDs only, never
+ * content (no titles, bodies, payloads or names): a client refetches through the normal,
+ * authorized endpoints, so a token that outlives a membership leaks nothing but IDs.
+ *
+ * Changes everyone in an organization can see go on `orgChangesChannel(organizationId)`;
+ * per-user state (the Inbox's Done, Skip and Snooze) on `userChangesChannel(userId)`.
+ * Every message is named `CHANGE_EVENT_NAME` and its data is one `ChangeEvent`.
+ *
+ * Safe to import in the browser (no server code).
+ */
+import type { ChangeResource } from "@omniralph/db/changes";
+import { z } from "zod";
+
+/** The version of the event shape (`v`). */
+export const CHANGE_EVENT_VERSION = 1;
+
+/** The Ably message name of every change event. */
+export const CHANGE_EVENT_NAME = "change";
+
+/** What changed. */
+export const CHANGE_RESOURCES = [
+  "run",
+  "transcript",
+  "pull_request",
+  "inbox_state",
+  "webhook_event",
+  "settings",
+  "agent",
+  "repository",
+  "connection",
+  "organization",
+] as const satisfies readonly ChangeResource[];
+export type ChangeEventResource = (typeof CHANGE_RESOURCES)[number];
+
+/** The tracked settings sections a `settings` event names. */
+export const SETTINGS_SECTIONS = [
+  "repository.reviews",
+  "repository.coding",
+  "repository.agents",
+  "routing_rules",
+  "connection",
+  "organization",
+  "agent_defaults",
+] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+const id = z.guid();
+
+/** Fields every event has; `ids` are the changed rows' IDs. */
+const base = {
+  v: z.literal(CHANGE_EVENT_VERSION),
+  ids: z.array(id).min(1),
+  organizationId: id,
+  /** When the change was committed (ISO 8601). */
+  at: z.iso.datetime(),
+};
+
+/**
+ * One schema per resource; each is strict, so an event can't carry anything but IDs.
+ *
+ * - `run`: a run changed (`ids` = run IDs, `runId` = the run), or one of its attempts
+ *   did (`ids` = job IDs, `runId` = their run; absent for system work such as a repo sync).
+ * - `transcript`: an attempt's transcript grew (`ids` = job IDs), coalesced to at most
+ *   one leading and one trailing event per run per second.
+ * - `pull_request`: a run's pull or merge request changed state (`ids` = lane IDs).
+ * - `inbox_state`: the user marked Inbox items Done, Skipped, Snoozed or Restored
+ *   (`ids` = item keys); only on the user's own channel.
+ * - `webhook_event`: a delivery was recorded or replayed (`ids` = webhook event IDs).
+ * - `settings`: a tracked settings `section` was saved, for `subjectId` (e.g. the
+ *   repository) when the section has one (`ids` = the subject, else the organization).
+ * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its
+ *   settings, pins, update state or installs changed (`ids` = agent IDs).
+ * - `repository`: repositories were connected, disconnected or switched (`ids` = repo IDs).
+ * - `connection`: a code host, tracker or chat connection changed (`ids` = connection IDs).
+ * - `organization`: the organization, its members, invitations or domains changed.
+ */
+export const changeEventSchemas = {
+  run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
+  transcript: z.strictObject({
+    ...base,
+    resource: z.literal("transcript"),
+    runId: id.optional(),
+  }),
+  pull_request: z.strictObject({
+    ...base,
+    resource: z.literal("pull_request"),
+    runId: id.optional(),
+  }),
+  inbox_state: z.strictObject({
+    ...base,
+    resource: z.literal("inbox_state"),
+    // Item keys (`manual_story:<id>`, `failed:<runId>:<attemptId>`, ...): IDs and kinds only.
+    ids: z.array(z.string().regex(/^[a-z_]+(:[0-9A-Za-z_.:-]+)+$/)).min(1),
+  }),
+  webhook_event: z.strictObject({
+    ...base,
+    resource: z.literal("webhook_event"),
+    runId: id.optional(),
+  }),
+  settings: z.strictObject({
+    ...base,
+    resource: z.literal("settings"),
+    section: z.enum(SETTINGS_SECTIONS),
+    subjectId: id.optional(),
+  }),
+  agent: z.strictObject({ ...base, resource: z.literal("agent") }),
+  repository: z.strictObject({ ...base, resource: z.literal("repository") }),
+  connection: z.strictObject({ ...base, resource: z.literal("connection") }),
+  organization: z.strictObject({ ...base, resource: z.literal("organization") }),
+} satisfies { [R in ChangeEventResource]: z.ZodType<{ resource: R }> };
+
+export const changeEventSchema = z.discriminatedUnion("resource", [
+  changeEventSchemas.run,
+  changeEventSchemas.transcript,
+  changeEventSchemas.pull_request,
+  changeEventSchemas.inbox_state,
+  changeEventSchemas.webhook_event,
+  changeEventSchemas.settings,
+  changeEventSchemas.agent,
+  changeEventSchemas.repository,
+  changeEventSchemas.connection,
+  changeEventSchemas.organization,
+]);
+
+export type ChangeEvent = z.infer<typeof changeEventSchema>;
+export type ChangeEventOf<R extends ChangeEventResource> = Extract<ChangeEvent, { resource: R }>;
+
+/** Parses a received message's data; null when it isn't a known change event. */
+export function parseChangeEvent(data: unknown): ChangeEvent | null {
+  const parsed = changeEventSchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The organization's change channel (never an agent's wake channel `org:<id>`). */
+export function orgChangesChannel(organizationId: string): string {
+  return `org:${organizationId}:changes`;
+}
+
+/** The user's own change channel, for per-user state. */
+export function userChangesChannel(userId: string): string {
+  return `user:${userId}:changes`;
+}

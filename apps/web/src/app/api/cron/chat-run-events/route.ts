@@ -2,6 +2,7 @@ import { defaultWakeDeps, processPendingRunEvents } from "@/lib/chat/agent/wake"
 import { checkPendingRunEvents, finishPendingRunEvents } from "@/lib/chat/pending-run-events";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Vercel Cron (`vercel.json`, every minute): wakes the chat responder for
@@ -12,7 +13,7 @@ import { getDb } from "@/lib/db";
  * event was recorded since a run that left none pending: see
  * `lib/chat/pending-run-events`.
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const db = getDb();
   const check = await checkPendingRunEvents(db);
@@ -21,3 +22,5 @@ export async function GET(req: Request): Promise<Response> {
   await finishPendingRunEvents(db, check);
   return Response.json(totals);
 }
+
+export const GET = liveRoute(get);

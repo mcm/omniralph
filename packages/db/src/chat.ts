@@ -5,8 +5,10 @@
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
 import { and, asc, desc, eq, gt, inArray, isNull, lte, lt, sql } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
+import { recordConnectionChange } from "./repositories.js";
 import {
   chatChannelTaskSettings,
   chatConnections,
@@ -177,6 +179,7 @@ export async function saveChatConnection<C>(
         setWhere: eq(chatConnections.organizationId, input.organizationId),
       })
       .returning();
+    if (row) recordConnectionChange(tx, row);
     return row ? toChatConnection(row) : "other_organization";
   });
 }
@@ -255,6 +258,7 @@ export async function deleteChatConnection<C>(
     .delete(chatConnections)
     .where(and(eq(chatConnections.organizationId, organizationId), eq(chatConnections.id, id)))
     .returning();
+  if (row) recordConnectionChange(db, row);
   return row ? withCredentials<C>(row, key) : null;
 }
 
@@ -272,6 +276,7 @@ export async function deleteChatConnectionByExternalId(
     .delete(chatConnections)
     .where(and(eq(chatConnections.platform, platform), eq(chatConnections.externalId, externalId)))
     .returning();
+  if (row) recordConnectionChange(db, row);
   return row ? toChatConnection(row) : null;
 }
 
@@ -368,6 +373,8 @@ export async function upsertChatChannelTaskSetting(
         setWhere: eq(chatChannelTaskSettings.organizationId, input.organizationId),
       })
       .returning();
+    if (row)
+      recordConnectionChange(tx, { id: input.connectionId, organizationId: input.organizationId });
     return row ?? null;
   });
 }
@@ -389,6 +396,7 @@ export async function deleteChatChannelTaskSetting(
       ),
     )
     .returning({ id: chatChannelTaskSettings.id });
+  if (removed.length > 0) recordConnectionChange(db, { id: connectionId, organizationId });
   return removed.length > 0;
 }
 
@@ -755,6 +763,10 @@ export async function mapThreadRun(
         .limit(1);
   if (mapped?.jobId) {
     await db.update(jobs).set({ chatThreadRunId: mapped.id }).where(eq(jobs.id, mapped.jobId));
+  }
+  // A new ask run (a coding run's own change is its ralph run's).
+  if (row?.kind === "query") {
+    recordChange(db, { resource: "run", ids: [row.id], runId: row.id, organizationId });
   }
   return mapped ?? null;
 }

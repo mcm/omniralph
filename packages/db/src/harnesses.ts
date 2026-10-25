@@ -17,6 +17,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { getAllowedTaskTypeDefaults, getDefaultMaxConcurrency } from "./app-settings.js";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
@@ -423,7 +424,17 @@ export async function updateHarnessConfig(
       ),
     )
     .returning();
+  if (row) recordAgentChange(db, row);
   return row ?? null;
+}
+
+/** Records a live `agent` change for the harness. */
+function recordAgentChange(db: Database, harness: { id: string; organizationId: string }): void {
+  recordChange(db, {
+    resource: "agent",
+    ids: [harness.id],
+    organizationId: harness.organizationId,
+  });
 }
 
 /**
@@ -447,6 +458,7 @@ export async function setHarnessDesiredVersion(
       ),
     )
     .returning();
+  if (row) recordAgentChange(db, row);
   return row ?? null;
 }
 
@@ -478,6 +490,7 @@ export async function requestHarnessUpdate(
       ),
     )
     .returning();
+  if (row) recordAgentChange(db, row);
   return row ?? null;
 }
 
@@ -503,7 +516,8 @@ export async function markHarnessDeleted(
         isNull(harnesses.deletedAt),
       ),
     )
-    .returning({ id: harnesses.id });
+    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+  for (const row of rows) recordAgentChange(db, row);
   return rows.length > 0;
 }
 
@@ -777,4 +791,58 @@ export async function listQueuedJobsTargetingHarness(
     .from(jobs)
     .where(and(eq(jobs.status, "queued"), eq(jobs.targetHarnessId, harnessId)))
     .orderBy(asc(jobs.createdAt));
+}
+
+/**
+ * Announces an agent online (`live_online`) when the live events last had it offline,
+ * recording a live `agent` change. False when it was already online, or is revoked,
+ * deleted or unknown: a steady heartbeat records nothing.
+ */
+export async function markHarnessLiveOnline(db: Database, harnessId: string): Promise<boolean> {
+  const rows = await db
+    .update(harnesses)
+    .set({ liveOnline: true })
+    .where(
+      and(
+        eq(harnesses.id, harnessId),
+        eq(harnesses.liveOnline, false),
+        isNull(harnesses.revokedAt),
+        isNull(harnesses.deletedAt),
+      ),
+    )
+    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+  for (const row of rows) recordAgentChange(db, row);
+  return rows.length > 0;
+}
+
+/** The agents the live events last announced online, with their row's last heartbeat. */
+export async function listLiveOnlineHarnesses(
+  db: Database,
+): Promise<{ id: string; organizationId: string; lastHeartbeatAt: Date | null }[]> {
+  return db
+    .select({
+      id: harnesses.id,
+      organizationId: harnesses.organizationId,
+      lastHeartbeatAt: harnesses.lastHeartbeatAt,
+    })
+    .from(harnesses)
+    .where(eq(harnesses.liveOnline, true));
+}
+
+/**
+ * Announces agents offline (clears `live_online`), recording a live `agent` change for
+ * each that was still online. Returns their IDs.
+ */
+export async function markHarnessesLiveOffline(
+  db: Database,
+  harnessIds: readonly string[],
+): Promise<string[]> {
+  if (harnessIds.length === 0) return [];
+  const rows = await db
+    .update(harnesses)
+    .set({ liveOnline: false })
+    .where(and(inArray(harnesses.id, [...harnessIds]), eq(harnesses.liveOnline, true)))
+    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+  for (const row of rows) recordAgentChange(db, row);
+  return rows.map((row) => row.id);
 }

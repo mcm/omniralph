@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { removeJobsDue } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Stores a job's result. Only the job's current harness may submit it: a harness
@@ -26,7 +27,7 @@ import { jobHooks } from "@/lib/sinks";
  * `completed` and reruns `onCompleted`, which is idempotent (never a second
  * post).
  */
-export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
+async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireHarness(req);
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
@@ -76,3 +77,5 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
       throw new Error(`Unexpected result outcome ${outcome.status}`);
   }
 }
+
+export const POST = liveRoute(post);

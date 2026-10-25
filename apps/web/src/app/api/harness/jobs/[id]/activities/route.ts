@@ -6,6 +6,7 @@ import { jobIdParam, notFound, type JobRouteContext } from "@/lib/harness-api/jo
 import { getDb } from "@/lib/db";
 import { getLinearGateway } from "@/lib/linear/client";
 import { relayActivity } from "@/lib/ralph/activities";
+import { liveRoute } from "@/lib/live/request";
 
 function forbidden(error: string): Response {
   return Response.json({ error }, { status: 403 });
@@ -20,7 +21,7 @@ function forbidden(error: string): Response {
  * legacy) with `run:activity`; the body is a `RalphActivity`. 502 when Linear
  * fails, after the activity is stored (the harness logs it and carries on).
  */
-export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
+async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireJob(req, "run:activity");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
@@ -52,3 +53,5 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
     return Response.json({ error: "linear_unavailable" }, { status: 502 });
   }
 }
+
+export const POST = liveRoute(post);

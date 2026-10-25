@@ -21,6 +21,7 @@ import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
+import { liveRoute } from "@/lib/live/request";
 
 /** Room above `MAX_CLAIM_WAIT_SECONDS` for the last claim and the response. */
 export const maxDuration = 60;
@@ -45,7 +46,7 @@ type ClaimRun = Extract<JobStartResponse, { action: "run" }>;
  * (`onStarted`, whose `skip` moves the claim on to the next job) and about
  * candidates the claim canceled (`onCanceled`) or gave up on (`onFailed`).
  */
-export async function POST(req: Request): Promise<Response> {
+async function post(req: Request): Promise<Response> {
   const principal = await requireHarness(req);
   if (principal instanceof Response) return principal;
   const body = ClaimRequest.safeParse(await readJson(req));
@@ -165,3 +166,5 @@ function wait(ms: number, signal: AbortSignal): Promise<boolean> {
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
+
+export const POST = liveRoute(post);

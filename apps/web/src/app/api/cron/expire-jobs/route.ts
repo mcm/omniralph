@@ -9,6 +9,7 @@ import {
 } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Vercel Cron (`vercel.json`): marks jobs still `queued` 24h after creation
@@ -17,7 +18,7 @@ import { jobHooks } from "@/lib/sinks";
  * review fails with a note on the PR/MR). With Redis, it returns without
  * querying Postgres while no queued job is that old (`hasExpiredQueuedJob`).
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const now = new Date();
   const db = getDb();
@@ -39,3 +40,5 @@ export async function GET(req: Request): Promise<Response> {
   }
   return Response.json({ expired: expired.length });
 }
+
+export const GET = liveRoute(get);

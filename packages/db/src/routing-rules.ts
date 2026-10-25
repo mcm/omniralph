@@ -6,6 +6,7 @@
 import type { RoutingRuleInput } from "@omniralph/shared";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getAllowedTaskTypeDefaults } from "./app-settings.js";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveRepositorySwitches, type RepositoryWithSwitches } from "./repositories.js";
 import {
@@ -71,6 +72,12 @@ export async function replaceRoutingRules(
     if (indexes.length > 0) return { ok: false, error: "unknown_repository", indexes };
 
     await tx.delete(routingRules).where(eq(routingRules.organizationId, organizationId));
+    recordChange(tx, {
+      resource: "settings",
+      section: "routing_rules",
+      ids: [organizationId],
+      organizationId,
+    });
     if (rules.length === 0) return { ok: true, rules: [] };
     const saved = await tx
       .insert(routingRules)

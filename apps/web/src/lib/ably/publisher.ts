@@ -4,10 +4,15 @@ import { getAblyConfig, type AblyConfig } from "./token";
 type Env = Record<string, string | undefined>;
 
 /** Ably's REST endpoint for publishing. */
-const ABLY_REST_URL = "https://rest.ably.io";
+export const ABLY_REST_URL = "https://rest.ably.io";
 
 /** A wake publish that takes longer than this is abandoned (dispatch must not hang on Ably). */
 const PUBLISH_TIMEOUT_MS = 5_000;
+
+/** The `authorization` header of an Ably REST request, with the API key (basic auth). */
+export function ablyAuthorization(config: AblyConfig): string {
+  return `Basic ${Buffer.from(`${config.keyName}:${config.keySecret}`).toString("base64")}`;
+}
 
 /** Publishes wake messages (name `wake`, no data) that make harnesses claim at once. */
 export interface WakePublisher {
@@ -21,8 +26,7 @@ export class AblyRestWakePublisher implements WakePublisher {
   private readonly fetch: typeof fetch;
 
   constructor(config: AblyConfig, options: { fetch?: typeof fetch } = {}) {
-    const key = `${config.keyName}:${config.keySecret}`;
-    this.authorization = `Basic ${Buffer.from(key).toString("base64")}`;
+    this.authorization = ablyAuthorization(config);
     this.fetch = options.fetch ?? fetch;
   }
 

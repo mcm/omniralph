@@ -3,8 +3,11 @@
  * a person to approve (`run_permission_requests`), stored with the run's job.
  */
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
+import { jobChangeColumns, jobRunId, recordJobChanges, type JobChangeFields } from "./jobs.js";
 import {
+  jobs,
   runActivities,
   runPermissionRequests,
   type RunActivityType,
@@ -40,7 +43,23 @@ export async function insertRunActivity(
       parameter: input.type === "action" ? (input.parameter ?? null) : null,
     })
     .returning();
+  const job = await changedJob(db, input.jobId);
+  if (job) {
+    recordChange(db, {
+      resource: "transcript",
+      ids: [job.id],
+      organizationId: job.organizationId,
+      runId: jobRunId(job),
+    });
+  }
   return row!;
+}
+
+/** The job's live-change fields, when a change collector is open (else no query). */
+async function changedJob(db: Queryable, jobId: string): Promise<JobChangeFields | null> {
+  if (!currentChangeCollector()) return null;
+  const [job] = await db.select(jobChangeColumns).from(jobs).where(eq(jobs.id, jobId));
+  return job ?? null;
 }
 
 /** A run's activities, oldest first. */
@@ -83,7 +102,11 @@ export async function createRunPermissionRequest(
       target: [runPermissionRequests.jobId, runPermissionRequests.requestId],
     })
     .returning();
-  if (created) return { request: created, created: true };
+  if (created) {
+    const job = await changedJob(db, input.jobId);
+    if (job) recordJobChanges(db, [job]);
+    return { request: created, created: true };
+  }
   const existing = await getRunPermissionRequest(db, input.jobId, input.requestId);
   return { request: existing!, created: false };
 }
@@ -135,7 +158,11 @@ export async function answerRunPermissionRequest(
       ),
     )
     .returning();
-  if (updated) return { request: updated, answered: true };
+  if (updated) {
+    const job = await changedJob(db, input.jobId);
+    if (job) recordJobChanges(db, [job]);
+    return { request: updated, answered: true };
+  }
   return {
     request: await getRunPermissionRequest(db, input.jobId, input.requestId),
     answered: false,

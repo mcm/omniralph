@@ -11,6 +11,7 @@ import {
   type CurrentUser,
   type OrgUser,
 } from "@/lib/auth/session";
+import { withLiveChanges } from "@/lib/live/request";
 import { ORGANIZATION_HEADER, ORGANIZATION_SWITCHED, type ApiErrorBody } from "./schemas";
 
 /** Shown when another tab switched organizations since this one loaded its data. */
@@ -94,7 +95,8 @@ type HandlerResult = Response | ActionResult | object;
  * - 404 `ApiRouteError.notFound()` (or Next's `notFound()`);
  * - any other `ApiRouteError` with its status, and 500 for anything unexpected.
  *
- * Handlers scope every query to `user.organization.id`.
+ * Handlers scope every query to `user.organization.id`. The changes the handler commits
+ * are published as live change events after the response (`withLiveChanges`).
  */
 export function apiHandler<
   A extends Access = "member",
@@ -106,7 +108,8 @@ export function apiHandler<
   fn: (context: ApiContext<A, Infer<BS>, Infer<QS>, P>) => Promise<HandlerResult> | HandlerResult,
 ): (request: Request, route: { params: Promise<P> }) => Promise<Response> {
   const access = (options.access ?? "member") as Access;
-  return async (request, route) => {
+  return (request, route) => withLiveChanges(() => handle(request, route));
+  async function handle(request: Request, route: { params: Promise<P> }): Promise<Response> {
     try {
       const user = access === "signed-in" ? await requireSignedInUser() : await requireUser(access);
       const expected = request.headers.get(ORGANIZATION_HEADER);
@@ -147,7 +150,7 @@ export function apiHandler<
     } catch (error) {
       return errorResponse(error);
     }
-  };
+  }
 }
 
 function invalid(error: z.ZodError): NextResponse<ApiErrorBody> {

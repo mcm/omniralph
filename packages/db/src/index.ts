@@ -1,5 +1,17 @@
 export * from "./schema.js";
 export { closeDb, createDb, type Database } from "./client.js";
+export {
+  CHANGE_RESOURCES,
+  captureChanges,
+  ChangeCollector,
+  currentChangeCollector,
+  recordChange,
+  runWithChangeCollector,
+  withChangeScopes,
+  type Change,
+  type ChangeResource,
+  type RecordedChange,
+} from "./changes.js";
 export { runMigrations, migrationsFolder } from "./migrate.js";
 export { decrypt, encrypt, hashToken, parseEncryptionKey } from "./crypto.js";
 export {
@@ -155,6 +167,9 @@ export {
   listRecentHarnessAudit,
   listRecentJobs,
   markHarnessDeleted,
+  markHarnessLiveOnline,
+  markHarnessesLiveOffline,
+  listLiveOnlineHarnesses,
   requestHarnessUpdate,
   setHarnessDesiredVersion,
   resolveHarnessConfig,

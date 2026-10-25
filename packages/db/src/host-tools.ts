@@ -6,6 +6,7 @@
  */
 import { HOST_TOOL_NAME_PATTERN, type ReportedHostTool } from "@omniralph/shared";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { harnessHostTools, harnesses, hostTools } from "./schema.js";
 
@@ -52,7 +53,18 @@ export async function createHostTool(
     .values({ organizationId, name: input.name, description: input.description ?? null })
     .onConflictDoNothing({ target: [hostTools.organizationId, hostTools.name] })
     .returning();
+  if (row) recordHostToolCatalogChange(db, organizationId);
   return row ? { ok: true, hostTool: row } : { ok: false, error: "duplicate_name" };
+}
+
+/** The host tool catalog is part of the agent defaults (a live `settings` change). */
+function recordHostToolCatalogChange(db: Database, organizationId: string): void {
+  recordChange(db, {
+    resource: "settings",
+    section: "agent_defaults",
+    ids: [organizationId],
+    organizationId,
+  });
 }
 
 /** The organization's host tools, by name. */
@@ -74,6 +86,7 @@ export async function deleteHostTool(
     .delete(hostTools)
     .where(and(eq(hostTools.organizationId, organizationId), eq(hostTools.id, hostToolId)))
     .returning({ id: hostTools.id });
+  if (rows.length > 0) recordHostToolCatalogChange(db, organizationId);
   return rows.length > 0;
 }
 
@@ -202,6 +215,7 @@ export async function setHarnessHostToolPath(
       target: [harnessHostTools.harnessId, harnessHostTools.hostToolId],
       set: { configuredPath, configuredPathExists: null },
     });
+  recordChange(db, { resource: "agent", ids: [harnessId], organizationId });
   return { ok: true };
 }
 
