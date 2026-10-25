@@ -1,0 +1,91 @@
+/* References: brand marks, reference badges and the size badge (Design rules 1, 2). */
+.or-brand-mark {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+
+/* @thesvg/react has no mono Slack mark: paint the default one in currentColor. */
+.or-brand-mark--slack path {
+  fill: currentColor;
+}
+
+.or-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-family: var(--or-font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.or-ref__icon {
+  flex: none;
+  color: var(--or-ter);
+}
+
+.or-ref__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-ref__text.or-mono {
+  font-size: 11.5px;
+}
+
+.or-ref--strong {
+  color: var(--or-text);
+  font-weight: 600;
+}
+
+/* The Omniralph tracker glyph keeps its two colors: ring in text, cursor in accent. */
+.or-ref--issue .or-glyph {
+  color: var(--or-text);
+}
+
+.or-ref--link {
+  cursor: pointer;
+}
+
+.or-ref--link:hover {
+  border-color: var(--or-ctl);
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-ref--link:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-size {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: default;
+}

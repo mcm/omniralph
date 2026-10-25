@@ -139,6 +139,39 @@ it in the accent with the halo.
 `apps/web/public` (`favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`) with `sharp`;
 commit the outputs. `src/brand/assets.test.ts` fails when they drift from `tileSvg`.
 
+## References
+
+Every reference carries its icon (Design rules 1, 2). Badges are a plain `<span>` unless
+given `href`, which renders them through the `UiProvider` link component. Long text is
+truncated with an ellipsis and keeps the full text in `title`.
+
+- `BrandMark` (`brand`: `github` | `gitlab` | `linear` | `slack` | `discord`, `size`
+  default 14): the `@thesvg/react` mark, imported by deep path (`@thesvg/react/github`,
+  never the index), `variant="mono"` so it takes `currentColor`. `role="img"`, named
+  "GitHub", "GitLab", "Linear", "Slack" or "Discord". Slack has no mono variant upstream,
+  so `refs.css` paints its default mark in `currentColor`.
+- `OrgBadge` (building icon + name, `title="Organization"`), `RepoBadge` (`host` mark +
+  name, optional `strong`), `IssueBadge` (`tracker`: `linear` mark or the 15 px `Glyph`
+  for `omniralph`, + mono ID), `BranchBadge` (branch icon + mono name), `ChangeBadge`
+  (merge icon + `!<n>` for GitLab, `#<n>` for GitHub), `AgentBadge` (server icon + name),
+  `MetaBadge` (optional decorative Tabler icon + text, optional `mono`). Icons that carry
+  meaning are `role="img"` named after the kind ("Organization", "Branch", "Merge
+  request", "Pull request", "Agent"), so a badge reads e.g. "GitLab acme/api".
+- `SizeBadge` (`S` | `M` | `L`): one mono letter, named and tooltipped "Size S" etc.
+- `RefBadge`: the shared badge shape, for screen epics that need another kind.
+
+## Status
+
+`StatusTone` is `need` (accent with the halo), `run` (mint with the run glow), `good`
+(mint), `fail` (coral) or `neutral` (`--or-done` dot, `--or-sec` text) (Design rule 15).
+
+- `StatusDot` (`tone`, required `label`): the dot alone, `role="img"` named by `label`.
+- `StatusText` (`tone`, children): a decorative dot followed by the label, in the tone's
+  color.
+
+Component CSS uses only `--or-` tokens: a test fails on any color literal outside
+`tokens.css`.
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
