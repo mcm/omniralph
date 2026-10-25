@@ -21,6 +21,7 @@ import {
   type RalphRunDetail,
   type RepositoryOverview,
   type ThreadRunRef,
+  unifiedRunStatus,
 } from "@omniralph/db";
 import { MAX_CHAT_ASK_QUESTION_LENGTH, QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
@@ -29,7 +30,7 @@ import { organizationDefinitions } from "@/lib/definitions";
 import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
-import { RALPH_RUN_STATUSES, jobHref, ralphRunListHref, truncate } from "@/lib/ralph/display";
+import { RALPH_RUN_STATUSES, jobHref, truncate } from "@/lib/ralph/display";
 import {
   lastRunActivity,
   pendingGuidanceCount,
@@ -37,6 +38,7 @@ import {
   ralphRunRow,
 } from "@/lib/ralph/history";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { runHref, runListHref } from "@/lib/runs/links";
 import { REVIEW_STATUSES } from "@/lib/reviews/display";
 import { reviewDetailView, reviewRow } from "@/lib/reviews/history";
 import { enqueueChatAsk, type ChatAskAttachment } from "../ask";
@@ -147,17 +149,17 @@ export const listRalphRunsTool = defineChatTool({
       repositoryId,
       pageSize: CHAT_TOOL_RESULT_LIMIT,
     });
-    const listUrl = `${appUrl}${ralphRunListHref("/coding", {
-      status: typeof status === "string" ? status : null,
-      repositoryId: repositoryId ?? null,
-      page: 1,
+    const listUrl = `${appUrl}${runListHref({
+      kind: ["epic", "request"],
+      status: [status ?? []].flat().map((ralphStatus) => unifiedRunStatus("epic", ralphStatus)),
+      repositoryId,
     })}`;
     return {
       runs: page.runs.map((entry) => {
         const run = ralphRunRow(entry);
         return {
           id: run.id,
-          url: `${appUrl}/coding/${run.id}`,
+          url: `${appUrl}${runHref(run.id)}`,
           linearIssue: run.linearIdentifier,
           title: run.linearTitle,
           linearUrl: run.linearUrl,
@@ -204,7 +206,7 @@ async function ralphRunState(
   const currentStory = run.stories.find((story) => story.status === "running") ?? null;
   return {
     id: run.id,
-    url: `${appUrl}/coding/${run.id}`,
+    url: `${appUrl}${runHref(run.id)}`,
     linearIssue: run.linearIdentifier,
     title: run.linearTitle,
     linearUrl: run.linearUrl,

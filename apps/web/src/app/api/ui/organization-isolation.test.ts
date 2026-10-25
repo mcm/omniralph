@@ -1339,7 +1339,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
     state.userId = user!.id;
 
-    const page = `/coding/${b.runId}`;
+    const page = `/runs/${b.runId}`;
     const { status, body } = await call(runDetail.GET, {
       params: { id: b.runId },
       path: `/api/ui?${new URLSearchParams({ next: page })}`,

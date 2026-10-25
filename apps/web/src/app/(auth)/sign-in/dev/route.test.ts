@@ -80,10 +80,10 @@ describe("GET /sign-in/dev", () => {
     it("sets the session cookie and redirects to the callback path", async () => {
       enable();
       const response = await GET(
-        request("email=admin@fixtures.example&callbackUrl=%2Fcoding%3Fstatus%3Drunning"),
+        request("email=admin@fixtures.example&callbackUrl=%2Fruns%3Fstatus%3Drunning"),
       );
       expect(response.status).toBe(307);
-      expect(response.headers.get("location")).toBe("http://localhost:3000/coding?status=running");
+      expect(response.headers.get("location")).toBe("http://localhost:3000/runs?status=running");
       const cookie = response.cookies.get("authjs.session-token");
       expect(cookie?.value).toBe("token-1");
       expect(cookie?.httpOnly).toBe(true);

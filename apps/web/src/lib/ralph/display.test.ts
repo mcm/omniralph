@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   chatChannelLabel,
   linearIssueUrl,
-  parseRalphRunListParams,
   ralphMessageState,
   ralphRunFailure,
-  ralphRunListHref,
   roundsLabel,
   runSourceLabel,
   shortSha,
@@ -13,33 +11,6 @@ import {
   type RalphJobView,
   type RalphStoryView,
 } from "./display";
-
-const REPO = "0b7c2a7e-6f43-4c0a-9a43-2f1c3e0d5a11";
-
-describe("ralph run list params", () => {
-  it("parses status, repository and page; ignores unknown values", () => {
-    expect(parseRalphRunListParams({ status: "waiting", repository: REPO, page: "2" })).toEqual({
-      status: "waiting",
-      repositoryId: REPO,
-      page: 2,
-    });
-    expect(parseRalphRunListParams({ status: "nope", repository: "x", page: "-1" })).toEqual({
-      status: null,
-      repositoryId: null,
-      page: 1,
-    });
-    expect(parseRalphRunListParams({ status: ["failed", "waiting"] }).status).toBe("failed");
-  });
-
-  it("builds list URLs without defaults", () => {
-    expect(ralphRunListHref("/ralph", { status: null, repositoryId: null, page: 1 })).toBe(
-      "/ralph",
-    );
-    expect(ralphRunListHref("/ralph", { status: "running", repositoryId: REPO, page: 3 })).toBe(
-      `/ralph?status=running&repository=${REPO}&page=3`,
-    );
-  });
-});
 
 describe("formatting", () => {
   it("derives other issues' Linear URLs from the run's", () => {

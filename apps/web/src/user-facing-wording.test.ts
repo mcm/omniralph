@@ -55,7 +55,7 @@ const ALLOWED: Allowed[] = [
   {
     text: /^\/ralph(\/:path\*)?$/g,
     files: ["apps/web/next.config.ts"],
-    reason: "routes from before TOOL-419, kept so old links redirect to /coding",
+    reason: "routes from before TOOL-419, kept so old links redirect to /runs",
   },
   {
     text: /^ralph-[a-z-]+$/g,

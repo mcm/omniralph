@@ -18,6 +18,7 @@ import { answerCleanup } from "@/lib/ralph/cleanup";
 import { conversationFor } from "@/lib/ralph/conversation";
 import { postActivity } from "@/lib/ralph/notify";
 import { answerPermission } from "@/lib/ralph/permissions";
+import { runHref } from "@/lib/runs/links";
 import { attachmentName, sessionAttachmentNote, type ThreadAttachment } from "../attachments";
 import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
 import { chatTaskOf, findRalphRunId } from "./read-tools";
@@ -36,7 +37,7 @@ import {
  * `answer_run_permission` and `answer_run_cleanup`.
  */
 
-const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}/coding/${run.id}`;
+const runUrl = (appUrl: string, run: Pick<RalphRun, "id">) => `${appUrl}${runHref(run.id)}`;
 
 export const startWork = defineChatTool({
   tier: "action",

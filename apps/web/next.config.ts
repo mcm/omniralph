@@ -10,12 +10,15 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: process.env.OMNIRALPH_ALLOWED_DEV_ORIGINS?.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-  // Coding tasks moved from `/ralph` to `/coding`; old links (bookmarks, chat
-  // and Linear messages) keep working. The query string is passed along.
+  // Runs moved from `/ralph` to `/coding` and then to the Runs screen (`/runs`), which shows
+  // every kind of run under the same IDs; old links (bookmarks, chat and Linear messages)
+  // keep working. The query string is passed along.
   async redirects() {
     return [
-      { source: "/ralph", destination: "/coding", permanent: true },
-      { source: "/ralph/:path*", destination: "/coding/:path*", permanent: true },
+      { source: "/ralph", destination: "/runs", permanent: true },
+      { source: "/ralph/:path*", destination: "/runs/:path*", permanent: true },
+      { source: "/coding", destination: "/runs", permanent: true },
+      { source: "/coding/:path*", destination: "/runs/:path*", permanent: true },
     ];
   },
 };

@@ -27,7 +27,7 @@ export const GET = apiHandler<"member", undefined, typeof detailQuery, Params>(
   { query: detailQuery },
   async ({ user, params, query }): Promise<RunDetail> => {
     await requireResourceInActiveOrganization(user, "ralph_run", params.id, {
-      pathPrefix: `/coding/${params.id}`,
+      pathPrefix: `/runs/${params.id}`,
       next: query.next,
     });
     const db = getDb();
