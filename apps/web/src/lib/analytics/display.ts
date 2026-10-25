@@ -8,6 +8,8 @@ import type {
   RalphAnalytics,
   RalphRunOutcome,
   RalphStoryOutcomes,
+  RunAnalytics,
+  RunAnalyticsBucket,
 } from "@omniralph/db";
 import { formatTokens } from "@/lib/reviews/display";
 
@@ -67,6 +69,19 @@ export type RalphAnalyticsData = Omit<RalphAnalytics, "from" | "to"> & { from: s
 
 export function ralphAnalyticsData(ralph: RalphAnalytics): RalphAnalyticsData {
   return { ...ralph, from: ralph.from.toISOString(), to: ralph.to.toISOString() };
+}
+
+/** Client-safe copy of the DB's `RUN_ANALYTICS_BUCKETS`. */
+export const RUN_ANALYTICS_BUCKETS = [
+  "day",
+  "week",
+] as const satisfies readonly RunAnalyticsBucket[];
+
+/** `RunAnalytics` with its dates as ISO strings, as `/api/ui/analytics/runs` sends it. */
+export type RunAnalyticsData = Omit<RunAnalytics, "from" | "to"> & { from: string; to: string };
+
+export function runAnalyticsData(analytics: RunAnalytics): RunAnalyticsData {
+  return { ...analytics, from: analytics.from.toISOString(), to: analytics.to.toISOString() };
 }
 
 /** Client-safe copy of the DB's `RALPH_RUN_OUTCOMES`, in chart order. */
