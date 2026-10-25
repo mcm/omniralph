@@ -1,4 +1,4 @@
-import type { RunKind, RunOrigin, RunStatus } from "@omniralph/db";
+import type { InboxQuestionKind, RunKind, RunOrigin, RunStatus } from "@omniralph/db";
 import { z } from "zod";
 import { isoDate } from "./schemas";
 
@@ -260,6 +260,33 @@ export const runActionsSchema = z.object({
 export type RunActions = z.infer<typeof runActionsSchema>;
 export type RunLane = z.infer<typeof runLaneSchema>;
 
+/** The questions a run asks a person (client-safe copy of `InboxQuestionKind`). */
+export const RUN_QUESTION_KINDS = [
+  "repository",
+  "preparation",
+  "cleanup",
+  "permission",
+] as const satisfies readonly InboxQuestionKind[];
+
+/**
+ * A run's open question (the run detail's and the Inbox `question` item's): which repo to
+ * use, whether to run a manual story's preparation, what to do with a merged PR/MR's
+ * leftovers, or whether to allow a tool call. `POST /api/ui/runs/{id}/answer` answers it with
+ * its `key` and one of its `options`.
+ */
+export const runQuestionSchema = z.object({
+  /** Stable while the question is open; a new question gets a new key. */
+  key: z.string(),
+  kind: z.enum(RUN_QUESTION_KINDS),
+  /** What is asked, in plain language. */
+  prompt: z.string(),
+  options: z.array(z.object({ id: z.string(), label: z.string() })),
+  askedAt: isoDate,
+  /** When it is answered for the person (a tool call is denied, a branch deleted). */
+  expiresAt: isoDate.nullable(),
+});
+export type RunQuestion = z.infer<typeof runQuestionSchema>;
+
 export const runDetailsSchema = z.object({
   repository: repositoryRefSchema.nullable(),
   branch: z.string().nullable(),
@@ -278,6 +305,8 @@ export const runDetailsSchema = z.object({
   waitingOn: z
     .object({ blockers: z.array(workItemRefSchema), manual: z.array(workItemRefSchema) })
     .nullable(),
+  /** The open question a person can answer (the most urgent, when there are several). */
+  question: runQuestionSchema.nullable(),
   actions: runActionsSchema,
 });
 export type RunDetails = z.infer<typeof runDetailsSchema>;
@@ -328,3 +357,19 @@ export const runRetryRequestSchema = z.object({
   target: runRetryTargetSchema.default({ kind: "run" }),
 });
 export type RunRetryRequest = z.input<typeof runRetryRequestSchema>;
+
+/** Longest question key and option ID `POST /api/ui/runs/{id}/answer` takes. */
+const ANSWER_FIELD_MAX_LENGTH = 500;
+
+/** `POST /api/ui/runs/{id}/answer` body: the open question's key and the chosen option. */
+export const runAnswerRequestSchema = z.object({
+  questionKey: z
+    .string({ error: "Say which question this answers." })
+    .min(1, "Say which question this answers.")
+    .max(ANSWER_FIELD_MAX_LENGTH, "That question doesn't exist."),
+  optionId: z
+    .string({ error: "Choose one of the offered answers." })
+    .min(1, "Choose one of the offered answers.")
+    .max(ANSWER_FIELD_MAX_LENGTH, "Choose one of the offered answers."),
+});
+export type RunAnswerRequest = z.infer<typeof runAnswerRequestSchema>;

@@ -10,6 +10,8 @@ import {
   findInboxItem,
   INBOX_ITEM_STATE_RETENTION_DAYS,
   listInboxItems,
+  listRunQuestions,
+  loadInboxReferences,
   pruneInboxItemStates,
   setInboxItemState,
   type InboxCandidate,
@@ -574,6 +576,85 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     // Newest first.
     const times = items.map((i) => i.since.getTime());
     expect(times).toEqual([...times].sort((a, b) => b - a));
+  });
+
+  it("lists one run's open questions with the Inbox's keys and what their answers need", async () => {
+    const items = await list();
+    const inboxKey = (runId: string) =>
+      items.find((i) => i.key.startsWith(`question:${runId}:`))!.key;
+
+    const [repository] = await listRunQuestions(
+      db,
+      { id: ids.noRepo!, kind: "epic", organizationId: acme },
+      now,
+    );
+    expect(repository).toMatchObject({
+      key: inboxKey(ids.noRepo!),
+      facts: {
+        question: { kind: "repository", subject: { kind: "repository", repositoryIds: [repo] } },
+      },
+    });
+    const references = await loadInboxReferences(db, [repository!]);
+    expect(references.repositories.get(repo)).toMatchObject({ id: repo });
+
+    expect(
+      await listRunQuestions(db, { id: ids.cleanup!, kind: "epic", organizationId: acme }, now),
+    ).toEqual([
+      expect.objectContaining({
+        key: inboxKey(ids.cleanup!),
+        facts: expect.objectContaining({
+          question: expect.objectContaining({
+            subject: {
+              kind: "cleanup",
+              laneId: expect.any(String),
+              branch: "omniralph/cleanup",
+              question: "stashes",
+              count: 1,
+            },
+          }),
+        }),
+      }),
+    ]);
+
+    const [triage] = await listRunQuestions(
+      db,
+      { id: ids.runningTriage!, kind: "triage", organizationId: acme },
+      now,
+    );
+    expect(triage).toMatchObject({
+      key: inboxKey(ids.runningTriage!),
+      facts: {
+        question: {
+          kind: "permission",
+          tool: "WebFetch",
+          subject: { kind: "permission", stored: true },
+        },
+      },
+    });
+    expect(
+      await listRunQuestions(db, { id: ids.stopped!, kind: "request", organizationId: acme }, now),
+    ).toEqual([]);
+
+    // Without the Inbox's 14-day window: a run waiting on its question for three weeks still asks.
+    const old = await ralphRun("oldQuestion", {
+      status: "waiting",
+      repositoryId: null,
+      pendingElicitation: { kind: "repository", repositoryIds: [repo] },
+      createdAt: ago(21 * DAY),
+      updatedAt: ago(21 * DAY),
+    });
+    try {
+      expect((await list()).some((i) => i.key.startsWith(`question:${old}:`))).toBe(false);
+      expect(
+        await listRunQuestions(db, { id: old, kind: "epic", organizationId: acme }, now),
+      ).toHaveLength(1);
+      // Not another organization's run.
+      expect(
+        await listRunQuestions(db, { id: old, kind: "epic", organizationId: beta }, now),
+      ).toEqual([]);
+    } finally {
+      await db.delete(ralphRuns).where(eq(ralphRuns.id, old));
+    }
   });
 
   it("filters by tab", async () => {

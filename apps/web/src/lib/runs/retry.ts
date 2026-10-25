@@ -28,6 +28,7 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
 import { retryTriageRun } from "@/lib/triage/retry";
 import { RETRYABLE_ATTEMPT_STATUSES } from "./actions";
 import { loadRunDetail } from "./detail";
+import { ralphDepsOf } from "./ralph-deps";
 
 export const RUN_BUSY_MESSAGE = "Om is already working on this run.";
 const NOT_FOUND = "That run doesn't exist.";
@@ -86,13 +87,7 @@ async function retryRalph(
   retriedBy: string | undefined,
 ): Promise<void> {
   const result = await retryRalphRun(
-    {
-      db,
-      organizationId: run.organizationId,
-      linear: await getLinearGatewayOrDisconnected({ db, organizationId: run.organizationId }),
-      dispatcher: getDispatcher(),
-      adapterFor: scmAdapterFor,
-    },
+    await ralphDepsOf(db, run.organizationId),
     run.id,
     ralphTarget,
     retriedBy,

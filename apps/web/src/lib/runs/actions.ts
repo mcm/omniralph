@@ -9,10 +9,11 @@ import type { RunActions } from "@/lib/api/runs";
 import { hasRole, type Role } from "@/lib/auth/roles";
 
 /** The role each run action needs in the run's organization. */
-export const RUN_ACTION_ROLES = { retry: "member", stop: "member" } as const satisfies Record<
-  string,
-  Role
->;
+export const RUN_ACTION_ROLES = {
+  retry: "member",
+  stop: "member",
+  answer: "member",
+} as const satisfies Record<string, Role>;
 
 /** A run that is retried as a whole from these statuses. */
 export const RETRYABLE_RUN_STATUSES = [

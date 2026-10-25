@@ -1,4 +1,4 @@
-import type { InboxItemKind, InboxQuestionKind, InboxReviewState } from "@omniralph/db";
+import type { InboxItemKind, InboxReviewState } from "@omniralph/db";
 import { z } from "zod";
 import {
   agentRefSchema,
@@ -8,6 +8,7 @@ import {
   repositoryRefSchema,
   RUN_KINDS,
   RUN_STATUSES,
+  runQuestionSchema,
   workItemRefSchema,
 } from "./runs";
 import { isoDate } from "./schemas";
@@ -50,12 +51,6 @@ export const INBOX_ACTIONS = [
 ] as const;
 export type InboxAction = (typeof INBOX_ACTIONS)[number];
 
-export const INBOX_QUESTION_KINDS = [
-  "repository",
-  "preparation",
-  "cleanup",
-  "permission",
-] as const satisfies readonly InboxQuestionKind[];
 export const PR_REVIEW_STATES = [
   "none",
   "review_requested",
@@ -96,15 +91,8 @@ export const inboxItemSchema = z.object({
   /** When what it is about happened (a failure, a question, a stop). */
   since: isoDate,
   actions: z.array(z.enum(INBOX_ACTIONS)),
-  /** `question`: what is asked. */
-  question: z
-    .object({
-      kind: z.enum(INBOX_QUESTION_KINDS),
-      askedAt: isoDate,
-      /** When it is answered for the person (a tool call is denied, a branch deleted). */
-      expiresAt: isoDate.nullable(),
-    })
-    .nullable(),
+  /** `question`: what is asked and the answers offered (its `key` is the item's). */
+  question: runQuestionSchema.nullable(),
   /** `pr_waiting`: the PR/MR's human review state. */
   reviewState: z.enum(PR_REVIEW_STATES).nullable(),
   /** `pr_waiting`: the latest AI review of the PR/MR; null when it has none. */

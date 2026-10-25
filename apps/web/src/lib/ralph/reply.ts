@@ -30,11 +30,15 @@
  *    request mode (a mention) only a pending request. `/coding` switches a
  *    request-mode run to epic mode (refused while the PRD has open questions).
  *
+ * The answers to the run's questions (1', 1a, 1b and 2) are `answerRunQuestion`, which
+ * Omniralph's Answer (`POST /api/ui/runs/{id}/answer`) calls too.
+ *
  * Every reply but stop, "Not yet" and a message for a running job advances
  * the run; one that asks for work (2a to 6) resumes a stopped run, and reopens
  * a completed one (cyralph runs a reply on a finished session as a request).
  */
 import {
+  getRun,
   getRunBySession,
   listActiveRunJobIds,
   listStories,
@@ -129,21 +133,11 @@ export async function handleReply(
 
   const text = event.body.trim();
   if (!text) return null;
-  // A live session waiting for a person to approve a tool call.
-  const permission =
-    run.permission && !run.permission.answer ? matchPermissionAnswer(text) : undefined;
-  if (permission) {
-    const note = await lockRun(deps.db, run.id, (tx, current) =>
-      answerPermission(tx, deps.db, current, permission, event.authorName),
-    );
-    if (note) {
-      await postActivity(conversationFor(run, deps), note);
-      return { kind: "permission_answer" };
-    }
+  // A tool permission, then a question about a merged PR/MR's leftovers (any run status).
+  for (const kind of ["permission", "cleanup"] as const) {
+    const answered = await answerRunQuestion(deps, run, { kind, text }, event.authorName);
+    if (answered) return asReply(answered);
   }
-  // An answer to a question about a merged PR/MR's leftovers (stashes, unmerged commits).
-  const cleanup = await answerCleanup(deps, run.id, parseInstruction(text).text || text);
-  if (cleanup) return { kind: "cleanup_answer" };
   if (run.status === "failed") {
     await postActivity(conversationFor(run, deps), {
       type: "response",
@@ -151,17 +145,12 @@ export async function handleReply(
     });
     return null;
   }
-
-  const offered = repositorySelectionOf(run);
-  if (offered && !run.repositoryId && run.status !== "stopped") {
-    const answered = await answerRepositorySelection(deps, run, offered, text);
-    return {
-      kind: "repository_selection",
-      ...(answered.status === "selected" && { advanced: answered.advanced }),
-    };
+  // The repository question, then the preparation question.
+  for (const kind of ["repository", "preparation"] as const) {
+    const answered = await answerRunQuestion(deps, run, { kind, text }, event.authorName);
+    if (answered) return asReply(answered);
   }
 
-  const answer = matchPreparationAnswer(text);
   // `/continue [guidance]`: the rest of the reply is handled as usual.
   const continued = parseContinueRequest(text);
   const body = continued ?? text;
@@ -191,10 +180,6 @@ export async function handleReply(
   }
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (current.status === "failed") return null;
-    const request = preparationOf(current).request;
-    if (answer && request && !request.jobId && current.status !== "stopped") {
-      return answerPreparation(tx, current, answer);
-    }
     const newerRun = {
       kind: "guidance" as const,
       advance: false,
@@ -334,6 +319,114 @@ export async function handleReply(
   if ("switched" in handled && handled.switched) await materializeStories(deps, run);
   if (!handled.advance) return { kind: handled.kind };
   return { kind: handled.kind, advanced: await advanceRun(run.id, deps) };
+}
+
+/** A question's answer as `handleReply`'s result. */
+function asReply({ kind, advanced }: RunQuestionAnswer): ReplyResult {
+  return { kind, ...(advanced && { advanced }) };
+}
+
+/** The questions a run asks a person (`answerRunQuestion`). */
+export type RunQuestionKind = "repository" | "preparation" | "cleanup" | "permission";
+
+/** An answer to one of a run's questions: its kind, and the reply text its matcher takes. */
+export interface RunQuestionReply {
+  kind: RunQuestionKind;
+  text: string;
+  /** A cleanup question: only the question of this lane. */
+  laneId?: string;
+}
+
+export interface RunQuestionAnswer extends ReplyResult {
+  /**
+   * `answered`: the question took the answer. `closed`: it isn't open anymore (it expired, or
+   * the session that asked ended). `busy`: the previous answer is still being carried out.
+   * `failed`: carrying the answer out failed. The run's conversation is told in every case.
+   */
+  outcome: "answered" | "closed" | "busy" | "failed";
+}
+
+/**
+ * Answers the run's open question of `answer.kind` with a reply's text, as a reply in the
+ * run's conversation does (`handleReply` calls it, and so does Omniralph's Answer,
+ * `POST /api/ui/runs/{id}/answer`): a tool permission (`answerPermission`), a question about a
+ * merged PR/MR's leftovers (`answerCleanup`), the repository question
+ * (`answerRepositorySelection`) or the preparation question (`answerPreparation`). The answer's
+ * note goes to the run's conversation and the run advances as after a reply. Null when the run
+ * has no open question of that kind the text answers. Doesn't depend on Linear: a chat run's
+ * questions are answered the same way.
+ */
+export async function answerRunQuestion(
+  deps: RalphDeps,
+  run: RalphRun,
+  answer: RunQuestionReply,
+  authorName: string | undefined,
+): Promise<RunQuestionAnswer | null> {
+  const { text } = answer;
+  switch (answer.kind) {
+    case "permission": {
+      const asked = run.permission && !run.permission.answer ? run.permission : null;
+      const permission = asked ? matchPermissionAnswer(text) : undefined;
+      if (!asked || !permission) return null;
+      const note = await lockRun(deps.db, run.id, (tx, current) =>
+        answerPermission(tx, deps.db, current, permission, authorName),
+      );
+      if (!note) return null;
+      await postActivity(conversationFor(run, deps), note);
+      const after = (await getRun(deps.db, run.id))?.permission;
+      const took =
+        after?.requestId === asked.requestId &&
+        (after.answer === "allowed" || after.answer === "denied");
+      return { kind: "permission_answer", outcome: took ? "answered" : "closed" };
+    }
+    case "cleanup": {
+      const cleanup = await answerCleanup(
+        deps,
+        run.id,
+        parseInstruction(text).text || text,
+        answer.laneId ? { laneId: answer.laneId } : undefined,
+      );
+      if (!cleanup) return null;
+      return {
+        kind: "cleanup_answer",
+        outcome: cleanup.status === "enqueued" ? "answered" : cleanup.status,
+      };
+    }
+    case "repository": {
+      const offered = repositorySelectionOf(run);
+      if (!offered || run.repositoryId || run.status === "stopped" || run.status === "failed") {
+        return null;
+      }
+      const answered = await answerRepositorySelection(deps, run, offered, text);
+      return {
+        kind: "repository_selection",
+        outcome:
+          answered.status === "selected"
+            ? "answered"
+            : answered.status === "unmatched"
+              ? "closed"
+              : "failed",
+        ...(answered.status === "selected" && { advanced: answered.advanced }),
+      };
+    }
+    case "preparation": {
+      const choice = matchPreparationAnswer(text);
+      if (!choice) return null;
+      const handled = await lockRun(deps.db, run.id, async (tx, current) => {
+        const request = preparationOf(current).request;
+        if (current.status === "failed" || current.status === "stopped") return null;
+        if (!request || request.jobId) return null;
+        return answerPreparation(tx, current, choice);
+      });
+      if (!handled) return null;
+      await postActivity(conversationFor(run, deps), handled.note);
+      return {
+        kind: handled.kind,
+        outcome: "answered",
+        ...(handled.advance && { advanced: await advanceRun(run.id, deps) }),
+      };
+    }
+  }
 }
 
 /** Creates a PRD's missing stories as sub-issues (a request-mode run switched to the epic loop). */
