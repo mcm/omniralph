@@ -79,7 +79,7 @@ describe("Settings › Agents pages' API", () => {
   it("needs a signed-in user", async () => {
     state.user = null;
     expect((await get(list.GET)).status).toBe(401);
-    expect((await get(detail.GET, "builtin:reviewer")).status).toBe(401);
+    expect((await get(detail.GET, "builtin:review-pr")).status).toBe(401);
   });
 
   it("lists built-ins first, then the organization's agents, to a member", async () => {
@@ -94,7 +94,6 @@ describe("Settings › Agents pages' API", () => {
       name: "Security reviewer",
       description: "",
       builtin: false,
-      taskTypes: ["review"],
       model: null,
     });
   });
@@ -103,11 +102,11 @@ describe("Settings › Agents pages' API", () => {
     state.user = user("member");
     const { status, body } = await get<AgentDetail>(
       detail.GET,
-      encodeURIComponent("builtin:reviewer"),
+      encodeURIComponent("builtin:review-pr"),
     );
     expect(status).toBe(200);
     expect(body.builtin).toBe(true);
-    expect(body.agent.id).toBe("builtin:reviewer");
+    expect(body.agent.id).toBe("builtin:review-pr");
     expect(body.tasks).toContainEqual(
       expect.objectContaining({ id: "builtin:review-pr", taskType: "review", builtin: true }),
     );
@@ -121,8 +120,9 @@ describe("Settings › Agents pages' API", () => {
       id: CUSTOM_ID,
       name: "Security reviewer",
       systemPrompt: "Find vulnerabilities.",
-      taskTypes: ["review"],
     });
+    // The task types stored before playbooks aren't served.
+    expect(body.agent).not.toHaveProperty("taskTypes");
     expect(body.tasks).toEqual([]);
   });
 

@@ -445,7 +445,7 @@ Jobs download the run's Linear attachments through the control panel and cache t
 
 A repository's runs work stories and requests as coding runs of its story and request tasks
 (**Repository › Settings › Coding › Story task** and **Request task**, by default the built-in
-`builtin:implement-story` and `builtin:handle-request`, agent `builtin:engineer`), and write each
+playbooks `builtin:implement-story` and `builtin:handle-request`, with the engineer persona), and write each
 PR/MR description with a query run of `builtin:describe-pr` (see
 [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#coding-runs)). Only the harness's own git
 commands can push: the session's git gets a read-only credential, and a request session publishes

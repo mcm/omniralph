@@ -19,14 +19,13 @@ import {
   deriveTaskRequirements,
   HARNESS_TOOLS_BY_TASK_TYPE,
   isBuiltinId,
-  validateAgentDefinition,
-  type AgentDefinition,
   type TaskDefinition,
 } from "@omniralph/tasks";
 import type { ActionResult } from "@/lib/action-result";
 import type {
   AgentDetail,
   AgentList,
+  CustomAgent,
   SavedDefinition,
   TaskDetail,
   TaskFormOptions,
@@ -42,7 +41,7 @@ import {
   PR_DESCRIPTION_TASKS,
 } from "@/lib/definitions";
 import { findTaskReferrers, hasNoReferrers, type TaskReferrers } from "@/lib/definitions/referrers";
-import { validateOrganizationTask } from "@/lib/definitions/validation";
+import { validateCustomAgent, validateOrganizationTask } from "@/lib/definitions/validation";
 import { loadHarnessChoices } from "@/lib/harnesses/editor-choices";
 import { allSinks } from "@/lib/sinks";
 import { repositoryTaskRoles } from "./repository-roles";
@@ -69,7 +68,7 @@ const CHAT_TASK_NAMES: Record<TaskReferrers["chatTasks"][number], string> = {
 };
 
 /** What a row stores: the definition without the ID and name its columns hold. */
-function storedDefinition(definition: AgentDefinition | TaskDefinition): Record<string, unknown> {
+function storedDefinition(definition: CustomAgent | TaskDefinition): Record<string, unknown> {
   const { id: _id, name: _name, ...stored } = definition;
   return stored;
 }
@@ -102,7 +101,6 @@ export async function loadAgentList(db: Database, user: OrgUser): Promise<AgentL
       name: definition.name,
       description: definition.description,
       builtin,
-      taskTypes: definition.taskTypes,
       model: definition.model,
     })),
   };
@@ -135,7 +133,7 @@ export async function loadAgentDetail(
 
 /**
  * Creates one of the admin's organization's agents after validating it
- * (`validateAgentDefinition`); returns its new ID.
+ * (`validateCustomAgent`); returns its new ID.
  */
 export async function createAgent(
   db: Database,
@@ -143,7 +141,7 @@ export async function createAgent(
   input: unknown,
 ): Promise<SavedDefinitionResult> {
   const id = randomUUID();
-  const validation = validateAgentDefinition(withId(input, id));
+  const validation = validateCustomAgent(withId(input, id));
   if (!validation.ok) return { ...INVALID, fieldErrors: validation.fieldErrors };
   const agent = validation.definition;
   await insertAgentDefinition(db, admin.organization.id, {
@@ -158,8 +156,8 @@ export async function createAgent(
 /**
  * Replaces one of the organization's agents. Refused for built-ins, for
  * definitions that don't validate, and for changes that would no longer suit a
- * task running on the agent (a task type it drops, a harness tool the task's
- * type doesn't allow); the error names each such task.
+ * task running on the agent (a harness tool the task's type doesn't allow);
+ * the error names each such task.
  */
 export async function updateAgent(
   db: Database,
@@ -172,36 +170,29 @@ export async function updateAgent(
   if (!(await getStoredAgentDefinition(db, organizationId, id))) {
     return { ok: false, error: AGENT_NOT_FOUND };
   }
-  const validation = validateAgentDefinition(withId(input, id));
+  const validation = validateCustomAgent(withId(input, id));
   if (!validation.ok) return { ...INVALID, fieldErrors: validation.fieldErrors };
   const agent = validation.definition;
 
   const tasks = (await listTaskDefinitions(db, organizationId)).filter(
     (task) => task.definition.agentId === id,
   );
-  const unsuited = tasks.filter((task) => !agent.taskTypes.includes(task.definition.taskType));
   const disallowed = tasks.filter((task) =>
     agent.tools.harness.some(
       (tool) => !HARNESS_TOOLS_BY_TASK_TYPE[task.definition.taskType].includes(tool),
     ),
   );
-  if (unsuited.length > 0 || disallowed.length > 0) {
-    const fieldErrors: Record<string, string> = {};
-    if (unsuited.length > 0) {
-      fieldErrors.taskTypes = `Still used by ${names(
-        unsuited.map((task) => `${task.definition.name} (${task.definition.taskType})`),
-      )}.`;
-    }
-    if (disallowed.length > 0) {
-      fieldErrors["tools.harness"] = `Not allowed for ${names(
-        disallowed.map((task) => `${task.definition.name} (${task.definition.taskType})`),
-      )}.`;
-    }
-    const broken = [...new Set([...unsuited, ...disallowed].map((task) => task.definition.name))];
+  if (disallowed.length > 0) {
     return {
       ok: false,
-      error: `This change would make tasks using the agent invalid: ${names(broken)}.`,
-      fieldErrors,
+      error: `This change would make tasks using the agent invalid: ${names(
+        disallowed.map((task) => task.definition.name),
+      )}.`,
+      fieldErrors: {
+        "tools.harness": `Not allowed for ${names(
+          disallowed.map((task) => `${task.definition.name} (${task.definition.taskType})`),
+        )}.`,
+      },
     };
   }
 
@@ -351,7 +342,6 @@ export async function loadTaskFormOptions(db: Database, user: OrgUser): Promise<
     agents: agents.map(({ definition, builtin }) => ({
       id: definition.id,
       name: definition.name,
-      taskTypes: definition.taskTypes,
       builtin,
     })),
     sinks: allSinks().map((sink) => ({ kind: sink.kind, taskType: sink.taskType })),

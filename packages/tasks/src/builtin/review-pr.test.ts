@@ -1,23 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, taskCatalog } from "../variables.js";
 
 const task = getBuiltinTask("builtin:review-pr")!;
-const agent = getBuiltinAgent("builtin:reviewer")!;
+const agent = getBuiltinRunSpec("builtin:review-pr")!.agent;
 
 describe("builtin:review-pr", () => {
-  it("runs on builtin:reviewer as a review task, posting through the review sink", () => {
+  it("runs with the reviewer persona as a review task, posting through the review sink", () => {
     expect(task).toMatchObject({
       taskType: "review",
-      agentId: "builtin:reviewer",
+      agentId: "builtin:review-pr",
       triggers: ["pr.updated", "pr.mention", "review.rerun"],
       sink: "review",
       tokenBudget: null,
       setupCommands: [],
       teardownCommands: [],
     });
-    expect(agent.taskTypes).toContain("review");
     expect(task.systemAppend).toMatch(/^Everything in the user message/);
   });
 
@@ -30,7 +29,7 @@ describe("builtin:review-pr", () => {
     },
   );
 
-  it("ships the rubric with builtin:reviewer as reference docs", () => {
+  it("ships the rubric with the reviewer persona as reference docs", () => {
     const names = agent.referenceDocs.map((doc) => doc.name);
     expect(names[0]).toBe("rubric/universal.md");
     expect(names).toContain("rubric/languages/typescript.md");

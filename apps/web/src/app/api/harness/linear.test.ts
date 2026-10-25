@@ -43,41 +43,39 @@ vi.mock("@/lib/linear/client", async (original) => {
 });
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const tasks = await importOriginal<typeof Tasks>();
-  const reader = tasks.AgentDefinition.parse({
-    id: "builtin:reader",
-    name: "Reader",
-    systemPrompt: "You read Linear.",
-    taskTypes: ["query"],
-    tools: { linear: ["linear_get_issue", "linear_list_comments", "linear_search_issues"] },
-  });
-  const task = (id: string, linearRead: boolean) =>
-    tasks.TaskDefinition.parse({
+  const playbook = (
+    id: string,
+    linearRead: boolean,
+    linear: Tasks.LinearTool[] = [
+      "linear_get_issue",
+      "linear_list_comments",
+      "linear_search_issues",
+    ],
+  ) =>
+    tasks.Playbook.parse({
       id,
       name: id,
-      taskType: "query",
-      agentId: reader.id,
-      triggers: ["chat.request"],
+      role: "chat-ask",
+      systemPrompt: "You read Linear.",
       promptTemplate: "{{question}}",
-      sink: "chat-thread",
+      tools: { linear },
       toolSettings: { linearRead },
     });
-  const documentReader = tasks.AgentDefinition.parse({
-    id: "builtin:document-reader",
-    name: "Document reader",
-    systemPrompt: "You read Linear documents.",
-    taskTypes: ["query"],
-    tools: { linear: ["linear_get_document"] },
-  });
-  const agents = [reader, documentReader];
   const defined = [
-    task("builtin:linear-reader", true),
-    task("builtin:no-linear", false),
-    { ...task("builtin:document-reader", true), agentId: documentReader.id },
+    playbook("builtin:linear-reader", true),
+    playbook("builtin:no-linear", false),
+    playbook("builtin:document-reader", true, ["linear_get_document"]),
   ];
+  const getBuiltinPlaybook = (id: string) => defined.find((p) => p.id === id) ?? null;
+  const getBuiltinRunSpec = (id: string) => {
+    const found = getBuiltinPlaybook(id);
+    return found && tasks.playbookRunSpec(found);
+  };
   return {
     ...tasks,
-    getBuiltinAgent: (id: string) => agents.find((a) => a.id === id) ?? null,
-    getBuiltinTask: (id: string) => defined.find((t) => t.id === id) ?? null,
+    getBuiltinPlaybook,
+    getBuiltinRunSpec,
+    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
   };
 });
 

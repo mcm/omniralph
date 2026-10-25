@@ -1,7 +1,7 @@
 import "server-only";
 import {
   validateTaskDefinition,
-  type AgentDefinition,
+  type RunSpecAgent,
   type SinkKind,
   type SinkOutput,
   type TaskDefinition,
@@ -9,6 +9,7 @@ import {
   type TaskValidationContext,
 } from "@omniralph/tasks";
 import { z } from "zod";
+import { CustomAgent } from "@/lib/api/definitions";
 import { allSinks, type Sink } from "@/lib/sinks";
 import { listAgentDefinitions, listTaskDefinitions } from "./index";
 
@@ -37,7 +38,7 @@ export function sinkOutputs(): Partial<Record<SinkKind, SinkOutput>> {
 
 /** A validation context over these agents and tasks (built-in and custom), with the real sinks. */
 export function taskValidationContext(
-  agents: readonly AgentDefinition[],
+  agents: readonly RunSpecAgent[],
   tasks: readonly TaskDefinition[],
 ): TaskValidationContext {
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
@@ -71,4 +72,19 @@ export async function validateOrganizationTask(
   input: unknown,
 ): Promise<TaskValidation> {
   return validateTaskDefinition(input, await organizationValidationContext(db, organizationId));
+}
+
+/** A validated custom agent, or its schema errors by dotted field path. */
+export type AgentValidation =
+  { ok: true; definition: CustomAgent } | { ok: false; fieldErrors: Record<string, string> };
+
+/** The parsed custom agent, or its schema errors by field (first message per field). */
+export function validateCustomAgent(input: unknown): AgentValidation {
+  const parsed = CustomAgent.safeParse(input);
+  if (parsed.success) return { ok: true, definition: parsed.data };
+  const fieldErrors: Record<string, string> = {};
+  for (const issue of parsed.error.issues) {
+    fieldErrors[issue.path.map(String).join(".") || "form"] ??= issue.message;
+  }
+  return { ok: false, fieldErrors };
 }

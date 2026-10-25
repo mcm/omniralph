@@ -10,7 +10,7 @@ import {
   type ScmProvider,
 } from "@omniralph/db";
 import { parseRalphSettings } from "@omniralph/shared";
-import type { DefinitionSource } from "@/lib/definitions";
+import type { PlaybookSource } from "@/lib/definitions";
 import { roundLimits, storyLimits } from "./coding";
 import {
   cleanupLabel,
@@ -55,7 +55,7 @@ export function ralphRunRow(entry: RalphRunListEntry): RalphRunRow {
 
 export async function ralphRunDetailView(
   detail: RalphRunDetail,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<RalphRunDetailView> {
   const { run, repository } = detail;
   const lanes = await Promise.all(

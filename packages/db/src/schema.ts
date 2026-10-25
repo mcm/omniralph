@@ -745,10 +745,10 @@ export const chatLinearDelegations = pgTable(
 // ── Agent and task definitions ───────────────────────────────────────────────
 
 /**
- * An organization's own agent definition (`@omniralph/tasks`
- * `AgentDefinition`, validated by the control panel when read). Built-in
- * agents stay in code under `builtin:<name>` IDs, so they never clash with
- * these UUIDs.
+ * An organization's own agent definition (a run spec agent, `CustomAgent` in
+ * the control panel, validated when read): the persona half of a custom
+ * playbook. Built-in playbooks stay in code under `builtin:<name>` IDs, so
+ * they never clash with these UUIDs.
  */
 export const agentDefinitions = pgTable(
   "agent_definitions",

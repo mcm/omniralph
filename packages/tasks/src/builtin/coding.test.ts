@@ -17,7 +17,7 @@ import {
   type RequestPromptContext,
 } from "@omniralph/ralph";
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { validateCodingTask } from "../coding.js";
 import { fence, renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, findVariable } from "../variables.js";
@@ -26,10 +26,10 @@ import { GOOD_NEIGHBOR_RULE } from "./engineer.js";
 import { REQUEST_RULES } from "./handle-request.js";
 import { STORY_RULES } from "./implement-story.js";
 
-const engineer = getBuiltinAgent("builtin:engineer")!;
+const engineer = getBuiltinRunSpec("builtin:implement-story")!.agent;
 const storyTask = getBuiltinTask("builtin:implement-story")!;
 const requestTask = getBuiltinTask("builtin:handle-request")!;
-const prWriter = getBuiltinAgent("builtin:pr-writer")!;
+const prWriter = getBuiltinRunSpec("builtin:describe-pr")!.agent;
 const describeTask = getBuiltinTask("builtin:describe-pr")!;
 
 /** An untrusted value as the renderer fences it (with its catalog entry's info string). */
@@ -171,9 +171,9 @@ function fenceDescribe(ctx: DescribePrPromptContext): DescribePrPromptContext {
   };
 }
 
-describe("builtin:engineer", () => {
-  it("suits coding tasks only and keeps ralph's mode-neutral rules", () => {
-    expect(engineer).toMatchObject({ systemPromptMode: "append", taskTypes: ["coding"] });
+describe("the engineer persona", () => {
+  it("keeps ralph's mode-neutral rules", () => {
+    expect(engineer).toMatchObject({ systemPromptMode: "append" });
     expect(GOOD_NEIGHBOR_RULE).toBe(RALPH_GOOD_NEIGHBOR_RULE);
     expect(engineer.systemPrompt).toContain(`You are "Omniralph", an autonomous engineer`);
     expect(engineer.systemPrompt).toContain(
@@ -201,10 +201,10 @@ describe("builtin:engineer", () => {
 });
 
 describe("builtin:implement-story", () => {
-  it("is a coding task on builtin:engineer started by linear.delegated", () => {
+  it("is a coding task with the engineer persona started by linear.delegated", () => {
     expect(storyTask).toMatchObject({
       taskType: "coding",
-      agentId: "builtin:engineer",
+      agentId: "builtin:implement-story",
       triggers: ["linear.delegated"],
       maxAttemptsPerStory: 3,
       maxIterationsPerRun: 50,
@@ -248,10 +248,10 @@ describe("builtin:implement-story", () => {
 });
 
 describe("builtin:handle-request", () => {
-  it("is a coding task on builtin:engineer started by the request triggers", () => {
+  it("is a coding task with the engineer persona started by the request triggers", () => {
     expect(requestTask).toMatchObject({
       taskType: "coding",
-      agentId: "builtin:engineer",
+      agentId: "builtin:handle-request",
       triggers: [
         "linear.mention",
         "chat.request",
@@ -324,12 +324,12 @@ describe("builtin:handle-request", () => {
 });
 
 describe("builtin:describe-pr", () => {
-  it("is a query task on builtin:pr-writer, invoked by the coding run", () => {
-    expect(prWriter).toMatchObject({ taskTypes: ["query"], systemPromptMode: "append" });
+  it("is a query task invoked by the coding run", () => {
+    expect(prWriter).toMatchObject({ systemPromptMode: "append" });
     expect(prWriter.systemPrompt).toBe(PR_DESCRIPTION_SYSTEM_APPEND);
     expect(describeTask).toMatchObject({
       taskType: "query",
-      agentId: "builtin:pr-writer",
+      agentId: "builtin:describe-pr",
       triggers: ["run.invoked"],
       sink: "run-result",
     });

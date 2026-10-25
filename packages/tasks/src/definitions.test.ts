@@ -1,25 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
-  AgentDefinition,
   CODING_DEFAULTS,
   CODING_MAX_FIX_ROUNDS,
   DEFAULT_COMMAND_OUTPUT_BYTES,
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_TIMEOUT_SECONDS,
+  RunSpecAgent,
   TaskDefinition,
-  validateAgentForTask,
-  type AgentDefinitionInput,
+  harnessToolsProblem,
+  type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "./index.js";
 
 const UUID = "0b8f9c1e-4d2a-4f6b-9e3c-7a5d1c2b3e4f";
 
-const agent: AgentDefinitionInput = {
+const agent: RunSpecAgentInput = {
   id: "builtin:reviewer",
   name: "Reviewer",
   systemPrompt: "You review code.",
-  taskTypes: ["query"],
 };
 
 const task: TaskDefinitionInput = {
@@ -38,22 +37,21 @@ function issues(result: { success: boolean; error?: { issues: { path: PropertyKe
   return result.error?.issues.map((issue) => issue.path.join(".")) ?? [];
 }
 
-describe("AgentDefinition", () => {
+describe("RunSpecAgent", () => {
   it("fills defaults", () => {
-    const parsed = AgentDefinition.parse(agent);
+    const parsed = RunSpecAgent.parse(agent);
     expect(parsed).toEqual({
       ...agent,
       description: "",
       systemPromptMode: "append",
       tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
-      skills: [],
       referenceDocs: [],
       model: null,
       fallbackModel: null,
     });
   });
 
-  it("accepts a full definition", () => {
+  it("accepts a full agent", () => {
     const full = {
       ...agent,
       id: UUID,
@@ -65,18 +63,22 @@ describe("AgentDefinition", () => {
         linear: ["linear_get_issue"],
         mcpServers: ["code-graph"],
       },
-      skills: [{ name: "review", content: "# Review" }],
       referenceDocs: [{ name: "rubric", content: "Be precise." }],
       model: "claude-opus-5-5",
       fallbackModel: "claude-sonnet-5-5",
-      taskTypes: ["query", "review"],
     } as const;
-    expect(AgentDefinition.parse(full)).toEqual(full);
+    expect(RunSpecAgent.parse(full)).toEqual(full);
+  });
+
+  it("passes fields it doesn't know through (the taskTypes older harnesses require)", () => {
+    expect(RunSpecAgent.parse({ ...agent, taskTypes: ["query"] })).toMatchObject({
+      taskTypes: ["query"],
+    });
   });
 
   it("accepts an installable's MCP servers as <package>:<server> and rejects malformed ones", () => {
     const tools = (mcpServers: string[]) =>
-      AgentDefinition.safeParse({ ...agent, tools: { mcpServers } });
+      RunSpecAgent.safeParse({ ...agent, tools: { mcpServers } });
     expect(tools(["github", "@omniralph/code-graph:graph"]).success).toBe(true);
     expect(issues(tools(["github", "code graph:graph", "pkg:"]))).toEqual([
       "tools.mcpServers.1",
@@ -84,24 +86,17 @@ describe("AgentDefinition", () => {
     ]);
   });
 
-  it("rejects bad definitions", () => {
-    expect(issues(AgentDefinition.safeParse({ ...agent, taskTypes: [] }))).toEqual(["taskTypes"]);
-    expect(issues(AgentDefinition.safeParse({ ...agent, taskTypes: ["deploy"] }))).toEqual([
-      "taskTypes.0",
-    ]);
-    expect(issues(AgentDefinition.safeParse({ ...agent, id: "reviewer" }))).toEqual(["id"]);
-    expect(issues(AgentDefinition.safeParse({ ...agent, systemPromptMode: "prepend" }))).toEqual([
+  it("rejects bad agents", () => {
+    expect(issues(RunSpecAgent.safeParse({ ...agent, id: "reviewer" }))).toEqual(["id"]);
+    expect(issues(RunSpecAgent.safeParse({ ...agent, systemPromptMode: "prepend" }))).toEqual([
       "systemPromptMode",
     ]);
     expect(
-      issues(AgentDefinition.safeParse({ ...agent, tools: { harness: ["delete_repo"] } })),
+      issues(RunSpecAgent.safeParse({ ...agent, tools: { harness: ["delete_repo"] } })),
     ).toEqual(["tools.harness.0"]);
     expect(
-      issues(AgentDefinition.safeParse({ ...agent, tools: { linear: ["linear_save_issue"] } })),
+      issues(RunSpecAgent.safeParse({ ...agent, tools: { linear: ["linear_save_issue"] } })),
     ).toEqual(["tools.linear.0"]);
-    expect(issues(AgentDefinition.safeParse({ ...agent, skills: [{ name: "x" }] }))).toEqual([
-      "skills.0.content",
-    ]);
   });
 });
 
@@ -349,32 +344,20 @@ describe("TaskDefinition", () => {
   });
 });
 
-describe("validateAgentForTask", () => {
-  it("accepts an agent that suits the task", () => {
-    const parsedAgent = AgentDefinition.parse({
-      ...agent,
-      tools: { harness: ["post_activity", "get_attachment"] },
-    });
-    expect(validateAgentForTask(parsedAgent, TaskDefinition.parse(task))).toEqual([]);
-  });
-
-  it("reports an agent whose task types don't include the task's", () => {
-    const coder = AgentDefinition.parse({ ...agent, taskTypes: ["coding"] });
-    expect(validateAgentForTask(coder, TaskDefinition.parse(task))).toEqual([
-      "Agent builtin:reviewer suits coding tasks, not query.",
-    ]);
+describe("harnessToolsProblem", () => {
+  it("accepts harness tools the task type allows", () => {
+    expect(
+      harnessToolsProblem({ harness: ["post_activity", "get_attachment"] }, "query"),
+    ).toBeNull();
+    expect(harnessToolsProblem({ harness: ["post_activity", "ship"] }, "coding")).toBeNull();
   });
 
   it("reports harness tools the task type doesn't allow", () => {
-    const shipper = AgentDefinition.parse({
-      ...agent,
-      taskTypes: ["query", "coding"],
-      tools: { harness: ["post_activity", "ship"] },
-    });
-    expect(validateAgentForTask(shipper, TaskDefinition.parse(task))).toEqual([
-      "query tasks can't use the harness tool ship.",
-    ]);
-    expect(validateAgentForTask(shipper, { taskType: "coding" })).toEqual([]);
-    expect(validateAgentForTask(shipper, { taskType: "review" })).toHaveLength(2);
+    expect(harnessToolsProblem({ harness: ["post_activity", "ship"] }, "query")).toBe(
+      "query runs can't use the harness tool ship.",
+    );
+    expect(harnessToolsProblem({ harness: ["ship", "ship"] }, "review")).toBe(
+      "review runs can't use the harness tools ship, ship.",
+    );
   });
 });

@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  AgentDefinition,
+  RunSpecAgent,
   TaskDefinition,
-  type AgentDefinitionInput,
+  type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,8 +35,8 @@ const GRAPH = {
   },
 };
 
-function agent(overrides: Partial<AgentDefinitionInput> = {}) {
-  return AgentDefinition.parse({
+function agent(overrides: Partial<RunSpecAgentInput> = {}) {
+  return RunSpecAgent.parse({
     id: "builtin:test-agent",
     name: "Agent",
     systemPrompt: "",

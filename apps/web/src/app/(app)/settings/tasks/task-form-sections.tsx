@@ -17,9 +17,7 @@ import {
   DEFAULT_COMMAND_OUTPUT_BYTES,
   DEFAULT_COMMAND_TIMEOUT_SECONDS,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
-  DRAFT_PULL_REQUEST_TIMINGS,
   PUSH_TIMINGS,
-  type DraftPullRequestTiming,
   type PushTiming,
   type SetupCommandInput,
   type TaskDefinition,
@@ -323,8 +321,6 @@ export function ToolSettingsFields({
 /** Coding settings being edited; numbers as typed (empty uses the default). */
 export interface CodingDraft {
   pushTiming: PushTiming;
-  /** Empty follows the repository's setting. */
-  draftPullRequest: DraftPullRequestTiming | "";
   prDescriptionTaskId: string;
   maxAttemptsPerStory: string;
   maxRoundsPerStory: string;
@@ -358,7 +354,6 @@ export function codingDraft(task: TaskDefinition | null): CodingDraft {
   const text = (value: number | undefined) => (value === undefined ? "" : String(value));
   return {
     pushTiming: task?.pushTiming ?? "per-story",
-    draftPullRequest: task?.draftPullRequest ?? "",
     prDescriptionTaskId: task?.prDescriptionTaskId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
     maxAttemptsPerStory: text(task?.maxAttemptsPerStory),
     maxRoundsPerStory: text(task?.maxRoundsPerStory),
@@ -373,7 +368,6 @@ export function codingDraft(task: TaskDefinition | null): CodingDraft {
 export function codingFields(draft: CodingDraft): Partial<TaskDefinition> {
   return {
     pushTiming: draft.pushTiming,
-    draftPullRequest: draft.draftPullRequest || undefined,
     prDescriptionTaskId: draft.prDescriptionTaskId,
     ...Object.fromEntries(LIMITS.map(([key]) => [key, amount(draft[key])])),
   };
@@ -383,12 +377,8 @@ export const PUSH_TIMING_LABELS: Record<PushTiming, string> = {
   "per-story": "After each story",
   end: "Once at the end",
 };
-export const DRAFT_PULL_REQUEST_LABELS: Record<DraftPullRequestTiming, string> = {
-  early: "Early (after the first story)",
-  end: "At the end",
-};
 
-/** Push and draft PR timing, the PR description task and the run's limits. */
+/** Push timing, the PR description task and the run's limits. */
 export function CodingFields({
   value,
   onChange,
@@ -430,29 +420,6 @@ export function CodingFields({
             {PUSH_TIMINGS.map((timing) => (
               <option key={timing} value={timing}>
                 {PUSH_TIMING_LABELS[timing]}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
-        <Field
-          label="Draft PR"
-          htmlFor="task-draft-pull-request"
-          description={withDefault("When the run opens its draft PR.", "the repository's setting")}
-          error={errors.draftPullRequest}
-        >
-          <NativeSelect
-            id="task-draft-pull-request"
-            disabled={disabled}
-            aria-invalid={Boolean(errors.draftPullRequest)}
-            value={value.draftPullRequest}
-            onChange={(e) =>
-              set({ draftPullRequest: e.target.value as DraftPullRequestTiming | "" })
-            }
-          >
-            <option value="">The repository&apos;s setting</option>
-            {DRAFT_PULL_REQUEST_TIMINGS.map((timing) => (
-              <option key={timing} value={timing}>
-                {DRAFT_PULL_REQUEST_LABELS[timing]}
               </option>
             ))}
           </NativeSelect>

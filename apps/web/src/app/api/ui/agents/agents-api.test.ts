@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getBuiltinAgent, getBuiltinTask, type AgentDefinition } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -128,7 +128,6 @@ const INPUT = {
   systemPrompt: "Find vulnerabilities.",
   tools: { builtin: ["Read", "Grep"], harness: [], linear: [], mcpServers: [] },
   model: "claude-opus-5-5",
-  taskTypes: ["review" as const, "query" as const],
 };
 
 const row = (fields: Partial<Row> & Pick<Row, "id" | "name" | "definition">): Row => ({
@@ -165,7 +164,7 @@ describe("Settings › Agents API", () => {
         id: OTHER_ORG_AGENT_ID,
         organizationId: "org-2",
         name: "Theirs",
-        definition: { systemPrompt: "", taskTypes: ["review"] },
+        definition: { systemPrompt: "" },
       }),
     ];
     state.tasks = [];
@@ -176,7 +175,7 @@ describe("Settings › Agents API", () => {
     const refused = { ok: false, error: expect.any(String) };
     expect(await createAgentDefinition(INPUT)).toEqual(refused);
     expect(await updateAgentDefinition(AGENT_ID, INPUT)).toEqual(refused);
-    expect(await cloneAgentDefinition("builtin:reviewer")).toEqual(refused);
+    expect(await cloneAgentDefinition("builtin:review-pr")).toEqual(refused);
     expect(await deleteAgentDefinition(AGENT_ID)).toEqual(refused);
     expect(state.writes).toBe(0);
     expect(state.agents).toHaveLength(2);
@@ -198,7 +197,6 @@ describe("Settings › Agents API", () => {
       systemPromptMode: "append",
       model: "claude-opus-5-5",
       fallbackModel: null,
-      taskTypes: ["review", "query"],
     });
     expect(created.definition).not.toHaveProperty("id");
     expect(created.definition).not.toHaveProperty("name");
@@ -208,26 +206,35 @@ describe("Settings › Agents API", () => {
     const result = await createAgentDefinition({
       ...INPUT,
       name: " ",
-      taskTypes: [],
-      skills: [{ name: "owasp", content: "" }],
-      tools: { ...INPUT.tools, harness: ["teleport" as never] },
+      tools: { ...INPUT.tools, harness: ["teleport" as never], mcpServers: ["github"] },
     });
     expect(result).toEqual({
       ok: false,
       error: expect.any(String),
       fieldErrors: expect.objectContaining({
         name: expect.any(String),
-        taskTypes: expect.any(String),
-        "skills.0.content": expect.any(String),
         "tools.harness.0": expect.any(String),
+        "tools.mcpServers.0": expect.any(String),
       }),
     });
-    expect(await updateAgentDefinition(AGENT_ID, { ...INPUT, taskTypes: [] })).toEqual({
+    expect(await updateAgentDefinition(AGENT_ID, { ...INPUT, systemPrompt: 7 })).toEqual({
       ok: false,
       error: expect.any(String),
-      fieldErrors: { taskTypes: expect.any(String) },
+      fieldErrors: { systemPrompt: expect.any(String) },
     });
     expect(state.writes).toBe(0);
+  });
+
+  it("drops the task types and skills agents had before playbooks", async () => {
+    const result = await createAgentDefinition({
+      ...INPUT,
+      taskTypes: ["review"],
+      skills: [{ name: "owasp", content: "The OWASP top ten." }],
+    });
+    const id = (result as { id: string }).id;
+    const created = state.agents.find((agent) => agent.id === id)!;
+    expect(created.definition).not.toHaveProperty("taskTypes");
+    expect(created.definition).not.toHaveProperty("skills");
   });
 
   it("updates an agent recording the admin", async () => {
@@ -244,36 +251,35 @@ describe("Settings › Agents API", () => {
     state.tasks = [
       reviewTask("Security review", AGENT_ID),
       reviewTask("Dependency review", AGENT_ID, "44444444-4444-4444-8444-444444444444"),
-      reviewTask("Unrelated review", "builtin:reviewer", "55555555-5555-4555-8555-555555555555"),
+      reviewTask("Unrelated review", "builtin:review-pr", "55555555-5555-4555-8555-555555555555"),
     ];
-    const dropped = await updateAgentDefinition(AGENT_ID, { ...INPUT, taskTypes: ["query"] });
-    expect(dropped).toMatchObject({ ok: false, fieldErrors: { taskTypes: expect.any(String) } });
-    const { error } = dropped as { error: string };
-    expect(error).toContain("Security review");
-    expect(error).toContain("Dependency review");
-    expect(error).not.toContain("Unrelated review");
-
     const shipping = await updateAgentDefinition(AGENT_ID, {
       ...INPUT,
       tools: { ...INPUT.tools, harness: ["ship"] },
     });
     expect(shipping).toMatchObject({
       ok: false,
-      error: expect.stringContaining("Security review"),
       fieldErrors: { "tools.harness": expect.stringContaining("Security review") },
     });
+    const { error } = shipping as { error: string };
+    expect(error).toContain("Security review");
+    expect(error).toContain("Dependency review");
+    expect(error).not.toContain("Unrelated review");
     expect(state.writes).toBe(0);
 
-    // Still suiting every task's type is fine.
-    expect(await updateAgentDefinition(AGENT_ID, { ...INPUT, taskTypes: ["review"] })).toEqual({
-      ok: true,
-    });
+    // Harness tools every task's type allows are fine.
+    expect(
+      await updateAgentDefinition(AGENT_ID, {
+        ...INPUT,
+        tools: { ...INPUT.tools, harness: ["post_activity"] },
+      }),
+    ).toEqual({ ok: true });
   });
 
   it("refuses to update or delete a built-in, and treats another organization's agent as missing", async () => {
     for (const result of [
-      await updateAgentDefinition("builtin:reviewer", INPUT),
-      await deleteAgentDefinition("builtin:reviewer"),
+      await updateAgentDefinition("builtin:review-pr", INPUT),
+      await deleteAgentDefinition("builtin:review-pr"),
     ]) {
       expect(result).toEqual({ ok: false, error: expect.stringContaining("Built-in") });
     }
@@ -291,10 +297,11 @@ describe("Settings › Agents API", () => {
   });
 
   it("clones a built-in into a new row named as a copy", async () => {
-    const result = await cloneAgentDefinition("builtin:reviewer");
+    const result = await cloneAgentDefinition("builtin:review-pr");
     expect(result).toEqual({ ok: true, id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     const id = (result as { id: string }).id;
-    const reviewer = getBuiltinAgent("builtin:reviewer") as AgentDefinition;
+    // A built-in playbook's persona, as an agent of its ID.
+    const reviewer = getBuiltinRunSpec("builtin:review-pr")!.agent;
     const clone = state.agents.find((agent) => agent.id === id)!;
     expect(clone).toMatchObject({
       organizationId: "org-1",

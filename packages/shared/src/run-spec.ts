@@ -1,13 +1,13 @@
 /**
  * Run specs: everything a harness needs to run a task, resolved by the
- * control panel when the job is claimed (agent and task definitions, trigger
- * context, repository, tools, model, budget and tokens), so the harness has
- * no per-task code or lookups.
+ * control panel when the job is claimed (the agent and task built from the
+ * job's playbook, trigger context, repository, tools, model, budget and
+ * tokens), so the harness has no per-task code or lookups.
  */
 import {
-  AgentDefinition,
   HARNESS_VERSION_BY_TASK_TYPE,
   HARNESS_VERSION_FOR_COMMANDS,
+  RunSpecAgent,
   TaskDefinition,
   TaskTypeSchema,
   TriggerKindSchema,
@@ -76,8 +76,8 @@ export const RunSpec = z.object({
   taskType: TaskTypeSchema,
   /** `poolForTaskType(taskType)`. */
   pool: z.enum(POOLS),
-  /** The task's agent, its tools already narrowed by the repository's settings. */
-  agent: AgentDefinition,
+  /** The playbook's persona (`playbookRunSpec`), its tools already narrowed by the repository's settings. */
+  agent: RunSpecAgent,
   task: TaskDefinition,
   trigger: RunTrigger,
   repository: JobRepository.nullable(),
@@ -93,15 +93,15 @@ export const RunSpec = z.object({
   /** The repository's tool settings, applied on top of the agent's tools (they never widen them). */
   tools: RunToolRestrictions,
   /**
-   * A review run's depth model. Any other run's: the task's, else the agent's;
-   * null for the Claude Code default.
+   * A review run's depth model. Any other run's: the playbook's; null for the
+   * Claude Code default.
    */
   model: z.string().min(1).nullable(),
-  /** The agent's fallback model; null for none. */
+  /** The playbook's fallback model; null for none. */
   fallbackModel: z.string().min(1).nullable(),
   /**
-   * Token cap of the run: a review run's depth cap; any other run's task's fixed
-   * `tokens`. Null means "No limit".
+   * Token cap of the run: a review run's depth cap; any other run's playbook's
+   * fixed `tokens`. Null means "No limit".
    */
   tokenBudget: z.int().min(1).nullable(),
   /** Most files a review run covers (its review depth's `maxFiles`); null or absent for other runs. */

@@ -7,7 +7,7 @@ import {
   type TriagePromptInput,
 } from "@omniralph/ralph";
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, VARIABLES } from "../variables.js";
 
@@ -22,7 +22,7 @@ const FIXTURES = JSON.parse(
 ) as Record<string, Fixture>;
 
 const task = getBuiltinTask("builtin:triage")!;
-const agent = getBuiltinAgent("builtin:planner")!;
+const agent = getBuiltinRunSpec("builtin:triage")!.agent;
 
 /** The trigger context `enqueueTriage` stores, plus the query variables the harness computes. */
 function render({ checkout, input }: Fixture): string {
@@ -38,10 +38,9 @@ function render({ checkout, input }: Fixture): string {
 }
 
 describe("builtin:triage", () => {
-  it("runs on builtin:planner as a read-only query task with the Linear tools", () => {
+  it("runs with the planner persona as a read-only query task with the Linear tools", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "append",
-      taskTypes: ["query"],
       tools: {
         builtin: ["Read", "Grep", "Glob"],
         harness: [],
@@ -53,11 +52,11 @@ describe("builtin:triage", () => {
         ],
         mcpServers: [],
       },
-      model: null,
+      model: "opus",
     });
     expect(task).toMatchObject({
       taskType: "query",
-      agentId: "builtin:planner",
+      agentId: "builtin:triage",
       triggers: ["linear.triage"],
       sink: "triage",
       model: "opus",

@@ -13,7 +13,7 @@ import { renderSummary } from "@omniralph/engine/summary";
 import type { InlineComment } from "@omniralph/scm";
 import { REVIEW_DEPTHS, REVIEW_SKIP_REASONS, type Finding } from "@omniralph/shared";
 import { getAppUrl } from "@/lib/app-url";
-import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
 import { connectionBotHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -56,11 +56,12 @@ export async function repositoryTarget(
 
 /** Review task names by ID, looked up once: a task's name, or its ID when it isn't a known task. */
 export async function reviewTaskNames(
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
   taskIds: Iterable<string>,
 ): Promise<(taskId: string) => string> {
   const names = new Map<string, string>();
-  for (const id of new Set(taskIds)) names.set(id, (await definitions.getTask(id))?.name ?? id);
+  for (const id of new Set(taskIds))
+    names.set(id, (await getPlaybookTask(definitions, id))?.name ?? id);
   return (taskId) => names.get(taskId) ?? taskId;
 }
 
@@ -126,7 +127,7 @@ function runTaskNames(
   reviews: readonly Review[],
   rows: readonly FindingRow[] = [],
 ): Promise<(taskId: string) => string> {
-  return reviewTaskNames(organizationDefinitions(db, run.organizationId), [
+  return reviewTaskNames(organizationPlaybooks(db, run.organizationId), [
     ...reviews.flatMap((r) => (r.taskId ? [r.taskId] : [])),
     ...rows.flatMap((row) => row.sourceTaskIds),
   ]);

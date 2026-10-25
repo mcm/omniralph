@@ -3,8 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// docs/definitions.md (and the ADR section that links it) may only name pages, files and
-// functions that exist.
+// docs/definitions.md (playbooks, and the ADR section that links it) may only name pages, files
+// and functions that exist.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (file: string) => readFileSync(path.join(root, file), "utf8");
@@ -49,11 +49,14 @@ describe("docs/definitions.md", () => {
   const doc = read("docs/definitions.md");
   const spans = codeSpans(doc);
 
-  it("names the pages, validators and referrer lookup the story asks for", () => {
+  it("names the playbook model, the pages, validators and referrer lookup", () => {
     for (const name of [
+      "Playbook",
+      "PLAYBOOK_ROLES",
+      "playbookRunSpec",
       "/settings/agents",
       "/settings/tasks",
-      "validateAgentDefinition",
+      "validateCustomAgent",
       "validateTaskDefinition",
       "findTaskReferrers",
     ]) {

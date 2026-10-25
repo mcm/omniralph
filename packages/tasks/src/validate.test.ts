@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUILTIN_AGENTS,
   BUILTIN_TASKS,
   deriveHarnessRequirements,
   deriveTaskRequirements,
-  getBuiltinAgent,
+  getBuiltinRunSpec,
   getBuiltinTask,
   HARNESS_VERSION_BY_TASK_TYPE,
   HARNESS_VERSION_FOR_COMMANDS,
-  validateAgentDefinition,
+  RunSpecAgent,
   validateTaskDefinition,
   VARIABLES,
-  type AgentDefinitionInput,
+  type RunSpecAgentInput,
   type SinkKind,
   type SinkOutput,
   type TaskDefinitionInput,
@@ -47,23 +46,20 @@ const SINKS: Record<SinkKind, SinkOutput> = {
   "ralph-run": { taskType: "coding" },
 };
 
-const customAgent: AgentDefinitionInput = {
+const customAgent: RunSpecAgentInput = {
   id: AGENT_ID,
   name: "Security reviewer",
   systemPrompt: "You look for security problems.",
-  taskTypes: ["review"],
 };
 
 const context: TaskValidationContext = {
-  getAgent: (id) => (id === AGENT_ID ? validAgent() : getBuiltinAgent(id)),
+  getAgent: (id) => (id === AGENT_ID ? validAgent() : (getBuiltinRunSpec(id)?.agent ?? null)),
   getTask: getBuiltinTask,
   sinks: SINKS,
 };
 
 function validAgent() {
-  const result = validateAgentDefinition(customAgent);
-  if (!result.ok) throw new Error("fixture agent is invalid");
-  return result.definition;
+  return RunSpecAgent.parse(customAgent);
 }
 
 /** A valid query task; each test breaks one rule. */
@@ -71,7 +67,7 @@ const query: TaskDefinitionInput = {
   id: TASK_ID,
   name: "Answer in a finding thread",
   taskType: "query",
-  agentId: "builtin:reviewer",
+  agentId: "builtin:reply-to-finding",
   triggers: ["finding.mention"],
   promptTemplate: "{{finding.title}}\n\n{{question}}",
   sink: "finding-thread",
@@ -82,7 +78,7 @@ const coding: TaskDefinitionInput = {
   id: TASK_ID,
   name: "Implement",
   taskType: "coding",
-  agentId: "builtin:engineer",
+  agentId: "builtin:implement-story",
   triggers: ["linear.delegated", "linear.mention"],
   promptTemplate: "{{epic.title}}{{#epic.prd}}\n{{epic.prd}}{{/epic.prd}}",
   sink: "ralph-run",
@@ -93,54 +89,13 @@ function errors(input: unknown) {
   return result.ok ? {} : result.fieldErrors;
 }
 
-describe("validateAgentDefinition", () => {
-  it("accepts every built-in agent", () => {
-    for (const agent of BUILTIN_AGENTS) {
-      expect(validateAgentDefinition(agent), agent.id).toEqual({ ok: true, definition: agent });
-    }
-  });
-
-  it("parses a custom agent, filling defaults", () => {
-    const result = validateAgentDefinition(customAgent);
-    expect(result.ok && result.definition).toMatchObject({
-      ...customAgent,
-      systemPromptMode: "append",
-      model: null,
-    });
-  });
-
-  it("returns schema errors by field path", () => {
-    expect(
-      validateAgentDefinition({
-        ...customAgent,
-        name: " ",
-        taskTypes: [],
-        tools: { harness: ["nope"] },
-        skills: [{ name: "x", content: "" }],
-      }),
-    ).toEqual({
-      ok: false,
-      fieldErrors: {
-        name: expect.any(String),
-        taskTypes: expect.any(String),
-        "tools.harness.0": expect.any(String),
-        "skills.0.content": expect.any(String),
-      },
-    });
-    expect(validateAgentDefinition(null)).toEqual({
-      ok: false,
-      fieldErrors: { form: expect.any(String) },
-    });
-  });
-});
-
 describe("validateTaskDefinition", () => {
   it("accepts every built-in task, returning its derived requirements", () => {
     expect(BUILTIN_TASKS.map((task) => task.id)).toEqual(
       expect.arrayContaining(["builtin:review-pr", "builtin:describe-pr"]),
     );
     for (const task of BUILTIN_TASKS) {
-      const agent = getBuiltinAgent(task.agentId);
+      const agent = getBuiltinRunSpec(task.id)!.agent;
       const requirements = deriveTaskRequirements(task, undefined, agent);
       expect(validateTaskDefinition(task, context), task.id).toEqual({
         ok: true,
@@ -250,12 +205,19 @@ describe("validateTaskDefinition", () => {
     ).toEqual({});
   });
 
-  it("rejects an unknown agent, and one that doesn't suit the task type", () => {
+  it("rejects an unknown agent, and one with harness tools the task type doesn't allow", () => {
     expect(errors({ ...query, agentId: "builtin:nope" })).toEqual({
       agentId: "There is no agent builtin:nope.",
     });
-    expect(errors({ ...query, agentId: AGENT_ID })).toEqual({
-      agentId: expect.stringContaining("suits review tasks, not query"),
+    const shipper = RunSpecAgent.parse({ ...customAgent, tools: { harness: ["ship"] } });
+    expect(
+      validateTaskDefinition(
+        { ...query, agentId: AGENT_ID },
+        { ...context, getAgent: (id) => (id === AGENT_ID ? shipper : null) },
+      ),
+    ).toEqual({
+      ok: false,
+      fieldErrors: { agentId: "query runs can't use the harness tool ship." },
     });
   });
 

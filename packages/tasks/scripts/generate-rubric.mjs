@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Writes src/builtin/rubric.ts: the review rubric (`packages/engine/src/rubric/`) as
-// `builtin:reviewer`'s reference docs. Run after changing a rubric file:
+// the reviewer persona's reference docs. Run after changing a rubric file:
 //   pnpm --filter @omniralph/tasks generate:rubric
 // (`@omniralph/engine`'s builtin review test fails while the two disagree.)
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";

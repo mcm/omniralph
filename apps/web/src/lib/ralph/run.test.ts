@@ -83,21 +83,27 @@ import { reconcileRuns, RECONCILE_STALE_MS } from "./reconcile";
 import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
 import { fitTitle } from "@omniralph/ralph";
-import { CODING_DEFAULTS, getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import {
+  CODING_DEFAULTS,
+  getBuiltinPlaybook,
+  getBuiltinTask,
+  type Playbook,
+  type PlaybookCoding,
+} from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { advanceRun, laneHarnessId, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
-/** Built-in tasks some tests change (the resolver reads built-ins through `getBuiltinTask`). */
+/** Built-in playbooks some tests change (the resolver reads built-ins through `getBuiltinPlaybook`). */
 const changedBuiltins = vi.hoisted(() => new Map<string, unknown>());
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
   return {
     ...actual,
-    getBuiltinTask: (id: string) =>
-      (changedBuiltins.get(id) as TaskDefinition | undefined) ?? actual.getBuiltinTask(id),
+    getBuiltinPlaybook: (id: string) =>
+      (changedBuiltins.get(id) as Playbook | undefined) ?? actual.getBuiltinPlaybook(id),
   };
 });
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -283,7 +289,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   /** The job's outcome hooks: a coding run's are the `ralph-run` sink's, the same ralph hooks. */
   const expectRalphHooks = async (job: Job) => {
-    expect((await taskSink(job, organizationDefinitions(db, job.organizationId)))?.kind).toBe(
+    expect((await taskSink(job, organizationPlaybooks(db, job.organizationId)))?.kind).toBe(
       "ralph-run",
     );
   };
@@ -365,7 +371,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
-    const sink = await taskSink(job, organizationDefinitions(db, job.organizationId));
+    const sink = await taskSink(job, organizationPlaybooks(db, job.organizationId));
     expect(sink?.kind).toBe("run-result");
     expect(await sink!.onStarted!(db, job, harnessId)).toEqual({
       skip: false,
@@ -1226,11 +1232,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await setEarly(false);
     });
 
-    /** `builtin:implement-story` with `settings` (the built-in definitions are read through `getBuiltinTask`). */
-    function storyTaskWith(settings: Partial<TaskDefinition>): void {
+    /** `builtin:implement-story` with coding `settings` (built-ins are read through `getBuiltinPlaybook`). */
+    function storyTaskWith(settings: PlaybookCoding): void {
       changedBuiltins.delete("builtin:implement-story");
-      const builtin = getBuiltinTask("builtin:implement-story")!;
-      changedBuiltins.set(builtin.id, { ...builtin, ...settings });
+      const builtin = getBuiltinPlaybook("builtin:implement-story")!;
+      changedBuiltins.set(builtin.id, { ...builtin, coding: { ...builtin.coding, ...settings } });
     }
 
     /**
@@ -1272,7 +1278,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           durationMs: 10,
         };
         expect(
-          (await taskSink(job, organizationDefinitions(db, job.organizationId)))?.parseResult?.(
+          (await taskSink(job, organizationPlaybooks(db, job.organizationId)))?.parseResult?.(
             result,
           ),
         ).toEqual(result);
@@ -1575,15 +1581,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it.each([
-      { draftPullRequest: "early", openPullRequestEarly: false, draft: true },
-      { draftPullRequest: "end", openPullRequestEarly: true, draft: false },
-      { draftPullRequest: undefined, openPullRequestEarly: true, draft: true },
+      { openPullRequestEarly: false, draft: false },
+      { openPullRequestEarly: true, draft: true },
     ] as const)(
-      "with draftPullRequest $draftPullRequest and openPullRequestEarly $openPullRequestEarly, opens an early draft: $draft",
-      async ({ draftPullRequest, openPullRequestEarly, draft }) => {
-        if (draftPullRequest) storyTaskWith({ draftPullRequest });
+      "with openPullRequestEarly $openPullRequestEarly, opens an early draft: $draft",
+      async ({ openPullRequestEarly, draft }) => {
         await setEarly(openPullRequestEarly);
-        const n = 190 + (draftPullRequest === "early" ? 0 : draftPullRequest === "end" ? 3 : 6);
+        const n = 190 + (openPullRequestEarly ? 6 : 3);
         const epic = linear.add({ identifier: `ENG-${n}`, title: "Gizmos" });
         linear.add({ identifier: `ENG-${n + 1}`, title: "First", parentId: epic.id, priority: 1 });
         linear.add({ identifier: `ENG-${n + 2}`, title: "Second", parentId: epic.id, priority: 2 });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { ClaudeAgentProvider, DISALLOWED_TOOLS, EXPLORATION_TOOLS } from "@omniralph/engine";
-import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import type { ToolPolicy } from "./index.js";
 import { RALPH_TOOL_POLICY } from "./ralph/index.js";
@@ -39,7 +39,7 @@ const silent = { info() {}, warn() {}, error() {} };
 
 /** The policy of `builtin:review-pr` sessions (agent `builtin:reviewer`), as the review lifecycle builds it. */
 const REVIEW_TOOL_POLICY = queryToolPolicy(
-  getBuiltinAgent("builtin:reviewer")!,
+  getBuiltinRunSpec("builtin:review-pr")!.agent,
   getBuiltinTask("builtin:review-pr")!.toolSettings,
 );
 

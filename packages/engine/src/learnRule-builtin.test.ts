@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getBuiltinAgent, getBuiltinTask } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -16,7 +16,7 @@ const FIXTURES = JSON.parse(
 ) as Record<string, { finding: LearnRuleFinding; hunk: string | null; note: string | null }>;
 
 const task = getBuiltinTask("builtin:learn-rule")!;
-const agent = getBuiltinAgent(task.agentId)!;
+const agent = getBuiltinRunSpec(task.id)!.agent;
 
 describe("builtin:learn-rule agrees with the rule-generation prompt builders", () => {
   it("has the agent's system prompt + the task's systemAppend = LEARN_RULE_SYSTEM_PROMPT", () => {

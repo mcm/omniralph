@@ -31,7 +31,7 @@ import {
   type TriggerKind,
 } from "@omniralph/tasks";
 import type { runSpecJobInput } from "@/lib/runs/job";
-import { taskJobInput, type DefinitionSource } from "@/lib/definitions";
+import { getPlaybookTask, taskJobInput, type PlaybookSource } from "@/lib/definitions";
 
 /** Story attempts a run makes before it stops and asks (cyralph's `maxIterationsPerRun`). */
 export const MAX_ITERATIONS_PER_RUN = 50;
@@ -41,9 +41,9 @@ type CodingRepository = Pick<Repository, "storyTaskId" | "requestTaskId">;
 /** The coding task `id`, or null when it's unknown or of another task type. */
 export async function codingTask(
   id: string,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<TaskDefinition | null> {
-  const task = await definitions.getTask(id);
+  const task = await getPlaybookTask(definitions, id);
   return task?.taskType === "coding" ? task : null;
 }
 
@@ -113,7 +113,7 @@ function taskStoryCaps(task: TaskDefinition | null | undefined): StoryCaps {
  */
 export async function storyLimits(
   repository: CodingRepository | null | undefined,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<StoryLimits> {
   const task = repository ? await codingTask(storyTaskFor(repository), definitions) : null;
   return {
@@ -125,7 +125,7 @@ export async function storyLimits(
 /** The attempts and rounds a story gets, by the job that ran its last attempt (its coding task's, else the defaults). */
 export async function jobStoryCaps(
   job: Pick<Job, "taskId"> | null,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<StoryCaps> {
   const task = job?.taskId ? await codingTask(job.taskId, definitions) : null;
   return task ? taskStoryCaps(task) : DEFAULT_STORY_CAPS;
@@ -144,7 +144,7 @@ export interface RoundLimits {
 export async function roundLimits(
   run: Pick<RalphRun, "codingTaskId">,
   repository: CodingRepository & { ralphSettings: unknown },
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<RoundLimits> {
   const settings = parseRalphSettings(repository.ralphSettings);
   const limits = { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds };
@@ -162,26 +162,24 @@ export async function roundLimits(
  */
 export async function pushTimingFor(
   repository: Pick<Repository, "storyTaskId">,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<PushTiming> {
   return (await codingTask(storyTaskFor(repository), definitions))?.pushTiming ?? "per-story";
 }
 
 /**
  * Whether a repository's lanes get a draft PR/MR as soon as a story is pushed
- * (`openEarlyPullRequest`) rather than when the lane is published: its story
- * task's `draftPullRequest` when set, else the repository's
- * `openPullRequestEarly`. A story task that pushes only at the end never
- * opens one early (there's no branch to open it for until then).
+ * (`openEarlyPullRequest`) rather than when the lane is published: the
+ * repository's `openPullRequestEarly`. A story playbook that pushes only at
+ * the end never opens one early (there's no branch to open it for until then).
  */
 export async function opensPullRequestEarly(
   repository: Pick<Repository, "storyTaskId"> & { ralphSettings: unknown },
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<boolean> {
-  const early = parseRalphSettings(repository.ralphSettings).openPullRequestEarly;
   const task = await codingTask(storyTaskFor(repository), definitions);
   if (task?.pushTiming === "end") return false;
-  return task?.draftPullRequest ? task.draftPullRequest === "early" : early;
+  return parseRalphSettings(repository.ralphSettings).openPullRequestEarly;
 }
 
 /**
@@ -192,7 +190,7 @@ export async function opensPullRequestEarly(
 export async function codingJobInput(
   coding: { taskId: string; trigger: TriggerKind },
   payload: RalphStoryPayload | RalphRequestPayload,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | null> {
   const task = await codingTask(coding.taskId, definitions);
   if (!task || !task.triggers.includes(coding.trigger)) return null;
@@ -211,7 +209,7 @@ export async function codingJobInput(
 export async function pushJobInput(
   repository: Pick<Repository, "storyTaskId">,
   payload: RalphPushPayload,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | null> {
   const task = await codingTask(storyTaskFor(repository), definitions);
   if (!task || !task.triggers.includes("linear.delegated")) return null;
@@ -240,7 +238,7 @@ export function ralphJobPayload(job: Pick<Job, "payload">): unknown {
  */
 export async function prDescriptionTaskFor(
   repository: Pick<Repository, "storyTaskId">,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<string> {
   return (
     (await codingTask(storyTaskFor(repository), definitions))?.prDescriptionTaskId ??
@@ -285,10 +283,10 @@ export function describePrTriggerContext(
 export async function describePrJobInput(
   repository: Pick<Repository, "storyTaskId">,
   payload: RalphDescribePrPayload,
-  definitions: DefinitionSource,
+  definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | string> {
   const taskId = await prDescriptionTaskFor(repository, definitions);
-  const task = await definitions.getTask(taskId);
+  const task = await getPlaybookTask(definitions, taskId);
   if (task?.taskType !== "query" || !task.triggers.includes("run.invoked")) {
     return `${taskId} isn't a query task started by run.invoked`;
   }

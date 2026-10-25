@@ -3,11 +3,11 @@
  * epic delegated in Linear, in the run's branch worktree. The prompt is
  * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the PRD,
  * the story list, the story and how to work it. The story-specific rules of
- * ralph's story system prompt close it, since `builtin:engineer`'s system
+ * ralph's story system prompt close it, since the engineer persona's system
  * prompt is mode-neutral. The harness commits, runs the gates and pushes.
  */
-import type { TaskDefinitionInput } from "../definitions.js";
-import { ENGINEER_AGENT } from "./engineer.js";
+import type { PlaybookInput } from "../playbooks.js";
+import { ENGINEER_PERSONA } from "./engineer.js";
 
 /** The story-specific rules of ralph's story system prompt (`RALPH_SYSTEM_APPEND`). */
 export const STORY_RULES = `## Rules
@@ -169,18 +169,16 @@ Never file follow-ups, or create issues yourself, for another project or reposit
 
 ${STORY_RULES}`;
 
-export const IMPLEMENT_STORY_TASK: TaskDefinitionInput = {
+export const IMPLEMENT_STORY_PLAYBOOK: PlaybookInput = {
   id: "builtin:implement-story",
   name: "Implement a story",
   description:
     "Works one story of an epic delegated in Linear in the run's branch worktree; the harness runs the quality gates, commits and pushes.",
-  taskType: "coding",
-  agentId: ENGINEER_AGENT.id,
-  triggers: ["linear.delegated"],
+  role: "story",
+  ...ENGINEER_PERSONA,
   promptTemplate: STORY_TEMPLATE,
   toolSettings: { shell: true, linearRead: false, network: true },
-  // Handed back to the ralph run, which records the attempt.
-  sink: "ralph-run",
+  // Its runs go back to the ralph run (the role's `ralph-run` sink), which records the attempt.
   // Ralph's story model (`DEFAULT_STORY_MODEL`); the repository's `ralph_settings.model` overrides it.
   model: "opus",
   tokenBudget: null,

@@ -8,7 +8,7 @@ import {
 } from "@omniralph/db";
 import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { organizationDefinitions, taskJobInput } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/definitions";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import type { FindingThreadContext } from "@/lib/sinks/finding-thread";
 
@@ -94,8 +94,8 @@ export async function enqueueReply(
     return { status: "repository_unavailable" };
   }
   if (!switches.query) return { status: "query_disabled" };
-  const definitions = organizationDefinitions(db, found.repository.organizationId);
-  const task = await definitions.getTask(REPLY_TASK_ID);
+  const definitions = organizationPlaybooks(db, found.repository.organizationId);
+  const task = await getPlaybookTask(definitions, REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);
   const context = replyContext({
     finding,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getBuiltinAgent, getBuiltinTask, type TaskDefinitionInput } from "@omniralph/tasks";
+import { getBuiltinRunSpec, getBuiltinTask, type TaskDefinitionInput } from "@omniralph/tasks";
 import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -206,7 +206,7 @@ const INPUT = {
   name: "Security review",
   description: "Reviews for vulnerabilities.",
   taskType: "review",
-  agentId: "builtin:reviewer",
+  agentId: "builtin:review-pr",
   triggers: ["pr.updated", "review.rerun"],
   promptTemplate: "Review {{pr.title}} for vulnerabilities.",
   sink: "review",
@@ -217,7 +217,7 @@ const DESCRIBER = {
   name: "Describe with changelog",
   description: "Writes the PR description, with the changelog entry.",
   taskType: "query",
-  agentId: "builtin:pr-writer",
+  agentId: "builtin:describe-pr",
   triggers: ["run.invoked"],
   promptTemplate: "Describe {{branch}}.\n\n{{setup.changelog}}",
   setupCommands: [
@@ -254,7 +254,7 @@ const CODER = {
   name: "Ship stories",
   description: "Implements a story at a time.",
   taskType: "coding",
-  agentId: "builtin:engineer",
+  agentId: "builtin:implement-story",
   triggers: ["linear.delegated"],
   promptTemplate: "Implement {{story.title}}.\n\n{{setup.status}}",
   setupCommands: [
@@ -288,7 +288,7 @@ describe("Settings › Tasks API", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.writes = 0;
-    const { id: _id, name: _name, ...reviewer } = getBuiltinAgent("builtin:reviewer")!;
+    const { id: _id, name: _name, ...reviewer } = getBuiltinRunSpec("builtin:review-pr")!.agent;
     state.agents = [row({ id: AGENT_ID, name: "Custom reviewer", definition: reviewer })];
     state.tasks = [
       row({ id: TASK_ID, name: "Security review", definition: fieldsOf("builtin:review-pr") }),
@@ -344,7 +344,7 @@ describe("Settings › Tasks API", () => {
       definition: {
         id,
         name: "Security review",
-        agentId: "builtin:reviewer",
+        agentId: "builtin:review-pr",
         triggers: ["pr.updated", "review.rerun"],
         tokenBudget: null,
       },
@@ -380,7 +380,7 @@ describe("Settings › Tasks API", () => {
     const result = await createTaskDefinition({
       ...INPUT,
       name: "",
-      agentId: "builtin:engineer",
+      agentId: "builtin:implement-story",
       triggers: ["chat.request"],
       sink: "chat-thread",
     });
@@ -389,7 +389,7 @@ describe("Settings › Tasks API", () => {
     expect(Object.keys(fieldErrors)).toEqual(expect.arrayContaining(["name"]));
     expect(state.writes).toBe(0);
 
-    const unsuited = await createTaskDefinition({ ...INPUT, agentId: "builtin:engineer" });
+    const unsuited = await createTaskDefinition({ ...INPUT, agentId: "builtin:implement-story" });
     expect(unsuited).toMatchObject({ ok: false, fieldErrors: { agentId: expect.any(String) } });
     const triggers = await createTaskDefinition({ ...INPUT, triggers: ["chat.request"] });
     expect(triggers).toMatchObject({ ok: false, fieldErrors: { triggers: expect.any(String) } });

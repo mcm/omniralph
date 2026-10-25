@@ -20,7 +20,6 @@ import {
 import {
   codingDraft,
   commandDraft,
-  DRAFT_PULL_REQUEST_LABELS,
   LIMIT_DEFAULTS,
   LIMITS,
   PUSH_TIMING_LABELS,
@@ -147,7 +146,6 @@ export function taskValues(draft: TaskDraft): Record<string, SettingValue> {
     requiredHostTools: draft.requiredHostTools,
     outputSchema: draft.taskType === "query" ? draft.outputSchema.trim() : null,
     pushTiming: coding ? draft.coding.pushTiming : null,
-    draftPullRequest: coding ? draft.coding.draftPullRequest : null,
     prDescriptionTaskId: coding ? draft.coding.prDescriptionTaskId : null,
     ...Object.fromEntries(
       LIMITS.map(([key]) => [key, coding ? draft.coding[key].trim() : null] as const),
@@ -186,11 +184,6 @@ export function taskSpecs(names: TaskChangeNames): SettingSpec[] {
     { key: "requiredHostTools", label: "Required host tools" },
     { key: "outputSchema", label: "Output schema" },
     { key: "pushTiming", label: "Push", format: option(PUSH_TIMING_LABELS) },
-    {
-      key: "draftPullRequest",
-      label: "Draft PR",
-      format: option(DRAFT_PULL_REQUEST_LABELS, "The repository's setting"),
-    },
     { key: "prDescriptionTaskId", label: "PR description task", format: byName(names.tasks) },
     ...LIMITS.map(([key, label]) => ({
       key,

@@ -26,7 +26,7 @@ import {
 import { MAX_CHAT_ASK_QUESTION_LENGTH, QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { organizationDefinitions } from "@/lib/definitions";
+import { getPlaybookTask, organizationPlaybooks } from "@/lib/definitions";
 import type { RunHarnessRequirements } from "@/lib/harnesses/claimable";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow, jobRow } from "@/lib/harnesses/rows";
@@ -97,7 +97,9 @@ export async function chatTaskOf(
 ): Promise<{ task: TaskDefinition } | { error: "task_unavailable"; message: string }> {
   const tasks = await chatTasksFor(context.db, context.connection, context.chatThread.channelId);
   const getTask =
-    context.getTask ?? organizationDefinitions(context.db, context.organizationId).getTask;
+    context.getTask ??
+    ((id: string) =>
+      getPlaybookTask(organizationPlaybooks(context.db, context.organizationId), id));
   const task = await getTask(tasks[role]);
   const choice = validateChatTaskChoice(role, tasks[role], () => task);
   if (choice.ok) return { task: choice.task };
@@ -202,7 +204,7 @@ async function ralphRunState(
   detail: RalphRunDetail,
   appUrl: string,
 ) {
-  const run = await ralphRunDetailView(detail, organizationDefinitions(db, organizationId));
+  const run = await ralphRunDetailView(detail, organizationPlaybooks(db, organizationId));
   const currentStory = run.stories.find((story) => story.status === "running") ?? null;
   return {
     id: run.id,

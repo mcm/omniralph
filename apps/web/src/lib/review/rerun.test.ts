@@ -35,13 +35,21 @@ vi.mock("server-only", () => ({}));
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
   const security = {
-    ...actual.getBuiltinTask("builtin:review-pr")!,
+    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
     id: "builtin:security-review",
     name: "Security review",
   };
+  const getBuiltinPlaybook = (id: string) =>
+    id === security.id ? security : actual.getBuiltinPlaybook(id);
+  const getBuiltinRunSpec = (id: string) => {
+    const playbook = getBuiltinPlaybook(id);
+    return playbook && actual.playbookRunSpec(playbook);
+  };
   return {
     ...actual,
-    getBuiltinTask: (id: string) => (id === security.id ? security : actual.getBuiltinTask(id)),
+    getBuiltinPlaybook,
+    getBuiltinRunSpec,
+    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
   };
 });
 const SECURITY_TASK_ID = "builtin:security-review";

@@ -27,7 +27,7 @@ import { QueryBoundary } from "@/components/query-boundary";
 import type { AgentSummary } from "@/lib/api/definitions";
 import { useIsAdmin } from "../definition-page";
 import { useAgentList } from "../definition-queries";
-import { agentHref, BuiltinBadge, ModelName, TaskTypeBadges } from "./agent-parts";
+import { agentHref, BuiltinBadge, ModelName } from "./agent-parts";
 
 export type { AgentSummary };
 
@@ -57,7 +57,7 @@ export function AgentsView() {
           title="Agents"
           description={
             <>
-              The personas tasks run on: system prompt, tools, skills and model. Built-in agents are
+              The personas tasks run on: system prompt, tools and model. Built-in agents are
               read-only
               {isAdmin
                 ? "; clone one or create a new agent to make your own."
@@ -99,7 +99,6 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
         <TableRow>
           <TableHead>Name</TableHead>
           <TableHead className={WIDE_COLUMN}>ID</TableHead>
-          <TableHead className={WIDE_COLUMN}>Task types</TableHead>
           <TableHead className={WIDE_COLUMN}>Model</TableHead>
         </TableRow>
       </TableHeader>
@@ -117,15 +116,11 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
                 {agent.description && <Muted className="text-xs">{agent.description}</Muted>}
               </Stack>
               <PhoneMeta>
-                <TaskTypeBadges taskTypes={agent.taskTypes} />
                 <ModelName model={agent.model} />
               </PhoneMeta>
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <MonoValue value={agent.id} className="text-xs text-text-secondary" />
-            </TableCell>
-            <TableCell className={WIDE_COLUMN}>
-              <TaskTypeBadges taskTypes={agent.taskTypes} />
             </TableCell>
             <TableCell className={WIDE_COLUMN}>
               <ModelName model={agent.model} />

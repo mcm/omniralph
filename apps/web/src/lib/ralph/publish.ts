@@ -9,9 +9,8 @@
  * updates the open one and marks it ready. Once every lane is through, the run
  * completes, or waits on a reply when one of them failed. With a story task
  * that pushes only at the end, a `ralph.push` run pushes the lane's branch
- * first. With `openPullRequestEarly` (or the story task's `draftPullRequest:
- * early`), a lane's draft with a templated body is opened as soon as its
- * first story is pushed.
+ * first. With `openPullRequestEarly`, a lane's draft with a templated body is
+ * opened as soon as its first story is pushed.
  */
 import {
   getJob,
@@ -32,7 +31,7 @@ import {
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { epicCompletedTarget, parseRalphSettings, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
 import {
@@ -259,8 +258,8 @@ export async function linkPullRequestToIssue(
 }
 
 /**
- * `openPullRequestEarly` (per lane: its story task's `draftPullRequest`, else
- * its repository's setting, `opensPullRequestEarly`):
+ * `openPullRequestEarly` (per lane: its repository's setting,
+ * `opensPullRequestEarly`):
  * once a story of a lane is pushed, opens a draft PR/MR with a templated body (or
  * adopts the one open for the branch, as it is). Lanes without the setting,
  * with a PR/MR already or without a pushed story, and runs with every story
@@ -293,7 +292,7 @@ async function openEarlyLanePullRequest(
 ): Promise<void> {
   const { lane } = input;
   const found = await getRepositoryWithConnection(deps.db, lane.repositoryId);
-  const definitions = organizationDefinitions(deps.db, run.organizationId);
+  const definitions = organizationPlaybooks(deps.db, run.organizationId);
   if (!found || !(await opensPullRequestEarly(found.repository, definitions))) return;
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
@@ -373,7 +372,7 @@ export async function tickPushedStories(
       term = changeRequestTerm(target.repository.provider);
       const timing = await pushTimingFor(
         target.repository,
-        organizationDefinitions(deps.db, run.organizationId),
+        organizationPlaybooks(deps.db, run.organizationId),
       );
       const pushed = timing !== "end" || status === "pushed";
       const ticked = rows

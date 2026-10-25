@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import {
-  getBuiltinAgent,
+  getBuiltinRunSpec,
   getBuiltinTask,
   renderTemplate,
   taskCatalog,
@@ -29,7 +29,7 @@ import {
 import type { ReviewContext, ReviewScope } from "./runReview.js";
 
 const task = getBuiltinTask("builtin:review-pr")!;
-const agent = getBuiltinAgent(task.agentId)!;
+const agent = getBuiltinRunSpec(task.id)!.agent;
 
 const fixture = (name: string) =>
   parseDiff(readFileSync(new URL(`../test/fixtures/${name}.diff`, import.meta.url), "utf8"));
@@ -231,7 +231,7 @@ describe("builtin:review-pr agrees with the review prompt builders", () => {
     }
   });
 
-  it("ships the rubric files as builtin:reviewer's reference docs", () => {
+  it("ships the rubric files as the reviewer persona's reference docs", () => {
     const languages = readdirSync(new URL("rubric/languages/", import.meta.url))
       .filter((name) => name.endsWith(".md"))
       .map((name) => name.slice(0, -3))

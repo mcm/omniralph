@@ -36,7 +36,7 @@ import {
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { parseRalphSettings, RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
-import { organizationDefinitions } from "@/lib/definitions";
+import { organizationPlaybooks } from "@/lib/definitions";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
@@ -208,7 +208,7 @@ export async function respondToReview(
     const { maxReviewRounds } = await roundLimits(
       run,
       repository,
-      organizationDefinitions(deps.db, run.organizationId),
+      organizationPlaybooks(deps.db, run.organizationId),
     );
     if (rounds >= maxReviewRounds) {
       await updateLane(tx, lane.id, { handledReviewIds });

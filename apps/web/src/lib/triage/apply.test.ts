@@ -25,7 +25,7 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import { BUILTIN_DEFINITIONS } from "@/lib/definitions";
+import { BUILTIN_PLAYBOOK_SOURCE } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
 import type { IssueSummary } from "@/lib/linear/gateway";
 import { loadEpic } from "@/lib/ralph/epic-loader";
@@ -730,7 +730,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     it("is the hooks of a builtin:triage job", async () => {
       const issue = addIssue();
       const { job, run, sessionId } = await completedJob(issue, result());
-      const hooks = (await jobHooks(job, BUILTIN_DEFINITIONS))!;
+      const hooks = (await jobHooks(job, BUILTIN_PLAYBOOK_SOURCE))!;
 
       // The output must have the triage's shape; a well-formed triage `validateTriageOutput`
       // rejects is still accepted (and fails the run when applied).
@@ -756,7 +756,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       const started = await completedJob(issue, null);
       await db.update(jobs).set({ status: "running" }).where(eq(jobs.id, started.job.id));
       expect(
-        await (await jobHooks(started.job, BUILTIN_DEFINITIONS))!.onStarted!(
+        await (await jobHooks(started.job, BUILTIN_PLAYBOOK_SOURCE))!.onStarted!(
           db,
           started.job,
           "harness",
@@ -766,12 +766,16 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       });
       expect((await getTriageRun(db, started.run.id))?.status).toBe("running");
 
-      await (await jobHooks(started.job, BUILTIN_DEFINITIONS))!.onFailed!(db, started.job, "boom");
+      await (await jobHooks(started.job, BUILTIN_PLAYBOOK_SOURCE))!.onFailed!(
+        db,
+        started.job,
+        "boom",
+      );
       expect((await getTriageRun(db, started.run.id))?.status).toBe("failed");
       expect(JSON.stringify(responses(started.sessionId))).toContain("Triage failed: boom");
 
       const canceled = await completedJob(issue, null);
-      await (await jobHooks(canceled.job, BUILTIN_DEFINITIONS))!.onCanceled!(db, canceled.job);
+      await (await jobHooks(canceled.job, BUILTIN_PLAYBOOK_SOURCE))!.onCanceled!(db, canceled.job);
       expect((await getTriageRun(db, canceled.run.id))?.status).toBe("stopped");
       expect(responses(canceled.sessionId)).toEqual([
         { type: "response", body: "Triage was canceled. Nothing changed in Linear." },

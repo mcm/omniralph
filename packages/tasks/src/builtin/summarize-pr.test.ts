@@ -6,10 +6,10 @@ import { availableVariables, taskCatalog } from "../variables.js";
 const task = getBuiltinTask("builtin:summarize-pr")!;
 
 describe("builtin:summarize-pr", () => {
-  it("runs on builtin:reviewer as a summary-only review task posting to a sticky comment", () => {
+  it("runs with the reviewer persona as a summary-only review task posting to a sticky comment", () => {
     expect(task).toMatchObject({
       taskType: "review",
-      agentId: "builtin:reviewer",
+      agentId: "builtin:summarize-pr",
       triggers: ["pr.updated", "pr.mention", "review.rerun"],
       sink: "sticky-comment",
       tokenBudget: null,

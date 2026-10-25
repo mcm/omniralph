@@ -51,34 +51,32 @@ vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 // Fixture built-ins for run-spec jobs (the registry is filled by the port stories).
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const tasks = await importOriginal<typeof Tasks>();
-  const agent = tasks.AgentDefinition.parse({
-    id: "builtin:test-agent",
-    name: "Test agent",
-    systemPrompt: "You answer questions about code.",
-    taskTypes: ["query"],
-    tools: { builtin: ["Read", "Grep"] },
-  });
   const defined = (
     [
-      ["builtin:learn-rule", "learned-rule"],
-      ["builtin:reply-to-finding", "finding-thread"],
+      ["builtin:learn-rule", "learn-rule"],
+      ["builtin:reply-to-finding", "reply-to-finding"],
     ] as const
-  ).map(([id, sink]) =>
-    tasks.TaskDefinition.parse({
+  ).map(([id, role]) =>
+    tasks.Playbook.parse({
       id,
       name: id,
-      taskType: "query",
-      agentId: agent.id,
-      triggers: ["finding.dismissed", "finding.mention"],
+      role,
+      systemPrompt: "You answer questions about code.",
       promptTemplate: "{{finding.title}}",
-      sink,
+      tools: { builtin: ["Read", "Grep"] },
       tokenBudget: { tokens: 5000 },
     }),
   );
+  const getBuiltinPlaybook = (id: string) => defined.find((p) => p.id === id) ?? null;
+  const getBuiltinRunSpec = (id: string) => {
+    const playbook = getBuiltinPlaybook(id);
+    return playbook && tasks.playbookRunSpec(playbook);
+  };
   return {
     ...tasks,
-    getBuiltinAgent: (id: string) => (id === agent.id ? agent : null),
-    getBuiltinTask: (id: string) => defined.find((task) => task.id === id) ?? null,
+    getBuiltinPlaybook,
+    getBuiltinRunSpec,
+    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
   };
 });
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
@@ -549,7 +547,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         jobId,
         taskType: "query",
         pool: "short",
-        agent: { id: "builtin:test-agent" },
+        agent: { id: "builtin:learn-rule", systemPrompt: "You answer questions about code." },
         task: { id: "builtin:learn-rule" },
         trigger: RUN_PAYLOAD.trigger,
         repository: null,
@@ -575,7 +573,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       });
     });
 
-    it("fails a run-spec job whose task is unknown and claims the next job", async () => {
+    it("fails a run-spec job whose playbook is unknown and claims the next job", async () => {
       const { agent, job } = await claimOrg();
       const unknown = await job("claim.run", { taskId: "builtin:gone", payload: RUN_PAYLOAD });
       const next = await job();
@@ -584,14 +582,14 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(body.job.id).toBe(next);
       expect(await jobRow(unknown)).toMatchObject({
         status: "failed",
-        error: "Unknown task builtin:gone",
+        error: "Unknown playbook builtin:gone",
         deliveryCount: 0,
       });
-      // A run-spec job never reaches its type's outcome handler; an unknown task has no sink either.
+      // A run-spec job never reaches its type's outcome handler; an unknown playbook has no sink either.
       expect(outcomes).toEqual([`started:${next}:${agent.harnessId}`]);
     });
 
-    it("fails a run-spec job whose trigger the task doesn't allow", async () => {
+    it("fails a run-spec job whose trigger the playbook's role doesn't allow", async () => {
       const { agent, job } = await claimOrg();
       const jobId = await job("claim.run", {
         taskId: "builtin:learn-rule",
@@ -601,41 +599,45 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(res.status).toBe(204);
       expect(await jobRow(jobId)).toMatchObject({
         status: "failed",
-        error: "Task builtin:learn-rule can't be triggered by chat.request",
+        error: "Playbook builtin:learn-rule can't be triggered by chat.request",
       });
     });
 
-    /** A custom query task of `organizationId` on `agentId`, like the fixture built-ins. */
+    /** A custom chat task of `organizationId` on `agentId` (custom playbooks can't learn rules). */
     async function customTask(organizationId: string, agentId: string) {
       return insertTaskDefinition(db, organizationId, {
-        name: "Custom rule writer",
+        name: "Custom explainer",
         definition: {
           taskType: "query",
           agentId,
-          triggers: ["finding.dismissed"],
-          promptTemplate: "{{finding.title}}",
-          sink: "learned-rule",
+          triggers: ["chat.request"],
+          promptTemplate: "{{question}}",
+          sink: "chat-thread",
           tokenBudget: { tokens: 7000 },
         },
         requirements: {},
         createdBy: null,
       });
     }
+    const CHAT_PAYLOAD = { trigger: { kind: "chat.request", context: { question: "Why?" } } };
 
-    it("resolves the run spec of the organization's custom task, on a built-in or custom agent", async () => {
+    it("resolves the run spec of the organization's custom playbook, on a built-in or custom agent", async () => {
       const { organizationId, agent, job } = await claimOrg();
       const customAgent = await insertAgentDefinition(db, organizationId, {
         name: "Custom agent",
         definition: {
-          systemPrompt: "You write rules.",
+          systemPrompt: "You explain code.",
           taskTypes: ["query"],
           tools: { builtin: ["Read"] },
         },
         createdBy: null,
       });
-      for (const agentId of ["builtin:test-agent", customAgent.id]) {
+      for (const [agentId, systemPrompt] of [
+        ["builtin:learn-rule", "You answer questions about code."],
+        [customAgent.id, "You explain code."],
+      ] as const) {
         const task = await customTask(organizationId, agentId);
-        const jobId = await job("claim.run", { taskId: task.id, payload: RUN_PAYLOAD });
+        const jobId = await job("claim.run", { taskId: task.id, payload: CHAT_PAYLOAD });
         const body = (await (await claimAs(agent.accessToken)).json()) as JobStartResponse;
         if (body.action !== "run") throw new Error("expected run");
         expect(JobStartResponse.safeParse(body).success).toBe(true);
@@ -643,9 +645,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           jobId,
           taskType: "query",
           pool: "short",
-          agent: { id: agentId },
-          task: { id: task.id, name: "Custom rule writer", agentId },
-          trigger: RUN_PAYLOAD.trigger,
+          agent: { id: task.id, systemPrompt },
+          task: { id: task.id, name: "Custom explainer", agentId: task.id, sink: "chat-thread" },
+          trigger: CHAT_PAYLOAD.trigger,
           tokenBudget: 7000,
         });
       }
@@ -654,12 +656,12 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
 
     it("fails a run-spec job whose task belongs to another organization", async () => {
       const { agent, job } = await claimOrg();
-      const theirs = await customTask(orgId, "builtin:test-agent");
-      const jobId = await job("claim.run", { taskId: theirs.id, payload: RUN_PAYLOAD });
+      const theirs = await customTask(orgId, "builtin:learn-rule");
+      const jobId = await job("claim.run", { taskId: theirs.id, payload: CHAT_PAYLOAD });
       expect((await claimAs(agent.accessToken)).status).toBe(204);
       expect(await jobRow(jobId)).toMatchObject({
         status: "failed",
-        error: `Unknown task ${theirs.id}`,
+        error: `Unknown playbook ${theirs.id}`,
         deliveryCount: 0,
       });
     });
@@ -1320,7 +1322,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         .set({
           type: "task.run",
           taskType: "query",
-          taskId: "builtin:reply-to-finding",
+          taskId: "builtin:learn-rule",
           payload: RUN_PAYLOAD,
         })
         .where(eq(jobs.id, runSpec));

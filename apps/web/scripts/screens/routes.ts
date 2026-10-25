@@ -24,7 +24,7 @@ export type ScreenStep =
 
 const ids = FIXTURE_IDS;
 /** Built-in definitions: their route segment encodes the colon of `builtin:`. */
-const builtinAgent = encodeURIComponent("builtin:reviewer");
+const builtinAgent = encodeURIComponent("builtin:review-pr");
 const builtinTask = encodeURIComponent("builtin:review-pr");
 
 /**

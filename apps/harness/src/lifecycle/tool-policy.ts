@@ -1,5 +1,5 @@
 import { DISALLOWED_TOOLS, EXPLORATION_TOOLS } from "@omniralph/engine";
-import type { AgentDefinition, ToolSettings } from "@omniralph/tasks";
+import type { RunSpecAgent, ToolSettings } from "@omniralph/tasks";
 import type { ToolPolicy } from "../capabilities/index.js";
 
 /** Claude Code's shell tool: only with the task's `toolSettings.shell`. */
@@ -27,7 +27,7 @@ export const QUERY_TOOLS: readonly string[] = [
  * it further when the session is built (`narrowPermissions`), and only narrow.
  */
 export function queryToolPolicy(
-  agent: Pick<AgentDefinition, "tools">,
+  agent: Pick<RunSpecAgent, "tools">,
   settings: Pick<ToolSettings, "shell" | "network">,
   { files = true }: { files?: boolean } = {},
 ): ToolPolicy {

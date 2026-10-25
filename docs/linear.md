@@ -637,7 +637,7 @@ serves for the run's organization. When the routed repository's default branch d
 it runs as if no repository were routed.
 
 Like every query task, triage has no code of its own on the harness: the control panel sends the
-task (`builtin:triage`, on the agent definition `builtin:planner`, model `opus`, no token budget)
+playbook (`builtin:triage`, role `triage`, model `opus`, no token budget)
 with the job, the harness runs it through the fixed query lifecycle
 ([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)), and the `triage` sink validates the
 result and applies it to Linear.

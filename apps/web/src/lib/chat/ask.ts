@@ -23,7 +23,7 @@ import {
 } from "@omniralph/shared";
 import type { TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
-import { organizationDefinitions, taskRunRequirements } from "@/lib/definitions";
+import { organizationPlaybooks, taskRunRequirements } from "@/lib/definitions";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
   queryClaimableHarnesses,
@@ -200,7 +200,7 @@ export async function enqueueChatAsk(
   }
 
   const { task } = input;
-  const definitions = organizationDefinitions(db, input.organizationId);
+  const definitions = organizationPlaybooks(db, input.organizationId);
   const taskRequirements = await taskRunRequirements(definitions, task);
   const requirements: RunHarnessRequirements = {
     minHarnessVersion: runSpecMinHarnessVersion(task, taskRequirements.minHarnessVersion),

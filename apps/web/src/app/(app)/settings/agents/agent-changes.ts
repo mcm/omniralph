@@ -2,14 +2,8 @@
  * The agent form's draft (what its inputs hold) and its unsaved changes: the
  * "old → new" list an edit confirms. Pure, so the change list can be tested.
  */
-import type {
-  AgentDefinition,
-  HarnessTool,
-  LinearTool,
-  NamedContent,
-  SystemPromptMode,
-  TaskType,
-} from "@omniralph/tasks";
+import type { HarnessTool, LinearTool, NamedContent, SystemPromptMode } from "@omniralph/tasks";
+import type { CustomAgent } from "@/lib/api/definitions";
 import {
   formatSettingValue,
   settingChanges,
@@ -23,7 +17,6 @@ import {
 export interface AgentDraft {
   name: string;
   description: string;
-  taskTypes: TaskType[];
   model: string;
   fallbackModel: string;
   systemPromptMode: SystemPromptMode;
@@ -32,16 +25,14 @@ export interface AgentDraft {
   harnessTools: HarnessTool[];
   linearTools: LinearTool[];
   mcpServers: string[];
-  skills: NamedContent[];
   referenceDocs: NamedContent[];
 }
 
 /** The draft of `agent`, or of a new agent when null. */
-export function agentDraft(agent: Omit<AgentDefinition, "id"> | null): AgentDraft {
+export function agentDraft(agent: Omit<CustomAgent, "id"> | null): AgentDraft {
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
-    taskTypes: agent?.taskTypes ?? [],
     model: agent?.model ?? "",
     fallbackModel: agent?.fallbackModel ?? "",
     systemPromptMode: agent?.systemPromptMode ?? "append",
@@ -50,7 +41,6 @@ export function agentDraft(agent: Omit<AgentDefinition, "id"> | null): AgentDraf
     harnessTools: agent?.tools.harness ?? [],
     linearTools: agent?.tools.linear ?? [],
     mcpServers: agent?.tools.mcpServers ?? [],
-    skills: agent?.skills ?? [],
     referenceDocs: agent?.referenceDocs ?? [],
   };
 }
@@ -82,7 +72,6 @@ export function agentValues(draft: AgentDraft): Record<string, SettingValue> {
   return {
     name: draft.name.trim(),
     description: draft.description.trim(),
-    taskTypes: draft.taskTypes,
     model: draft.model.trim(),
     fallbackModel: draft.fallbackModel.trim(),
     systemPromptMode: draft.systemPromptMode,
@@ -91,7 +80,6 @@ export function agentValues(draft: AgentDraft): Record<string, SettingValue> {
     harnessTools: draft.harnessTools,
     linearTools: draft.linearTools,
     mcpServers: draft.mcpServers,
-    skills: draft.skills.map(documentKey),
     referenceDocs: draft.referenceDocs.map(documentKey),
   };
 }
@@ -100,7 +88,6 @@ export function agentValues(draft: AgentDraft): Record<string, SettingValue> {
 export const AGENT_SPECS: readonly SettingSpec[] = [
   { key: "name", label: "Name" },
   { key: "description", label: "Description" },
-  { key: "taskTypes", label: "Suited task types" },
   { key: "model", label: "Model" },
   { key: "fallbackModel", label: "Fallback model" },
   {
@@ -113,7 +100,6 @@ export const AGENT_SPECS: readonly SettingSpec[] = [
   { key: "harnessTools", label: "Harness tools" },
   { key: "linearTools", label: "Linear tools" },
   { key: "mcpServers", label: "MCP servers" },
-  { key: "skills", label: "Skills", format: formatDocuments },
   { key: "referenceDocs", label: "Reference docs", format: formatDocuments },
 ];
 

@@ -21,9 +21,6 @@ import {
   HARNESS_TOOLS,
   LINEAR_TOOLS,
   SYSTEM_PROMPT_MODES,
-  TASK_TYPES,
-  type AgentDefinition,
-  type AgentDefinitionInput,
   type NamedContent,
   type SystemPromptMode,
 } from "@omniralph/tasks";
@@ -35,7 +32,12 @@ import { ConfirmChangesDialog } from "@/components/settings-card";
 import { useApiMutation } from "@/components/use-api-mutation";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
-import { definitionPath, savedDefinitionSchema } from "@/lib/api/definitions";
+import {
+  definitionPath,
+  savedDefinitionSchema,
+  type CustomAgent,
+  type CustomAgentInput,
+} from "@/lib/api/definitions";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import type { HarnessChoices } from "@/lib/harnesses/editor-choices";
 import { withDefault } from "@/lib/settings/changes";
@@ -50,18 +52,18 @@ import { agentHref } from "./agent-parts";
 import { Choices, EditorActions, errorFor, mcpServerOptions } from "./form-parts";
 
 /** What the agent form submits: a definition without its ID (the row's). */
-export type AgentDefinitionFields = Omit<AgentDefinitionInput, "id">;
+export type AgentDefinitionFields = Omit<CustomAgentInput, "id">;
 
 /** The agent being edited (its definition without the ID), or null to create one. */
 export interface AgentFormProps {
-  agent: (Omit<AgentDefinition, "id"> & { id: string }) | null;
+  agent: (Omit<CustomAgent, "id"> & { id: string }) | null;
   /** The models and installables the organization's harnesses report. */
   choices: HarnessChoices;
   /** Field errors to show from the start (component tests). */
   initialErrors?: FieldErrors;
 }
 
-/** Editable named documents (skills or reference docs), errors keyed `<field>.<index>.<name|content>`. */
+/** Editable reference docs, errors keyed `<field>.<index>.<name|content>`. */
 function Documents({
   field,
   noun,
@@ -70,7 +72,7 @@ function Documents({
   errors,
   disabled,
 }: {
-  field: "skills" | "referenceDocs";
+  field: "referenceDocs";
   noun: string;
   documents: NamedContent[];
   onChange: (documents: NamedContent[]) => void;
@@ -161,11 +163,9 @@ export function agentInput(draft: AgentDraft): AgentDefinitionFields {
       linear: draft.linearTools,
       mcpServers: draft.mcpServers,
     },
-    skills: draft.skills,
     referenceDocs: draft.referenceDocs,
     model: draft.model.trim() || null,
     fallbackModel: draft.fallbackModel.trim() || null,
-    taskTypes: draft.taskTypes,
   };
 }
 
@@ -259,21 +259,6 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
                     aria-invalid={Boolean(errors.description)}
                     value={draft.description}
                     onChange={(e) => set({ description: e.target.value })}
-                  />
-                </Field>
-                <Field
-                  label="Suited task types"
-                  htmlFor="agent-task-types"
-                  description="Tasks of these types may run on the agent."
-                  error={errorFor(errors, "taskTypes")}
-                  required
-                >
-                  <Choices
-                    id="agent-task-types"
-                    options={TASK_TYPES}
-                    value={draft.taskTypes}
-                    onChange={(taskTypes) => set({ taskTypes })}
-                    disabled={pending}
                   />
                 </Field>
                 <div className="definition-grid-wide">
@@ -430,7 +415,7 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
                   label="MCP servers"
                   htmlFor="agent-tools-mcp"
                   description={withDefault(
-                    "Pick an installable's server (<package>:<server>; its tasks then need that installable), or type the name of an MCP server configured on the harnesses.",
+                    "Pick an installable's server (<package>:<server>; its tasks then need that installable).",
                   )}
                   error={errorFor(errors, "tools.mcpServers")}
                 >
@@ -440,30 +425,10 @@ export function AgentForm({ agent, choices, initialErrors = {} }: AgentFormProps
                     value={draft.mcpServers}
                     onChange={(mcpServers) => set({ mcpServers })}
                     options={mcpServerOptions(choices)}
-                    allowCustom
                     placeholder="Add an MCP server…"
                     className="settings-mono"
                   />
                 </Field>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Skills</CardTitle>
-                <CardDescription>
-                  Instructions the agent loads when a task calls for them.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Documents
-                  field="skills"
-                  noun="skill"
-                  documents={draft.skills}
-                  onChange={(skills) => set({ skills })}
-                  errors={errors}
-                  disabled={pending}
-                />
               </CardContent>
             </Card>
 

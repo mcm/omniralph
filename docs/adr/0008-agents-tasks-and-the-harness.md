@@ -63,6 +63,15 @@ task types, pools, trigger kinds, sink kinds, harness and Linear tools), the var
 (`variables.ts`), the template engine (`template.ts`) and the built-in definitions
 (`builtins.ts`, `builtin/*.ts`).
 
+_Since TOOL-592 a built-in is one **playbook** (`Playbook` in `playbooks.ts`: role, prompts,
+model, tools, requirements) instead of an agent and a task kept in sync. The role fixes the task
+type, triggers and sink (`PLAYBOOK_ROLES`); agent task types and skills, `validateAgentForTask` and
+`AgentDefinition` are gone (the run spec's agent half is `RunSpecAgent`). `playbookRunSpec` builds
+the run spec's `agent` and `task` from a playbook, so the harness protocol is unchanged, and the
+control panel resolves runs through a `PlaybookSource` (`organizationPlaybooks`). The built-in
+agents (`builtin:reviewer`, `builtin:engineer`, …) folded into their playbooks, which keep their
+tasks' IDs. See [definitions.md](../definitions.md)._
+
 - **IDs.** Built-ins are `builtin:<name>`; an organization's own definitions are UUIDs
   ([organization definitions](#organization-definitions)).
 - **Validation.** `validateAgentForTask` rejects an agent that doesn't list the task's type, or

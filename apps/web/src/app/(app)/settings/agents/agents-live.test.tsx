@@ -4,7 +4,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BUILTIN_AGENTS, type AgentDefinition } from "@omniralph/tasks";
+import { getBuiltinRunSpec } from "@omniralph/tasks";
+import type { CustomAgent } from "@/lib/api/definitions";
 import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
@@ -44,19 +45,18 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const CLONE_ID = "22222222-2222-4222-8222-222222222222";
-const reviewer = BUILTIN_AGENTS.find((agent) => agent.id === "builtin:reviewer") as AgentDefinition;
+const reviewer: CustomAgent = getBuiltinRunSpec("builtin:review-pr")!.agent;
 const keys = definitionKeys(queryKeys(TEST_ORGANIZATION_ID));
 
-const summary = (agent: AgentDefinition, builtin: boolean): AgentSummary => ({
+const summary = (agent: CustomAgent, builtin: boolean): AgentSummary => ({
   id: agent.id,
   name: agent.name,
   description: agent.description,
   builtin,
-  taskTypes: agent.taskTypes,
   model: agent.model,
 });
 
-const custom = (changes: Partial<AgentDefinition> = {}): AgentDefinition => ({
+const custom = (changes: Partial<CustomAgent> = {}): CustomAgent => ({
   ...reviewer,
   id: AGENT_ID,
   name: "Security reviewer",
@@ -64,13 +64,13 @@ const custom = (changes: Partial<AgentDefinition> = {}): AgentDefinition => ({
   ...changes,
 });
 
-const detail = (agent: AgentDefinition = custom(), builtin = false): AgentDetail => ({
+const detail = (agent: CustomAgent = custom(), builtin = false): AgentDetail => ({
   agent,
   builtin,
   tasks: [],
 });
 
-const list = (...agents: AgentDefinition[]): AgentList => ({
+const list = (...agents: CustomAgent[]): AgentList => ({
   agents: [summary(reviewer, true), ...agents.map((agent) => summary(agent, false))],
 });
 
@@ -104,7 +104,7 @@ describe("AgentsView", () => {
     mockFetch({ "GET /api/ui/agents": () => jsonResponse(agents) });
     const client = renderView(<AgentsView />);
     expect(screen.getByLabelText("Loading the agents")).toBeTruthy();
-    expect(await screen.findByRole("link", { name: "Reviewer" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "Review a pull request" })).toBeTruthy();
     expect(screen.queryByText("Security reviewer")).toBeNull();
 
     agents = list(custom());
@@ -122,19 +122,19 @@ describe("AgentsView", () => {
     expect(await screen.findByText("Couldn't load the agents")).toBeTruthy();
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
-    expect(await screen.findByRole("link", { name: "Reviewer" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "Review a pull request" })).toBeTruthy();
   });
 });
 
 describe("AgentDetailView", () => {
   it("loads a built-in by its encoded ID", async () => {
-    navigation.id = encodeURIComponent("builtin:reviewer");
+    navigation.id = encodeURIComponent("builtin:review-pr");
     const seen = mockFetch({
-      "GET /api/ui/agents/builtin%3Areviewer": detail(reviewer, true),
+      "GET /api/ui/agents/builtin%3Areview-pr": detail(reviewer, true),
     });
     renderView(<AgentDetailView />, "member");
     expect(await screen.findByRole("heading", { name: reviewer.name })).toBeTruthy();
-    expect(seen.map((request) => request.path)).toEqual(["/api/ui/agents/builtin%3Areviewer"]);
+    expect(seen.map((request) => request.path)).toEqual(["/api/ui/agents/builtin%3Areview-pr"]);
     expect(screen.queryByRole("button", { name: /Clone/ })).toBeNull();
   });
 
@@ -249,9 +249,9 @@ describe("Agent editor", () => {
   });
 
   it("doesn't edit a built-in", async () => {
-    navigation.id = encodeURIComponent("builtin:reviewer");
+    navigation.id = encodeURIComponent("builtin:review-pr");
     mockFetch({
-      "GET /api/ui/agents/builtin%3Areviewer": detail(reviewer, true),
+      "GET /api/ui/agents/builtin%3Areview-pr": detail(reviewer, true),
       "GET /api/ui/agents/form-options": CHOICES,
     });
     renderView(<EditAgentView />);

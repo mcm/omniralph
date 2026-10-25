@@ -18,21 +18,20 @@ import type {
   LinearDocument,
   LinearGateway,
 } from "@/lib/linear/gateway";
-import { organizationDefinitions, type DefinitionSource } from "@/lib/definitions";
+import { organizationPlaybooks, type PlaybookSource } from "@/lib/definitions";
 
 /**
- * The Linear tools a job's run may call: those its task's agent lists, when
- * the task turns on `toolSettings.linearRead`. None for a legacy job or an
- * unknown task.
+ * The Linear tools a job's run may call: those its playbook lists, when it
+ * turns on `toolSettings.linearRead`. None for a legacy job or an unknown
+ * playbook.
  */
 export async function runLinearTools(
   job: Pick<Job, "taskId">,
-  definitions: DefinitionSource,
+  playbooks: PlaybookSource,
 ): Promise<LinearTool[]> {
   if (job.taskId === null) return [];
-  const task = await definitions.getTask(job.taskId);
-  if (!task?.toolSettings.linearRead) return [];
-  return (await definitions.getAgent(task.agentId))?.tools.linear ?? [];
+  const playbook = await playbooks.getPlaybook(job.taskId);
+  return playbook?.toolSettings.linearRead ? playbook.tools.linear : [];
 }
 
 export function runLinearIssue(issue: IssueSummary): RunLinearIssue {
@@ -100,7 +99,7 @@ export async function serveRunLinearTool(
   const db = getDb();
   const job = await getJobForHarness(db, jobId, principal.harnessId);
   if (!job) return notFound();
-  const tools = await runLinearTools(job, organizationDefinitions(db, job.organizationId));
+  const tools = await runLinearTools(job, organizationPlaybooks(db, job.organizationId));
   if (!tools.includes(tool)) {
     return Response.json({ error: "linear_tool_not_allowed" }, { status: 403 });
   }

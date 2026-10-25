@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { getBuiltinAgent, getBuiltinTask } from "../builtins.js";
+import { getBuiltinRunSpec, getBuiltinTask } from "../builtins.js";
 import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, VARIABLES } from "../variables.js";
 
@@ -47,23 +47,22 @@ function context({ finding, hunk, note }: Fixture): Record<string, unknown> {
 }
 
 const task = getBuiltinTask("builtin:learn-rule")!;
-const agent = getBuiltinAgent("builtin:rule-writer")!;
+const agent = getBuiltinRunSpec("builtin:learn-rule")!.agent;
 
 function render(fixture: Fixture): string {
   return renderTemplate(task.promptTemplate, context(fixture), VARIABLES, task.variableLimits);
 }
 
 describe("builtin:learn-rule", () => {
-  it("runs on builtin:rule-writer as a query task with no tools and no preset", () => {
+  it("runs with the rule writer persona as a query task with no tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      taskTypes: ["query"],
       tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
-      model: null,
+      model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
       taskType: "query",
-      agentId: "builtin:rule-writer",
+      agentId: "builtin:learn-rule",
       triggers: ["finding.dismissed"],
       sink: "learned-rule",
       model: "claude-sonnet-5-5",

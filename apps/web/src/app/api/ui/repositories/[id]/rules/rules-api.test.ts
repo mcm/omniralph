@@ -63,7 +63,7 @@ const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
 const { dismissFindingWithFeedback } = await import("@/lib/reviews/feedback");
 const { jobHooks, parseSinkResult, sinkFor } = await import("@/lib/sinks");
-const { organizationDefinitions } = await import("@/lib/definitions");
+const { organizationPlaybooks } = await import("@/lib/definitions");
 const { enqueueLearnRule } = await import("@/lib/rules/learn");
 const { ruleView } = await import("@/lib/rules/display");
 
@@ -226,7 +226,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
 
   /** Applies a completed rule generation through the job's hooks (its task's `learned-rule` sink), like `/result` does. */
   async function onLearnRuleJobCompleted(_db: Database, job: Job): Promise<unknown> {
-    const hooks = await jobHooks(job, organizationDefinitions(db, job.organizationId));
+    const hooks = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
     return hooks!.onCompleted!(db, job);
   }
 

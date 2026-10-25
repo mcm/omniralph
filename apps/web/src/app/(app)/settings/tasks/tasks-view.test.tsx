@@ -139,7 +139,6 @@ describe("TaskDetailContent", () => {
     const task: TaskDefinition = {
       ...implementStory,
       pushTiming: "end",
-      draftPullRequest: "early",
       prDescriptionTaskId: "builtin:describe-pr",
     };
     const render = (isAdmin: boolean) =>
@@ -158,7 +157,7 @@ describe("TaskDetailContent", () => {
     expect(html).toContain("Built-in");
     expect(html).toContain(">Coding<");
     expect(html).toContain("Once, when every story is done");
-    expect(html).toContain("After the first story");
+    expect(html).not.toContain("Draft PR");
     expect(html).toContain('href="/settings/tasks/builtin%3Adescribe-pr"');
     expect(html).toContain(">Describe PR<");
     expect(html).toContain(">0.11.0<");

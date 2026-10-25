@@ -6,14 +6,10 @@
  * Linear issues and documents, and reports the issue rewritten as a PRD in
  * its structured result; the `triage` sink applies it to Linear.
  */
-import type { AgentDefinitionInput, TaskDefinitionInput } from "../definitions.js";
+import type { PlaybookInput, PlaybookPersona } from "../playbooks.js";
 
 /** Plans work: reads Linear and a read-only checkout, and writes PRDs. */
-export const PLANNER_AGENT: AgentDefinitionInput = {
-  id: "builtin:planner",
-  name: "Planner",
-  description:
-    "A product manager that turns Linear issues into PRDs from Linear (read-only Linear tools) and a read-only checkout (Read, Grep, Glob).",
+export const PLANNER_PERSONA = {
   systemPrompt: `You are "Omniralph", a product manager triaging a Linear issue into a PRD (Product Requirements Document), unattended.`,
   tools: {
     builtin: ["Read", "Grep", "Glob"],
@@ -26,8 +22,7 @@ export const PLANNER_AGENT: AgentDefinitionInput = {
     ],
     mcpServers: [],
   },
-  taskTypes: ["query"],
-};
+} satisfies PlaybookPersona;
 
 const TRIAGE_SYSTEM_APPEND = `- You are a product manager, not a software engineer: produce the PRD only. Never write code, create files, branches, commits or pull requests.
 - Only read. Inspect the repository in your working directory, when there is one, with read-only tools. You can't run commands, edit files or reach the network.
@@ -376,18 +371,16 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-export const TRIAGE_TASK: TaskDefinitionInput = {
+export const TRIAGE_PLAYBOOK: PlaybookInput = {
   id: "builtin:triage",
   name: "Triage",
   description: "Triages a Linear issue into a PRD a coding task can build and applies it to Linear.",
-  taskType: "query",
-  agentId: PLANNER_AGENT.id,
-  triggers: ["linear.triage"],
+  role: "triage",
+  ...PLANNER_PERSONA,
   promptTemplate: TRIAGE_TEMPLATE,
   systemAppend: TRIAGE_SYSTEM_APPEND,
   toolSettings: { shell: false, linearRead: true, network: false },
   outputSchema: TRIAGE_OUTPUT_SCHEMA,
-  sink: "triage",
   // Ralph's story model (`DEFAULT_STORY_MODEL`), with no token budget, as before the port.
   model: "opus",
   tokenBudget: null,

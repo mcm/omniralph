@@ -9,7 +9,7 @@ import {
   type RalphPushPayload,
   type RalphStoryPayload,
 } from "@omniralph/shared";
-import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
+import { getBuiltinPlaybook, type Playbook } from "@omniralph/tasks";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -33,57 +33,44 @@ const {
   storyLimits,
 } = await import("./coding");
 
-const story = getBuiltinTask("builtin:implement-story")!;
-const request = getBuiltinTask("builtin:handle-request")!;
-const strict: TaskDefinition = {
+const story = getBuiltinPlaybook("builtin:implement-story")!;
+const request = getBuiltinPlaybook("builtin:handle-request")!;
+const strict: Playbook = {
   ...story,
-  id: "custom:strict-story",
-  maxAttemptsPerStory: 1,
-  maxRoundsPerStory: 4,
-  stallRounds: 2,
-  maxIterationsPerRun: 7,
+  id: "builtin:strict-story",
+  coding: { maxAttemptsPerStory: 1, maxRoundsPerStory: 4, stallRounds: 2, maxIterationsPerRun: 7 },
 };
-const cautious: TaskDefinition = {
+const cautious: Playbook = {
   ...request,
-  id: "custom:cautious-request",
-  maxReviewRounds: 1,
-  maxFixRounds: 0,
+  id: "builtin:cautious-request",
+  coding: { maxReviewRounds: 1, maxFixRounds: 0 },
 };
-const describeTask = getBuiltinTask("builtin:describe-pr")!;
-const customDescribe: TaskDefinition = { ...describeTask, id: "custom:describe-pr" };
-const describing: TaskDefinition = {
+const describeTask = getBuiltinPlaybook("builtin:describe-pr")!;
+const customDescribe: Playbook = { ...describeTask, id: "builtin:custom-describe-pr" };
+const describing: Playbook = {
   ...story,
-  id: "custom:describing-story",
-  prDescriptionTaskId: customDescribe.id,
+  id: "builtin:describing-story",
+  coding: { prDescriptionPlaybookId: customDescribe.id },
 };
-const misdescribing: TaskDefinition = {
+const misdescribing: Playbook = {
   ...story,
-  id: "custom:misdescribing-story",
-  prDescriptionTaskId: request.id,
+  id: "builtin:misdescribing-story",
+  coding: { prDescriptionPlaybookId: request.id },
 };
-const atTheEnd: TaskDefinition = { ...story, id: "custom:push-at-end", pushTiming: "end" };
-const earlyDraft: TaskDefinition = {
-  ...story,
-  id: "custom:early-draft",
-  draftPullRequest: "early",
-};
-const lateDraft: TaskDefinition = { ...story, id: "custom:late-draft", draftPullRequest: "end" };
+const atTheEnd: Playbook = { ...story, id: "builtin:push-at-end", coding: { pushTiming: "end" } };
+const PLAYBOOKS = [
+  story,
+  atTheEnd,
+  request,
+  strict,
+  cautious,
+  describeTask,
+  customDescribe,
+  describing,
+  misdescribing,
+];
 const DEFINITIONS = {
-  getTask: (id: string) =>
-    [
-      story,
-      atTheEnd,
-      earlyDraft,
-      lateDraft,
-      request,
-      strict,
-      cautious,
-      describeTask,
-      customDescribe,
-      describing,
-      misdescribing,
-    ].find((t) => t.id === id) ?? null,
-  getAgent: () => null,
+  getPlaybook: (id: string) => PLAYBOOKS.find((p) => p.id === id) ?? null,
 };
 
 const repository = (
@@ -350,22 +337,9 @@ describe("push and draft PR timing", () => {
     );
   });
 
-  it("opens drafts early per the story task's draftPullRequest, else the repository's openPullRequestEarly", async () => {
-    // The built-in leaves draftPullRequest unset: today's setting applies.
+  it("opens drafts early per the repository's openPullRequestEarly", async () => {
     expect(await opensPullRequestEarly(repository(early(true)), DEFINITIONS)).toBe(true);
     expect(await opensPullRequestEarly(repository(early(false)), DEFINITIONS)).toBe(false);
-    expect(
-      await opensPullRequestEarly(
-        repository({ storyTaskId: earlyDraft.id, ...early(false) }),
-        DEFINITIONS,
-      ),
-    ).toBe(true);
-    expect(
-      await opensPullRequestEarly(
-        repository({ storyTaskId: lateDraft.id, ...early(true) }),
-        DEFINITIONS,
-      ),
-    ).toBe(false);
     // Pushing only at the end, there's no branch for an early draft.
     expect(
       await opensPullRequestEarly(

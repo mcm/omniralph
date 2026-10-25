@@ -5,16 +5,12 @@
  * request) is in the closing rules section of each task's template, so a
  * request run never reads about epics, PRDs or stories.
  */
-import type { AgentDefinitionInput } from "../definitions.js";
+import type { PlaybookPersona } from "../playbooks.js";
 
 /** A copy of `GOOD_NEIGHBOR_RULE` in `@omniralph/ralph` (a test checks they agree). */
 export const GOOD_NEIGHBOR_RULE = `- Be a good neighbor: always assume you share this machine's CPU, memory, disk and network with other sessions and workloads, and never assume what resources are available. Run tests and builds the usual way, one at a time. Never stress test by saturating all cores, running several instances of a test suite at once, or otherwise exhausting the machine's resources.`;
 
-export const ENGINEER_AGENT: AgentDefinitionInput = {
-  id: "builtin:engineer",
-  name: "Engineer",
-  description:
-    "Omniralph's autonomous engineer: changes code in the run's branch worktree with Claude Code's tools, runs the quality gates, and leaves shipping to the harness.",
+export const ENGINEER_PERSONA = {
   systemPrompt: `You are "Omniralph", an autonomous engineer working in a git worktree of a repository.
 - You may run subagents and commands in the background. To wait for them, end your turn waiting, as the rules of your task say: the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
 ${GOOD_NEIGHBOR_RULE}`,
@@ -25,5 +21,4 @@ ${GOOD_NEIGHBOR_RULE}`,
     linear: [],
     mcpServers: [],
   },
-  taskTypes: ["coding"],
-};
+} satisfies PlaybookPersona;
