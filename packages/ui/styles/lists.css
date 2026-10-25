@@ -1,0 +1,273 @@
+/*
+ * Lists: the data table and its phone cards (Design rule 16), and list rows. A row's
+ * link is stretched over the row (`::after`), and the row's other controls sit above it,
+ * so the whole row is clickable without nesting controls inside the link.
+ */
+
+/* Table (wider than 768 px) */
+.or-tblwrap {
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+}
+
+.or-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-tbl th {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--or-line);
+  color: var(--or-ter);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.or-tbl td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--or-line);
+  vertical-align: middle;
+}
+
+.or-tbl tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.or-tbl .or-tbl__cell--center {
+  text-align: center;
+}
+
+.or-tbl .or-tbl__cell--end {
+  text-align: right;
+}
+
+.or-tbl td.or-mono {
+  color: var(--or-sec);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.or-tbl__title {
+  font-weight: 500;
+}
+
+.or-tbl__row--linked {
+  position: relative;
+}
+
+.or-tbl__row--linked:hover {
+  background: var(--or-hover);
+}
+
+.or-tbl__row--bad,
+.or-cardrow--bad {
+  background: var(--or-fail-tint);
+}
+
+.or-tbl__row[aria-current="true"],
+.or-cardrow[aria-current="true"] {
+  background: var(--or-sel);
+}
+
+/* Cards (768 px and narrower) */
+.or-cards {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-cardrow {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+  color: var(--or-text);
+}
+
+.or-cardrow--linked:hover {
+  background: var(--or-hover);
+}
+
+.or-cardrow__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+  font-size: 12px;
+}
+
+.or-cardrow__time {
+  margin-left: auto;
+  color: var(--or-ter);
+}
+
+.or-cardrow__title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.or-cardrow__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The link stretched over a table row or card */
+.or-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.or-row-link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.or-row-link:focus-visible {
+  outline: none;
+}
+
+.or-row-link:focus-visible::after {
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
+  border-radius: inherit;
+}
+
+/* Controls in a linked row stay above its link */
+.or-tbl__row--linked :is(a, button, input, label, select, textarea):not(.or-row-link),
+.or-cardrow--linked :is(a, button, input, label, select, textarea):not(.or-row-link) {
+  position: relative;
+  z-index: 1;
+}
+
+/* List rows */
+.or-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--or-line);
+  color: var(--or-text);
+}
+
+.or-row:hover {
+  background: var(--or-hover);
+}
+
+.or-row[aria-current="true"] {
+  background: var(--or-sel);
+}
+
+.or-row__link {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.or-row__link:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
+}
+
+.or-row__select,
+.or-row__actions,
+.or-row__meta :is(a, button) {
+  position: relative;
+  z-index: 1;
+}
+
+.or-row__select {
+  margin-top: 1px;
+}
+
+.or-row__dot {
+  margin-top: 6px;
+}
+
+.or-row__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.or-row__kind {
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-row__title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.or-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.or-row__time {
+  flex: none;
+  width: 44px;
+  color: var(--or-ter);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.or-row__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 768px) {
+  .or-tblwrap {
+    display: none;
+  }
+
+  .or-cards {
+    display: flex;
+  }
+}
