@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { syncJobsDue } from "@/lib/dispatch/due";
 import { organizationDefinitions } from "@/lib/definitions";
 import { jobHooks } from "@/lib/sinks";
+import { liveRoute } from "@/lib/live/request";
 
 /** Delay before a retryable failure may be claimed again, when the harness doesn't name one. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
@@ -25,7 +26,7 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
  * updates the job type's state, e.g. a review's final failure fails the
  * review and posts a failure note.
  */
-export async function POST(req: Request, ctx: JobRouteContext): Promise<Response> {
+async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireHarness(req);
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
@@ -70,3 +71,5 @@ export async function POST(req: Request, ctx: JobRouteContext): Promise<Response
       return Response.json({ status: outcome.status } satisfies JobOutcomeResponse);
   }
 }
+
+export const POST = liveRoute(post);

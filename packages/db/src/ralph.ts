@@ -11,6 +11,7 @@ import {
   desc,
   eq,
   exists,
+  getTableColumns,
   inArray,
   isNotNull,
   isNull,
@@ -22,11 +23,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { ChatPlatform } from "./chat.js";
+import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
 import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import {
   effectiveRepositorySwitches,
+  recordRepositorySettingsChange,
   switchedOn,
   type Repository,
   type RepositoryCodingPath,
@@ -140,6 +143,7 @@ export async function updateRepositoryRalphSettings(
     })
     .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
     .returning();
+  if (row) recordRepositorySettingsChange(db, row, "repository.coding");
   return row ?? null;
 }
 
@@ -255,6 +259,7 @@ export async function createRun(
           baseBranch: baseBranch ?? "",
         });
       }
+      recordRunChange(tx, row);
       return row;
     });
     if (row) return { run: row, created: true };
@@ -410,7 +415,18 @@ export async function updateRun(
     .set({ ...update, updatedAt: new Date() })
     .where(eq(ralphRuns.id, runId))
     .returning();
+  if (row) recordRunChange(db, row);
   return row ?? null;
+}
+
+/** Records a live `run` change for a ralph run (epic or request). */
+function recordRunChange(db: Executor, run: { id: string; organizationId: string }): void {
+  recordChange(db, {
+    resource: "run",
+    ids: [run.id],
+    runId: run.id,
+    organizationId: run.organizationId,
+  });
 }
 
 /** Replies kept as a run's guidance (the latest). */
@@ -438,6 +454,7 @@ export async function appendGuidance(
     })
     .where(eq(ralphRuns.id, runId))
     .returning();
+  if (row) recordRunChange(db, row);
   return row ?? null;
 }
 
@@ -460,6 +477,7 @@ export async function appendProgress(
     })
     .where(eq(ralphRuns.id, runId))
     .returning();
+  if (row) recordRunChange(db, row);
   return row ?? null;
 }
 
@@ -919,7 +937,10 @@ export interface NewRalphLaneInput {
 /** The run's lane in `repositoryId`, created with `input`'s branches if it has none yet. */
 export async function ensureLane(db: Executor, input: NewRalphLaneInput): Promise<RalphLane> {
   const [row] = await db.insert(ralphLanes).values(input).onConflictDoNothing().returning();
-  if (row) return row;
+  if (row) {
+    await recordLaneChange(db, row, {});
+    return row;
+  }
   const existing = await getLaneByRepository(db, input.runId, input.repositoryId);
   if (!existing) throw new Error(`Failed to create a lane of ralph run ${input.runId}`);
   return existing;
@@ -1135,12 +1156,49 @@ export async function updateLane(
   id: string,
   update: RalphLaneUpdate,
 ): Promise<RalphLane | null> {
-  const [row] = await db
+  const [updated] = await db
     .update(ralphLanes)
     .set({ ...update, updatedAt: new Date() })
-    .where(eq(ralphLanes.id, id))
-    .returning();
-  return row ?? null;
+    .from(ralphRuns)
+    .where(and(eq(ralphLanes.id, id), eq(ralphRuns.id, ralphLanes.runId)))
+    .returning({ lane: getTableColumns(ralphLanes), organizationId: ralphRuns.organizationId });
+  if (!updated) return null;
+  await recordLaneChange(db, updated.lane, update, updated.organizationId);
+  return updated.lane;
+}
+
+/** Lane columns whose change is the pull or merge request's (a `pull_request` change too). */
+const PULL_REQUEST_LANE_FIELDS = ["prNumber", "prUrl", "prClosed", "prMerged"] as const;
+
+/**
+ * Records a lane's live changes: its run's, and its pull request's when `update`
+ * touched one of its fields. Looks up the run's organization unless given.
+ */
+async function recordLaneChange(
+  db: Executor,
+  lane: { id: string; runId: string },
+  update: RalphLaneUpdate,
+  organizationId?: string,
+): Promise<void> {
+  if (!currentChangeCollector()) return;
+  const orgId =
+    organizationId ??
+    (
+      await db
+        .select({ organizationId: ralphRuns.organizationId })
+        .from(ralphRuns)
+        .where(eq(ralphRuns.id, lane.runId))
+    )[0]?.organizationId;
+  if (!orgId) return;
+  recordRunChange(db, { id: lane.runId, organizationId: orgId });
+  if (PULL_REQUEST_LANE_FIELDS.some((field) => field in update)) {
+    recordChange(db, {
+      resource: "pull_request",
+      ids: [lane.id],
+      runId: lane.runId,
+      organizationId: orgId,
+    });
+  }
 }
 
 /**
@@ -1258,6 +1316,8 @@ export async function upsertStories(
           updatedAt: new Date(),
         },
       });
+    const run = currentChangeCollector() ? await getRun(db, runId) : null;
+    if (run) recordRunChange(db, run);
   }
   return listStories(db, runId);
 }
@@ -1307,12 +1367,15 @@ export async function updateStory(
   id: string,
   update: RalphStoryUpdate,
 ): Promise<RalphStory | null> {
-  const [row] = await db
+  const [updated] = await db
     .update(ralphStories)
     .set({ ...update, updatedAt: new Date() })
-    .where(eq(ralphStories.id, id))
-    .returning();
-  return row ?? null;
+    .from(ralphRuns)
+    .where(and(eq(ralphStories.id, id), eq(ralphRuns.id, ralphStories.runId)))
+    .returning({ story: getTableColumns(ralphStories), organizationId: ralphRuns.organizationId });
+  if (!updated) return null;
+  recordRunChange(db, { id: updated.story.runId, organizationId: updated.organizationId });
+  return updated.story;
 }
 
 // ── Live messages ────────────────────────────────────────────────────────────

@@ -1,0 +1,1 @@
+ALTER TABLE "harnesses" ADD COLUMN "live_online" boolean DEFAULT false NOT NULL;

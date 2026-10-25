@@ -16,12 +16,13 @@ import {
   hitRateLimit,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Exchanges a refresh token for a 15-minute access token and rotates it.
  * Presenting an already-used refresh token revokes its family and the harness.
  */
-export async function POST(req: Request): Promise<Response> {
+async function post(req: Request): Promise<Response> {
   const db = getDb();
   const ip = clientIp(req);
   const now = new Date();
@@ -77,3 +78,5 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 }
+
+export const POST = liveRoute(post);

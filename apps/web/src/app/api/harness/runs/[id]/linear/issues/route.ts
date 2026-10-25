@@ -1,13 +1,14 @@
 import { LinearSearchQuery } from "@omniralph/shared";
 import type { JobRouteContext } from "@/lib/harness-api/jobs";
 import { runLinearIssue, serveRunLinearTool } from "@/lib/runs/linear";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * `linear_search_issues`: issues of the run's organization's Linear workspace
  * matching `query` (full text), best match first, at most `first` (default
  * 10, at most 25). 400 `invalid_query` for a missing or too long query.
  */
-export async function GET(req: Request, ctx: JobRouteContext): Promise<Response> {
+async function get(req: Request, ctx: JobRouteContext): Promise<Response> {
   const params = new URL(req.url).searchParams;
   const search = LinearSearchQuery.safeParse({
     query: params.get("query") ?? undefined,
@@ -20,3 +21,5 @@ export async function GET(req: Request, ctx: JobRouteContext): Promise<Response>
     ),
   }));
 }
+
+export const GET = liveRoute(get);

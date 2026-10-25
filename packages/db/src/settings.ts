@@ -4,7 +4,7 @@
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
-import type { Repository } from "./repositories.js";
+import { recordRepositorySettingsChange, type Repository } from "./repositories.js";
 import type { ReviewProfile } from "./reviews.js";
 import {
   harnessRepoPins,
@@ -201,6 +201,7 @@ export async function updateRepositorySettings(
       ),
     )
     .returning();
+  if (row) recordRepositorySettingsChange(db, row, "repository.reviews");
   return row ?? null;
 }
 

@@ -1,5 +1,6 @@
 import "server-only";
 import type { ActionResult } from "@/lib/action-result";
+import { withLiveChanges } from "@/lib/live/request";
 import { AuthorizationError } from "./roles";
 import { requireSignedInUser, requireUser, type CurrentUser, type OrgUser } from "./session";
 
@@ -8,6 +9,7 @@ import { requireSignedInUser, requireUser, type CurrentUser, type OrgUser } from
  * action that changes settings, repos, agents or members goes through this: non-admins
  * (and signed-out callers, or users without an organization) get an error result and
  * `fn` never runs. `fn` may return a result with extra fields (e.g. a created ID).
+ * Like every action here, the changes it commits are published as live change events.
  */
 export async function runAdminAction<R extends ActionResult = ActionResult>(
   fn: (admin: OrgUser) => Promise<R | void>,
@@ -19,7 +21,7 @@ export async function runAdminAction<R extends ActionResult = ActionResult>(
     if (error instanceof AuthorizationError) return { ok: false, error: error.message };
     throw error;
   }
-  return (await fn(admin)) ?? { ok: true };
+  return (await withLiveChanges(() => fn(admin))) ?? { ok: true };
 }
 
 /**
@@ -36,7 +38,7 @@ export async function runMemberAction(
     if (error instanceof AuthorizationError) return { ok: false, error: error.message };
     throw error;
   }
-  return (await fn(user)) ?? { ok: true };
+  return (await withLiveChanges(() => fn(user))) ?? { ok: true };
 }
 
 /**
@@ -54,5 +56,5 @@ export async function runSignedInAction(
     if (error instanceof AuthorizationError) return { ok: false, error: error.message };
     throw error;
   }
-  return (await fn(user)) ?? { ok: true };
+  return (await withLiveChanges(() => fn(user))) ?? { ok: true };
 }

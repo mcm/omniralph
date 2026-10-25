@@ -5,6 +5,7 @@ import { clientIp } from "@/lib/harness-auth/request";
 import { requireJob, type JobPrincipal } from "@/lib/harness-auth/verify";
 import { getDb } from "@/lib/db";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { liveRoute } from "@/lib/live/request";
 
 function forbidden(error: string, message?: string): Response {
   return Response.json(message ? { error, message } : { error }, { status: 403 });
@@ -47,7 +48,7 @@ function canPush(
  * `credential_issued` with its `access` and the token kind
  * (`tokenKind`: `lifecycle`, `session` or `legacy`).
  */
-export async function POST(req: Request): Promise<Response> {
+async function post(req: Request): Promise<Response> {
   const principal = await requireJob(req, "credentials:read");
   if (principal instanceof Response) return principal;
   const db = getDb();
@@ -99,3 +100,5 @@ export async function POST(req: Request): Promise<Response> {
     { headers: { "cache-control": "no-store" } },
   );
 }
+
+export const POST = liveRoute(post);

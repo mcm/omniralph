@@ -43,15 +43,35 @@ export async function signAblyToken(
   config: AblyConfig,
   input: { harnessId: string; organizationId: string; now?: number },
 ): Promise<AblyToken> {
+  return signAblyJwt(config, {
+    clientId: input.harnessId,
+    capability: {
+      [harnessWakeChannel(input.harnessId)]: ["subscribe"],
+      [orgWakeChannel(input.organizationId)]: ["subscribe"],
+    },
+    ttlSeconds: ABLY_TOKEN_TTL_SECONDS,
+    now: input.now,
+  });
+}
+
+/**
+ * Signs an Ably JWT locally with the key secret (HS256, `kid` = key name; no Ably
+ * call) for `clientId` with `capability` (channel → operations), valid `ttlSeconds`.
+ */
+export async function signAblyJwt(
+  config: AblyConfig,
+  input: {
+    clientId: string;
+    capability: Record<string, string[]>;
+    ttlSeconds: number;
+    now?: number;
+  },
+): Promise<AblyToken> {
   const iat = Math.floor((input.now ?? Date.now()) / 1000);
-  const exp = iat + ABLY_TOKEN_TTL_SECONDS;
-  const capability = {
-    [harnessWakeChannel(input.harnessId)]: ["subscribe"],
-    [orgWakeChannel(input.organizationId)]: ["subscribe"],
-  };
+  const exp = iat + input.ttlSeconds;
   const token = await new SignJWT({
-    "x-ably-clientId": input.harnessId,
-    "x-ably-capability": JSON.stringify(capability),
+    "x-ably-clientId": input.clientId,
+    "x-ably-capability": JSON.stringify(input.capability),
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: config.keyName })
     .setIssuedAt(iat)

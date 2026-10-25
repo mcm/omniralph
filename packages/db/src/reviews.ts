@@ -9,6 +9,7 @@
  * per review.
  */
 import { and, asc, desc, eq, inArray, lt, ne, notInArray } from "drizzle-orm";
+import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
   findings,
@@ -59,12 +60,38 @@ export interface NewReviewRunInput {
 
 export async function createReviewRun(db: Database, input: NewReviewRunInput): Promise<ReviewRun> {
   const [row] = await db.insert(reviewRuns).values(input).returning();
+  recordReviewRunChange(db, row!);
   return row!;
 }
 
 /** Deletes a review run with its reviews. */
 export async function deleteReviewRun(db: Database, reviewRunId: string): Promise<void> {
-  await db.delete(reviewRuns).where(eq(reviewRuns.id, reviewRunId));
+  const rows = await db
+    .delete(reviewRuns)
+    .where(eq(reviewRuns.id, reviewRunId))
+    .returning({ id: reviewRuns.id, organizationId: reviewRuns.organizationId });
+  for (const row of rows) recordReviewRunChange(db, row);
+}
+
+/** Records a live `run` change for a review run. */
+function recordReviewRunChange(db: unknown, run: { id: string; organizationId: string }): void {
+  recordChange(db, {
+    resource: "run",
+    ids: [run.id],
+    runId: run.id,
+    organizationId: run.organizationId,
+  });
+}
+
+/** Records a live `run` change for the review runs of reviews (their passes). */
+async function recordReviewChanges(db: Database, reviewIds: readonly string[]): Promise<void> {
+  if (!currentChangeCollector() || reviewIds.length === 0) return;
+  const rows = await db
+    .select({ id: reviewRuns.id, organizationId: reviewRuns.organizationId })
+    .from(reviews)
+    .innerJoin(reviewRuns, eq(reviewRuns.id, reviews.reviewRunId))
+    .where(inArray(reviews.id, [...reviewIds]));
+  for (const row of rows) recordReviewRunChange(db, row);
 }
 
 export async function getReviewRun(db: Database, reviewRunId: string): Promise<ReviewRun | null> {
@@ -97,10 +124,12 @@ export async function listReviewRunFindings(
 
 /** `queued` → `running`, once one of its task runs started. */
 export async function markReviewRunRunning(db: Database, reviewRunId: string): Promise<void> {
-  await db
+  const rows = await db
     .update(reviewRuns)
     .set({ status: "running" })
-    .where(and(eq(reviewRuns.id, reviewRunId), eq(reviewRuns.status, "queued")));
+    .where(and(eq(reviewRuns.id, reviewRunId), eq(reviewRuns.status, "queued")))
+    .returning({ id: reviewRuns.id, organizationId: reviewRuns.organizationId });
+  for (const row of rows) recordReviewRunChange(db, row);
 }
 
 /** Ends review runs that are still active as `skipped` (e.g. superseded by a newer push). */
@@ -110,7 +139,7 @@ export async function skipReviewRuns(
   error: string,
 ): Promise<void> {
   if (reviewRunIds.length === 0) return;
-  await db
+  const rows = await db
     .update(reviewRuns)
     .set({ status: "skipped", error })
     .where(
@@ -118,7 +147,9 @@ export async function skipReviewRuns(
         inArray(reviewRuns.id, [...reviewRunIds]),
         inArray(reviewRuns.status, ACTIVE_REVIEW_RUN_STATUSES),
       ),
-    );
+    )
+    .returning({ id: reviewRuns.id, organizationId: reviewRuns.organizationId });
+  for (const row of rows) recordReviewRunChange(db, row);
 }
 
 /** A finished review of a review run with its open findings: one input of its correlation. */
@@ -197,12 +228,14 @@ export async function settleReviewRun(
           .update(reviewRuns)
           .set({ status: "correlating", correlationJobId: started.jobId, error: null })
           .where(eq(reviewRuns.id, reviewRunId));
+        recordReviewRunChange(tx, run);
         return "correlating";
       }
       await tx
         .update(reviewRuns)
         .set({ status: "completed", error: started.error })
         .where(eq(reviewRuns.id, reviewRunId));
+      recordReviewRunChange(tx, run);
       return "completed";
     }
 
@@ -220,6 +253,7 @@ export async function settleReviewRun(
       .update(reviewRuns)
       .set({ status, error: status === "failed" ? "Every review task failed" : null })
       .where(eq(reviewRuns.id, reviewRunId));
+    recordReviewRunChange(tx, run);
     return status;
   });
 }
@@ -350,6 +384,7 @@ export async function applyCorrelation(
       .update(reviewRuns)
       .set({ status: "completed", summary: input.summary.trim() || null, error: null })
       .where(eq(reviewRuns.id, run.id));
+    recordReviewRunChange(tx, run);
     return { applied: true, merged };
   });
 }
@@ -374,7 +409,8 @@ export async function failCorrelation(
         eq(reviewRuns.status, "correlating"),
       ),
     )
-    .returning({ id: reviewRuns.id });
+    .returning({ id: reviewRuns.id, organizationId: reviewRuns.organizationId });
+  for (const row of rows) recordReviewRunChange(db, row);
   return rows.length > 0;
 }
 
@@ -416,10 +452,12 @@ export interface NewReviewInput {
 
 export async function createReview(db: Database, input: NewReviewInput): Promise<Review> {
   const [row] = await db.insert(reviews).values(input).returning();
+  await recordReviewChanges(db, [row!.id]);
   return row!;
 }
 
 export async function deleteReview(db: Database, reviewId: string): Promise<void> {
+  await recordReviewChanges(db, [reviewId]);
   await db.delete(reviews).where(eq(reviews.id, reviewId));
 }
 
@@ -610,10 +648,15 @@ export async function markReviewRunning(
   reviewId: string,
   harnessId: string,
 ): Promise<void> {
-  await db
+  const rows = await db
     .update(reviews)
     .set({ status: "running", harnessId, error: null })
-    .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)));
+    .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)))
+    .returning({ id: reviews.id });
+  await recordReviewChanges(
+    db,
+    rows.map((r) => r.id),
+  );
 }
 
 /** Back to `queued` after a retryable failure (the job is redelivered later). */
@@ -622,10 +665,15 @@ export async function markReviewQueued(
   reviewId: string,
   error: string | null,
 ): Promise<void> {
-  await db
+  const rows = await db
     .update(reviews)
     .set({ status: "queued", error })
-    .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)));
+    .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)))
+    .returning({ id: reviews.id });
+  await recordReviewChanges(
+    db,
+    rows.map((r) => r.id),
+  );
 }
 
 /**
@@ -642,6 +690,10 @@ export async function finishReview(
     .set({ status: input.status, error: input.error })
     .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)))
     .returning({ id: reviews.id });
+  await recordReviewChanges(
+    db,
+    rows.map((r) => r.id),
+  );
   return rows.length > 0;
 }
 
@@ -714,6 +766,7 @@ export async function saveReviewOutcome(
         })),
       );
     }
+    await recordReviewChanges(tx as unknown as Database, [reviewId]);
     return { saved: true };
   });
 }

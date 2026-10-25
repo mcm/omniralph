@@ -4,6 +4,7 @@
  * and records the `triage.run` job whose outcome it applies next.
  */
 import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { repositoryLink, repositoryLinkColumns, type RepositoryLink } from "./harnesses.js";
 import type { JobStatus } from "./jobs.js";
@@ -50,7 +51,10 @@ export async function createTriageRun(
   // A conflicting run can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
     const [row] = await db.insert(triageRuns).values(input).onConflictDoNothing().returning();
-    if (row) return { run: row, created: true };
+    if (row) {
+      recordTriageRunChange(db, row);
+      return { run: row, created: true };
+    }
 
     const existing =
       (await getTriageRunBySession(db, input.linearAgentSessionId)) ??
@@ -113,6 +117,7 @@ export async function setTriageRunJob(
     .set({ currentJobId: jobId, updatedAt: new Date() })
     .where(eq(triageRuns.id, runId))
     .returning();
+  if (row) recordTriageRunChange(db, row);
   return row ?? null;
 }
 
@@ -135,6 +140,7 @@ export async function setTriageRunStatus(
     })
     .where(eq(triageRuns.id, runId))
     .returning();
+  if (row) recordTriageRunChange(db, row);
   return row ?? null;
 }
 
@@ -160,6 +166,7 @@ export async function startTriageRunJob(
       ),
     )
     .returning();
+  if (row) recordTriageRunChange(db, row);
   return row ?? null;
 }
 
@@ -191,6 +198,7 @@ export async function finishTriageRunJob(
       ),
     )
     .returning();
+  if (row) recordTriageRunChange(db, row);
   return row ?? null;
 }
 
@@ -209,6 +217,7 @@ export async function setTriageRunSession(
     .set({ linearAgentSessionId, updatedAt: new Date() })
     .where(eq(triageRuns.id, runId))
     .returning();
+  if (row) recordTriageRunChange(db, row);
   return row ?? null;
 }
 
@@ -279,6 +288,7 @@ async function requeueTriageRun(
           .set({ pendingReply: joinReplies(run.pendingReply, reply), updatedAt: new Date() })
           .where(eq(triageRuns.id, runId))
           .returning();
+        recordTriageRunChange(tx, row!);
         return { status: "pending", run: row! } as const;
       }
       const combined = joinReplies(run.pendingReply, reply);
@@ -290,6 +300,7 @@ async function requeueTriageRun(
         .set({ status: "queued", currentJobId: null, pendingReply: null, updatedAt: new Date() })
         .where(eq(triageRuns.id, runId))
         .returning();
+      recordTriageRunChange(tx, row!);
       return { status: "requeued", run: row!, reply: combined } as const;
     });
   } catch (error) {
@@ -323,7 +334,18 @@ export async function stopTriageRun(db: Database, runId: string): Promise<Triage
       .update(triageRuns)
       .set({ status: "stopped", pendingReply: null, updatedAt: new Date() })
       .where(eq(triageRuns.id, runId));
+    recordTriageRunChange(tx, run);
     return run;
+  });
+}
+
+/** Records a live `run` change for a triage run. */
+function recordTriageRunChange(db: Executor, run: { id: string; organizationId: string }): void {
+  recordChange(db, {
+    resource: "run",
+    ids: [run.id],
+    runId: run.id,
+    organizationId: run.organizationId,
   });
 }
 

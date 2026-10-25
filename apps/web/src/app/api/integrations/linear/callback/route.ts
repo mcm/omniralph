@@ -14,6 +14,7 @@ import {
   linearRedirectUri,
   STATE_COOKIE,
 } from "@/lib/linear/oauth";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Linear's OAuth redirect: checks the signed `state` (same admin, same
@@ -22,7 +23,7 @@ import {
  * the organization's Linear integration. A workspace already connected to
  * another organization is refused (`?linear=other_organization`).
  */
-export async function GET(request: NextRequest) {
+async function get(request: NextRequest) {
   const to = (path: string) => {
     const response = NextResponse.redirect(new URL(path, request.url));
     response.cookies.delete({ name: STATE_COOKIE, path: LINEAR_CALLBACK_PATH });
@@ -83,3 +84,5 @@ export async function GET(request: NextRequest) {
   if (saved === "other_organization") return to("/settings/integrations?linear=other_organization");
   return to("/settings/integrations?linear=connected");
 }
+
+export const GET = liveRoute(get);

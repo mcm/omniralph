@@ -17,6 +17,7 @@ import {
   type AnyColumn,
 } from "drizzle-orm";
 import { getAllowedTaskTypeDefaults } from "./app-settings.js";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
@@ -144,7 +145,32 @@ export async function upsertScmConnection(
       setWhere: eq(scmConnections.organizationId, input.organizationId),
     })
     .returning();
+  if (row) recordConnectionChange(db, row);
   return row ?? null;
+}
+
+/** Records a live `connection` change (a code host, tracker or chat connection). */
+export function recordConnectionChange(
+  db: unknown,
+  connection: { id: string; organizationId: string },
+): void {
+  recordChange(db, {
+    resource: "connection",
+    ids: [connection.id],
+    organizationId: connection.organizationId,
+  });
+}
+
+/** Records a live `repository` change. */
+function recordRepositoryChange(
+  db: unknown,
+  repository: { id: string; organizationId: string },
+): void {
+  recordChange(db, {
+    resource: "repository",
+    ids: [repository.id],
+    organizationId: repository.organizationId,
+  });
 }
 
 /** An organization's connection, or null. */
@@ -208,6 +234,7 @@ export async function deleteScmConnection(
     .delete(scmConnections)
     .where(and(eq(scmConnections.id, id), eq(scmConnections.organizationId, organizationId)))
     .returning();
+  if (row) recordConnectionChange(db, row);
   return row ?? null;
 }
 
@@ -247,7 +274,12 @@ export async function setScmConnectionHealth(
   id: string,
   health: ScmConnectionHealth,
 ): Promise<void> {
-  await db.update(scmConnections).set({ health }).where(eq(scmConnections.id, id));
+  const rows = await db
+    .update(scmConnections)
+    .set({ health })
+    .where(eq(scmConnections.id, id))
+    .returning({ id: scmConnections.id, organizationId: scmConnections.organizationId });
+  for (const row of rows) recordConnectionChange(db, row);
 }
 
 /**
@@ -361,6 +393,7 @@ export async function connectRepository(
     .onConflictDoUpdate({ target: [repositories.connectionId, repositories.externalId], set })
     .returning();
   if (!row) throw new Error("Failed to save repository");
+  recordRepositoryChange(db, row);
   return row;
 }
 
@@ -440,6 +473,19 @@ export async function setRepositorySwitches(
       ),
     )
     .returning({ id: repositories.id });
+  if (rows.length > 0) {
+    recordRepositoryChange(db, { id, organizationId });
+    // The review switch is the Reviews section's, the coding and query switches the Coding one's.
+    const sections = [
+      ...(switches.review !== undefined ? (["repository.reviews"] as const) : []),
+      ...(switches.coding !== undefined || switches.query !== undefined
+        ? (["repository.coding"] as const)
+        : []),
+    ];
+    for (const section of sections) {
+      recordRepositorySettingsChange(db, { id, organizationId }, section);
+    }
+  }
   return rows.length > 0;
 }
 
@@ -484,7 +530,14 @@ export async function disconnectRepository(
       .where(and(eq(repositories.id, id), eq(repositories.organizationId, organizationId)))
       .returning();
     if (!row) return null;
-    await tx.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, id));
+    const unpinned = await tx
+      .delete(harnessRepoPins)
+      .where(eq(harnessRepoPins.repositoryId, id))
+      .returning({ harnessId: harnessRepoPins.harnessId });
+    recordRepositoryChange(tx, row);
+    for (const { harnessId } of unpinned) {
+      recordPinChange(tx, { harnessId, repositoryId: id, organizationId });
+    }
     return row;
   });
 }
@@ -690,6 +743,7 @@ export async function pinRepositoryToHarness(
       .values({ harnessId: input.harnessId, repositoryId: input.repositoryId })
       .onConflictDoNothing()
       .returning({ id: harnessRepoPins.id });
+    if (inserted.length > 0) recordPinChange(tx, { ...input, ...repo });
     return inserted.length > 0 ? "pinned" : "already_pinned";
   });
 }
@@ -708,7 +762,41 @@ export async function unpinRepositoryFromHarness(
       ),
     )
     .returning({ id: harnessRepoPins.id });
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  const [agent] = await db
+    .select({ organizationId: harnesses.organizationId })
+    .from(harnesses)
+    .where(eq(harnesses.id, input.harnessId));
+  if (agent) recordPinChange(db, { ...input, organizationId: agent.organizationId });
+  return true;
+}
+
+/** Records a live `settings` change of a repository's settings section. */
+export function recordRepositorySettingsChange(
+  db: unknown,
+  repository: { id: string; organizationId: string },
+  section: "repository.reviews" | "repository.coding" | "repository.agents",
+): void {
+  recordChange(db, {
+    resource: "settings",
+    section,
+    ids: [repository.id],
+    subjectId: repository.id,
+    organizationId: repository.organizationId,
+  });
+}
+
+/** Records a pin's live changes: the agent's and the repository's agents section. */
+function recordPinChange(
+  db: unknown,
+  pin: { harnessId: string; repositoryId: string; organizationId: string },
+): void {
+  recordChange(db, { resource: "agent", ids: [pin.harnessId], organizationId: pin.organizationId });
+  recordRepositorySettingsChange(
+    db,
+    { id: pin.repositoryId, organizationId: pin.organizationId },
+    "repository.agents",
+  );
 }
 
 /**

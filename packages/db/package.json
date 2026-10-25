@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./changes": {
+      "@omniralph/source": "./src/changes.ts",
+      "types": "./dist/changes.d.ts",
+      "default": "./dist/changes.js"
+    },
     "./testing": "./testing/index.ts"
   },
   "files": [

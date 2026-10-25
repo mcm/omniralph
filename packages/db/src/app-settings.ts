@@ -1,6 +1,7 @@
 /** Per-organization settings (`app_settings`): one JSON value per organization and key. */
 import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { appSettings } from "./schema.js";
 
@@ -41,16 +42,28 @@ export async function setAppSetting(
     await db
       .delete(appSettings)
       .where(and(eq(appSettings.organizationId, organizationId), eq(appSettings.key, key)));
-    return;
+  } else {
+    await db
+      .insert(appSettings)
+      .values({ organizationId, key, value, updatedBy })
+      .onConflictDoUpdate({
+        target: [appSettings.organizationId, appSettings.key],
+        set: { value, updatedBy, updatedAt: new Date() },
+      });
   }
-  await db
-    .insert(appSettings)
-    .values({ organizationId, key, value, updatedBy })
-    .onConflictDoUpdate({
-      target: [appSettings.organizationId, appSettings.key],
-      set: { value, updatedBy, updatedAt: new Date() },
-    });
+  const section = SETTING_SECTIONS[key];
+  if (section) {
+    recordChange(db, { resource: "settings", section, ids: [organizationId], organizationId });
+  }
 }
+
+/** The settings section a key's save changes (live `settings` changes); others are internal. */
+const SETTING_SECTIONS: Record<string, "agent_defaults" | "connection" | undefined> = {
+  "harness.desiredVersion": "agent_defaults",
+  "harness.maxConcurrency": "agent_defaults",
+  "tasks.allowedTypes": "agent_defaults",
+  "chat.tasks": "connection",
+};
 
 /** The organization's desired harness version (possibly `latest`), or null when none is chosen. */
 export async function getDesiredHarnessVersion(

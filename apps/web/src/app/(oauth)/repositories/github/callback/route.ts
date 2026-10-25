@@ -13,6 +13,7 @@ import {
   GITHUB_INSTALL_COOKIE,
   GITHUB_INSTALL_STATE_PURPOSE,
 } from "@/lib/scm/github-app";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * The GitHub App's Setup URL: GitHub redirects here after the app is installed (or its
@@ -23,7 +24,7 @@ import {
  * refused. Without a valid state (e.g. the installation was changed on GitHub), only an
  * installation the active organization already has is opened.
  */
-export async function GET(request: NextRequest) {
+async function get(request: NextRequest) {
   const to = (path: string) => {
     const response = NextResponse.redirect(new URL(path, request.url));
     response.cookies.delete({ name: GITHUB_INSTALL_COOKIE, path: GITHUB_CALLBACK_PATH });
@@ -105,3 +106,5 @@ function errorName(error: unknown): string {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export const GET = liveRoute(get);

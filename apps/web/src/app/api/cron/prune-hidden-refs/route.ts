@@ -2,6 +2,7 @@ import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
 import { pruneHiddenRefs } from "@/lib/ralph/hidden-refs";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Vercel Cron (`vercel.json`, daily): enqueues the deletion of runs' hidden
@@ -10,8 +11,10 @@ import { pruneHiddenRefs } from "@/lib/ralph/hidden-refs";
  * they're older than 14 days and their run isn't running (stopped or stuck
  * runs). A harness deletes them with git (`worktree.cleanup`).
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const counts = await pruneHiddenRefs({ db: getDb(), dispatcher: getDispatcher() });
   return Response.json(counts);
 }
+
+export const GET = liveRoute(get);

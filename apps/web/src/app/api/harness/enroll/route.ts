@@ -8,12 +8,13 @@ import {
   hitRateLimit,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Exchanges a one-time enrollment token (1 hour, single use) for a new harness
  * and its first refresh token.
  */
-export async function POST(req: Request): Promise<Response> {
+async function post(req: Request): Promise<Response> {
   const db = getDb();
   const ip = clientIp(req);
   const now = new Date();
@@ -41,3 +42,5 @@ export async function POST(req: Request): Promise<Response> {
   });
   return Response.json(enrolled satisfies EnrollResponse);
 }
+
+export const POST = liveRoute(post);

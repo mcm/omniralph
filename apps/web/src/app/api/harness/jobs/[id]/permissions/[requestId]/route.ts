@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getLinearGateway } from "@/lib/linear/client";
 import { expirePermission } from "@/lib/ralph/permissions";
 import { readRunPermission } from "@/lib/runs/permissions";
+import { liveRoute } from "@/lib/live/request";
 
 interface PermissionRouteContext {
   params: Promise<{ id: string; requestId: string }>;
@@ -32,7 +33,7 @@ async function resolve(req: Request, ctx: PermissionRouteContext) {
  * The answer to a permission request so far (`RalphPermissionAnswer`), from
  * the stored request (`readRunPermission`).
  */
-export async function GET(req: Request, ctx: PermissionRouteContext): Promise<Response> {
+async function get(req: Request, ctx: PermissionRouteContext): Promise<Response> {
   const resolved = await resolve(req, ctx);
   if (resolved instanceof Response) return resolved;
   const { db, job, requestId } = resolved;
@@ -43,7 +44,7 @@ export async function GET(req: Request, ctx: PermissionRouteContext): Promise<Re
  * The harness stopped waiting for an answer and denied the call: the request
  * is closed as expired (unless already answered), and so is a ralph run's question.
  */
-export async function DELETE(req: Request, ctx: PermissionRouteContext): Promise<Response> {
+async function remove(req: Request, ctx: PermissionRouteContext): Promise<Response> {
   const resolved = await resolve(req, ctx);
   if (resolved instanceof Response) return resolved;
   const { db, job, requestId } = resolved;
@@ -56,3 +57,6 @@ export async function DELETE(req: Request, ctx: PermissionRouteContext): Promise
   );
   return new Response(null, { status: 204 });
 }
+
+export const GET = liveRoute(get);
+export const DELETE = liveRoute(remove);

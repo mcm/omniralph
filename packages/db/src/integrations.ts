@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
+import { recordConnectionChange } from "./repositories.js";
 import { integrations, oauthStateUses } from "./schema.js";
 
 export type IntegrationProvider = (typeof integrations.$inferSelect)["provider"];
@@ -154,6 +155,7 @@ export async function saveIntegration<C>(
         },
       })
       .returning();
+    recordConnectionChange(tx, row!);
     return toIntegration(row!);
   });
 }
@@ -174,6 +176,7 @@ export async function deleteIntegration<C>(
       and(eq(integrations.organizationId, organizationId), eq(integrations.provider, provider)),
     )
     .returning();
+  if (row) recordConnectionChange(db, row);
   return row ? withCredentials<C>(row, key) : null;
 }
 

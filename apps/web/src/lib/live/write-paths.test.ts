@@ -1,0 +1,670 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import {
+  addMember,
+  addOrganizationDomain,
+  captureChanges,
+  claimJob,
+  closeDb,
+  completeJob,
+  connectRepository,
+  createDb,
+  createHarnessEnrollment,
+  createHostTool,
+  createInvitation,
+  createReview,
+  createReviewRun,
+  createRun,
+  createTriageRun,
+  createUser,
+  deleteScmConnection,
+  enrollHarness,
+  ensureChatThread,
+  ensureLane,
+  expireQueuedJobs,
+  failJob,
+  harnesses,
+  insertJob,
+  insertRunActivity,
+  jobs,
+  mapThreadRun,
+  markHarnessDeleted,
+  markReviewRunning,
+  markReviewRunRunning,
+  organizations,
+  pinRepositoryToHarness,
+  recordHarnessHeartbeat,
+  replaceRoutingRules,
+  requestJobCancel,
+  revokeHarness,
+  saveChatConnection,
+  saveIntegration,
+  seedReviewProfiles,
+  setDefaultMaxConcurrency,
+  setHarnessHostToolPath,
+  setRepositorySwitches,
+  setTriageRunStatus,
+  updateHarnessConfig,
+  updateLane,
+  updateMemberRole,
+  updateOrganization,
+  updateRepositoryRalphSettings,
+  updateRepositorySettings,
+  updateRun,
+  updateStory,
+  upsertScmConnection,
+  upsertStories,
+  DEFAULT_RALPH_SETTINGS,
+  type Database,
+} from "@omniralph/db";
+import {
+  createTestDatabase,
+  testDatabaseAvailable,
+  type TestDatabase,
+} from "@omniralph/db/testing";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+
+const { changeMessage } = await import("./publisher");
+
+/** The messages (channel and event, without its time) the writes in `fn` publish. */
+async function published(fn: () => Promise<unknown>) {
+  const { changes } = await captureChanges(fn);
+  return changes.map((change) => {
+    const { channel, event } = changeMessage(change);
+    const { at, ...rest } = event;
+    expect(Date.parse(at)).not.toBeNaN();
+    return { channel, ...rest };
+  });
+}
+
+describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () => {
+  let testDb: TestDatabase;
+  let db: Database;
+  let orgId: string;
+  let userId: string;
+  let otherUserId: string;
+  let connectionId: string;
+  let repoId: string;
+  let harnessId: string;
+  let orgChannel: string;
+  let issue = 0;
+
+  beforeAll(async () => {
+    testDb = await createTestDatabase();
+    db = createDb(testDb.uri);
+    const user = await createUser(db, { email: "ada@example.com", name: "Ada" });
+    const other = await createUser(db, { email: "bob@example.com", name: "Bob" });
+    userId = user.id;
+    otherUserId = other.id;
+    const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
+    orgId = org!.id;
+    orgChannel = `org:${orgId}:changes`;
+    await seedReviewProfiles(db, orgId);
+    const connection = (await upsertScmConnection(db, {
+      organizationId: orgId,
+      provider: "github",
+      name: "acme",
+      baseUrl: "https://api.github.com",
+      externalId: "acme-installation",
+      credentials: {},
+    }))!;
+    connectionId = connection.id;
+    const repo = await connectRepository(db, {
+      connectionId,
+      provider: "github",
+      externalId: "500",
+      fullPath: "acme/app",
+    });
+    repoId = repo.id;
+    const [harness] = await db
+      .insert(harnesses)
+      .values({ organizationId: orgId, name: "host", reportedVersion: "1.0.0" })
+      .returning();
+    harnessId = harness!.id;
+  }, 180_000);
+
+  afterAll(async () => {
+    if (db) await closeDb(db);
+    await testDb?.stop();
+  });
+
+  async function epicRun() {
+    issue += 1;
+    const { run } = await createRun(db, {
+      organizationId: orgId,
+      linearIssueId: `issue-${issue}`,
+      linearIdentifier: `SOC-${issue}`,
+      linearTitle: "Epic",
+      linearUrl: null,
+      linearAgentSessionId: `session-${issue}`,
+      kind: "children",
+      repositoryId: repoId,
+      branch: `branch-${issue}`,
+      baseBranch: "main",
+    });
+    return run;
+  }
+
+  const runEvent = (runId: string, ids: string[] = [runId]) => ({
+    channel: orgChannel,
+    v: 1,
+    resource: "run",
+    ids,
+    organizationId: orgId,
+    runId,
+  });
+
+  describe("runs", () => {
+    it("createRun, updateRun, updateStory and upsertStories publish the run", async () => {
+      let runId = "";
+      expect(
+        await published(async () => {
+          runId = (await epicRun()).id;
+        }),
+      ).toEqual([runEvent(runId)]);
+      expect(await published(() => updateRun(db, runId, { status: "running" }))).toEqual([
+        runEvent(runId),
+      ]);
+      let storyId = "";
+      expect(
+        await published(async () => {
+          const [story] = await upsertStories(db, runId, [
+            { linearIssueId: "story-1", identifier: "SOC-100", title: "Story" },
+          ]);
+          storyId = story!.id;
+        }),
+      ).toEqual([runEvent(runId)]);
+      expect(await published(() => updateStory(db, storyId, { status: "completed" }))).toEqual([
+        runEvent(runId),
+      ]);
+    });
+
+    it("updateLane publishes the run, and the pull request when its PR changed", async () => {
+      const run = await epicRun();
+      const lane = await ensureLane(db, {
+        runId: run.id,
+        repositoryId: repoId,
+        branch: "b",
+        baseBranch: "main",
+      });
+      expect(await published(() => updateLane(db, lane.id, { publish: null }))).toEqual([
+        runEvent(run.id),
+      ]);
+      expect(
+        await published(() =>
+          updateLane(db, lane.id, { prNumber: 42, prUrl: "https://github.com/acme/app/pull/42" }),
+        ),
+      ).toEqual([
+        runEvent(run.id),
+        {
+          channel: orgChannel,
+          v: 1,
+          resource: "pull_request",
+          ids: [lane.id],
+          organizationId: orgId,
+          runId: run.id,
+        },
+      ]);
+    });
+
+    it("review run and review status updates publish the review run", async () => {
+      let reviewRunId = "";
+      expect(
+        await published(async () => {
+          reviewRunId = (
+            await createReviewRun(db, {
+              organizationId: orgId,
+              repositoryId: repoId,
+              prNumber: 3,
+              headSha: "a".repeat(40),
+              baseSha: "b".repeat(40),
+              trigger: "mention",
+              mode: "full",
+              profileId: "standard",
+            })
+          ).id;
+        }),
+      ).toEqual([runEvent(reviewRunId)]);
+      let reviewId = "";
+      expect(
+        await published(async () => {
+          reviewId = (
+            await createReview(db, {
+              reviewRunId,
+              repositoryId: repoId,
+              prNumber: 3,
+              prTitle: "Change",
+              headSha: "a".repeat(40),
+              baseSha: "b".repeat(40),
+              trigger: "mention",
+              profileId: "standard",
+              model: null,
+              budget: 100_000,
+            })
+          ).id;
+        }),
+      ).toEqual([runEvent(reviewRunId)]);
+      expect(await published(() => markReviewRunning(db, reviewId, harnessId))).toEqual([
+        runEvent(reviewRunId),
+      ]);
+      expect(await published(() => markReviewRunRunning(db, reviewRunId))).toEqual([
+        runEvent(reviewRunId),
+      ]);
+      // Already running: nothing changed, nothing is published.
+      expect(await published(() => markReviewRunRunning(db, reviewRunId))).toEqual([]);
+    });
+
+    it("triage run updates publish the triage run", async () => {
+      let runId = "";
+      expect(
+        await published(async () => {
+          runId = (
+            await createTriageRun(db, {
+              organizationId: orgId,
+              linearIssueId: "triage-issue",
+              linearAgentSessionId: "triage-session",
+              trigger: "mention",
+            })
+          ).run.id;
+        }),
+      ).toEqual([runEvent(runId)]);
+      expect(await published(() => setTriageRunStatus(db, runId, "failed"))).toEqual([
+        runEvent(runId),
+      ]);
+    });
+
+    it("mapping an ask to its chat thread publishes the ask run", async () => {
+      const connection = await saveChatConnection(db, {
+        organizationId: orgId,
+        platform: "slack",
+        externalId: "T1",
+        name: "Acme",
+        credentials: null,
+        installedByUserId: null,
+      });
+      if (connection === "other_organization") throw new Error("connected elsewhere");
+      const thread = (await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: "thread-1",
+        channelId: "slack:C1",
+        startedByExternalUserId: "U1",
+      }))!;
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "chat.ask",
+        taskType: "query",
+        pool: "short",
+      });
+      let askId = "";
+      expect(
+        await published(async () => {
+          askId = (await mapThreadRun(db, {
+            organizationId: orgId,
+            chatThreadId: thread.id,
+            jobId: job.id,
+          }))!.id;
+        }),
+      ).toEqual([runEvent(askId)]);
+    });
+  });
+
+  describe("attempts", () => {
+    async function queuedJob(run?: { id: string }) {
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+        ralphRunId: run?.id ?? null,
+      });
+      return job;
+    }
+
+    it("creating, claiming, completing, failing and canceling a job publish its run", async () => {
+      await db.delete(jobs);
+      const run = await epicRun();
+      let jobId = "";
+      expect(
+        await published(async () => {
+          jobId = (await queuedJob(run)).id;
+        }),
+      ).toEqual([runEvent(run.id, [jobId])]);
+      const claim = {
+        harnessId,
+        organizationId: orgId,
+        acceptedTaskTypes: ["coding"],
+        pools: ["long"],
+        harnessVersion: "1.0.0",
+        maxDeliveries: 3,
+      };
+      expect(await published(() => claimJob(db, claim))).toEqual([runEvent(run.id, [jobId])]);
+      expect(
+        await published(() => failJob(db, { jobId, harnessId, retryable: true, maxDeliveries: 3 })),
+      ).toEqual([runEvent(run.id, [jobId])]);
+      await claimJob(db, claim);
+      expect(await published(() => completeJob(db, { jobId, harnessId, result: {} }))).toEqual([
+        runEvent(run.id, [jobId]),
+      ]);
+      // A rejected result (not running any more) publishes nothing.
+      expect(await published(() => completeJob(db, { jobId, harnessId, result: {} }))).toEqual([]);
+      const queued = await queuedJob(run);
+      expect(await published(() => requestJobCancel(db, queued.id))).toEqual([
+        runEvent(run.id, [queued.id]),
+      ]);
+    });
+
+    it("a system job's change has no run", async () => {
+      let jobId = "";
+      expect(
+        await published(async () => {
+          jobId = (
+            await insertJob(db, {
+              organizationId: orgId,
+              type: "repo.sync",
+              taskType: "system",
+              pool: null,
+            })
+          ).job.id;
+        }),
+      ).toEqual([
+        { channel: orgChannel, v: 1, resource: "run", ids: [jobId], organizationId: orgId },
+      ]);
+    });
+
+    it("expiring queued jobs publishes them, merged into one event per run", async () => {
+      await db.delete(jobs);
+      const run = await epicRun();
+      const first = await queuedJob(run);
+      const second = await queuedJob(run);
+      expect(await published(() => expireQueuedJobs(db, new Date(Date.now() + 60_000)))).toEqual([
+        runEvent(run.id, [first.id, second.id]),
+      ]);
+    });
+  });
+
+  describe("transcript", () => {
+    it("insertRunActivity publishes the attempt's transcript", async () => {
+      const run = await epicRun();
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+        ralphRunId: run.id,
+      });
+      expect(
+        await published(() =>
+          insertRunActivity(db, {
+            jobId: job.id,
+            organizationId: orgId,
+            type: "thought",
+            body: "Thinking about the secret plan",
+          }),
+        ),
+      ).toEqual([
+        {
+          channel: orgChannel,
+          v: 1,
+          resource: "transcript",
+          ids: [job.id],
+          organizationId: orgId,
+          runId: run.id,
+        },
+      ]);
+    });
+  });
+
+  describe("agents", () => {
+    const agentEvent = (id: string) => ({
+      channel: orgChannel,
+      v: 1,
+      resource: "agent",
+      ids: [id],
+      organizationId: orgId,
+    });
+
+    it("enroll, settings, pins, host tool paths, revoke and delete publish the agent", async () => {
+      const { token } = await createHarnessEnrollment(db, { organizationId: orgId });
+      let id = "";
+      expect(
+        await published(async () => {
+          id = (await enrollHarness(db, { enrollmentToken: token, name: "new", version: "1.0.0" }))!
+            .harnessId;
+        }),
+      ).toEqual([agentEvent(id)]);
+      expect(
+        await published(() =>
+          updateHarnessConfig(db, orgId, id, {
+            maxConcurrency: 2,
+            acceptedTaskTypes: null,
+            poolLimits: {},
+          }),
+        ),
+      ).toEqual([agentEvent(id)]);
+      expect(
+        await published(() => pinRepositoryToHarness(db, { harnessId: id, repositoryId: repoId })),
+      ).toEqual([
+        agentEvent(id),
+        {
+          channel: orgChannel,
+          v: 1,
+          resource: "settings",
+          section: "repository.agents",
+          ids: [repoId],
+          subjectId: repoId,
+          organizationId: orgId,
+        },
+      ]);
+      const tool = await createHostTool(db, orgId, { name: "psql" });
+      if (!tool.ok) throw new Error("setup");
+      expect(
+        await published(() => setHarnessHostToolPath(db, orgId, id, tool.hostTool.id, "/bin/psql")),
+      ).toEqual([agentEvent(id)]);
+      const revoked = await published(() => revokeHarness(db, id, { organizationId: orgId }));
+      expect(revoked).toContainEqual(agentEvent(id));
+      expect(revoked).toContainEqual(expect.objectContaining({ section: "repository.agents" }));
+      expect(await published(() => markHarnessDeleted(db, orgId, id))).toEqual([agentEvent(id)]);
+    });
+
+    it("a heartbeat publishes a changed update state or install, not a steady report", async () => {
+      const report = { version: "1.0.0", installables: [] };
+      await recordHarnessHeartbeat(db, harnessId, report);
+      expect(await published(() => recordHarnessHeartbeat(db, harnessId, report))).toEqual([]);
+      const failing = {
+        ...report,
+        update: { status: "failed" as const, version: "1.1.0", error: "boom", at: "x" },
+      };
+      expect(
+        await published(() => recordHarnessHeartbeat(db, harnessId, failing as never)),
+      ).toEqual([agentEvent(harnessId)]);
+      expect(
+        await published(() =>
+          recordHarnessHeartbeat(db, harnessId, {
+            ...(failing as never as typeof report),
+            installables: [{ name: "gh", version: "2.0.0" }],
+          } as never),
+        ),
+      ).toEqual([agentEvent(harnessId)]);
+    });
+
+    it("an install job targeted at an agent publishes the agent", async () => {
+      const events = await published(() =>
+        insertJob(db, {
+          organizationId: orgId,
+          type: "install",
+          taskType: "system",
+          pool: null,
+          targetHarnessId: harnessId,
+        }),
+      );
+      expect(events).toContainEqual(agentEvent(harnessId));
+    });
+  });
+
+  describe("settings", () => {
+    const settingsEvent = (section: string, subjectId?: string) => ({
+      channel: orgChannel,
+      v: 1,
+      resource: "settings",
+      section,
+      ids: [subjectId ?? orgId],
+      ...(subjectId ? { subjectId } : {}),
+      organizationId: orgId,
+    });
+
+    it("repository review, coding and task-type saves publish their section", async () => {
+      expect(
+        await published(() =>
+          updateRepositorySettings(db, orgId, repoId, {
+            profileId: "standard",
+            triggers: { onOpen: true, onPush: false, onMention: true },
+            pathExcludes: [],
+            customInstructions: "",
+          } as never),
+        ),
+      ).toEqual([settingsEvent("repository.reviews", repoId)]);
+      expect(
+        await published(() =>
+          updateRepositoryRalphSettings(db, repoId, { ralphSettings: DEFAULT_RALPH_SETTINGS }),
+        ),
+      ).toEqual([settingsEvent("repository.coding", repoId)]);
+      expect(
+        await published(() =>
+          setRepositorySwitches(db, orgId, repoId, { review: true, coding: false }),
+        ),
+      ).toEqual([
+        { channel: orgChannel, v: 1, resource: "repository", ids: [repoId], organizationId: orgId },
+        settingsEvent("repository.reviews", repoId),
+        settingsEvent("repository.coding", repoId),
+      ]);
+    });
+
+    it("routing rules and agent defaults publish their section", async () => {
+      expect(
+        await published(() =>
+          replaceRoutingRules(db, orgId, [
+            {
+              repositoryId: repoId,
+              query: {
+                combinator: "and",
+                rules: [{ field: "labels", operator: "containsAny", value: ["web"] }],
+              },
+            },
+          ]),
+        ),
+      ).toEqual([settingsEvent("routing_rules")]);
+      expect(await published(() => setDefaultMaxConcurrency(db, orgId, 3, userId))).toEqual([
+        settingsEvent("agent_defaults"),
+      ]);
+      expect(await published(() => createHostTool(db, orgId, { name: "jq" }))).toEqual([
+        settingsEvent("agent_defaults"),
+      ]);
+    });
+
+    it("connections and integrations publish the connection", async () => {
+      const connectionEvent = (id: string) => ({
+        channel: orgChannel,
+        v: 1,
+        resource: "connection",
+        ids: [id],
+        organizationId: orgId,
+      });
+      let gitlabId = "";
+      expect(
+        await published(async () => {
+          gitlabId = (await upsertScmConnection(db, {
+            organizationId: orgId,
+            provider: "gitlab",
+            name: "gl",
+            baseUrl: "https://gitlab.example.com",
+            externalId: "gl-1",
+            credentials: { token: "secret-token" },
+          }))!.id;
+        }),
+      ).toEqual([connectionEvent(gitlabId)]);
+      expect(await published(() => deleteScmConnection(db, orgId, gitlabId))).toEqual([
+        connectionEvent(gitlabId),
+      ]);
+      let integrationId = "";
+      expect(
+        await published(async () => {
+          const saved = await saveIntegration(db, {
+            organizationId: orgId,
+            provider: "linear",
+            externalId: "workspace-1",
+            name: "Acme workspace",
+            credentials: { accessToken: "secret" },
+            installedByUserId: userId,
+          });
+          if (saved === "other_organization") throw new Error("setup");
+          integrationId = saved.id;
+        }),
+      ).toEqual([connectionEvent(integrationId)]);
+    });
+
+    it("organization, member, invitation and domain changes publish the organization", async () => {
+      const orgEvent = {
+        channel: orgChannel,
+        v: 1,
+        resource: "organization",
+        ids: [orgId],
+        organizationId: orgId,
+      };
+      // The member also hears it on their own channel: their organizations changed.
+      const memberEvent = (id: string) => ({ ...orgEvent, channel: `user:${id}:changes` });
+      expect(await published(() => updateOrganization(db, orgId, { name: "Acme Inc" }))).toEqual([
+        orgEvent,
+      ]);
+      expect(
+        await published(() => addMember(db, { organizationId: orgId, userId, role: "admin" })),
+      ).toEqual([orgEvent, memberEvent(userId)]);
+      await addMember(db, { organizationId: orgId, userId: otherUserId, role: "member" });
+      expect(
+        await published(() =>
+          updateMemberRole(db, { organizationId: orgId, userId: otherUserId, role: "admin" }),
+        ),
+      ).toEqual([orgEvent, memberEvent(otherUserId)]);
+      expect(
+        await published(() =>
+          createInvitation(db, {
+            organizationId: orgId,
+            email: "carol@example.com",
+            role: "member",
+            invitedBy: userId,
+          }),
+        ),
+      ).toEqual([orgEvent]);
+      expect(await published(() => addOrganizationDomain(db, orgId, "example.com"))).toEqual([
+        orgEvent,
+      ]);
+    });
+  });
+
+  it("publishes nothing for a write that changed nothing", async () => {
+    expect(await published(() => updateRun(db, randomUUID(), { status: "running" }))).toEqual([]);
+    expect(
+      await published(() =>
+        updateHarnessConfig(db, orgId, randomUUID(), {
+          maxConcurrency: 2,
+          acceptedTaskTypes: null,
+          poolLimits: {},
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("never puts names, titles or bodies in an event", async () => {
+    const run = await epicRun();
+    const events = await published(async () => {
+      await updateRun(db, run.id, { status: "running" });
+      await updateOrganization(db, orgId, { name: "Secret Name" });
+    });
+    const text = JSON.stringify(events);
+    for (const content of ["Epic", "Secret Name", "SOC-", "Acme"])
+      expect(text).not.toContain(content);
+    await db.update(organizations).set({ name: "Acme" }).where(eq(organizations.id, orgId));
+  });
+});

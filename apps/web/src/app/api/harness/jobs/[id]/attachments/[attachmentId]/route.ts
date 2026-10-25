@@ -5,6 +5,7 @@ import { jobIdParam, notFound } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import { runAttachment } from "@/lib/runs/attachments";
+import { liveRoute } from "@/lib/live/request";
 
 interface AttachmentRouteContext {
   params: Promise<{ id: string; attachmentId: string }>;
@@ -44,7 +45,7 @@ function capped(body: ReadableStream<Uint8Array>, max: number): ReadableStream<U
  * and files over 25 MB are rejected; a failed download answers
  * `{ error: "download_failed", reason }`.
  */
-export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Response> {
+async function get(req: Request, ctx: AttachmentRouteContext): Promise<Response> {
   const principal = await requireJob(req, "run:attachments");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
@@ -90,3 +91,5 @@ export async function GET(req: Request, ctx: AttachmentRouteContext): Promise<Re
     },
   });
 }
+
+export const GET = liveRoute(get);

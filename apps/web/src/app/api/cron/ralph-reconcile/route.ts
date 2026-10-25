@@ -4,6 +4,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { checkRalphReconcile, finishRalphReconcile } from "@/lib/ralph/active";
 import { reconcileAllOrganizations } from "@/lib/ralph/reconcile-cron";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { liveRoute } from "@/lib/live/request";
 
 /**
  * Vercel Cron (`vercel.json`, every 10 minutes): for every organization with a
@@ -18,7 +19,7 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
  * Postgres while nothing marked ralph work since a run that found none (and the
  * last full run is less than a day old): see `lib/ralph/active`.
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const db = getDb();
   const check = await checkRalphReconcile(db);
@@ -31,3 +32,5 @@ export async function GET(req: Request): Promise<Response> {
   await finishRalphReconcile(db, check);
   return Response.json(totals);
 }
+
+export const GET = liveRoute(get);

@@ -11,6 +11,7 @@ import {
   count,
   desc,
   eq,
+  getTableColumns,
   inArray,
   isNull,
   lt,
@@ -19,8 +20,9 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { harnessVersionAtLeast, isJobTaskType } from "@omniralph/shared";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveHostToolPath } from "./host-tools.js";
 import {
@@ -36,6 +38,42 @@ import {
 
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
+
+/** What a job's live change needs: its organization and the run it is an attempt of. */
+export type JobChangeFields = Pick<
+  Job,
+  "id" | "organizationId" | "ralphRunId" | "reviewRunId" | "triageRunId" | "chatThreadRunId"
+>;
+
+/** The columns `JobChangeFields` reads, for `returning(...)`. */
+export const jobChangeColumns = {
+  id: jobs.id,
+  organizationId: jobs.organizationId,
+  ralphRunId: jobs.ralphRunId,
+  reviewRunId: jobs.reviewRunId,
+  triageRunId: jobs.triageRunId,
+  chatThreadRunId: jobs.chatThreadRunId,
+};
+
+/** The run a job is an attempt of (its one run link), or null for system work. */
+export function jobRunId(job: Omit<JobChangeFields, "id" | "organizationId">): string | null {
+  return job.ralphRunId ?? job.reviewRunId ?? job.triageRunId ?? job.chatThreadRunId ?? null;
+}
+
+/**
+ * Records a live `run` change for each job (an attempt's change: `ids` = the job,
+ * `runId` = its run, none for system work).
+ */
+export function recordJobChanges(db: unknown, changed: readonly JobChangeFields[]): void {
+  for (const job of changed) {
+    recordChange(db, {
+      resource: "run",
+      ids: [job.id],
+      organizationId: job.organizationId,
+      runId: jobRunId(job),
+    });
+  }
+}
 
 /**
  * How long a claimed job's lease lasts; the agent's heartbeat renews it.
@@ -115,7 +153,18 @@ export async function insertJob(
         where: sql`status in ('queued', 'running')`,
       })
       .returning();
-    if (row) return { job: row, created: true };
+    if (row) {
+      recordJobChanges(db, [row]);
+      // A job only one agent may claim (an install, a pin sync) shows on that agent.
+      if (row.targetHarnessId) {
+        recordChange(db, {
+          resource: "agent",
+          ids: [row.targetHarnessId],
+          organizationId: row.organizationId,
+        });
+      }
+      return { job: row, created: true };
+    }
 
     const [active] = await db
       .select()
@@ -140,7 +189,8 @@ export async function setQueuedJobTarget(
     .update(jobs)
     .set({ targetHarnessId })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
-    .returning({ id: jobs.id });
+    .returning(jobChangeColumns);
+  recordJobChanges(db, rows);
   return rows.length > 0;
 }
 
@@ -235,14 +285,20 @@ export async function requestJobCancel(
     .update(jobs)
     .set({ cancelRequested: true, status: "canceled", finishedAt: now })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
-    .returning({ id: jobs.id });
-  if (queued) return "canceled";
+    .returning(jobChangeColumns);
+  if (queued) {
+    recordJobChanges(db, [queued]);
+    return "canceled";
+  }
   const [running] = await db
     .update(jobs)
     .set({ cancelRequested: true })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")))
-    .returning({ id: jobs.id });
-  if (running) return "cancel_requested";
+    .returning(jobChangeColumns);
+  if (running) {
+    recordJobChanges(db, [running]);
+    return "cancel_requested";
+  }
   return (await getJob(db, jobId)) ? "not_cancelable" : "not_found";
 }
 
@@ -309,7 +365,13 @@ export async function claimJob(
         .orderBy(sql`${jobs.targetHarnessId} is null`, asc(jobs.createdAt), asc(jobs.id))
         .limit(1)
         .for("update", { skipLocked: true });
-      if (!job) return { claim: null, settled };
+      if (!job) {
+        recordJobChanges(
+          tx,
+          settled.map((s) => s.job),
+        );
+        return { claim: null, settled };
+      }
 
       if (job.cancelRequested) {
         const [canceled] = await tx
@@ -355,6 +417,7 @@ export async function claimJob(
         })
         .where(eq(jobs.id, job.id))
         .returning();
+      recordJobChanges(tx, [...settled.map((s) => s.job), claimed!]);
       return { claim: { action: "run", job: claimed! }, settled };
     }
   });
@@ -568,6 +631,7 @@ export async function completeJob(
       .update(jobs)
       .set({ status, result: input.result, error: null, finishedAt: now })
       .where(eq(jobs.id, input.jobId));
+    recordJobChanges(tx, [locked.job]);
     return { status };
   });
 }
@@ -597,6 +661,7 @@ export async function failJob(
     if ("rejected" in locked) return locked.rejected;
     const { job } = locked;
     const error = input.error ?? null;
+    recordJobChanges(tx, [job]);
     if (job.cancelRequested) {
       await tx
         .update(jobs)
@@ -638,7 +703,8 @@ export async function skipJob(
     .update(jobs)
     .set({ status: "skipped", error: input.reason, finishedAt: input.now ?? new Date() })
     .where(and(eq(jobs.id, jobId), inArray(jobs.status, ["queued", "running"])))
-    .returning({ id: jobs.id });
+    .returning(jobChangeColumns);
+  recordJobChanges(db, rows);
   return rows.length > 0;
 }
 
@@ -656,7 +722,8 @@ export async function failCompletedJob(
     .update(jobs)
     .set({ status: "failed", error })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "completed")))
-    .returning({ id: jobs.id });
+    .returning(jobChangeColumns);
+  recordJobChanges(db, rows);
   return rows.length > 0;
 }
 
@@ -711,7 +778,8 @@ export async function expireQueuedJobs(
     .update(jobs)
     .set({ status: "expired", finishedAt: now })
     .where(and(eq(jobs.status, "queued"), lt(jobs.createdAt, createdBefore)))
-    .returning({ id: jobs.id });
+    .returning(jobChangeColumns);
+  recordJobChanges(db, rows);
   return rows.map((r) => r.id);
 }
 
@@ -737,7 +805,9 @@ export async function recordHarnessHeartbeat(
   const handled = input.handledUpdateRequestId ?? null;
   const clearIfHandled = (column: AnyPgColumn) =>
     sql`case when ${harnesses.updateRequestId} = ${handled}::uuid then null else ${column} end`;
-  const [row] = await db
+  // `previous` is the row before this update (a self-join sees the old snapshot).
+  const previous = alias(harnesses, "previous");
+  const [updated] = await db
     .update(harnesses)
     .set({
       reportedVersion: input.version,
@@ -753,9 +823,36 @@ export async function recordHarnessHeartbeat(
       }),
       lastHeartbeatAt: input.now ?? new Date(),
     })
-    .where(eq(harnesses.id, harnessId))
-    .returning();
-  return row ?? null;
+    .from(previous)
+    .where(and(eq(harnesses.id, harnessId), eq(previous.id, harnesses.id)))
+    .returning({
+      row: getTableColumns(harnesses),
+      before: {
+        reportedVersion: previous.reportedVersion,
+        selfUpdate: previous.selfUpdate,
+        updateState: previous.updateState,
+        failedVersions: previous.failedVersions,
+        reportedInstallables: previous.reportedInstallables,
+        reportedModels: previous.reportedModels,
+        updateRequestId: previous.updateRequestId,
+      },
+    });
+  if (!updated) return null;
+  const { row, before } = updated;
+  // What the fleet shows changed (version, update state, installs): not a steady heartbeat.
+  const after = {
+    reportedVersion: row.reportedVersion,
+    selfUpdate: row.selfUpdate,
+    updateState: row.updateState,
+    failedVersions: row.failedVersions,
+    reportedInstallables: row.reportedInstallables,
+    reportedModels: row.reportedModels,
+    updateRequestId: row.updateRequestId,
+  };
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    recordChange(db, { resource: "agent", ids: [row.id], organizationId: row.organizationId });
+  }
+  return row;
 }
 
 export async function getHarness(

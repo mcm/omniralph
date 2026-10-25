@@ -61,6 +61,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
+import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
@@ -182,6 +183,7 @@ const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
 const routingPreview = await import("./routing/preview/route");
+const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
 const reviewDetail = await import("./reviews/[id]/route");
 const reviewRerun = await import("./reviews/[id]/rerun/route");
@@ -1455,6 +1457,34 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         const layout = await AppLayout({ children: null });
         expect(layout.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
       }
+    }
+  });
+
+  it("grants each user's live token only their own organization's change channel", async () => {
+    vi.stubEnv("ABLY_API_KEY", "appId.keyId:s3cr3t");
+    try {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const { status, body } = await call(liveToken.GET);
+          expect(status).toBe(200);
+          const { payload } = await jwtVerify(
+            body.token as string,
+            new TextEncoder().encode("s3cr3t"),
+          );
+          const capability = JSON.parse(payload["x-ably-capability"] as string) as object;
+          expect(capability).toEqual({
+            [`org:${own.orgId}:changes`]: ["subscribe"],
+            [`user:${userId}:changes`]: ["subscribe"],
+          });
+          expect(JSON.stringify(capability)).not.toContain(other.orgId);
+        }
+      }
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 

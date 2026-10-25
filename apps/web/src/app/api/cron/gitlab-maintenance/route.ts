@@ -15,6 +15,7 @@ import {
 } from "@omniralph/scm";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
+import { liveRoute } from "@/lib/live/request";
 
 interface GitLabCredentials extends Record<string, unknown> {
   token: string;
@@ -35,7 +36,7 @@ const ROTATION_INTERVAL_MS = 60 * 60 * 1000;
  * keeps its previous health (plus any rotation problem) and is counted as
  * failed.
  */
-export async function GET(req: Request): Promise<Response> {
+async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const db = getDb();
   const totals = { rotated: 0, checked: 0, problems: 0, failed: 0 };
@@ -181,3 +182,5 @@ async function keepHealthWith(
     );
   }
 }
+
+export const GET = liveRoute(get);
