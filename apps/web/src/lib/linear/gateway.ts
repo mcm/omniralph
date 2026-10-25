@@ -17,6 +17,10 @@ export interface IssueSummary {
   branchName: string;
   teamId: string;
   teamKey: string;
+  /** The team's name (when Linear returned it). */
+  teamName?: string;
+  /** The workflow state's ID (when Linear returned it). */
+  stateId?: string;
   stateType: string;
   stateName: string;
   labels: string[];
@@ -25,6 +29,7 @@ export interface IssueSummary {
   /** Manual position among its parent's sub-issues. */
   subIssueSortOrder?: number;
   projectName?: string;
+  projectId?: string;
   parentId?: string;
   assigneeId?: string;
   /**
@@ -58,6 +63,44 @@ export interface Blocker {
   identifier: string;
   title?: string;
   stateType: string;
+  stateName?: string;
+}
+
+/**
+ * Which issues `listIssues` returns: every condition given must hold. Paginated by
+ * `after` (the previous page's `endCursor`), `first` per page.
+ */
+export interface ListIssuesFilter {
+  teamId?: string;
+  projectId?: string;
+  /** Issues carrying any of these labels. */
+  labelIds?: string[];
+  /** Issues delegated to this (agent) user. */
+  delegateId?: string;
+  /** Issues not delegated to this user (undelegated ones included). */
+  notDelegateId?: string;
+  /** Issues in a workflow state of one of these types. */
+  stateTypes?: string[];
+  /**
+   * Issues in a state of one of `types` (except in the `typesExceptTeamIds` teams), or in
+   * one of the states `ids`.
+   */
+  stateMatch?: { types: string[]; typesExceptTeamIds: string[]; ids: string[] };
+  first: number;
+  after?: string | null;
+}
+
+/** An issue `listIssues` returned, with the issues that block it. */
+export interface IssueWithBlockers extends IssueSummary {
+  /** Issues that block it ("X blocks this"), in any state. */
+  blockers: Blocker[];
+}
+
+/** A page of `listIssues`. */
+export interface IssuePage {
+  issues: IssueWithBlockers[];
+  /** The `after` of the next page; null on the last one. */
+  endCursor: string | null;
 }
 
 export interface WorkflowState {
@@ -240,6 +283,11 @@ export interface LinearGateway {
   getDocument(idOrSlugId: string): Promise<LinearDocument>;
   /** Issues that block the given issue ("X blocks this"). */
   getBlockers(issueId: string): Promise<Blocker[]>;
+  /**
+   * A page of issues matching `filter`, oldest first, each with its blockers (fetched in
+   * the same query).
+   */
+  listIssues(filter: ListIssuesFilter): Promise<IssuePage>;
   /** The team's workflow states by position (cached per team for the gateway's lifetime). */
   getWorkflowStates(teamId: string): Promise<WorkflowState[]>;
   /** The team's label with this name (case-insensitive), else a workspace label, else null. */
@@ -321,8 +369,10 @@ const ISSUE_SELECTION = /* GraphQL */ `
     team {
       id
       key
+      name
     }
     state {
+      id
       name
       type
     }
@@ -332,6 +382,7 @@ const ISSUE_SELECTION = /* GraphQL */ `
       }
     }
     project {
+      id
       name
     }
   `;
@@ -354,10 +405,10 @@ interface IssueNode {
   parent?: { id: string } | null;
   assignee?: { id: string } | null;
   creator?: { id: string; name: string; url?: string | null } | null;
-  team?: { id: string; key: string } | null;
-  state?: { name: string; type: string } | null;
+  team?: { id: string; key: string; name?: string | null } | null;
+  state?: { id?: string | null; name: string; type: string } | null;
   labels?: { nodes: Array<{ name: string }> } | null;
-  project?: { name: string } | null;
+  project?: { id?: string | null; name: string } | null;
 }
 
 /** The routing fields of an issue (`routingFieldsOf`). */
@@ -470,12 +521,15 @@ function summarize(issue: IssueNode): IssueSummary {
     branchName: issue.branchName,
     teamId: issue.team?.id ?? "",
     teamKey: issue.team?.key ?? "",
+    ...(issue.team?.name && { teamName: issue.team.name }),
+    ...(issue.state?.id && { stateId: issue.state.id }),
     stateType: issue.state?.type ?? "unstarted",
     stateName: issue.state?.name ?? "",
     labels: issue.labels?.nodes.map((l) => l.name) ?? [],
     priority: issue.priority ?? 0,
     subIssueSortOrder: issue.subIssueSortOrder ?? undefined,
     projectName: issue.project?.name ?? undefined,
+    ...(issue.project?.id && { projectId: issue.project.id }),
     parentId: issue.parent?.id ?? undefined,
     assigneeId: issue.assignee?.id ?? undefined,
     creator: issue.creator
@@ -486,6 +540,66 @@ function summarize(issue: IssueNode): IssueSummary {
         }
       : undefined,
   };
+}
+
+/** An issue's relations as `inverseRelations` lists them. */
+interface RelationNode {
+  type: string;
+  issue?: {
+    id: string;
+    identifier: string;
+    title?: string | null;
+    state?: { type: string; name?: string | null } | null;
+  } | null;
+}
+
+/** The `blocks` relations among an issue's inverse relations: the issues that block it. */
+function blockersOf(nodes: RelationNode[]): Blocker[] {
+  return nodes.flatMap((rel) =>
+    rel.type === "blocks" && rel.issue
+      ? [
+          {
+            id: rel.issue.id,
+            identifier: rel.issue.identifier,
+            title: rel.issue.title ?? undefined,
+            stateType: rel.issue.state?.type ?? "unstarted",
+            ...(rel.issue.state?.name && { stateName: rel.issue.state.name }),
+          },
+        ]
+      : [],
+  );
+}
+
+/** Blockers `listIssues` reads per issue (in the same query, so its complexity stays bounded). */
+const BLOCKERS_PER_ISSUE = 25;
+
+/** `ListIssuesFilter` as a Linear `IssueFilter` (every condition must hold). */
+export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
+  const and: Array<Record<string, unknown>> = [];
+  if (filter.teamId) and.push({ team: { id: { eq: filter.teamId } } });
+  if (filter.projectId) and.push({ project: { id: { eq: filter.projectId } } });
+  if (filter.labelIds?.length) and.push({ labels: { some: { id: { in: filter.labelIds } } } });
+  if (filter.delegateId) and.push({ delegate: { id: { eq: filter.delegateId } } });
+  if (filter.notDelegateId) {
+    and.push({
+      or: [{ delegate: { null: true } }, { delegate: { id: { neq: filter.notDelegateId } } }],
+    });
+  }
+  if (filter.stateTypes) and.push({ state: { type: { in: filter.stateTypes } } });
+  if (filter.stateMatch) {
+    const { types, typesExceptTeamIds, ids } = filter.stateMatch;
+    const or: Array<Record<string, unknown>> = [];
+    if (types.length) {
+      or.push({
+        state: { type: { in: types } },
+        ...(typesExceptTeamIds.length && { team: { id: { nin: typesExceptTeamIds } } }),
+      });
+    }
+    if (ids.length) or.push({ state: { id: { in: ids } } });
+    // No state matches: an impossible condition rather than none.
+    and.push(or.length ? { or } : { state: { id: { in: [] } } });
+  }
+  return { and };
 }
 
 /** Thrown when Linear answers a mutation with `success: false` or without the created entity. */
@@ -757,15 +871,6 @@ export class SdkLinearGateway implements LinearGateway {
   }
 
   async getBlockers(issueId: string): Promise<Blocker[]> {
-    type RelationNode = {
-      type: string;
-      issue?: {
-        id: string;
-        identifier: string;
-        title?: string | null;
-        state?: { type: string } | null;
-      } | null;
-    };
     const nodes = await this.paginate(async (after) => {
       const data = await this.request<{ issue: { inverseRelations: Connection<RelationNode> } }>(
         /* GraphQL */ `
@@ -780,6 +885,7 @@ export class SdkLinearGateway implements LinearGateway {
                     title
                     state {
                       type
+                      name
                     }
                   }
                 }
@@ -795,18 +901,50 @@ export class SdkLinearGateway implements LinearGateway {
       );
       return data.issue.inverseRelations;
     });
-    return nodes.flatMap((rel) =>
-      rel.type === "blocks" && rel.issue
-        ? [
-            {
-              id: rel.issue.id,
-              identifier: rel.issue.identifier,
-              title: rel.issue.title ?? undefined,
-              stateType: rel.issue.state?.type ?? "unstarted",
-            },
-          ]
-        : [],
+    return blockersOf(nodes);
+  }
+
+  async listIssues(filter: ListIssuesFilter): Promise<IssuePage> {
+    const data = await this.request<{
+      issues: Connection<IssueNode & { inverseRelations: { nodes: RelationNode[] } }>;
+    }>(
+      /* GraphQL */ `
+        query ListIssues($filter: IssueFilter, $first: Int!, $after: String) {
+          issues(filter: $filter, first: $first, after: $after) {
+            nodes {
+              ...IssueFields
+              inverseRelations(first: ${BLOCKERS_PER_ISSUE}) {
+                nodes {
+                  type
+                  issue {
+                    id
+                    identifier
+                    title
+                    state {
+                      type
+                      name
+                    }
+                  }
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+        ${ISSUE_FIELDS}
+      `,
+      { filter: issueFilter(filter), first: filter.first, after: filter.after ?? null },
     );
+    return {
+      issues: data.issues.nodes.map(({ inverseRelations, ...issue }) => ({
+        ...summarize(issue),
+        blockers: blockersOf(inverseRelations.nodes),
+      })),
+      endCursor: data.issues.pageInfo.hasNextPage ? (data.issues.pageInfo.endCursor ?? null) : null,
+    };
   }
 
   getWorkflowStates(teamId: string): Promise<WorkflowState[]> {

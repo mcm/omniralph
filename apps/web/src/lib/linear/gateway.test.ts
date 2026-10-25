@@ -481,6 +481,117 @@ describe("SdkLinearGateway reads", () => {
     ]);
   });
 
+  it("reads the team's name, the state's ID and the project's ID when Linear returns them", async () => {
+    resolvers.Issue = (v) => ({
+      issue: issueNode(String(v.id), {
+        team: { id: "team-1", key: "TOOL", name: "Tooling" },
+        state: { id: "state-1", name: "Todo", type: "unstarted" },
+        project: { id: "project-1", name: "Omniralph" },
+      }),
+    });
+    expect(await gateway().getIssue("42")).toMatchObject({
+      teamName: "Tooling",
+      stateId: "state-1",
+      projectId: "project-1",
+      projectName: "Omniralph",
+    });
+  });
+
+  it("lists a page of issues with their blockers in one request", async () => {
+    resolvers.ListIssues = () => ({
+      issues: {
+        nodes: [
+          {
+            ...issueNode("1"),
+            inverseRelations: {
+              nodes: [
+                {
+                  type: "blocks",
+                  issue: {
+                    id: "b1",
+                    identifier: "TOOL-7",
+                    title: "Blocker",
+                    state: { type: "started", name: "In Progress" },
+                  },
+                },
+                { type: "related", issue: { id: "r1", identifier: "TOOL-8", state: null } },
+              ],
+            },
+          },
+          { ...issueNode("2"), inverseRelations: { nodes: [] } },
+        ],
+        pageInfo: { hasNextPage: true, endCursor: "cursor-2" },
+      },
+    });
+    const page = await gateway().listIssues({
+      teamId: "team-1",
+      projectId: "project-1",
+      labelIds: ["label-1"],
+      delegateId: "app-user",
+      stateTypes: ["unstarted", "backlog"],
+      stateMatch: { types: ["unstarted"], typesExceptTeamIds: ["team-2"], ids: ["state-9"] },
+      first: 2,
+      after: "cursor-1",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.query).toContain("inverseRelations");
+    expect(calls[0]!.variables).toEqual({
+      first: 2,
+      after: "cursor-1",
+      filter: {
+        and: [
+          { team: { id: { eq: "team-1" } } },
+          { project: { id: { eq: "project-1" } } },
+          { labels: { some: { id: { in: ["label-1"] } } } },
+          { delegate: { id: { eq: "app-user" } } },
+          { state: { type: { in: ["unstarted", "backlog"] } } },
+          {
+            or: [
+              { state: { type: { in: ["unstarted"] } }, team: { id: { nin: ["team-2"] } } },
+              { state: { id: { in: ["state-9"] } } },
+            ],
+          },
+        ],
+      },
+    });
+    expect(page.endCursor).toBe("cursor-2");
+    expect(page.issues.map((i) => i.identifier)).toEqual(["TOOL-1", "TOOL-2"]);
+    expect(page.issues[0]!.blockers).toEqual([
+      {
+        id: "b1",
+        identifier: "TOOL-7",
+        title: "Blocker",
+        stateType: "started",
+        stateName: "In Progress",
+      },
+    ]);
+    expect(page.issues[1]!.blockers).toEqual([]);
+  });
+
+  it("lists issues not delegated to a user, and answers no cursor on the last page", async () => {
+    resolvers.ListIssues = () => ({
+      issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: "end" } },
+    });
+    const page = await gateway().listIssues({
+      notDelegateId: "app-user",
+      stateMatch: { types: [], typesExceptTeamIds: [], ids: [] },
+      first: 10,
+    });
+    expect(page).toEqual({ issues: [], endCursor: null });
+    expect(calls[0]!.variables).toEqual({
+      first: 10,
+      after: null,
+      filter: {
+        and: [
+          {
+            or: [{ delegate: { null: true } }, { delegate: { id: { neq: "app-user" } } }],
+          },
+          { state: { id: { in: [] } } },
+        ],
+      },
+    });
+  });
+
   it("caches workflow states per team, sorted by position", async () => {
     resolvers.TeamWorkflowStates = (v) => ({
       workflowStates: {

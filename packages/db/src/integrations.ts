@@ -8,7 +8,7 @@ import { and, asc, eq, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { recordConnectionChange } from "./repositories.js";
-import { integrations, oauthStateUses } from "./schema.js";
+import { integrations, oauthStateUses, type TrackerStateMapping } from "./schema.js";
 
 export type IntegrationProvider = (typeof integrations.$inferSelect)["provider"];
 
@@ -19,6 +19,8 @@ export interface Integration {
   externalId: string;
   name: string;
   installedByUserId: string | null;
+  /** Which workflow states mean "Ready to start" and "Needs refining". */
+  stateMapping: TrackerStateMapping;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,6 +70,31 @@ export async function getIntegration(
     )
     .limit(1);
   return row ? toIntegration(row) : null;
+}
+
+/** An integration by ID (without credentials), or null. */
+export async function getIntegrationById(db: Database, id: string): Promise<Integration | null> {
+  const [row] = await db.select().from(integrations).where(eq(integrations.id, id)).limit(1);
+  return row ? toIntegration(row) : null;
+}
+
+/**
+ * Saves an integration's readiness state mapping (validated by the caller) and records a
+ * `connection` change. Returns the integration, or null when it no longer exists.
+ */
+export async function setIntegrationStateMapping(
+  db: Database,
+  id: string,
+  stateMapping: TrackerStateMapping,
+): Promise<Integration | null> {
+  const [row] = await db
+    .update(integrations)
+    .set({ stateMapping, updatedAt: new Date() })
+    .where(eq(integrations.id, id))
+    .returning();
+  if (!row) return null;
+  recordConnectionChange(db, row);
+  return toIntegration(row);
 }
 
 /**

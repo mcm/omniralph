@@ -200,6 +200,7 @@ const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
+const trackerStateMapping = await import("./trackers/[integrationId]/state-mapping/route");
 const organizationSettings = await import("./organization/route");
 const organizationInvitations = await import("./organization/invitations/route");
 const organizationInvitation = await import("./organization/invitations/[id]/route");
@@ -589,6 +590,82 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           .status,
       ).toBe(401);
     } finally {
+      for (const id of linear.values()) {
+        await db.delete(integrationRows).where(eq(integrationRows.id, id));
+      }
+    }
+  });
+
+  it("shows each organization's own tracker state mapping to its members, saves it for its admins, and 404s on the other's", async () => {
+    const linear = new Map<string, string>();
+    const mapping = {
+      ready: { types: ["unstarted", "started"] },
+      needsRefining: { types: ["backlog"] },
+      teams: {},
+    };
+    try {
+      for (const own of [a, b]) {
+        const integration = await saveIntegration(db, {
+          organizationId: own.orgId,
+          provider: "linear",
+          externalId: `${own.name}-mapping-workspace`,
+          name: `${own.name} workspace`,
+          credentials: { accessToken: "t" },
+          installedByUserId: null,
+        });
+        if (integration === "other_organization") throw new Error("setup");
+        linear.set(own.orgId, integration.id);
+        const workspace = new FakeLinearGateway();
+        workspace.teams = [{ id: `${own.name}-team`, key: "ENG", name: `${own.name} team` }];
+        state.linear.set(own.orgId, workspace);
+      }
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const params = { integrationId: linear.get(own.orgId)! };
+        const otherParams = { integrationId: linear.get(other.orgId)! };
+        const path = `/api/ui/trackers/${params.integrationId}/state-mapping`;
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const shown = await call(trackerStateMapping.GET, { params, path });
+          expect(shown.status).toBe(200);
+          expect(shown.body).toMatchObject({ integrationId: params.integrationId });
+          for (const marker of markers(other)) {
+            expect(JSON.stringify(shown.body)).not.toContain(marker);
+          }
+          expect(JSON.stringify(shown.body)).not.toContain(`${other.name}-team`);
+          expect(await call(trackerStateMapping.GET, { params: otherParams, path })).toMatchObject({
+            status: 404,
+          });
+          expect(
+            await call(trackerStateMapping.PUT, {
+              params: otherParams,
+              path,
+              method: "PUT",
+              body: mapping,
+            }),
+          ).toMatchObject({ status: 404 });
+        }
+        state.userId = own.memberId;
+        expect(
+          await call(trackerStateMapping.PUT, { params, path, method: "PUT", body: mapping }),
+        ).toMatchObject({ status: 403 });
+        state.userId = own.adminId;
+        expect(
+          await call(trackerStateMapping.PUT, { params, path, method: "PUT", body: mapping }),
+        ).toMatchObject({ status: 200, body: { mapping } });
+      }
+      state.userId = null;
+      expect(
+        (
+          await call(trackerStateMapping.GET, {
+            params: { integrationId: linear.get(a.orgId)! },
+          })
+        ).status,
+      ).toBe(401);
+    } finally {
+      state.linear.clear();
       for (const id of linear.values()) {
         await db.delete(integrationRows).where(eq(integrationRows.id, id));
       }

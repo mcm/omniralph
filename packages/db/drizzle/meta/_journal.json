@@ -624,6 +624,13 @@
       "when": 1792926496357,
       "tag": "0088_webhook_events",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792928701034,
+      "tag": "0089_integration_state_mapping",
+      "breakpoints": true
     }
   ]
 }
