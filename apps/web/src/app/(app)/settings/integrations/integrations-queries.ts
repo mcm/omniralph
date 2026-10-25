@@ -24,7 +24,7 @@ export function useIntegrations() {
 /**
  * What an integration change affects: this page and every other connection query (the
  * repository Coding tab's Linear status), runs (whether Linear is connected) and the
- * settings that list what uses a task (chat tasks).
+ * settings that list what uses a playbook (chat playbooks).
  */
 export const integrationsChanged = (keys: QueryKeys) => [
   keys.connections.all,

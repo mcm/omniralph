@@ -694,6 +694,13 @@
       "when": 1792966270313,
       "tag": "0098_repository_coding_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1792969210083,
+      "tag": "0099_chat_playbooks",
+      "breakpoints": true
     }
   ]
 }

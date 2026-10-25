@@ -179,9 +179,9 @@ export interface ChatChannelPlaybookBindings {
   connectionName: string;
   channelId: string;
   /** The channel's "ask about code" playbook; null follows the organization's. */
-  askAboutCodeTaskId: string | null;
+  askPlaybookId: string | null;
   /** The channel's "start work" playbook; null follows the organization's. */
-  startWorkTaskId: string | null;
+  startWorkPlaybookId: string | null;
 }
 
 /** The organization's chat channel overrides, by connection name then channel. */
@@ -194,8 +194,8 @@ export async function listChatChannelPlaybookBindings(
       connectionId: chatChannelTaskSettings.connectionId,
       connectionName: chatConnections.name,
       channelId: chatChannelTaskSettings.channelId,
-      askAboutCodeTaskId: chatChannelTaskSettings.askAboutCodeTaskId,
-      startWorkTaskId: chatChannelTaskSettings.startWorkTaskId,
+      askPlaybookId: chatChannelTaskSettings.askPlaybookId,
+      startWorkPlaybookId: chatChannelTaskSettings.startWorkPlaybookId,
     })
     .from(chatChannelTaskSettings)
     .innerJoin(chatConnections, eq(chatConnections.id, chatChannelTaskSettings.connectionId))

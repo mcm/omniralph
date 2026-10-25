@@ -1366,13 +1366,12 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
            where table_schema = 'public' and table_name in ('agent_definitions', 'task_definitions', 'playbooks')`,
         );
         expect(tables).toEqual([{ table_name: "playbooks" }]);
+        // The built-in chat choice is kept (as `chat.playbooks` from 0099).
         const { rows: chat } = await client.query(
-          `select value from app_settings where key = 'chat.tasks'`,
+          `select value from app_settings where key = 'chat.playbooks'`,
         );
         expect(chat).toEqual([
-          {
-            value: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
-          },
+          { value: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" } },
         ]);
       } finally {
         await cleanup();
@@ -1577,6 +1576,104 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         expect(columns).toHaveLength(1);
       } finally {
         await cleanup();
+      }
+    });
+  });
+
+  describe("chat tasks become chat playbooks (0099)", () => {
+    it("converts the organization's choice and renames the channel override columns", async () => {
+      const name = "chat_playbooks";
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0099_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme'), ('Beta'), ('Gamma') returning id`,
+        );
+        const [acme, beta, gamma] = orgs.map((o) => o.id) as [string, string, string];
+        await client.query(
+          `insert into app_settings (organization_id, key, value) values
+             ($1, 'chat.tasks', '{"askAboutCode":"builtin:ask-about-code","startWork":"builtin:handle-request"}'),
+             ($2, 'chat.tasks', '{"startWork":"builtin:handle-request","askAboutCode":7}'),
+             ($3, 'chat.tasks', '{"askAboutCode":null}'),
+             ($1, 'tasks.allowedTypes', '["review"]')`,
+          [acme, beta, gamma],
+        );
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into chat_connections (organization_id, platform, external_id, name, encrypted_credentials)
+           values ($1, 'slack', 'T1', 'Slack', 'x') returning id`,
+          [acme],
+        );
+        await client.query(
+          `insert into chat_channel_task_settings (organization_id, connection_id, channel_id, ask_about_code_task_id, start_work_task_id)
+           values ($1, $2, 'slack:C1', 'builtin:ask-about-code', null),
+                  ($1, $2, 'slack:C2', null, 'builtin:handle-request')`,
+          [acme, connections[0]!.id],
+        );
+
+        await runMigrations(uri);
+
+        const { rows: settings } = await client.query<{
+          organization_id: string;
+          key: string;
+          value: unknown;
+        }>(
+          `select organization_id, key, value from app_settings
+           where key like 'chat.%' or key = 'tasks.allowedTypes' order by key, organization_id`,
+        );
+        expect(settings).toEqual(
+          [
+            {
+              organization_id: acme,
+              key: "chat.playbooks",
+              value: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+            },
+            // A field that isn't an ID was the built-in default: it is left out.
+            {
+              organization_id: beta,
+              key: "chat.playbooks",
+              value: { startWork: "builtin:handle-request" },
+            },
+            // Gamma chose nothing: no row. Other settings are untouched.
+            { organization_id: acme, key: "tasks.allowedTypes", value: ["review"] },
+          ].sort((a, b) =>
+            a.key === b.key
+              ? Number(a.organization_id > b.organization_id) - 0.5
+              : Number(a.key > b.key) - 0.5,
+          ),
+        );
+        const { rows: overrides } = await client.query(
+          `select channel_id, ask_playbook_id, start_work_playbook_id
+           from chat_channel_task_settings order by channel_id`,
+        );
+        expect(overrides).toEqual([
+          {
+            channel_id: "slack:C1",
+            ask_playbook_id: "builtin:ask-about-code",
+            start_work_playbook_id: null,
+          },
+          {
+            channel_id: "slack:C2",
+            ask_playbook_id: null,
+            start_work_playbook_id: "builtin:handle-request",
+          },
+        ]);
+      } finally {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
       }
     });
   });

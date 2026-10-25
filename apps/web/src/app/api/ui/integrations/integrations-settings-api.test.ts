@@ -9,10 +9,10 @@ const state = vi.hoisted(() => ({
   discordConfigured: true,
 }));
 /**
- * org-a's own playbooks: a chat query playbook, a chat coding playbook, and a query
- * playbook not accepting `chat.request` (no picker offers it).
+ * org-a's own playbooks: a chat-ask playbook, a request playbook, and a correlation
+ * playbook (no picker offers it).
  */
-async function storedTaskRows() {
+async function storedPlaybookRows() {
   const { getBuiltinPlaybook } = await import("@omniralph/tasks");
   const row = (id: string, name: string, base: string, changes: object = {}) => {
     const { id: _id, name: _name, role, ...definition } = getBuiltinPlaybook(base)!;
@@ -50,12 +50,12 @@ vi.mock("@/lib/chat/discord-oauth", () => ({
   discordOAuthConfig: () => (state.discordConfigured ? { applicationId: "a" } : null),
 }));
 vi.mock("@omniralph/db", () => ({
-  DEFAULT_CHAT_TASKS: {
-    askAboutCode: "builtin:ask-about-code",
+  DEFAULT_CHAT_PLAYBOOKS: {
+    ask: "builtin:ask-about-code",
     startWork: "builtin:handle-request",
   },
   listStoredPlaybooks: async (_db: unknown, organizationId: string) =>
-    organizationId === "org-a" ? await storedTaskRows() : [],
+    organizationId === "org-a" ? await storedPlaybookRows() : [],
   // Only the active organization's integration exists.
   getIntegration: async (_db: unknown, organizationId: string, provider: string) =>
     organizationId === "org-a" && provider === "linear"
@@ -102,24 +102,24 @@ vi.mock("@omniralph/db", () => ({
           },
         ]
       : [],
-  getChatTaskDefaults: async (_db: unknown, organizationId: string) =>
+  getChatPlaybookDefaults: async (_db: unknown, organizationId: string) =>
     organizationId === "org-a"
-      ? { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" }
+      ? { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" }
       : null,
-  listChatChannelTaskSettings: async (_db: unknown, organizationId: string) =>
+  listChatChannelPlaybookSettings: async (_db: unknown, organizationId: string) =>
     organizationId === "org-a"
       ? [
           {
             connectionId: "conn-1",
             channelId: "slack:C0SECURITY",
-            askAboutCodeTaskId: null,
-            startWorkTaskId: "builtin:handle-request",
+            askPlaybookId: null,
+            startWorkPlaybookId: "builtin:handle-request",
           },
           {
             connectionId: "conn-3",
             channelId: "discord:G01:222",
-            askAboutCodeTaskId: "builtin:ask-about-code",
-            startWorkTaskId: null,
+            askPlaybookId: "builtin:ask-about-code",
+            startWorkPlaybookId: null,
           },
         ]
       : [],
@@ -186,7 +186,7 @@ describe("GET /api/ui/integrations", () => {
         },
       ],
       discordConfigured: true,
-      chatTasks: expect.anything(),
+      chatPlaybooks: expect.anything(),
     });
   });
 
@@ -213,19 +213,19 @@ describe("GET /api/ui/integrations", () => {
   });
 });
 
-describe("GET /api/ui/integrations › chat tasks", () => {
-  it("shows the organization's chat tasks, the choices and each connection's channels", async () => {
+describe("GET /api/ui/integrations › chat playbooks", () => {
+  it("shows the organization's chat playbooks, the choices and each connection's channels", async () => {
     state.user = user("admin");
     const { props } = await load();
-    expect(props.chatTasks).toEqual({
-      defaults: { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" },
+    expect(props.chatPlaybooks).toEqual({
+      defaults: { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" },
       builtinDefaults: {
-        askAboutCode: "builtin:ask-about-code",
+        ask: "builtin:ask-about-code",
         startWork: "builtin:handle-request",
       },
-      // Built-in and the organization's own tasks of the role's type accepting chat.request.
+      // Built-in and the organization's own playbooks of the slot's role (chat-ask, request).
       choices: {
-        askAboutCode: [
+        ask: [
           { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
           { id: "11111111-1111-4111-8111-111111111111", name: "Security Q&A", builtin: false },
         ],
@@ -243,7 +243,7 @@ describe("GET /api/ui/integrations › chat tasks", () => {
             {
               channelId: "slack:C0SECURITY",
               channel: "C0SECURITY",
-              askAboutCode: null,
+              ask: null,
               startWork: "builtin:handle-request",
             },
           ],
@@ -257,7 +257,7 @@ describe("GET /api/ui/integrations › chat tasks", () => {
             {
               channelId: "discord:G01:222",
               channel: "222",
-              askAboutCode: "builtin:ask-about-code",
+              ask: "builtin:ask-about-code",
               startWork: null,
             },
           ],

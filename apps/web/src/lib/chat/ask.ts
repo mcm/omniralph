@@ -39,7 +39,7 @@ import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
 /**
  * Code questions from chat: a question about a repository enqueues a run of
- * the channel's "ask about code" query task (`chatTasksFor`; the built-in
+ * the channel's "ask about code" playbook (`chatPlaybooksFor`; the built-in
  * `builtin:ask-about-code` unless chosen otherwise, job type `chat.ask`),
  * answered on a harness from a read-only checkout of the default branch,
  * within the task's fixed token budget (or none); the built-in's `chat-thread`

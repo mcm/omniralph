@@ -280,30 +280,30 @@ export async function deleteChatConnectionByExternalId(
   return row ? toChatConnection(row) : null;
 }
 
-// ── Channel task settings ────────────────────────────────────────────────────
+// ── Channel playbook settings ────────────────────────────────────────────────
 
-export type ChatChannelTaskSetting = typeof chatChannelTaskSettings.$inferSelect;
+export type ChatChannelPlaybookSetting = typeof chatChannelTaskSettings.$inferSelect;
 
-export interface UpsertChatChannelTaskSettingInput {
+export interface UpsertChatChannelPlaybookSettingInput {
   organizationId: string;
   connectionId: string;
   channelId: string;
-  /** Null keeps the organization's "ask about code" task. */
-  askAboutCodeTaskId: string | null;
-  /** Null keeps the organization's "start work" task. */
-  startWorkTaskId: string | null;
+  /** Null keeps the organization's "ask about code" playbook. */
+  askPlaybookId: string | null;
+  /** Null keeps the organization's "start work" playbook. */
+  startWorkPlaybookId: string | null;
   updatedBy: string | null;
 }
 
 /**
- * An organization's channel task overrides, by connection then channel; only
+ * An organization's channel playbook overrides, by connection then channel; only
  * `connectionId`'s when given.
  */
-export async function listChatChannelTaskSettings(
+export async function listChatChannelPlaybookSettings(
   db: Database,
   organizationId: string,
   connectionId?: string,
-): Promise<ChatChannelTaskSetting[]> {
+): Promise<ChatChannelPlaybookSetting[]> {
   return db
     .select()
     .from(chatChannelTaskSettings)
@@ -318,13 +318,13 @@ export async function listChatChannelTaskSettings(
     .orderBy(asc(chatChannelTaskSettings.connectionId), asc(chatChannelTaskSettings.channelId));
 }
 
-/** An organization's task overrides of one channel of a connection, or null. */
-export async function getChatChannelTaskSetting(
+/** An organization's playbook overrides of one channel of a connection, or null. */
+export async function getChatChannelPlaybookSetting(
   db: Database,
   organizationId: string,
   connectionId: string,
   channelId: string,
-): Promise<ChatChannelTaskSetting | null> {
+): Promise<ChatChannelPlaybookSetting | null> {
   const [row] = await db
     .select()
     .from(chatChannelTaskSettings)
@@ -340,13 +340,13 @@ export async function getChatChannelTaskSetting(
 }
 
 /**
- * Creates or replaces a channel's task overrides. Null when the connection
+ * Creates or replaces a channel's playbook overrides. Null when the connection
  * isn't one of the organization's.
  */
-export async function upsertChatChannelTaskSetting(
+export async function upsertChatChannelPlaybookSetting(
   db: Database,
-  input: UpsertChatChannelTaskSettingInput,
-): Promise<ChatChannelTaskSetting | null> {
+  input: UpsertChatChannelPlaybookSettingInput,
+): Promise<ChatChannelPlaybookSetting | null> {
   return db.transaction(async (tx) => {
     const [connection] = await tx
       .select({ id: chatConnections.id })
@@ -365,8 +365,8 @@ export async function upsertChatChannelTaskSetting(
       .onConflictDoUpdate({
         target: [chatChannelTaskSettings.connectionId, chatChannelTaskSettings.channelId],
         set: {
-          askAboutCodeTaskId: input.askAboutCodeTaskId,
-          startWorkTaskId: input.startWorkTaskId,
+          askPlaybookId: input.askPlaybookId,
+          startWorkPlaybookId: input.startWorkPlaybookId,
           updatedBy: input.updatedBy,
           updatedAt: new Date(),
         },
@@ -379,8 +379,8 @@ export async function upsertChatChannelTaskSetting(
   });
 }
 
-/** Removes a channel's task overrides; false when the organization has none for it. */
-export async function deleteChatChannelTaskSetting(
+/** Removes a channel's playbook overrides; false when the organization has none for it. */
+export async function deleteChatChannelPlaybookSetting(
   db: Database,
   organizationId: string,
   connectionId: string,

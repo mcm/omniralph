@@ -17,11 +17,11 @@ import {
   listHostTools,
   getIntegration,
   getMembership,
-  listChatChannelTaskSettings,
+  listChatChannelPlaybookSettings,
   listChatConnections,
   saveChatConnection,
   saveIntegration,
-  upsertChatChannelTaskSetting,
+  upsertChatChannelPlaybookSetting,
   getOrganization,
   listChatIdentities,
   listOrganizationDomains,
@@ -247,8 +247,8 @@ const integrations = await import("./integrations/route");
 const linearIntegration = await import("./integrations/linear/route");
 const slackIntegration = await import("./integrations/slack/[id]/route");
 const discordIntegration = await import("./integrations/discord/[id]/route");
-const chatTasks = await import("./integrations/chat-tasks/route");
-const channelTasks = await import("./integrations/chat-connections/[id]/channels/route");
+const chatPlaybooks = await import("./integrations/chat-tasks/route");
+const channelPlaybooks = await import("./integrations/chat-connections/[id]/channels/route");
 const playbookList = await import("./playbooks/route");
 const playbookDetail = await import("./playbooks/[id]/route");
 const playbookClone = await import("./playbooks/[id]/clone/route");
@@ -2557,7 +2557,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   });
 
   describe("integrations", () => {
-    /** Each tenant's Slack workspace and Discord server, one channel of each with its own tasks. */
+    /** Each tenant's Slack workspace and Discord server, one channel of each with its own playbooks. */
     const chat = new Map<string, { slackId: string; discordId: string }>();
     const extra = (own: Tenant) => chat.get(own.name)!;
     const markersOf = (own: Tenant) => [
@@ -2591,15 +2591,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             installedByUserId: own.adminId,
           });
           if (saved === "other_organization") throw new Error("setup");
-          await upsertChatChannelTaskSetting(db, {
+          await upsertChatChannelPlaybookSetting(db, {
             organizationId: own.orgId,
             connectionId: saved.id,
             channelId:
               platform === "slack"
                 ? `slack:C${own.name.toUpperCase()}`
                 : `discord:${saved.externalId}:1`,
-            askAboutCodeTaskId: "builtin:ask-about-code",
-            startWorkTaskId: null,
+            askPlaybookId: "builtin:ask-about-code",
+            startWorkPlaybookId: null,
             updatedBy: own.adminId,
           });
           return saved.id;
@@ -2625,7 +2625,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           discord: [{ id: extra(own).discordId }],
         });
         const connections = (
-          body.chatTasks as { connections: { id: string; channels: unknown[] }[] }
+          body.chatPlaybooks as { connections: { id: string; channels: unknown[] }[] }
         ).connections;
         expect(connections.map((c) => [c.id, c.channels.length])).toEqual(
           expect.arrayContaining([
@@ -2642,7 +2642,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
 
     it("refuses every integration change on the other organization's connections, and to members", async () => {
-      const valid = { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" };
+      const valid = { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" };
       state.userId = a.adminId;
       const otherSlack = { id: extra(b).slackId };
       const otherDiscord = { id: extra(b).discordId };
@@ -2653,19 +2653,19 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         await call(discordIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
       ).toEqual({ status: 400, body: { error: "That Discord server isn't connected." } });
       expect(
-        await call(channelTasks.PUT, {
+        await call(channelPlaybooks.PUT, {
           method: "PUT",
           params: otherSlack,
           body: { channel: "C0123ABCD", ...valid },
         }),
       ).toEqual({ status: 400, body: { error: "That chat connection isn't connected." } });
       expect(
-        await call(channelTasks.DELETE, {
+        await call(channelPlaybooks.DELETE, {
           method: "DELETE",
           params: otherSlack,
           body: { channelId: "slack:CBETA" },
         }),
-      ).toEqual({ status: 400, body: { error: "That channel has no task overrides." } });
+      ).toEqual({ status: 400, body: { error: "That channel has no playbook overrides." } });
       // Another organization's id under its own platform's route, and a non-uuid.
       expect(
         await call(slackIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
@@ -2674,7 +2674,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         await call(slackIntegration.DELETE, { method: "DELETE", params: { id: "nope" } }),
       ).toMatchObject({ status: 404 });
       expect(
-        await call(channelTasks.PUT, { method: "PUT", params: { id: "nope" }, body: {} }),
+        await call(channelPlaybooks.PUT, { method: "PUT", params: { id: "nope" }, body: {} }),
       ).toMatchObject({ status: 404 });
 
       // Members can't change anything.
@@ -2683,13 +2683,13 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         await call(linearIntegration.DELETE, { method: "DELETE" }),
         await call(slackIntegration.DELETE, { method: "DELETE", params: otherSlack }),
         await call(discordIntegration.DELETE, { method: "DELETE", params: otherDiscord }),
-        await call(chatTasks.PUT, { method: "PUT", body: valid }),
-        await call(channelTasks.PUT, {
+        await call(chatPlaybooks.PUT, { method: "PUT", body: valid }),
+        await call(channelPlaybooks.PUT, {
           method: "PUT",
           params: otherSlack,
           body: { channel: "C0123ABCD", ...valid },
         }),
-        await call(channelTasks.DELETE, {
+        await call(channelPlaybooks.DELETE, {
           method: "DELETE",
           params: otherSlack,
           body: { channelId: "slack:CBETA" },
@@ -2699,36 +2699,36 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
 
       expect(await listChatConnections(db, b.orgId)).toHaveLength(2);
-      expect(await listChatChannelTaskSettings(db, b.orgId)).toHaveLength(2);
+      expect(await listChatChannelPlaybookSettings(db, b.orgId)).toHaveLength(2);
       expect(await getIntegration(db, b.orgId, "linear")).not.toBeNull();
     });
 
     it("changes only the active organization's integrations", async () => {
       state.userId = a.adminId;
       const chosen = {
-        askAboutCode: "builtin:ask-about-code",
+        ask: "builtin:ask-about-code",
         startWork: "builtin:handle-request",
       };
-      expect(await call(chatTasks.PUT, { method: "PUT", body: chosen })).toEqual({
+      expect(await call(chatPlaybooks.PUT, { method: "PUT", body: chosen })).toEqual({
         status: 200,
         body: { ok: true },
       });
       expect(
-        await call(channelTasks.PUT, {
+        await call(channelPlaybooks.PUT, {
           method: "PUT",
           params: { id: extra(a).slackId },
-          body: { channel: "C0123ABCD", askAboutCode: null, startWork: "builtin:handle-request" },
+          body: { channel: "C0123ABCD", ask: null, startWork: "builtin:handle-request" },
         }),
       ).toEqual({ status: 200, body: { ok: true } });
       expect(
-        await call(channelTasks.DELETE, {
+        await call(channelPlaybooks.DELETE, {
           method: "DELETE",
           params: { id: extra(a).slackId },
           body: { channelId: "slack:CALPHA" },
         }),
       ).toEqual({ status: 200, body: { ok: true } });
       expect(
-        (await listChatChannelTaskSettings(db, a.orgId)).map((t) => t.channelId).sort(),
+        (await listChatChannelPlaybookSettings(db, a.orgId)).map((t) => t.channelId).sort(),
       ).toEqual([`discord:alpha-discord:1`, "slack:C0123ABCD"]);
 
       expect(
@@ -2750,7 +2750,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       // The other organization keeps everything.
       expect(await getIntegration(db, b.orgId, "linear")).not.toBeNull();
       expect(await listChatConnections(db, b.orgId)).toHaveLength(2);
-      expect(await listChatChannelTaskSettings(db, b.orgId)).toHaveLength(2);
+      expect(await listChatChannelPlaybookSettings(db, b.orgId)).toHaveLength(2);
     });
   });
 

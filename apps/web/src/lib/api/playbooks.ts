@@ -30,13 +30,13 @@ export const playbookUsedBySchema = z.object({
       roles: z.array(z.enum(["review", "correlation", "story", "request"])),
     }),
   ),
-  chatTasks: z.array(z.enum(["askAboutCode", "startWork"])),
+  chatPlaybooks: z.array(z.enum(["ask", "startWork"])),
   chatChannels: z.array(
     z.object({
       connectionId: z.string(),
       connectionName: z.string(),
       channelId: z.string(),
-      roles: z.array(z.enum(["askAboutCode", "startWork"])),
+      roles: z.array(z.enum(["ask", "startWork"])),
     }),
   ),
   /** Story and request playbooks with it as their PR description playbook. */

@@ -347,7 +347,7 @@ async function relayGroup(
       chatThread,
       turnMessages: [],
       ralph,
-      getTask: deps.getTask,
+      getPlaybook: deps.getPlaybook,
       // A tool's own message (a card) doesn't change what the answer posts.
       handedOff: () => undefined,
     },

@@ -7,7 +7,7 @@ import {
   organizations,
   repositories,
   scmConnections,
-  setChatTaskDefaults,
+  setChatPlaybookDefaults,
   type Database,
 } from "@omniralph/db";
 import { getBuiltinPlaybook } from "@omniralph/tasks";
@@ -113,16 +113,16 @@ describe.skipIf(!databaseAvailable)("findPlaybookReferrers", () => {
     });
 
     // Chat: the organization's choice and channel overrides; another org's too.
-    await setChatTaskDefaults(
+    await setChatPlaybookDefaults(
       db,
       orgId,
-      { askAboutCode: id, startWork: "builtin:handle-request" },
+      { ask: id, startWork: "builtin:handle-request" },
       null,
     );
-    await setChatTaskDefaults(db, otherOrgId, { askAboutCode: id, startWork: id }, null);
-    await chatChannel(orgId, "acme", { askAboutCodeTaskId: id });
-    await chatChannel(orgId, "acmeops", { startWorkTaskId: "builtin:handle-request" });
-    await chatChannel(otherOrgId, "other", { askAboutCodeTaskId: id });
+    await setChatPlaybookDefaults(db, otherOrgId, { ask: id, startWork: id }, null);
+    await chatChannel(orgId, "acme", { askPlaybookId: id });
+    await chatChannel(orgId, "acmeops", { startWorkPlaybookId: "builtin:handle-request" });
+    await chatChannel(otherOrgId, "other", { askPlaybookId: id });
 
     // Coding playbooks: one resolvable, one that no longer parses; another org's.
     const coding = await insertPlaybook(db, orgId, {
@@ -151,12 +151,12 @@ describe.skipIf(!databaseAvailable)("findPlaybookReferrers", () => {
       expect.objectContaining({ fullPath: "acme/correlate", roles: ["correlation"] }),
       expect.objectContaining({ fullPath: "acme/review", roles: ["review"] }),
     ]);
-    expect(referrers.chatTasks).toEqual(["askAboutCode"]);
+    expect(referrers.chatPlaybooks).toEqual(["ask"]);
     expect(referrers.chatChannels).toEqual([
       expect.objectContaining({
         connectionName: "acme",
         channelId: "slack:CACME123",
-        roles: ["askAboutCode"],
+        roles: ["ask"],
       }),
     ]);
     expect(referrers.playbooks).toEqual([
@@ -194,8 +194,8 @@ describe.skipIf(!databaseAvailable)("findPlaybookReferrers", () => {
     expect(describeReferrers.playbooks).toContainEqual(
       expect.objectContaining({ id: "builtin:implement-story", builtin: true }),
     );
-    expect((await findPlaybookReferrers(db, org!.id, "builtin:handle-request")).chatTasks).toEqual([
-      "startWork",
-    ]);
+    expect(
+      (await findPlaybookReferrers(db, org!.id, "builtin:handle-request")).chatPlaybooks,
+    ).toEqual(["startWork"]);
   });
 });

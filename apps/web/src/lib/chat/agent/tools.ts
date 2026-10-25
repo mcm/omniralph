@@ -6,7 +6,7 @@ import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
 import type { ThreadAttachment } from "../attachments";
 import type { ChatActor } from "../identity";
-import type { TaskLookup } from "../tasks";
+import type { PlaybookLookup } from "../playbooks";
 
 /**
  * The control-panel agent's tools. Each declares a tier:
@@ -22,7 +22,7 @@ export type ChatToolTier = "read" | "action";
 export interface ChatToolContext {
   db: Database;
   organizationId: string;
-  /** The chat connection that received the message (its channel's chat tasks, `chatTasksFor`). */
+  /** The chat connection that received the message (its channel's chat playbooks, `chatPlaybooksFor`). */
   connection: Pick<ChatConnection, "id" | "organizationId">;
   actor: ChatActor;
   /** The chat user ID of the author of the message being answered. */
@@ -38,8 +38,8 @@ export interface ChatToolContext {
   ralph(): Promise<RalphDeps>;
   /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
   attachments?: ReadonlyMap<string, ThreadAttachment>;
-  /** Looks up the tasks chat runs (default: the organization's, `organizationPlaybooks`). */
-  getTask?: TaskLookup;
+  /** Looks up the playbooks chat runs (default: the organization's, `organizationPlaybooks`). */
+  getPlaybook?: PlaybookLookup;
   /**
    * A tool posted its own message (e.g. a card) in the thread: an empty final
    * answer then posts nothing.

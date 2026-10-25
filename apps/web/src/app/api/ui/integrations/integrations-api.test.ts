@@ -20,17 +20,17 @@ const state = vi.hoisted(() => ({
     credentials: { botToken: string } | null;
   }>,
   chatDeletes: [] as Array<[string, string]>,
-  chatTaskDefaults: [] as Array<[string, unknown, string | null]>,
-  channelTasks: [] as Array<{
+  chatPlaybookDefaults: [] as Array<[string, unknown, string | null]>,
+  channelPlaybooks: [] as Array<{
     organizationId: string;
     connectionId: string;
     channelId: string;
-    askAboutCodeTaskId: string | null;
-    startWorkTaskId: string | null;
+    askPlaybookId: string | null;
+    startWorkPlaybookId: string | null;
     updatedBy: string | null;
   }>,
 }));
-/** Stored playbooks: org-a's chat query and coding tasks, a non-chat one, and org-b's chat query task. */
+/** Stored playbooks: org-a's chat-ask and request playbooks, a correlation one, and org-b's chat-ask one. */
 const IDS = {
   query: "11111111-1111-4111-8111-111111111111",
   coding: "22222222-2222-4222-8222-222222222222",
@@ -95,17 +95,17 @@ vi.mock("@omniralph/db", async () => ({
   },
   getChatConnection: async (_db: unknown, organizationId: string, id: string) =>
     state.chat.find((c) => c.organizationId === organizationId && c.id === id) ?? null,
-  setChatTaskDefaults: async (
+  setChatPlaybookDefaults: async (
     _db: unknown,
     organizationId: string,
-    tasks: unknown,
+    playbooks: unknown,
     updatedBy: string | null,
   ) => {
-    state.chatTaskDefaults.push([organizationId, tasks, updatedBy]);
+    state.chatPlaybookDefaults.push([organizationId, playbooks, updatedBy]);
   },
-  upsertChatChannelTaskSetting: async (
+  upsertChatChannelPlaybookSetting: async (
     _db: unknown,
-    input: (typeof state.channelTasks)[number],
+    input: (typeof state.channelPlaybooks)[number],
   ) => {
     if (
       !state.chat.some(
@@ -113,20 +113,20 @@ vi.mock("@omniralph/db", async () => ({
       )
     )
       return null;
-    state.channelTasks = state.channelTasks.filter(
+    state.channelPlaybooks = state.channelPlaybooks.filter(
       (t) => !(t.connectionId === input.connectionId && t.channelId === input.channelId),
     );
-    state.channelTasks.push(input);
+    state.channelPlaybooks.push(input);
     return { id: "setting-1", ...input, updatedAt: new Date() };
   },
-  deleteChatChannelTaskSetting: async (
+  deleteChatChannelPlaybookSetting: async (
     _db: unknown,
     organizationId: string,
     connectionId: string,
     channelId: string,
   ) => {
-    const before = state.channelTasks.length;
-    state.channelTasks = state.channelTasks.filter(
+    const before = state.channelPlaybooks.length;
+    state.channelPlaybooks = state.channelPlaybooks.filter(
       (t) =>
         !(
           t.organizationId === organizationId &&
@@ -134,14 +134,14 @@ vi.mock("@omniralph/db", async () => ({
           t.channelId === channelId
         ),
     );
-    return state.channelTasks.length < before;
+    return state.channelPlaybooks.length < before;
   },
 }));
 
 const linear = await import("@/app/api/ui/integrations/linear/route");
 const slack = await import("@/app/api/ui/integrations/slack/[id]/route");
 const discord = await import("@/app/api/ui/integrations/discord/[id]/route");
-const chatTasks = await import("@/app/api/ui/integrations/chat-tasks/route");
+const chatPlaybooks = await import("@/app/api/ui/integrations/chat-tasks/route");
 const channels = await import("@/app/api/ui/integrations/chat-connections/[id]/channels/route");
 
 /** Chat connection IDs (UUIDs) by the name the tests use. */
@@ -156,14 +156,18 @@ const CONNECTIONS: Record<string, string> = {
 const cid = (name: string) => CONNECTIONS[name]!;
 
 // The panel's requests, under the names of the server actions they replace.
-type Tasks<T> = { askAboutCode: T; startWork: T };
+type Playbooks<T> = { ask: T; startWork: T };
 const disconnectLinear = () => callAction(linear.DELETE, "DELETE", {});
 const disconnectSlack = (name: string) => callAction(slack.DELETE, "DELETE", { id: cid(name) });
 const disconnectDiscord = (name: string) => callAction(discord.DELETE, "DELETE", { id: cid(name) });
-const saveChatTaskDefaults = (tasks: Tasks<string>) => callAction(chatTasks.PUT, "PUT", {}, tasks);
-const saveChatChannelTasks = (name: string, channel: string, tasks: Tasks<string | null>) =>
-  callAction(channels.PUT, "PUT", { id: cid(name) }, { channel, ...tasks });
-const removeChatChannelTasks = (name: string, channelId: string) =>
+const saveChatPlaybookDefaults = (playbooks: Playbooks<string>) =>
+  callAction(chatPlaybooks.PUT, "PUT", {}, playbooks);
+const saveChatChannelPlaybooks = (
+  name: string,
+  channel: string,
+  playbooks: Playbooks<string | null>,
+) => callAction(channels.PUT, "PUT", { id: cid(name) }, { channel, ...playbooks });
+const removeChatChannelPlaybooks = (name: string, channelId: string) =>
   callAction(channels.DELETE, "DELETE", { id: cid(name) }, { channelId });
 
 const revoked: string[] = [];
@@ -393,69 +397,79 @@ describe("disconnectDiscord", () => {
   });
 });
 
-describe("saveChatTaskDefaults", () => {
+describe("saveChatPlaybookDefaults", () => {
   beforeEach(() => {
     state.user = user("admin");
-    state.chatTaskDefaults = [];
+    state.chatPlaybookDefaults = [];
   });
 
-  it("saves the organization's chat tasks", async () => {
-    const tasks = { askAboutCode: "builtin:ask-about-code", startWork: "builtin:handle-request" };
-    expect(await saveChatTaskDefaults(tasks)).toEqual({ ok: true });
-    expect(state.chatTaskDefaults).toEqual([["org-a", tasks, "admin-1"]]);
+  it("saves the organization's chat playbooks", async () => {
+    const playbooks = { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" };
+    expect(await saveChatPlaybookDefaults(playbooks)).toEqual({ ok: true });
+    expect(state.chatPlaybookDefaults).toEqual([["org-a", playbooks, "admin-1"]]);
   });
 
-  it("rejects a task that doesn't pass validateChatTaskChoice", async () => {
-    for (const [tasks, field] of [
-      [
-        { askAboutCode: "builtin:handle-request", startWork: "builtin:handle-request" },
-        "askAboutCode",
-      ],
-      [
-        { askAboutCode: "builtin:ask-about-code", startWork: "builtin:implement-story" },
-        "startWork",
-      ],
-      [{ askAboutCode: "builtin:ask-about-code", startWork: "builtin:nope" }, "startWork"],
+  it("rejects a playbook that doesn't pass validateChatPlaybookChoice", async () => {
+    for (const [playbooks, field] of [
+      [{ ask: "builtin:handle-request", startWork: "builtin:handle-request" }, "ask"],
+      [{ ask: "builtin:ask-about-code", startWork: "builtin:implement-story" }, "startWork"],
+      [{ ask: "builtin:ask-about-code", startWork: "builtin:nope" }, "startWork"],
     ] as const) {
-      const result = await saveChatTaskDefaults(tasks);
+      const result = await saveChatPlaybookDefaults(playbooks);
       expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
     }
-    expect(await saveChatTaskDefaults(null as never)).toMatchObject({ ok: false });
-    expect(state.chatTaskDefaults).toEqual([]);
+    expect(await saveChatPlaybookDefaults(null as never)).toMatchObject({ ok: false });
+    expect(state.chatPlaybookDefaults).toEqual([]);
   });
 
-  it("saves the organization's own chat tasks", async () => {
-    const tasks = { askAboutCode: IDS.query, startWork: IDS.coding };
-    expect(await saveChatTaskDefaults(tasks)).toEqual({ ok: true });
-    expect(state.chatTaskDefaults).toEqual([["org-a", tasks, "admin-1"]]);
+  it("saves the organization's own chat playbooks", async () => {
+    const playbooks = { ask: IDS.query, startWork: IDS.coding };
+    expect(await saveChatPlaybookDefaults(playbooks)).toEqual({ ok: true });
+    expect(state.chatPlaybookDefaults).toEqual([["org-a", playbooks, "admin-1"]]);
   });
 
-  it("rejects another organization's task, one of the wrong type or not accepting chat.request", async () => {
-    for (const [tasks, field] of [
-      [{ askAboutCode: IDS.foreign, startWork: IDS.coding }, "askAboutCode"],
-      [{ askAboutCode: IDS.coding, startWork: IDS.coding }, "askAboutCode"],
-      [{ askAboutCode: IDS.query, startWork: IDS.query }, "startWork"],
-      [{ askAboutCode: IDS.notChat, startWork: IDS.coding }, "askAboutCode"],
+  it("rejects another organization's playbook or one of another role", async () => {
+    for (const [playbooks, field] of [
+      [{ ask: IDS.foreign, startWork: IDS.coding }, "ask"],
+      [{ ask: IDS.coding, startWork: IDS.coding }, "ask"],
+      [{ ask: IDS.query, startWork: IDS.query }, "startWork"],
+      [{ ask: IDS.notChat, startWork: IDS.coding }, "ask"],
     ] as const) {
-      const result = await saveChatTaskDefaults(tasks);
+      const result = await saveChatPlaybookDefaults(playbooks);
       expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
     }
-    expect(state.chatTaskDefaults).toEqual([]);
+    expect(state.chatPlaybookDefaults).toEqual([]);
+  });
+
+  it("names the role a choice needs", async () => {
+    expect(await saveChatPlaybookDefaults({ ask: IDS.coding, startWork: IDS.query })).toMatchObject(
+      {
+        ok: false,
+        fieldErrors: {
+          ask: "Ask about code needs a chat-ask playbook; Custom Handle a request is a request playbook.",
+          startWork:
+            "Start work needs a request playbook; Custom Ask about code is a chat-ask playbook.",
+        },
+      },
+    );
+    expect(
+      await saveChatPlaybookDefaults({ ask: "builtin:nope", startWork: "builtin:handle-request" }),
+    ).toMatchObject({ ok: false, fieldErrors: { ask: "There's no playbook builtin:nope." } });
   });
 
   it("refuses non-admins", async () => {
     state.user = user("member");
     expect(
-      await saveChatTaskDefaults({
-        askAboutCode: "builtin:ask-about-code",
+      await saveChatPlaybookDefaults({
+        ask: "builtin:ask-about-code",
         startWork: "builtin:handle-request",
       }),
     ).toMatchObject({ ok: false });
-    expect(state.chatTaskDefaults).toEqual([]);
+    expect(state.chatPlaybookDefaults).toEqual([]);
   });
 });
 
-describe("saveChatChannelTasks and removeChatChannelTasks", () => {
+describe("saveChatChannelPlaybooks and removeChatChannelPlaybooks", () => {
   it("404s on a connection ID that isn't a UUID", async () => {
     const response = await channels.PUT(
       new Request("http://localhost/api/ui", { method: "PUT", body: "{}" }),
@@ -492,124 +506,124 @@ describe("saveChatChannelTasks and removeChatChannelTasks", () => {
         credentials: { botToken: "xoxb" },
       },
     ];
-    state.channelTasks = [];
+    state.channelPlaybooks = [];
   });
 
   it("saves a channel's overrides under its Chat SDK channel ID", async () => {
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", {
-        askAboutCode: "builtin:ask-about-code",
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", {
+        ask: "builtin:ask-about-code",
         startWork: null,
       }),
     ).toEqual({ ok: true });
     expect(
-      await saveChatChannelTasks("d1", "222", {
-        askAboutCode: null,
+      await saveChatChannelPlaybooks("d1", "222", {
+        ask: null,
         startWork: "builtin:handle-request",
       }),
     ).toEqual({ ok: true });
-    expect(state.channelTasks).toEqual([
+    expect(state.channelPlaybooks).toEqual([
       {
         organizationId: "org-a",
         connectionId: cid("s1"),
         channelId: "slack:C0123ABCD",
-        askAboutCodeTaskId: "builtin:ask-about-code",
-        startWorkTaskId: null,
+        askPlaybookId: "builtin:ask-about-code",
+        startWorkPlaybookId: null,
         updatedBy: "admin-1",
       },
       {
         organizationId: "org-a",
         connectionId: cid("d1"),
         channelId: "discord:111:222",
-        askAboutCodeTaskId: null,
-        startWorkTaskId: "builtin:handle-request",
+        askPlaybookId: null,
+        startWorkPlaybookId: "builtin:handle-request",
         updatedBy: "admin-1",
       },
     ]);
-    expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toEqual({ ok: true });
-    expect(state.channelTasks.map((t) => t.connectionId)).toEqual([cid("d1")]);
-    expect(await removeChatChannelTasks("s1", "slack:C0123ABCD")).toMatchObject({ ok: false });
+    expect(await removeChatChannelPlaybooks("s1", "slack:C0123ABCD")).toEqual({ ok: true });
+    expect(state.channelPlaybooks.map((t) => t.connectionId)).toEqual([cid("d1")]);
+    expect(await removeChatChannelPlaybooks("s1", "slack:C0123ABCD")).toMatchObject({ ok: false });
   });
 
-  it("saves a channel override naming the organization's own tasks", async () => {
+  it("saves a channel override naming the organization's own playbooks", async () => {
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", {
-        askAboutCode: IDS.query,
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", {
+        ask: IDS.query,
         startWork: IDS.coding,
       }),
     ).toEqual({ ok: true });
-    expect(state.channelTasks).toEqual([
+    expect(state.channelPlaybooks).toEqual([
       expect.objectContaining({
         channelId: "slack:C0123ABCD",
-        askAboutCodeTaskId: IDS.query,
-        startWorkTaskId: IDS.coding,
+        askPlaybookId: IDS.query,
+        startWorkPlaybookId: IDS.coding,
       }),
     ]);
   });
 
-  it("rejects a channel override naming another organization's task, or a wrong one", async () => {
-    for (const [tasks, field] of [
-      [{ askAboutCode: IDS.foreign, startWork: null }, "askAboutCode"],
-      [{ askAboutCode: IDS.coding, startWork: null }, "askAboutCode"],
-      [{ askAboutCode: null, startWork: IDS.query }, "startWork"],
-      [{ askAboutCode: IDS.notChat, startWork: null }, "askAboutCode"],
+  it("rejects a channel override naming another organization's playbook, or a wrong one", async () => {
+    for (const [playbooks, field] of [
+      [{ ask: IDS.foreign, startWork: null }, "ask"],
+      [{ ask: IDS.coding, startWork: null }, "ask"],
+      [{ ask: null, startWork: IDS.query }, "startWork"],
+      [{ ask: IDS.notChat, startWork: null }, "ask"],
     ] as const) {
-      const result = await saveChatChannelTasks("s1", "C0123ABCD", tasks);
+      const result = await saveChatChannelPlaybooks("s1", "C0123ABCD", playbooks);
       expect(result).toMatchObject({ ok: false, fieldErrors: { [field]: expect.any(String) } });
     }
-    expect(state.channelTasks).toEqual([]);
+    expect(state.channelPlaybooks).toEqual([]);
   });
 
-  it("rejects an invalid task, channel or connection", async () => {
+  it("rejects an invalid playbook, channel or connection", async () => {
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", {
-        askAboutCode: "builtin:review-pr",
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", {
+        ask: "builtin:review-pr",
         startWork: null,
       }),
-    ).toMatchObject({ ok: false, fieldErrors: { askAboutCode: expect.any(String) } });
+    ).toMatchObject({ ok: false, fieldErrors: { ask: expect.any(String) } });
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", {
-        askAboutCode: null,
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", {
+        ask: null,
         startWork: "builtin:implement-story",
       }),
     ).toMatchObject({ ok: false, fieldErrors: { startWork: expect.any(String) } });
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", { askAboutCode: null, startWork: null }),
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", { ask: null, startWork: null }),
     ).toMatchObject({ ok: false });
     expect(
-      await saveChatChannelTasks("s1", "#general", {
-        askAboutCode: "builtin:ask-about-code",
+      await saveChatChannelPlaybooks("s1", "#general", {
+        ask: "builtin:ask-about-code",
         startWork: null,
       }),
     ).toMatchObject({ ok: false, fieldErrors: { channel: expect.any(String) } });
     expect(
-      await saveChatChannelTasks("foreign", "C0123ABCD", {
-        askAboutCode: "builtin:ask-about-code",
+      await saveChatChannelPlaybooks("foreign", "C0123ABCD", {
+        ask: "builtin:ask-about-code",
         startWork: null,
       }),
     ).toEqual({ ok: false, error: "That chat connection isn't connected." });
-    expect(state.channelTasks).toEqual([]);
+    expect(state.channelPlaybooks).toEqual([]);
   });
 
   it("refuses non-admins", async () => {
-    state.channelTasks = [
+    state.channelPlaybooks = [
       {
         organizationId: "org-a",
         connectionId: cid("s1"),
         channelId: "slack:C1",
-        askAboutCodeTaskId: "builtin:ask-about-code",
-        startWorkTaskId: null,
+        askPlaybookId: "builtin:ask-about-code",
+        startWorkPlaybookId: null,
         updatedBy: "admin-1",
       },
     ];
     state.user = user("member");
     expect(
-      await saveChatChannelTasks("s1", "C0123ABCD", {
-        askAboutCode: "builtin:ask-about-code",
+      await saveChatChannelPlaybooks("s1", "C0123ABCD", {
+        ask: "builtin:ask-about-code",
         startWork: null,
       }),
     ).toMatchObject({ ok: false });
-    expect(await removeChatChannelTasks("s1", "slack:C1")).toMatchObject({ ok: false });
-    expect(state.channelTasks).toHaveLength(1);
+    expect(await removeChatChannelPlaybooks("s1", "slack:C1")).toMatchObject({ ok: false });
+    expect(state.channelPlaybooks).toHaveLength(1);
   });
 });

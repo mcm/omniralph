@@ -22,9 +22,9 @@ import {
   saveChatConnection,
   claimJob,
   repositories,
-  setChatTaskDefaults,
+  setChatPlaybookDefaults,
   updateRepositoryCoding,
-  upsertChatChannelTaskSetting,
+  upsertChatChannelPlaybookSetting,
   upsertScmConnection,
   type ChatConnection,
   type ChatThread,
@@ -338,7 +338,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await setChatTaskDefaults(db, orgId, null, null);
+    await setChatPlaybookDefaults(db, orgId, null, null);
     await db
       .update(repositories)
       .set({ requestPlaybookId: "builtin:handle-request" })
@@ -610,25 +610,25 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       prUrl: null,
     });
   });
-  it("runs the channel's start work task over the repository's request task", async () => {
-    // The repository's own request task doesn't take chat requests: the run's task is used instead.
+  it("runs the channel's start work playbook over the repository's request playbook", async () => {
+    // The repository's own request binding isn't a request playbook: the channel's is used instead.
     await db
       .update(repositories)
       .set({ requestPlaybookId: "builtin:implement-story" })
       .where(eq(repositories.id, appRepoId));
-    // The organization's choice is gone (e.g. a deleted custom task); the channel's override wins.
-    await setChatTaskDefaults(
+    // The organization's choice is gone (e.g. a deleted custom playbook); the channel's override wins.
+    await setChatPlaybookDefaults(
       db,
       orgId,
-      { askAboutCode: "builtin:ask-about-code", startWork: "custom:deleted" },
+      { ask: "builtin:ask-about-code", startWork: "00000000-0000-4000-8000-0000000000de" },
       null,
     );
-    await upsertChatChannelTaskSetting(db, {
+    await upsertChatChannelPlaybookSetting(db, {
       organizationId: orgId,
       connectionId: connection.id,
       channelId: chatThread.channelId,
-      askAboutCodeTaskId: null,
-      startWorkTaskId: "builtin:handle-request",
+      askPlaybookId: null,
+      startWorkPlaybookId: "builtin:handle-request",
       updatedBy: null,
     });
 
@@ -653,18 +653,19 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     await db.execute("DELETE FROM chat_channel_task_settings");
   });
 
-  it("starts nothing when the channel's start work task can't run", async () => {
-    await setChatTaskDefaults(
+  it("starts nothing when the channel's start work playbook can't run", async () => {
+    const deleted = "00000000-0000-4000-8000-0000000000de";
+    await setChatPlaybookDefaults(
       db,
       orgId,
-      { askAboutCode: "builtin:ask-about-code", startWork: "custom:deleted" },
+      { ask: "builtin:ask-about-code", startWork: deleted },
       null,
     );
 
     const calls = await handOff({ repository: "acme/app", request: REQUEST }, "");
 
-    expect(toolOutput(calls[1]!)).toMatchObject({ error: "task_unavailable" });
-    expect(String(toolOutput(calls[1]!).message)).toContain("There's no task custom:deleted.");
+    expect(toolOutput(calls[1]!)).toMatchObject({ error: "playbook_unavailable" });
+    expect(String(toolOutput(calls[1]!).message)).toContain(`There's no playbook ${deleted}.`);
     expect(await threadRun()).toBeNull();
     expect(await queuedJobs()).toEqual([]);
   });

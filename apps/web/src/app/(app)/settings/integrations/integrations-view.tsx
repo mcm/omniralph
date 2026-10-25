@@ -49,7 +49,6 @@ import {
   INTEGRATION_STATE_VARIANTS,
   integrationState,
 } from "@/lib/state-variants";
-import { ChatTasksCard } from "./chat-tasks-card";
 import { integrationsChanged, useIntegrations } from "./integrations-queries";
 
 export type { DiscordServer, LinearConnection, SlackWorkspace };
@@ -218,7 +217,7 @@ function IntegrationsSkeleton() {
 
 /**
  * Settings › Integrations (admins), live: a connection made in another tab (an OAuth
- * install) or removed elsewhere shows without a reload, and so do chat task changes.
+ * install) or removed elsewhere shows without a reload.
  */
 export function IntegrationsView() {
   const { role } = useCurrentUser();
@@ -287,7 +286,6 @@ export function IntegrationsContent({
   slackConfigured,
   discord,
   discordConfigured,
-  chatTasks,
 }: IntegrationsSettings) {
   const linearDisconnect = useDisconnect(() => "/api/ui/integrations/linear");
   const slackDisconnect = useDisconnect((id) => `/api/ui/integrations/slack/${id}`);
@@ -402,8 +400,6 @@ export function IntegrationsContent({
         disconnectDescription="Omniralph forgets the server and its conversations, and the bot leaves it. Mentions in Discord are ignored until you connect again."
         disconnect={discordDisconnect}
       />
-
-      <ChatTasksCard {...chatTasks} />
     </>
   );
 }
