@@ -54,7 +54,6 @@ import {
   replaceRoutingRules,
   requestJobCancel,
   resolveOpenFindings,
-  restoreFinding,
   revokeHarness,
   saveChatConnection,
   saveIntegration,
@@ -320,20 +319,20 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         await published(() =>
           dismissFinding(db, {
             findingId: first!.id,
-            source: "ui",
             reason: "false_positive",
-            userId,
+            scmUsername: "ada",
           }),
         ),
-      ).toEqual([runEvent(reviewRun.id)]);
-      expect(
-        await published(() => restoreFinding(db, { findingId: first!.id, userId })),
       ).toEqual([runEvent(reviewRun.id)]);
       expect(await published(() => resolveOpenFindings(db, [first!.id, second!.id]))).toEqual([
         runEvent(reviewRun.id),
       ]);
       // Nothing left to change: nothing is published.
-      expect(await published(() => restoreFinding(db, { findingId: first!.id }))).toEqual([]);
+      expect(
+        await published(() =>
+          dismissFinding(db, { findingId: first!.id, reason: "false_positive" }),
+        ),
+      ).toEqual([]);
       expect(await published(() => resolveOpenFindings(db, [first!.id]))).toEqual([]);
     });
 

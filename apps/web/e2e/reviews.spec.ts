@@ -21,7 +21,7 @@ async function runningReview(db: Database, prefix: string) {
   return { review, title };
 }
 
-/** A finding of `reviewId` without a thread on the code host (dismissing it calls no API). */
+/** A finding of `reviewId` without a thread on the code host. */
 async function addFinding(db: Database, reviewId: string, title: string) {
   const [row] = await db
     .insert(findings)
@@ -89,28 +89,5 @@ test.describe("reviews", () => {
     await expect(page.getByLabel("Filter by status")).toHaveValue("failed");
     await expect(page).toHaveURL(/\/reviews\?status=failed$/);
     await expect(row).toBeVisible();
-  });
-
-  test("dismissing a finding shows at once and sticks", async ({ db, page, signIn }) => {
-    const { review } = await runningReview(db, "Dismissed review");
-    await db.update(reviews).set({ status: "completed" }).where(eq(reviews.id, review.id));
-    const finding = await addFinding(db, review.id, "Unbounded retries");
-    await signIn("member");
-    await open(page, `/reviews/${review.id}`, /\/api\/ui\/reviews\/[\w-]+(\?|$)/);
-
-    const item = page.locator(`#finding-${finding.id}`);
-    await item.getByRole("button", { name: "Dismiss" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Won't fix").check();
-    await dialog.getByRole("button", { name: "Dismiss" }).click();
-    await expect(item.getByRole("button", { name: "Restore" })).toBeVisible();
-
-    await expect
-      .poll(async () => {
-        const [row] = await db.select().from(findings).where(eq(findings.id, finding.id));
-        return row!.status;
-      })
-      .toBe("dismissed");
-    await expect(item).toContainText("Dismissed by");
   });
 });

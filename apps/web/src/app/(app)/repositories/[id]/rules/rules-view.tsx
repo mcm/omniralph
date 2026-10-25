@@ -527,8 +527,8 @@ export function RulesContent({ repositoryId, rules }: { repositoryId: string; ru
             Learned rules <Badge variant="neutral">{learned.length}</Badge>
           </CardTitle>
           <CardDescription>
-            Generated from findings dismissed as false positives, in the control panel or with @bot
-            dismiss. Near-duplicates of existing rules aren&apos;t added.
+            Generated from findings dismissed as false positives with @bot dismiss in their thread
+            on the PR. Near-duplicates of existing rules aren&apos;t added.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -537,7 +537,7 @@ export function RulesContent({ repositoryId, rules }: { repositoryId: string; ru
               titleAs="h3"
               icon={<IconBulb size={24} />}
               title="No learned rules yet"
-              description="Dismiss a finding as a false positive to teach the reviewer a rule."
+              description="Reply @bot dismiss in a finding's thread on the PR to teach the reviewer a rule."
             />
           ) : (
             <RulesTable

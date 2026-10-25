@@ -10,7 +10,6 @@ import {
   getReview,
   jobs,
   listRepositoryRules,
-  restoreFinding,
   rules,
   upsertScmConnection,
   users,
@@ -200,10 +199,9 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
     const finding = await addFinding();
     const result = await dismissFindingWithFeedback(db, {
       findingId: finding.id,
-      source: "ui",
       reason: "false_positive",
       note,
-      userId: "member-1",
+      scmUsername: "octocat",
     });
     if (result.status !== "ok" || !result.learnRuleJobId) throw new Error("no learn-rule job");
     return { finding, job: (await getJob(db, result.learnRuleJobId))! };
@@ -310,7 +308,6 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
       const scm = await addFinding();
       const result = await dismissFindingWithFeedback(db, {
         findingId: scm.id,
-        source: "scm",
         reason: "false_positive",
         scmUsername: "octocat",
       });
@@ -320,9 +317,8 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         const finding = await addFinding();
         const other = await dismissFindingWithFeedback(db, {
           findingId: finding.id,
-          source: "ui",
           reason,
-          userId: "member-1",
+          scmUsername: "octocat",
         });
         expect(other).toMatchObject({ status: "ok" });
         expect(other).not.toHaveProperty("learnRuleJobId");
@@ -399,7 +395,12 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
       );
 
       const restored = await dismissFalsePositive();
-      await restoreFinding(db, { findingId: restored.finding.id, userId: "member-1" });
+      // Feedback restored before its rule came back. Nothing restores findings any more, but
+      // feedback from before keeps its `restoredAt`.
+      await db
+        .update(feedback)
+        .set({ restoredAt: new Date() })
+        .where(eq(feedback.findingId, restored.finding.id));
       expect(
         await onLearnRuleJobCompleted(
           db,
@@ -595,7 +596,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = await dismissFindingWithFeedback(
       db,
-      { findingId: finding.id, source: "ui", reason: "false_positive", userId: "member-1" },
+      { findingId: finding.id, reason: "false_positive", scmUsername: "octocat" },
       failing,
     );
     expect(result).toMatchObject({ status: "ok" });

@@ -93,12 +93,6 @@ function findingItem() {
   return document.getElementById(`finding-${FINDING_ID}`) as HTMLElement;
 }
 
-async function dismiss() {
-  await userEvent.click(within(findingItem()).getByRole("button", { name: "Dismiss" }));
-  const dialog = await screen.findByRole("dialog");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Dismiss" }));
-}
-
 beforeEach(() => {
   vi.unstubAllGlobals();
   nav.router.push.mockReset();
@@ -128,83 +122,54 @@ describe("ReviewDetailView", () => {
     expect(screen.getByText("Findings")!.parentElement!.textContent).toContain("(1)");
   });
 
-  it("dismisses a finding at once, before the server answers", async () => {
-    let current = detail();
-    let respond: () => void = () => {};
-    const seen = mockFetch({
-      [`GET /api/ui/reviews/${REVIEW_ID}`]: () => jsonResponse(current),
-      [`POST /api/ui/findings/${FINDING_ID}/dismiss`]: async () => {
-        await new Promise<void>((resolve) => (respond = resolve));
-        current = detail({
-          files: [{ path: "src/a.ts", findings: [finding({ status: "dismissed" })] }],
-        });
-        return jsonResponse({ ok: true });
-      },
-    });
-    const client = renderView();
-    await screen.findByText("Null dereference");
-    await dismiss();
-
-    // Dismissed while the request is in flight, and through a poll of the old state.
-    await waitFor(() => expect(within(findingItem()).getByText("Dismissed")).toBeTruthy());
-    expect(within(findingItem()).getByRole("button", { name: "Restore" })).toBeTruthy();
-    await refetch(client);
-    expect(within(findingItem()).getByText("Dismissed")).toBeTruthy();
-    expect(seen.find((r) => r.method === "POST")!.body).toEqual({
-      reason: "false_positive",
-      note: "",
-    });
-
-    respond();
-    await waitFor(() =>
-      expect(seen.filter((r) => r.method === "GET").length).toBeGreaterThanOrEqual(3),
-    );
-    expect(within(findingItem()).getByText("Dismissed")).toBeTruthy();
-  });
-
-  it("puts a finding back when the dismissal fails", async () => {
-    let fail: () => void = () => {};
+  it("shows each finding's status and feedback read-only, with no dismiss or restore", async () => {
     mockFetch({
-      [`GET /api/ui/reviews/${REVIEW_ID}`]: detail(),
-      [`POST /api/ui/findings/${FINDING_ID}/dismiss`]: async () => {
-        await new Promise<void>((resolve) => (fail = resolve));
-        return jsonResponse({ error: "Only open findings can be dismissed." }, 400);
-      },
+      [`GET /api/ui/reviews/${REVIEW_ID}`]: detail({
+        files: [
+          {
+            path: "src/a.ts",
+            findings: [
+              finding({
+                status: "dismissed",
+                feedback: [
+                  {
+                    id: "f-1",
+                    source: "ui",
+                    reason: "wont_fix",
+                    note: null,
+                    actor: "Mia Member",
+                    createdAt: "2026-10-16T09:10:00.000Z",
+                    restoredAt: "2026-10-16T09:20:00.000Z",
+                    restoredBy: "Sam",
+                  },
+                  {
+                    id: "f-2",
+                    source: "scm",
+                    reason: "false_positive",
+                    note: "Validated by the caller.",
+                    actor: "@octo-dev",
+                    createdAt: "2026-10-16T09:30:00.000Z",
+                    restoredAt: null,
+                    restoredBy: null,
+                  },
+                ],
+              }),
+            ],
+          },
+        ],
+      }),
     });
     renderView();
     await screen.findByText("Null dereference");
-    await dismiss();
-    await waitFor(() => expect(within(findingItem()).getByText("Dismissed")).toBeTruthy());
-
-    fail();
-    await waitFor(() =>
-      expect(within(findingItem()).getByRole("button", { name: "Dismiss" })).toBeTruthy(),
-    );
-    expect(within(findingItem()).queryByText("Dismissed")).toBeNull();
-  });
-
-  it("restores a dismissed finding at once and rolls back on failure", async () => {
-    let fail: () => void = () => {};
-    mockFetch({
-      [`GET /api/ui/reviews/${REVIEW_ID}`]: detail({
-        files: [{ path: "src/a.ts", findings: [finding({ status: "dismissed" })] }],
-      }),
-      [`POST /api/ui/findings/${FINDING_ID}/restore`]: async () => {
-        await new Promise<void>((resolve) => (fail = resolve));
-        return jsonResponse({ error: "Only dismissed findings can be restored." }, 400);
-      },
-    });
-    renderView("member");
-    await screen.findByText("Null dereference");
-    await userEvent.click(within(findingItem()).getByRole("button", { name: "Restore" }));
-    await waitFor(() =>
-      expect(within(findingItem()).getByRole("button", { name: "Dismiss" })).toBeTruthy(),
-    );
-
-    fail();
-    await waitFor(() =>
-      expect(within(findingItem()).getByRole("button", { name: "Restore" })).toBeTruthy(),
-    );
+    const item = within(findingItem());
+    expect(item.getByText("Dismissed")).toBeTruthy();
+    expect(item.getByText("False positive")).toBeTruthy();
+    expect(item.getByText("Won't fix")).toBeTruthy();
+    expect(findingItem().textContent).toContain("Dismissed by @octo-dev via @bot dismiss");
+    expect(findingItem().textContent).toContain("Dismissed by Mia Member via control panel");
+    expect(findingItem().textContent).toContain("Restored by Sam");
+    expect(item.getByText(/Validated by the caller/)).toBeTruthy();
+    expect(item.queryByRole("button")).toBeNull();
   });
 
   it("opens the new review after a re-run", async () => {

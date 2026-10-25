@@ -1,13 +1,9 @@
 import "server-only";
-import { getFindingOrganizationId, type Database } from "@omniralph/db";
-import type { DismissFindingInput } from "@omniralph/shared";
-import type { ActionResult } from "@/lib/action-result";
+import type { Database } from "@omniralph/db";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { rerunReview as rerun, type RerunReviewOptions } from "@/lib/review/rerun";
-import { dismissFindingWithFeedback, restoreDismissedFinding } from "./feedback";
 
 export const REVIEW_NOT_FOUND = "That review doesn't exist.";
-export const FINDING_NOT_FOUND = "That finding doesn't exist.";
 
 export type RerunOutcome =
   | {
@@ -71,53 +67,4 @@ export async function rerunOrganizationReview(
         error: "Couldn't look up the change request on the code host. Try again later.",
       };
   }
-}
-
-/** Whether the finding is one of the organization's. */
-export async function findingInOrganization(
-  db: Database,
-  organizationId: string,
-  findingId: string,
-): Promise<boolean> {
-  return (await getFindingOrganizationId(db, findingId)) === organizationId;
-}
-
-/**
- * Dismisses an open finding (one of the caller's organization: see `findingInOrganization`)
- * from the control panel: records `ui` feedback by `userId` and resolves the finding's SCM
- * thread. A thread that can't be resolved comes back as a warning; the dismissal still stands.
- */
-export async function dismissFindingFromPanel(
-  db: Database,
-  { findingId, userId, input }: { findingId: string; userId: string; input: DismissFindingInput },
-): Promise<ActionResult> {
-  const result = await dismissFindingWithFeedback(db, {
-    findingId,
-    source: "ui",
-    reason: input.reason,
-    note: input.note ?? null,
-    userId,
-  });
-  switch (result.status) {
-    case "not_found":
-      return { ok: false, error: FINDING_NOT_FOUND };
-    case "conflict":
-      return { ok: false, error: "Only open findings can be dismissed." };
-  }
-  return result.scmWarning ? { ok: true, warning: result.scmWarning } : { ok: true };
-}
-
-/** Restores a dismissed finding to `open`; its feedback stays in the history, marked restored. */
-export async function restoreFindingFromPanel(
-  db: Database,
-  { findingId, userId }: { findingId: string; userId: string },
-): Promise<ActionResult> {
-  const result = await restoreDismissedFinding(db, { findingId, userId });
-  switch (result.status) {
-    case "not_found":
-      return { ok: false, error: FINDING_NOT_FOUND };
-    case "conflict":
-      return { ok: false, error: "Only dismissed findings can be restored." };
-  }
-  return { ok: true };
 }

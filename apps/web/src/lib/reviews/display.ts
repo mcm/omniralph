@@ -97,13 +97,13 @@ export interface FindingView {
   status: "open" | "dismissed" | "resolved" | "superseded" | "merged";
   /** The fresh review's finding that superseded this one. */
   supersededBy: { reviewId: string; findingId: string } | null;
-  /** Dismissals from the control panel and `@bot dismiss`, oldest first. */
+  /** Dismissals (`@bot dismiss`, and older ones from the control panel), oldest first. */
   feedback: FeedbackView[];
 }
 
 export interface FeedbackView {
   id: string;
-  /** `ui`: control panel; `scm`: `@bot dismiss` in the PR/MR thread. */
+  /** `scm`: `@bot dismiss` in the PR/MR thread; `ui`: the control panel (history only). */
   source: "ui" | "scm";
   reason: FeedbackReasonValue;
   note: string | null;

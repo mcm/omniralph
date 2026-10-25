@@ -2394,7 +2394,7 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* A radio with its label and hint (dismiss finding, re-run review dialogs). */
+/* A radio with its label and hint (re-run review dialog). */
 .review-radio-option {
   display: flex;
   align-items: flex-start;
