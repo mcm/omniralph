@@ -3,7 +3,17 @@ import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "..
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { countInboxItems, listInboxItems, type InboxCandidate } from "./inbox.js";
+import { captureChanges } from "./changes.js";
+import {
+  clearInboxItemState,
+  countInboxItems,
+  findInboxItem,
+  INBOX_ITEM_STATE_RETENTION_DAYS,
+  listInboxItems,
+  pruneInboxItemStates,
+  setInboxItemState,
+  type InboxCandidate,
+} from "./inbox.js";
 import { connectRepository, upsertScmConnection } from "./repositories.js";
 import {
   appSettings,
@@ -674,5 +684,78 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       await ralphRun(`more${i}`, { status: i % 2 ? "failed" : "stopped", mode: "request" });
     }
     expect(await count()).toBe(before);
+  });
+
+  describe("one item and the user's state of it", () => {
+    const find = (key: string, organizationIds = [acme]) =>
+      findInboxItem(db, { organizationIds, key, onlineWindowMs: ONLINE_WINDOW_MS, now });
+
+    it("finds an item by key whatever the user marked, in the organizations asked for", async () => {
+      const items = await list(bob);
+      expect(items.length).toBeGreaterThan(3);
+      for (const item of items) expect(await find(item.key)).toEqual(item);
+      const failedKey = `failed:${ids.failed}:${ids.failedAttempt2}`;
+      // Alice marked it Done, and the run failed again since: it is a new key now.
+      expect(await find(failedKey)).toBeNull();
+      const [first] = items;
+      expect(await find(first!.key, [beta])).toBeNull();
+      for (const key of ["", "nonsense", "constructor:x", `manual_story:${randomUUID()}`]) {
+        expect(await find(key)).toBeNull();
+      }
+    });
+
+    it("marks Done, snoozes and restores for one user, recording an inbox_state change for them", async () => {
+      const [item] = await list(bob);
+      const key = { userId: bob, organizationId: acme, key: item!.key };
+      const { changes } = await captureChanges(() =>
+        setInboxItemState(db, { ...key, state: "done", snoozedUntil: null }),
+      );
+      expect(changes).toEqual([
+        expect.objectContaining({
+          resource: "inbox_state",
+          ids: [item!.key],
+          organizationId: acme,
+          userId: bob,
+        }),
+      ]);
+      expect(keysOf(await list(bob))).not.toContain(item!.key);
+      expect(keysOf(await list(alice))).toContain(item!.key);
+      // Snoozing replaces Done (and ignores a `snoozedUntil` given for Done).
+      await setInboxItemState(db, {
+        ...key,
+        state: "snoozed",
+        snoozedUntil: new Date(now.getTime() + 3_600_000),
+      });
+      const rows = await db
+        .select()
+        .from(inboxItemStates)
+        .where(eq(inboxItemStates.itemKey, item!.key));
+      expect(rows).toEqual([expect.objectContaining({ userId: bob, state: "snoozed" })]);
+      expect(keysOf(await list(bob))).not.toContain(item!.key);
+      expect((await captureChanges(() => clearInboxItemState(db, key))).changes).toEqual([
+        expect.objectContaining({ resource: "inbox_state", userId: bob }),
+      ]);
+      expect(keysOf(await list(bob))).toContain(item!.key);
+    });
+
+    it("prunes states not updated for 60 days", async () => {
+      await db.delete(inboxItemStates);
+      const at = (days: number) => new Date(now.getTime() - days * 86_400_000);
+      await db.insert(inboxItemStates).values([
+        { userId: alice, organizationId: acme, itemKey: "old:1", state: "done", updatedAt: at(61) },
+        {
+          userId: bob,
+          organizationId: acme,
+          itemKey: "old:2",
+          state: "snoozed",
+          snoozedUntil: at(-1),
+          updatedAt: at(60.5),
+        },
+        { userId: alice, organizationId: acme, itemKey: "new:1", state: "done", updatedAt: at(59) },
+      ]);
+      expect(INBOX_ITEM_STATE_RETENTION_DAYS).toBe(60);
+      expect(await pruneInboxItemStates(db, now)).toBe(2);
+      expect((await db.select().from(inboxItemStates)).map((r) => r.itemKey)).toEqual(["new:1"]);
+    });
   });
 });

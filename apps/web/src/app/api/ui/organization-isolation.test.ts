@@ -50,6 +50,7 @@ import {
   listHarnessHostTools,
   recordWebhookEvent,
   organizationMembers,
+  ralphRuns,
   scmConnections,
   setActiveOrganization,
   updateRun,
@@ -204,6 +205,7 @@ const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
+const inboxItem = await import("./inbox/items/[key]/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
 const trackerStateMapping = await import("./trackers/[integrationId]/state-mapping/route");
@@ -551,6 +553,88 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = null;
     expect((await call(inboxFeed.GET)).status).toBe(401);
     expect((await call(inboxCounts.GET)).status).toBe(401);
+  });
+
+  it("lets members act on their organization's Inbox items, and 404s on the other's", async () => {
+    type Item = { key: string; actions: string[] };
+    const itemsOf = async (userId: string): Promise<Item[]> => {
+      state.userId = userId;
+      const items: Item[] = [];
+      for (const tab of ["needs-you", "problems", "running"]) {
+        const response = await call(inboxFeed.GET, {
+          path: `/api/ui?tab=${tab}&organization=all`,
+        });
+        items.push(...(response.body.items as Item[]));
+      }
+      return items;
+    };
+    const act = (key: string, body: Record<string, unknown>) =>
+      call(inboxItem.POST, { params: { key: encodeURIComponent(key) }, body });
+    const until = () => new Date(Date.now() + 3_600_000).toISOString();
+    // A stopped epic in each organization: a Needs you item with Done, Snooze and Resume.
+    const stopped: string[] = [];
+    for (const own of [a, b]) {
+      const { run } = await createRun(db, {
+        organizationId: own.orgId,
+        linearIssueId: `${own.name}-stopped-issue`,
+        linearIdentifier: `${own.name.toUpperCase()}-9`,
+        linearTitle: `${own.name} stopped epic`,
+        linearUrl: null,
+        linearAgentSessionId: `${own.name}-stopped-session`,
+        kind: "children",
+        repositoryId: own.repoId,
+        branch: `${own.name}-stopped`,
+        baseBranch: "main",
+      });
+      await updateRun(db, run.id, { status: "stopped" });
+      stopped.push(run.id);
+    }
+    try {
+      await actOnItems();
+    } finally {
+      await db.delete(ralphRuns).where(inArray(ralphRuns.id, stopped));
+    }
+    state.userId = null;
+    expect((await act("stopped:x", { action: "done" })).status).toBe(401);
+
+    async function actOnItems() {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const theirs = await itemsOf(other.memberId);
+        expect(theirs.length).toBeGreaterThan(0);
+        const mine = await itemsOf(own.memberId);
+        const snoozable = mine.find((i) => i.actions.includes("snooze"));
+        expect(snoozable, "the organization has an item to snooze").toBeDefined();
+        // A member snoozes and restores their own organization's item.
+        expect(await act(snoozable!.key, { action: "snooze", until: until() })).toMatchObject({
+          status: 200,
+          body: { key: snoozable!.key, state: "snoozed" },
+        });
+        expect(await act(snoozable!.key, { action: "restore" })).toMatchObject({ status: 200 });
+        // Every action on the other organization's items finds nothing.
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          for (const { key } of theirs) {
+            for (const action of [
+              "done",
+              "skip",
+              "snooze",
+              "restore",
+              "start_anyway",
+              "resume",
+              "retry",
+            ]) {
+              expect(await act(key, { action, until: until() })).toMatchObject({
+                status: 404,
+                body: { error: "This item was already handled." },
+              });
+            }
+          }
+        }
+      }
+    }
   });
 
   it("lists and shows each organization's webhook deliveries to its members, and 404s on the other's", async () => {

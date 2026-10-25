@@ -10,7 +10,8 @@
  * a fixed number of queries whatever the number of runs.
  */
 import { INSTALL_JOB_TYPE, REPO_SYNC_JOB_TYPE, WORKTREE_CLEANUP_JOB_TYPE } from "@omniralph/shared";
-import { and, eq, gt, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, or, sql, type SQL } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { FindingSeverityCounts } from "./run-detail.js";
 import {
@@ -740,6 +741,24 @@ async function hiddenKeys(
   return new Set(rows.map((r) => r.key));
 }
 
+/** Every item of the organizations' tabs, one per key, whatever the user's Done and Snooze. */
+async function deriveInboxItems(
+  db: Queryable,
+  query: Omit<InboxQuery, "userId" | "tab">,
+  tabs: readonly InboxTab[],
+  now: Date,
+): Promise<Map<string, InboxCandidate>> {
+  const scope: Scope = {
+    orgs: list(query.organizationIds),
+    now: now.toISOString(),
+    cutoff: new Date(now.getTime() - INBOX_WINDOW_DAYS * 86_400_000).toISOString(),
+  };
+  const queries = tabQueries(db, scope, query.onlineWindowMs);
+  const found = (await Promise.all(tabs.flatMap((tab) => queries[tab]).map((q) => q()))).flat();
+  // One item per key (a key is what the user marks).
+  return new Map(found.map((item) => [item.key, item]));
+}
+
 /**
  * The user's Inbox items of the organizations (one tab, or all), newest first, without the
  * ones they marked Done or snoozed into the future.
@@ -747,20 +766,109 @@ async function hiddenKeys(
 export async function listInboxItems(db: Queryable, query: InboxQuery): Promise<InboxCandidate[]> {
   if (query.organizationIds.length === 0) return [];
   const now = query.now ?? new Date();
-  const scope: Scope = {
-    orgs: list(query.organizationIds),
-    now: now.toISOString(),
-    cutoff: new Date(now.getTime() - INBOX_WINDOW_DAYS * 86_400_000).toISOString(),
-  };
-  const queries = tabQueries(db, scope, query.onlineWindowMs);
-  const tabs = query.tab ? [query.tab] : INBOX_TABS;
-  const found = (await Promise.all(tabs.flatMap((tab) => queries[tab]).map((q) => q()))).flat();
-  // One item per key (a key is what the user marks).
-  const byKey = new Map(found.map((item) => [item.key, item]));
+  const byKey = await deriveInboxItems(db, query, query.tab ? [query.tab] : INBOX_TABS, now);
   const hidden = await hiddenKeys(db, query.userId, [...byKey.keys()], now);
   return [...byKey.values()]
     .filter((item) => !hidden.has(item.key))
     .sort((a, b) => b.since.getTime() - a.since.getTime() || a.key.localeCompare(b.key));
+}
+
+/** The tab of each key prefix (`manual_story:{storyId}` → Needs you, …). */
+const TAB_OF_KEY_PREFIX: Record<string, InboxTab> = {
+  manual_story: "needs_you",
+  blocked: "needs_you",
+  question: "needs_you",
+  stopped: "needs_you",
+  prd_ready: "needs_you",
+  pr: "needs_you",
+  failed: "problems",
+  failed_attempt: "problems",
+  agent_offline: "problems",
+  agent_update: "problems",
+  running: "running",
+};
+
+/**
+ * The item `key` derives in the organizations today, whether or not the user marked it Done
+ * or snoozed it; null when it derives none (it was handled, or what made it new changed).
+ * Queries only the key's tab.
+ */
+export async function findInboxItem(
+  db: Queryable,
+  query: Omit<InboxQuery, "userId" | "tab"> & { key: string },
+): Promise<InboxCandidate | null> {
+  const prefix = query.key.slice(0, query.key.indexOf(":"));
+  const tab = Object.hasOwn(TAB_OF_KEY_PREFIX, prefix) ? TAB_OF_KEY_PREFIX[prefix] : undefined;
+  if (!tab || query.organizationIds.length === 0) return null;
+  const byKey = await deriveInboxItems(db, query, [tab], query.now ?? new Date());
+  return byKey.get(query.key) ?? null;
+}
+
+export interface InboxItemStateKey {
+  userId: string;
+  organizationId: string;
+  key: string;
+}
+
+/**
+ * Marks an item Done (`snoozedUntil` null) or snoozed until `snoozedUntil`, for the user only
+ * (an `inbox_state` change on their channel).
+ */
+export async function setInboxItemState(
+  db: Queryable,
+  item: InboxItemStateKey & { state: "done" | "snoozed"; snoozedUntil: Date | null },
+): Promise<void> {
+  const snoozedUntil = item.state === "snoozed" ? item.snoozedUntil : null;
+  await db
+    .insert(inboxItemStates)
+    .values({
+      userId: item.userId,
+      organizationId: item.organizationId,
+      itemKey: item.key,
+      state: item.state,
+      snoozedUntil,
+    })
+    .onConflictDoUpdate({
+      target: [inboxItemStates.userId, inboxItemStates.itemKey],
+      set: {
+        organizationId: item.organizationId,
+        state: item.state,
+        snoozedUntil,
+        updatedAt: sql`now()`,
+      },
+    });
+  recordChange(db, {
+    resource: "inbox_state",
+    ids: [item.key],
+    organizationId: item.organizationId,
+    userId: item.userId,
+  });
+}
+
+/** Restores an item the user marked Done or snoozed (an `inbox_state` change on their channel). */
+export async function clearInboxItemState(db: Queryable, item: InboxItemStateKey): Promise<void> {
+  await db
+    .delete(inboxItemStates)
+    .where(and(eq(inboxItemStates.userId, item.userId), eq(inboxItemStates.itemKey, item.key)));
+  recordChange(db, {
+    resource: "inbox_state",
+    ids: [item.key],
+    organizationId: item.organizationId,
+    userId: item.userId,
+  });
+}
+
+/** Days after its last update an item's Done or Snooze is pruned. */
+export const INBOX_ITEM_STATE_RETENTION_DAYS = 60;
+
+/** Deletes Done and Snooze states not updated for `INBOX_ITEM_STATE_RETENTION_DAYS`; their count. */
+export async function pruneInboxItemStates(db: Queryable, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - INBOX_ITEM_STATE_RETENTION_DAYS * 86_400_000);
+  const deleted = await db
+    .delete(inboxItemStates)
+    .where(lt(inboxItemStates.updatedAt, cutoff))
+    .returning({ key: inboxItemStates.itemKey });
+  return deleted.length;
 }
 
 export type InboxCounts = Record<InboxTab, number>;
