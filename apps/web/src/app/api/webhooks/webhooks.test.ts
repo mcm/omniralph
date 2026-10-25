@@ -2,6 +2,11 @@ import { createHmac, generateKeyPairSync, randomBytes, randomUUID } from "node:c
 import {
   connectRepository,
   closeDb,
+  createRun,
+  getLane,
+  getMainLane,
+  updateLane,
+  updateRun,
   getScmConnection,
   createDb,
   getRepository,
@@ -455,6 +460,63 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       const drafted = await github(githubRequest(githubPayload("converted_to_draft", { number })));
       expect(await drafted.json()).toEqual({ status: "ignored", reason: "not_ralph" });
       expect(await prJobs(githubRepoId, number)).toHaveLength(0);
+    });
+
+    it("records a ralph PR's review state from pull_request and pull_request_review", async () => {
+      const number = ++prCounter;
+      const { run } = await createRun(db, {
+        organizationId: orgId,
+        linearIssueId: `issue-pr-${number}`,
+        linearIdentifier: `ENG-${number}`,
+        linearAgentSessionId: `session-pr-${number}`,
+        kind: "children",
+        repositoryId: githubRepoId,
+        branch: `om/eng-${number}`,
+        baseBranch: "main",
+      });
+      await updateRun(db, run.id, { status: "completed" });
+      const lane = (await updateLane(db, (await getMainLane(db, run))!.id, {
+        prNumber: number,
+        prUrl: `https://github.com/acme/app/pull/${number}`,
+      }))!;
+      const stateOf = async () => {
+        const current = (await getLane(db, lane.id))!;
+        return [current.prDraft, current.prReviewState];
+      };
+      const accepted = { status: "accepted", event: "pull_request_state" };
+      const reviewPayload = (action: string, state: string) => ({
+        action,
+        installation: { id: 4242 },
+        repository: { id: 100, full_name: "acme/app" },
+        review: { state, user: { login: "alice", type: "User" } },
+        pull_request: { number, state: "open", draft: false, requested_reviewers: [] },
+      });
+
+      const approved = await github(
+        githubRequest(reviewPayload("submitted", "approved"), { event: "pull_request_review" }),
+      );
+      expect(await approved.json()).toEqual(accepted);
+      expect(await stateOf()).toEqual([false, "approved"]);
+      const dismissed = await github(
+        githubRequest(reviewPayload("dismissed", "dismissed"), { event: "pull_request_review" }),
+      );
+      expect(await dismissed.json()).toEqual(accepted);
+      expect(await stateOf()).toEqual([false, "none"]);
+      const changes = await github(
+        githubRequest(reviewPayload("submitted", "changes_requested"), {
+          event: "pull_request_review",
+        }),
+      );
+      expect(await changes.json()).toEqual(accepted);
+      expect(await stateOf()).toEqual([false, "changes_requested"]);
+      // Drafting it, then reopening it, are recorded too.
+      const drafted = await github(
+        githubRequest(githubPayload("converted_to_draft", { number, draft: true })),
+      );
+      expect(await drafted.json()).toEqual(accepted);
+      expect(await stateOf()).toEqual([true, "changes_requested"]);
+      await github(githubRequest(githubPayload("reopened", { number })));
+      expect(await stateOf()).toEqual([false, "changes_requested"]);
     });
 
     it("does not create a second job for a repeated delivery ID", async () => {

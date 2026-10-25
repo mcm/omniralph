@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import {
   addMember,
   addOrganizationDomain,
+  chatConnections,
   chatIdentities,
   closeDb,
   createInvitation,
@@ -34,10 +35,12 @@ import {
   listRepositoryRules,
   createOrganization,
   createReview,
+  createReviewRun,
   createRun,
   createTriageRun,
   insertJob,
   enrollHarness,
+  ensureChatThread,
   findings,
   getHarnessOverview,
   getRepository,
@@ -48,12 +51,16 @@ import {
   jobs,
   runActivities,
   listHarnessHostTools,
+  mapThreadRun,
   recordWebhookEvent,
   organizationMembers,
+  organizations,
   ralphRuns,
+  reviewRuns,
   scmConnections,
   setActiveOrganization,
   settingsChanges,
+  triageRuns,
   updateRun,
   upsertScmConnection,
   upsertStories,
@@ -604,6 +611,129 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = null;
     expect((await call(inboxFeed.GET)).status).toBe(401);
     expect((await call(inboxCounts.GET)).status).toBe(401);
+  });
+
+  it("spans only the user's memberships with organization=all in the Inbox", async () => {
+    // A third organization the user isn't a member of, with an item on every tab.
+    const [owner, user] = await db
+      .insert(users)
+      .values([
+        { id: "gamma-admin", email: "admin@gamma.io" },
+        { id: "inbox-both-member", email: "inbox-both@alpha.io" },
+      ])
+      .returning();
+    const c = await createOrganization(db, { name: "gamma", createdBy: owner!.id });
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    // Each organization gets a Needs you item (a stopped epic), a Problems item (a failed
+    // triage run) and a Running item (its running epic; gamma a running triage run).
+    const ralph: string[] = [];
+    const triage: string[] = [];
+    const items = new Map<string, string[]>();
+    for (const [orgId, name, repositoryId] of [
+      [a.orgId, a.name, a.repoId],
+      [b.orgId, b.name, b.repoId],
+      [c.id, "gamma", null],
+    ] as const) {
+      const { run: stopped } = await createRun(db, {
+        organizationId: orgId,
+        linearIssueId: `${name}-all-stopped-issue`,
+        linearIdentifier: `${name.toUpperCase()}-77`,
+        linearTitle: `${name} stopped for all`,
+        linearUrl: null,
+        linearAgentSessionId: `${name}-all-stopped-session`,
+        kind: "children",
+        repositoryId,
+        branch: `${name}-all-stopped`,
+        baseBranch: "main",
+      });
+      await updateRun(db, stopped.id, { status: "stopped" });
+      ralph.push(stopped.id);
+      const { run: failed } = await createTriageRun(db, {
+        organizationId: orgId,
+        linearIssueId: `${name}-all-failed-issue`,
+        linearAgentSessionId: `${name}-all-failed-session`,
+        trigger: "mention",
+      });
+      await db.update(triageRuns).set({ status: "failed" }).where(eq(triageRuns.id, failed.id));
+      triage.push(failed.id);
+      const ids = [stopped.id, failed.id];
+      if (orgId === c.id) {
+        const { run: running } = await createTriageRun(db, {
+          organizationId: orgId,
+          linearIssueId: "gamma-all-running-issue",
+          linearAgentSessionId: "gamma-all-running-session",
+          trigger: "mention",
+        });
+        await db.update(triageRuns).set({ status: "running" }).where(eq(triageRuns.id, running.id));
+        triage.push(running.id);
+        ids.push(running.id);
+      }
+      items.set(orgId, ids);
+    }
+    const cIds = [c.id, ...items.get(c.id)!];
+
+    try {
+      state.userId = user!.id;
+      type Item = { organization: { id: string }; run: { id: string } | null };
+      const feed = async (tab: string, organization: string) => {
+        const response = await call(inboxFeed.GET, {
+          path: `/api/ui?tab=${tab}&organization=${organization}`,
+        });
+        expect(response.status).toBe(200);
+        return response;
+      };
+      const expected = {
+        "needs-you": [items.get(a.orgId)![0], items.get(b.orgId)![0]],
+        problems: [items.get(a.orgId)![1], items.get(b.orgId)![1]],
+        running: [a.runId, b.runId],
+      };
+      for (const [tab, runIds] of Object.entries(expected)) {
+        const all = await feed(tab, "all");
+        const listed = all.body.items as Item[];
+        expect(listed.map((i) => i.run?.id)).toEqual(expect.arrayContaining(runIds));
+        expect(new Set(listed.map((i) => i.organization.id))).toEqual(new Set([a.orgId, b.orgId]));
+        for (const marker of cIds) expect(JSON.stringify(all.body)).not.toContain(marker);
+        // organization=all is exactly the union of the user's two organizations.
+        const own = [
+          ...((await feed(tab, a.orgId)).body.items as Item[]),
+          ...((await feed(tab, b.orgId)).body.items as Item[]),
+        ];
+        expect(listed).toHaveLength(own.length);
+      }
+      const counts = await call(inboxCounts.GET, { path: "/api/ui?organization=all" });
+      expect(counts.status).toBe(200);
+      const countsOf = async (organization: string) =>
+        (await call(inboxCounts.GET, { path: `/api/ui?organization=${organization}` })).body as {
+          needsYou: number;
+          problems: number;
+          running: number;
+        };
+      const [countA, countB] = [await countsOf(a.orgId), await countsOf(b.orgId)];
+      expect(counts.body).toEqual({
+        needsYou: countA.needsYou + countB.needsYou,
+        problems: countA.problems + countB.problems,
+        running: countA.running + countB.running,
+      });
+      expect(countA.needsYou).toBeGreaterThan(0);
+      expect(countA.problems).toBeGreaterThan(0);
+      expect(countA.running).toBeGreaterThan(0);
+      // Gamma isn't one of the user's organizations.
+      expect(await call(inboxFeed.GET, { path: `/api/ui?organization=${c.id}` })).toMatchObject({
+        status: 404,
+      });
+      expect(await call(inboxCounts.GET, { path: `/api/ui?organization=${c.id}` })).toMatchObject({
+        status: 404,
+      });
+    } finally {
+      await db.delete(ralphRuns).where(inArray(ralphRuns.id, ralph));
+      await db.delete(triageRuns).where(inArray(triageRuns.id, triage));
+      await db.delete(organizations).where(eq(organizations.id, c.id));
+      await db.delete(users).where(inArray(users.id, [owner!.id, user!.id]));
+    }
   });
 
   it("lets members act on their organization's Inbox items, and 404s on the other's", async () => {
@@ -1521,6 +1651,183 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
     }
     await db.delete(jobs).where(inArray(jobs.id, [...attempts.values()]));
+  });
+
+  it("lists and shows each organization's own review runs and asks, and 404s on the other's", async () => {
+    // Each organization: a review run with a pass and an attempt, and an ask from Slack.
+    const seeded = new Map<string, { reviewRunId: string; askId: string; attempts: string[] }>();
+    const jobIds: string[] = [];
+    const reviewRunIds: string[] = [];
+    const chatConnectionIds: string[] = [];
+    for (const tenant of [a, b]) {
+      const reviewRun = await createReviewRun(db, {
+        organizationId: tenant.orgId,
+        repositoryId: tenant.repoId,
+        prNumber: 8,
+        headSha: "c".repeat(40),
+        baseSha: "d".repeat(40),
+        trigger: "webhook",
+        mode: "full",
+        profileId: "standard",
+      });
+      reviewRunIds.push(reviewRun.id);
+      await createReview(db, {
+        reviewRunId: reviewRun.id,
+        repositoryId: tenant.repoId,
+        prNumber: 8,
+        prTitle: `${tenant.name} reviewed change`,
+        headSha: "c".repeat(40),
+        baseSha: "d".repeat(40),
+        trigger: "webhook",
+        profileId: "standard",
+        model: null,
+        budget: 100_000,
+      });
+      const { job: reviewJob } = await insertJob(db, {
+        organizationId: tenant.orgId,
+        type: "review.task",
+        taskType: "review",
+        pool: "short",
+        repositoryId: tenant.repoId,
+        reviewRunId: reviewRun.id,
+      });
+      const connection = await saveChatConnection(db, {
+        organizationId: tenant.orgId,
+        platform: "slack",
+        externalId: `${tenant.name}-runs-team`,
+        name: `${tenant.name} runs Slack`,
+        credentials: null,
+        installedByUserId: null,
+      });
+      if (connection === "other_organization") throw new Error("setup");
+      chatConnectionIds.push(connection.id);
+      const thread = (await ensureChatThread(db, {
+        connectionId: connection.id,
+        externalThreadId: `slack:C${tenant.name.toUpperCase()}1:1.1`,
+        channelId: `slack:C${tenant.name.toUpperCase()}1`,
+        startedByExternalUserId: "U1",
+      }))!;
+      const { job: askJob } = await insertJob(db, {
+        organizationId: tenant.orgId,
+        type: "chat.ask",
+        taskType: "query",
+        pool: "short",
+        repositoryId: tenant.repoId,
+        payload: {
+          trigger: { kind: "chat.request", context: { question: `${tenant.name} question` } },
+        },
+      });
+      const ask = (await mapThreadRun(db, {
+        organizationId: tenant.orgId,
+        chatThreadId: thread.id,
+        jobId: askJob.id,
+      }))!;
+      for (const job of [reviewJob, askJob]) {
+        await db.insert(runActivities).values({
+          jobId: job.id,
+          organizationId: tenant.orgId,
+          type: "thought",
+          body: `${tenant.name} ${job.type}`,
+        });
+        jobIds.push(job.id);
+      }
+      seeded.set(tenant.orgId, {
+        reviewRunId: reviewRun.id,
+        askId: ask.id,
+        attempts: [reviewJob.id, askJob.id],
+      });
+    }
+
+    try {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const mine = seeded.get(own.orgId)!;
+        const theirs = seeded.get(other.orgId)!;
+        const theirMarkers = [
+          ...markers(other),
+          theirs.reviewRunId,
+          theirs.askId,
+          ...theirs.attempts,
+          `${other.name} question`,
+          `${other.name} reviewed change`,
+        ];
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const lists = [];
+          for (const path of [
+            "/api/ui",
+            "/api/ui?organization=all",
+            `/api/ui?organization=${own.orgId}`,
+          ]) {
+            const list = await call(runList.GET, { path });
+            expect(list.status).toBe(200);
+            const runs = list.body.runs as {
+              id: string;
+              kind: string;
+              organization: { id: string };
+            }[];
+            expect(new Set(runs.map((r) => r.id))).toEqual(
+              new Set([own.triageRunId, own.runId, mine.reviewRunId, mine.askId]),
+            );
+            expect(runs.find((r) => r.id === mine.reviewRunId)).toMatchObject({ kind: "review" });
+            expect(runs.find((r) => r.id === mine.askId)).toMatchObject({ kind: "ask" });
+            lists.push(list);
+          }
+          for (const kind of ["review", "ask"]) {
+            const byKind = await call(runList.GET, {
+              path: `/api/ui?organization=all&kind=${kind}`,
+            });
+            expect(byKind.status).toBe(200);
+            expect((byKind.body.runs as { id: string }[]).map((r) => r.id)).toEqual([
+              kind === "review" ? mine.reviewRunId : mine.askId,
+            ]);
+            lists.push(byKind);
+          }
+
+          const details = [];
+          for (const [id, attemptId] of [
+            [mine.reviewRunId, mine.attempts[0]!],
+            [mine.askId, mine.attempts[1]!],
+          ] as const) {
+            const detail = await call(runDetail.GET, { params: { id } });
+            expect(detail).toMatchObject({
+              status: 200,
+              body: { id, organization: { id: own.orgId, name: own.name } },
+            });
+            const transcript = await call(runTranscript.GET, { params: { id, attemptId } });
+            expect(transcript).toMatchObject({
+              status: 200,
+              body: { events: [{ body: expect.stringContaining(own.name) }] },
+            });
+            details.push(detail, transcript);
+          }
+          for (const { body } of [...lists, ...details]) {
+            for (const marker of theirMarkers) expect(JSON.stringify(body)).not.toContain(marker);
+          }
+
+          // The other's review run and ask, and their attempts through one's own runs.
+          for (const id of [theirs.reviewRunId, theirs.askId]) {
+            expect(await call(runDetail.GET, { params: { id } })).toMatchObject({ status: 404 });
+          }
+          for (const [id, attemptId] of [
+            [theirs.reviewRunId, theirs.attempts[0]!],
+            [theirs.askId, theirs.attempts[1]!],
+            [mine.reviewRunId, theirs.attempts[0]!],
+            [mine.askId, theirs.attempts[1]!],
+          ] as const) {
+            expect(await call(runTranscript.GET, { params: { id, attemptId } })).toMatchObject({
+              status: 404,
+            });
+          }
+        }
+      }
+    } finally {
+      await db.delete(jobs).where(inArray(jobs.id, jobIds));
+      await db.delete(reviewRuns).where(inArray(reviewRuns.id, reviewRunIds));
+      await db.delete(chatConnections).where(inArray(chatConnections.id, chatConnectionIds));
+    }
   });
 
   it("refuses to stop the other organization's run, and lets its own members stop it", async () => {

@@ -1,6 +1,6 @@
 import { fieldErrors } from "@omniralph/shared";
 import { apiHandler, ApiRouteError, INVALID_JSON_MESSAGE } from "@/lib/api/handler";
-import { runRetryRequestSchema, type RunDetail } from "@/lib/api/runs";
+import { runRetryRequestSchema, type RunRetryResult } from "@/lib/api/runs";
 import { requireRunAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { RUN_ACTION_ROLES } from "@/lib/runs/actions";
@@ -13,13 +13,14 @@ type Params = { id: string };
  * Retries a run of any kind (members of its organization), with an optional body `{target}`
  * (`runRetryRequestSchema`): the run (default), one of an epic's stories (a finished epic
  * re-runs a completed one), or an attempt (a review's, triage's or ask's attempt retries its
- * run). Answers the run's detail; a review's retry is a new review run of the PR's current
- * head, and answers that run's detail. 400 when the target can't be retried (its PR/MR merged
- * or closed…), 409 while Om works on the run.
+ * run). Answers the run's detail (`runRetryResultSchema`); a review's retry is a new review run
+ * of the PR's current head, and answers that run's detail, or the detail of that head's review
+ * already queued or running with a `warning` saying so. 400 when the target can't be retried
+ * (its PR/MR merged or closed…), 409 while Om works on the run.
  */
 export const POST = apiHandler<"member", undefined, undefined, Params>(
   { access: RUN_ACTION_ROLES.retry },
-  async ({ user, params, request }): Promise<RunDetail> => {
+  async ({ user, params, request }): Promise<RunRetryResult> => {
     const { run, organization } = await requireRunAccess(user, params.id, {
       role: RUN_ACTION_ROLES.retry,
       notFoundMessage: "That run doesn't exist.",

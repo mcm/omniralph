@@ -24,6 +24,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   inboxCountsSchema,
@@ -31,6 +32,7 @@ import {
   type InboxFeed,
   type InboxItem,
 } from "@/lib/api/inbox";
+import { runDetailSchema } from "@/lib/api/runs";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -54,6 +56,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const inbox = await import("@/app/api/ui/inbox/route");
 const counts = await import("@/app/api/ui/inbox/counts/route");
+const runDetail = await import("@/app/api/ui/runs/[id]/route");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -340,6 +343,94 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     }
     state.user = alice;
     expect((await call(counts.GET)).body).toEqual({ needsYou: 1, problems: 1, running: 2 });
+  });
+
+  it("carries each kind of open question with the run detail's question, and offers Answer", async () => {
+    const askedAt = new Date().toISOString();
+    const inAnHour = new Date(Date.now() + 3_600_000).toISOString();
+    await run("repositoryQuestion", {
+      status: "waiting",
+      repositoryId: null,
+      pendingElicitation: { kind: "repository", repositoryIds: [repoId] },
+    });
+    await run("preparationQuestion", {
+      status: "waiting",
+      preparation: {
+        request: {
+          storyIssueId: "story-prep",
+          identifier: "ENG-51",
+          title: "Seed the bucket",
+          commandsHash: "hash",
+          headSha: null,
+          askedAt,
+        },
+        handled: {},
+      },
+    });
+    await run("cleanupQuestion", {});
+    await db.insert(ralphLanes).values({
+      runId: ids.cleanupQuestion!,
+      repositoryId: repoId,
+      branch: "omniralph/cleanup",
+      baseBranch: "main",
+      prNumber: 7,
+      cleanup: {
+        status: "done",
+        at: askedAt,
+        mergedSha: "abc",
+        questions: [{ kind: "branch", commits: 2, askedAt, deadline: inAnHour }],
+      },
+    });
+    await run("permissionQuestion", { status: "running" });
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: state.orgId,
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+        status: "running",
+        ralphRunId: ids.permissionQuestion!,
+      })
+      .returning();
+    await db
+      .update(ralphRuns)
+      .set({
+        permission: {
+          requestId: "req-1",
+          jobId: job!.id,
+          tool: "Bash",
+          detail: "rm -rf build",
+          askedAt,
+          expiresAt: inAnHour,
+        },
+      })
+      .where(inArray(ralphRuns.id, [ids.permissionQuestion!]));
+    const questionRuns = {
+      repository: ids.repositoryQuestion!,
+      preparation: ids.preparationQuestion!,
+      cleanup: ids.cleanupQuestion!,
+      permission: ids.permissionQuestion!,
+    };
+    try {
+      const items = (await feed("needs-you", bob)).filter((i) => i.kind === "question");
+      for (const [kind, runId] of Object.entries(questionRuns)) {
+        const item = items.find((i) => i.run?.id === runId);
+        expect(item, kind).toBeDefined();
+        const response = await runDetail.GET(new Request("http://localhost/api/ui"), {
+          params: Promise.resolve({ id: runId }),
+        });
+        expect(response.status).toBe(200);
+        const { question } = runDetailSchema.parse(await response.json()).details;
+        expect(question).toMatchObject({ kind, key: item!.key });
+        expect(question!.options.length).toBeGreaterThan(0);
+        expect(item!.question).toEqual(question);
+        expect(item!.actions).toContain("answer");
+      }
+    } finally {
+      await db.delete(jobs).where(inArray(jobs.id, [job!.id]));
+      await db.delete(ralphRuns).where(inArray(ralphRuns.id, Object.values(questionRuns)));
+    }
   });
 
   it("refuses an unknown tab or organization, and anonymous users", async () => {

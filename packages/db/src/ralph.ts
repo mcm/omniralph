@@ -16,6 +16,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   notExists,
   notInArray,
   or,
@@ -1186,13 +1187,20 @@ const PULL_REQUEST_LANE_FIELDS = [
 export interface PullRequestStateUpdate {
   draft?: boolean;
   reviewState?: { to: PullRequestReviewState; from?: readonly PullRequestReviewState[] };
+  /**
+   * When the code host says the change happened. A lane whose
+   * `pr_state_updated_at` is later ignores it (an out-of-order delivery), and
+   * a lane it changes is stamped with it. Without it, the change applies now.
+   */
+  occurredAt?: Date | null;
 }
 
 /**
  * Applies a PR/MR's draft or review state to every open lane of it in the
  * repository (a re-delegation carries a PR/MR forward to the new run's lane).
- * Lanes it doesn't change are left alone, `pr_state_updated_at` included.
- * Returns the lanes it changed.
+ * Lanes it doesn't change are left alone, `pr_state_updated_at` included, and
+ * so are lanes whose state is newer than `occurredAt`. Returns the lanes it
+ * changed.
  */
 export async function updatePullRequestState(
   db: Executor,
@@ -1200,7 +1208,7 @@ export async function updatePullRequestState(
   prNumber: number,
   update: PullRequestStateUpdate,
 ): Promise<RalphLane[]> {
-  const { draft, reviewState } = update;
+  const { draft, reviewState, occurredAt } = update;
   const reviewMoves = reviewState
     ? and(
         sql`${ralphLanes.prReviewState} <> ${reviewState.to}`,
@@ -1211,6 +1219,7 @@ export async function updatePullRequestState(
   const changes = [draftMoves, reviewMoves].filter((c): c is SQL => c !== undefined);
   if (changes.length === 0) return [];
   const now = new Date();
+  const stamp = occurredAt ?? now;
   const rows = await db
     .update(ralphLanes)
     .set({
@@ -1220,7 +1229,7 @@ export async function updatePullRequestState(
             prReviewState: sql`case when ${reviewMoves} then ${reviewState!.to}::pr_review_state else ${ralphLanes.prReviewState} end`,
           }
         : {}),
-      prStateUpdatedAt: now,
+      prStateUpdatedAt: stamp,
       updatedAt: now,
     })
     .from(ralphRuns)
@@ -1230,6 +1239,7 @@ export async function updatePullRequestState(
         eq(ralphLanes.repositoryId, repositoryId),
         eq(ralphLanes.prNumber, prNumber),
         eq(ralphLanes.prClosed, false),
+        or(isNull(ralphLanes.prStateUpdatedAt), lte(ralphLanes.prStateUpdatedAt, stamp)),
         or(...changes),
       ),
     )

@@ -5,7 +5,8 @@ import "server-only";
  * epic's stories (`retryRalphRun`); a review run on its PR's current head with its mode and
  * profile (`rerunOrganizationReview`); a triage run with a new attempt (`retryTriageRun`); an
  * ask with a copy of its last attempt (`retryChatAsk`). A review's, triage's or ask's attempt
- * is retried with its run.
+ * is retried with its run. A review whose head is already queued or running answers that review
+ * run with a `warning`, as the review Re-run does.
  */
 import {
   getRunIndexEntry,
@@ -16,7 +17,7 @@ import {
 } from "@omniralph/db";
 import { CHAT_ASK_JOB_TYPE, RALPH_REQUEST_JOB_TYPE, TRIAGE_RUN_JOB_TYPE } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
-import type { RunDetail, RunRetryTarget } from "@/lib/api/runs";
+import type { RunDetail, RunRetryResult, RunRetryTarget } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { getDispatcher } from "@/lib/dispatch";
 import { retryChatAsk } from "@/lib/chat/ask";
@@ -33,20 +34,24 @@ import { ralphDepsOf } from "./ralph-deps";
 export const RUN_BUSY_MESSAGE = "Om is already working on this run.";
 const NOT_FOUND = "That run doesn't exist.";
 
-/** Retries `run` for a user who is `organization.role` there; answers its detail afterwards. */
+/**
+ * Retries `run` for a user who is `organization.role` there; answers its detail afterwards
+ * (a review's: the review run of the current head), with a `warning` when nothing new started.
+ */
 export async function retryRun(
   db: Database,
   run: RunIndexEntry,
   organization: ScopedOrganization,
   target: RunRetryTarget,
   retriedBy: string | undefined,
-): Promise<RunDetail> {
+): Promise<RunRetryResult> {
   const detail = await loadRunDetail(db, run, organization);
   if (!detail) throw ApiRouteError.notFound(NOT_FOUND);
   if (detail.attempts.some((a) => a.status === "queued" || a.status === "running")) {
     throw new ApiRouteError(409, RUN_BUSY_MESSAGE, "run_busy");
   }
-  let retried: RunIndexEntry | null;
+  let retried: RunIndexEntry;
+  let warning: string | null = null;
   switch (run.kind) {
     case "epic":
     case "request":
@@ -55,7 +60,7 @@ export async function retryRun(
       break;
     case "review":
       checkWholeRunTarget(detail, target);
-      retried = await retryReview(db, run);
+      ({ entry: retried, warning } = await retryReview(db, run));
       break;
     case "triage":
       checkWholeRunTarget(detail, target);
@@ -70,10 +75,10 @@ export async function retryRun(
   }
   // The index entry carries the run's status: read it again.
   const current = (await getRunIndexEntry(db, retried.id)) ?? retried;
-  return (
+  const fresh =
     (await loadRunDetail(db, current, organization)) ??
-    (current.id === run.id ? detail : notFound())
-  );
+    (current.id === run.id ? detail : notFound());
+  return { ...fresh, warning };
 }
 
 const notFound = (): never => {
@@ -138,9 +143,13 @@ const attemptNotRetryable = () =>
 
 /**
  * Re-runs a review run (all its passes and the correlation) on its PR's current head with the
- * run's mode and profile. Answers the new review run.
+ * run's mode and profile. Answers the new review run, or the one of that head already queued or
+ * running with the warning that says so.
  */
-async function retryReview(db: Database, run: RunIndexEntry): Promise<RunIndexEntry> {
+async function retryReview(
+  db: Database,
+  run: RunIndexEntry,
+): Promise<{ entry: RunIndexEntry; warning: string | null }> {
   const [reviewRun, passes] = await Promise.all([
     getReviewRun(db, run.id),
     listReviewRunReviews(db, run.id),
@@ -152,8 +161,15 @@ async function retryReview(db: Database, run: RunIndexEntry): Promise<RunIndexEn
     runMode: reviewRun.mode,
     profileId: reviewRun.profileId,
   });
-  if (result.ok) return (await getRunIndexEntry(db, result.reviewRunId)) ?? notFound();
-  if (result.activeReviewId) throw new ApiRouteError(409, result.error, "run_busy");
+  if (result.ok) {
+    return { entry: (await getRunIndexEntry(db, result.reviewRunId)) ?? notFound(), warning: null };
+  }
+  if (result.activeReviewId) {
+    // Legacy reviews' run IDs are their own.
+    const active = await getRunIndexEntry(db, result.activeReviewRunId ?? result.activeReviewId);
+    if (active) return { entry: active, warning: result.error };
+    throw new ApiRouteError(409, result.error, "run_busy");
+  }
   if (result.notFound) throw ApiRouteError.notFound(NOT_FOUND);
   throw notRetryable(result.error);
 }

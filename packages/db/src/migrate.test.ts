@@ -1048,17 +1048,19 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
              linear_issue_id, linear_identifier, linear_agent_session_id)
            values ($1, 'prd', $2, 'completed', 'i1', 'ENG-1', 's1'),
                   ($1, 'prd', $2, 'completed', 'i2', 'ENG-2', 's2'),
-                  ($1, 'prd', $2, 'running', 'i3', 'ENG-3', 's3')
+                  ($1, 'prd', $2, 'running', 'i3', 'ENG-3', 's3'),
+                  ($1, 'prd', $2, 'stopped', 'i4', 'ENG-4', 's4')
            returning id`,
           [org, repos[0]!.id],
         );
-        // Production's lane shapes: a merged PR, an open PR, no PR yet.
+        // Production's lane shapes: a merged PR, an open PR, no PR yet, a PR closed unmerged.
         await client.query(
           `insert into ralph_lanes (run_id, repository_id, branch, base_branch, pr_number, pr_url, pr_closed, pr_merged)
            values ($1, $4, 'a', 'main', 1, 'https://github.com/acme/main/pull/1', true, true),
                   ($2, $4, 'b', 'main', 2, 'https://github.com/acme/main/pull/2', false, false),
-                  ($3, $4, 'c', 'main', null, null, false, false)`,
-          [runs[0]!.id, runs[1]!.id, runs[2]!.id, repos[0]!.id],
+                  ($3, $4, 'c', 'main', null, null, false, false),
+                  ($5, $4, 'd', 'main', 4, 'https://github.com/acme/main/pull/4', true, false)`,
+          [runs[0]!.id, runs[1]!.id, runs[2]!.id, repos[0]!.id, runs[3]!.id],
         );
 
         await runMigrations(uri);
@@ -1086,6 +1088,14 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           {
             branch: "c",
             pr_closed: false,
+            pr_merged: false,
+            pr_draft: false,
+            pr_review_state: "none",
+            pr_state_updated_at: null,
+          },
+          {
+            branch: "d",
+            pr_closed: true,
             pr_merged: false,
             pr_draft: false,
             pr_review_state: "none",
@@ -1444,6 +1454,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
                ($1, 'review.correlate', 'query', 'short', 'builtin:correlate', 'completed', '{}', 'correlation', null),
                ($1, 'review.reply', 'query', 'short', 'builtin:reply', 'completed', $2, 'reply', null),
                ($1, 'triage.run', 'query', 'short', 'builtin:triage', 'failed', $5, 'triage', null),
+               ($1, 'triage.run', 'query', 'short', 'builtin:triage', 'completed', $5, 'triage-turn-2', null),
                ($1, 'triage.run', 'query', 'short', 'builtin:triage', 'failed', $6, 'triage-bad-id', null),
                ($1, 'chat.ask', 'query', 'short', 'builtin:ask', 'expired', $7, 'ask', null),
                ($1, 'ralph.story', 'coding', 'long', null, 'completed', $8, 'legacy-story', $10),
@@ -1574,6 +1585,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
             link("task-story", { ralph_run_id: ralphRun, ralph_story_id: taskStory }),
             link("triage", { triage_run_id: triageRun }),
             link("triage-bad-id"),
+            link("triage-turn-2", { triage_run_id: triageRun }),
           ]);
 
           // The links are cleared, not cascaded, when their run goes.

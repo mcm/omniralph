@@ -275,6 +275,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     return result.rows[0]!.at;
   }
 
+  /** The run's change went on the organization's channel, and nothing on a user's. */
+  function expectRunChange(messages: ChangeMessage[], runId: string) {
+    expect(messages).toContainEqual({
+      channel: `org:${orgId}:changes`,
+      event: expect.objectContaining({ resource: "run", organizationId: orgId, runId }),
+    });
+    expect(messages.some((m) => m.channel.startsWith("user:"))).toBe(false);
+  }
+
   const queuedJobs = (runId: string) =>
     db
       .select()
@@ -331,10 +340,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     it("Skip cancels its work item through the tracker and the story becomes canceled", async () => {
       const { run, manual, manualRow, nextRow } = await manualStoryEpic();
       const key = `manual_story:${manualRow.id}`;
-      expect(await act(key, { action: "skip" })).toMatchObject({
+      let result!: Awaited<ReturnType<typeof act>>;
+      const messages = await published(async () => {
+        result = await act(key, { action: "skip" });
+      });
+      expect(result).toMatchObject({
         status: 200,
         body: { action: "skip", runId: run.id },
       });
+      expectRunChange(messages, run.id);
       expect((await linear.getIssue(manual.id))!.stateType).toBe("canceled");
       const stories = await listStories(db, run.id);
       expect(stories.find((s) => s.id === manualRow.id)).toMatchObject({ status: "canceled" });
@@ -495,10 +509,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
 
   it("Resume retries a stopped epic", async () => {
     const { run, key } = await stoppedEpic();
-    expect(await act(key, { action: "resume" })).toMatchObject({
+    let result!: Awaited<ReturnType<typeof act>>;
+    const messages = await published(async () => {
+      result = await act(key, { action: "resume" });
+    });
+    expect(result).toMatchObject({
       status: 200,
       body: { action: "resume", runId: run.id },
     });
+    expectRunChange(messages, run.id);
     expect(await getRun(db, run.id)).toMatchObject({ status: "running" });
     expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
       "Retried from Omniralph by Mo Member.",
@@ -516,10 +535,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       .filter((i) => i.kind === "failed_run")
       .map((i) => i.key);
     expect(key).toBe(`failed:${run.id}:none`);
-    expect(await act(key!, { action: "retry" })).toMatchObject({
+    let result!: Awaited<ReturnType<typeof act>>;
+    const messages = await published(async () => {
+      result = await act(key!, { action: "retry" });
+    });
+    expect(result).toMatchObject({
       status: 200,
       body: { runId: run.id },
     });
+    expectRunChange(messages, run.id);
     expect(await getRun(db, run.id)).toMatchObject({ status: "running" });
   });
 

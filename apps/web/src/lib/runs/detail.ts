@@ -197,12 +197,12 @@ async function reviewKindFacts(
     organizationDefinitions(db, run.organizationId),
     facts.passes.flatMap((p) => p.taskId ?? []),
   );
-  const passName = new Map(
-    facts.passes.map((p) => [p.id, p.taskId ? taskName(p.taskId) : "Review"]),
-  );
+  // A legacy pass has no task: its step reads "Review", its attempt "Reviewed pull request #12".
+  const passTask = new Map(facts.passes.map((p) => [p.id, p.taskId ? taskName(p.taskId) : null]));
+  const passName = new Map(facts.passes.map((p) => [p.id, passTask.get(p.id) ?? "Review"]));
   const labelContext = (attempt: RunAttemptEntry): AttemptLabelContext => ({
     ...base,
-    reviewTask: (attempt.reviewId && passName.get(attempt.reviewId)) || null,
+    reviewTask: (attempt.reviewId && passTask.get(attempt.reviewId)) || null,
   });
   const steps: RunStep[] = facts.passes.map((pass) => ({
     kind: "review_pass",

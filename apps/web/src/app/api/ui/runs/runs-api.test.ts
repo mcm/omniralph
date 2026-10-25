@@ -3,6 +3,7 @@ import {
   harnesses,
   chatConnections,
   chatThreadRuns,
+  CANCELED_REVIEW_ERROR,
   connectRepository,
   closeDb,
   createReview,
@@ -18,6 +19,8 @@ import {
   ensureLane,
   findings,
   insertRunActivity,
+  listRunEvents,
+  threadRunOf,
   getJob,
   getMainLane,
   getRun,
@@ -39,6 +42,7 @@ import {
   type Database,
   organizations,
   seedReviewProfiles,
+  settleReviewRun,
   type LinearRun,
   type NewLinearRalphRunInput,
 } from "@omniralph/db";
@@ -54,8 +58,20 @@ import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { runListSchema, type RunList, type RunRow } from "@/lib/api/runs";
-import { runDetailSchema, transcriptPageSchema, type RunDetail } from "@/lib/api/runs";
+import {
+  runDetailSchema,
+  runRetryResultSchema,
+  transcriptPageSchema,
+  type RunDetail,
+  type RunRetryResult,
+} from "@/lib/api/runs";
 import type * as Adapters from "@/lib/scm/adapters";
+import type { ChatChannel } from "@/lib/ralph/conversation";
+import { applyChatAnswer, chatThreadSink } from "@/lib/sinks/chat-thread";
+import { parseSinkResult } from "@/lib/sinks";
+import { createMockAdapter, createMockState } from "@chat-adapter/tests";
+import type { Adapter } from "chat";
+import type { QueryRunResult } from "@omniralph/shared";
 import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
 
 vi.mock("server-only", () => ({}));
@@ -165,7 +181,7 @@ async function stopRalphRun(id: string): Promise<Result> {
 async function retryRequest(
   id: string,
   body?: unknown,
-): Promise<{ status: number; body: RunDetail & { error?: string } }> {
+): Promise<{ status: number; body: RunRetryResult & { error?: string } }> {
   const response = await runRetry.POST(
     new Request("http://localhost/api/ui", {
       method: "POST",
@@ -178,7 +194,7 @@ async function retryRequest(
   );
   return {
     status: response.status,
-    body: (await response.json()) as RunDetail & { error?: string },
+    body: (await response.json()) as RunRetryResult & { error?: string },
   };
 }
 
@@ -644,8 +660,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   });
 
   it("stops only epic and request runs", async () => {
-    const { triage, reviewRun } = await runOfEachKind();
-    for (const id of [triage.id, reviewRun.id]) {
+    const { triage, reviewRun, ask } = await runOfEachKind();
+    for (const id of [triage.id, reviewRun.id, ask.id]) {
       const { status, body } = await call<Result>(runStop.POST, { id, method: "POST" });
       expect([status, body.error]).toEqual([400, "Only epic and request runs can be stopped."]);
     }
@@ -1107,6 +1123,56 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
   });
 
+  it("matches a legacy review.run job to its pass by the payload's top-level review ID", async () => {
+    // As migration 0084 made them: the review's run has the review's own ID.
+    const review = await createReview(db, {
+      repositoryId: repoA,
+      prNumber: 12,
+      prTitle: "Old change",
+      headSha: "e".repeat(40),
+      baseSha: "b".repeat(40),
+      trigger: "webhook",
+      profileId: "standard",
+      model: null,
+      budget: 100_000,
+    });
+    await db.insert(reviewRuns).values({
+      id: review.id,
+      organizationId: orgId,
+      repositoryId: repoA,
+      prNumber: 12,
+      headSha: "e".repeat(40),
+      baseSha: "b".repeat(40),
+      trigger: "webhook",
+      mode: "fresh",
+      profileId: "standard",
+      status: "completed",
+    });
+    await db
+      .update(reviews)
+      .set({ reviewRunId: review.id, status: "completed" })
+      .where(eq(reviews.id, review.id));
+    const job = await attempt(
+      {
+        type: "review.run",
+        taskType: "review",
+        reviewRunId: review.id,
+        repositoryId: repoA,
+        payload: { reviewId: review.id },
+      },
+      { status: "completed", finishedAt: at(10) },
+    );
+
+    const view = await detailPage(review.id);
+    expect(view).toMatchObject({ id: review.id, kind: "review", status: "completed" });
+    expect(view.steps).toMatchObject([{ kind: "review_pass", id: review.id, taskName: "Review" }]);
+    expect(view.attempts.map((a) => [a.id, a.type, a.step])).toEqual([
+      [job.id, "review.run", review.id],
+    ]);
+    // A legacy pass has no task to name.
+    expect(view.attempts[0]!.label).toBe("Reviewed pull request #12 in api");
+  });
+
   it("shows a triage run's turns, and an ask", async () => {
     const { triage, ask } = await runOfEachKind();
     const [firstTurn] = await db.select().from(jobs).where(eq(jobs.triageRunId, triage.id));
@@ -1394,18 +1460,93 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         "Retried **ENG-42** from Omniralph by Ada Admin.",
       );
 
-      // Its attempt fails; retrying that attempt retries the story.
-      const [job] = await queuedStoryJobs(run.id);
+      // Its attempt fails, is canceled or expires; retrying that attempt retries the story.
+      for (const status of ["failed", "canceled", "expired"] as const) {
+        const [job] = await queuedStoryJobs(run.id);
+        await db.update(jobs).set({ status, finishedAt: new Date() }).where(eq(jobs.id, job!.id));
+        await updateStory(db, open.id, { status: "exhausted", attempts: 3 });
+        await updateRun(db, run.id, { status: "stopped" });
+        expect((await detailPage(run.id)).details.actions.retry).toMatchObject({
+          storyIds: expect.arrayContaining([open.id]),
+          attemptIds: [job!.id],
+        });
+        expect(
+          await retryRequest(run.id, { target: { kind: "attempt", attemptId: job!.id } }),
+        ).toMatchObject({ status: 200, body: { status: "running", warning: null } });
+        const [again, ...more] = await queuedStoryJobs(run.id);
+        expect(more).toEqual([]);
+        expect(again).toMatchObject({ type: "ralph.story", ralphStoryId: open.id });
+        expect(again!.id).not.toBe(job!.id);
+        // The story starts over.
+        expect((await listStories(db, run.id)).find((s) => s.id === open.id)).toMatchObject({
+          status: "running",
+          attempts: 0,
+        });
+      }
+    });
+
+    it("refuses a completed or skipped run or attempt (400)", async () => {
+      const { run, built, open } = await stoppedEpic();
+      const attempt = (status: "completed" | "skipped") =>
+        insertJob(db, {
+          organizationId: orgId,
+          type: "ralph.story",
+          taskType: "coding",
+          pool: "long",
+          ralphRunId: run.id,
+          ralphStoryId: status === "completed" ? built.id : open.id,
+          payload: {},
+        }).then(async ({ job }) => {
+          await db.update(jobs).set({ status, finishedAt: new Date() }).where(eq(jobs.id, job.id));
+          return job;
+        });
+      const completed = await attempt("completed");
+      const skipped = await attempt("skipped");
+      for (const job of [completed, skipped]) {
+        expect(
+          await retryRequest(run.id, { target: { kind: "attempt", attemptId: job.id } }),
+        ).toMatchObject({
+          status: 400,
+          body: {
+            error:
+              "Only the latest attempt of a step that failed, was canceled or expired can be retried.",
+          },
+        });
+      }
+      // A skipped review run, and its skipped pass.
+      const review = await createReviewRun(db, {
+        organizationId: orgId,
+        repositoryId: repoA,
+        prNumber: 4,
+        headSha: "d".repeat(40),
+        baseSha: "b".repeat(40),
+        trigger: "webhook",
+        mode: "fresh",
+        profileId: "standard",
+      });
+      const { job: pass } = await insertJob(db, {
+        organizationId: orgId,
+        type: "review.task",
+        taskType: "review",
+        pool: "short",
+        repositoryId: repoA,
+        reviewRunId: review.id,
+        payload: {},
+      });
       await db
         .update(jobs)
-        .set({ status: "failed", finishedAt: new Date(), error: "Tests failed." })
-        .where(eq(jobs.id, job!.id));
-      await updateRun(db, run.id, { status: "stopped" });
+        .set({ status: "skipped", finishedAt: new Date() })
+        .where(eq(jobs.id, pass.id));
+      await db.update(reviewRuns).set({ status: "skipped" }).where(eq(reviewRuns.id, review.id));
+      expect(await retryRequest(review.id)).toMatchObject({
+        status: 400,
+        body: { error: "This run is skipped, so there's nothing to retry." },
+      });
       expect(
-        await retryRequest(run.id, { target: { kind: "attempt", attemptId: job!.id } }),
-      ).toMatchObject({ status: 200, body: { status: "running" } });
-      const [again] = await queuedStoryJobs(run.id);
-      expect(again).toMatchObject({ type: "ralph.story", ralphStoryId: open.id });
+        await retryRequest(review.id, { target: { kind: "attempt", attemptId: pass.id } }),
+      ).toMatchObject({ status: 400 });
+      expect(await queuedStoryJobs(run.id)).toEqual([]);
+      expect((await getRun(db, run.id))!.status).toBe("stopped");
     });
 
     it("re-runs a completed story of a finished epic, but not the finished epic as a whole", async () => {
@@ -1545,8 +1686,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       return pr;
     }
 
-    /** A fresh review run of acme/api#9 whose one pass failed. */
-    async function failedReview() {
+    /**
+     * A fresh review run of acme/api#9 whose one pass's job ended `status`, settled as the review
+     * sink leaves it: a failed or expired job fails its review, a canceled one skips it as
+     * canceled; either way the run fails.
+     */
+    async function endedReview(status: "failed" | "canceled" | "expired" = "failed") {
       const run = await createReviewRun(db, {
         organizationId: orgId,
         repositoryId: repoA,
@@ -1580,51 +1725,91 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       });
       await db
         .update(jobs)
-        .set({ status: "failed", finishedAt: new Date(), error: "Crashed." })
+        .set({ status, finishedAt: new Date(), error: status === "failed" ? "Crashed." : null })
         .where(eq(jobs.id, job.id));
-      await db.update(reviews).set({ status: "failed" }).where(eq(reviews.id, review.id));
-      await db.update(reviewRuns).set({ status: "failed" }).where(eq(reviewRuns.id, run.id));
+      await db
+        .update(reviews)
+        .set(
+          status === "canceled"
+            ? { status: "skipped", error: CANCELED_REVIEW_ERROR }
+            : { status: "failed", error: "Crashed." },
+        )
+        .where(eq(reviews.id, review.id));
+      expect(await settleReviewRun(db, run.id)).toBe("failed");
       return { run, review, job };
     }
 
-    it("re-runs a failed review on the PR's current head with the run's mode and profile", async () => {
-      fakeScm();
-      const { run, job } = await failedReview();
-      state.user = member;
-      const before = await detailPage(run.id);
-      expect(before.details.actions.retry).toMatchObject({ run: true, attemptIds: [job.id] });
-
-      const { status, body } = await retryRequest(run.id);
-      expect(status).toBe(200);
-      const view = runDetailSchema.parse(body);
-      // The retry is a new review run of the current head, which the answer shows.
-      expect(view).toMatchObject({ kind: "review", status: "queued", origin: "manual" });
-      expect(view.id).not.toBe(run.id);
-      const [retried] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, view.id));
-      expect(retried).toMatchObject({
-        headSha: HEAD,
-        mode: "fresh",
-        profileId: "deep",
-        prNumber: 9,
-      });
-      const queued = await db
+    /** The jobs queued for review run `reviewRunId`. */
+    const queuedReviewJobs = (reviewRunId: string) =>
+      db
         .select()
         .from(jobs)
-        .where(sql`${jobs.reviewRunId} = ${view.id} and ${jobs.status} = 'queued'`);
-      expect(queued.map((j) => j.type)).toEqual(["review.task"]);
+        .where(sql`${jobs.reviewRunId} = ${reviewRunId} and ${jobs.status} = 'queued'`);
 
-      // Its pass retries the run too; while the new run is queued, the head is busy.
-      expect(
-        await retryRequest(run.id, { target: { kind: "attempt", attemptId: job.id } }),
-      ).toMatchObject({
-        status: 409,
-        body: { error: `A review of ${HEAD.slice(0, 12)} is already queued or running.` },
+    it.each(["failed", "canceled", "expired"] as const)(
+      "re-runs a review whose pass %s on the PR's current head with the run's mode and profile",
+      async (status) => {
+        fakeScm();
+        const { run, job } = await endedReview(status);
+        state.user = member;
+        const before = await detailPage(run.id);
+        expect(before.status).toBe("failed");
+        expect(before.details.actions.retry).toMatchObject({ run: true, attemptIds: [job.id] });
+
+        const { status: code, body } = await retryRequest(run.id);
+        expect(code).toBe(200);
+        const view = runRetryResultSchema.parse(body);
+        // The retry is a new review run of the current head, which the answer shows.
+        expect(view).toMatchObject({
+          kind: "review",
+          status: "queued",
+          origin: "manual",
+          warning: null,
+        });
+        expect(view.id).not.toBe(run.id);
+        const [retried] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, view.id));
+        expect(retried).toMatchObject({
+          headSha: HEAD,
+          mode: "fresh",
+          profileId: "deep",
+          prNumber: 9,
+        });
+        const queued = await queuedReviewJobs(view.id);
+        expect(queued.map((j) => j.type)).toEqual(["review.task"]);
+
+        // Its pass retries the run too; while the new run is queued, the head is busy: the
+        // answer is that run, with a warning, and nothing new is queued.
+        const again = await retryRequest(run.id, {
+          target: { kind: "attempt", attemptId: job.id },
+        });
+        expect(again.status).toBe(200);
+        expect(runRetryResultSchema.parse(again.body)).toMatchObject({
+          id: view.id,
+          kind: "review",
+          status: "queued",
+          warning: `A review of ${HEAD.slice(0, 12)} is already queued or running.`,
+        });
+        expect(await queuedReviewJobs(view.id)).toHaveLength(1);
+        expect(await db.select().from(reviewRuns)).toHaveLength(2);
+      },
+    );
+
+    it("re-runs a review from its failed pass, as an attempt target", async () => {
+      fakeScm();
+      const { run, job } = await endedReview("expired");
+      const { status, body } = await retryRequest(run.id, {
+        target: { kind: "attempt", attemptId: job.id },
       });
+      expect(status).toBe(200);
+      const view = runRetryResultSchema.parse(body);
+      expect(view).toMatchObject({ kind: "review", status: "queued", warning: null });
+      expect(view.id).not.toBe(run.id);
+      expect((await queuedReviewJobs(view.id)).map((j) => j.type)).toEqual(["review.task"]);
     });
 
     it("refuses a review of a merged pull request, and a review that didn't fail", async () => {
       const pr = fakeScm();
-      const { run } = await failedReview();
+      const { run } = await endedReview();
       pr.state = "merged";
       expect(await retryRequest(run.id)).toMatchObject({
         status: 400,
@@ -1732,11 +1917,23 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         pool: "short",
         repositoryId: repoA,
         dedupeKey: `chat.ask:${thread.id}:q`,
+        // As `enqueueChatAsk` stores it (`ChatThreadContext`).
         payload: {
           trigger: {
             kind: "chat.request",
-            context: { question: "Where is auth handled?", chatThreadId: thread.id },
+            context: {
+              repository: "acme/api",
+              branch: "main",
+              provider: "github",
+              question: "Where is auth handled?",
+              chatThreadId: thread.id,
+              chat: { context: null },
+              budgetTokens: 12_000,
+            },
           },
+          repositoryId: repoA,
+          ref: "main",
+          requireCheckout: true,
         },
       });
       await db.update(jobs).set({ status, finishedAt: new Date() }).where(eq(jobs.id, job.id));
@@ -1745,12 +1942,21 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         chatThreadId: thread.id,
         jobId: job.id,
       }))!;
-      return { ask, job };
+      return { ask, job, thread };
     }
 
+    /** The chat bot the `chat-thread` sink records answers with (nothing is posted). */
+    const chatChannel = (): ChatChannel => ({
+      db,
+      adapters: { slack: createMockAdapter("slack") as Adapter },
+      state: createMockState(),
+      appUrl: "https://omniralph.example.com",
+    });
+
     it("retries an ask with a copy of its last attempt, relayed to the same thread", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
       for (const status of ["failed", "canceled", "expired"] as const) {
-        const { ask, job } = await endedAsk(status);
+        const { ask, job, thread } = await endedAsk(status);
         state.user = member;
         expect((await detailPage(ask.id)).status).toBe(
           status === "canceled" ? "stopped" : "failed",
@@ -1773,7 +1979,45 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
           .from(chatThreadRuns)
           .where(eq(chatThreadRuns.id, ask.id));
         expect(mapped!.jobId).toBe(copy.id);
+        expect(await threadRunOf(db, orgId, { jobId: copy.id })).toMatchObject({
+          id: ask.id,
+          chatThreadId: thread.id,
+        });
         expect(await retryRequest(ask.id)).toMatchObject({ status: 409 });
+
+        // The copy's answer goes the way an agent's result does (the `chat-thread` sink): it is
+        // recorded for the original thread, as the ask's event.
+        const answer: QueryRunResult = {
+          outcome: "answered",
+          structured: null,
+          answer: "Auth is handled in `src/auth.ts`.",
+          references: [],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          durationMs: 5,
+        };
+        await db
+          .update(jobs)
+          .set({ status: "completed", finishedAt: new Date(), result: answer })
+          .where(eq(jobs.id, copy.id));
+        const completed = (await getJob(db, copy.id))!;
+        expect(
+          await applyChatAnswer(
+            db,
+            completed,
+            parseSinkResult(chatThreadSink, completed.result)!,
+            chatChannel(),
+          ),
+        ).toBe(true);
+        const events = await listRunEvents(db, orgId, thread.id);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          kind: "response",
+          chatThreadId: thread.id,
+          threadRunId: ask.id,
+          idempotencyKey: `chat-run-event:job:${copy.id}:response`,
+          body: { outcome: "answered", text: "Auth is handled in `src/auth.ts`." },
+        });
+        expect((await detailPage(ask.id)).status).toBe("completed");
       }
     });
   });

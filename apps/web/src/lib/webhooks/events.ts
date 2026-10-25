@@ -308,6 +308,18 @@ export interface PullRequestStateEvent {
   reviewState?: { to: PullRequestReviewState; from?: readonly PullRequestReviewState[] };
   /** Who reviewed, approved or unapproved, for review events: the bot's own are ignored. */
   reviewer: { username: string; isBot: boolean } | null;
+  /**
+   * When the code host says the change happened, if the payload says: a lane
+   * whose state is newer ignores it (an out-of-order delivery).
+   */
+  occurredAt: Date | null;
+}
+
+/** A webhook timestamp (ISO 8601, or GitLab's `2026-10-25 12:00:00 UTC`) as a Date, or null. */
+function webhookTime(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const time = new Date(value.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC$/, "$1T$2Z"));
+  return Number.isNaN(time.getTime()) ? null : time;
 }
 
 const GitHubStatePullRequest = z.object({
@@ -316,6 +328,7 @@ const GitHubStatePullRequest = z.object({
   draft: z.boolean().optional(),
   requested_reviewers: z.array(z.unknown()).nullish(),
   requested_teams: z.array(z.unknown()).nullish(),
+  updated_at: z.string().nullish(),
 });
 const GitHubPullRequestStateEvent = z.object({
   action: z.string(),
@@ -323,7 +336,11 @@ const GitHubPullRequestStateEvent = z.object({
 });
 const GitHubPullRequestReviewEvent = z.object({
   action: z.string(),
-  review: z.object({ state: z.string(), user: GitHubUser.nullish() }),
+  review: z.object({
+    state: z.string(),
+    user: GitHubUser.nullish(),
+    submitted_at: z.string().nullish(),
+  }),
   pull_request: GitHubStatePullRequest,
 });
 
@@ -371,6 +388,7 @@ export function parseGitHubPullRequestStateEvent(
       draft: pr.draft ?? false,
       reviewState: move(githubAwaitsReview(pr)),
       reviewer: null,
+      occurredAt: webhookTime(pr.updated_at),
     };
   }
   if (eventName === "pull_request_review") {
@@ -395,6 +413,8 @@ export function parseGitHubPullRequestStateEvent(
       draft: pr.draft ?? false,
       reviewState,
       reviewer: review.user ? githubAuthor(review.user) : null,
+      // A dismissal has no time of its own: the PR's last update is when it happened.
+      occurredAt: webhookTime(action === "submitted" ? review.submitted_at : pr.updated_at),
     };
   }
   return null;
@@ -415,6 +435,7 @@ const GitLabMergeRequestStateEvent = z.object({
     state: z.string(),
     draft: z.boolean().optional(),
     work_in_progress: z.boolean().optional(),
+    updated_at: z.string().nullish(),
   }),
   changes: z
     .object({
@@ -443,11 +464,15 @@ export function parseGitLabPullRequestStateEvent(
   if (mr.state !== "opened") return null;
   const awaits = (parsed.data.reviewers?.length ?? 0) > 0;
   const actor = user ? { username: user.username, isBot: false } : null;
-  const event = (reviewState: ReviewMove, reviewer: PullRequestStateEvent["reviewer"] = null) => ({
+  const event = (
+    reviewState: ReviewMove,
+    reviewer: PullRequestStateEvent["reviewer"] = null,
+  ): PullRequestStateEvent => ({
     number: mr.iid,
     draft: mr.draft ?? mr.work_in_progress ?? false,
     reviewState,
     reviewer,
+    occurredAt: webhookTime(mr.updated_at),
   });
   switch (mr.action) {
     case "open":
