@@ -603,10 +603,10 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         await published(() =>
           updateRepositorySettings(db, orgId, repoId, {
             depth: "standard",
-            triggers: { onOpen: true, onPush: false, onMention: true },
+            triggers: { onOpen: true, onPush: false, drafts: false },
             pathExcludes: [],
             customInstructions: "",
-          } as never),
+          }),
         ),
       ).toEqual([settingsEvent("repository.reviews", repoId)]);
       expect(

@@ -29,6 +29,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { captureChanges } from "@omniralph/db/changes";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
@@ -237,8 +238,8 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
   }
 
   it("saves the depth, triggers, excludes and instructions", async () => {
-    expect(
-      await updateRepositorySettings(repoId, {
+    const { result, changes } = await captureChanges(() =>
+      updateRepositorySettings(repoId, {
         depth: "quick",
         triggers: { onOpen: true, onPush: false, drafts: true },
         pathExcludes: ["*.snap", "/docs/**"],
@@ -247,7 +248,18 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
         reviewTaskIds: ["builtin:review-pr"],
         correlationTaskId: "builtin:correlate-findings",
       }),
-    ).toEqual({ ok: true });
+    );
+    expect(result).toEqual({ ok: true });
+    // The repo's review settings change event goes out for the save.
+    expect(changes).toEqual([
+      expect.objectContaining({
+        resource: "settings",
+        section: "repository.reviews",
+        ids: [repoId],
+        subjectId: repoId,
+        organizationId: orgId,
+      }),
+    ]);
     expect(await getRepository(db, repoId)).toMatchObject({
       reviewDepth: "quick",
       triggers: { onOpen: true, onPush: false, drafts: true },
@@ -518,15 +530,18 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
 
   it("answers 400 for an unknown depth, or none, without saving anything", async () => {
     for (const depth of ["thorough", "Deep", null, undefined]) {
-      const response = await repositorySettings.PUT(
-        new Request("http://localhost/api/ui", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...baseSettings, depth, customInstructions: "Changed." }),
-        }),
-        { params: Promise.resolve({ id: repoId }) },
+      const { result: response, changes } = await captureChanges(() =>
+        repositorySettings.PUT(
+          new Request("http://localhost/api/ui", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...baseSettings, depth, customInstructions: "Changed." }),
+          }),
+          { params: Promise.resolve({ id: repoId }) },
+        ),
       );
       expect(response.status).toBe(400);
+      expect(changes).toEqual([]);
       expect(await response.json()).toMatchObject({
         fieldErrors: { depth: "Choose a review depth: quick, standard or deep." },
       });
