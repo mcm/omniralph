@@ -77,9 +77,11 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
 - `Tooltip`: Radix tooltip shown on hover and keyboard focus; carries its own provider.
 - `Toolbar`: `label`, up to two `actions` in one bordered group, and `menu` items behind a
   ⋯ "More actions" button. One tab stop; Left/Right/Home/End move between its buttons.
-- `Menu`: `items` (`{ label, icon?, onSelect | href, destructive?, disabled? }` or
-  `"separator"`) opened from `trigger`. Destructive items always render last, after a
-  separator, in coral; their `onSelect` should open a `ConfirmDialog`.
+- `Menu`: `items` (`{ label, icon?, onSelect | href, destructive?, disabled?, checked? }`
+  or `"separator"`) opened from `trigger`. Destructive items always render last, after a
+  separator, in coral; their `onSelect` should open a `ConfirmDialog`. An item with
+  `checked` is a `menuitemcheckbox` choice with a check after its label when `true` (e.g.
+  the current organization).
 - `ConfirmDialog`: controlled (`open`, `onOpenChange`) `role="alertdialog"` with `title`,
   `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
   disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.
@@ -207,7 +209,9 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   `orgPicker?` (node), `user` (`{ name, image?, initials }`), `userMenu(trigger)` (wrap
   the trigger in a menu, e.g. `<Menu trigger={trigger} …/>`; called for the sidebar
   footer, the phone avatar and the drawer footer) and `children` (in the `main`
-  landmark). It knows nothing about routes or sessions.
+  landmark). It knows nothing about routes or sessions. An `orgPicker` trigger takes the
+  `or-org-picker` class (full width; on the rail, centered), with its label and chevron in
+  `or-org-picker__label` / `or-org-picker__chevron` plus `or-rail-hidden`.
   - 1200 px and wider: a 232 px `nav` "Primary" sidebar: `BrandLockup`, `orgPicker`, the
     `placement: "main"` entries, a flexible gap, the `bottom` entries and the user
     footer button (avatar and name).
@@ -222,7 +226,7 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
     `phone: "drawer"` entries and the user footer). Escape, the close button, a scrim
     click or following a link closes it, and focus returns to the hamburger.
 - `NavItem`: `{ id, label, href, icon, placement: "main" | "bottom", phone: "tab" |
-  "drawer", activeFor?, indicator? }`. `indicator` is `{ kind: "count", value, label }`
+"drawer", activeFor?, indicator? }`. `indicator` is `{ kind: "count", value, label }`
   (the accent pill) or `{ kind: "dot", tone: "run" | "fail", label }` (a `StatusDot`
   pip); its `label` joins the entry's accessible name ("Inbox, 4 need you").
 - `isNavActive(currentPath, item)`: true when the path equals the `href` or an

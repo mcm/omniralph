@@ -27,6 +27,7 @@
     "@omniralph/scm": "workspace:*",
     "@omniralph/shared": "workspace:*",
     "@omniralph/tasks": "workspace:*",
+    "@omniralph/ui": "workspace:*",
     "@tabler/icons-react": "^3.40.0",
     "@tanstack/react-query": "^5.104.3",
     "@vercel/kms": "^0.3.2",

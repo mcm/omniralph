@@ -19,6 +19,13 @@ export const PRIVACY_PATH = "/privacy";
  */
 export const ORGANIZATION_COOKIE = "omniralph-organization";
 /**
+ * `all` while this device shows every organization the user belongs to ("All
+ * organizations"); absent for one organization. `ORGANIZATION_COOKIE` still names the
+ * single active organization, which pages and `/api/ui` keep acting on. Not `httpOnly`,
+ * for the same reason. See `getOrganizationScope()`.
+ */
+export const ORGANIZATION_SCOPE_COOKIE = "omniralph-organization-scope";
+/**
  * Switches this device to the organization in a signed `?token=` and redirects to its next
  * path (pages can't set cookies). See `lib/organizations/enter.ts`.
  */

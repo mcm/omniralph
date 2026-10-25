@@ -1,5 +1,10 @@
 import "server-only";
-import { getActiveOrganization, getMemberOrganization, type UiTheme } from "@omniralph/db";
+import {
+  getActiveOrganization,
+  getMemberOrganization,
+  listOrganizationsForUser,
+  type UiTheme,
+} from "@omniralph/db";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -7,7 +12,13 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { getDb } from "@/lib/db";
 import { assertRole, AuthorizationError, hasRole, type Role } from "./roles";
-import { ACCESS_DENIED_PATH, ONBOARDING_PATH, ORGANIZATION_COOKIE, SIGN_IN_PATH } from "./routes";
+import {
+  ACCESS_DENIED_PATH,
+  ONBOARDING_PATH,
+  ORGANIZATION_COOKIE,
+  ORGANIZATION_SCOPE_COOKIE,
+  SIGN_IN_PATH,
+} from "./routes";
 
 /** The organization the user is working in. */
 export interface ActiveOrganization {
@@ -59,6 +70,49 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     image: image ?? null,
     theme,
   };
+});
+
+/** One of the user's organizations, with their role in it. */
+export interface OrganizationMembership {
+  id: string;
+  name: string;
+  role: Role;
+}
+
+/**
+ * Which organizations the user is looking at on this device: every one they belong to
+ * ("All organizations"), or the active one. Page data queries filter by it, and check the
+ * role of the organization that owns an item before acting on it.
+ */
+export type OrganizationScope =
+  | { kind: "all"; organizations: OrganizationMembership[] }
+  | { kind: "single"; organization: OrganizationMembership };
+
+/** The signed-in user's organizations, with their role in each, ordered by name. Cached per request. */
+export const getOrganizationMemberships = cache(async (): Promise<OrganizationMembership[]> => {
+  const user = await getCurrentUser();
+  if (!user) return [];
+  const organizations = await listOrganizationsForUser(getDb(), user.id);
+  return organizations.map(({ id, name, role }) => ({ id, name, role }));
+});
+
+/**
+ * The signed-in user's organization scope on this device: `all` (every organization they
+ * belong to, ordered by name) while the scope cookie says `all` and they belong to two or
+ * more, else `single` (the active organization; e.g. after being removed from all but
+ * one). `null` when signed out, or with no active organization and not `all`.
+ * `requirePageUser()`, `requireUser()` and `/api/ui` keep acting on the active
+ * organization either way.
+ */
+export const getOrganizationScope = cache(async (): Promise<OrganizationScope | null> => {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  if ((await cookies()).get(ORGANIZATION_SCOPE_COOKIE)?.value === "all") {
+    const organizations = await getOrganizationMemberships();
+    if (organizations.length >= 2) return { kind: "all", organizations };
+  }
+  if (!user.organization || !user.role) return null;
+  return { kind: "single", organization: { ...user.organization, role: user.role } };
 });
 
 /**

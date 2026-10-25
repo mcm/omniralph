@@ -10,6 +10,14 @@ export interface SessionUser {
   organization: { id: string; name: string };
   /** The user's role in the active organization. */
   role: Role;
+  /**
+   * This device's organization scope: `all` shows every organization in `organizations`
+   * ("All organizations"), `single` the active one. Server actions and `/api/ui` act on
+   * the active organization either way.
+   */
+  scope: "single" | "all";
+  /** Every organization the user belongs to, with their role in each, ordered by name. */
+  organizations: { id: string; name: string; role: Role }[];
   name: string | null;
   email: string | null;
   image: string | null;

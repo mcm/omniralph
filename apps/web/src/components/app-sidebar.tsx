@@ -34,9 +34,7 @@ import {
 import { isNavItemActive, navGroupsForRole, type NavIcon } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { useCurrentUser } from "./current-user";
-import { OrganizationSwitcher, type OrganizationOption } from "./organization-switcher";
-
-export type { OrganizationOption };
+import { OrganizationPicker } from "./organization-picker";
 
 const navIcons: Record<NavIcon, React.ElementType> = {
   repositories: IconGitPullRequest,
@@ -55,7 +53,7 @@ const navIcons: Record<NavIcon, React.ElementType> = {
   chatAccounts: IconMessageCircleUser,
 };
 
-export function AppSidebar({ organizations }: { organizations: OrganizationOption[] }) {
+export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed } = useSidebar();
   const user = useCurrentUser();
@@ -99,7 +97,7 @@ export function AppSidebar({ organizations }: { organizations: OrganizationOptio
       <SidebarFooter
         className={collapsed ? "sidebar-footer sidebar-footer-collapsed" : "sidebar-footer"}
       >
-        <OrganizationSwitcher organizations={organizations} collapsed={collapsed} />
+        <OrganizationPicker />
         <div className="sidebar-user">
           <Avatar className="sidebar-avatar">
             {user.image && <AvatarImage src={user.image} alt="" />}

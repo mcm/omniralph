@@ -4,11 +4,12 @@ import {
   createOrganization,
   declineInvitation,
   joinOrganization,
+  listOrganizationsForUser,
   type AcceptInvitationResult,
 } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDb } from "@/lib/db";
-import { activateOrganization } from "./active";
+import { activateOrganization, setOrganizationScope } from "./active";
 import { checkOrganizationName } from "./name";
 
 /**
@@ -26,7 +27,13 @@ const ACCEPT_ERRORS: Record<Exclude<AcceptInvitationResult, "accepted">, string>
   email_not_allowed: "Your email domain is no longer allowed in that organization.",
 };
 
-/** Makes one of the user's organizations the active one; other organizations are refused. */
+export const ALL_ORGANIZATIONS_REFUSED =
+  "You need to belong to more than one organization to see all of them.";
+
+/**
+ * Makes one of the user's organizations the active one, and this device's scope that one
+ * organization (leaving "All organizations"); other organizations are refused.
+ */
 export async function switchOrganization(
   userId: string,
   organizationId: string,
@@ -34,6 +41,18 @@ export async function switchOrganization(
   if (!(await activateOrganization(userId, organizationId))) {
     return { ok: false, error: "You are not a member of that organization." };
   }
+  await setOrganizationScope("single");
+  return { ok: true };
+}
+
+/**
+ * Shows every organization the user belongs to on this device ("All organizations"),
+ * keeping their active organization; refused unless they belong to two or more.
+ */
+export async function showAllOrganizations(userId: string): Promise<ActionResult> {
+  const organizations = await listOrganizationsForUser(getDb(), userId);
+  if (organizations.length < 2) return { ok: false, error: ALL_ORGANIZATIONS_REFUSED };
+  await setOrganizationScope("all");
   return { ok: true };
 }
 

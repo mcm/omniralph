@@ -78,7 +78,11 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask } from "@omniralph/tasks";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import { ENTER_ORGANIZATION_PATH, ORGANIZATION_COOKIE } from "@/lib/auth/routes";
+import {
+  ENTER_ORGANIZATION_PATH,
+  ORGANIZATION_COOKIE,
+  ORGANIZATION_SCOPE_COOKIE,
+} from "@/lib/auth/routes";
 import type { RoutingPreview } from "@/lib/api/routing-rules";
 import type * as LinearClient from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -135,7 +139,7 @@ vi.mock("@/lib/linear/client", async (importOriginal) => {
 });
 // The signed-in user with their real role in their active organization.
 vi.mock("@/lib/auth/session", async () => {
-  const { getActiveOrganization } = await import("@omniralph/db");
+  const { getActiveOrganization, listOrganizationsForUser } = await import("@omniralph/db");
   const current = async (role: Role) => {
     const active = state.userId ? await getActiveOrganization(state.db, state.userId) : null;
     return assertRole(
@@ -158,6 +162,18 @@ vi.mock("@/lib/auth/session", async () => {
     requireUser: async (role: Role = "member") => current(role),
     requireSignedInUser: async () => current("member"),
     requirePageUser: async (role: Role = "member") => current(role),
+    getOrganizationMemberships: async () =>
+      state.userId === null
+        ? []
+        : (await listOrganizationsForUser(state.db, state.userId)).map(({ id, name, role }) => ({
+            id,
+            name,
+            role,
+          })),
+    getOrganizationScope: async () => {
+      const { organization, role } = await current("member");
+      return { kind: "single", organization: { ...organization, role } };
+    },
   };
 });
 // The signed-in layout's shell is a client component; the test reads the props it gets.
@@ -2253,7 +2269,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       for (const userId of [own.adminId, own.memberId]) {
         state.userId = userId;
         const layout = await AppLayout({ children: null });
-        expect(layout.props.organizations).toEqual([{ id: own.orgId, name: own.name }]);
+        expect(layout.props.user).toMatchObject({
+          scope: "single",
+          organizations: [
+            { id: own.orgId, name: own.name, role: userId === own.adminId ? "admin" : "member" },
+          ],
+        });
       }
     }
   });
@@ -2529,7 +2550,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         id: b.orgId,
         role: "admin",
       });
-      expect([...state.cookies.values()]).toEqual([b.orgId]);
+      expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
+      // One organization: not "All organizations".
+      expect(state.cookies.get(ORGANIZATION_SCOPE_COOKIE) ?? "").toBe("");
       // The settings follow the active organization.
       expect((await call(organizationSettings.GET)).body).toMatchObject({
         organization: { id: b.orgId },
