@@ -2340,3 +2340,37 @@ export const webhookEvents = pgTable(
     ),
   ],
 );
+
+// ── Inbox ────────────────────────────────────────────────────────────────────
+
+export const inboxItemState = pgEnum("inbox_item_state", ["done", "snoozed"]);
+
+/**
+ * A user's Done or Snooze of an Inbox item (`inbox.ts`), by the item's key. Items themselves
+ * are derived from run state on read; a key encodes what makes an item new, so a new failure
+ * of a run marked Done has a new key and shows up again.
+ */
+export const inboxItemStates = pgTable(
+  "inbox_item_states",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    state: inboxItemState("state").notNull(),
+    /** Until when a `snoozed` item is hidden; null for `done`. */
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.itemKey] }),
+    index("inbox_item_states_updated_at_idx").on(t.updatedAt),
+    check(
+      "inbox_item_states_snooze",
+      sql`(${t.state} = 'snoozed') = (${t.snoozedUntil} is not null)`,
+    ),
+  ],
+);

@@ -711,6 +711,7 @@ export {
 } from "./definitions.js";
 export {
   FINISHED_RUN_STATUSES,
+  getRunIndexEntries,
   getRunIndexEntry,
   listRunIndex,
   loadRunListEntries,
@@ -748,3 +749,21 @@ export {
   type TranscriptEvent,
   type TranscriptPage,
 } from "./run-detail.js";
+export {
+  countInboxItems,
+  INBOX_ITEM_KINDS,
+  INBOX_SYSTEM_JOB_TYPES,
+  INBOX_TABS,
+  INBOX_WINDOW_DAYS,
+  listInboxItems,
+  loadInboxReferences,
+  type InboxReferences,
+  type InboxCandidate,
+  type InboxCounts,
+  type InboxFacts,
+  type InboxItemKind,
+  type InboxQuery,
+  type InboxQuestionKind,
+  type InboxReviewState,
+  type InboxTab,
+} from "./inbox.js";
