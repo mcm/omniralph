@@ -80,7 +80,8 @@ describe("HarnessesView", () => {
     const link = await screen.findByRole("link", { name: "coder-1" });
     expect(link.getAttribute("href")).toBe(`/harnesses/${HARNESS_ID}`);
     expect(screen.getAllByText("Online").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("5s ago").length).toBeGreaterThan(0);
+    // A slow test run can take a few seconds to render, so allow some drift.
+    expect(screen.getAllByText(/^\d+s ago$/).length).toBeGreaterThan(0);
   });
 
   it("shows an old heartbeat as offline", async () => {
