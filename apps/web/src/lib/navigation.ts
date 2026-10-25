@@ -2,8 +2,9 @@ import type { NavItem } from "@omniralph/ui";
 import { IconGitFork, IconPlayerPlay, IconServer2, IconSettings } from "@tabler/icons-react";
 
 /**
- * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at today's closest
- * page until the epic that replaces it repoints or replaces the entry (TOOL-575,
+ * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at its 2.0 URL,
+ * never an old one kept for compatibility: Runs points at `/runs`, which Epic 5 builds, and
+ * the other entries at today's pages until their epics replace them (TOOL-575,
  * "Coexistence with today's pages"); every entry is visible to members and admins.
  * Reviews, Triage, Jobs, Analytics and the other Settings pages have no entry of their
  * own: they light up Runs or Settings and stay reachable by URL and their in-page tabs.
@@ -13,14 +14,13 @@ import { IconGitFork, IconPlayerPlay, IconServer2, IconSettings } from "@tabler/
  */
 export const navItems: readonly NavItem[] = [
   {
-    // The old Coding pages redirect to /runs, which has no page yet: Reviews stands in.
     id: "runs",
     label: "Runs",
-    href: "/reviews",
+    href: "/runs",
     icon: IconPlayerPlay,
     placement: "main",
     phone: "tab",
-    activeFor: ["/runs", "/triage", "/jobs", "/analytics"],
+    activeFor: ["/reviews", "/triage", "/jobs", "/analytics"],
   },
   {
     id: "repos",
