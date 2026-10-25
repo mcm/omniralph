@@ -69,6 +69,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/live/token", () => {
       email: "ada@example.com",
       image: null,
       theme: null,
+      showAdvanced: false,
     };
   }, 180_000);
 

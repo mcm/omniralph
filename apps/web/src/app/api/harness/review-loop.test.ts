@@ -1070,6 +1070,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         email: row!.email,
         image: null,
         theme: null,
+        showAdvanced: false,
         organization: { id: orgId, name: "Acme" },
         role: "admin",
       };

@@ -29,6 +29,7 @@ const admin: OrgUser = {
   email: "ada@example.com",
   image: null,
   theme: null,
+  showAdvanced: false,
 };
 
 function request(

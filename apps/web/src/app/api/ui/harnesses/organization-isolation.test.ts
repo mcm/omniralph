@@ -55,6 +55,7 @@ vi.mock("@/lib/auth/session", async () => {
             email: null,
             image: null,
             theme: null,
+            showAdvanced: false,
           },
       role,
     );

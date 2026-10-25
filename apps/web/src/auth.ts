@@ -20,11 +20,13 @@ import { parseTheme } from "@/lib/theme";
 declare module "next-auth" {
   interface User {
     theme?: UiTheme | null;
+    showAdvanced?: boolean;
   }
   interface Session {
     user: {
       id: string;
       theme: UiTheme | null;
+      showAdvanced: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -93,6 +95,7 @@ function authConfig(): NextAuthConfig {
       async session({ session, user }) {
         session.user.id = user.id;
         session.user.theme = parseTheme(user.theme);
+        session.user.showAdvanced = user.showAdvanced === true;
         return session;
       },
     },

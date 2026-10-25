@@ -48,7 +48,7 @@ function TodaysPage() {
 
 function renderTodaysPage() {
   return render(
-    <AppShell user={testUser} themePreference="dark" organizationCookie={null} scopeCookie={null}>
+    <AppShell user={testUser} themePreference="dark" organizationCookie={null} scopeCookie={null} showAdvanced={false}>
       <LegacyFrame>
         <TodaysPage />
       </LegacyFrame>

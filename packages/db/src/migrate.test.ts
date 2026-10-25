@@ -1259,6 +1259,59 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     });
   });
 
+  it("adds the show advanced settings preference, off for every user, keeping their theme (0095)", async () => {
+    await db.execute(sql`create database user_show_advanced`);
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/user_show_advanced");
+    const before = mkdtempSync(join(tmpdir(), "migrations-"));
+    try {
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0095_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        await migrate(drizzle(client), { migrationsFolder: before });
+        // Production-shaped: one user chose dark, the other follows the OS.
+        await client.query(
+          `insert into users (id, email, theme) values
+             ('dark-user', 'dark@example.com', 'dark'),
+             ('os-user', 'os@example.com', null)`,
+        );
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{
+          id: string;
+          theme: string | null;
+          show_advanced: boolean;
+        }>(`select id, theme, show_advanced from users order by id`);
+        expect(rows).toEqual([
+          { id: "dark-user", theme: "dark", show_advanced: false },
+          { id: "os-user", theme: null, show_advanced: false },
+        ]);
+        // New users start with advanced settings hidden.
+        await client.query(`insert into users (id, email) values ('new-user', 'new@example.com')`);
+        const { rows: created } = await client.query<{ show_advanced: boolean }>(
+          `select show_advanced from users where id = 'new-user'`,
+        );
+        expect(created).toEqual([{ show_advanced: false }]);
+        await expect(
+          client.query(`update users set show_advanced = null where id = 'os-user'`),
+        ).rejects.toThrow(/null value/);
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+
   it("backfills each lane's harness from its run (0077)", async () => {
     await db.execute(sql`create database lane_harnesses`);
     const uri = testDb.uri.replace(/\/[^/]*$/, "/lane_harnesses");

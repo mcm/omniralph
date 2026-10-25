@@ -12,6 +12,7 @@ import { OrganizationGuard } from "./organization-guard";
 import { ALL_ORGANIZATIONS_LABEL, OrganizationPicker } from "./organization-picker";
 import { QueryProvider } from "./query-provider";
 import { SavedThemeProvider } from "./saved-theme";
+import { ShowAdvancedProvider } from "./show-advanced";
 import { UserMenu } from "./user-menu";
 
 /**
@@ -24,6 +25,7 @@ export function AppShell({
   themePreference,
   organizationCookie,
   scopeCookie,
+  showAdvanced,
   children,
 }: {
   /** The signed-in user, with their organizations and scope (for the organization picker). */
@@ -34,6 +36,8 @@ export function AppShell({
   organizationCookie: string | null;
   /** The organization scope cookie this page was rendered with, likewise. */
   scopeCookie: string | null;
+  /** The user's saved "Show advanced settings" preference (see `useShowAdvanced`). */
+  showAdvanced: boolean;
   /**
    * The page. Today's pages come wrapped in `app/(app)/legacy-frame.tsx` (the library's
    * tooltips and the unsaved-changes guard and bar) until Epics 5–10 replace them.
@@ -45,38 +49,40 @@ export function AppShell({
   return (
     <SavedThemeProvider preference={themePreference}>
       <CurrentUserProvider user={user}>
-        {/* Live data for every page (src/lib/api, src/lib/live, README "Data fetching").
+        <ShowAdvancedProvider initial={showAdvanced}>
+          {/* Live data for every page (src/lib/api, src/lib/live, README "Data fetching").
       Keyed by the organization and scope: any change of either starts over with an empty
       cache, subscribed to the new scope's change channels. */}
-        <QueryProvider
-          key={`${user.organization.id}:${user.scope}`}
-          organizationId={user.organization.id}
-        >
-          <LiveProvider>
-            <OrganizationGuard
-              organizationName={
-                user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
-              }
-              renderedCookie={organizationCookie}
-              renderedScopeCookie={scopeCookie}
-            >
-              <UiProvider linkComponent={Link}>
-                <AppFrame
-                  currentPath={pathname}
-                  brandHref="/"
-                  nav={navItems}
-                  orgPicker={<OrganizationPicker />}
-                  user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
-                  userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                >
-                  <LiveNoticeSlot />
-                  {children}
-                </AppFrame>
-                <Toaster />
-              </UiProvider>
-            </OrganizationGuard>
-          </LiveProvider>
-        </QueryProvider>
+          <QueryProvider
+            key={`${user.organization.id}:${user.scope}`}
+            organizationId={user.organization.id}
+          >
+            <LiveProvider>
+              <OrganizationGuard
+                organizationName={
+                  user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
+                }
+                renderedCookie={organizationCookie}
+                renderedScopeCookie={scopeCookie}
+              >
+                <UiProvider linkComponent={Link}>
+                  <AppFrame
+                    currentPath={pathname}
+                    brandHref="/"
+                    nav={navItems}
+                    orgPicker={<OrganizationPicker />}
+                    user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
+                    userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                  >
+                    <LiveNoticeSlot />
+                    {children}
+                  </AppFrame>
+                  <Toaster />
+                </UiProvider>
+              </OrganizationGuard>
+            </LiveProvider>
+          </QueryProvider>
+        </ShowAdvancedProvider>
       </CurrentUserProvider>
     </SavedThemeProvider>
   );

@@ -35,7 +35,7 @@ const twoOrganizations: SessionUser = {
 function renderShell(pathname: string, user: SessionUser = testUser) {
   nav.pathname = pathname;
   return render(
-    <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null}>
+    <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null} showAdvanced={false}>
       <h1>Page content</h1>
     </AppShell>,
   );
@@ -172,7 +172,7 @@ describe("AppShell", () => {
       return null;
     }
     const shell = (user: SessionUser) => (
-      <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null}>
+      <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null} showAdvanced={false}>
         <Probe />
       </AppShell>
     );

@@ -44,6 +44,14 @@ export async function setUserTheme(db: Database, id: string, theme: UiTheme | nu
   await db.update(users).set({ theme }).where(eq(users.id, id));
 }
 
+/**
+ * Remembers whether the user's control panel shows advanced settings. A UI preference
+ * only: it never changes what an API, routing or a run does.
+ */
+export async function setUserShowAdvanced(db: Database, id: string, value: boolean): Promise<void> {
+  await db.update(users).set({ showAdvanced: value }).where(eq(users.id, id));
+}
+
 /** Deletes a user; their accounts, sessions and memberships cascade. */
 export async function deleteUser(db: Database, id: string): Promise<void> {
   await db.delete(users).where(eq(users.id, id));

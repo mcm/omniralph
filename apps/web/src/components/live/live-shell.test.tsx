@@ -75,6 +75,7 @@ function renderApp(initial: { user?: SessionUser; theme?: ThemePreference } = {}
         themePreference={state.theme}
         organizationCookie={null}
         scopeCookie={null}
+        showAdvanced={false}
       >
         <h1>Page content</h1>
       </AppShell>

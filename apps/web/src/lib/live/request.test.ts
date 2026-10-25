@@ -29,6 +29,7 @@ const user: OrgUser = {
   email: null,
   image: null,
   theme: null,
+  showAdvanced: false,
 };
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async () => user,
