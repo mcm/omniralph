@@ -1,0 +1,391 @@
+/*
+ * Surfaces: the card, the progress card (Design rule 10), the save bar, the ⓘ and
+ * ID-card popovers (rules 11, 17), the details disclosure and the empty state.
+ */
+
+/* Card */
+.or-card {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+  color: var(--or-text);
+}
+
+.or-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+}
+
+.or-card__heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-card__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-card__title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.or-card__title-link:hover {
+  text-decoration: underline;
+}
+
+.or-card__title-link:focus-visible,
+.or-step__link:focus-visible,
+.or-more-info__summary:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+  border-radius: var(--or-radius-sm);
+}
+
+.or-card__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.or-card__body {
+  margin-top: 12px;
+}
+
+/* Progress: one bar, one count line, one ordered list of steps */
+.or-progress {
+  display: flex;
+  gap: 3px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.or-progress__seg {
+  height: 100%;
+  border-radius: 1px;
+  background: var(--or-border);
+}
+
+.or-progress__seg--done {
+  background: var(--or-sec);
+}
+
+.or-progress__seg--waiting {
+  background: var(--or-acc);
+}
+
+.or-progress__seg--running {
+  background: var(--or-run);
+}
+
+.or-progress__seg--failed {
+  background: var(--or-fail);
+}
+
+.or-progress__seg--blocked,
+.or-progress__seg--pending {
+  background: var(--or-border);
+}
+
+.or-progress__count {
+  margin: 8px 0 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: or-step;
+}
+
+.or-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  font-size: 13px;
+  counter-increment: or-step;
+}
+
+.or-step::before {
+  content: counter(or-step);
+  flex: none;
+  width: 16px;
+  color: var(--or-ter);
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+  text-align: right;
+}
+
+.or-step__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-step--done .or-step__label {
+  color: var(--or-sec);
+}
+
+.or-step--waiting .or-step__label {
+  color: var(--or-acc);
+  font-weight: 500;
+}
+
+.or-step--failed .or-step__label {
+  color: var(--or-fail);
+}
+
+.or-step--blocked .or-step__label,
+.or-step--pending .or-step__label {
+  color: var(--or-ter);
+}
+
+.or-step__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.or-step__link:hover {
+  text-decoration: underline;
+}
+
+.or-step__meta {
+  flex: none;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+/* Save bar: pending changes listed before Save */
+.or-savebar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-raised);
+  color: var(--or-text);
+}
+
+.or-savebar__body {
+  min-width: 0;
+}
+
+.or-savebar__count {
+  margin: 0;
+  font-weight: 600;
+}
+
+.or-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.or-pending__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+.or-pending__label {
+  color: var(--or-text);
+}
+
+.or-pending__values {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+}
+
+.or-pending__from {
+  color: var(--or-ter);
+  text-decoration: line-through;
+}
+
+.or-pending__arrow {
+  color: var(--or-ter);
+}
+
+.or-pending__to {
+  color: var(--or-text);
+}
+
+.or-pending__effect {
+  flex-basis: 100%;
+  color: var(--or-sec);
+}
+
+.or-savebar__error {
+  margin: 8px 0 0;
+  color: var(--or-fail);
+  font-size: 13px;
+}
+
+.or-savebar__actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .or-savebar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .or-savebar__actions {
+    justify-content: flex-end;
+  }
+}
+
+/* Popovers: the ⓘ provenance button and the ID-card details button */
+.or-infobtn {
+  color: var(--or-ter);
+}
+
+.or-pop {
+  z-index: 50;
+  box-sizing: border-box;
+  max-width: min(340px, calc(100vw - 16px));
+  padding: 12px 14px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-pop:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-pop__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.or-pop__row {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr;
+  gap: 12px;
+}
+
+.or-pop__term {
+  color: var(--or-ter);
+}
+
+.or-pop__detail {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--or-text);
+}
+
+/* Details: a native disclosure with a chevron */
+.or-more-info {
+  color: var(--or-text);
+}
+
+.or-more-info__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--or-sec);
+  font-size: 13px;
+  font-weight: 500;
+  list-style: none;
+}
+
+.or-more-info__summary::-webkit-details-marker {
+  display: none;
+}
+
+.or-more-info__summary:hover {
+  color: var(--or-text);
+}
+
+.or-more-info__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.or-more-info[open] .or-more-info__chevron {
+  transform: rotate(90deg);
+}
+
+.or-more-info__body {
+  margin-top: 10px;
+}
+
+/* Empty state */
+.or-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  color: var(--or-sec);
+  text-align: center;
+}
+
+.or-empty__icon {
+  color: var(--or-ter);
+}
+
+.or-empty__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.or-empty__description {
+  max-width: 48ch;
+  margin: 0;
+  font-size: 13px;
+}
+
+.or-empty__action {
+  margin-top: 8px;
+}

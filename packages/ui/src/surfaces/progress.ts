@@ -1,0 +1,45 @@
+/** Where a step stands. Only `waiting` means needs you (Design rule 15). */
+export type StepState = "done" | "waiting" | "running" | "failed" | "blocked" | "pending";
+
+export interface ProgressStep {
+  id: string;
+  label: string;
+  state: StepState;
+  /** A short machine fact shown after the label (e.g. a duration or ID), in mono. */
+  meta?: string;
+  /** Makes the label a link. */
+  href?: string;
+}
+
+/** The visible and spoken name of each state. */
+export const STEP_STATE_LABELS: Record<StepState, string> = {
+  done: "Done",
+  waiting: "Waiting on you",
+  running: "Running",
+  failed: "Failed",
+  blocked: "Blocked",
+  pending: "Pending",
+};
+
+/** The parts after "N of M done", in their fixed order. */
+const SUMMARY_PARTS: readonly [StepState, string][] = [
+  ["waiting", "waiting on you"],
+  ["running", "running"],
+  ["failed", "failed"],
+  ["blocked", "blocked"],
+];
+
+/**
+ * The one-line count for a progress card (Design rule 10): "N of M done" followed by each
+ * non-zero part in a fixed order, e.g. "2 of 4 done · 1 waiting on you · 1 blocked".
+ */
+export function progressSummary(steps: readonly Pick<ProgressStep, "state">[]): string {
+  if (steps.length === 0) return "No steps yet";
+  const count = (state: StepState) => steps.filter((step) => step.state === state).length;
+  const parts = [`${count("done")} of ${steps.length} done`];
+  for (const [state, text] of SUMMARY_PARTS) {
+    const n = count(state);
+    if (n > 0) parts.push(`${n} ${text}`);
+  }
+  return parts.join(" · ");
+}

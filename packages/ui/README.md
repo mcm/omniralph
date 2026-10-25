@@ -172,6 +172,35 @@ truncated with an ellipsis and keeps the full text in `title`.
 Component CSS uses only `--or-` tokens: a test fails on any color literal outside
 `tokens.css`.
 
+## Surfaces
+
+- `Card`: a `section` labeled by its `title` (`headingLevel` 2–4, default 2), with
+  optional `info` (provenance behind an ⓘ `InfoPopover` right after the title, Design
+  rule 11; `infoLabel` defaults to "About this card"), optional right-aligned `actions`
+  and children.
+- `ProgressCard`: the one progress view (rule 10). `title`, optional `titleHref`, and
+  `steps` (`{ id, label, state, meta?, href? }`, `state` `done` | `waiting` | `running` |
+  `failed` | `blocked` | `pending`). One bar segment per step (done `--or-sec`, waiting
+  `--or-acc`, running `--or-run`, failed `--or-fail`, others `--or-border`), a one-line
+  count, and the steps as a numbered `<ol>`. The bar is a `progressbar` (`aria-valuenow`
+  done steps, `aria-valuemax` total, `aria-valuetext` the count line).
+- `progressSummary(steps)`: the count line, e.g. "2 of 4 done · 1 waiting on you · 1
+  blocked": the done count, then waiting, running, failed and blocked when non-zero, or
+  "No steps yet".
+- `SaveBar`: `changes` (`{ id, label, from?, to?, effect? }`), `onSave`, `onDiscard`,
+  `saving?`, `error?`. Renders nothing without changes; otherwise a sticky `region` named
+  "Unsaved changes" listing each change (label, from → to, effect sentence), a ghost
+  Discard and a solid Save (never `primary`, rule 6). Both are disabled while `saving`;
+  `error` shows in an `alert`.
+- `InfoPopover` (ⓘ, `label` default "About this card", children) and `DetailsPopover`
+  (ID card, `label` default "Details", `items: { term, detail }[]` as a `<dl>`, rule 17):
+  icon buttons that open a Radix popover named by the label. Click, Enter and Space open
+  it; Escape closes it and returns focus to the button.
+- `DetailsSection`: a native `<details>` (collapsed) with a chevron `<summary>`, `title`
+  default "Details".
+- `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
+  and decorative `icon`. There is no hint prop (rule 3).
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
