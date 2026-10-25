@@ -1,0 +1,317 @@
+/*
+ * Actions: buttons, icon buttons, the toolbar group, the ⋯ menu, tooltips and the
+ * confirm dialog. Only .or-btn--primary carries a glow (Design rule 6); focus rings use
+ * outline, never box-shadow.
+ */
+
+/* Buttons */
+.or-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--or-radius);
+  font-family: var(--or-font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--or-text);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.or-btn--sm {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  gap: 5px;
+}
+
+.or-btn--with-icon {
+  padding-left: 12px;
+}
+
+.or-btn--sm.or-btn--with-icon {
+  padding-left: 8px;
+}
+
+.or-btn__icon {
+  flex: none;
+}
+
+.or-btn:focus-visible,
+.or-icon-btn:focus-visible,
+.or-dialog__input:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-btn:disabled,
+.or-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.or-btn--outline {
+  border-color: var(--or-ctl);
+  background: transparent;
+  color: var(--or-text);
+}
+
+.or-btn--outline:hover:not(:disabled) {
+  background: var(--or-hover);
+}
+
+.or-btn--solid {
+  background: var(--or-solid);
+  color: var(--or-solid-ink);
+}
+
+.or-btn--solid:hover:not(:disabled) {
+  background: var(--or-solid-hover);
+}
+
+.or-btn--primary {
+  background: var(--or-acc);
+  color: var(--or-acc-ink);
+  box-shadow: var(--or-glow);
+}
+
+.or-btn--primary:hover:not(:disabled) {
+  background: var(--or-acc-hover);
+}
+
+.or-btn--ghost {
+  background: transparent;
+  color: var(--or-sec);
+}
+
+.or-btn--ghost:hover:not(:disabled) {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-btn--danger {
+  border-color: var(--or-fail);
+  background: transparent;
+  color: var(--or-fail);
+}
+
+.or-btn--danger:hover:not(:disabled) {
+  background: var(--or-fail-tint);
+}
+
+/* Icon buttons */
+.or-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--or-radius);
+  background: transparent;
+  color: var(--or-sec);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.or-icon-btn--sm {
+  width: 30px;
+  height: 30px;
+}
+
+.or-icon-btn--outline {
+  border-color: var(--or-border);
+}
+
+.or-icon-btn:hover:not(:disabled),
+.or-icon-btn[data-state="open"] {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+/* Toolbar: one bordered group of up to two icon actions, then the ⋯ button */
+.or-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  overflow: hidden;
+}
+
+.or-toolbar__group .or-toolbar__button {
+  border: 0;
+  border-radius: 0;
+}
+
+.or-toolbar__group .or-toolbar__button + .or-toolbar__button {
+  border-left: 1px solid var(--or-border);
+}
+
+.or-toolbar__group .or-toolbar__button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Menu */
+.or-menu {
+  z-index: 50;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+  color: var(--or-text);
+}
+
+.or-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--or-radius-sm);
+  font-size: 14px;
+  color: var(--or-text);
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.or-menu__icon {
+  flex: none;
+  color: var(--or-sec);
+}
+
+.or-menu__item[data-highlighted] {
+  background: var(--or-hover);
+}
+
+.or-menu__item[data-disabled] {
+  color: var(--or-ter);
+  cursor: not-allowed;
+}
+
+.or-menu__item--danger,
+.or-menu__item--danger .or-menu__icon {
+  color: var(--or-fail);
+}
+
+.or-menu__item--danger[data-highlighted] {
+  background: var(--or-fail-tint);
+}
+
+.or-menu__separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--or-line);
+}
+
+/* Tooltip */
+.or-tip {
+  z-index: 60;
+  max-width: 260px;
+  padding: 5px 8px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* Confirm dialog */
+.or-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: color-mix(in srgb, var(--or-page) 72%, transparent);
+}
+
+.or-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 71;
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+  transform: translate(-50%, -50%);
+}
+
+.or-dialog__title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--or-text);
+}
+
+.or-dialog__description {
+  margin: 0;
+  color: var(--or-sec);
+}
+
+.or-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.or-dialog__typed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.or-dialog__typed-label {
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-dialog__typed-label .or-mono {
+  color: var(--or-text);
+}
+
+.or-dialog__input {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--or-ctl);
+  border-radius: var(--or-radius);
+  background: var(--or-page);
+  color: var(--or-text);
+  font-family: var(--or-font-mono);
+  font-size: 13px;
+}
+
+.or-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
