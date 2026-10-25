@@ -228,6 +228,19 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
 Open a PR in a connected repository: the review appears under **Jobs** and **Reviews**, and the
 summary comment links back to `/reviews/<id>`.
 
+### Webhook deliveries and Replay
+
+Every verified GitHub, GitLab and Linear delivery is kept for 14 days with what it did
+(`GET /api/ui/connections/{scm|linear}/{id}/deliveries`, `GET /api/ui/deliveries/{id}`). After
+fixing a setting (a trigger, a switch, a routing rule), any member of the organization can replay
+one with `POST /api/ui/deliveries/{id}/replay`: it runs through the same processing as a live
+delivery with today's settings, without the signature check or the delivery-ID dedupe, and is
+logged as a new delivery that links the original and the run it started (the original's detail
+lists its replays). A Linear agent-session event whose run is finished replays in a new agent
+session on the issue; one whose run is still active is refused (409). Deliveries too large to keep
+(over 256 KB) or whose repo or connection was removed can't be replayed (400), and pruned ones are
+gone (404). Each user can replay 10 deliveries a minute.
+
 ## Troubleshooting
 
 - **Install fails with 401/404 for `@iamthemcmaster/ui`:** the `NPM_TOKEN` Actions secret is

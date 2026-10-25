@@ -351,6 +351,7 @@ export {
 export {
   getWebhookEvent,
   getWebhookEventSourceOrganizationId,
+  listWebhookEventReplays,
   listWebhookEvents,
   pruneWebhookEvents,
   recordWebhookEvent,
