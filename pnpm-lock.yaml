@@ -362,6 +362,9 @@ importers:
       '@tabler/icons-react':
         specifier: ^3.48.0
         version: 3.48.0(react@19.3.0)
+      '@thesvg/react':
+        specifier: ^3.4.1
+        version: 3.4.1(react@19.3.0)
     devDependencies:
       '@testing-library/dom':
         specifier: ^10.4.2
@@ -3142,6 +3145,12 @@ packages:
     engines: {node: '>=12', npm: '>=6'}
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
+
+  '@thesvg/react@3.4.1':
+    resolution: {integrity: sha512-LEMkBJDp5o3eWXvKRn+MerGWby2J3HtPgpax8SNEyjDnfiLN+dapt8AqqZr1B+YsvnECB9Ct1cdzr6cBNE60rQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
 
   '@ts-jison/common@0.4.1-alpha.4':
     resolution: {integrity: sha512-3P2x2i/sIh8mVeAY+lu9/NqpuLm4V+McGPce3k/1Zf5pw6fQPa/ideqNu5A5331UEEdMYlQFpP8fJDdAytY/9g==}
@@ -9580,6 +9589,10 @@ snapshots:
   '@testing-library/user-event@14.6.8(@testing-library/dom@10.4.2)':
     dependencies:
       '@testing-library/dom': 10.4.2
+
+  '@thesvg/react@3.4.1(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
 
   '@ts-jison/common@0.4.1-alpha.4': {}
 

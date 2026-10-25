@@ -1,0 +1,61 @@
+/*
+ * Status (Design rule 15): lavender means needs you, mint means good, coral means
+ * failed, everything else is neutral.
+ */
+.or-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.or-dot--need {
+  background: var(--or-acc);
+  box-shadow: 0 0 0 3px var(--or-halo);
+}
+
+.or-dot--run {
+  background: var(--or-run);
+  box-shadow: 0 0 0 3px var(--or-run-glow);
+}
+
+.or-dot--good {
+  background: var(--or-run);
+}
+
+.or-dot--fail {
+  background: var(--or-fail);
+}
+
+.or-dot--neutral {
+  background: var(--or-done);
+}
+
+.or-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.or-status--need {
+  color: var(--or-acc);
+}
+
+.or-status--run,
+.or-status--good {
+  color: var(--or-run);
+}
+
+.or-status--fail {
+  color: var(--or-fail);
+}
+
+.or-status--neutral {
+  color: var(--or-sec);
+}
