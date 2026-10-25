@@ -15,7 +15,7 @@ harness's config, repo cache and Claude login live in that user's home, which th
 On a dedicated or shared server you may want a **dedicated Unix user** instead, to keep the
 harness's refresh token and Claude login away from other sessions on the host (see
 [Optional: a dedicated user](#optional-a-dedicated-user)). The rest of this guide calls whichever
-user runs the harness *the harness's user*.
+user runs the harness _the harness's user_.
 
 ## Prerequisites
 
@@ -169,11 +169,11 @@ another path, for `enroll` and `start` alike.
 You can add these optional keys by hand. Token rotation keeps them, and they stay out of the file
 when unset:
 
-| Key | Default | Meaning |
-| -- | -- | -- |
+| Key                  | Default            | Meaning                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `installables.allow` | `["@omniralph/*"]` | npm package patterns the harness accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The harness enforces this itself, whatever the control panel asks. |
-| `blockedExecPaths` | `[]` | Absolute path prefixes the harness never executes: host tools (whether their path was configured in the control panel or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
-| `dataDir` | `~/.omniralph` | Absolute directory for the harness's installables and their caches. |
+| `blockedExecPaths`   | `[]`               | Absolute path prefixes the harness never executes: host tools (whether their path was configured in the control panel or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
+| `dataDir`            | `~/.omniralph`     | Absolute directory for the harness's installables and their caches.                                                                                                                                                                                                                                                      |
 
 ```json
 {
@@ -193,7 +193,7 @@ replaces it.
 
 The refresh token rotates every ~15 minutes and is rewritten atomically. **Never copy the file to
 another host or restore an old backup of it**: presenting an old refresh token looks like token
-theft and revokes the harness (see *Re-enrollment*). To run another harness, enroll it separately.
+theft and revokes the harness (see _Re-enrollment_). To run another harness, enroll it separately.
 
 ## 5. Run it
 
@@ -375,7 +375,7 @@ An update can also be started on demand, from either side:
 
 - **Harnesses › <harness> › Version › Update now** (admins; only for harnesses under pm2). The control panel
   sends an update request with every heartbeat until the harness reports it handled; meanwhile the
-  harness shows **Updating** (*<version> requested*).
+  harness shows **Updating** (_<version> requested_).
 - `omniralph-harness update` on the host (as the harness's user, with the same `--config` as `start`).
   It writes `update-request.json` next to `harness.json` (mode 0600); the running harness picks it up
   with its next heartbeat and removes it. If the harness isn't running, it acts on it once started.
@@ -392,14 +392,14 @@ not under pm2 only log the request and show it as the last update error.
 Everything except the four local settings is configured centrally and delivered in every heartbeat
 response (every 20s), so changes need no restart:
 
-| Setting | Where | Default |
-| -- | -- | -- |
-| Max concurrency (parallel jobs) | **Harnesses › <harness>** | 1 |
-| Concurrency per pool (1 to max concurrency) | **Harnesses › <harness>** | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
-| Accepted task types (`query`, `review`, `coding`) | **Harnesses › <harness>** | `query`, `review` |
-| Pinned repositories | **Harnesses › <harness>**, or **Repository › Settings › Harness pinning** | none (every harness is eligible for every repo) |
-| Desired harness version ([self-update](#self-update-pm2), pm2 only) | **Settings › Harnesses**; per-harness override on **Harnesses › <harness>** | none (not managed) |
-| Job cancellations | **Jobs** (cancel) | — |
+| Setting                                                             | Where                                                                                      | Default                                                            |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Max concurrency (parallel jobs)                                     | **Harnesses › <harness>**                                                                  | 1                                                                  |
+| Concurrency per pool (1 to max concurrency)                         | **Harnesses › <harness>**                                                                  | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
+| Accepted task types (`query`, `review`, `coding`)                   | **Harnesses › <harness>**                                                                  | `query`, `review`                                                  |
+| Pinned repositories                                                 | **Repository › Settings › Harness pinning** (the harness's overview lists them, read-only) | none (every harness is eligible for every repo)                    |
+| Desired harness version ([self-update](#self-update-pm2), pm2 only) | **Settings › Harnesses**; per-harness override on **Harnesses › <harness>**                | none (not managed)                                                 |
+| Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
 Accepted task types decide what a host may run (trust): `query` (replies, code questions, learned
 rules, triage), `review` (PR/MR reviews) and `coding` (ralph jobs, which change code and push).
@@ -493,6 +493,7 @@ Unlike reviews, ralph sessions run the repository's own tools, with full permiss
   user, that's your own global identity, so story commits are made as you; use a dedicated user if
   they should carry a separate one. With systemd's `ProtectHome=tmpfs`, `~/.gitconfig` must be in
   the bound home.
+
 - **The target repositories' toolchains.** The PRD's quality gates (`pnpm typecheck`, `cargo test`,
   …) and the repository's **Setup command** run on the host, so everything they need must be
   installed for the harness's user and on the unit's `PATH`: Node/pnpm (e.g. `corepack enable` as the
@@ -624,7 +625,8 @@ What to do:
    creates a **new harness** (new ID) and overwrites `harness.json`; the revoked harness stays in the list
    for its history.
 4. Re-apply the old harness's central config to the new one: max concurrency,
-   accepted task types, pool limits and **pinned repositories** (pins belong to the harness ID).
+   accepted task types and pool limits, and pin its repositories to it again from each
+   repository's **Settings › Harness pinning** (pins belong to the harness ID).
 5. Start the harness again.
 
 When an admin revokes a harness, its running jobs are re-queued at once. After a `refresh_reuse`, the

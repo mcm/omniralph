@@ -205,8 +205,8 @@ export function HarnessesView() {
           description={
             <>
               Hosts running <InlineCode>omniralph-harness</InlineCode>. Their concurrency, accepted
-              task types, pool limits and pinned repositories are configured here and reach them
-              with their next heartbeat.
+              task types and pool limits are configured here and reach them with their next
+              heartbeat.
             </>
           }
           meta={<Freshness query={harnesses} />}

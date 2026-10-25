@@ -34,11 +34,9 @@ import { IconBan, IconCheck, IconClock, IconCloudDownload, IconTrash } from "@ta
 import { defaultPoolLimit, HarnessVersion, POOLS } from "@omniralph/shared";
 import { TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
-import { useCurrentUser } from "@/components/current-user";
 import { Freshness } from "@/components/freshness";
 import { Timestamp } from "@/components/list-table";
 import { PageHeader } from "@/components/page-header";
-import { MultiSelect, type MultiSelectOption } from "@/components/pickers";
 import { QueryBoundary } from "@/components/query-boundary";
 import { JobStatusBadge } from "@/components/ralph-badges";
 import { useNow } from "@/components/relative-time";
@@ -50,11 +48,9 @@ import { api } from "@/lib/api/client";
 import {
   harnessSavedSchema,
   harnessUpdateRequestedSchema,
-  pinnableRepositoriesSchema,
   type HarnessConfigForm,
   type HarnessDetail,
   type HarnessSettingsSave,
-  type PinnableRepository,
   type PinSyncJob,
 } from "@/lib/api/harnesses";
 import { mutationResultSchema } from "@/lib/api/schemas";
@@ -313,31 +309,6 @@ function InheritableSetting({
   );
 }
 
-const PROVIDER_LABELS: Record<PinnableRepository["provider"], string> = {
-  github: "GitHub",
-  gitlab: "GitLab",
-};
-
-function repositoryOption(repo: PinnableRepository): MultiSelectOption {
-  return { value: repo.id, label: repo.fullPath, hint: PROVIDER_LABELS[repo.provider] };
-}
-
-/** Searches the repositories to pin (not polled: it runs as the person types); a failure shows its error. */
-function useRepositorySearch() {
-  const { organization } = useCurrentUser();
-  return React.useCallback(
-    async (query: string): Promise<MultiSelectOption[]> => {
-      const { repositories } = await api.get(
-        "/api/ui/harnesses/pinnable-repositories",
-        pinnableRepositoriesSchema,
-        { params: { query }, organizationId: organization.id },
-      );
-      return repositories.map(repositoryOption);
-    },
-    [organization.id],
-  );
-}
-
 // ── Heartbeat-deferred changes ───────────────────────────────────────────────
 
 /** A saved change on its way to the harness: `pending` until a heartbeat after the save. */
@@ -484,40 +455,17 @@ export function versionInput(draft: VersionDraft): { version: string } | { error
   return { version };
 }
 
-function pinSpec(labels: ReadonlyMap<string, string>): SettingSpec {
-  return {
-    key: "pinnedRepositoryIds",
-    label: "Pinned repositories",
-    format: (value) =>
-      Array.isArray(value) && value.length > 0
-        ? value.map((id) => labels.get(id) ?? id).join(", ")
-        : "None",
-  };
-}
-
-/** What pinning says about the repositories the harness serves. */
-function pinsDescription(count: number): string {
-  if (count === 0) {
-    return "None: this harness serves every repository that isn't pinned elsewhere. Jobs for a pinned repository only go to the harnesses it's pinned to, which pre-clone it.";
-  }
-  const repos = count === 1 ? "this repository" : `these ${count} repositories`;
-  return `Jobs for ${repos} only go to the harnesses they're pinned to; this harness pre-clones them.`;
-}
-
 /**
- * The harness's central settings, saved together: concurrency and pool limits, task types,
- * pinned repositories and its desired version override. They reach the harness with its next
- * heartbeat.
+ * The harness's central settings, saved together: concurrency and pool limits, task types
+ * and its desired version override. They reach the harness with its next heartbeat. Pinned
+ * repositories are edited from each repository's settings (the overview lists them).
  */
 export function HarnessSettingsSection({
   harness,
   globalDesiredVersion,
-  pinSyncJobs = [],
 }: {
   harness: HarnessRow;
   globalDesiredVersion: string | null;
-  /** The latest sync job of each pinned repository. */
-  pinSyncJobs?: readonly PinSyncJob[];
 }) {
   const apiAction = useApiAction();
   const pickup = usePickup(harness);
@@ -527,37 +475,6 @@ export function HarnessSettingsSection({
   const savedVersion = versionDraft(harness);
   const [version, setVersion] = useSeededDraft(savedVersion);
   const [versionError, setVersionError] = React.useState<string | undefined>();
-  // By id: pins are a set, so a refetch in path order doesn't count as an edit.
-  const savedPins = harness.pinnedRepositories.map((repo) => repo.id).sort();
-  const [pins, setPins] = useSeededDraft<string[]>(savedPins);
-  const pinnedOptions = React.useMemo(
-    () => harness.pinnedRepositories.map(repositoryOption),
-    [harness.pinnedRepositories],
-  );
-  // Repository paths by id, for the change list: the saved pins and every search result.
-  const [searched, setSearched] = React.useState<ReadonlyMap<string, string>>(() => new Map());
-  const labels = React.useMemo(
-    () =>
-      new Map([
-        ...searched,
-        ...pinnedOptions.map((option) => [option.value, option.label] as const),
-      ]),
-    [searched, pinnedOptions],
-  );
-  const searchRepositories = useRepositorySearch();
-  const search = React.useCallback(
-    async (query: string) => {
-      const options = await searchRepositories(query);
-      setSearched((known) => {
-        const next = new Map(known);
-        for (const option of options) next.set(option.value, option.label);
-        return next;
-      });
-      return options;
-    },
-    [searchRepositories],
-  );
-  const syncJobs = new Map(pinSyncJobs.map((job) => [job.repositoryId, job]));
 
   const { defaults } = harness;
   const readOnly = harness.revoked;
@@ -566,20 +483,14 @@ export function HarnessSettingsSection({
     : Number(draft.maxConcurrency);
   const slots = maxConcurrency >= 1 ? Math.floor(maxConcurrency) : 1;
   const specs = React.useMemo(
-    () => [...configSpecs(defaults), versionSpec(globalDesiredVersion), pinSpec(labels)],
-    [defaults, globalDesiredVersion, labels],
+    () => [...configSpecs(defaults), versionSpec(globalDesiredVersion)],
+    [defaults, globalDesiredVersion],
   );
-  const values = (config: ConfigDraft, versionDraft: VersionDraft, pinned: readonly string[]) => ({
+  const values = (config: ConfigDraft, versionDraft: VersionDraft) => ({
     ...configValues(config),
     versionOverride: versionValue(versionDraft),
-    // The saved pins come back in path order: compare them as a set.
-    pinnedRepositoryIds: [...pinned].sort(),
   });
-  const changes = settingChanges(
-    specs,
-    values(saved, savedVersion, savedPins),
-    values(draft, version, pins),
-  );
+  const changes = settingChanges(specs, values(saved, savedVersion), values(draft, version));
 
   const toggle = (taskType: string, on: boolean) =>
     setDraft((d) => ({
@@ -595,16 +506,10 @@ export function HarnessSettingsSection({
       return null;
     }
     setVersionError(undefined);
-    const configChanged = [...changed].some(
-      (key) => key !== "versionOverride" && key !== "pinnedRepositoryIds",
-    );
-    const added = pins.filter((id) => !savedPins.includes(id));
-    const removed = savedPins.filter((id) => !pins.includes(id));
+    const configChanged = [...changed].some((key) => key !== "versionOverride");
     const body: HarnessSettingsSave = {
       ...(configChanged && { config: configInput(draft) }),
       ...(versionSave && { version: versionSave.version }),
-      unpin: removed,
-      pin: added,
     };
     return {
       // One request; the page refetches once, after it.
@@ -618,10 +523,7 @@ export function HarnessSettingsSection({
           harnessChanged,
           (result) => pickup.onSaved(result.savedAt),
         ),
-      success:
-        added.length > 0
-          ? "Saved. The harness picks it up with its next heartbeat and pre-clones the repositories you pinned."
-          : "Saved. The harness picks it up with its next heartbeat.",
+      success: "Saved. The harness picks it up with its next heartbeat.",
     };
   };
 
@@ -637,7 +539,6 @@ export function HarnessSettingsSection({
         setDraft(saved);
         setVersion(savedVersion);
         setVersionError(undefined);
-        setPins(savedPins);
       }}
       confirm={{
         consequence:
@@ -743,30 +644,6 @@ export function HarnessSettingsSection({
             </div>
           ))}
         </InheritableSetting>
-      </SettingsSubsection>
-
-      <SettingsSubsection
-        id="harness-pins"
-        title="Pinned repositories"
-        description="Pin repositories to keep their jobs on this harness, for instance one that holds their credentials or a warm clone."
-      >
-        <Field label="Pinned repositories" description={pinsDescription(pins.length)}>
-          <MultiSelect
-            id="pinned-repositories"
-            value={pins}
-            onChange={(next) => setPins([...next].sort())}
-            onSearch={search}
-            selectedOptions={pinnedOptions}
-            disabled={readOnly}
-            placeholder="No pinned repositories"
-            searchPlaceholder="Search repositories…"
-            searchLabel="Search repositories"
-            staleMessage="It was disconnected. It's kept until you remove it."
-          />
-        </Field>
-        {harness.pinnedRepositories.length > 0 && (
-          <PinSyncList repositories={harness.pinnedRepositories} syncJobs={syncJobs} />
-        )}
       </SettingsSubsection>
 
       <SettingsSubsection
@@ -1346,7 +1223,6 @@ function HarnessTabContent({ tab, detail }: { tab: HarnessTab; detail: HarnessDe
           <HarnessSettingsSection
             harness={harness}
             globalDesiredVersion={detail.globalDesiredVersion}
-            pinSyncJobs={detail.pinSyncJobs}
           />
         )}
         {tab === "installables" && <InstallablesTab harness={harness} />}

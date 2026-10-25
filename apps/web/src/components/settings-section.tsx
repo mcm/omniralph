@@ -42,7 +42,7 @@ interface SettingsSectionProps {
 }
 
 /**
- * A section save made of several actions (e.g. a harness's config, then its pins): runs them in
+ * A section save made of several actions (e.g. a harness's config, then its version): runs them in
  * order and stops at the first that fails, whose result it returns.
  */
 export async function saveInOrder(

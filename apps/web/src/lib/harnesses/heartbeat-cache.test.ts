@@ -51,6 +51,7 @@ const { latestVersionKey } = await import("./heartbeat-cache");
 const manage = await import("./manage");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
+const { saveRepositorySettings } = await import("@/lib/repositories/settings");
 const { sendToChatRun } = await import("@/lib/ralph/chat-reply");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -261,11 +262,24 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "unpin",
       async ({ harnessId, orgId }) => {
-        // Pinned before the warm-up (`setUp`), unpinned here.
+        // Pinned before the warm-up (`setUp`), unpinned here from the repository's settings.
         const [repositoryId] = (await send(harnessId)).response.pinnedRepoIds;
-        expect(await manage.unpinRepository(db, orgId, harnessId, repositoryId!)).toEqual({
-          ok: true,
-        });
+        const saved = await saveRepositorySettings(
+          db,
+          new PostgresDispatcher({ db }),
+          orgId,
+          repositoryId!,
+          {
+            profileId: "standard",
+            triggers: { onOpen: true, onPush: true, drafts: false },
+            pathExcludes: [],
+            customInstructions: "",
+            pinnedHarnessIds: [],
+            reviewTaskIds: ["builtin:review-pr"],
+            correlationTaskId: "builtin:correlate-findings",
+          },
+        );
+        expect(saved).toMatchObject({ status: "saved", unpinnedHarnessIds: [harnessId] });
       },
       (response) => expect(response.pinnedRepoIds).toEqual([]),
     ],
@@ -388,14 +402,12 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         status: "running",
       })
       .returning();
-    await db
-      .insert(chatThreadRuns)
-      .values({
-        organizationId: orgId,
-        chatThreadId: thread!.id,
-        kind: "coding",
-        ralphRunId: run!.id,
-      });
+    await db.insert(chatThreadRuns).values({
+      organizationId: orgId,
+      chatThreadId: thread!.id,
+      kind: "coding",
+      ralphRunId: run!.id,
+    });
     await runningJob(orgId, harnessId, { type: "ralph.request", ralphRunId: run!.id });
     await warm(harnessId);
     const deps = { db, organizationId: orgId } as Parameters<typeof sendToChatRun>[0];

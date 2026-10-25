@@ -208,15 +208,13 @@ export type HarnessConfigForm = z.infer<typeof harnessConfigFormSchema>;
 
 /**
  * `PUT /api/ui/harnesses/{id}/settings`: the Settings tab's changes, saved in one request in
- * this order (left-out parts aren't changed).
+ * this order (left-out parts aren't changed). Strict: pins are edited from the repository's
+ * settings only, so a `pin` or `unpin` here is refused.
  */
-export const harnessSettingsSaveSchema = z.object({
+export const harnessSettingsSaveSchema = z.strictObject({
   config: harnessConfigFormSchema.optional(),
   /** The desired version override; "" clears it. */
   version: z.string().max(100).optional(),
-  /** Repositories to unpin, then to pin. */
-  unpin: z.array(z.string()).max(500).default([]),
-  pin: z.array(z.string()).max(500).default([]),
 });
 export type HarnessSettingsSave = z.infer<typeof harnessSettingsSaveSchema>;
 
@@ -248,19 +246,3 @@ export const installRequestSchema = z.object({
 
 /** `POST /api/ui/harnesses/{id}/installs` response: the install job (deduped while one runs). */
 export const installEnqueuedSchema = mutationResultSchema.extend({ jobId: z.string() });
-
-/** A connected repository a harness can be pinned to. */
-export const pinnableRepositorySchema = z.object({
-  id: z.string(),
-  provider: z.enum(["github", "gitlab"]),
-  fullPath: z.string(),
-});
-export type PinnableRepository = z.infer<typeof pinnableRepositorySchema>;
-
-/** `GET /api/ui/harnesses/pinnable-repositories?query=`: the pins picker's search. */
-export const pinnableRepositoriesSchema = z.object({
-  repositories: z.array(pinnableRepositorySchema),
-});
-export const pinnableRepositoriesQuerySchema = z.object({
-  query: z.string().max(200).default(""),
-});
