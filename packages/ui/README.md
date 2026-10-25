@@ -84,6 +84,25 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
   disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.
 
+## Controls
+
+Keyboard-operable form controls (Design rule 12). Each shows the accent focus ring on
+`:focus-visible`.
+
+- `Switch`: an on/off setting, `<button role="switch" aria-checked>`. Named by a visible
+  `label` or by `aria-label` / `aria-labelledby`; `checked` + `onCheckedChange` (or
+  `defaultChecked`), `disabled`. Click, Space and Enter toggle it.
+- `Checkbox`: a native `<input type="checkbox">` inside its `<label>` (or with `aria-label`),
+  drawn with the custom appearance. `checked`, `defaultChecked`, `indeterminate` (sets the
+  DOM property), `disabled`, `onCheckedChange`.
+- `SegmentedControl`: one-of-N `options` (`{ value, label, icon?, disabled? }`) as a
+  `radiogroup` with one tab stop; `value` + `onValueChange` (or `defaultValue`), `size`
+  `md` / `sm`. Arrow keys move and select, Home/End select the first and last option.
+- `Tabs`: Radix tabs from `tabs` (`{ value, label, count?, countTone?, disabled? }`), with
+  `TabPanel value` children for the panels. `countTone` `need` draws the count in the
+  accent and `fail` in coral; the count is part of the tab's name ("Needs you, 4"). Arrow
+  keys move and select, Home/End jump; the strip scrolls sideways instead of wrapping.
+
 ## Scripts
 
 `pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
