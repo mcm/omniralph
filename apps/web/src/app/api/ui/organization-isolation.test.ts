@@ -81,6 +81,7 @@ vi.mock("@/lib/dispatch", () => ({
       job: { id: "00000000-0000-4000-8000-000000000000" },
       created: true,
     }),
+    cancel: async () => "cancel_requested",
   }),
 }));
 // Disconnecting revokes tokens at Linear and Slack: never in tests.
@@ -185,6 +186,7 @@ const selectable = await import("./scm-connections/[id]/repositories/route");
 const runList = await import("./runs/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
+const runRetry = await import("./runs/[id]/retry/route");
 const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
@@ -1322,7 +1324,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     await db.delete(jobs).where(inArray(jobs.id, [...attempts.values()]));
   });
 
-  it("refuses to stop the other organization's run, and members can't stop runs", async () => {
+  it("refuses to stop the other organization's run, and lets its own members stop it", async () => {
     state.userId = a.adminId;
     expect(await call(runStop.POST, { method: "POST", params: { id: b.runId } })).toMatchObject({
       status: 404,
@@ -1334,11 +1336,44 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       await call(runStop.POST, { method: "POST", params: { id: "not-a-uuid" } }),
     ).toMatchObject({ status: 404 });
+    expect((await getRun(db, b.runId))!.status).toBe("running");
     state.userId = b.memberId;
     expect(await call(runStop.POST, { method: "POST", params: { id: b.runId } })).toMatchObject({
-      status: 403,
+      status: 200,
+      body: { ok: true },
     });
+    expect((await getRun(db, b.runId))!.status).toBe("stopped");
+    await updateRun(db, b.runId, { status: "running" });
+  });
+
+  it("refuses to retry the other organization's run, and lets its own members retry", async () => {
+    const retry = (id: string) =>
+      call(runRetry.POST, { params: { id }, body: { target: { kind: "run" } } });
+    state.userId = a.memberId;
+    expect(await retry(b.runId)).toMatchObject({
+      status: 404,
+      body: { error: "That run doesn't exist." },
+    });
+    expect(await retry("not-a-uuid")).toMatchObject({ status: 404 });
+    state.userId = a.adminId;
+    expect(await retry(b.runId)).toMatchObject({ status: 404 });
     expect((await getRun(db, b.runId))!.status).toBe("running");
+
+    // Its own member reaches it: a running run has nothing to retry.
+    state.userId = b.memberId;
+    expect(await retry(b.runId)).toMatchObject({
+      status: 400,
+      body: { error: "This run is running, so there's nothing to retry." },
+    });
+    // Stopped, it resumes.
+    await updateRun(db, b.runId, { status: "stopped" });
+    // (Its organization has no Linear workspace: the run waits for the reconcile cron to advance it.)
+    expect(await retry(b.runId)).toMatchObject({
+      status: 200,
+      body: { id: b.runId, status: "queued" },
+    });
+    expect((await getRun(db, b.runId))!.status).toBe("pending");
+    await updateRun(db, b.runId, { status: "running" });
   });
 
   it("previews routing with only the organization's own runs and repositories", async () => {
@@ -1463,7 +1498,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(own!.status).toBe("open");
   });
 
-  it("refuses to re-run the other organization's review, and members can't re-run", async () => {
+  it("refuses to re-run the other organization's review, and its own members reach it", async () => {
     const rerun = (id: string) =>
       call(reviewRerun.POST, { params: { id }, body: { mode: "fresh", profileId: null } });
     state.userId = a.adminId;
@@ -1473,7 +1508,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     expect(await rerun("not-a-uuid")).toMatchObject({ status: 404 });
     state.userId = b.memberId;
-    expect(await rerun(b.reviewId)).toMatchObject({ status: 403 });
+    expect(await rerun(b.reviewId)).not.toMatchObject({ status: 403 });
+    expect(await rerun(b.reviewId)).not.toMatchObject({ status: 404 });
   });
 
   it("sends a member of both organizations to switch to the review's organization", async () => {
@@ -1541,7 +1577,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
-  it("refuses to cancel the other organization's job, and members can't cancel jobs", async () => {
+  it("refuses to cancel the other organization's job, and lets its own members cancel it", async () => {
     state.userId = a.adminId;
     expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
       status: 400,
@@ -1550,14 +1586,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       await call(jobCancel.POST, { method: "POST", params: { id: "not-a-uuid" } }),
     ).toMatchObject({ status: 404 });
+    expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
     state.userId = b.memberId;
     expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
-      status: 403,
+      status: 200,
+      body: { ok: true },
     });
-    expect(await getJob(db, b.jobId)).toMatchObject({ status: "running", cancelRequested: false });
   });
 
-  it("refuses to rerun the other organization's job, and members can't rerun jobs", async () => {
+  it("refuses to rerun the other organization's job, and its own members may rerun it", async () => {
     state.userId = a.adminId;
     expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
       status: 400,
@@ -1566,9 +1603,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       await call(jobRerun.POST, { method: "POST", params: { id: "not-a-uuid" } }),
     ).toMatchObject({ status: 404 });
+    // A member reaches the job (a running one isn't rerun).
     state.userId = b.memberId;
     expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
-      status: 403,
+      status: 400,
+      body: { error: expect.not.stringContaining("doesn't exist") },
     });
   });
 

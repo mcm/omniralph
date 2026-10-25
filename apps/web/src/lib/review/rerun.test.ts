@@ -753,9 +753,17 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(payload.reviewConfig.profile.id).toBe("standard");
     });
 
-    it("rejects members", async () => {
+    it("lets members re-run a review", async () => {
       const { number, review } = await reviewedPr();
       state.user = member;
+      const res = await rerunReview(review.id, { mode: "fresh", profileId: null });
+      if (!res.ok) throw new Error(res.error);
+      expect(await prJobs(number)).toHaveLength(1);
+    });
+
+    it("rejects a signed-out user", async () => {
+      const { number, review } = await reviewedPr();
+      state.user = null;
       const res = await rerunReview(review.id, { mode: "fresh", profileId: null });
       expect(res.ok).toBe(false);
       expect(state.scm.calls.getChangeRequest).toHaveLength(0);

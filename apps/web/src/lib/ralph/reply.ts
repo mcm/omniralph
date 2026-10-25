@@ -44,7 +44,6 @@ import {
   type RalphRun,
   type RalphTransaction,
   getMainLane,
-  getActiveRunOfSameOrigin,
   isLinearRun,
 } from "@omniralph/db";
 import {
@@ -67,13 +66,14 @@ import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
-import { answerCleanup, cleanUpStoppedRun, dropKeepBranchCleanups } from "./cleanup";
-import { applyGuidance, freshAttempts, queueLiveReply, undeliveredNote } from "./messages";
+import { answerCleanup, cleanUpStoppedRun } from "./cleanup";
+import { applyGuidance, queueLiveReply, undeliveredNote } from "./messages";
 import { postActivity, quietly } from "./notify";
 import { answerPermission } from "./permissions";
 import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import { addInstruction } from "./requests";
+import { continueRun, newerRunMessage, resumeRun } from "./retry";
 import { openQuestionsCheckFailedMessage, openQuestionsMessage, withOpenQuestions } from "./start";
 import {
   advanceRun,
@@ -194,40 +194,35 @@ export async function handleReply(
     if (answer && request && !request.jobId && current.status !== "stopped") {
       return answerPreparation(tx, current, answer);
     }
-    // A stopped run resumes; a finished one takes the reply as a direct request (cyralph).
-    let resumed =
-      current.status === "stopped" || current.status === "completed"
-        ? await resume(tx, current)
-        : current;
-    if (!resumed) {
+    const newerRun = {
+      kind: "guidance" as const,
+      advance: false,
+      note: { type: "response" as const, body: newerRunMessage(current) },
+    };
+    // A bare `/continue` goes on without guidance (shared with Omniralph's Retry).
+    if (continued !== null && !instruction.text && !instruction.wantsLoop) {
+      const resumed = await continueRun(tx, current);
+      if (!resumed) return newerRun;
       return {
-        kind: "guidance" as const,
-        advance: false,
+        kind: "continue" as const,
+        advance: true,
         note: {
-          type: "response" as const,
-          body: `A newer run of **${current.linearIdentifier}** is under way, so this ${current.status} run stays ${current.status}. Reply in that run's session instead.`,
+          type: "thought" as const,
+          body: await whenFree(
+            tx,
+            resumed,
+            "OK, I'll continue with a fresh iteration budget",
+            "OK, continuing with a fresh iteration budget.",
+          ),
         },
       };
     }
+    // A stopped run resumes; a finished one takes the reply as a direct request (cyralph).
+    let resumed = await resumeRun(tx, current);
+    if (!resumed) return newerRun;
+    // `/continue` with text: the iteration cap starts over.
     if (continued !== null) {
-      // The iteration cap starts over; a bare `/continue` goes on without guidance.
       resumed = (await updateRun(tx, resumed.id, { iterations: 0 })) ?? resumed;
-      if (!instruction.text && !instruction.wantsLoop) {
-        await freshAttempts(tx, resumed);
-        return {
-          kind: "continue" as const,
-          advance: true,
-          note: {
-            type: "thought" as const,
-            body: await whenFree(
-              tx,
-              resumed,
-              "OK, I'll continue with a fresh iteration budget",
-              "OK, continuing with a fresh iteration budget.",
-            ),
-          },
-        };
-      }
     }
     if (resumed.mode === "epic" && isRerunPreparationRequest(body)) {
       const state = preparationOf(resumed);
@@ -441,20 +436,6 @@ export async function stopRun(
   await postActivity(conversationFor(run, deps), content);
   await cleanUpStoppedRun(deps, run.id);
   return { status: "stopped", canceled };
-}
-
-/**
- * A stopped run asked to work again becomes `pending` (advancing it decides
- * what's next; its next job recreates a removed worktree from the kept
- * branch, and its keep-branch cleanups that haven't started are dropped).
- * Not while another run of the issue (or chat thread) is unfinished (it was
- * delegated again): null.
- */
-async function resume(tx: RalphTransaction, run: RalphRun): Promise<RalphRun | null> {
-  const other = await getActiveRunOfSameOrigin(tx, run);
-  if (other && other.id !== run.id) return null;
-  await dropKeepBranchCleanups(tx, run.id);
-  return updateRun(tx, run.id, { status: "pending", error: null });
 }
 
 /** An answer to the open preparation question. */

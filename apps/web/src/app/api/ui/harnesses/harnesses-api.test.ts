@@ -1456,8 +1456,9 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
           status: "queued",
         })
         .returning();
-      expect(await cancelJob(another!.id)).toMatchObject({ ok: false });
-      expect(await jobRow(another!.id)).toMatchObject({ status: "queued" });
+      // Members cancel jobs too.
+      expect(await cancelJob(another!.id)).toEqual({ ok: true });
+      expect(await jobRow(another!.id)).toMatchObject({ status: "canceled" });
     });
   });
 
@@ -1497,10 +1498,16 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         ok: true,
         warning: expect.any(String),
       });
-      // A job that didn't fail can't be rerun, and members can't rerun.
+      // A job that didn't fail can't be rerun.
       expect(await rerunJob(copies[0]!.id)).toMatchObject({ ok: false });
+      // Members rerun jobs too: the copy is already queued, so the copy's a warning.
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await rerunJob(installed.jobId)).toMatchObject({ ok: false });
+      expect(await rerunJob(installed.jobId)).toMatchObject({
+        ok: true,
+        warning: expect.any(String),
+      });
+      await db.update(jobs).set({ status: "failed" }).where(eq(jobs.id, copies[0]!.id));
+      expect(await rerunJob(copies[0]!.id)).toEqual({ ok: true });
     });
   });
 });
