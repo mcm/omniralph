@@ -1,14 +1,11 @@
 "use client";
 
-import { SidebarProvider, SonnerToaster, TooltipProvider } from "@iamthemcmaster/ui";
-import type { ThemePreference } from "@omniralph/ui";
-import { AppSidebar } from "./app-sidebar";
+import { Toaster, type ThemePreference } from "@omniralph/ui";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { OrganizationGuard } from "./organization-guard";
 import { ALL_ORGANIZATIONS_LABEL } from "./organization-picker";
 import { QueryProvider } from "./query-provider";
 import { SavedThemeProvider } from "./saved-theme";
-import { UnsavedChangesBar, UnsavedChangesProvider } from "./unsaved-changes";
 
 export function AppShell({
   user,
@@ -25,6 +22,7 @@ export function AppShell({
   organizationCookie: string | null;
   /** The organization scope cookie this page was rendered with, likewise. */
   scopeCookie: string | null;
+  /** The page, in today's frame (`app/(app)/legacy-frame.tsx`) until the shell is rebuilt. */
   children: React.ReactNode;
 }) {
   return (
@@ -43,23 +41,8 @@ export function AppShell({
             renderedCookie={organizationCookie}
             renderedScopeCookie={scopeCookie}
           >
-            <TooltipProvider>
-              {/* No AuroraField: this shell wraps the data surfaces, which sit on a flat page
-            (DESIGN.md). Below 768px the sidebar is the library's navigation sheet, opened
-            from the trigger in AppHeader. */}
-              <UnsavedChangesProvider>
-                <SidebarProvider>
-                  <div className="app-shell flex">
-                    <AppSidebar />
-                    <div className="flex flex-1 flex-col min-w-0">
-                      {children}
-                      <UnsavedChangesBar />
-                    </div>
-                  </div>
-                </SidebarProvider>
-              </UnsavedChangesProvider>
-              <SonnerToaster position="bottom-right" />
-            </TooltipProvider>
+            {children}
+            <Toaster />
           </OrganizationGuard>
         </QueryProvider>
       </CurrentUserProvider>

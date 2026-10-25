@@ -13,8 +13,11 @@ export interface ConfirmDialogProps {
   description: ReactNode;
   /** The confirm button's label, naming the action (e.g. "Delete repository"). */
   confirmLabel: string;
-  /** Defaults to "Cancel". */
-  cancelLabel?: string;
+  /**
+   * Defaults to "Cancel". `null` makes the decision required: no Cancel button, and Escape
+   * doesn't close the dialog.
+   */
+  cancelLabel?: string | null;
   /** Draws the confirm button in the coral danger style. */
   destructive?: boolean;
   /** Text the user must type exactly before confirm enables (e.g. the repository name). */
@@ -45,6 +48,7 @@ export function ConfirmDialog({
   const [typed, setTyped] = useState("");
   const confirmed = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     // Each opening starts fresh: nothing typed, not yet confirmed.
@@ -68,12 +72,17 @@ export function ConfirmDialog({
         <AlertDialog.Overlay className="or-dialog__overlay" />
         <AlertDialog.Content
           className="or-root or-dialog"
+          onEscapeKeyDown={(event) => {
+            if (cancelLabel === null) event.preventDefault();
+          }}
           onOpenAutoFocus={(event) => {
             confirmed.current = false;
             // With a typed confirmation, start in the field; otherwise Radix focuses Cancel.
-            if (inputRef.current) {
+            // Without a Cancel button (Radix's default target), start on confirm.
+            const target = inputRef.current ?? (cancelLabel === null ? confirmRef.current : null);
+            if (target) {
               event.preventDefault();
-              inputRef.current.focus();
+              target.focus();
             }
           }}
         >
@@ -107,10 +116,13 @@ export function ConfirmDialog({
               </div>
             ) : null}
             <div className="or-dialog__actions">
-              <AlertDialog.Cancel className={buttonClassName("outline")}>
-                {cancelLabel}
-              </AlertDialog.Cancel>
+              {cancelLabel === null ? null : (
+                <AlertDialog.Cancel className={buttonClassName("outline")}>
+                  {cancelLabel}
+                </AlertDialog.Cancel>
+              )}
               <button
+                ref={confirmRef}
                 type="submit"
                 className={buttonClassName(destructive ? "danger" : "solid")}
                 disabled={!matches}

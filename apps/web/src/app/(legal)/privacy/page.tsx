@@ -38,11 +38,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Chat data.</strong> For a connected Slack workspace or Discord server: the
-          workspace or server name; the messages that mention the bot and the replies in its
-          threads, with their authors&apos; user IDs and display names; and, in Slack, the email
-          address on the author&apos;s profile, used to recognize members of the organization. Other
-          messages and direct messages are ignored and not stored. Chat accounts linked to an
-          Omniralph account are stored with that link.
+          workspace or server name; the messages that mention Om and the replies in its threads,
+          with their authors&apos; user IDs and display names; and, in Slack, the email address on
+          the author&apos;s profile, used to recognize members of the organization. Other messages
+          and direct messages are ignored and not stored. Chat accounts linked to an Omniralph
+          account are stored with that link.
         </li>
         <li>
           <strong>Agents.</strong> Agent hosts&apos; names, versions, enrollment and token records,

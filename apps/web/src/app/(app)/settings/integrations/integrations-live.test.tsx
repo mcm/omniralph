@@ -10,7 +10,7 @@ import {
   queryWrapper,
   testUser,
 } from "@/components/query-test-utils";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { IntegrationsSettings, SlackWorkspace } from "@/lib/api/integrations";
 import { IntegrationsView } from "./integrations-view";
 
@@ -27,10 +27,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigation.redirect,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const PATH = "/api/ui/integrations";
@@ -105,7 +105,7 @@ const picker = () =>
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
   navigation.search = new URLSearchParams();
 });
 
@@ -175,7 +175,7 @@ describe("IntegrationsView", () => {
     await waitFor(() => expect(slackNamed("Acme Slack")).toBeNull());
     expect(slackNamed("Acme Grid")).toBeTruthy();
     expect(seen.filter((r) => r.method === "DELETE")).toHaveLength(1);
-    expect(toast.notify).toHaveBeenCalledWith("Disconnected Acme Slack");
+    expect(toasts.toast).toHaveBeenCalledWith("Disconnected Acme Slack");
     // The repository Coding tab's Linear status and run lists refetch too.
     const keys = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
     expect(keys).toEqual(
@@ -207,7 +207,7 @@ describe("IntegrationsView", () => {
     expect(
       await screen.findByText(/Install the Omniralph app in one Linear workspace/),
     ).toBeTruthy();
-    expect(toast.notify).toHaveBeenCalledWith("Disconnected Acme, but Linear didn't confirm.", {
+    expect(toasts.toast).toHaveBeenCalledWith("Disconnected Acme, but Linear didn't confirm.", {
       variant: "warning",
     });
   });
@@ -266,7 +266,7 @@ describe("IntegrationsView", () => {
       startWork: "builtin:handle-request",
     });
     expect(picker().value).toBe("custom-query");
-    expect(toast.notify).toHaveBeenCalledWith("Saved the chat tasks");
+    expect(toasts.toast).toHaveBeenCalledWith("Saved the chat tasks");
   });
 
   it("adds a channel override and lists it, without a reload", async () => {
@@ -310,7 +310,7 @@ describe("IntegrationsView", () => {
       startWork: null,
     });
     expect((screen.getByLabelText("Slack channel ID") as HTMLInputElement).value).toBe("");
-    expect(toast.notify).toHaveBeenCalledWith("Channel C0OPS runs its own tasks");
+    expect(toasts.toast).toHaveBeenCalledWith("Channel C0OPS runs its own tasks");
   });
 
   it("removes a channel override", async () => {
@@ -361,7 +361,7 @@ describe("IntegrationsView", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /Add channel/ }));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "Enter a Slack channel ID, like C0123ABCD (in the channel's details).",
         expect.objectContaining({ variant: "danger" }),
       ),

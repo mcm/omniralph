@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getBuiltinTask, type TaskDefinition } from "@omniralph/tasks";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import {
   createTestQueryClient,
   jsonResponse,
@@ -36,10 +36,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigation.redirect,
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const TASK_ID = "33333333-3333-4333-8333-333333333333";
@@ -109,7 +109,7 @@ const nameField = () => document.getElementById("task-name") as HTMLInputElement
 
 beforeEach(() => {
   vi.unstubAllGlobals();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
   navigation.push.mockReset();
   navigation.notFound.mockReset();
   navigation.redirect.mockClear();
@@ -215,7 +215,7 @@ describe("TaskDetailView", () => {
       seen.filter((request) => request.method === "GET" && request.path.endsWith(TASK_ID)),
     ).toHaveLength(1);
     expect(client.getQueryData(keys.tasks.detail(TASK_ID))).toBeUndefined();
-    expect(toast.notify).toHaveBeenCalledWith("Deleted Security review");
+    expect(toasts.toast).toHaveBeenCalledWith("Deleted Security review");
   });
 });
 
@@ -289,7 +289,7 @@ describe("Task editor", () => {
     expect(client.getQueryData(keys.tasks.detail(TASK_ID))).toMatchObject({
       task: { name: "AppSec review" },
     });
-    expect(toast.notify).toHaveBeenCalledWith("AppSec review saved");
+    expect(toasts.toast).toHaveBeenCalledWith("AppSec review saved");
   });
 
   it("shows a refused new task's field errors and stays on the form", async () => {
@@ -306,7 +306,7 @@ describe("Task editor", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create task" }));
     expect(await screen.findByText("Name is required.")).toBeTruthy();
     expect(navigation.push).not.toHaveBeenCalled();
-    expect(toast.notify).toHaveBeenCalledWith("Fix the highlighted fields.", {
+    expect(toasts.toast).toHaveBeenCalledWith("Fix the highlighted fields.", {
       variant: "danger",
     });
   });

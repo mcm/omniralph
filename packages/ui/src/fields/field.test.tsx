@@ -64,4 +64,13 @@ describe("Field", () => {
     expect(field.querySelector(".or-field__head .or-field__description")).toBeTruthy();
     expect(field.querySelector(".or-field__control input")).toBeTruthy();
   });
+
+  it("adds the stacked modifier when stacked", () => {
+    const { container } = render(
+      <Field label="Email" stacked>
+        <TextInput />
+      </Field>,
+    );
+    expect(container.firstElementChild!.className).toBe("or-field or-field--stacked");
+  });
 });

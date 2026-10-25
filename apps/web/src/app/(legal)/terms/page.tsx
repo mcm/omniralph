@@ -14,7 +14,7 @@ export default function TermsPage() {
         its integrations with GitHub, GitLab, Linear, Slack and Discord (together, &quot;the
         service&quot;). Omniralph is self-hosted software; this deployment is run by its operator,
         the person or company that set it up (&quot;we&quot;). By signing in, connecting an
-        integration or using the chat bot, you agree to these terms and to the{" "}
+        integration or using Om in chat, you agree to these terms and to the{" "}
         <Link href="/privacy">privacy policy</Link>. If you use the service on behalf of an
         organization, you agree to them for that organization.
       </p>

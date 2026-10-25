@@ -12,9 +12,9 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  background: var(--bg-page);
-  color: var(--text-primary);
-  font-family: var(--font-body);
+  background: var(--or-page);
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
 }
 
 /* The signed-in shell: sidebar rail and content fill at least the viewport. */
@@ -36,36 +36,6 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
-}
-
-/* Terms of service and privacy policy (app/(legal)) */
-.legal-document {
-  font-size: var(--text-sm);
-  line-height: 1.65;
-  color: var(--text-secondary);
-}
-.legal-document h1 {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-2xl);
-  color: var(--text-primary);
-}
-.legal-document h2 {
-  margin: var(--space-8) 0 var(--space-2);
-  font-size: var(--text-base);
-  color: var(--text-primary);
-}
-.legal-document p,
-.legal-document ul {
-  margin: 0 0 var(--space-3);
-}
-.legal-document ul {
-  padding-left: var(--space-6);
-}
-.legal-document li + li {
-  margin-top: var(--space-1);
-}
-.legal-document a {
-  color: var(--text-accent);
 }
 
 /* App header (components/app-header.tsx): one line at every width. It grows rather than
@@ -2077,8 +2047,7 @@ body {
   align-items: center;
   gap: var(--space-2);
 }
-.sidebar-brand-mark,
-.auth-brand-mark {
+.sidebar-brand-mark {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2090,21 +2059,13 @@ body {
   width: 24px;
   height: 24px;
 }
-.auth-brand-mark {
-  width: 28px;
-  height: 28px;
-}
-.sidebar-brand-name,
-.auth-brand-name {
+.sidebar-brand-name {
   font-family: var(--font-mono);
   color: var(--text-accent);
   letter-spacing: 0.12em;
 }
 .sidebar-brand-name {
   font-size: var(--text-xs);
-}
-.auth-brand-name {
-  font-size: var(--text-sm);
 }
 /* The organization picker sits above the signed-in user at the foot of the sidebar. */
 .sidebar-footer {
@@ -2133,74 +2094,218 @@ body {
   background: var(--bg-raised);
   color: var(--text-secondary);
 }
-.auth-main {
-  position: relative;
-  z-index: 1;
+/* Signed-out pages (components/auth-shell.tsx, legal-shell.tsx): Ultraviolet on --or-page. */
+.auth-main,
+.legal-main {
   min-height: 100vh;
+  min-height: 100dvh;
+  padding: 48px 20px;
+}
+.auth-main {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-8);
 }
 .auth-column {
   width: 100%;
   max-width: 420px;
 }
-.auth-brand {
+.auth-lockup {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-6);
+  width: fit-content;
+  margin: 0 auto 24px;
+  color: var(--or-text);
+  text-decoration: none;
+}
+.auth-lockup:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 4px;
+  border-radius: var(--or-radius-sm);
+}
+.auth-card.or-card {
+  padding: 22px 22px 24px;
+}
+.auth-card .or-card__title {
+  font-size: 18px;
+  white-space: normal;
+}
+.auth-card .or-empty {
+  padding: 16px 0 8px;
+}
+.auth-card h1.or-empty__title {
+  font-size: 18px;
+}
+.auth-title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.auth-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-stack--loose {
+  gap: 16px;
+}
+.auth-lede {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+.auth-lede strong {
+  color: var(--or-text);
+  font-weight: 600;
+}
+.auth-wide {
+  width: 100%;
+}
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.auth-actions--split {
+  justify-content: space-between;
+}
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-fail-tint);
+  color: var(--or-text);
+  font-size: 13px;
+}
+.auth-alert .or-dot {
+  margin-top: 5px;
+}
+.auth-alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.auth-alert-title,
+.auth-alert-text {
+  margin: 0;
+}
+.auth-alert-title {
+  font-weight: 600;
+}
+.auth-alert-text {
+  color: var(--or-sec);
+  overflow-wrap: anywhere;
+}
+.auth-denied-reason {
+  color: var(--or-text);
+}
+.auth-fine-print {
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 12px;
+  text-align: center;
 }
 .auth-legal-links {
   display: flex;
   justify-content: center;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
-  font-size: var(--text-xs);
+  gap: 16px;
+  margin-top: 16px;
+  font-size: 12px;
 }
 .auth-legal-links a {
-  color: var(--text-tertiary);
+  color: var(--or-ter);
   text-decoration: none;
 }
-.auth-title-row {
+.auth-legal-links a:hover {
+  color: var(--or-sec);
+  text-decoration: underline;
+}
+.onboarding-list {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.auth-fine-print {
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  text-align: center;
-}
-.auth-fine-print a {
-  color: inherit;
-}
-.legal-main {
-  position: relative;
-  z-index: 1;
-  min-height: 100vh;
-  padding: var(--space-16) var(--space-8);
-}
-.legal-column {
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-}
-.onboarding-title {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 600;
+  padding: 0;
+  list-style: none;
 }
 .onboarding-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+}
+.onboarding-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.onboarding-row-name {
+  overflow: hidden;
+  color: var(--or-text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onboarding-row-detail {
+  color: var(--or-ter);
+  font-size: 12px;
+}
+.onboarding-row-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* Terms of service and privacy policy (app/(legal)): a readable column of prose. */
+.legal-column {
+  width: 100%;
+  max-width: 68ch;
+  margin: 0 auto;
+}
+.legal-document {
+  color: var(--or-sec);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.legal-document h1 {
+  margin: 0 0 4px;
+  color: var(--or-text);
+  font-size: 26px;
+  line-height: 1.25;
+}
+.legal-document h2 {
+  margin: 32px 0 8px;
+  color: var(--or-text);
+  font-size: 16px;
+}
+.legal-document p,
+.legal-document ul {
+  margin: 0 0 12px;
+}
+.legal-document ul {
+  padding-left: 24px;
+}
+.legal-document li + li {
+  margin-top: 4px;
+}
+.legal-document strong {
+  color: var(--or-text);
+}
+.legal-document a {
+  color: var(--or-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 /* definitions (settings/agents, settings/tasks): detail pages and the agent and task forms. */

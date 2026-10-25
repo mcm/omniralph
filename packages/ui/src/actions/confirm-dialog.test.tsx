@@ -70,6 +70,18 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it("makes the decision required when cancelLabel is null: no Cancel, Escape keeps it open", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness onConfirm={vi.fn()} cancelLabel={null} destructive={false} confirmLabel="Go on" />,
+    );
+    const dialog = await openDialog(user);
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Go on" }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog")).toBe(dialog);
+  });
+
   it("calls onConfirm once and closes", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

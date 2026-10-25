@@ -1,7 +1,6 @@
 "use client";
 
-import { notify } from "@iamthemcmaster/ui";
-import { ThemeProvider, type ThemePreference } from "@omniralph/ui";
+import { ThemeProvider, toast, type ThemePreference } from "@omniralph/ui";
 import type * as React from "react";
 import { saveThemePreference } from "@/lib/theme-actions";
 
@@ -16,7 +15,7 @@ async function saveTheme(preference: ThemePreference): Promise<void> {
   document.documentElement.setAttribute("data-theme-transition", "");
   const result = await saveThemePreference(preference).catch(() => null);
   if (!result?.ok) {
-    notify(THEME_SAVE_FAILED, { variant: "danger" });
+    toast(THEME_SAVE_FAILED, { variant: "danger" });
     throw new Error(result?.error ?? THEME_SAVE_FAILED);
   }
 }

@@ -1,25 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Cluster,
-  Field,
-  Input,
-  Muted,
-  SonnerToaster,
-  Stack,
-} from "@iamthemcmaster/ui";
-import { IconBuilding, IconLogout, IconPlus } from "@tabler/icons-react";
-import { AuthBrand } from "@/components/auth-shell";
+import { Button, Card, Field, TextInput } from "@omniralph/ui";
+import { IconLogout, IconPlus } from "@tabler/icons-react";
 import { useServerAction } from "../use-server-action";
 import { signOutAction } from "@/lib/auth/actions";
 import type { Role } from "@/lib/auth/roles";
@@ -50,12 +34,24 @@ interface OnboardingViewProps {
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
 
-function OrganizationName({ name, detail }: { name: string; detail?: string }) {
+/** One organization in a list card: its name, a detail line and its actions. */
+function OrganizationRow({
+  name,
+  detail,
+  children,
+}: {
+  name: string;
+  detail?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="min-w-0 flex-1">
-      <div className="truncate text-sm font-medium text-text-primary">{name}</div>
-      {detail && <div className="text-xs text-text-tertiary">{detail}</div>}
-    </div>
+    <li className="onboarding-row">
+      <div className="onboarding-row-text">
+        <span className="onboarding-row-name">{name}</span>
+        {detail && <span className="onboarding-row-detail">{detail}</span>}
+      </div>
+      <div className="onboarding-row-actions">{children}</div>
+    </li>
   );
 }
 
@@ -83,34 +79,25 @@ function CreateOrganizationCard() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Create an organization</CardTitle>
-        <CardDescription>
+    <Card title="Create an organization" className="auth-card">
+      <form onSubmit={submit} className="auth-stack">
+        <p className="auth-lede">
           Organizations share repositories, agents and integrations between their members. You
           become its admin and can invite others.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Stack asChild gap={3}>
-          <form onSubmit={submit}>
-            <Field label="Name" htmlFor="organization-name" required>
-              <Input
-                id="organization-name"
-                required
-                maxLength={100}
-                placeholder="e.g. Acme"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
-            <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
-              <IconPlus size={14} />
-              {pending ? "Creating…" : "Create organization"}
-            </Button>
-          </form>
-        </Stack>
-      </CardContent>
+        </p>
+        <Field label="Name" htmlFor="organization-name" stacked>
+          <TextInput
+            required
+            maxLength={100}
+            placeholder="e.g. Acme"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+        <Button type="submit" variant="solid" icon={IconPlus} disabled={pending || !name.trim()}>
+          {pending ? "Creating…" : "Create organization"}
+        </Button>
+      </form>
     </Card>
   );
 }
@@ -119,11 +106,10 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
   const { pending, run, open } = useOrganizationAction();
   const router = useRouter();
   return (
-    <div className="onboarding-row">
-      <OrganizationName
-        name={invitation.organizationName}
-        detail={`${roleLabel[invitation.role]} · expires ${new Date(invitation.expiresAt).toLocaleDateString()}`}
-      />
+    <OrganizationRow
+      name={invitation.organizationName}
+      detail={`${roleLabel[invitation.role]} · expires ${new Date(invitation.expiresAt).toLocaleDateString()}`}
+    >
       <Button
         variant="ghost"
         size="sm"
@@ -151,17 +137,15 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
       >
         Accept
       </Button>
-    </div>
+    </OrganizationRow>
   );
 }
 
 function JoinableOrganization({ organization }: { organization: { id: string; name: string } }) {
   const { pending, open } = useOrganizationAction();
   return (
-    <div className="onboarding-row">
-      <OrganizationName name={organization.name} detail="Open to your email domain" />
+    <OrganizationRow name={organization.name} detail="Open to your email domain">
       <Button
-        variant="secondary"
         size="sm"
         disabled={pending}
         onClick={() =>
@@ -170,18 +154,15 @@ function JoinableOrganization({ organization }: { organization: { id: string; na
       >
         Join
       </Button>
-    </div>
+    </OrganizationRow>
   );
 }
 
 function Membership({ organization }: { organization: { id: string; name: string; role: Role } }) {
   const { pending, open } = useOrganizationAction();
   return (
-    <div className="onboarding-row">
-      <OrganizationName name={organization.name} />
-      <Badge variant="neutral">{roleLabel[organization.role]}</Badge>
+    <OrganizationRow name={organization.name} detail={roleLabel[organization.role]}>
       <Button
-        variant="secondary"
         size="sm"
         disabled={pending}
         onClick={() =>
@@ -190,7 +171,7 @@ function Membership({ organization }: { organization: { id: string; name: string
       >
         Open
       </Button>
-    </div>
+    </OrganizationRow>
   );
 }
 
@@ -204,14 +185,13 @@ function ListCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <Stack asChild gap={2}>
-        <CardContent>{children}</CardContent>
-      </Stack>
+    <Card title={title} className="auth-card">
+      <div className="auth-stack">
+        <p className="auth-lede">{description}</p>
+        <ul className="onboarding-list" aria-label={title}>
+          {children}
+        </ul>
+      </div>
     </Card>
   );
 }
@@ -225,70 +205,65 @@ export function OnboardingView({
 }: OnboardingViewProps) {
   const [signingOut, startSignOut] = React.useTransition();
   return (
-    <>
-      <AuthBrand />
-      <Stack>
-        <div className="auth-title-row">
-          <IconBuilding size={18} className="text-text-accent" />
-          <h1 className="onboarding-title">
-            {hasActiveOrganization ? "Organizations" : "Choose an organization"}
-          </h1>
-        </div>
+    <div className="auth-stack auth-stack--loose">
+      <div className="auth-stack">
+        <h1 className="auth-title">
+          {hasActiveOrganization ? "Organizations" : "Choose an organization"}
+        </h1>
         {!hasActiveOrganization && (
-          <Muted>
+          <p className="auth-lede">
             Everything in Omniralph belongs to an organization. Create one, or join one you were
             invited to{email ? ` as ${email}` : ""}.
-          </Muted>
+          </p>
         )}
+      </div>
 
-        {memberships.length > 0 && (
-          <ListCard title="Your organizations" description="Organizations you're a member of.">
-            {memberships.map((o) => (
-              <Membership key={o.id} organization={o} />
-            ))}
-          </ListCard>
-        )}
+      {memberships.length > 0 && (
+        <ListCard title="Your organizations" description="Organizations you're a member of.">
+          {memberships.map((o) => (
+            <Membership key={o.id} organization={o} />
+          ))}
+        </ListCard>
+      )}
 
-        {invitations.length > 0 && (
-          <ListCard title="Invitations" description="Organizations that invited you.">
-            {invitations.map((i) => (
-              <Invitation key={i.id} invitation={i} />
-            ))}
-          </ListCard>
-        )}
+      {invitations.length > 0 && (
+        <ListCard title="Invitations" description="Organizations that invited you.">
+          {invitations.map((i) => (
+            <Invitation key={i.id} invitation={i} />
+          ))}
+        </ListCard>
+      )}
 
-        {joinable.length > 0 && (
-          <ListCard
-            title="Organizations you can join"
-            description="These organizations let anyone with your email domain join as a member."
-          >
-            {joinable.map((o) => (
-              <JoinableOrganization key={o.id} organization={o} />
-            ))}
-          </ListCard>
-        )}
+      {joinable.length > 0 && (
+        <ListCard
+          title="Organizations you can join"
+          description="These organizations let anyone with your email domain join as a member."
+        >
+          {joinable.map((o) => (
+            <JoinableOrganization key={o.id} organization={o} />
+          ))}
+        </ListCard>
+      )}
 
-        <CreateOrganizationCard />
+      <CreateOrganizationCard />
 
-        <Cluster justify="between" gap={2}>
-          {hasActiveOrganization ? (
-            <Button asChild variant="ghost">
-              <Link href="/">Back to the control panel</Link>
-            </Button>
-          ) : (
-            <span />
-          )}
-          <Button
-            variant="ghost"
-            disabled={signingOut}
-            onClick={() => startSignOut(() => signOutAction())}
-          >
-            <IconLogout size={14} />
-            Sign out
+      <div className="auth-actions auth-actions--split">
+        {hasActiveOrganization ? (
+          <Button href="/" variant="ghost">
+            Back to the control panel
           </Button>
-        </Cluster>
-      </Stack>
-      <SonnerToaster position="bottom-right" />
-    </>
+        ) : (
+          <span />
+        )}
+        <Button
+          variant="ghost"
+          icon={IconLogout}
+          disabled={signingOut}
+          onClick={() => startSignOut(() => signOutAction())}
+        >
+          Sign out
+        </Button>
+      </div>
+    </div>
   );
 }

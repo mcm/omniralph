@@ -3,7 +3,7 @@ import "@/components/pickers/test-dom";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as UI from "@iamthemcmaster/ui";
+import type * as OmniralphUi from "@omniralph/ui";
 import type { SessionUser } from "./current-user";
 import { OrganizationPicker } from "./organization-picker";
 import {
@@ -16,10 +16,10 @@ import {
 
 const router = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-const toast = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@iamthemcmaster/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof UI>()),
-  notify: toast.notify,
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("@omniralph/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof OmniralphUi>()),
+  toast: toasts.toast,
 }));
 
 const ACME = testUser.organization;
@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.unstubAllGlobals();
   router.push.mockReset();
   router.refresh.mockReset();
-  toast.notify.mockReset();
+  toasts.toast.mockReset();
   startHref = window.location.href;
   consoleError = vi.spyOn(console, "error");
 });
@@ -145,7 +145,7 @@ describe("OrganizationPicker", () => {
     await open("Acme");
     await userEvent.click(screen.getByRole("menuitemcheckbox", { name: "All organizations" }));
     await waitFor(() =>
-      expect(toast.notify).toHaveBeenCalledWith(
+      expect(toasts.toast).toHaveBeenCalledWith(
         "You need to belong to more than one organization to see all of them.",
         { variant: "danger" },
       ),
