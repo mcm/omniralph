@@ -94,8 +94,7 @@ export const DESCRIBE_PR_TASK: TaskDefinitionInput = {
     additionalProperties: false,
   },
   sink: "run-result",
-  // Ralph's story model (`DEFAULT_STORY_MODEL`). A run a ralph run invokes uses the repository's
-  // `ralph_settings.model` (and `fallbackModel`) instead when it sets one (`resolveRunSpec`).
+  // Ralph's story model (`DEFAULT_STORY_MODEL`).
   model: "opus",
   tokenBudget: null,
 };

@@ -47,17 +47,17 @@ describe("taskChanges", () => {
   });
 
   it("words the token budget and empty values", () => {
-    expect(changesTo({ budgetMode: "profileFraction", budgetAmount: "40", model: "" })).toEqual([
+    expect(changesTo({ budgetMode: "tokens", budgetAmount: "40000", model: "" })).toEqual([
       { key: "model", label: "Model override", from: "claude-opus-5-5", to: "Not set" },
       {
         key: "tokenBudget",
         label: "Token budget",
         from: "50,000 tokens",
-        to: "40% of the profile budget",
+        to: "40,000 tokens",
       },
     ]);
-    expect(changesTo({ budgetMode: "profile" })).toEqual([
-      { key: "tokenBudget", label: "Token budget", from: "50,000 tokens", to: "Profile budget" },
+    expect(changesTo({ budgetMode: "none" })).toEqual([
+      { key: "tokenBudget", label: "Token budget", from: "50,000 tokens", to: "No limit" },
     ]);
   });
 

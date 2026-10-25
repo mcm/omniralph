@@ -85,7 +85,7 @@ export const AgentDefinition = z.object({
   tools: AgentTools.default({ builtin: [], harness: [], linear: [], mcpServers: [] }),
   skills: z.array(NamedContent).default([]),
   referenceDocs: z.array(NamedContent).default([]),
-  /** Null uses the repository profile's model, or the Claude Code default. */
+  /** Used when the task sets no model; null for the Claude Code default. Never a review run's. */
   model: Model.nullable().default(null),
   fallbackModel: Model.nullable().default(null),
   /** Task types this agent suits. */
@@ -104,13 +104,14 @@ export const ToolSettings = z.object({
 });
 export type ToolSettings = z.infer<typeof ToolSettings>;
 
-/** A run's token cap: a fixed number, or a fraction of the repository profile's budget. */
+/**
+ * A run's fixed token cap, or null for "No limit". Review tasks set none: their
+ * run's cap comes from the review depth.
+ */
 export const TokenBudget = z
-  .union([
-    z.strictObject({ tokens: z.int().min(1) }),
-    z.strictObject({ profileFraction: z.number().gt(0).max(1) }),
-  ])
-  .nullable();
+  .strictObject({ tokens: z.int().min(1) })
+  .nullable()
+  .describe('A fixed token cap ({ tokens }), or null for "No limit".');
 export type TokenBudget = z.infer<typeof TokenBudget>;
 
 /** Most setup (and teardown) commands a task may declare. */

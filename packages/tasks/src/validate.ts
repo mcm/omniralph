@@ -67,6 +67,7 @@ export function validateAgentDefinition(input: unknown): AgentValidation {
  * The parsed task definition with the requirements derived from it
  * (`deriveTaskRequirements`), or its errors by field: the schema's, then
  * - `triggers`: a trigger kind its task type doesn't accept;
+ * - `model`, `tokenBudget`: set on a review task (its review depth sets them);
  * - `promptTemplate`: a template that isn't valid (the Mustache subset), or uses
  *   a variable not available for every trigger; on a coding task, `epic.prd` or
  *   `story` outside an optional section when a request may start it;
@@ -95,6 +96,15 @@ export function validateTaskDefinition(
       "triggers",
       `${task.taskType} tasks can't be started by ${unaccepted.join(", ")}; they accept ${accepted.join(", ")}.`,
     );
+  }
+
+  if (task.taskType === "review") {
+    if (task.model !== undefined) {
+      add("model", "Review tasks can't set a model; the repo's review depth sets it.");
+    }
+    if (task.tokenBudget !== null) {
+      add("tokenBudget", "Review tasks can't set a token budget; the repo's review depth sets it.");
+    }
   }
 
   // The coding rules first: their template message says more than "not available".

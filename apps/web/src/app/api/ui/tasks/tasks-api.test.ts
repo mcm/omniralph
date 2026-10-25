@@ -210,8 +210,6 @@ const INPUT = {
   triggers: ["pr.updated", "review.rerun"],
   promptTemplate: "Review {{pr.title}} for vulnerabilities.",
   sink: "review",
-  model: "claude-opus-5-5",
-  tokenBudget: { tokens: 50_000 },
 } satisfies Omit<TaskDefinitionInput, "id">;
 
 /** A query task with every section filled: what a custom PR description task looks like. */
@@ -248,7 +246,7 @@ const DESCRIBER = {
   },
   sink: "run-result",
   model: "claude-opus-5-5",
-  tokenBudget: { profileFraction: 0.25 },
+  tokenBudget: { tokens: 50_000 },
 } satisfies Omit<TaskDefinitionInput, "id">;
 
 /** A coding task with every section filled (its PR description task is set per test). */
@@ -348,7 +346,7 @@ describe("Settings › Tasks API", () => {
         name: "Security review",
         agentId: "builtin:reviewer",
         triggers: ["pr.updated", "review.rerun"],
-        tokenBudget: { tokens: 50_000 },
+        tokenBudget: null,
       },
       requirements: created.requirements,
     });
@@ -397,6 +395,18 @@ describe("Settings › Tasks API", () => {
     expect(triggers).toMatchObject({ ok: false, fieldErrors: { triggers: expect.any(String) } });
     const sink = await createTaskDefinition({ ...INPUT, sink: "chat-thread" });
     expect(sink).toMatchObject({ ok: false, fieldErrors: { sink: expect.any(String) } });
+    const depthOwned = await createTaskDefinition({
+      ...INPUT,
+      model: "claude-opus-5-5",
+      tokenBudget: { tokens: 50_000 },
+    });
+    expect(depthOwned).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        model: "Review tasks can't set a model; the repo's review depth sets it.",
+        tokenBudget: "Review tasks can't set a token budget; the repo's review depth sets it.",
+      },
+    });
     expect(state.writes).toBe(0);
   });
 

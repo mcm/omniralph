@@ -126,5 +126,8 @@ export const CORRELATE_FINDINGS_TASK: TaskDefinitionInput = {
     additionalProperties: false,
   },
   sink: "run-result",
-  tokenBudget: { profileFraction: 0.5 },
+  // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
+  model: "claude-sonnet-5-5",
+  // Half of the Standard depth's 200,000, as before the precedence fix.
+  tokenBudget: { tokens: 100_000 },
 };

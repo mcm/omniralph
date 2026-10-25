@@ -66,9 +66,8 @@ const CHAT_TASK_LABELS: Record<TaskReferrers["chatTasks"][number], string> = {
 };
 
 function tokenBudgetText(budget: TokenBudget): string {
-  if (budget === null) return "Profile budget";
-  if ("tokens" in budget) return `${budget.tokens.toLocaleString("en-US")} tokens`;
-  return `${Math.round(budget.profileFraction * 100)}% of the profile budget`;
+  if (budget === null) return "No limit";
+  return `${budget.tokens.toLocaleString("en-US")} tokens`;
 }
 
 function YesNo({ value }: { value: boolean }) {

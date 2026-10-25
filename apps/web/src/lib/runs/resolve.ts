@@ -1,18 +1,10 @@
 import "server-only";
-import {
-  getRepositoryReviewSettings,
-  getRepositoryWithConnection,
-  type Database,
-  type Job,
-} from "@omniralph/db";
+import { getRepositoryWithConnection, type Database, type Job } from "@omniralph/db";
 import {
   ReviewTaskContext,
   RunSpecJobPayload,
   parseRalphSettings,
   poolForTaskType,
-  RalphRunInvoker,
-  RalphSettings,
-  REVIEW_DEPTHS,
   ruleTool,
   type JobRepository,
   type JobToken,
@@ -41,15 +33,19 @@ export class RunSpecError extends Error {
  * Resolves a run-spec job (one with a `task_id`) into the `RunSpec` the
  * harness runs: its task and the task's agent (built-in or the job's
  * organization's own, `organizationDefinitions`), the trigger (which must be one
- * the task allows), the repository with its tool settings, the model (task →
- * repository depth → agent; for a query run a ralph run invokes, the
- * repository's ralph `model` and `fallbackModel` first, like the legacy
- * `ralph.describe-pr` job), the token budget (a `profileFraction` of the
- * repository profile's budget) and the job's `tokens`. The agent's tools are
- * narrowed by the repository's tool settings, never widened. A review run's
- * depth preset (from its trigger context: the repository's, or the one a
- * mention or re-run asked for) narrows it further (`narrowByReviewProfile`). Throws
- * `RunSpecError` for a job that can never be resolved.
+ * the task allows), the repository with its tool settings, the model, the
+ * token budget and the job's `tokens`. The agent's tools are narrowed by the
+ * repository's tool settings, never widened.
+ *
+ * Model and budget come from one place per kind of run:
+ * - a review run: its depth preset (from its trigger context: the
+ *   repository's, or the one a mention or re-run asked for) sets the model,
+ *   token cap, max files and exploration (`narrowByReviewDepth`);
+ * - any other run: model = task `model` ?? agent `model` ?? null (the Claude
+ *   Code default), fallback = agent `fallbackModel`, budget = the task's fixed
+ *   `tokens` or null ("No limit"). No review setting changes it.
+ *
+ * Throws `RunSpecError` for a job that can never be resolved.
  */
 export async function resolveRunSpec(
   db: Database,
@@ -79,26 +75,15 @@ export async function resolveRunSpec(
   const repositoryId = payload.repositoryId ?? job.repositoryId;
   let repository: JobRepository | null = null;
   let tools: RunToolRestrictions = { allowedTools: [], disallowedTools: [] };
-  let profile: { model: string; maxTokensPerReview: number } | null = null;
-  // The repository's ralph models, for a query run a ralph run invokes (its PR description).
-  let ralphModels: { model: string | null; fallbackModel: string | null } | null = null;
   if (repositoryId) {
     const found = await getRepositoryWithConnection(db, repositoryId, job.organizationId);
-    const settings = found && (await getRepositoryReviewSettings(db, repositoryId));
-    if (!found || !settings) throw new RunSpecError(`Unknown repository ${repositoryId}`);
+    if (!found) throw new RunSpecError(`Unknown repository ${repositoryId}`);
     repository = jobRepository(found.repository, found.connection);
     const ralph = parseRalphSettings(found.repository.ralphSettings);
     tools = {
       allowedTools: ralph.allowedTools ?? [],
       disallowedTools: ralph.disallowedTools ?? [],
     };
-    profile = REVIEW_DEPTHS[settings.depth];
-    if (RalphRunInvoker.safeParse(payload.trigger.context.invoker).success) {
-      ralphModels = {
-        model: storedRalphModel(found.repository.ralphSettings) ? ralph.model : null,
-        fallbackModel: ralph.fallbackModel,
-      };
-    }
   }
 
   const spec: RunSpec = {
@@ -116,9 +101,9 @@ export async function resolveRunSpec(
     ref: payload.ref ?? null,
     requireCheckout: payload.requireCheckout ?? false,
     tools,
-    model: ralphModels?.model ?? task.model ?? profile?.model ?? agent.model,
-    fallbackModel: ralphModels?.fallbackModel ?? agent.fallbackModel,
-    tokenBudget: runTokenBudget(task, profile),
+    model: task.model ?? agent.model,
+    fallbackModel: agent.fallbackModel,
+    tokenBudget: runTokenBudget(task),
     tokens,
   };
   if (task.taskType !== "review") return spec;
@@ -128,7 +113,7 @@ export async function resolveRunSpec(
   if (!reviewConfig.success) {
     throw new RunSpecError(`Review run of task ${task.id} has no valid review configuration`);
   }
-  return narrowByReviewProfile(spec, reviewConfig.data.profile);
+  return narrowByReviewDepth(spec, reviewConfig.data.profile);
 }
 
 /**
@@ -139,33 +124,23 @@ function withLegacyPool(task: TaskDefinition, pool: PoolName): TaskDefinition {
   return { ...task, pool } as TaskDefinition;
 }
 
-/**
- * Whether the repository's stored ralph settings set a valid `model` (parsing
- * them fills in the default model when they don't).
- */
-function storedRalphModel(stored: unknown): boolean {
-  if (!stored || typeof stored !== "object" || !("model" in stored)) return false;
-  return RalphSettings.shape.model.safeParse(stored.model).success;
-}
-
 /** Read-only file tools a review uses to read beyond the diff (the engine's `EXPLORATION_TOOLS`). */
 const EXPLORATION_TOOLS: readonly string[] = ["Read", "Grep", "Glob"];
 
 /**
- * A review run as its depth's preset (`reviewConfig.profile`) narrows it: the preset's `model`, when
- * it sets one, over the task's and the agent's; the profile's
- * `maxTokensPerReview` as the budget, capped by the task's own budget when it
- * has one; the profile's `maxFiles`; and without `allowRepoExploration`, no
- * exploration tools (the review sees only the diff).
+ * A review run as its depth's preset (`reviewConfig.profile`) sets it: the
+ * preset's `model` (null for the Claude Code default), `maxTokensPerReview` as
+ * the budget and `maxFiles`, and without `allowRepoExploration`, no
+ * exploration tools (the review sees only the diff). The task's and agent's
+ * models never apply; review tasks can't set a model or budget.
  */
-export function narrowByReviewProfile(
+export function narrowByReviewDepth(
   spec: RunSpec,
   profile: Pick<
     ReviewProfileConfig,
     "model" | "maxTokensPerReview" | "maxFiles" | "allowRepoExploration"
   >,
 ): RunSpec {
-  const taskBudget = runTokenBudget(spec.task, profile);
   const builtin = spec.agent.tools.builtin;
   return {
     ...spec,
@@ -178,8 +153,8 @@ export function narrowByReviewProfile(
           : builtin.filter((tool) => !EXPLORATION_TOOLS.includes(tool)),
       },
     },
-    model: profile.model ?? spec.task.model ?? spec.agent.model,
-    tokenBudget: Math.min(profile.maxTokensPerReview, taskBudget ?? Infinity),
+    model: profile.model,
+    tokenBudget: profile.maxTokensPerReview,
     maxFiles: profile.maxFiles,
   };
 }
@@ -197,21 +172,9 @@ export function narrowTools(builtin: readonly string[], tools: RunToolRestrictio
 }
 
 /**
- * A run's token cap: the task's fixed `tokens`, or its `profileFraction` of
- * the repository depth's budget (at least 1); null for none. Throws
- * `RunSpecError` for a relative budget without a profile.
+ * A non-review run's token cap: the task's fixed `tokens`, or null for "No
+ * limit". Never depends on a review setting.
  */
-export function runTokenBudget(
-  task: Pick<TaskDefinition, "id" | "tokenBudget">,
-  profile: { maxTokensPerReview: number } | null,
-): number | null {
-  const budget = task.tokenBudget;
-  if (budget === null) return null;
-  if ("tokens" in budget) return budget.tokens;
-  if (!profile) {
-    throw new RunSpecError(
-      `Task ${task.id} has a budget relative to the repository's review depth, but the run has no repository`,
-    );
-  }
-  return Math.max(1, Math.floor(profile.maxTokensPerReview * budget.profileFraction));
+export function runTokenBudget(task: Pick<TaskDefinition, "tokenBudget">): number | null {
+  return task.tokenBudget?.tokens ?? null;
 }
