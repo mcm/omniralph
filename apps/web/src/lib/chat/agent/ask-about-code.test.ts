@@ -25,7 +25,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import {
-  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
   RunSpecJobPayload,
   type QueryRunResult,
 } from "@omniralph/shared";
@@ -80,7 +80,7 @@ describe("queryClaimableHarnesses", () => {
       pinnedRepositories: [],
       ...over,
     }) as unknown as Overview;
-  const minimum = { minHarnessVersion: "0.9.0", installables: [], hostTools: [] };
+  const minimum = { minAgentVersion: "0.9.0", installables: [], hostTools: [] };
   const claimable = (harnesses: Overview[], repositoryId = "r1") =>
     queryClaimableHarnesses(harnesses, new Map(), repositoryId, minimum, now);
 
@@ -119,7 +119,7 @@ describe("queryClaimableHarnesses", () => {
       ["no-semgrep", ["opengrep"]],
     ]);
     const requirements = {
-      minHarnessVersion: "0.9.0",
+      minAgentVersion: "0.9.0",
       installables: [graph.name, hello.name],
       hostTools: ["opengrep", "semgrep"],
     };
@@ -338,7 +338,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   beforeEach(async () => {
     scm = new FakeScmAdapter();
     const capable = {
-      reportedVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       lastHeartbeatAt: new Date(),
       revokedAt: null,
     };
@@ -373,7 +373,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       targetAgentId: null,
       taskType: "query",
       taskId: "builtin:ask-about-code",
-      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       dedupeKey: chatAskDedupeKey(h.chatThread.id, "How are webhooks verified?"),
     });
     const payload = RunSpecJobPayload.parse(job!.payload);
@@ -567,10 +567,10 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       error: "no_capable_harness",
       harnesses: [{ name: "acme-agent", version: "0.8.0", capable: false }],
     });
-    expect(old.message).toContain(QUERY_TASKS_MIN_HARNESS_VERSION);
+    expect(old.message).toContain(QUERY_TASKS_MIN_AGENT_VERSION);
 
     await setAgent(harnessId, {
-      reportedVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       lastHeartbeatAt: null,
     });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });

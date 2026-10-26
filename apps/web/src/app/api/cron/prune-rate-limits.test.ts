@@ -16,7 +16,7 @@ process.env.CRON_SECRET = "cron-secret";
 
 const { GET: pruneRoute } = await import("./prune-rate-limits/route");
 const {
-  HARNESS_RATE_LIMITS,
+  AGENT_RATE_LIMITS,
   AUTH_FAILURE_LIMIT,
   AUTH_FAILURE_WINDOW_SECONDS,
   AUTH_LOCKOUT_SECONDS,
@@ -158,7 +158,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("rate limits", () => {
         { key: "token:ip:recent", windowStart: minutesAgo(59), count: 2 },
       ]);
       // Live counters written the way the agent API writes them.
-      await hitRateLimit(db, HARNESS_RATE_LIMITS.enrollPerIp("203.0.113.1"));
+      await hitRateLimit(db, AGENT_RATE_LIMITS.enrollPerIp("203.0.113.1"));
       for (let i = 0; i < AUTH_FAILURE_LIMIT; i += 1) {
         await recordAuthFailure(db, "203.0.113.2");
       }
@@ -192,7 +192,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("rate limits", () => {
     });
 
     it("returns without querying Postgres", async () => {
-      await hitRateLimit(noPostgres, HARNESS_RATE_LIMITS.enrollPerIp("203.0.113.1"));
+      await hitRateLimit(noPostgres, AGENT_RATE_LIMITS.enrollPerIp("203.0.113.1"));
       for (let i = 0; i < AUTH_FAILURE_LIMIT; i += 1) {
         await recordAuthFailure(noPostgres, "203.0.113.2");
       }
@@ -212,13 +212,13 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("rate limits", () => {
     it("counts in Postgres while Redis is down and sweeps those rows later", async () => {
       // Nothing listens on port 1: every Redis command fails.
       await useRedis("redis://127.0.0.1:1");
-      const rule = HARNESS_RATE_LIMITS.enrollPerIp("203.0.113.3");
+      const rule = AGENT_RATE_LIMITS.enrollPerIp("203.0.113.3");
       expect((await hitRateLimit(db, rule)).count).toBe(1);
       expect(await keys()).toEqual(["enroll:ip:203.0.113.3"]);
 
       // Back up: the next count records the fallback, so the cron sweeps Postgres.
       await useRedis(testRedis.url);
-      await hitRateLimit(db, HARNESS_RATE_LIMITS.enrollPerIp("203.0.113.4"));
+      await hitRateLimit(db, AGENT_RATE_LIMITS.enrollPerIp("203.0.113.4"));
       const recordedAt = Number(await getRedis().get(POSTGRES_FALLBACK_KEY));
       expect(recordedAt).toBeGreaterThan(Date.now() - 60_000);
 

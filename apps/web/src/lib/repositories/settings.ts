@@ -20,8 +20,8 @@ import type { JobDispatcher } from "@/lib/dispatch";
 export type SaveRepositorySettingsResult =
   | {
       status: "saved";
-      pinnedHarnessIds: string[];
-      unpinnedHarnessIds: string[];
+      pinnedAgentIds: string[];
+      unpinnedAgentIds: string[];
       /** `repo.sync` jobs enqueued for the newly pinned harnesses. */
       syncJobIds: string[];
     }
@@ -117,7 +117,7 @@ export async function saveRepositorySettings(
     return { status: "invalid_bindings", fieldErrors: bindingErrors };
   }
 
-  const wanted = [...new Set(input.pinnedHarnessIds)];
+  const wanted = [...new Set(input.pinnedAgentIds)];
   const current = await listRepositoryPinnedAgentIds(db, repositoryId);
   const added = wanted.filter((id) => !current.includes(id));
   const active = await filterActiveAgentIds(db, organizationId, added);
@@ -149,5 +149,5 @@ export async function saveRepositorySettings(
       await bumpHarnessHeartbeat(harnessId);
     }
   }
-  return { status: "saved", pinnedHarnessIds: added, unpinnedHarnessIds: removed, syncJobIds };
+  return { status: "saved", pinnedAgentIds: added, unpinnedAgentIds: removed, syncJobIds };
 }

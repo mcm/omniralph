@@ -1,10 +1,10 @@
 import type * as Db from "@omniralph/db";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   agentVersionAtLeast,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
-  REVIEW_TASKS_MIN_HARNESS_VERSION,
-  SETUP_COMMANDS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
+  REVIEW_TASKS_MIN_AGENT_VERSION,
+  SETUP_COMMANDS_MIN_AGENT_VERSION,
   reviewProfileConfigForDepth,
   type JobToken,
   type ReviewDepth,
@@ -119,10 +119,10 @@ describe("resolveRunSpec", () => {
         id: "builtin:reply-to-finding",
         systemPrompt: "You read code.",
         tools: { builtin: ["Read", "Grep", "Glob"] },
-        // Harnesses up to 0.13 still require an agent's task types: the run's own.
+        // Agents up to 0.13 still require an agent's task types: the run's own.
         taskTypes: ["query"],
       },
-      // Harnesses up to 0.13 still read the task's pool: it is derived from its task type.
+      // Agents up to 0.13 still read the task's pool: it is derived from its task type.
       task: {
         id: "builtin:reply-to-finding",
         agentId: "builtin:reply-to-finding",
@@ -461,7 +461,7 @@ describe("runSpecJobInput", () => {
       taskId: "builtin:reply-to-finding",
       payload,
       repositoryId: REPO_ID,
-      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       requiredInstallables: [],
       requiredHostTools: [],
     });
@@ -480,17 +480,17 @@ describe("runSpecJobInput", () => {
     });
   });
 
-  it("requires a harness with the review lifecycle for review tasks", () => {
+  it("requires an agent with the review lifecycle for review tasks", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "review" });
-    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(REVIEW_TASKS_MIN_AGENT_VERSION);
   });
 
-  it("requires a harness with the coding lifecycle for coding tasks", () => {
+  it("requires an agent with the coding lifecycle for coding tasks", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "coding" });
-    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(CODING_TASKS_MIN_HARNESS_VERSION);
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(CODING_TASKS_MIN_AGENT_VERSION);
     // Coding runs run a coding task's setup commands too: the higher minimum wins.
     expect(
-      agentVersionAtLeast(CODING_TASKS_MIN_HARNESS_VERSION, SETUP_COMMANDS_MIN_HARNESS_VERSION),
+      agentVersionAtLeast(CODING_TASKS_MIN_AGENT_VERSION, SETUP_COMMANDS_MIN_AGENT_VERSION),
     ).toBe(true);
     const withSetup = TaskDefinition.parse({
       ...taskInput,
@@ -498,30 +498,28 @@ describe("runSpecJobInput", () => {
       setupCommands: [{ name: "deps", command: "pnpm install" }],
     });
     expect(runSpecJobInput(withSetup, payload).minAgentVersion).toBe(
-      CODING_TASKS_MIN_HARNESS_VERSION,
+      CODING_TASKS_MIN_AGENT_VERSION,
     );
   });
 
-  it("requires coding runs to wait for a harness release after 0.10.0", () => {
+  it("requires coding runs to wait for an agent release after 0.10.0", () => {
     // 0.10.0 predates the coding lifecycle and fails coding runs as an unsupported task type.
-    expect(agentVersionAtLeast("0.10.0", CODING_TASKS_MIN_HARNESS_VERSION)).toBe(false);
+    expect(agentVersionAtLeast("0.10.0", CODING_TASKS_MIN_AGENT_VERSION)).toBe(false);
   });
 
-  it("requires a harness that runs setup and teardown commands when the task has any", () => {
+  it("requires an agent that runs setup and teardown commands when the task has any", () => {
     const setup = TaskDefinition.parse({
       ...taskInput,
       setupCommands: [{ name: "lint", command: "semgrep --json ." }],
     });
-    expect(runSpecJobInput(setup, payload).minAgentVersion).toBe(
-      SETUP_COMMANDS_MIN_HARNESS_VERSION,
-    );
+    expect(runSpecJobInput(setup, payload).minAgentVersion).toBe(SETUP_COMMANDS_MIN_AGENT_VERSION);
     const teardown = TaskDefinition.parse({
       ...taskInput,
       taskType: "review",
       teardownCommands: [{ name: "clean", command: "rm -rf .cache" }],
     });
     expect(runSpecJobInput(teardown, payload).minAgentVersion).toBe(
-      SETUP_COMMANDS_MIN_HARNESS_VERSION,
+      SETUP_COMMANDS_MIN_AGENT_VERSION,
     );
   });
 });

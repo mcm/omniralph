@@ -28,7 +28,7 @@ const HARNESSES: RepositoryHarness[] = [
   harness({ id: "h4", name: "old-01", revoked: true }),
 ];
 
-function renderTab(pinnedHarnessIds: string[] = []) {
+function renderTab(pinnedAgentIds: string[] = []) {
   return render(
     <RepositorySettingsContent
       tab="harnesses"
@@ -43,7 +43,7 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         triggers: { onOpen: true, onPush: true, drafts: false },
         pathExcludes: [],
         customInstructions: "",
-        pinnedHarnessIds,
+        pinnedAgentIds,
       }}
       harnesses={HARNESSES}
       taskTypes={{ reviews: true, coding: true, ask: true }}

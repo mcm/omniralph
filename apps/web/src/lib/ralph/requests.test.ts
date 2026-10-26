@@ -27,7 +27,7 @@ import {
 } from "@omniralph/db";
 import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -42,7 +42,7 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeAgent } from "@/lib/harness-auth/revoke";
+import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -208,7 +208,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -799,7 +799,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         agentId: agentA,
         acceptedTaskTypes: ["coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       await completeJob(db, {

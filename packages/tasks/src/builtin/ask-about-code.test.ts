@@ -17,7 +17,7 @@ const FIXTURES = JSON.parse(
   readFileSync(new URL("./__fixtures__/ask-about-code.json", import.meta.url), "utf8"),
 ) as Record<string, Fixture>;
 
-/** The trigger context `enqueueChatAsk` stores, plus the query variables the harness computes. */
+/** The trigger context `enqueueChatAsk` stores, plus the query variables the agent computes. */
 function context({ repository, branch, question, context, conventions }: Fixture) {
   return {
     repository,
@@ -42,7 +42,7 @@ describe("builtin:ask-about-code", () => {
   it("runs with the code explainer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({

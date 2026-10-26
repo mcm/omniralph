@@ -1,6 +1,6 @@
 /**
  * Permission requests of any run (`run_permission_requests`): a session asks
- * to approve a tool call, the harness polls for the answer. A ralph run's
+ * to approve a tool call, the agent polls for the answer. A ralph run's
  * question is also asked in its conversation (`lib/ralph/permissions.ts`),
  * and the answer recorded there is copied to the stored request.
  */

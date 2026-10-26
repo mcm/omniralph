@@ -40,7 +40,7 @@ export async function pinRepository(
     payload,
     repositoryId: input.repositoryId,
     dedupeKey: `${REPO_SYNC_JOB_TYPE}:${input.harnessId}:${input.repositoryId}`,
-    targetHarnessId: input.harnessId,
+    targetAgentId: input.harnessId,
   });
   return { result, syncJobId: job.id };
 }

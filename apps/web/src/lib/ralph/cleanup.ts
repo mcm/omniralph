@@ -201,7 +201,7 @@ async function enqueueCleanupJob(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: cleanupDedupeKey(lane.id),
-    targetHarnessId: harnessId,
+    targetAgentId: harnessId,
   });
   return { jobId: job.id };
 }

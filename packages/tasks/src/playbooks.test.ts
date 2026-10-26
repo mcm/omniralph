@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CODING_DEFAULTS,
   CUSTOM_PLAYBOOK_ROLES,
-  HARNESS_VERSION_BY_TASK_TYPE,
+  AGENT_VERSION_BY_TASK_TYPE,
   PLAYBOOK_ROLES,
   PLAYBOOK_ROLE_IDS,
   Playbook,
@@ -124,7 +124,7 @@ describe("Playbook", () => {
       referenceDocs: [],
       model: null,
       fallbackModel: null,
-      tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
       toolSettings: { shell: false, linearRead: false, network: false },
       setupCommands: [],
       teardownCommands: [],
@@ -147,7 +147,7 @@ describe("Playbook", () => {
       fallbackModel: "claude-sonnet-5-5",
       tools: {
         builtin: ["Read"],
-        harness: ["post_activity", "ship"],
+        agent: ["post_activity", "ship"],
         linear: ["linear_get_issue"],
         mcpServers: ["@omniralph/code-graph:graph"],
       },
@@ -243,12 +243,12 @@ describe("Playbook", () => {
         role: "review",
         outputSchema: { type: "object" },
         coding: { maxAttemptsPerStory: 2 },
-        tools: { harness: ["ship"] },
+        tools: { agent: ["ship"] },
       }),
     ).toEqual({
       outputSchema: "A review playbook can't declare an output schema.",
       coding: "Only story and request playbooks have coding settings.",
-      "tools.harness": "review runs can't use the harness tool ship.",
+      "tools.agent": "review runs can't use the agent tool ship.",
     });
   });
 
@@ -284,7 +284,7 @@ describe("playbookRunSpec", () => {
         description: "",
         systemPrompt: "You explain code.",
         systemPromptMode: "append",
-        tools: { builtin: ["Read"], harness: [], linear: [], mcpServers: [] },
+        tools: { builtin: ["Read"], agent: [], linear: [], mcpServers: [] },
         referenceDocs: [],
         model: "claude-sonnet-5-5",
         fallbackModel: "claude-haiku-5-5",
@@ -364,7 +364,7 @@ describe("playbookRunSpec", () => {
 });
 
 describe("playbookRequirements", () => {
-  it("needs its role's harness release, its installables and its MCP servers' installables", () => {
+  it("needs its role's agent release, its installables and its MCP servers' installables", () => {
     const playbook = Playbook.parse({
       ...chat,
       role: "review",
@@ -373,7 +373,7 @@ describe("playbookRequirements", () => {
       requires: { installables: ["@omniralph/sast"], hostTools: ["opengrep"] },
     });
     expect(playbookRequirements(playbook)).toEqual({
-      minHarnessVersion: HARNESS_VERSION_BY_TASK_TYPE.review,
+      minAgentVersion: AGENT_VERSION_BY_TASK_TYPE.review,
       installables: ["@omniralph/code-graph", "@omniralph/sast"],
       hostTools: ["opengrep"],
     });

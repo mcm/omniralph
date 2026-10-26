@@ -144,7 +144,7 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
- *    lifecycle token). The agent's Omniralph tools (`tools.harness` until TOOL-584, capped by
+ *    lifecycle token). The agent's Omniralph tools (`tools.agent`, capped by
  *    the task type) and its read-only Linear tools (`tools.linear`, when the
  *    task turns on `linearRead`) come from the in-process `omniralph` MCP
  *    server, which calls the control panel with the session token too; with
@@ -212,8 +212,7 @@ export async function runQueryTask(
       spec.task.variableLimits,
     );
     // `get_attachment` saves to the run's temp directory: the empty working directory, or one of its own next to a checkout.
-    // `tools.harness` is the run spec's key until TOOL-584 renames it.
-    const offered = offeredAgentTools(spec.agent.tools.harness, spec.taskType);
+    const offered = offeredAgentTools(spec.agent.tools.agent, spec.taskType);
     const downloads =
       offered.includes("get_attachment") && workspace.checkout
         ? await mkdtemp(path.join(options.tmpDir ?? tmpdir(), "omniralph-run-"))
@@ -234,8 +233,7 @@ export async function runQueryTask(
       server: ctx.server,
       jobId: spec.jobId,
       sessionToken: ctx.sessionToken,
-      // The run spec's `tools.harness` key is renamed `tools.agent` by TOOL-584.
-      tools: spec.agent.tools.harness,
+      tools: spec.agent.tools.agent,
       linearTools: offeredLinearTools(spec.agent.tools, spec.task.toolSettings),
       taskType: spec.taskType,
       tmpDir: runTmpDir,

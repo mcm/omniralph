@@ -31,7 +31,7 @@ import {
 import { projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { preparationHash } from "@omniralph/ralph";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -183,7 +183,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -336,7 +336,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       agentId: agentA,
       acceptedTaskTypes: ["coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);

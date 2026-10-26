@@ -9,11 +9,11 @@ const CONFIG = { keyName: "appId.keyId", keySecret: "s3cr3t" };
 describe("AblyRestWakePublisher", () => {
   it("posts an empty wake message to the channel with the API key", async () => {
     const fetch = vi.fn(async () => new Response("{}", { status: 201 }));
-    await new AblyRestWakePublisher(CONFIG, { fetch }).wake("harness:abc");
+    await new AblyRestWakePublisher(CONFIG, { fetch }).wake("agent:abc");
 
     expect(fetch).toHaveBeenCalledOnce();
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://rest.ably.io/channels/harness%3Aabc/messages");
+    expect(url).toBe("https://rest.ably.io/channels/agent%3Aabc/messages");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ name: "wake" });
     expect((init.headers as Record<string, string>).authorization).toBe(

@@ -159,7 +159,7 @@ export const repositoryDetailSchema = z.object({
     triggers: z.object({ onOpen: z.boolean(), onPush: z.boolean(), drafts: z.boolean() }),
     pathExcludes: z.array(z.string()),
     customInstructions: z.string(),
-    pinnedHarnessIds: z.array(z.string()),
+    pinnedAgentIds: z.array(z.string()),
     /** The review and review-summary playbooks its review runs fan out to, in order. */
     reviewPlaybookIds: z.array(z.string()),
     /** The playbook that correlates its review runs' findings. */

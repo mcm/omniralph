@@ -27,7 +27,7 @@ import {
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import {
   MAX_REPLY_ANSWER_LENGTH,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
   reviewProfileConfigForDepth,
   reviewTriggerContext,
   RunSpecJobPayload,
@@ -620,7 +620,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(created[0]).toMatchObject({
         taskType: "query",
         taskId: "builtin:reply-to-finding",
-        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
         // Once per asking comment.
         dedupeKey: expect.stringMatching(new RegExp(`^review\\.reply:${repoId}:\\d+$`)),
       });

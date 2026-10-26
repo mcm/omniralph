@@ -61,7 +61,7 @@ export interface RepositoryDraft {
   /** One glob per line. */
   pathExcludes: string;
   customInstructions: string;
-  pinnedHarnessIds: readonly string[];
+  pinnedAgentIds: readonly string[];
 }
 
 /** The repository review settings as saved. */
@@ -69,7 +69,7 @@ export interface RepositorySettingsValues {
   triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
   pathExcludes: readonly string[];
   customInstructions: string;
-  pinnedHarnessIds: readonly string[];
+  pinnedAgentIds: readonly string[];
 }
 
 export function repositoryDraft(settings: RepositorySettingsValues): RepositoryDraft {
@@ -77,7 +77,7 @@ export function repositoryDraft(settings: RepositorySettingsValues): RepositoryD
     ...settings.triggers,
     pathExcludes: settings.pathExcludes.join("\n"),
     customInstructions: settings.customInstructions,
-    pinnedHarnessIds: settings.pinnedHarnessIds,
+    pinnedAgentIds: settings.pinnedAgentIds,
   };
 }
 
@@ -95,7 +95,7 @@ export function repositoryValues(draft: RepositoryDraft, context: RepositoryForm
     pathExcludes: parsePathExcludes(draft.pathExcludes),
     customInstructions: draft.customInstructions,
     // In the harnesses' order, so picking them in another order isn't a change.
-    pinnedHarnessIds: context.harnessIds.filter((id) => draft.pinnedHarnessIds.includes(id)),
+    pinnedAgentIds: context.harnessIds.filter((id) => draft.pinnedAgentIds.includes(id)),
   } satisfies Record<string, SettingValue>;
 }
 export type RepositoryValues = ReturnType<typeof repositoryValues>;
@@ -110,7 +110,7 @@ export function repositoryInput(
     triggers: { onOpen: values.onOpen, onPush: values.onPush, drafts: values.drafts },
     pathExcludes: [...values.pathExcludes],
     customInstructions: values.customInstructions,
-    pinnedHarnessIds: [...values.pinnedHarnessIds],
+    pinnedAgentIds: [...values.pinnedAgentIds],
   };
 }
 
@@ -118,7 +118,7 @@ export function repositoryInput(
 export const REPOSITORY_CARDS = {
   triggers: ["onOpen", "onPush", "drafts"],
   files: ["pathExcludes", "customInstructions"],
-  pinning: ["pinnedHarnessIds"],
+  pinning: ["pinnedAgentIds"],
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
 /** The repository settings tabs' sections and the settings each one saves. */
@@ -137,8 +137,8 @@ export function repositorySpecs(names: {
     drafts: { key: "drafts", label: "Include drafts" },
     pathExcludes: { key: "pathExcludes", label: "Path excludes", format: lines },
     customInstructions: { key: "customInstructions", label: "Custom instructions" },
-    pinnedHarnessIds: {
-      key: "pinnedHarnessIds",
+    pinnedAgentIds: {
+      key: "pinnedAgentIds",
       label: "Pinned harnesses",
       format: (value) =>
         Array.isArray(value) && value.length === 0

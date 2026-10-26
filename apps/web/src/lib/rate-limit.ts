@@ -104,15 +104,15 @@ export async function hitRateLimit(
 }
 
 /** Agent API limits (US-017). */
-export const HARNESS_RATE_LIMITS = {
+export const AGENT_RATE_LIMITS = {
   enrollPerIp: (ip: string): RateLimit => ({
     key: `enroll:ip:${ip}`,
     limit: 10,
     windowSeconds: 60,
   }),
   tokenPerIp: (ip: string): RateLimit => ({ key: `token:ip:${ip}`, limit: 60, windowSeconds: 60 }),
-  tokenPerHarness: (harnessId: string): RateLimit => ({
-    key: `token:agent:${harnessId}`,
+  tokenPerAgent: (agentId: string): RateLimit => ({
+    key: `token:agent:${agentId}`,
     limit: 30,
     windowSeconds: 60,
   }),

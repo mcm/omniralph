@@ -208,22 +208,19 @@ async function runEnroll(
     );
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
-      deps.io.stderr(
-        `omniralph-agent: the enrollment token is invalid, expired or already used\n`,
-      );
+      deps.io.stderr(`omniralph-agent: the enrollment token is invalid, expired or already used\n`);
       return 1;
     }
     throw error;
   }
-  // The enroll response's `harnessId` field is renamed `agentId` by TOOL-584.
   await writeConfig(configPath, {
     server,
-    agentId: enrolled.harnessId,
+    agentId: enrolled.agentId,
     refreshToken: enrolled.refreshToken,
     workspaceRoot,
   });
   deps.io.stdout(
-    `Enrolled as agent ${enrolled.harnessId}.\nConfig written to ${configPath}.\nRun 'omniralph-agent start' to start the agent.\n`,
+    `Enrolled as agent ${enrolled.agentId}.\nConfig written to ${configPath}.\nRun 'omniralph-agent start' to start the agent.\n`,
   );
   return 0;
 }

@@ -1,12 +1,12 @@
 /**
- * Run specs: everything a harness needs to run a task, resolved by the
+ * Run specs: everything an agent needs to run a task, resolved by the
  * control panel when the job is claimed (the agent and task built from the
  * job's playbook, trigger context, repository, tools, model, budget and
- * tokens), so the harness has no per-task code or lookups.
+ * tokens), so the agent has no per-task code or lookups.
  */
 import {
-  HARNESS_VERSION_BY_TASK_TYPE,
-  HARNESS_VERSION_FOR_COMMANDS,
+  AGENT_VERSION_BY_TASK_TYPE,
+  AGENT_VERSION_FOR_COMMANDS,
   RunSpecAgent,
   TaskDefinition,
   TaskTypeSchema,
@@ -17,33 +17,33 @@ import { JobRepository, JobToken } from "./job-basics.js";
 import { POOLS } from "./pools.js";
 
 /**
- * The first harness release that runs query tasks through the fixed
+ * The first agent release that runs query tasks through the fixed
  * lifecycle; query runs that need it carry it as their
- * `min_harness_version`, so older harnesses leave them queued.
+ * `min_agent_version`, so older agents leave them queued.
  */
-export const QUERY_TASKS_MIN_HARNESS_VERSION = HARNESS_VERSION_BY_TASK_TYPE.query;
+export const QUERY_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.query;
 
 /**
- * The first harness release that runs a task's setup and teardown commands;
- * runs of tasks that declare any carry it as their `min_harness_version`.
+ * The first agent release that runs a task's setup and teardown commands;
+ * runs of tasks that declare any carry it as their `min_agent_version`.
  */
-export const SETUP_COMMANDS_MIN_HARNESS_VERSION = HARNESS_VERSION_FOR_COMMANDS;
+export const SETUP_COMMANDS_MIN_AGENT_VERSION = AGENT_VERSION_FOR_COMMANDS;
 
 /**
- * The first harness release that runs review tasks (`builtin:review-pr`)
+ * The first agent release that runs review tasks (`builtin:review-pr`)
  * through the review lifecycle; review runs carry it as their
- * `min_harness_version`.
+ * `min_agent_version`.
  */
-export const REVIEW_TASKS_MIN_HARNESS_VERSION = HARNESS_VERSION_BY_TASK_TYPE.review;
+export const REVIEW_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.review;
 
 /**
- * The first harness release that runs coding tasks (`builtin:implement-story`,
+ * The first agent release that runs coding tasks (`builtin:implement-story`,
  * `builtin:handle-request` and their push runs) through the coding lifecycle,
  * including a coding task's own setup and teardown commands; coding runs carry
- * it as their `min_harness_version`, so older harnesses (which would fail them
+ * it as their `min_agent_version`, so older agents (which would fail them
  * as an unsupported task type) leave them queued.
  */
-export const CODING_TASKS_MIN_HARNESS_VERSION = HARNESS_VERSION_BY_TASK_TYPE.coding;
+export const CODING_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.coding;
 
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
@@ -82,7 +82,7 @@ export const RunSpec = z.object({
   trigger: RunTrigger,
   repository: JobRepository.nullable(),
   /**
-   * The ID of `repository` (null with none), keying the harness's installable
+   * The ID of `repository` (null with none), keying the agent's installable
    * caches; absent from control panels before it was added.
    */
   repositoryId: z.uuid().nullable().optional(),

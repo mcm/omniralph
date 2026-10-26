@@ -23,7 +23,7 @@ const FIXTURES = JSON.parse(
   readFileSync(new URL("./__fixtures__/reply.json", import.meta.url), "utf8"),
 ) as Record<string, Fixture>;
 
-/** The trigger context `enqueueReply` stores, plus the query variables the harness computes. */
+/** The trigger context `enqueueReply` stores, plus the query variables the agent computes. */
 function context({ finding, hunk, question }: Fixture): Record<string, unknown> {
   return {
     repository: "acme/app",
@@ -55,7 +55,7 @@ describe("builtin:reply-to-finding", () => {
   it("runs with the reviewer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({

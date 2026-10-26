@@ -1,7 +1,7 @@
 import {
   MAX_ATTEMPTS_PER_STORY,
   MAX_ROUNDS_PER_STORY,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
   RalphDescribePrPayload,
   STALL_ROUNDS,
   ralphHiddenRef,
@@ -314,7 +314,7 @@ describe("describing a lane's PR", () => {
       taskType: "query",
       taskId: customDescribe.id,
       repositoryId: payload.repositoryId,
-      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       payload: {
         trigger: {
           kind: "run.invoked",

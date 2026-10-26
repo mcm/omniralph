@@ -113,7 +113,7 @@ describe("rerunJob", () => {
         taskType: "system",
         payload: { name: "@acme/tool" },
         dedupeKey: failed.dedupeKey,
-        targetHarnessId: HARNESS_ID,
+        targetAgentId: HARNESS_ID,
       }),
     );
   });
@@ -128,7 +128,7 @@ describe("rerunJob", () => {
       const { dispatcher: d, createAndPublish } = dispatcher();
       expect(await rerunJob({} as never, d, ORG, ended.id)).toMatchObject({ ok: true });
       expect(createAndPublish).toHaveBeenCalledWith(
-        expect.objectContaining({ type: REPO_SYNC_JOB_TYPE, targetHarnessId: HARNESS_ID }),
+        expect.objectContaining({ type: REPO_SYNC_JOB_TYPE, targetAgentId: HARNESS_ID }),
       );
     }
   });

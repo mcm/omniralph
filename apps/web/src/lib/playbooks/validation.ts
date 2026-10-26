@@ -52,7 +52,7 @@ const PLAYBOOK_FIELD: Record<string, string> = {
   ...Object.fromEntries(CODING_FIELD_NAMES.map((name) => [name, `coding.${name}`])),
   prDescriptionTaskId: "coding.prDescriptionPlaybookId",
   // The agent half of the run spec is the playbook's own tools.
-  agentId: "tools.harness",
+  agentId: "tools.agent",
   // The role fixes both.
   triggers: "role",
   sink: "role",

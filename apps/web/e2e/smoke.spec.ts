@@ -21,9 +21,9 @@ test.describe("smoke", () => {
   }) => {
     const token = await createEnrollmentToken(db);
     const name = `e2e-smoke-${Date.now()}`;
-    const { harnessId } = await enrollAgent(request, token, name);
+    const { agentId } = await enrollAgent(request, token, name);
 
-    const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
+    const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
     expect(row).toMatchObject({ name, organizationId: FIXTURE_IDS.organizations.main });
   });
 });

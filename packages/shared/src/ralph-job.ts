@@ -138,7 +138,7 @@ export const RalphAttachmentId = z.string().regex(/^[0-9a-f]{32}$/);
 
 /**
  * A file uploaded to Linear (a pasted screenshot, a mockup, a PDF) that the
- * job may download through `GET /api/harness/jobs/{id}/attachments/{attachmentId}`.
+ * job may download through `GET /api/agent/jobs/{id}/attachments/{attachmentId}`.
  */
 export const RalphAttachment = z.object({
   id: RalphAttachmentId,
@@ -219,7 +219,7 @@ export type RalphFollowUp = z.infer<typeof RalphFollowUp>;
 export const MAX_RALPH_RECOMMENDATIONS = 20;
 
 /**
- * Most recommendations in one story result (the harness keeps as many from a session), so one attempt
+ * Most recommendations in one story result (the agent keeps as many from a session), so one attempt
  * can't push every earlier attempt's out of the story's list.
  */
 export const MAX_RALPH_RESULT_RECOMMENDATIONS = 10;
@@ -248,7 +248,7 @@ export const RalphStoryMetric = z.object({
 });
 export type RalphStoryMetric = z.infer<typeof RalphStoryMetric>;
 
-/** Outcome of a `ralph.story` coding run (`/api/harness/jobs/{id}/result`). */
+/** Outcome of a `ralph.story` coding run (`/api/agent/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
   /** What was done, or what is in the way; posted to Linear. */
@@ -262,9 +262,9 @@ export const RalphStoryResult = z.object({
    */
   hiddenRef: z.object({ ref: z.string().min(1).max(255), sha: CommitSha }).optional(),
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
-  /** Advice for other projects (older harnesses never send any). */
+  /** Advice for other projects (older agents never send any). */
   recommendations: z.array(RalphRecommendation).max(MAX_RALPH_RESULT_RECOMMENDATIONS).optional(),
-  /** The story's progress metric this round, when it reports one (older harnesses never do). */
+  /** The story's progress metric this round, when it reports one (older agents never do). */
   metric: RalphStoryMetric.optional(),
   /** Why the attempt didn't complete (e.g. failed gate output), for the next attempt; null when complete. */
   feedback: z.string().max(20_000).nullable(),
@@ -488,7 +488,7 @@ export function ralphStashPrefix(runId: string): string {
 
 /**
  * The ref outside `refs/heads/` a run that pushes only at the end keeps its
- * story commits on, on `origin`: it starts no CI, and another harness picking
+ * story commits on, on `origin`: it starts no CI, and another agent picking
  * the run up starts from it.
  */
 export function ralphHiddenRef(runId: string): string {
@@ -543,7 +543,7 @@ export const MAX_CLEANUP_HIDDEN_REFS = 50;
 export const RalphCleanupPayload = RalphJobBase.extend({
   /** The epic, which names the stash branch. */
   epic: RalphIssue.pick({ identifier: true }),
-  /** Absent: only `hiddenRefs` are deleted (on any harness). */
+  /** Absent: only `hiddenRefs` are deleted (on any agent). */
   action: RalphCleanupAction.optional(),
   /**
    * Hidden refs (`ralphHiddenRef`) of finished runs to delete on `origin`
@@ -595,13 +595,13 @@ export const WorktreeCleanupResult = RalphCleanupResult;
 export type WorktreeCleanupResult = RalphCleanupResult;
 
 /**
- * An agent-session activity relayed by an agent (`POST /api/harness/jobs/{id}/activities`):
+ * An agent-session activity relayed by an agent (`POST /api/agent/jobs/{id}/activities`):
  * Claude's text as a `thought`, a tool call as an (ephemeral) `action`.
  */
 /**
  * A tool call a running ralph job's session needs a person's approval for
  * (the repository's Claude Code settings `ask` about it):
- * `POST /api/harness/jobs/{id}/permissions`. The control panel asks in the
+ * `POST /api/agent/jobs/{id}/permissions`. The control panel asks in the
  * run's Linear agent session.
  */
 export const RalphPermissionRequest = z.object({
@@ -621,7 +621,7 @@ export type RalphPermissionRequest = z.infer<typeof RalphPermissionRequest>;
 export const RALPH_PERMISSION_STATUSES = ["pending", "allowed", "denied", "expired"] as const;
 export type RalphPermissionStatus = (typeof RALPH_PERMISSION_STATUSES)[number];
 
-/** `GET /api/harness/jobs/{id}/permissions/{requestId}`: the answer so far. */
+/** `GET /api/agent/jobs/{id}/permissions/{requestId}`: the answer so far. */
 export const RalphPermissionAnswer = z.object({
   status: z.enum(RALPH_PERMISSION_STATUSES),
   /** Who answered in Linear, when known. */

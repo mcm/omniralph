@@ -35,7 +35,7 @@ describe("protocol", () => {
     ).toBe(false);
   });
 
-  it("defaults a heartbeat's installables to none, so older harnesses validate", () => {
+  it("defaults a heartbeat's installables to none, so older agents validate", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
     expect(Heartbeat.parse(base).installables).toEqual([]);
     const installables = [{ name: "@omniralph/hello", version: "1.0.0" }];
@@ -47,7 +47,7 @@ describe("protocol", () => {
     ).toBe(false);
   });
 
-  it("defaults a heartbeat's models to none, so older harnesses validate", () => {
+  it("defaults a heartbeat's models to none, so older agents validate", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
     expect(Heartbeat.parse(base).models).toEqual([]);
     const models = [{ value: "opus", displayName: "Opus" }];
@@ -153,7 +153,7 @@ describe("protocol", () => {
     expect(ok({ name: "Upper" })).toBe(false);
   });
 
-  it("leaves a slot free of long jobs by default on harnesses with two or more slots", () => {
+  it("leaves a slot free of long jobs by default on agents with two or more slots", () => {
     expect(defaultPoolLimit("long", 1)).toBe(1);
     expect(defaultPoolLimit("long", 2)).toBe(1);
     expect(defaultPoolLimit("long", 4)).toBe(3);
@@ -240,7 +240,7 @@ describe("self-update protocol", () => {
     expect(response.hostTools).toEqual([]);
   });
 
-  it("stays compatible with harnesses and control panels that predate Ably wake-ups", () => {
+  it("stays compatible with agents and control panels that predate Ably wake-ups", () => {
     const heartbeat = Heartbeat.parse({ version: "0.1.0", runningJobIds: [], freeSlots: 0 });
     expect(heartbeat.ablyTokenExpiresAt).toBeUndefined();
     const expiresAt = "2026-10-16T00:00:00.000Z";
@@ -303,7 +303,7 @@ describe("self-update protocol", () => {
   });
 
   it("names the Ably wake channels", () => {
-    expect(agentWakeChannel(ID)).toBe(`harness:${ID}`);
+    expect(agentWakeChannel(ID)).toBe(`agent:${ID}`);
     expect(orgWakeChannel(ID)).toBe(`org:${ID}`);
   });
 

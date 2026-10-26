@@ -18,7 +18,7 @@ import {
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { TriageTemplateContext } from "@omniralph/ralph";
-import { QUERY_TASKS_MIN_HARNESS_VERSION, RunSpecJobPayload } from "@omniralph/shared";
+import { QUERY_TASKS_MIN_AGENT_VERSION, RunSpecJobPayload } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -190,7 +190,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       type: "triage.run",
       taskType: "query",
       taskId: "builtin:triage",
-      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",

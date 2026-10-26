@@ -71,7 +71,7 @@ Harnesses never hold the API key. The control panel signs each harness a JWT
 | `x-ably-capability` | `{"harness:<id>":["subscribe"],"org:<orgId>":["subscribe"]}` |
 
 Issuing makes no Ably call. It can't go through KMS like the other control-panel signatures
-(`apps/web/src/lib/harness-auth/signer.ts`): Ably only accepts tokens signed with the key secret.
+(`apps/web/src/lib/agent-auth/signer.ts`): Ably only accepts tokens signed with the key secret.
 The token can only subscribe to the harness's own two channels, so a leaked token reveals when jobs
 are dispatched to that harness or its organization, nothing more. `getAblyConfig()` returns null
 (Ably off) when the key is unset or malformed; a malformed key is logged.
@@ -94,7 +94,7 @@ The harness keeps the latest token and hands it to the Ably SDK from its `authCa
 The heartbeat request gains optional `claimablePools`: the harness's `claimablePools()` (the pools
 under their limits), sent only in wake mode and while a slot is free. When present, the response's
 `claimable` says whether a claim for those pools would find a job right now (`heartbeatClaimable`,
-`apps/web/src/lib/harness-api/claimable.ts`, calling `hasClaimableJob`).
+`apps/web/src/lib/agent-api/claimable.ts`, calling `hasClaimableJob`).
 
 `claimJob` and `hasClaimableJob` (`packages/db/src/jobs.ts`) share one query builder for the
 candidate conditions (organization, pool or `system`, target, queued and available or a lapsed

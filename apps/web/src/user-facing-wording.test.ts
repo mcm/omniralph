@@ -47,7 +47,7 @@ const ALLOWED: Allowed[] = [
   {
     text: /\bralph\.[a-z-]*/g,
     files: [
-      "apps/web/src/app/api/harness/credentials/route.ts",
+      "apps/web/src/app/api/agent/credentials/route.ts",
       "apps/web/src/lib/chat/agent/read-tools.ts",
     ],
     reason: "job types (`ralph.story`, the `ralph.` prefix) stored with every job",

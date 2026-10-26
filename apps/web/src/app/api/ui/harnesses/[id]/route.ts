@@ -4,9 +4,9 @@ import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { HarnessDetail } from "@/lib/api/harnesses";
 import { requireResourceInActiveOrganization } from "@/lib/api/resource";
 import { getDb } from "@/lib/db";
-import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { organizationAgentVersion } from "@/lib/harnesses/desired-version";
 import { clientIp } from "@/lib/harnesses/request";
-import { deleteHarness } from "@/lib/harnesses/manage";
+import { deleteAgent } from "@/lib/harnesses/manage";
 import { withHarnessLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 
@@ -39,7 +39,7 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
     const [harness, audit, version, pinSyncJobs] = await Promise.all([
       getAgentOverview(db, orgId, params.id).then(withHarnessLastSeen),
       listRecentAgentAudit(db, params.id, AUDIT_LIMIT),
-      organizationHarnessVersion(db, orgId, { timeoutMs: NPM_TIMEOUT_MS }),
+      organizationAgentVersion(db, orgId, { timeoutMs: NPM_TIMEOUT_MS }),
       listAgentPinSyncJobs(db, orgId, params.id, new Date(now.getTime() - PIN_SYNC_WINDOW_MS)),
     ]);
     if (!harness) throw ApiRouteError.notFound();
@@ -70,7 +70,7 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
 export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
   { access: "admin" },
   async ({ user, params, request }) =>
-    deleteHarness(params.id, {
+    deleteAgent(params.id, {
       organizationId: user.organization.id,
       userId: user.id,
       ip: clientIp(request.headers),

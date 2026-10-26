@@ -1,10 +1,10 @@
 /**
  * Installables: npm packages whose package.json has an `omniralph` field
- * declaring the commands, MCP servers and skills they put on a harness. The
- * harness installs them; the control panel shows and requires them.
+ * declaring the commands, MCP servers and skills they put on an agent. The
+ * agent installs them; the control panel shows and requires them.
  *
  * No `node:path` here: the control panel's client code imports this package.
- * Paths are POSIX, as on every host a harness runs on.
+ * Paths are POSIX, as on every host an agent runs on.
  */
 import { z } from "zod";
 

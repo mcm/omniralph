@@ -130,7 +130,7 @@ code-host or Vercel credentials. Their identity is:
   helper) only see a job token, never the harness's tokens. `LocalTokenSigner`
   (`jose`, `LOCAL_AGENT_SIGNING_KEY` or an in-memory key) exists for local dev
   and tests and refuses to run with `VERCEL_ENV=production`.
-- **Verification.** `requireHarness`/`requireJob` (`apps/web/src/lib/harness-auth/verify.ts`)
+- **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/agent-auth/verify.ts`)
   check the signature (RS256 only), `aud`, `typ` and `exp` with `jose` against
   the issuer's cached JWKS (`https://kms.vercel.com/<issuer>/jwks.json`), then
   **check the database** that the harness isn't revoked (and, for job tokens,

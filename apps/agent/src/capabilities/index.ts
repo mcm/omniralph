@@ -105,7 +105,7 @@ export interface JobContext {
   execPathBlocked?(path: string): Promise<boolean>;
 }
 
-/** The capability's output, sent to `/api/harness/jobs/{id}/result`. */
+/** The capability's output, sent to `/api/agent/jobs/{id}/result`. */
 export type JobOutput = Record<string, unknown>;
 
 export interface Capability {

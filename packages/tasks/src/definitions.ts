@@ -1,6 +1,6 @@
 /**
  * The building blocks of playbooks (`playbooks.ts`) and the two halves of the
- * run spec a harness runs: `RunSpecAgent` (persona: system prompt, tools,
+ * run spec an agent runs: `RunSpecAgent` (persona: system prompt, tools,
  * model) and `TaskDefinition` (what to do and when: task type, triggers,
  * prompt template, tool settings, sink). The control panel builds both from a
  * playbook (`playbookRunSpec`); custom tasks stored before playbooks still
@@ -45,15 +45,15 @@ export type NamedContent = z.infer<typeof NamedContent>;
 export const AgentTools = z.object({
   /** Claude Code tool names (`Read`, `Grep`, `Bash`, …). */
   builtin: z.array(z.string().min(1).max(100)).default([]),
-  /** Harness tools from the `omniralph` MCP server. */
-  harness: z.array(AgentToolSchema).default([]),
+  /** Agent tools from the `omniralph` MCP server. */
+  agent: z.array(AgentToolSchema).default([]),
   /** Read-only Linear tools (need `toolSettings.linearRead`). */
   linear: z.array(LinearToolSchema).default([]),
   /**
    * An installable's MCP servers, as `<package>:<server>`
    * (`@omniralph/code-graph:graph`): runs then require that installable.
    * Other names are accepted on the wire (custom agents stored before
-   * playbooks) and ignored by the harness; playbooks refuse them
+   * playbooks) and ignored by the agent; playbooks refuse them
    * (`PlaybookTools`).
    */
   mcpServers: z
@@ -86,7 +86,7 @@ export type SystemPromptMode = (typeof SYSTEM_PROMPT_MODES)[number];
  * prompt, tools, reference docs, model). `playbookRunSpec` builds it from a
  * playbook; its ID and name are the playbook's. Fields it doesn't know pass
  * through untouched: the control panel still sends the `taskTypes` that
- * harnesses up to 0.13 require of an agent.
+ * agents up to 0.13 require of an agent.
  */
 export const RunSpecAgent = z.looseObject({
   id: DefinitionId,
@@ -94,7 +94,7 @@ export const RunSpecAgent = z.looseObject({
   description: Description.default(""),
   systemPrompt: z.string(),
   systemPromptMode: z.enum(SYSTEM_PROMPT_MODES).default("append"),
-  tools: AgentTools.default({ builtin: [], harness: [], linear: [], mcpServers: [] }),
+  tools: AgentTools.default({ builtin: [], agent: [], linear: [], mcpServers: [] }),
   referenceDocs: z.array(NamedContent).default([]),
   /** The playbook's model; null for the Claude Code default. Never a review run's. */
   model: Model.nullable().default(null),
@@ -188,9 +188,9 @@ export type TeardownCommand = z.infer<typeof TeardownCommand>;
 export const MAX_TASK_REQUIRES = 20;
 
 /**
- * What a task's runs need on the harness beyond its agent's tools: installables
+ * What a task's runs need on the agent beyond its agent's tools: installables
  * (npm package names) and host tools (names in the organization's catalog).
- * Only harnesses reporting all of them claim its runs.
+ * Only agents reporting all of them claim its runs.
  */
 export const TaskRequires = z.object({
   installables: z.array(InstallablePackageName).max(MAX_TASK_REQUIRES).default([]),
@@ -375,15 +375,15 @@ export type TaskDefinition = z.infer<typeof TaskDefinition>;
 export type TaskDefinitionInput = z.input<typeof TaskDefinition>;
 
 /**
- * Why `tools` don't fit runs of `taskType`: harness tools the type doesn't
+ * Why `tools` don't fit runs of `taskType`: agent tools the type doesn't
  * allow (`ship` is for coding runs only); null when they fit.
  */
-export function harnessToolsProblem(
-  tools: Pick<AgentTools, "harness">,
+export function agentToolsProblem(
+  tools: Pick<AgentTools, "agent">,
   taskType: TaskType,
 ): string | null {
   const allowed = AGENT_TOOLS_BY_TASK_TYPE[taskType];
-  const disallowed = tools.harness.filter((tool) => !allowed.includes(tool));
+  const disallowed = tools.agent.filter((tool) => !allowed.includes(tool));
   if (disallowed.length === 0) return null;
-  return `${taskType} runs can't use the harness tool${disallowed.length > 1 ? "s" : ""} ${disallowed.join(", ")}.`;
+  return `${taskType} runs can't use the agent tool${disallowed.length > 1 ? "s" : ""} ${disallowed.join(", ")}.`;
 }

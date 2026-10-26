@@ -6,8 +6,8 @@ import { getRedis, hotStateEnabled } from "@/lib/hot-state";
 
 /**
  * A harness's last heartbeat, kept in Redis so an unchanged heartbeat doesn't write to
- * Postgres. Every heartbeat sets `harness-last-seen:{id}`; the harness row is written
- * only when what the harness reports changed (`harness-report:{id}` holds a fingerprint
+ * Postgres. Every heartbeat sets `agent-last-seen:{id}`; the harness row is written
+ * only when what the harness reports changed (`agent-report:{id}` holds a fingerprint
  * of the report last written) or its `last_heartbeat_at` is a day old (the fingerprint
  * expires then). Neither key is derived from Postgres, so there's no epoch: a lost key
  * just means a Postgres write on the next heartbeat, and readers fall back to the
@@ -17,8 +17,8 @@ import { getRedis, hotStateEnabled } from "@/lib/hot-state";
 export type HeartbeatReport = Omit<Parameters<typeof recordAgentHeartbeat>[2], "now">;
 export type HarnessRow = NonNullable<Awaited<ReturnType<typeof recordAgentHeartbeat>>>;
 
-const LAST_SEEN_PREFIX = "harness-last-seen:";
-const REPORT_PREFIX = "harness-report:";
+const LAST_SEEN_PREFIX = "agent-last-seen:";
+const REPORT_PREFIX = "agent-report:";
 /** Longest the harness row's `last_heartbeat_at` goes without a write while the harness is up. */
 export const POSTGRES_HEARTBEAT_MAX_AGE_MS = 24 * 3600_000;
 /** How long a last-seen outlives the harness's last heartbeat (then the row's value is used). */

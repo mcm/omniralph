@@ -23,7 +23,7 @@ async function storedPlaybookRows() {
       name,
       role,
       definition: { ...definition, ...changes },
-      requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
+      requirements: { minAgentVersion: "0.40.0", installables: [], hostTools: ["git"] },
       createdAt: now,
       updatedAt: now,
       createdBy: null,

@@ -228,7 +228,7 @@ export function templateList<T>(items: readonly T[] | undefined): TemplateList<T
  * issue, its comments, sub-issues and blockers, the routed repository and the
  * session's reply and previous triage, shaped for the logic-less prompt
  * template, which renders it as `buildTriagePrompt` renders `input` (with the
- * harness's `checkout` saying whether the repository is checked out).
+ * agent's `checkout` saying whether the repository is checked out).
  */
 export interface TriageTemplateContext {
   issue: {

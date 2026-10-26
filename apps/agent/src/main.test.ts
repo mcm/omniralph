@@ -107,9 +107,7 @@ describe("omniralph-agent CLI", () => {
     it("exchanges the enrollment token and writes the config with mode 0600", async () => {
       const { out, io } = capture();
       const server = fakeServer({
-        "/api/harness/enroll": () =>
-          // `harnessId`: the enroll response field until TOOL-584.
-          Response.json({ harnessId: AGENT_ID, refreshToken: "refresh-0" }),
+        "/api/agent/enroll": () => Response.json({ agentId: AGENT_ID, refreshToken: "refresh-0" }),
       });
       const code = await main(
         [
@@ -128,7 +126,7 @@ describe("omniralph-agent CLI", () => {
       expect(code).toBe(0);
       expect(server.calls).toEqual([
         {
-          path: "/api/harness/enroll",
+          path: "/api/agent/enroll",
           authorization: null,
           body: {
             enrollmentToken: "ore_abc",
@@ -150,9 +148,7 @@ describe("omniralph-agent CLI", () => {
 
     it("stores a custom workspace root", async () => {
       const server = fakeServer({
-        "/api/harness/enroll": () =>
-          // `harnessId`: the enroll response field until TOOL-584.
-          Response.json({ harnessId: AGENT_ID, refreshToken: "refresh-0" }),
+        "/api/agent/enroll": () => Response.json({ agentId: AGENT_ID, refreshToken: "refresh-0" }),
       });
       const code = await main(
         [
@@ -189,7 +185,7 @@ describe("omniralph-agent CLI", () => {
     it("reports an invalid enrollment token", async () => {
       const { out, io } = capture();
       const server = fakeServer({
-        "/api/harness/enroll": () => Response.json({ error: "unauthorized" }, { status: 401 }),
+        "/api/agent/enroll": () => Response.json({ error: "unauthorized" }, { status: 401 }),
       });
       const code = await main(
         ["enroll", "--server", "https://omniralph.example", "--token", "t", "--config", configPath],
@@ -292,11 +288,11 @@ describe("omniralph-agent CLI", () => {
       await writeConfig(configPath, config);
       const { out, io } = capture();
       const server = fakeServer({
-        "/api/harness/token": () => Response.json({ error: "unauthorized" }, { status: 401 }),
+        "/api/agent/token": () => Response.json({ error: "unauthorized" }, { status: 401 }),
       });
       expect(await main(["start", "--config", configPath], { io, ...startDeps(server) })).toBe(1);
       expect(out.stderr).toContain("re-enrollment required");
-      expect(server.calls.map((c) => c.path)).toEqual(["/api/harness/token"]);
+      expect(server.calls.map((c) => c.path)).toEqual(["/api/agent/token"]);
     });
 
     it("runs with rotating tokens and exits non-zero once /token returns 401", async () => {
@@ -305,25 +301,25 @@ describe("omniralph-agent CLI", () => {
       const { out, io } = capture();
       let n = 0;
       const server = fakeServer({
-        "/api/harness/token": () => {
+        "/api/agent/token": () => {
           n++;
           return n === 1
             ? Response.json({ accessToken: "access-1", expiresIn: 900, refreshToken: "refresh-1" })
             : Response.json({ error: "refresh_token_reused" }, { status: 401 });
         },
-        "/api/harness/heartbeat": () => Response.json(HEARTBEAT),
-        "/api/harness/claim": holdClaim,
+        "/api/agent/heartbeat": () => Response.json(HEARTBEAT),
+        "/api/agent/claim": holdClaim,
       });
       const exit = main(["start", "--config", configPath], { io, ...startDeps(server) });
       await vi.waitFor(() => expect(server.calls).toHaveLength(3));
       expect(server.calls).toEqual([
-        { path: "/api/harness/token", authorization: null, body: { refreshToken: "refresh-0" } },
+        { path: "/api/agent/token", authorization: null, body: { refreshToken: "refresh-0" } },
         expect.objectContaining({
-          path: "/api/harness/heartbeat",
+          path: "/api/agent/heartbeat",
           authorization: "Bearer access-1",
         }),
         {
-          path: "/api/harness/claim",
+          path: "/api/agent/claim",
           authorization: "Bearer access-1",
           body: { pools: ["short", "long"], acceptedTaskTypes: ["query", "review", "coding"] },
         },
@@ -334,7 +330,7 @@ describe("omniralph-agent CLI", () => {
       await vi.waitFor(() => expect(out.stderr).toContain("re-enrollment required"));
       expect(await exit).toBe(1);
       expect(out.stderr).toContain("re-enrollment required (refresh_token_reused)");
-      expect(server.calls.filter((c) => c.path === "/api/harness/token").at(-1)?.body).toEqual({
+      expect(server.calls.filter((c) => c.path === "/api/agent/token").at(-1)?.body).toEqual({
         refreshToken: "refresh-1",
       });
       // Nothing is called after the fatal 401.
@@ -347,16 +343,16 @@ describe("omniralph-agent CLI", () => {
       await writeConfig(configPath, config);
       let signal!: () => void;
       const server = fakeServer({
-        "/api/harness/token": () =>
+        "/api/agent/token": () =>
           Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
-        "/api/harness/heartbeat": () => Response.json(HEARTBEAT),
+        "/api/agent/heartbeat": () => Response.json(HEARTBEAT),
       });
       const exit = main(["start", "--config", configPath], {
         io: capture().io,
         ...startDeps(server, { onShutdownSignal: (handler) => (signal = handler) }),
       });
       await vi.waitFor(() =>
-        expect(server.calls.map((c) => c.path)).toContain("/api/harness/heartbeat"),
+        expect(server.calls.map((c) => c.path)).toContain("/api/agent/heartbeat"),
       );
       signal();
       expect(await exit).toBe(0);
@@ -366,9 +362,9 @@ describe("omniralph-agent CLI", () => {
       await writeConfig(configPath, config);
       const installs: string[] = [];
       const server = fakeServer({
-        "/api/harness/token": () =>
+        "/api/agent/token": () =>
           Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
-        "/api/harness/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
+        "/api/agent/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
       });
       const exit = main(["start", "--config", configPath], {
         io: capture().io,
@@ -388,7 +384,7 @@ describe("omniralph-agent CLI", () => {
         failed: [],
       });
       expect((await stat(statePath)).mode & 0o777).toBe(0o600);
-      expect(server.calls.find((c) => c.path === "/api/harness/heartbeat")?.body).toMatchObject({
+      expect(server.calls.find((c) => c.path === "/api/agent/heartbeat")?.body).toMatchObject({
         version: "1.0.0",
         selfUpdate: "supported",
         models: [{ value: "opus", displayName: "Opus" }],
@@ -408,9 +404,9 @@ describe("omniralph-agent CLI", () => {
 
       const installs: string[] = [];
       const server = fakeServer({
-        "/api/harness/token": () =>
+        "/api/agent/token": () =>
           Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
-        "/api/harness/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
+        "/api/agent/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
       });
       const exit = main(["start", "--config", configPath], {
         io: capture().io,

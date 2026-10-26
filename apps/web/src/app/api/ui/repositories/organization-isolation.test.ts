@@ -302,7 +302,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
         triggers: { onOpen: false, onPush: false, drafts: false },
         pathExcludes: [],
         customInstructions: "",
-        pinnedHarnessIds: [],
+        pinnedAgentIds: [],
         reviewPlaybookIds: ["builtin:review-pr"],
         correlationPlaybookId: "builtin:correlate-findings",
       }),
@@ -341,7 +341,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       customInstructions: "",
-      pinnedHarnessIds: [],
+      pinnedAgentIds: [],
       reviewPlaybookIds: ["builtin:review-pr"],
       correlationPlaybookId: "builtin:correlate-findings",
     };

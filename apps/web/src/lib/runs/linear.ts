@@ -1,6 +1,6 @@
 /**
  * The read-only Linear tools of a run, served under
- * `/api/harness/runs/{id}/linear/*` with the run's organization's Linear
+ * `/api/agent/runs/{id}/linear/*` with the run's organization's Linear
  * workspace (see `@omniralph/shared` `run-linear.ts`).
  */
 import "server-only";
@@ -8,8 +8,8 @@ import { InvalidInputLinearError } from "@linear/sdk";
 import { getJobForAgent, type Job } from "@omniralph/db";
 import type { RunLinearComment, RunLinearDocument, RunLinearIssue } from "@omniralph/shared";
 import type { LinearTool } from "@omniralph/tasks";
-import { requireJob } from "@/lib/harness-auth/verify";
-import { jobIdParam, notFound, type JobRouteContext } from "@/lib/harness-api/jobs";
+import { requireJob } from "@/lib/agent-auth/verify";
+import { jobIdParam, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
 import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
 import type {
@@ -79,7 +79,7 @@ function failed(status: number, error: string, reason: string): Response {
 /**
  * Serves one Linear tool call of a run: authenticates the run's token
  * (`linear:read`, so the session token), checks the job runs on the calling
- * harness and its task may use `tool` (`runLinearTools`, else 403
+ * agent and its task may use `tool` (`runLinearTools`, else 403
  * `linear_tool_not_allowed`), then answers `read`'s result as JSON, read with
  * the gateway of the job's organization. 409 `linear_not_connected` when the
  * organization has no Linear workspace, 404 `linear_not_found` when Linear
@@ -97,7 +97,7 @@ export async function serveRunLinearTool(
   if (!jobId) return notFound();
   if (jobId !== principal.jobId) return Response.json({ error: "job_mismatch" }, { status: 403 });
   const db = getDb();
-  const job = await getJobForAgent(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.agentId);
   if (!job) return notFound();
   const tools = await runLinearTools(job, organizationPlaybooks(db, job.organizationId));
   if (!tools.includes(tool)) {

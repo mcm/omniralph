@@ -16,7 +16,7 @@ export interface QueryHarnessStatus {
 /** What a run needs from the harness claiming it, as `claimJob` checks it. */
 export interface RunHarnessRequirements {
   /** The run's `min_harness_version`; null for none. */
-  minHarnessVersion: string | null;
+  minAgentVersion: string | null;
   /** `required_installables`: each must be in the harness's `reportedInstallables`. */
   installables: readonly string[];
   /** `required_host_tools`: each must have an effective path on the harness. */
@@ -49,7 +49,7 @@ export function queryClaimableHarnesses(
       version: h.reportedVersion,
       capable:
         h.effective.acceptedTaskTypes.includes("query") &&
-        versionCapable(h.reportedVersion, requirements.minHarnessVersion) &&
+        versionCapable(h.reportedVersion, requirements.minAgentVersion) &&
         requirements.installables.every((name) =>
           h.reportedInstallables.some((installable) => installable.name === name),
         ) &&

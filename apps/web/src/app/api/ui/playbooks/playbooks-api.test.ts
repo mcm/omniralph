@@ -236,7 +236,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           playbook: { id: "builtin:implement-story", role: "story", tokenBudget: null },
           builtin: true,
           tokenBudgetLabel: "No limit",
-          requirements: { minHarnessVersion: expect.any(String) },
+          requirements: { minAgentVersion: expect.any(String) },
           usedBy: { repositories: [{ id: repoId, roles: ["story"] }] },
         },
       });

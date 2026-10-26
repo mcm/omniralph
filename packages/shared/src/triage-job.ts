@@ -1,7 +1,7 @@
 /**
  * Triage: turning a Linear issue into a PRD ralph can build,
  * unattended. The control panel loads the issue and applies the result to
- * Linear (harnesses hold no Linear token); harnesses run its job:
+ * Linear (agents hold no Linear token); agents run its job:
  *
  * - `triage.run`: a run of the built-in query task `builtin:triage`, one
  *   read-only Claude session over the issue (and, when one is routed, a

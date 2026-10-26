@@ -13,7 +13,7 @@ export const PLANNER_PERSONA = {
   systemPrompt: `You are "Omniralph", a product manager triaging a Linear issue into a PRD (Product Requirements Document), unattended.`,
   tools: {
     builtin: ["Read", "Grep", "Glob"],
-    harness: [],
+    agent: [],
     linear: [
       "linear_get_issue",
       "linear_list_comments",

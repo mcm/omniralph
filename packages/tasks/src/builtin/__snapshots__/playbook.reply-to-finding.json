@@ -16,7 +16,7 @@
       "Grep",
       "Glob"
     ],
-    "harness": [],
+    "agent": [],
     "linear": [],
     "mcpServers": []
   },

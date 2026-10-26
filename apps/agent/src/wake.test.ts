@@ -125,11 +125,10 @@ describe("createWakeSubscription", () => {
     const { subscription, client, events } = setup();
     subscription.setToken("jwt-1", LATER);
     subscription.setToken("jwt-2", LATER);
-    // `harness:<id>`: the wake channel until TOOL-584 renames it.
-    expect([...client.channelMap.keys()]).toEqual([`harness:${AGENT_ID}`, `org:${ORG_ID}`]);
+    expect([...client.channelMap.keys()]).toEqual([`agent:${AGENT_ID}`, `org:${ORG_ID}`]);
     for (const channel of client.channelMap.values()) expect(channel.listeners).toHaveLength(1);
 
-    client.channelMap.get(`harness:${AGENT_ID}`)!.publish();
+    client.channelMap.get(`agent:${AGENT_ID}`)!.publish();
     client.channelMap.get(`org:${ORG_ID}`)!.publish();
     expect(events).toEqual(["wake", "wake"]);
   });
@@ -151,7 +150,7 @@ describe("createWakeSubscription", () => {
   it("re-attaches failed channels on reconnect", () => {
     const { subscription, client } = setup();
     subscription.setToken("jwt-1", LATER);
-    const agentChannel = client.channelMap.get(`harness:${AGENT_ID}`)!;
+    const agentChannel = client.channelMap.get(`agent:${AGENT_ID}`)!;
     const org = client.channelMap.get(`org:${ORG_ID}`)!;
     agentChannel.state = "failed";
     org.state = "attached";
@@ -167,7 +166,7 @@ describe("createWakeSubscription", () => {
     subscription.close();
     expect(client.close).toHaveBeenCalledTimes(1);
 
-    client.channelMap.get(`harness:${AGENT_ID}`)!.publish();
+    client.channelMap.get(`agent:${AGENT_ID}`)!.publish();
     client.setState("closed");
     subscription.setToken("jwt-2", LATER);
     expect(events).toEqual(["connected"]);

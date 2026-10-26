@@ -41,7 +41,7 @@ describe("validatePlaybookAgainst", () => {
       expect(result, playbook.id).toMatchObject({
         ok: true,
         playbook: { id: PLAYBOOK_ID, role: playbook.role },
-        requirements: { minHarnessVersion: expect.any(String) },
+        requirements: { minAgentVersion: expect.any(String) },
       });
     }
   });

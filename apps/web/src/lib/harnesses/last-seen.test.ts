@@ -59,9 +59,9 @@ const {
   withLastSeen,
 } = await import("./last-seen");
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
-const { POST: heartbeat } = await import("@/app/api/harness/heartbeat/route");
+const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
 const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
-const { getTokenSigner } = await import("@/lib/harness-auth/signer");
+const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 
 const REPORT = { version: "1.4.0", selfUpdate: "supported" as const, failedVersions: [] };
 
@@ -181,7 +181,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
       const send = async () => {
         const token = await getTokenSigner().signAccessToken(harnessId);
         const response = await heartbeat(
-          new Request("http://localhost/api/harness/heartbeat", {
+          new Request("http://localhost/api/agent/heartbeat", {
             method: "POST",
             headers: {
               authorization: `Bearer ${token}`,

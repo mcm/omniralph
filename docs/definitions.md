@@ -20,7 +20,7 @@ A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 | `promptTemplate`                              | The user prompt, rendered for each run ([templates](#templates)).                                                                                                                                                    |
 | `referenceDocs`                               | Named Markdown documents the run can read. A review renders `rubric/universal.md` and `rubric/languages/<language>.md` (for the diff's languages) as `{{rubric}}`, so a reviewer's rubric is its reference docs.     |
 | `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets neither: its review depth sets the model.                                          |
-| `tools`                                       | `builtin` (Claude Code tool names), `harness` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only). |
+| `tools`                                       | `builtin` (Claude Code tool names), `agent` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only). |
 | `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `linearRead` (the Linear tools), `network` (beyond the control panel).                                                                                                           |
 | `requires`                                    | Installables and host tools its runs need ([derived requirements](#derived-requirements)).                                                                                                                           |
 | `setupCommands`, `teardownCommands`           | Commands run before and after the session ([below](#setup-and-teardown-commands)).                                                                                                                                   |
@@ -256,7 +256,7 @@ appears on and an example message:
 | No field the role sets (`REFUSED_PLAYBOOK_FIELDS`)                                                     | The field                        | A playbook's role sets where its output goes; remove sink.                                                                                       |
 | A role a custom playbook can take                                                                      | `role`                           | Only a built-in playbook can be a triage playbook.                                                                                               |
 | MCP servers are an installable's                                                                       | `tools.mcpServers.<i>`           | Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.                                                         |
-| Harness tools are allowed for the role's task type                                                     | `tools.harness`                  | review runs can't use the harness tool ship.                                                                                                     |
+| Agent tools are allowed for the role's task type                                                       | `tools.agent`                    | review runs can't use the agent tool ship.                                                                                                       |
 | Setup command names are unique                                                                         | `setupCommands.<i>.name`         | Setup command name semgrep is used twice                                                                                                         |
 | Only query roles have an output schema; only story and request playbooks have coding settings          | `outputSchema`, `coding`         | A review playbook can't declare an output schema.                                                                                                |
 | A review playbook sets no model, fallback model or token budget                                        | `model`, `fallbackModel`, `tokenBudget` | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
@@ -285,7 +285,7 @@ one, also stored with its row on save and returned as `requirements` by `GET /ap
   installable whose MCP servers its tools list as `<package>:<server>` (e.g.
   `@omniralph/code-graph:graph`).
 
-Every job of the playbook carries the minimum version (`jobs.min_harness_version`), so only
+Every job of the playbook carries the minimum version (`jobs.min_agent_version`), so only
 harnesses on that release or later claim it; older ones leave it queued. Built-ins carry no stored
 requirements; their jobs set the version their task type needs. Jobs also carry the installables
 and host tools (`jobs.required_installables`, `jobs.required_host_tools`), derived from the

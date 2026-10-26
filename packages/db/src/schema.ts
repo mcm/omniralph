@@ -1527,7 +1527,7 @@ export const jobs = pgTable(
 /** What a run's session reported: Claude's text (`thought`) or a tool call (`action`). */
 export type RunActivityType = "thought" | "action";
 
-/** Activities a run's session reported (`POST /api/harness/jobs/{id}/activities`), oldest first. */
+/** Activities a run's session reported (`POST /api/agent/jobs/{id}/activities`), oldest first. */
 export const runActivities = pgTable(
   "run_activities",
   {
@@ -1556,7 +1556,7 @@ export type RunPermissionAnswer = "allowed" | "denied" | "expired";
 
 /**
  * Tool calls a run's session asked a person to approve
- * (`POST /api/harness/jobs/{id}/permissions`), one row per request.
+ * (`POST /api/agent/jobs/{id}/permissions`), one row per request.
  */
 export const runPermissionRequests = pgTable(
   "run_permission_requests",

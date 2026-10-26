@@ -37,7 +37,7 @@ export interface ResolveOptions {
  * `LATEST_MAX_AGE_MS`; a failed read keeps the last version (and is retried after the same
  * time), so harnesses stay where they are while the registry can't be reached.
  */
-export async function organizationHarnessVersion(
+export async function organizationAgentVersion(
   db: Database,
   organizationId: string,
   options: ResolveOptions = {},

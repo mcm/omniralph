@@ -13,7 +13,7 @@ export class ReenrollmentRequiredError extends Error {
 
 export interface TokenManagerOptions {
   config: AgentConfig;
-  /** `POST /api/harness/token`. */
+  /** `POST /api/agent/token`. */
   exchange: (refreshToken: string) => Promise<TokenResponse>;
   /** Persists the config atomically (see `writeConfig`). */
   persist: (config: AgentConfig) => Promise<void>;
@@ -31,7 +31,7 @@ const defaultRetryDelayMs = (failures: number) => Math.min(60_000, 5_000 * 2 ** 
 /**
  * Holds the agent's access token and rotates the refresh token.
  *
- * Every exchange at `/api/harness/token` consumes the presented refresh token,
+ * Every exchange at `/api/agent/token` consumes the presented refresh token,
  * and presenting it again revokes the agent. So the new refresh token is
  * written to the config file (atomically) before the new access token is
  * handed out: a crash can't leave the agent with only a used token.

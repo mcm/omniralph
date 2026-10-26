@@ -18,7 +18,7 @@ import {
   type RalphRunStatus,
 } from "@omniralph/db";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   ralphHiddenRef,
   WorktreeCleanupPayload,
@@ -145,7 +145,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
         repositoryId: job.repositoryId,
         type: job.type,
         taskType: job.taskType,
-        targetHarnessId: job.targetAgentId,
+        targetAgentId: job.targetAgentId,
         action: payload.action,
         hiddenRefs: payload.hiddenRefs,
       };
@@ -156,7 +156,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     repositoryId,
     type: "worktree.cleanup",
     taskType: "system",
-    targetHarnessId: null,
+    targetAgentId: null,
     action: undefined,
     hiddenRefs: [ref],
   });
@@ -203,7 +203,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
       agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(queued!.id);
@@ -234,7 +234,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
       agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     await completeJob(db, { jobId: again!.id, agentId: harnessId, result: result([ref]) });

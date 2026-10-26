@@ -4,7 +4,7 @@
  * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the PRD,
  * the story list, the story and how to work it. The story-specific rules of
  * ralph's story system prompt close it, since the engineer persona's system
- * prompt is mode-neutral. The harness commits, runs the gates and pushes.
+ * prompt is mode-neutral. Omniralph commits, runs the gates and pushes.
  */
 import type { PlaybookInput } from "../playbooks.js";
 import { ENGINEER_PERSONA } from "./engineer.js";
@@ -173,7 +173,7 @@ export const IMPLEMENT_STORY_PLAYBOOK: PlaybookInput = {
   id: "builtin:implement-story",
   name: "Implement a story",
   description:
-    "Works one story of an epic delegated in Linear in the run's branch worktree; the harness runs the quality gates, commits and pushes.",
+    "Works one story of an epic delegated in Linear in the run's branch worktree; Omniralph runs the quality gates, commits and pushes.",
   role: "story",
   ...ENGINEER_PERSONA,
   promptTemplate: STORY_TEMPLATE,

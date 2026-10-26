@@ -193,7 +193,7 @@ function without(
 
 /**
  * Why `schema` can't be a query task's output schema, or null when it can: a
- * structured output is a JSON object, and the harness checks each result
+ * structured output is a JSON object, and the agent checks each result
  * against the schema (`z.fromJSONSchema`), so it must convert.
  */
 export function invalidOutputSchema(schema: Readonly<Record<string, unknown>>): string | null {
@@ -201,7 +201,7 @@ export function invalidOutputSchema(schema: Readonly<Record<string, unknown>>): 
   try {
     z.fromJSONSchema(schema as Parameters<typeof z.fromJSONSchema>[0]);
   } catch (error) {
-    return `This isn't a JSON schema the harness can check output against: ${error instanceof Error ? error.message : String(error)}.`;
+    return `This isn't a JSON schema the agent can check output against: ${error instanceof Error ? error.message : String(error)}.`;
   }
   return null;
 }

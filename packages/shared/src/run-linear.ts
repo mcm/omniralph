@@ -1,8 +1,8 @@
 /**
  * The read-only Linear tools of a run (`linear_get_issue`,
  * `linear_list_comments`, `linear_search_issues`, `linear_get_document`):
- * served by the control panel under `/api/harness/runs/{id}/linear/*` with
- * the run's organization's Linear workspace, so the harness never holds a
+ * served by the control panel under `/api/agent/runs/{id}/linear/*` with
+ * the run's organization's Linear workspace, so the agent never holds a
  * Linear token. Requests carry the run's session token (`linear:read`).
  */
 import { z } from "zod";

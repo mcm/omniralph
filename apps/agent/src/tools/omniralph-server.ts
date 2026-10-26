@@ -60,7 +60,7 @@ export interface OmniralphServerOptions {
   jobId: string;
   /** The run's session token (`run:activity`, `run:attachments`, `linear:read`); never the lifecycle token. */
   sessionToken: () => string;
-  /** The Omniralph tools the agent lists (`tools.harness`, renamed by TOOL-584). */
+  /** The Omniralph tools the agent lists (`tools.agent`). */
   tools: readonly AgentTool[];
   /** The read-only Linear tools of the run (`offeredLinearTools`), served by the control panel. */
   linearTools?: readonly LinearTool[];
@@ -268,12 +268,12 @@ export function omniralphTools(options: OmniralphServerOptions): SdkMcpToolDefin
 
 /**
  * The definitions of the run's Linear tools (`linearTools`), read through
- * `/api/harness/runs/{id}/linear/*` with the session token: the control panel
+ * `/api/agent/runs/{id}/linear/*` with the session token: the control panel
  * holds the Linear token and decides what the run may read. Results are JSON.
  */
 function linearTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
   const offered = new Set(options.linearTools ?? []);
-  const base = `${options.server}/api/harness/runs/${encodeURIComponent(options.jobId)}/linear`;
+  const base = `${options.server}/api/agent/runs/${encodeURIComponent(options.jobId)}/linear`;
   const read = async <S extends z.ZodType>(what: string, url: string, schema: S) => {
     try {
       const body = await getJson(options.fetch ?? fetch, url, schema, options.sessionToken(), {

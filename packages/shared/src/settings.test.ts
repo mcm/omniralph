@@ -15,7 +15,7 @@ const validSettings: RepositorySettingsInput = {
   triggers: { onOpen: true, onPush: false, drafts: false },
   pathExcludes: ["*.lock", "/vendor/**", "src/**/*.{gen,pb}.ts", "docs/[!_]*.md"],
   customInstructions: "Prefer early returns.",
-  pinnedHarnessIds: [],
+  pinnedAgentIds: [],
   reviewPlaybookIds: ["builtin:review-pr"],
   correlationPlaybookId: "builtin:correlate-findings",
 };
@@ -92,9 +92,9 @@ describe("RepositorySettingsInput", () => {
     const result = RepositorySettingsInput.safeParse({
       ...validSettings,
       depth: "turbo",
-      pinnedHarnessIds: ["not-a-uuid"],
+      pinnedAgentIds: ["not-a-uuid"],
     });
-    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual(["depth", "pinnedHarnessIds.0"]);
+    expect(Object.keys(fieldErrors(result.error!)).sort()).toEqual(["depth", "pinnedAgentIds.0"]);
   });
 
   it("takes one to 20 distinct review playbooks, or leaves them unchanged", () => {

@@ -23,7 +23,7 @@ const FIXTURES = JSON.parse(
   readFileSync(new URL("./__fixtures__/learn-rule.json", import.meta.url), "utf8"),
 ) as Record<string, Fixture>;
 
-/** The trigger context `enqueueLearnRule` stores, plus the query variables the harness computes. */
+/** The trigger context `enqueueLearnRule` stores, plus the query variables the agent computes. */
 function context({ finding, hunk, note }: Fixture): Record<string, unknown> {
   return {
     feedbackId: "f0f0f0f0-0000-4000-8000-000000000001",
@@ -57,7 +57,7 @@ describe("builtin:learn-rule", () => {
   it("runs with the rule writer persona as a query task with no tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({

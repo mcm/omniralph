@@ -3,16 +3,16 @@ import { getAgent, type Database } from "@omniralph/db";
 import { readHotState } from "@/lib/hot-state";
 
 /**
- * A harness's organization, cached in Redis (`harness-organization:{id}`) so an idle
+ * A harness's organization, cached in Redis (`agent-organization:{id}`) so an idle
  * claim long-poll finds its organization's due set without querying Postgres. A
  * harness never changes organization, so the entry needs no writer or rebuild.
  */
 
-const KEY_PREFIX = "harness-organization:";
+const KEY_PREFIX = "agent-organization:";
 const TTL_SECONDS = 7 * 24 * 3600;
 
 /** The harness's organization ID, or null for an unknown harness. */
-export async function readHarnessOrganization(
+export async function readAgentOrganization(
   db: Database,
   harnessId: string,
 ): Promise<string | null> {

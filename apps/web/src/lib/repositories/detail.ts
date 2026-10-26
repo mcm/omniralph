@@ -16,7 +16,7 @@ import type {
   RepositoryTaskTypes,
 } from "@/lib/api/repositories";
 import { getDb } from "@/lib/db";
-import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { organizationAgentVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
@@ -43,14 +43,13 @@ export async function loadRepositoryDetail(
 ): Promise<RepositoryDetail> {
   const db = getDb();
   const { repository, connection } = await connectedRepository(organizationId, id);
-  const [harnesses, organizationVersion, pinnedHarnessIds, workItemMatch, rules] =
-    await Promise.all([
-      listAgentOverview(db, organizationId).then(withLastSeen),
-      organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-      listRepositoryPinnedAgentIds(db, id),
-      getWorkItemMatch(db, organizationId, id),
-      listRoutingRules(db, organizationId),
-    ]);
+  const [harnesses, organizationVersion, pinnedAgentIds, workItemMatch, rules] = await Promise.all([
+    listAgentOverview(db, organizationId).then(withLastSeen),
+    organizationAgentVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    listRepositoryPinnedAgentIds(db, id),
+    getWorkItemMatch(db, organizationId, id),
+    listRoutingRules(db, organizationId),
+  ]);
   const now = new Date();
   return {
     repository: {
@@ -64,7 +63,7 @@ export async function loadRepositoryDetail(
       triggers: repository.triggers,
       pathExcludes: repository.pathExcludes,
       customInstructions: repository.customInstructions ?? "",
-      pinnedHarnessIds,
+      pinnedAgentIds,
       reviewPlaybookIds: repository.reviewPlaybookIds,
       correlationPlaybookId: repository.correlationPlaybookId,
       storyPlaybookId: repository.storyPlaybookId,

@@ -32,7 +32,7 @@ import {
 } from "@omniralph/db";
 import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   type RalphRequestResult,
@@ -183,7 +183,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

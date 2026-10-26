@@ -244,8 +244,7 @@ describe("runQueryTask", () => {
       (options?.allowedTools ?? []).filter((rule) => rule.startsWith("mcp__"));
 
     it("attaches the omniralph server with the tools the agent lists", async () => {
-      // `harness`: the run spec's tools key until TOOL-584 renames it.
-      const agent = agentFixture({ tools: { builtin: ["Read"], harness: ["post_activity"] } });
+      const agent = agentFixture({ tools: { builtin: ["Read"], agent: ["post_activity"] } });
       const { calls } = await run(spec({ agent }));
       const options = calls[0]?.options;
       expect(Object.keys(options?.mcpServers ?? {})).toEqual(["omniralph"]);
@@ -266,7 +265,7 @@ describe("runQueryTask", () => {
     it("never offers ship to a query run", async () => {
       // A definition that slipped past validation still doesn't get it.
       const agent = agentFixture({
-        tools: { builtin: ["Read"], harness: ["ship", "ask_permission"] },
+        tools: { builtin: ["Read"], agent: ["ship", "ask_permission"] },
         taskTypes: ["query", "coding"],
       });
       const { calls } = await run(spec({ agent }));
@@ -292,7 +291,7 @@ describe("runQueryTask", () => {
     });
 
     it("gives get_attachment a run temp directory next to the checkout, removed afterwards", async () => {
-      const agent = agentFixture({ tools: { builtin: ["Read"], harness: ["get_attachment"] } });
+      const agent = agentFixture({ tools: { builtin: ["Read"], agent: ["get_attachment"] } });
       const { calls } = await run(spec({ agent }));
       const options = calls[0]?.options;
       expect(agentToolRules(options)).toEqual(["mcp__omniralph__get_attachment"]);

@@ -13,7 +13,7 @@ const MAX_RULE_LENGTH = 300;
 export const RULE_WRITER_PERSONA = {
   systemPrompt: "You maintain the review rules of Omniralph, an automated code reviewer.",
   systemPromptMode: "replace",
-  tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
+  tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
 } satisfies PlaybookPersona;
 
 const LEARN_RULE_SYSTEM_APPEND = `A reviewer finding was dismissed as a false positive. Write one generalized rule that stops the reviewer from raising the same kind of false positive again in this repository, or decide that no rule should be written.

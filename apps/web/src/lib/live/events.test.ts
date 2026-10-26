@@ -84,6 +84,6 @@ describe("change channels", () => {
       expect(wake).not.toContain(userChangesChannel(id));
     }
     expect(orgWakeChannel(ORG)).toBe(`org:${ORG}`);
-    expect(agentWakeChannel(ID)).toBe(`harness:${ID}`);
+    expect(agentWakeChannel(ID)).toBe(`agent:${ID}`);
   });
 });

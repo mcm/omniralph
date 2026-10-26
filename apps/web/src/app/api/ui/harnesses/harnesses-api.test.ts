@@ -95,12 +95,12 @@ const { PostgresDispatcher } = await import("@/lib/dispatch");
 const jobCancel = await import("@/app/api/ui/jobs/[id]/cancel/route");
 const jobRerun = await import("@/app/api/ui/jobs/[id]/rerun/route");
 const jobList = await import("@/app/api/ui/jobs/route");
-const { POST: enroll } = await import("@/app/api/harness/enroll/route");
+const { POST: enroll } = await import("@/app/api/agent/enroll/route");
 const { POST: postEnrollment } = await import("@/app/api/ui/harness-enrollments/route");
-const { POST: token } = await import("@/app/api/harness/token/route");
-const { POST: heartbeat } = await import("@/app/api/harness/heartbeat/route");
-const { requireJob } = await import("@/lib/harness-auth/verify");
-const { getTokenSigner } = await import("@/lib/harness-auth/signer");
+const { POST: token } = await import("@/app/api/agent/token/route");
+const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
+const { requireJob } = await import("@/lib/agent-auth/verify");
+const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -111,7 +111,7 @@ function newIp(): string {
 }
 
 function post(path: string, body: unknown, accessToken?: string): Request {
-  return new Request(`http://localhost/api/harness/${path}`, {
+  return new Request(`http://localhost/api/agent/${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -202,7 +202,7 @@ async function listedJob(id: string) {
   const { jobs } = (await response.json()) as { jobs: { id: string }[] };
   return jobs.find((job) => job.id === id);
 }
-const deleteHarness = (id: string) => ui(harnessDetail.DELETE, id, { method: "DELETE" });
+const deleteAgent = (id: string) => ui(harnessDetail.DELETE, id, { method: "DELETE" });
 const installInstallable = (id: string, body: { name: string; version?: string }) =>
   ui(harnessInstalls.POST, id, { body });
 const setHostToolPath = (id: string, hostToolId: string, path: string) =>
@@ -298,7 +298,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
   async function enrolledHarness(name = "") {
     const { token: enrollmentToken } = await newEnrollment(name);
     const enrolled = (await (await redeem(enrollmentToken)).json()) as {
-      harnessId: string;
+      agentId: string;
       refreshToken: string;
     };
     const tokens = (await (
@@ -307,7 +307,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       accessToken: string;
       refreshToken: string;
     };
-    return { harnessId: enrolled.harnessId, ...tokens };
+    return { harnessId: enrolled.agentId, ...tokens };
   }
 
   async function sendHeartbeat(accessToken: string, body: object = HEARTBEAT) {
@@ -332,7 +332,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       const res = await redeem(result.token);
       expect(res.status).toBe(200);
-      const { harnessId } = (await res.json()) as { harnessId: string };
+      const { agentId: harnessId } = (await res.json()) as { agentId: string };
       const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness!.name).toBe("Build box");
       expect(harness!.enrolledBy).toBe(adminId);
@@ -1230,7 +1230,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         .returning();
       const jobToken = await getTokenSigner().signJobToken({
         jobId: running!.id,
-        harnessId,
+        agentId: harnessId,
         scopes: ["credentials:read"],
       });
 
@@ -1239,7 +1239,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       // Its unexpired access token, job token and refresh token are rejected right away.
       expect((await sendHeartbeat(accessToken)).status).toBe(401);
       const jobAuth = await requireJob(
-        new Request("http://localhost/api/harness/credentials", {
+        new Request("http://localhost/api/agent/credentials", {
           method: "POST",
           headers: { authorization: `Bearer ${jobToken}`, "x-real-ip": newIp() },
         }),
@@ -1318,7 +1318,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         })
         .returning();
 
-      expect(await deleteHarness(harnessId)).toEqual({ ok: true });
+      expect(await deleteAgent(harnessId)).toEqual({ ok: true });
 
       expect((await sendHeartbeat(accessToken)).status).toBe(401);
       const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
@@ -1335,14 +1335,14 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(audit!.detail).toEqual({ deletedBy: adminId });
 
       // Gone: it can't be deleted or revoked again.
-      expect(await deleteHarness(harnessId)).toMatchObject({ ok: false });
+      expect(await deleteAgent(harnessId)).toMatchObject({ ok: false });
     });
 
     it("deletes an already revoked harness without revoking it again", async () => {
       const { harnessId } = await enrolledHarness();
       expect(await revokeAgent(harnessId)).toEqual({ ok: true });
       const [before] = await db.select().from(agents).where(eq(agents.id, harnessId));
-      expect(await deleteHarness(harnessId)).toEqual({ ok: true });
+      expect(await deleteAgent(harnessId)).toEqual({ ok: true });
       const [after] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(after!.revokedAt).toEqual(before!.revokedAt);
       expect(after!.deletedAt).not.toBeNull();
@@ -1352,11 +1352,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("is admin-only and reports unknown harnesses", async () => {
       const { harnessId } = await enrolledHarness();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await deleteHarness(harnessId)).toMatchObject({ ok: false });
+      expect(await deleteAgent(harnessId)).toMatchObject({ ok: false });
       const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness).toMatchObject({ revokedAt: null, deletedAt: null });
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
-      expect(await deleteHarness(randomUUID())).toMatchObject({ ok: false });
+      expect(await deleteAgent(randomUUID())).toMatchObject({ ok: false });
     });
   });
 

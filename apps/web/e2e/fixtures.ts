@@ -1,5 +1,5 @@
 // What the specs import instead of `@playwright/test`: its `test` with the fixture database
-// (`db`) and the dev sign-in (`signIn`), plus helpers that play a harness, a webhook or a cron.
+// (`db`) and the dev sign-in (`signIn`), plus helpers that play an agent, a webhook or a cron.
 import { test as base, type APIRequestContext, type BrowserContext } from "@playwright/test";
 import { closeDb, createDb, createAgentEnrollment, type Database } from "@omniralph/db";
 import { FIXTURE_EMAILS, FIXTURE_IDS } from "../scripts/fixtures/ids";
@@ -36,21 +36,21 @@ export async function createEnrollmentToken(
 }
 
 /**
- * Enrolls a harness with `token` through `POST /api/harness/enroll`, as a harness on another
+ * Enrolls an agent with `token` through `POST /api/agent/enroll`, as an agent on another
  * machine does. Returns its id and refresh token.
  */
 export async function enrollAgent(
   request: APIRequestContext,
   token: string,
   name: string,
-): Promise<{ harnessId: string; refreshToken: string }> {
-  const response = await request.post("/api/harness/enroll", {
+): Promise<{ agentId: string; refreshToken: string }> {
+  const response = await request.post("/api/agent/enroll", {
     data: { enrollmentToken: token, name, version: "0.0.0-e2e" },
   });
   if (!response.ok()) {
     throw new Error(`enroll failed: HTTP ${response.status()} ${await response.text()}`);
   }
-  return (await response.json()) as { harnessId: string; refreshToken: string };
+  return (await response.json()) as { agentId: string; refreshToken: string };
 }
 
 export const test = base.extend<

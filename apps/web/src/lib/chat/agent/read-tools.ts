@@ -789,9 +789,9 @@ export const askAboutCodeTool = defineChatTool({
 /** What a harness needs to claim a run, as a phrase: "accepting query tasks on version 0.9.0 or later, with …". */
 function harnessNeeds(requirements: RunHarnessRequirements): string {
   const parts = [
-    requirements.minHarnessVersion === null
+    requirements.minAgentVersion === null
       ? "accepting query tasks"
-      : `accepting query tasks on version ${requirements.minHarnessVersion} or later`,
+      : `accepting query tasks on version ${requirements.minAgentVersion} or later`,
   ];
   if (requirements.installables.length > 0) {
     parts.push(`with the installables ${requirements.installables.join(", ")}`);

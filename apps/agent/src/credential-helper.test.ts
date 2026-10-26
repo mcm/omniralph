@@ -55,7 +55,7 @@ describe("git-credential", () => {
     );
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0]!;
-    expect(url).toBe("https://omniralph.example/api/harness/credentials");
+    expect(url).toBe("https://omniralph.example/api/agent/credentials");
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer job-token");
     expect(init?.redirect).toBe("error");
@@ -232,7 +232,7 @@ describe("git with the agent's credential helper", () => {
     expect(output).not.toContain("host-url-secret");
     await expect(stat(marker)).rejects.toThrow();
     expect(requests).toEqual([
-      { authorization: "Bearer the-job-token", url: "/api/harness/credentials" },
+      { authorization: "Bearer the-job-token", url: "/api/agent/credentials" },
     ]);
   }, 40_000);
 });

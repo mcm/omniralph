@@ -6,13 +6,13 @@ import { templateVariables } from "./template.js";
 import { taskVariables, VARIABLES, type VariableDefinition } from "./variables.js";
 
 /**
- * What a run of a task needs from the harness that claims it, derived from
+ * What a run of a task needs from the agent that claims it, derived from
  * the definition when it's saved and stored with it: the installables it
- * uses, the host tools it shells out to and the lowest harness version that
+ * uses, the host tools it shells out to and the lowest agent version that
  * provides everything it uses (null for any).
  */
 export const TaskRequirements = z.object({
-  minHarnessVersion: z.string().min(1).nullable().default(null),
+  minAgentVersion: z.string().min(1).nullable().default(null),
   installables: z.array(z.string().min(1)).default([]),
   hostTools: z.array(z.string().min(1)).default([]),
 });
@@ -20,22 +20,22 @@ export type TaskRequirements = z.infer<typeof TaskRequirements>;
 export type TaskRequirementsInput = z.input<typeof TaskRequirements>;
 
 /**
- * The first harness release that runs each task type through its lifecycle
+ * The first agent release that runs each task type through its lifecycle
  * (and provides the type's variables). `@omniralph/shared` exports them as
- * `QUERY_TASKS_MIN_HARNESS_VERSION`, `REVIEW_TASKS_MIN_HARNESS_VERSION` and
- * `CODING_TASKS_MIN_HARNESS_VERSION`.
+ * `QUERY_TASKS_MIN_AGENT_VERSION`, `REVIEW_TASKS_MIN_AGENT_VERSION` and
+ * `CODING_TASKS_MIN_AGENT_VERSION`.
  */
-export const HARNESS_VERSION_BY_TASK_TYPE: Record<TaskType, string> = {
+export const AGENT_VERSION_BY_TASK_TYPE: Record<TaskType, string> = {
   query: "0.9.0",
   review: "0.10.0",
   coding: "0.11.0",
 };
 
 /**
- * The first harness release that runs a task's setup and teardown commands
- * (`SETUP_COMMANDS_MIN_HARNESS_VERSION` in `@omniralph/shared`).
+ * The first agent release that runs a task's setup and teardown commands
+ * (`SETUP_COMMANDS_MIN_AGENT_VERSION` in `@omniralph/shared`).
  */
-export const HARNESS_VERSION_FOR_COMMANDS = "0.10.0";
+export const AGENT_VERSION_FOR_COMMANDS = "0.10.0";
 
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)/;
 
@@ -82,9 +82,9 @@ export function deriveAgentRequirements(
 }
 
 /**
- * What a run of `task` (on `agent`) needs: the harness release that runs its
+ * What a run of `task` (on `agent`) needs: the agent release that runs its
  * task type, its setup and teardown commands (if any) and every task-type
- * variable its template uses (`minHarnessVersion` in `catalog`), whichever is
+ * variable its template uses (`minAgentVersion` in `catalog`), whichever is
  * highest; and the installables and host tools of `deriveAgentRequirements`.
  */
 export function deriveTaskRequirements(
@@ -93,18 +93,18 @@ export function deriveTaskRequirements(
   agent?: RequirementAgentFields | null,
 ): TaskRequirements {
   const entries = new Map(catalog.map((variable) => [variable.name, variable]));
-  const versions = [HARNESS_VERSION_BY_TASK_TYPE[task.taskType]];
+  const versions = [AGENT_VERSION_BY_TASK_TYPE[task.taskType]];
   if (task.setupCommands.length > 0 || task.teardownCommands.length > 0) {
-    versions.push(HARNESS_VERSION_FOR_COMMANDS);
+    versions.push(AGENT_VERSION_FOR_COMMANDS);
   }
   for (const name of templateVariables(task.promptTemplate, taskVariables(task, catalog))) {
     const entry = entries.get(name);
-    if (entry?.source === "taskType" && entry.minHarnessVersion !== undefined) {
-      versions.push(entry.minHarnessVersion);
+    if (entry?.source === "taskType" && entry.minAgentVersion !== undefined) {
+      versions.push(entry.minAgentVersion);
     }
   }
   return {
-    minHarnessVersion: versions.reduce(higherVersion),
+    minAgentVersion: versions.reduce(higherVersion),
     ...deriveAgentRequirements(task, agent),
   };
 }

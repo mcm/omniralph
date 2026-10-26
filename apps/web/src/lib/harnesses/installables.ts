@@ -40,7 +40,7 @@ export async function enqueueInstall(
     taskType: "system",
     payload,
     dedupeKey: `${INSTALL_JOB_TYPE}:${input.harnessId}:${input.name}@${input.version ?? "latest"}`,
-    targetHarnessId: input.harnessId,
+    targetAgentId: input.harnessId,
   });
   return { result: "enqueued", jobId: job.id, created };
 }

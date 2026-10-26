@@ -6,7 +6,7 @@
  * `@omniralph/ralph`) for both sources, both history-rewrite policies and
  * `/ship`, closed by the request-specific rules of ralph's request system
  * prompt (`requestSystemAppend`). Unlike today's request session, it can't
- * push: it publishes the branch through the `ship` harness tool (the push
+ * push: it publishes the branch through the `ship` agent tool (the push
  * instructions say so). A request run need not have an epic: the PRD, the
  * story list, its status and any other mention of epics or stories only
  * render in optional sections, for requests on a PRD epic's run.

@@ -2,7 +2,7 @@
  * Playbooks: one recipe per kind of run (role, prompts, model, tools,
  * requirements). A playbook's role fixes its task type, triggers and sink
  * (`PLAYBOOK_ROLES`); everything else a run needs is on the playbook itself.
- * The harness still runs today's run spec (`agent` + `task`), which
+ * The agent still runs today's run spec (`agent` + `task`), which
  * `playbookRunSpec` builds from a playbook.
  */
 import { z } from "zod";
@@ -21,7 +21,7 @@ import {
   TeardownCommand,
   TokenBudget,
   ToolSettings,
-  harnessToolsProblem,
+  agentToolsProblem,
   type TaskDefinitionInput,
 } from "./definitions.js";
 import { DefinitionId } from "./ids.js";
@@ -165,7 +165,7 @@ const PlaybookFields = z.object({
   /** Null for the Claude Code default. Review playbooks set none: the review depth does. */
   model: Model.nullable().default(null),
   fallbackModel: Model.nullable().default(null),
-  tools: PlaybookTools.default({ builtin: [], harness: [], linear: [], mcpServers: [] }),
+  tools: PlaybookTools.default({ builtin: [], agent: [], linear: [], mcpServers: [] }),
   toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
   /** Installables and host tools its runs need (its installable MCP servers add theirs). */
   requires: TaskRequires.optional(),
@@ -277,9 +277,9 @@ export const Playbook = z.preprocess(
         });
       }
     }
-    const toolsProblem = harnessToolsProblem(playbook.tools, taskType);
+    const toolsProblem = agentToolsProblem(playbook.tools, taskType);
     if (toolsProblem) {
-      ctx.addIssue({ code: "custom", path: ["tools", "harness"], message: toolsProblem });
+      ctx.addIssue({ code: "custom", path: ["tools", "agent"], message: toolsProblem });
     }
   }),
 );
@@ -290,14 +290,14 @@ export function playbookTaskType(playbook: Pick<Playbook, "role">): TaskType {
   return roleTaskType(playbook.role);
 }
 
-/** The two halves of the run spec a harness runs. */
+/** The two halves of the run spec an agent runs. */
 export interface PlaybookRunSpec {
   agent: RunSpecAgent;
   task: TaskDefinition;
 }
 
 /**
- * The run spec `agent` and `task` the harness runs for `playbook`: the agent
+ * The run spec `agent` and `task` the agent runs for `playbook`: the agent
  * carries its persona (system prompt, tools, reference docs, model), the task
  * the rest, with the task type, triggers and sink of its role and, for a story
  * or request playbook, its coding settings over `CODING_DEFAULTS`. Both take
@@ -352,7 +352,7 @@ export function playbookRunSpec(playbook: Playbook): PlaybookRunSpec {
   return { agent, task };
 }
 
-/** What runs of `playbook` need from a harness (`deriveTaskRequirements` of its run spec). */
+/** What runs of `playbook` need from an agent (`deriveTaskRequirements` of its run spec). */
 export function playbookRequirements(
   playbook: Playbook,
   catalog?: readonly VariableDefinition[],

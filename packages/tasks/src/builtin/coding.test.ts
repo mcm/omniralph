@@ -96,7 +96,7 @@ function fenceRequest(ctx: RequestPromptContext): RequestPromptContext {
 
 /**
  * Today's push wording in request prompts and rules, and what coding runs
- * say instead: the session can't push, it calls the `ship` harness tool.
+ * say instead: the session can't push, it calls the `ship` agent tool.
  */
 function shipToolWording(ctx: RequestPromptContext): [string, string][] {
   const { branch, baseBranch } = ctx;
@@ -310,7 +310,7 @@ describe("builtin:handle-request", () => {
       expect(prompt).not.toMatch(/git push (-u|--force-with-lease)/);
       if (!ctx.ship) expect(prompt).toContain("call the `ship` tool");
     }
-    expect(engineer.tools.harness).toContain("ship");
+    expect(engineer.tools.agent).toContain("ship");
   });
 
   it("puts the PRD, story list and story status in optional sections", () => {

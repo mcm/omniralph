@@ -15,7 +15,7 @@ import {
 
 const SERVER = "https://omniralph.example.com";
 const JOB = "job-1";
-const BASE = `${SERVER}/api/harness/jobs/${JOB}`;
+const BASE = `${SERVER}/api/agent/jobs/${JOB}`;
 
 interface Call {
   url: string;
@@ -356,7 +356,7 @@ describe("omniralph server", () => {
   });
 
   describe("Linear tools", () => {
-    const LINEAR = `${SERVER}/api/harness/runs/${JOB}/linear`;
+    const LINEAR = `${SERVER}/api/agent/runs/${JOB}/linear`;
     const issue = {
       id: "i1",
       identifier: "ENG-7",
