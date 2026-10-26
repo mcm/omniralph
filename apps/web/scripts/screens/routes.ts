@@ -196,7 +196,22 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
-  { name: "agents", path: "/agents", page: "(app)/agents/page.tsx", auth: "signed-in" },
+  { name: "fleet", path: "/fleet", page: "(app)/fleet/page.tsx", auth: "signed-in" },
+  {
+    name: "fleet-agent",
+    path: `/fleet/${ids.agents.online}`,
+    page: "(app)/fleet/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // The enroll sheet's first step.
+    name: "fleet-enroll",
+    path: "/fleet",
+    page: "(app)/fleet/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: ".or-fleet__head button" }],
+    viewportOnly: true,
+  },
   {
     name: "agent-online",
     path: `/agents/${ids.agents.online}`,

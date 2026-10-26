@@ -1,0 +1,157 @@
+/*
+ * Fleet (Design board Fleet): the title with Enroll, the summary card and the agents table
+ * (cards at 768 px and narrower, from `DataTable`), beside the open agent's panel. Only
+ * `--or-` tokens.
+ */
+.or-fleet {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-fleet__list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-fleet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px 12px;
+}
+
+.or-fleet__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-fleet__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 24px 32px;
+}
+
+.or-fleet__body .or-empty {
+  padding: 40px 20px;
+}
+
+.or-fleet__fail {
+  color: var(--or-fail);
+}
+
+.or-fleet__on,
+.or-fleet__pins {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-fleet__none {
+  color: var(--or-sec);
+}
+
+/* The open agent */
+.or-fleet-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px 24px 32px;
+}
+
+.or-fleet-agent__name {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.or-fleet-agent__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The enroll sheet */
+.or-enroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.or-enroll__text,
+.or-enroll__note,
+.or-enroll__warning,
+.or-enroll__waiting,
+.or-enroll__connected {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-enroll__warning {
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  color: var(--or-text);
+}
+
+.or-enroll__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.or-enroll__label {
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.or-enroll__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+}
+
+.or-enroll__code {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--or-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.or-enroll__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .or-fleet__head {
+    padding: 16px 16px 12px;
+  }
+
+  .or-fleet__body {
+    padding: 0 16px 24px;
+  }
+
+  .or-fleet-agent {
+    padding: 16px;
+  }
+}

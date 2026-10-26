@@ -321,9 +321,14 @@ describe("createLiveInvalidator", () => {
       changeEvent(OTHER_ORG, { resource: "inbox_state", ids: ["manual_story:1"] }),
       both,
     );
-    // Another organization's agents and settings stay theirs.
+    // Fleet lists every organization's agents under the active one's keys; settings stay theirs.
     invalidator.apply(changeEvent(OTHER_ORG, { resource: "agent", ids: [ID] }), both);
-    expect(invalidated()).not.toContainEqual(active.agents.list());
+    expect(invalidated()).toContainEqual(active.agents.list());
+    invalidator.apply(
+      changeEvent(OTHER_ORG, { resource: "settings", section: "organization" }),
+      both,
+    );
+    expect(invalidated()).not.toContainEqual(active.settings.detail("x"));
   });
 
   it("scopeInvalidations adds only the scope-wide areas of the other organizations", () => {
@@ -331,6 +336,8 @@ describe("createLiveInvalidator", () => {
     expect(scopeInvalidations(other, new Set([OTHER_ORG]))).toEqual(liveInvalidations(other));
     expect(scopeInvalidations(other, new Set([ORG, OTHER_ORG]))).toEqual([
       ...liveInvalidations(other),
+      keys.agents.lists,
+      keys.agents.detail(ID),
       keys.inbox.all,
       ...repositoryViews,
     ]);

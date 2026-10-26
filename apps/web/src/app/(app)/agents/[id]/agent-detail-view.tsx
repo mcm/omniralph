@@ -866,7 +866,7 @@ function useLeaveAgent(agent: AgentRow, action: "revoke" | "delete") {
     // detail goes with the page.
     invalidate: (keys) => [keys.agents.lists, keys.runs.all, keys.repositories.all],
     success: `${action === "revoke" ? "Revoked" : "Deleted"} ${agent.name}`,
-    onSuccess: () => router.push("/agents"),
+    onSuccess: () => router.push("/fleet"),
   });
 }
 
@@ -1149,7 +1149,7 @@ export function AgentDetailView({ tab }: { tab: AgentTab }) {
     <>
       <AppHeader
         breadcrumbs={[
-          { label: "Agents", href: "/agents" },
+          { label: "Fleet", href: "/fleet" },
           { label: name ?? "Agent" },
           { label: AGENT_TAB_LABELS[tab] },
         ]}

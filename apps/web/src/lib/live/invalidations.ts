@@ -211,12 +211,14 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   // The Backlog lists every organization's work items, and opens any of them.
   "backlog",
   "workItems",
+  // Fleet lists every organization's agents, and opens any of them, under the active one's keys.
+  "agents",
 ];
 
 /**
  * The prefixes `event` invalidates in the cache of a scope: its own organization's keys,
  * plus, for the scope-wide areas (`SCOPE_WIDE_AREAS`), the same prefixes under every other
- * organization of the scope, since "All organizations" keys its Inbox, Runs and Repos
+ * organization of the scope, since "All organizations" keys its Inbox, Runs, Repos and Fleet
  * queries by the active one (Repos also opens any organization's repo under the active one's
  * keys).
  */

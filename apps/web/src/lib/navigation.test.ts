@@ -69,7 +69,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Agents, then Settings at the bottom", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -83,7 +83,7 @@ describe("navItems", () => {
       { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
       { id: "backlog", label: "Backlog", href: "/backlog", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repos", placement: "main", phone: "drawer" },
-      { id: "agents", label: "Agents", href: "/agents", placement: "main", phone: "drawer" },
+      { id: "fleet", label: "Fleet", href: "/fleet", placement: "main", phone: "drawer" },
       {
         id: "settings",
         label: "Settings",
@@ -127,8 +127,9 @@ describe("navItems", () => {
     ["/backlog/linear-1", "backlog"],
     ["/repos", "repos"],
     ["/repos/abc", "repos"],
-    ["/agents", "agents"],
-    ["/agents/abc", "agents"],
+    ["/fleet", "fleet"],
+    ["/fleet/abc", "fleet"],
+    ["/agents/abc", "fleet"],
     ["/settings", "settings"],
     ["/settings/general", "settings"],
     ["/settings/advanced/routing", "settings"],
@@ -142,7 +143,7 @@ describe("navItems", () => {
     ]);
   });
 
-  it.each(["/analytics", "/runsx", "/reposx", "/backlogx", "/repositories"])(
+  it.each(["/analytics", "/runsx", "/reposx", "/backlogx", "/fleetx", "/repositories"])(
     "makes no entry active on %s",
     (pathname) => {
       expect(navItems.filter((item) => isNavActive(pathname, item))).toEqual([]);
@@ -163,6 +164,16 @@ describe("navItems", () => {
       activeFor: ["/repos"],
       phone: "drawer",
     });
+  });
+
+  it("points Fleet at /fleet, lit for /fleet and today's agent pages, in the phone drawer", () => {
+    expect(navItems.find((item) => item.id === "fleet")).toMatchObject({
+      href: "/fleet",
+      activeFor: ["/fleet", "/agents"],
+      phone: "drawer",
+    });
+    expect(pageFor("/fleet/abc")).toBe(pages.get("/fleet/[id]"));
+    expect(pages.get("/agents")).toBeUndefined();
   });
 
   it("makes every page reachable from an entry", () => {

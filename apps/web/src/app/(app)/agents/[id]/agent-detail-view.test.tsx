@@ -188,7 +188,7 @@ describe("AgentDetailView", () => {
     expect(await screen.findByRole("button", { name: "Deleting…" })).toBeTruthy();
     expect(router.push).not.toHaveBeenCalled();
     resolveDelete(jsonResponse({ ok: true }));
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/agents"));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/fleet"));
     expect(requests.some((r) => r.method === "DELETE")).toBe(true);
     expect(client.getQueryState(keys.agents.list())?.isInvalidated).toBe(true);
   });

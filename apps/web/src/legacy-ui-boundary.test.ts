@@ -54,6 +54,7 @@ const SCREENS_2_0 = [
   /^src\/app\/\(app\)\/page\.tsx$/,
   /^src\/app\/\(app\)\/runs\//,
   /^src\/app\/\(app\)\/repos\//,
+  /^src\/app\/\(app\)\/fleet\//,
   /^src\/app\/\(app\)\/settings\//,
 ];
 
