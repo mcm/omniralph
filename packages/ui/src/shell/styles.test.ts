@@ -70,6 +70,15 @@ describe("shell.css", () => {
     expect(count.color).toBe("var(--or-acc-ink)");
   });
 
+  it("draws the neutral count as plain tertiary text, never the accent (.nav .n2)", () => {
+    const rules = parseRules(topLevel);
+    const n2 = declarations(rules, ".or-nav__n2");
+    expect(n2.color).toBe("var(--or-ter)");
+    expect(n2.background).toBeUndefined();
+    expect(n2["margin-left"]).toBe("auto");
+    expect(declarations(rules, ".or-nav__item--tab .or-nav__n2").display).toBe("none");
+  });
+
   describe("icon rail", () => {
     const rail = media(RAIL);
 
@@ -92,8 +101,12 @@ describe("shell.css", () => {
       }
     });
 
-    it("never uses display: none or visibility: hidden", () => {
-      for (const rule of rail) {
+    it("hides the neutral count, which the entry's accessible name still carries", () => {
+      expect(declarations(rail, ".or-sidebar .or-nav__n2").display).toBe("none");
+    });
+
+    it("never uses display: none or visibility: hidden for anything else", () => {
+      for (const rule of rail.filter((r) => !r.selectors.includes(".or-sidebar .or-nav__n2"))) {
         expect(rule.declarations.display, rule.selectors.join(", ")).not.toBe("none");
         expect(rule.declarations.visibility, rule.selectors.join(", ")).not.toBe("hidden");
       }

@@ -136,6 +136,19 @@
   text-align: center;
 }
 
+/* ui.css .nav .n2: a neutral count (never lavender, Design rule 15), full sidebar only */
+.or-nav__n2 {
+  margin-left: auto;
+  color: var(--or-ter);
+  font-family: var(--or-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.or-nav__item--tab .or-nav__n2 {
+  display: none;
+}
+
 /* ui.css .pip: a small dot in the indicator's tone */
 .or-nav__pip {
   width: 7px;
@@ -394,6 +407,11 @@
     top: 3px;
     right: 6px;
     margin-left: 0;
+  }
+
+  /* The neutral count leaves the rail; the entry's accessible name still carries it. */
+  .or-sidebar .or-nav__n2 {
+    display: none;
   }
 
   .or-sidebar .or-nav__count {

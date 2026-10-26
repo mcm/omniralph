@@ -1,8 +1,12 @@
 import type { TablerIcon } from "@tabler/icons-react";
 
-/** A live mark on a nav entry: a count pill (accent) or a dot in its tone. */
+/**
+ * A live mark on a nav entry: a count or a dot in its tone. A count is the accent pill
+ * (`accent`, the default: it needs you) or plain neutral text (`neutral`, e.g. Backlog's
+ * item count, Design rule 15), which shows on the full sidebar only.
+ */
 export type NavIndicator =
-  | { kind: "count"; value: number; label: string }
+  | { kind: "count"; value: number; label: string; tone?: "accent" | "neutral" }
   | { kind: "dot"; tone: "run" | "fail"; label: string };
 
 /** One navigation entry, shown in the sidebar, the rail and (by `phone`) the tab bar or drawer. */
@@ -44,6 +48,11 @@ export function isNavActive(
 /** The entry's accessible name: its label, plus the indicator's label when it has one. */
 export function navAccessibleName(item: Pick<NavItem, "label" | "indicator">): string {
   return item.indicator ? `${item.label}, ${item.indicator.label}` : item.label;
+}
+
+/** Whether the indicator is an alert (counted on the hamburger), not just information. */
+export function isNavAlert(indicator: NavIndicator | undefined): boolean {
+  return indicator !== undefined && !(indicator.kind === "count" && indicator.tone === "neutral");
 }
 
 /** The hamburger's accessible name: "Open menu", plus ", N alerts" for drawer indicators. */
