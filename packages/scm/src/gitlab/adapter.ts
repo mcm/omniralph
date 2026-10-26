@@ -2,12 +2,17 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { AccessLevel, Gitlab } from "@gitbeaker/rest";
 import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
 import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
+import { capPatch, countPatchLines, maxFilesOf } from "../commit-diff.js";
 import { MemoryCredentialCache, type CachedCredential, type CredentialCache } from "../credential-cache.js";
 import {
   ChangeRequestNotFoundError,
   CloneCredentialPermissionError,
+  CommitNotFoundError,
   getHeader,
   type ChangeRequest,
+  type CommitDiff,
+  type CommitDiffFile,
+  type CommitDiffOptions,
   type ChangeRequestUpdate,
   type CloneCredential,
   type CreatedChangeRequest,
@@ -103,6 +108,45 @@ function isTokenCreationForbidden(error: unknown): boolean {
 function projectId(repo: RepoRef): string | number {
   if (repo.externalId && /^\d+$/.test(repo.externalId)) return Number(repo.externalId);
   return repo.externalId ?? repo.fullPath;
+}
+
+/** Files GitLab lists per page at most. */
+const MAX_PER_PAGE = 100;
+
+interface GitLabCommitDiffEntry {
+  old_path: string;
+  new_path: string;
+  new_file: boolean;
+  renamed_file: boolean;
+  deleted_file: boolean;
+  diff: string;
+  /** Set (with an empty `diff`) when the file's diff is too large to return. */
+  too_large?: boolean;
+  collapsed?: boolean;
+}
+
+/**
+ * A file of `GET /projects/:id/repository/commits/:sha/diff`. GitLab sends no
+ * line counts, so they're counted in the patch; a diff GitLab left out for
+ * its size has none and is `truncated`.
+ */
+function gitLabCommitFile(entry: GitLabCommitDiffEntry): CommitDiffFile {
+  const status = entry.new_file
+    ? "added"
+    : entry.deleted_file
+      ? "removed"
+      : entry.renamed_file
+        ? "renamed"
+        : "modified";
+  const capped = entry.diff ? capPatch(entry.diff) : null;
+  return {
+    path: entry.new_path,
+    previousPath: status === "renamed" ? entry.old_path : null,
+    status,
+    ...countPatchLines(entry.diff ?? ""),
+    patch: capped?.patch ?? null,
+    truncated: capped ? capped.truncated : Boolean(entry.too_large || entry.collapsed),
+  };
 }
 
 /** A title without GitLab's draft markers. */
@@ -460,6 +504,33 @@ export class GitLabAdapter implements ScmAdapter {
       return { state: "merged", headSha: mr.sha, mergeSha: mergeSha || null };
     }
     return { state: mr.state === "closed" ? "closed" : "open", headSha: mr.sha, mergeSha: null };
+  }
+
+  /**
+   * `GET /projects/:id/repository/commits/:sha` for its page, then its
+   * `/diff`, up to one file more than `maxFiles` to tell whether there are more.
+   */
+  async getCommitDiff(repo: RepoRef, sha: string, options?: CommitDiffOptions): Promise<CommitDiff> {
+    const project = projectId(repo);
+    const maxFiles = maxFilesOf(options);
+    let commit;
+    try {
+      commit = await this.api.Commits.show(project, sha);
+    } catch (error) {
+      if (statusOf(error) === 404) throw new CommitNotFoundError(repo, sha, { cause: error });
+      throw error;
+    }
+    const perPage = Math.min(maxFiles + 1, MAX_PER_PAGE);
+    const entries = (await this.api.Commits.showDiff(project, sha, {
+      perPage,
+      maxPages: Math.ceil((maxFiles + 1) / perPage),
+    })) as unknown as GitLabCommitDiffEntry[];
+    return {
+      sha: commit.id,
+      url: commit.web_url,
+      files: entries.slice(0, maxFiles).map(gitLabCommitFile),
+      truncated: entries.length > maxFiles,
+    };
   }
 
   private async mergeRequest(repo: RepoRef, number: number) {

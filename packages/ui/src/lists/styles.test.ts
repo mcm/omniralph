@@ -72,6 +72,22 @@ describe("lists.css", () => {
     });
   });
 
+  it("colors a diff's added lines mint and removed lines coral, with tokens only", () => {
+    expect(top.get(".or-diff__line--add")?.color).toBe("var(--or-run)");
+    expect(top.get(".or-diff__line--del")?.color).toBe("var(--or-fail)");
+    expect(top.get(".or-diff__stat--add")?.color).toBe("var(--or-run)");
+    expect(top.get(".or-diff__stat--del")?.color).toBe("var(--or-fail)");
+    for (const [selector, declarations] of top) {
+      if (!selector.startsWith(".or-diff")) continue;
+      for (const value of Object.values(declarations)) {
+        expect(value, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+        for (const [, name] of value.matchAll(/var\((--[\w-]+)/g)) {
+          expect(name, selector).toMatch(/^--or-/);
+        }
+      }
+    }
+  });
+
   it("styles selected and bad rows", () => {
     expect(top.get('.or-tbl__row[aria-current="true"]')?.background).toBe("var(--or-sel)");
     expect(top.get('.or-cardrow[aria-current="true"]')?.background).toBe("var(--or-sel)");

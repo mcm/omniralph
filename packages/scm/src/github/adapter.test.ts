@@ -1,8 +1,14 @@
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ChangeRequestNotFoundError, CloneCredentialPermissionError } from "../types.js";
+import { MAX_PATCH_LINES } from "../commit-diff.js";
+import {
+  ChangeRequestNotFoundError,
+  CloneCredentialPermissionError,
+  CommitNotFoundError,
+} from "../types.js";
 import { GitHubAdapter } from "./adapter.js";
 import type { AppJwtSigner } from "./app-jwt.js";
 
@@ -1066,5 +1072,107 @@ describe("CI status and pull request state", () => {
       headSha: HEAD,
       mergeSha: "m".repeat(40),
     });
+  });
+});
+
+describe("getCommitDiff", () => {
+  /** A recorded `GET /repos/{owner}/{repo}/commits/{sha}` response. */
+  const commit = JSON.parse(
+    readFileSync(new URL("./fixtures/commit.json", import.meta.url), "utf8"),
+  ) as { sha: string; files: Record<string, unknown>[] };
+  const SHA = commit.sha;
+  const COMMIT_URL = `${API}/repos/acme/widgets/commits/${SHA}`;
+
+  it("maps the commit's files, statuses, counts and patches", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    let perPage: string | null = null;
+    server.use(
+      http.get(COMMIT_URL, ({ request }) => {
+        perPage = new URL(request.url).searchParams.get("per_page");
+        return HttpResponse.json(commit);
+      }),
+    );
+    const diff = await adapter.getCommitDiff(REPO, SHA);
+    expect(perPage).toBe("101");
+    expect(diff.sha).toBe(SHA);
+    expect(diff.url).toBe(`https://github.com/acme/widgets/commit/${SHA}`);
+    expect(diff.truncated).toBe(false);
+    expect(diff.files).toEqual([
+      {
+        path: "src/importer.ts",
+        previousPath: null,
+        status: "added",
+        additions: 3,
+        deletions: 0,
+        patch:
+          "@@ -0,0 +1,3 @@\n+export function importRows(rows: string[]) {\n+  return rows.map((row) => row.trim());\n+}",
+        truncated: false,
+      },
+      expect.objectContaining({
+        path: "src/app.ts",
+        status: "modified",
+        additions: 2,
+        deletions: 1,
+      }),
+      expect.objectContaining({
+        path: "docs/importing.md",
+        previousPath: "docs/import.md",
+        status: "renamed",
+      }),
+      expect.objectContaining({ path: "src/legacy.ts", status: "removed", deletions: 1 }),
+      // Binary: no patch, nothing left out.
+      expect.objectContaining({ path: "assets/logo.png", patch: null, truncated: false }),
+      // Too large for GitHub to show: no patch, truncated.
+      expect.objectContaining({ path: "pnpm-lock.yaml", patch: null, truncated: true }),
+    ]);
+  });
+
+  it("caps the files at maxFiles and each patch at 2,000 lines", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    const long = ["@@ -1,0 +1,2500 @@", ...Array.from({ length: 2_500 }, (_, i) => `+line ${i}`)];
+    const files = commit.files.map((file, i) =>
+      i === 1 ? { ...file, additions: 2_500, deletions: 0, patch: long.join("\n") } : file,
+    );
+    server.use(http.get(COMMIT_URL, () => HttpResponse.json({ ...commit, files })));
+    const diff = await adapter.getCommitDiff(REPO, SHA, { maxFiles: 2 });
+    expect(diff.truncated).toBe(true);
+    expect(diff.files.map((f) => f.path)).toEqual(["src/importer.ts", "src/app.ts"]);
+    const capped = diff.files[1]!;
+    expect(capped.truncated).toBe(true);
+    expect(capped.patch?.split("\n")).toHaveLength(MAX_PATCH_LINES);
+    expect(capped.additions).toBe(2_500);
+  });
+
+  it("is truncated when GitHub has another page of files", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    server.use(
+      http.get(COMMIT_URL, () =>
+        HttpResponse.json(commit, {
+          headers: { link: `<${COMMIT_URL}?per_page=300&page=2>; rel="next"` },
+        }),
+      ),
+    );
+    const diff = await adapter.getCommitDiff(REPO, SHA, { maxFiles: 500 });
+    expect(diff.files).toHaveLength(commit.files.length);
+    expect(diff.truncated).toBe(true);
+  });
+
+  it("throws CommitNotFoundError for an unknown commit or repository", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    server.use(
+      http.get(COMMIT_URL, () =>
+        HttpResponse.json({ message: `No commit found for SHA: ${SHA}` }, { status: 422 }),
+      ),
+    );
+    await expect(adapter.getCommitDiff(REPO, SHA)).rejects.toBeInstanceOf(CommitNotFoundError);
+    server.use(
+      http.get(COMMIT_URL, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })),
+    );
+    await expect(adapter.getCommitDiff(REPO, SHA)).rejects.toMatchObject({
+      name: "CommitNotFoundError",
+      sha: SHA,
+    });
+    server.use(http.get(COMMIT_URL, () => HttpResponse.json({ message: "boom" }, { status: 500 })));
+    await expect(adapter.getCommitDiff(REPO, SHA)).rejects.not.toBeInstanceOf(CommitNotFoundError);
   });
 });

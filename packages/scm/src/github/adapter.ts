@@ -2,12 +2,18 @@ import type { Octokit } from "@octokit/rest";
 import { verify } from "@octokit/webhooks-methods";
 import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
 import { capLength, capTitle, renderInlineComment, summaryWithFallbacks } from "../comment-body.js";
+import { capPatch, maxFilesOf } from "../commit-diff.js";
 import { buildDiffLineIndex, isCommentInDiff } from "../diff-lines.js";
 import {
   ChangeRequestNotFoundError,
   CloneCredentialPermissionError,
+  CommitNotFoundError,
   getHeader,
   type ChangeRequest,
+  type CommitDiff,
+  type CommitDiffFile,
+  type CommitDiffOptions,
+  type CommitFileStatus,
   type ChangeRequestUpdate,
   type CloneCredential,
   type CreatedChangeRequest,
@@ -153,6 +159,49 @@ function isPermissionNotGranted(error: unknown): boolean {
 
 /** Workflow run and job conclusions that count as a CI failure. */
 const GITHUB_FAILED = new Set(["failure", "timed_out", "startup_failure"]);
+
+/** GitHub's file statuses as {@link CommitFileStatus}: a copy is a new file. */
+const GITHUB_FILE_STATUS: Record<string, CommitFileStatus> = {
+  added: "added",
+  copied: "added",
+  removed: "removed",
+  renamed: "renamed",
+  modified: "modified",
+  changed: "modified",
+  unchanged: "modified",
+};
+
+/** Files the commit API lists per page at most. */
+const MAX_COMMIT_FILES_PER_PAGE = 300;
+
+interface GitHubCommitFile {
+  filename: string;
+  previous_filename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+/**
+ * A file of `GET /repos/{owner}/{repo}/commits/{sha}`. GitHub leaves `patch`
+ * out for binary files (no line changes) and for diffs too large to show
+ * (line changes, so `truncated`).
+ */
+function githubCommitFile(file: GitHubCommitFile): CommitDiffFile {
+  const status = GITHUB_FILE_STATUS[file.status] ?? "modified";
+  const capped = file.patch ? capPatch(file.patch) : null;
+  return {
+    path: file.filename,
+    previousPath: status === "renamed" ? (file.previous_filename ?? null) : null,
+    status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: capped?.patch ?? null,
+    truncated: capped ? capped.truncated : file.changes > 0,
+  };
+}
 
 function commentKey(path: string, side: string, line: number | null | undefined): string {
   return JSON.stringify([path, side, line ?? null]);
@@ -618,6 +667,44 @@ export class GitHubAdapter implements ScmAdapter {
       state: merged ? "merged" : pr.state === "closed" ? "closed" : "open",
       headSha: pr.head.sha,
       mergeSha: merged ? (pr.merge_commit_sha ?? null) : null,
+    };
+  }
+
+  /**
+   * `GET /repos/{owner}/{repo}/commits/{sha}`, one page of files: one more
+   * than `maxFiles` (up to GitHub's 300 per page) tells whether there are
+   * more. GitHub answers 404 for an unknown repository and 422 for an
+   * unknown SHA.
+   */
+  async getCommitDiff(
+    repo: RepoRef,
+    sha: string,
+    options?: CommitDiffOptions,
+  ): Promise<CommitDiff> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const maxFiles = maxFilesOf(options);
+    const octokit = await this.client(repo);
+    let response;
+    try {
+      response = await octokit.repos.getCommit({
+        owner,
+        repo: name,
+        ref: sha,
+        per_page: Math.min(maxFiles + 1, MAX_COMMIT_FILES_PER_PAGE),
+      });
+    } catch (error) {
+      if (hasStatus(error, 404) || hasStatus(error, 422)) {
+        throw new CommitNotFoundError(repo, sha, { cause: error });
+      }
+      throw error;
+    }
+    const files = (response.data.files ?? []) as GitHubCommitFile[];
+    const nextPage = /rel="next"/.test(response.headers.link ?? "");
+    return {
+      sha: response.data.sha,
+      url: response.data.html_url,
+      files: files.slice(0, maxFiles).map(githubCommitFile),
+      truncated: files.length > maxFiles || nextPage,
     };
   }
 

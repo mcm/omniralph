@@ -286,6 +286,15 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   per event: the mono offset from `startedAt` (`transcriptOffset`: "m:ss", or "h:mm:ss"
   from an hour), the action's name or "thinking", then the action's `parameter` in mono or
   the thought's text in prose. The `error` renders last, in coral, as an `alert`.
+- `DiffView`: `files` (`{ path, previousPath?, additions, deletions, patch, truncated? }`,
+  `patch` the unified hunks or null), optional `truncated` (more files than listed), `url`
+  (the full diff on the code host), `urlLabel` (default "Open the commit") and `aria-label`
+  (default "Diff"). A `<ul>` with one section per file: a toggle button (`aria-expanded`,
+  open by default) showing "{previousPath} → {path}" for a rename and "+{additions}
+  −{deletions}", then the mono lines (`diffLineKind`: added in `--or-run`, removed in
+  `--or-fail`, hunk headers tertiary). A truncated file, and a truncated diff once after
+  the files, say "This diff is too large to show in full." (`DIFF_TOO_LARGE`) with the
+  link; a file without lines says "No line changes to show.".
 - `nestedInteractiveElements(root)`: every `a`, `button` or `input` inside an `a` or
   `button`. Lists and tables return none; screen tests can assert the same.
 

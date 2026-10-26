@@ -159,6 +159,21 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(liveInvalidations(event({ resource: "organization" }))).toEqual([keys.organization.all]);
   });
 
+  it("never reaches a story's diff: a commit's diff doesn't change", () => {
+    const diff = runsKeys(keys).diff(RUN, ID, "c0ffee");
+    const reaches = (prefix: QueryKey) => prefix.every((part, i) => diff[i] === part);
+    const events: ChangeEvent[] = [ORG, OTHER_ORG].flatMap((org) =>
+      CHANGE_RESOURCES.filter((resource) => resource !== "settings").flatMap((resource) => [
+        changeEvent(org, { resource, runId: RUN, ids: [ID] }),
+        changeEvent(org, { resource, ids: [ID] }),
+      ]),
+    );
+    for (const changed of events) {
+      const prefixes = scopeInvalidations(changed, new Set([ORG, OTHER_ORG]));
+      expect(prefixes.filter(reaches), changed.resource).toEqual([]);
+    }
+  });
+
   it("keys an event by its own organization", () => {
     expect(liveInvalidations(changeEvent(OTHER_ORG, { resource: "organization" }))).toEqual([
       queryKeys(OTHER_ORG).organization.all,

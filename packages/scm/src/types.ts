@@ -149,6 +149,55 @@ export class CloneCredentialPermissionError extends Error {
   }
 }
 
+/** How a commit changed a file. */
+export type CommitFileStatus = "added" | "modified" | "removed" | "renamed";
+
+/** One file of a commit's diff. */
+export interface CommitDiffFile {
+  /** Path after the commit. */
+  path: string;
+  /** Path before the commit, when the file was renamed; otherwise null. */
+  previousPath: string | null;
+  status: CommitFileStatus;
+  additions: number;
+  deletions: number;
+  /**
+   * Unified diff hunks (`@@ … @@` and the lines after), capped at
+   * `MAX_PATCH_LINES` (2,000) lines. Null when the host shows none (binary or
+   * too large).
+   */
+  patch: string | null;
+  /** The patch was cut short, or the host left it out because it is too large. */
+  truncated: boolean;
+}
+
+/** A commit's changes, as {@link ScmAdapter.getCommitDiff} returns them. */
+export interface CommitDiff {
+  sha: string;
+  /** The commit's page on the code host. */
+  url: string;
+  files: CommitDiffFile[];
+  /** More files changed than `maxFiles`; only the first ones are listed. */
+  truncated: boolean;
+}
+
+export interface CommitDiffOptions {
+  /** Most files returned; defaults to `DEFAULT_COMMIT_DIFF_MAX_FILES` (100). */
+  maxFiles?: number;
+}
+
+/** The commit doesn't exist on the code host (e.g. it was never pushed). */
+export class CommitNotFoundError extends Error {
+  constructor(
+    readonly repo: RepoRef,
+    readonly sha: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`Commit ${sha} not found in ${repo.fullPath}`, options);
+    this.name = "CommitNotFoundError";
+  }
+}
+
 /** Webhook request headers, either a Fetch `Headers` or a plain record. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
@@ -207,6 +256,13 @@ export interface ScmAdapter {
    * commits. Throws {@link ChangeRequestNotFoundError} when it doesn't exist.
    */
   getChangeRequestState(repo: RepoRef, number: number): Promise<ChangeRequestStatus>;
+  /**
+   * The files a commit changed, with their patches: at most `maxFiles` files
+   * (default 100) and 2,000 lines per patch, flagged
+   * `truncated` when cut. Throws {@link CommitNotFoundError} when the host
+   * doesn't have the commit.
+   */
+  getCommitDiff(repo: RepoRef, sha: string, options?: CommitDiffOptions): Promise<CommitDiff>;
   /** Verifies a webhook delivery's signature against the raw request body. */
   verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean>;
 }

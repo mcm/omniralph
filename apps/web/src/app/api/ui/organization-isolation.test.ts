@@ -63,6 +63,7 @@ import {
   updateRun,
   upsertScmConnection,
   upsertStories,
+  updateStory,
   users,
   type Database,
 } from "@omniralph/db";
@@ -85,6 +86,8 @@ import {
 import type { RoutingPreview } from "@/lib/api/routing-rules";
 import type * as LinearClient from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as Adapters from "@/lib/scm/adapters";
+import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { CANCEL_REQUESTED_WARNING } from "@/lib/jobs/cancel";
 
 vi.mock("server-only", () => ({}));
@@ -117,6 +120,8 @@ const state = vi.hoisted(() => ({
   cookies: new Map<string, string>(),
   /** Each organization's Linear workspace, by organization ID (else none is connected). */
   linear: new Map<string, FakeLinearGateway>(),
+  /** The code host, when a test sets one (else the real adapters). */
+  scm: null as FakeScmAdapter | null,
 }));
 // This browser's cookies (switching organizations sets one).
 vi.mock("next/headers", () => ({
@@ -135,6 +140,14 @@ vi.mock("@/lib/linear/client", async (importOriginal) => {
     ...actual,
     getLinearGateway: async (options: LinearClient.LinearGatewayOptions) =>
       state.linear.get(options.organizationId) ?? actual.getLinearGateway(options),
+  };
+});
+vi.mock("@/lib/scm/adapters", async (importOriginal) => {
+  const actual = await importOriginal<typeof Adapters>();
+  return {
+    ...actual,
+    scmAdapterFor: (...args: Parameters<typeof actual.scmAdapterFor>) =>
+      state.scm?.asAdapter() ?? actual.scmAdapterFor(...args),
   };
 });
 // The signed-in user with their real role in their active organization.
@@ -216,6 +229,7 @@ const runRetry = await import("./runs/[id]/retry/route");
 const runAnswer = await import("./runs/[id]/answer/route");
 const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
 const runSession = await import("./runs/[id]/session/route");
+const runStepDiff = await import("./runs/[id]/steps/[stepId]/diff/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
@@ -1621,6 +1635,28 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       });
       attempts.set(tenant.orgId, job!.id);
     }
+    // Each epic's story was built in a commit, which the code host has.
+    state.scm = new FakeScmAdapter();
+    for (const tenant of [a, b]) {
+      const sha = tenant.name.padEnd(40, "0");
+      await updateStory(db, tenant.storyId, { commitSha: sha });
+      state.scm.commitDiffs.set(`${tenant.repoPath}@${sha}`, {
+        sha,
+        url: `https://github.com/${tenant.repoPath}/commit/${sha}`,
+        files: [
+          {
+            path: `${tenant.name}.ts`,
+            previousPath: null,
+            status: "added",
+            additions: 1,
+            deletions: 0,
+            patch: `@@ -0,0 +1 @@\n+${tenant.name}`,
+            truncated: false,
+          },
+        ],
+        truncated: false,
+      });
+    }
     for (const [own, other] of [
       [a, b],
       [b, a],
@@ -1675,13 +1711,23 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         expect(transcript).toMatchObject({ status: 200, body: { events: [{ body: own.name }] } });
         const session = await call(runSession.GET, { params: { id: own.runId } });
         expect(session).toMatchObject({ status: 200, body: { messages: [] } });
-        for (const { body } of [list, detail, triageDetail, transcript, session]) {
+        const diff = await call(runStepDiff.GET, {
+          params: { id: own.runId, stepId: own.storyId },
+        });
+        expect(diff).toMatchObject({ status: 200, body: { files: [{ path: `${own.name}.ts` }] } });
+        for (const { body } of [list, detail, triageDetail, transcript, session, diff]) {
           for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         }
 
         for (const id of [other.runId, other.triageRunId, "not-a-uuid"]) {
           expect(await call(runDetail.GET, { params: { id } })).toMatchObject({ status: 404 });
           expect(await call(runSession.GET, { params: { id } })).toMatchObject({ status: 404 });
+        }
+        // The other's story, through their run or through one's own.
+        for (const id of [other.runId, own.runId]) {
+          expect(
+            await call(runStepDiff.GET, { params: { id, stepId: other.storyId } }),
+          ).toMatchObject({ status: 404 });
         }
         // The other's attempt, through their run or through one's own.
         for (const [id, attemptId] of [
@@ -1695,6 +1741,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
     }
     await db.delete(jobs).where(inArray(jobs.id, [...attempts.values()]));
+    for (const tenant of [a, b]) await updateStory(db, tenant.storyId, { commitSha: null });
+    state.scm = null;
   });
 
   it("lists and shows each organization's own review runs and asks, and 404s on the other's", async () => {

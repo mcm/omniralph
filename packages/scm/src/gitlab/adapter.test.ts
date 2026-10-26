@@ -1,8 +1,14 @@
+import { readFileSync } from "node:fs";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MemoryCredentialCache } from "../credential-cache.js";
-import { ChangeRequestNotFoundError, CloneCredentialPermissionError } from "../types.js";
+import { MAX_PATCH_LINES } from "../commit-diff.js";
+import {
+  ChangeRequestNotFoundError,
+  CloneCredentialPermissionError,
+  CommitNotFoundError,
+} from "../types.js";
 import { GitLabAdapter, stripDraftPrefix } from "./adapter.js";
 
 const HOST = "https://gitlab.example.com";
@@ -863,5 +869,88 @@ describe("CI status and merge request state", () => {
     // Fast-forward merges have no merge commit: the head landed as it is.
     server.use(mr({ state: "merged", merge_commit_sha: null, squash_commit_sha: null }));
     await expect(adapter.getChangeRequestState(REPO, 7)).resolves.toMatchObject({ mergeSha: HEAD });
+  });
+});
+
+describe("getCommitDiff", () => {
+  /** Recorded `GET /projects/:id/repository/commits/:sha` and `/diff` responses. */
+  const fixture = (name: string) =>
+    JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")) as unknown;
+  const commit = fixture("commit.json") as { id: string; web_url: string };
+  const commitDiff = fixture("commit-diff.json") as Record<string, unknown>[];
+  const SHA = commit.id;
+  const COMMIT = `${API}/repository/commits/${SHA}`;
+
+  it("maps the commit's files, statuses, counted lines and patches", async () => {
+    const adapter = makeAdapter();
+    let perPage: string | null = null;
+    server.use(
+      http.get(COMMIT, () => HttpResponse.json(commit)),
+      http.get(`${COMMIT}/diff`, ({ request }) => {
+        perPage = new URL(request.url).searchParams.get("per_page");
+        return HttpResponse.json(commitDiff);
+      }),
+    );
+    const diff = await adapter.getCommitDiff(REPO, SHA);
+    expect(perPage).toBe("100");
+    expect(diff.sha).toBe(SHA);
+    expect(diff.url).toBe(commit.web_url);
+    expect(diff.truncated).toBe(false);
+    expect(diff.files).toEqual([
+      {
+        path: "src/importer.ts",
+        previousPath: null,
+        status: "added",
+        additions: 3,
+        deletions: 0,
+        patch:
+          "@@ -0,0 +1,3 @@\n+export function importRows(rows: string[]) {\n+  return rows.map((row) => row.trim());\n+}",
+        truncated: false,
+      },
+      expect.objectContaining({ path: "src/app.ts", status: "modified", additions: 2, deletions: 1 }),
+      expect.objectContaining({
+        path: "docs/importing.md",
+        previousPath: "docs/import.md",
+        status: "renamed",
+        additions: 1,
+        deletions: 1,
+      }),
+      expect.objectContaining({ path: "src/legacy.ts", status: "removed", deletions: 1 }),
+      // Left out by GitLab for its size.
+      expect.objectContaining({ path: "pnpm-lock.yaml", patch: null, truncated: true }),
+    ]);
+  });
+
+  it("caps the files at maxFiles and each patch at 2,000 lines", async () => {
+    const adapter = makeAdapter();
+    const long = ["@@ -1,0 +1,2500 @@", ...Array.from({ length: 2_500 }, (_, i) => `+line ${i}`)];
+    const entries = commitDiff.map((entry, i) =>
+      i === 1 ? { ...entry, diff: `${long.join("\n")}\n` } : entry,
+    );
+    let perPage: string | null = null;
+    server.use(
+      http.get(COMMIT, () => HttpResponse.json(commit)),
+      http.get(`${COMMIT}/diff`, ({ request }) => {
+        perPage = new URL(request.url).searchParams.get("per_page");
+        return HttpResponse.json(entries.slice(0, Number(perPage)));
+      }),
+    );
+    const diff = await adapter.getCommitDiff(REPO, SHA, { maxFiles: 2 });
+    expect(perPage).toBe("3");
+    expect(diff.truncated).toBe(true);
+    expect(diff.files.map((f) => f.path)).toEqual(["src/importer.ts", "src/app.ts"]);
+    const capped = diff.files[1]!;
+    expect(capped.truncated).toBe(true);
+    expect(capped.patch?.split("\n")).toHaveLength(MAX_PATCH_LINES);
+    // Counted before the cap.
+    expect(capped.additions).toBe(2_500);
+  });
+
+  it("throws CommitNotFoundError for a commit GitLab doesn't have", async () => {
+    const adapter = makeAdapter();
+    server.use(
+      http.get(COMMIT, () => HttpResponse.json({ message: "404 Commit Not Found" }, { status: 404 })),
+    );
+    await expect(adapter.getCommitDiff(REPO, SHA)).rejects.toBeInstanceOf(CommitNotFoundError);
   });
 });

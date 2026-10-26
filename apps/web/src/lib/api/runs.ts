@@ -372,6 +372,36 @@ export const transcriptPageSchema = z.object({
 });
 export type TranscriptPageView = z.infer<typeof transcriptPageSchema>;
 
+/** How a commit changed a file (`CommitFileStatus` in `@omniralph/scm`). */
+export const COMMIT_FILE_STATUSES = ["added", "modified", "removed", "renamed"] as const;
+
+export const commitDiffFileSchema = z.object({
+  path: z.string(),
+  /** The path before a rename; null otherwise. */
+  previousPath: z.string().nullable(),
+  status: z.enum(COMMIT_FILE_STATUSES),
+  additions: z.number(),
+  deletions: z.number(),
+  /** Unified diff hunks, at most 2,000 lines; null when the code host shows none. */
+  patch: z.string().nullable(),
+  /** The patch was cut short or left out for its size. */
+  truncated: z.boolean(),
+});
+export type CommitDiffFileView = z.infer<typeof commitDiffFileSchema>;
+
+/** `GET /api/ui/runs/{id}/steps/{stepId}/diff`: an epic story's commit. */
+export const storyDiffSchema = z.object({
+  sha: z.string(),
+  /** The commit on the code host. */
+  url: z.string(),
+  provider,
+  /** At most 100 files. */
+  files: z.array(commitDiffFileSchema),
+  /** More files changed than are listed. */
+  truncated: z.boolean(),
+});
+export type StoryDiff = z.infer<typeof storyDiffSchema>;
+
 /** What `POST /api/ui/runs/{id}/retry` retries (the run by default). */
 export const runRetryTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("run") }),
