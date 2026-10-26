@@ -486,6 +486,30 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     expect(await queuedJobs()).toEqual([]);
   });
 
+  it("points to the Coding switch when no repository has coding on", async () => {
+    await db
+      .update(repositories)
+      .set({ codingEnabled: false })
+      .where(eq(repositories.organizationId, orgId));
+    try {
+      const calls = await handOff({ repository: "acme/app", request: REQUEST });
+
+      expect(toolOutput(calls[1]!)).toMatchObject({ error: "unknown_repository", candidates: [] });
+      const message = String(toolOutput(calls[1]!).message);
+      expect(message).toContain("Coding switch under Repos");
+      expect(message).toContain("work item match");
+      expect(message).not.toContain("Task types");
+      expect(await threadRun()).toBeNull();
+    } finally {
+      for (const fullPath of ["acme/app", "acme/web"]) {
+        await db
+          .update(repositories)
+          .set({ codingEnabled: true })
+          .where(and(eq(repositories.organizationId, orgId), eq(repositories.fullPath, fullPath)));
+      }
+    }
+  });
+
   it("refuses a chat user who isn't a linked member", async () => {
     const { model, calls } = scriptedModel(
       toolCallResult("start_work", { repository: "acme/app", request: REQUEST }),

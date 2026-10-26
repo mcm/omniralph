@@ -213,7 +213,7 @@ async function retryTriage(
       );
     case "query_disabled":
       throw notRetryable(
-        `Query tasks are turned off for ${result.repository}, so triage can't run.`,
+        `Ask is turned off for ${result.repository}, so triage can't run. Turn on the repo's Ask switch first.`,
       );
     case "load_failed":
       throw new ApiRouteError(
@@ -244,7 +244,9 @@ async function retryAsk(db: Database, run: RunIndexEntry, detail: RunDetail): Pr
     case "unknown_repository":
       throw notRetryable("The repo this question was about is disconnected.");
     case "query_disabled":
-      throw notRetryable(`Query tasks are turned off for ${result.repository.fullPath}.`);
+      throw notRetryable(
+        `Ask is turned off for ${result.repository.fullPath}. Turn on the repo's Ask switch first.`,
+      );
   }
 }
 

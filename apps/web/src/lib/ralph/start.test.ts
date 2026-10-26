@@ -471,8 +471,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
     const [error] = linear.bodies(unroutable.sessionId, "error");
-    expect(error).toContain("no repository has coding on");
-    expect(error).toContain("Repository › Settings › Task types");
+    expect(error).toContain("no repo has Coding on");
+    expect(error).toContain("work item match");
+    expect(error).toContain("**Coding** switch under **Repos**");
+    expect(error).not.toContain("Task types");
     expect(error).not.toContain("[repo=");
 
     expect(await db.select().from(ralphRuns)).toHaveLength(1);

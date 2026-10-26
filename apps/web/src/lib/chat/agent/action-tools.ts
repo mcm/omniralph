@@ -83,7 +83,7 @@ export const startWork = defineChatTool({
           message:
             outcome.candidates.length > 0
               ? `\`${input.repository}\` isn't a repository of this organization with coding on. Ask the user which of these they mean: ${outcome.candidates.join(", ")}.`
-              : "No repository of this organization has coding on. An admin can turn it on under Repository › Settings › Task types in the control panel.",
+              : "No repo of this organization has Coding on. An admin can turn on a repo's Coding switch under Repos in the control panel (the repo needs a work item match first).",
           candidates: outcome.candidates,
         };
       case "already_running":

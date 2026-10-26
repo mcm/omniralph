@@ -520,8 +520,9 @@ async function laneRepository(
   }
   if (!found.repository.codingEnabled) {
     return (
-      `Coding was turned off for \`${found.repository.fullPath}\`, so I stopped. Turn it on under ` +
-      "**Repository › Settings › Task types** and delegate the issue again to continue."
+      `Coding was turned off for \`${found.repository.fullPath}\`, so I stopped. Turn its ` +
+      "**Coding** switch back on under **Repos** (it needs a work item match) and delegate the " +
+      "work item again to continue."
     );
   }
   if (!lane) return "The run has no branch in its repository, so I stopped.";

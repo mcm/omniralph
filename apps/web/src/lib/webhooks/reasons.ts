@@ -28,7 +28,7 @@ export const WEBHOOK_IGNORE_REASONS = {
   own_review: () => "Om's own review doesn't change the review state",
   // `@bot` commands (`lib/mentions/handle.ts`), once they've run.
   command_refused: () => "Only people with write access to the repo can use this command",
-  query_disabled: () => "Questions are off for this repo",
+  query_disabled: () => "Ask is off for this repo",
   not_in_finding_thread: () => "The question isn't in a thread of one of Om's findings",
   run_finished: () => "Om's run for this is already over",
   help: () => "Om replied with the list of commands",

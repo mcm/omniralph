@@ -217,8 +217,8 @@ export async function awaitRepository(
   if (candidates.length === 0) {
     return {
       failed:
-        "No repository has coding on, so I can't build this. Turn it on for one under " +
-        "**Repository › Settings › Task types** and delegate the issue again.",
+        "No repo has Coding on, so I can't build this. Turn on a repo's **Coding** switch under " +
+        "**Repos** (it needs a work item match) and delegate the work item again.",
     };
   }
   const updated =

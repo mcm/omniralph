@@ -533,7 +533,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 
-  it("enqueues nothing and says so when the repository's query tasks are turned off", async () => {
+  it("enqueues nothing and says so when the repository's Ask switch is off", async () => {
     const setAsk = (askEnabled: boolean) =>
       db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repositoryId));
     const h = await harness();
@@ -541,7 +541,8 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       await setAsk(false);
       const off = await ask(h, { repository: "acme/api", question: "How is auth done?" });
       expect(off).toMatchObject({ error: "query_disabled" });
-      expect(off.message).toContain("Query tasks are turned off for acme/api");
+      expect(off.message).toContain("Ask is turned off for acme/api");
+      expect(off.message).toContain("Ask switch");
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
       // Ask on answers, whatever the organization's task types (on a harness taking queries).
