@@ -760,29 +760,38 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
 
         await runMigrations(uri);
+        // 0102 then turned the inherited (null) task types into every type, as reported.
+        const all = ["query", "review", "coding"];
         const { rows } = await client.query<{
           name: string;
           max_concurrency: number | null;
-          accepted_task_types: string[] | null;
+          reported_accepted_task_types: string[] | null;
           pool_limits: Record<string, number>;
         }>(
-          `select name, max_concurrency, accepted_task_types, pool_limits from harnesses order by name`,
+          `select name, max_concurrency, reported_accepted_task_types, pool_limits from harnesses order by name`,
         );
         expect(rows).toEqual([
-          { name: "configured", max_concurrency: null, accepted_task_types: null, pool_limits: {} },
-          { name: "defaults", max_concurrency: null, accepted_task_types: null, pool_limits: {} },
+          {
+            name: "configured",
+            max_concurrency: null,
+            reported_accepted_task_types: all,
+            pool_limits: {},
+          },
+          {
+            name: "defaults",
+            max_concurrency: null,
+            reported_accepted_task_types: all,
+            pool_limits: {},
+          },
         ]);
 
         // New harnesses inherit too: no column default.
-        const { rows: added } = await client.query<{
-          max_concurrency: number | null;
-          accepted_task_types: string[] | null;
-        }>(
+        const { rows: added } = await client.query<{ max_concurrency: number | null }>(
           `insert into harnesses (organization_id, name) values ($1, 'new')
-           returning max_concurrency, accepted_task_types`,
+           returning max_concurrency`,
           [acme],
         );
-        expect(added).toEqual([{ max_concurrency: null, accepted_task_types: null }]);
+        expect(added).toEqual([{ max_concurrency: null }]);
       } finally {
         await client.end();
       }
@@ -1609,7 +1618,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
              ($1, 'chat.tasks', '{"askAboutCode":"builtin:ask-about-code","startWork":"builtin:handle-request"}'),
              ($2, 'chat.tasks', '{"startWork":"builtin:handle-request","askAboutCode":7}'),
              ($3, 'chat.tasks', '{"askAboutCode":null}'),
-             ($1, 'tasks.allowedTypes', '["review"]')`,
+             ($1, 'harness.maxConcurrency', '2')`,
           [acme, beta, gamma],
         );
         const { rows: connections } = await client.query<{ id: string }>(
@@ -1632,7 +1641,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           value: unknown;
         }>(
           `select organization_id, key, value from app_settings
-           where key like 'chat.%' or key = 'tasks.allowedTypes' order by key, organization_id`,
+           where key like 'chat.%' or key = 'harness.maxConcurrency' order by key, organization_id`,
         );
         expect(settings).toEqual(
           [
@@ -1648,7 +1657,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
               value: { startWork: "builtin:handle-request" },
             },
             // Gamma chose nothing: no row. Other settings are untouched.
-            { organization_id: acme, key: "tasks.allowedTypes", value: ["review"] },
+            { organization_id: acme, key: "harness.maxConcurrency", value: 2 },
           ].sort((a, b) =>
             a.key === b.key
               ? Number(a.organization_id > b.organization_id) - 0.5
@@ -1819,6 +1828,118 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         await expect(
           client.query(`update repositories set coding_enabled = null where full_path = 'prod/a'`),
         ).rejects.toThrow(/null value/);
+      } finally {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("agents report their accepted task types (0102)", () => {
+    it("fills the reported task types from each agent's own value, else its organization's, else all", async () => {
+      await db.execute(sql`create database reported_task_types`);
+      const uri = testDb.uri.replace(/\/[^/]*$/, "/reported_task_types");
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      const client = new pg.Client({ connectionString: uri });
+      try {
+        cpSync(migrationsFolder, before, { recursive: true });
+        const journalPath = join(before, "meta", "_journal.json");
+        const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+          entries: { tag: string }[];
+        };
+        const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0102_"));
+        writeFileSync(
+          journalPath,
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+        );
+        await client.connect();
+        await migrate(drizzle(client), { migrationsFolder: before });
+
+        /** An organization (with `allowedTypes` when given) and its agents' own task types. */
+        const organization = async (
+          name: string,
+          allowedTypes: unknown,
+          agents: { name: string; accepted?: string[]; deleted?: boolean }[],
+        ) => {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into organizations (name) values ($1) returning id`,
+            [name],
+          );
+          const org = rows[0]!.id;
+          await client.query(
+            `insert into app_settings (organization_id, key, value) values ($1, 'harness.maxConcurrency', '2')`,
+            [org],
+          );
+          if (allowedTypes !== undefined) {
+            await client.query(
+              `insert into app_settings (organization_id, key, value) values ($1, 'tasks.allowedTypes', $2)`,
+              [org, JSON.stringify(allowedTypes)],
+            );
+          }
+          for (const agent of agents) {
+            await client.query(
+              `insert into harnesses (organization_id, name, accepted_task_types, revoked_at, deleted_at)
+               values ($1, $2, $3, $4, $4)`,
+              [org, agent.name, agent.accepted ?? null, agent.deleted ? new Date() : null],
+            );
+          }
+        };
+        // Production: 9 agents, all inheriting (null), 2 of them soft-deleted; no setting.
+        await organization(
+          "Production",
+          undefined,
+          Array.from({ length: 9 }, (_, i) => ({ name: `prod-${i + 1}`, deleted: i >= 7 })),
+        );
+        // The organization's setting (kept in task type order), and an agent's own value.
+        await organization(
+          "Allowed",
+          ["coding", "query"],
+          [
+            { name: "allowed-inheriting" },
+            { name: "allowed-own", accepted: ["review"] },
+            { name: "allowed-deleted", deleted: true },
+          ],
+        );
+        await organization("Malformed", ["review", "bogus"], [{ name: "malformed-agent" }]);
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{
+          name: string;
+          reported_accepted_task_types: string[] | null;
+        }>(`select name, reported_accepted_task_types from harnesses order by name`);
+        const all = ["query", "review", "coding"];
+        expect(
+          Object.fromEntries(rows.map((r) => [r.name, r.reported_accepted_task_types])),
+        ).toEqual({
+          ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`prod-${i + 1}`, all])),
+          "allowed-inheriting": ["query", "coding"],
+          "allowed-own": ["review"],
+          "allowed-deleted": ["query", "coding"],
+          "malformed-agent": all,
+        });
+
+        // The old column and the organization setting are gone; other settings stay.
+        const { rows: columns } = await client.query(
+          `select column_name from information_schema.columns
+           where table_schema = 'public' and table_name = 'harnesses'
+             and column_name in ('accepted_task_types', 'reported_accepted_task_types')`,
+        );
+        expect(columns).toEqual([{ column_name: "reported_accepted_task_types" }]);
+        const { rows: settings } = await client.query<{ key: string }>(
+          `select key from app_settings order by key`,
+        );
+        expect(settings.map((r) => r.key)).toEqual([
+          "harness.maxConcurrency",
+          "harness.maxConcurrency",
+          "harness.maxConcurrency",
+        ]);
+        // A new agent has reported nothing yet.
+        const { rows: added } = await client.query(
+          `insert into harnesses (organization_id, name)
+           select id, 'new' from organizations where name = 'Production'
+           returning reported_accepted_task_types`,
+        );
+        expect(added).toEqual([{ reported_accepted_task_types: null }]);
       } finally {
         await client.end();
         rmSync(before, { recursive: true, force: true });

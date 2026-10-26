@@ -141,7 +141,7 @@ describe.skipIf(!databaseAvailable)("/api/harness/jobs/{id}/permissions", () => 
       .values({
         organizationId: orgId,
         name: "coder-1",
-        acceptedTaskTypes: ["query", "review", "coding"],
+        reportedAcceptedTaskTypes: ["query", "review", "coding"],
       })
       .returning();
     harnessId = harness!.id;

@@ -17,7 +17,6 @@ import {
   repositories,
   reviewRuns,
   reviews,
-  setAllowedTaskTypeDefaults,
   updateLane,
   upsertScmConnection,
   users,
@@ -561,15 +560,13 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         expect(state.scm.calls.replyToComment[0]!.body).toContain("dismissed this finding");
         expect(state.scm.calls.replyToComment[0]!.body).not.toContain("learn");
 
-        // The organization's task types don't turn the repository's Ask switch off.
+        // Ask on learns from it.
         await setAsk(true);
-        await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
         const on = await reviewedPr();
         await threadComment(on.number, on.commentId, "@omniralph dismiss");
         expect(await learnJobs()).toHaveLength(before + 1);
       } finally {
         await setAsk(true);
-        await setAllowedTaskTypeDefaults(db, orgId, null, null);
       }
     });
 
@@ -671,15 +668,13 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         expect(await replyJobs()).toHaveLength(before);
         expect(state.scm.calls.replyToComment).toEqual([]);
 
-        // Ask on answers, whatever the organization's task types.
+        // Ask on answers.
         await setAsk(true);
-        await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
         const on = await reviewedPr();
         await threadComment(on.number, on.commentId, "And now, @omniralph?");
         expect(await replyJobs()).toHaveLength(before + 1);
       } finally {
         await setAsk(true);
-        await setAllowedTaskTypeDefaults(db, orgId, null, null);
       }
     });
 

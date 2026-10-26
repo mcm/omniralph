@@ -7,7 +7,6 @@ import {
   organizations,
   repositories,
   saveIntegration,
-  setAllowedTaskTypeDefaults,
   upsertScmConnection,
   users,
   workItemMatches,
@@ -193,18 +192,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/repositories/{id}/task-types", () =
     });
     expect((await get(repo)).body).toEqual({ reviews: false, coding: false, ask: false });
 
-    // The organization's task types don't change them.
-    try {
-      await setAllowedTaskTypeDefaults(db, state.orgId, ["coding"], null);
-      expect((await put(repo, { reviews: true, coding: false, ask: true })).body).toEqual({
-        reviews: true,
-        coding: false,
-        ask: true,
-      });
-      expect((await get(repo)).body).toEqual({ reviews: true, coding: false, ask: true });
-    } finally {
-      await setAllowedTaskTypeDefaults(db, state.orgId, null, null);
-    }
+    expect((await put(repo, { reviews: true, coding: false, ask: true })).body).toEqual({
+      reviews: true,
+      coding: false,
+      ask: true,
+    });
+    expect((await get(repo)).body).toEqual({ reviews: true, coding: false, ask: true });
   });
 
   it("refuses to turn Coding on without a work item match, saving and publishing nothing", async () => {

@@ -44,8 +44,8 @@ function harness(overrides: Partial<HarnessRow> = {}): HarnessRow {
     updateStatus: "up_to_date",
     acceptedTaskTypes: ["review"],
     maxConcurrency: 2,
-    overrides: { acceptedTaskTypes: null, maxConcurrency: null },
-    defaults: { acceptedTaskTypes: ["review"], maxConcurrency: 2 },
+    overrides: { maxConcurrency: null },
+    defaults: { maxConcurrency: 2 },
     poolLimits: {},
     effectivePoolLimits: { short: 2, long: 1 },
     runningJobs: [],
@@ -102,6 +102,8 @@ describe("HarnessDetailView", () => {
     const pin = () => document.querySelector('[data-pin-sync="acme/api"]') as HTMLElement;
     expect(within(pin()).getByText("Queued")).toBeTruthy();
     expect(screen.getByText(/0 \/ 2/)).toBeTruthy();
+    // Task types are the agent's own (Epic 7's Fleet shows them): no row here.
+    expect(screen.queryByText("Accepted task types")).toBeNull();
     // The page it's on goes along, for a switch to another organization.
     expect(requests[0]!.query.get("next")).toBe("/");
 

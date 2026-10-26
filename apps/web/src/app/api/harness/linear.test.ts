@@ -138,7 +138,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
     state.db = db;
     const [harness] = await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "coder-1", acceptedTaskTypes: ["query"] })
+      .values({ organizationId: orgId, name: "coder-1", reportedAcceptedTaskTypes: ["query"] })
       .returning();
     harnessId = harness!.id;
   }, 180_000);
@@ -349,7 +349,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [otherHarness] = await db
       .insert(harnesses)
-      .values({ organizationId: other!.id, name: "globex-1", acceptedTaskTypes: ["query"] })
+      .values({ organizationId: other!.id, name: "globex-1", reportedAcceptedTaskTypes: ["query"] })
       .returning();
     const globex = new FakeLinearGateway();
     globex.add({ title: "Globex secret", identifier: "GLX-1" });

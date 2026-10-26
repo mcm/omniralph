@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  acceptedTaskTypes,
   dataDir,
   defaultDataDir,
   defaultWorkspaceRoot,
@@ -225,6 +226,7 @@ describe("config file settings", () => {
     expect(installableAllowed(config, "@omniralph/codegraph")).toBe(true);
     expect(await execPathBlocked(config, "/usr/bin/env")).toBe(false);
     expect(dataDir(config, "/home/h")).toBe("/home/h/.omniralph");
+    expect(acceptedTaskTypes(config)).toEqual(["query", "review", "coding"]);
     // Rewriting it (as token rotation does) doesn't add the new keys.
     await writeConfig(file, { ...config, refreshToken: "next" });
     expect(Object.keys(JSON.parse(await readFile(file, "utf8")) as object).sort()).toEqual([
@@ -241,10 +243,12 @@ describe("config file settings", () => {
       dataDir: "/srv/omniralph",
       installables: { allow: ["@acme/*", "semgrep-mcp"] },
       blockedExecPaths: ["/opt/untrusted"],
+      acceptedTaskTypes: ["coding", "review"],
     };
     await writeRaw(withSettings);
     const config = await readConfig(file);
     expect(config).toEqual(withSettings);
+    expect(acceptedTaskTypes(config)).toEqual(["review", "coding"]);
     await writeConfig(file, config);
     expect(await readConfig(file)).toEqual(withSettings);
   });
@@ -265,4 +269,12 @@ describe("config file settings", () => {
     await writeRaw({ ...CONFIG, installables: { allow: "@omniralph/*" } });
     await expect(readConfig(file)).rejects.toThrow(/installables\.allow/);
   });
+
+  it.each([[], ["system"], ["ralph"], ["review", "review"], "review", [7]])(
+    "rejects the accepted task types %j naming the key",
+    async (acceptedTaskTypes) => {
+      await writeRaw({ ...CONFIG, acceptedTaskTypes });
+      await expect(readConfig(file)).rejects.toThrow(/acceptedTaskTypes/);
+    },
+  );
 });

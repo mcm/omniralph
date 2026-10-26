@@ -23,13 +23,11 @@ export const harnessRowSchema = z.object({
   failedVersions: z.array(z.string()),
   updateRequest: z.object({ version: z.string(), requestedAt: isoDate }).nullable(),
   updateStatus: z.enum(["up_to_date", "updating", "failed", "manual"]),
+  /** The task types the harness reports (its local `acceptedTaskTypes`); read-only. */
   acceptedTaskTypes: z.array(z.string()),
   maxConcurrency: z.number(),
-  overrides: z.object({
-    acceptedTaskTypes: z.array(z.string()).nullable(),
-    maxConcurrency: z.number().nullable(),
-  }),
-  defaults: z.object({ acceptedTaskTypes: z.array(z.string()), maxConcurrency: z.number() }),
+  overrides: z.object({ maxConcurrency: z.number().nullable() }),
+  defaults: z.object({ maxConcurrency: z.number() }),
   poolLimits: limits,
   effectivePoolLimits: limits,
   runningJobs: z.array(
@@ -195,12 +193,13 @@ export type HostToolRow = z.infer<typeof hostToolRowSchema>;
 export const harnessHostToolsSchema = z.object({ hostTools: z.array(hostToolRowSchema) });
 export type HarnessHostTools = z.infer<typeof harnessHostToolsSchema>;
 
-/** A harness's central config, as the Settings tab saves it. */
-export const harnessConfigFormSchema = z.object({
+/**
+ * A harness's central config, as the Settings tab saves it. Strict: the task types it runs are
+ * its own (its local `acceptedTaskTypes`), so sending any is refused.
+ */
+export const harnessConfigFormSchema = z.strictObject({
   /** Null uses the organization's default (Settings › Harnesses). */
   maxConcurrency: z.number().nullable(),
-  /** Task types the harness may claim jobs of (`query`, `review`, `coding`); null uses the organization's. */
-  acceptedTaskTypes: z.array(z.string()).nullable(),
   /** Per-pool concurrency limits (1 to the effective max concurrency); left-out pools use the default. */
   poolLimits: z.record(z.string(), z.number()),
 });
@@ -209,7 +208,8 @@ export type HarnessConfigForm = z.infer<typeof harnessConfigFormSchema>;
 /**
  * `PUT /api/ui/harnesses/{id}/settings`: the Settings tab's changes, saved in one request in
  * this order (left-out parts aren't changed). Strict: pins are edited from the repository's
- * settings only, so a `pin` or `unpin` here is refused.
+ * settings only, so a `pin` or `unpin` here is refused, and so are task types (the
+ * harness's own, reported read-only), here or in `config`.
  */
 export const harnessSettingsSaveSchema = z.strictObject({
   config: harnessConfigFormSchema.optional(),

@@ -993,10 +993,11 @@ export const harnesses = pgTable(
     /** Null: the organization's default (`app_settings` `harness.maxConcurrency`). */
     maxConcurrency: integer("max_concurrency"),
     /**
-     * Task types the harness runs (`system` is always accepted); trust, not concurrency.
-     * Null: the organization's default (`app_settings` `tasks.allowedTypes`).
+     * The task types the agent runs (`system` is always accepted), as it reports them: its
+     * local `acceptedTaskTypes`, sent in every heartbeat and claim. Read-only here. Null
+     * until it reports one: every task type.
      */
-    acceptedTaskTypes: text("accepted_task_types").array(),
+    reportedAcceptedTaskTypes: text("reported_accepted_task_types").array(),
     /**
      * Per-pool caps on concurrent jobs (e.g. `{ "long": 1 }`), within
      * `maxConcurrency`. Unset pools use the protocol's default limit.

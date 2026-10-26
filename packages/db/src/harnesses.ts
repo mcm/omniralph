@@ -16,7 +16,8 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { getAllowedTaskTypeDefaults, getDefaultMaxConcurrency } from "./app-settings.js";
+import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
+import { getDefaultMaxConcurrency } from "./app-settings.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { HarnessAuditEntry } from "./harness-auth.js";
@@ -61,15 +62,28 @@ export interface HarnessOverview extends HarnessRow {
 
 /** The organization's harness defaults, for harnesses without their own values. */
 export interface HarnessDefaults {
-  acceptedTaskTypes: readonly string[];
   maxConcurrency: number;
 }
 
 /** What a harness runs: its own value where it has one, else the organization's default. */
 export interface EffectiveHarnessConfig {
-  /** Task types it may claim jobs of (`system` is always accepted). */
-  acceptedTaskTypes: string[];
+  /**
+   * Task types it may claim jobs of (`system` is always accepted): the ones it reports
+   * (`harnessAcceptedTaskTypes`).
+   */
+  acceptedTaskTypes: TaskType[];
   maxConcurrency: number;
+}
+
+/**
+ * The task types an agent runs, as it reported them (its local `acceptedTaskTypes`), in
+ * `TASK_TYPES` order; every type until it reports any.
+ */
+export function harnessAcceptedTaskTypes(
+  harness: Pick<HarnessRow, "reportedAcceptedTaskTypes">,
+): TaskType[] {
+  const reported = harness.reportedAcceptedTaskTypes;
+  return reported ? TASK_TYPES.filter((type) => reported.includes(type)) : [...TASK_TYPES];
 }
 
 /** The organization's harness defaults (`app_settings`, else the built-in ones). */
@@ -77,20 +91,16 @@ export async function getHarnessDefaults(
   db: Database,
   organizationId: string,
 ): Promise<HarnessDefaults> {
-  const [acceptedTaskTypes, maxConcurrency] = await Promise.all([
-    getAllowedTaskTypeDefaults(db, organizationId),
-    getDefaultMaxConcurrency(db, organizationId),
-  ]);
-  return { acceptedTaskTypes, maxConcurrency };
+  return { maxConcurrency: await getDefaultMaxConcurrency(db, organizationId) };
 }
 
 /** A harness's effective configuration: each of its values when not null, else the default. */
 export function effectiveHarnessConfig(
-  harness: Pick<HarnessRow, "acceptedTaskTypes" | "maxConcurrency">,
+  harness: Pick<HarnessRow, "reportedAcceptedTaskTypes" | "maxConcurrency">,
   defaults: HarnessDefaults,
 ): EffectiveHarnessConfig {
   return {
-    acceptedTaskTypes: [...(harness.acceptedTaskTypes ?? defaults.acceptedTaskTypes)],
+    acceptedTaskTypes: harnessAcceptedTaskTypes(harness),
     maxConcurrency: harness.maxConcurrency ?? defaults.maxConcurrency,
   };
 }
@@ -101,13 +111,13 @@ export function effectiveHarnessConfig(
  */
 export async function resolveHarnessConfig(
   db: Database,
-  harness: Pick<HarnessRow, "organizationId" | "acceptedTaskTypes" | "maxConcurrency">,
+  harness: Pick<HarnessRow, "organizationId" | "reportedAcceptedTaskTypes" | "maxConcurrency">,
 ): Promise<EffectiveHarnessConfig> {
-  const [acceptedTaskTypes, maxConcurrency] = await Promise.all([
-    harness.acceptedTaskTypes ?? getAllowedTaskTypeDefaults(db, harness.organizationId),
-    harness.maxConcurrency ?? getDefaultMaxConcurrency(db, harness.organizationId),
-  ]);
-  return { acceptedTaskTypes: [...acceptedTaskTypes], maxConcurrency };
+  return {
+    acceptedTaskTypes: harnessAcceptedTaskTypes(harness),
+    maxConcurrency:
+      harness.maxConcurrency ?? (await getDefaultMaxConcurrency(db, harness.organizationId)),
+  };
 }
 
 export const repositoryLinkColumns = {
@@ -349,7 +359,7 @@ export async function listReportedInstallables(
 
 /**
  * The harnesses that may run a repository's coding jobs: its active pinned harnesses, else every
- * harness of the organization that accepts coding (its own task types, else the default).
+ * harness of the organization that accepts coding (the task types it reports).
  * Revoked and deleted harnesses are left out (pins only to those count as none). `pinned` says
  * which of the two the IDs are.
  */
@@ -370,30 +380,20 @@ export async function listRepositoryCodingHarnessIds(
     .where(and(eq(harnessRepoPins.repositoryId, repositoryId), active))
     .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
   if (pinned.length > 0) return { pinned: true, harnessIds: pinned.map((r) => r.id) };
-  const [defaults, rows] = await Promise.all([
-    getAllowedTaskTypeDefaults(db, organizationId),
-    db
-      .select({ id: harnesses.id, acceptedTaskTypes: harnesses.acceptedTaskTypes })
-      .from(harnesses)
-      .where(active)
-      .orderBy(asc(harnesses.name), asc(harnesses.createdAt)),
-  ]);
+  const rows = await db
+    .select({ id: harnesses.id, reportedAcceptedTaskTypes: harnesses.reportedAcceptedTaskTypes })
+    .from(harnesses)
+    .where(active)
+    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
   return {
     pinned: false,
-    harnessIds: rows
-      .filter((r) => (r.acceptedTaskTypes ?? defaults).includes("coding"))
-      .map((r) => r.id),
+    harnessIds: rows.filter((r) => harnessAcceptedTaskTypes(r).includes("coding")).map((r) => r.id),
   };
 }
 
 export interface HarnessConfigInput {
   /** Null inherits the organization's default. */
   maxConcurrency: number | null;
-  /**
-   * Task types the harness may claim jobs of (`system` is always accepted); null inherits
-   * the organization's default.
-   */
-  acceptedTaskTypes: Job["taskType"][] | null;
   /** Per-pool concurrency limits; pools left out use the default. */
   poolLimits: Partial<Record<string, number>>;
 }
@@ -413,7 +413,6 @@ export async function updateHarnessConfig(
     .update(harnesses)
     .set({
       maxConcurrency: input.maxConcurrency,
-      acceptedTaskTypes: input.acceptedTaskTypes && [...new Set(input.acceptedTaskTypes)],
       poolLimits: input.poolLimits,
     })
     .where(

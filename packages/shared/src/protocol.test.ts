@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AcceptedTaskTypes,
+  ClaimRequest,
   HarnessVersion,
   harnessVersionAtLeast,
   defaultPoolLimit,
@@ -165,6 +167,25 @@ describe("protocol", () => {
     expect(effectivePoolLimits({ long: 3, short: 9 }, 3)).toEqual({ short: 3, long: 3 });
     // Only `short` and `long` are pools: a stored limit for any other name is ignored.
     expect(effectivePoolLimits({ long: 0, gpu: 1 }, 3)).toEqual({ short: 3, long: 1 });
+  });
+
+  it("carries the agent's own accepted task types in heartbeats and claims, optional for older agents", () => {
+    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.parse(heartbeat).acceptedTaskTypes).toBeUndefined();
+    expect(
+      Heartbeat.parse({ ...heartbeat, acceptedTaskTypes: ["review"] }).acceptedTaskTypes,
+    ).toEqual(["review"]);
+    expect(ClaimRequest.parse({ pools: ["short"] }).acceptedTaskTypes).toBeUndefined();
+    expect(
+      ClaimRequest.parse({ pools: ["short"], acceptedTaskTypes: ["query", "coding"] })
+        .acceptedTaskTypes,
+    ).toEqual(["query", "coding"]);
+    // A non-empty subset of the task types, each once; `system` is always accepted, never listed.
+    for (const bad of [[], ["system"], ["deploy"], ["review", "review"], "review"]) {
+      expect(AcceptedTaskTypes.safeParse(bad).success).toBe(false);
+      expect(Heartbeat.safeParse({ ...heartbeat, acceptedTaskTypes: bad }).success).toBe(false);
+      expect(ClaimRequest.safeParse({ pools: [], acceptedTaskTypes: bad }).success).toBe(false);
+    }
   });
 
   it("requires the agent's organization in the heartbeat response", () => {

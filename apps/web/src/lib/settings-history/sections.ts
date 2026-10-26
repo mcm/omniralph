@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import {
   connectionCredentials,
   DESIRED_HARNESS_VERSION_KEY,
-  getAllowedTaskTypeDefaults,
   getAppSetting,
   getChatConnection,
   getChatPlaybookDefaults,
@@ -31,7 +30,6 @@ import {
   type TrackedSettings,
 } from "@omniralph/db";
 import { REVIEW_DEPTHS } from "@omniralph/shared";
-import type { TaskType } from "@omniralph/tasks";
 import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/playbooks";
 import { listPlaybooks } from "@/lib/playbooks";
@@ -421,29 +419,20 @@ export function trackedOrganization(organizationId: string): TrackedSettings {
 
 // ── agent_defaults ──────────────────────────────────────────────────────────
 
-const TASK_TYPE_LABELS = {
-  query: "Ask about code",
-  review: "Reviews",
-  coding: "Coding",
-} as const satisfies Record<TaskType, string>;
-
 export function trackedAgentDefaults(organizationId: string): TrackedSettings {
   return {
     organizationId,
     section: "agent_defaults",
     fields: {
-      allowedTaskTypes: { label: "Task types" },
       maxConcurrency: { label: "Max concurrency" },
       desiredVersion: { label: "Agent version" },
     },
     read: async (db) => {
-      const [allowed, maxConcurrency, version] = await Promise.all([
-        getAllowedTaskTypeDefaults(db, organizationId),
+      const [maxConcurrency, version] = await Promise.all([
         getDefaultMaxConcurrency(db, organizationId),
         getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY),
       ]);
       return {
-        allowedTaskTypes: allowed.map((t) => TASK_TYPE_LABELS[t as TaskType] ?? t),
         maxConcurrency,
         desiredVersion: typeof version?.value === "string" ? version.value : null,
       };

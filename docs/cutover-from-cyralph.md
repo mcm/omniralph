@@ -26,7 +26,7 @@ orchestrates runs).
   **Coding tasks**); harnesses keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
   **Settings › Integrations** (Linear), **Settings › Harnesses** (harness version), **Harnesses › <harness>**
-  (concurrency, accepted task types, pool limits), each repository's coding policy and its story
+  (concurrency, pool limits), each harness's local config (accepted task types), each repository's coding policy and its story
   and request playbooks.
   Changes apply from a run's next decision, without restarts.
 - **Two Linear apps.** Omniralph is its own Linear app (OAuth application). An issue is handled by
@@ -205,9 +205,10 @@ is delegated to Omniralph yet, so nothing runs.
    for commits, the repositories' toolchains (everything the verify commands, PRD gates and setup
    commands call), and private registry credentials, all for the harness's user. Sessions can use
    any `gh`/`glab` login that user has (see the linked section).
-2. On **Harnesses › <harness>**, tick `coding` under **Accepted task types**, set **Max concurrency**
-   (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `long` limit under
-   **Concurrency per pool**.
+2. Make sure each harness accepts `coding`: its `harness.json` has no `acceptedTaskTypes` (all
+   types), or lists `coding` (restart it after editing). On **Harnesses › <harness>**, set **Max
+   concurrency** (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `long`
+   limit under **Concurrency per pool**.
 3. For pm2 harnesses, choose the version on **Settings › Harnesses** (replaces cyralph's `autoUpdate`).
 4. If a repository is pinned to harnesses, at least one of them needs to accept `coding`.
 

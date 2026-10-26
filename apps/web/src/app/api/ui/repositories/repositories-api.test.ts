@@ -10,7 +10,6 @@ import {
   reviews,
   scmConnections,
   scmCredentialCache,
-  setAllowedTaskTypeDefaults,
   users,
   type Database,
 } from "@omniralph/db";
@@ -583,18 +582,13 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       ["acme/two", true],
     ]);
 
-    // Ticking turns reviews on, whatever the organization's task types.
-    try {
-      await setAllowedTaskTypeDefaults(state.db, orgId, ["query", "coding"], null);
-      expect(await saveGitHubRepositories(connection!.id, [1, 2])).toEqual({ ok: true });
-      repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-        ["acme/one", true],
-        ["acme/two", true],
-      ]);
-    } finally {
-      await setAllowedTaskTypeDefaults(state.db, orgId, null, null);
-    }
+    // Ticking turns reviews on.
+    expect(await saveGitHubRepositories(connection!.id, [1, 2])).toEqual({ ok: true });
+    repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
+      ["acme/one", true],
+      ["acme/two", true],
+    ]);
   });
 
   it("refuses a GitLab connection that belongs to another organization", async () => {

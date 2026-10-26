@@ -34,7 +34,7 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
 
 const DEFAULTS = "/api/ui/harness-defaults";
 const HOST_TOOLS = "/api/ui/host-tools";
-const builtIn = { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 };
+const builtIn = { maxConcurrency: 5 };
 
 function harnessDefaults(overrides: Partial<HarnessDefaults> = {}): HarnessDefaults {
   return {
@@ -76,7 +76,7 @@ beforeEach(() => {
 });
 
 describe("HarnessSettingsView › Defaults", () => {
-  it("shows a skeleton, then task types, concurrency and the harness version in one section with one save", async () => {
+  it("shows a skeleton, then concurrency and the harness version in one section with one save", async () => {
     mockFetch({ [`GET ${DEFAULTS}`]: harnessDefaults() });
     const { container } = renderView();
     expect(screen.getByLabelText("Loading the harness defaults")).toBeTruthy();
@@ -84,7 +84,6 @@ describe("HarnessSettingsView › Defaults", () => {
     expect(container.querySelectorAll("form")).toHaveLength(1);
     expect(container.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
-      "Task types",
       "Concurrency",
       "Harness version",
     ]);
@@ -169,14 +168,16 @@ describe("HarnessSettingsView › Defaults", () => {
     const { client } = renderView();
     const invalidate = vi.spyOn(client, "invalidateQueries");
     await waitFor(() => expect(version().value).toBe("1.4.0"));
-    await userEvent.click(screen.getByLabelText("Coding"));
+    const maxConcurrency = screen.getByLabelText("Max concurrency");
+    await userEvent.clear(maxConcurrency);
+    await userEvent.type(maxConcurrency, "6");
     await userEvent.clear(version());
     await userEvent.type(version(), "1.5.0");
     expect(screen.getByText("2 unsaved changes")).toBeTruthy();
     await saveAndConfirm();
     await screen.findByText("Saved");
     expect(seen.filter((r) => r.method === "PUT").map((r) => r.body)).toEqual([
-      { defaults: { allowedTaskTypes: ["query", "review"], maxConcurrency: 5 }, version: "1.5.0" },
+      { defaults: { maxConcurrency: 6 }, version: "1.5.0" },
     ]);
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
       [TEST_ORGANIZATION_ID, "settings", "detail", "harness-defaults"],

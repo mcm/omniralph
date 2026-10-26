@@ -155,7 +155,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
         {
           organizationId: orgId,
           name: "agent-a",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }];

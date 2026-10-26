@@ -509,7 +509,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         await published(() =>
           updateHarnessConfig(db, orgId, id, {
             maxConcurrency: 2,
-            acceptedTaskTypes: null,
             poolLimits: {},
           }),
         ),
@@ -558,6 +557,21 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           } as never),
         ),
       ).toEqual([agentEvent(harnessId)]);
+    });
+
+    it("a heartbeat publishes reported task types that differ from the stored ones", async () => {
+      const report = { version: "1.0.0", acceptedTaskTypes: ["query", "review", "coding"] };
+      await recordHarnessHeartbeat(db, harnessId, report);
+      expect(await published(() => recordHarnessHeartbeat(db, harnessId, report))).toEqual([]);
+      expect(
+        await published(() =>
+          recordHarnessHeartbeat(db, harnessId, { ...report, acceptedTaskTypes: ["review"] }),
+        ),
+      ).toEqual([agentEvent(harnessId)]);
+      // An older agent reports none: the stored ones stay, nothing is published.
+      expect(
+        await published(() => recordHarnessHeartbeat(db, harnessId, { version: "1.0.0" })),
+      ).toEqual([]);
     });
 
     it("a desired version or an update request from the control panel publishes the agent", async () => {
@@ -911,7 +925,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       await published(() =>
         updateHarnessConfig(db, orgId, randomUUID(), {
           maxConcurrency: 2,
-          acceptedTaskTypes: null,
           poolLimits: {},
         }),
       ),

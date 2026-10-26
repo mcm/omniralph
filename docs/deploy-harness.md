@@ -174,6 +174,7 @@ when unset:
 | `installables.allow` | `["@omniralph/*"]` | npm package patterns the harness accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The harness enforces this itself, whatever the control panel asks. |
 | `blockedExecPaths`   | `[]`               | Absolute path prefixes the harness never executes: host tools (whether their path was configured in the control panel or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
 | `dataDir`            | `~/.omniralph`     | Absolute directory for the harness's installables and their caches.                                                                                                                                                                                                                                                      |
+| `acceptedTaskTypes`  | all three          | The task types the harness runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The harness reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only. |
 
 ```json
 {
@@ -182,7 +183,8 @@ when unset:
   "refreshToken": "…",
   "workspaceRoot": "/home/coder/.omniralph/repos",
   "installables": { "allow": ["@omniralph/*", "@acme/*"] },
-  "blockedExecPaths": ["/opt/untrusted"]
+  "blockedExecPaths": ["/opt/untrusted"],
+  "acceptedTaskTypes": ["query", "review"]
 }
 ```
 
@@ -389,21 +391,27 @@ not under pm2 only log the request and show it as the last update error.
 
 ## Central config
 
-Everything except the four local settings is configured centrally and delivered in every heartbeat
-response (every 20s), so changes need no restart:
+Everything except the local config file (`harness.json`, see [Enroll](#4-enroll), including the task
+types the harness runs) is configured centrally and delivered in every heartbeat response (every
+20s), so changes need no restart:
 
 | Setting                                                             | Where                                                                                      | Default                                                            |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | Max concurrency (parallel jobs)                                     | **Harnesses › <harness>**                                                                  | 1                                                                  |
 | Concurrency per pool (1 to max concurrency)                         | **Harnesses › <harness>**                                                                  | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
-| Accepted task types (`query`, `review`, `coding`)                   | **Harnesses › <harness>**                                                                  | `query`, `review`                                                  |
 | Pinned repositories                                                 | **Repository › Settings › Harness pinning** (the harness's overview lists them, read-only) | none (every harness is eligible for every repo)                    |
 | Desired harness version ([self-update](#self-update-pm2), pm2 only) | **Settings › Harnesses**; per-harness override on **Harnesses › <harness>**                | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
-Accepted task types decide what a host may run (trust): `query` (replies, code questions, learned
-rules, triage), `review` (PR/MR reviews) and `coding` (ralph jobs, which change code and push).
-`repo.sync` and other housekeeping jobs always run. Pool limits decide how many of a harness's
+Accepted task types decide what a host may run (trust), so the host itself decides them: the
+`acceptedTaskTypes` key of its `harness.json` (all three when unset), read when the harness starts.
+`query` covers replies, code questions, learned rules and triage, `review` PR/MR reviews and
+`coding` ralph jobs, which change code and push. `repo.sync` and other housekeeping jobs always run.
+The harness sends its list in every heartbeat and claim, and only claims jobs of those types (and
+only asks for the pools they run in); the control panel stores what it reports and shows it on the
+**Harnesses** page, read-only. Harnesses older than this report nothing: they keep the task types
+they last had (their own setting, else their organization's default, at the upgrade), which the
+heartbeat response still sends them. Pool limits decide how many of a harness's
 slots one pool's jobs may take (concurrency): `short` holds query and review jobs, `long` coding
 jobs. The harness only claims a pool's jobs while that pool is under its limit, so with the default a
 harness with two or more slots always keeps one free for reviews while hours-long ralph stories run.
@@ -460,9 +468,9 @@ yet (it uses `opus`).
 
 ### Enabling ralph
 
-New harnesses only run query and review tasks. To let a harness run ralph jobs, open **Harnesses ›
-<harness>**, tick `coding` under **Accepted task types** and save; it applies with the next heartbeat
-(no restart). The harness then also claims its organization's `ralph` jobs (`coding` task type,
+A harness runs every task type unless its `harness.json` lists `acceptedTaskTypes`. To let a harness
+that lists them run ralph jobs, add `coding` to the list (or remove the key) while the harness is
+stopped, then start it again. The harness then also claims its organization's `ralph` jobs (`coding` task type,
 `long` pool; see
 [ADR 0004](adr/0004-organizations.md#job-isolation)).
 
@@ -624,9 +632,10 @@ What to do:
    organization), as the harness's user. This
    creates a **new harness** (new ID) and overwrites `harness.json`; the revoked harness stays in the list
    for its history.
-4. Re-apply the old harness's central config to the new one: max concurrency,
-   accepted task types and pool limits, and pin its repositories to it again from each
-   repository's **Settings › Harness pinning** (pins belong to the harness ID).
+4. Re-apply the old harness's central config to the new one: max concurrency and pool limits,
+   and pin its repositories to it again from each repository's **Settings › Harness pinning**
+   (pins belong to the harness ID). Add back any optional keys of the old `harness.json` you
+   used (`acceptedTaskTypes`, `installables`, `blockedExecPaths`, `dataDir`).
 5. Start the harness again.
 
 When an admin revokes a harness, its running jobs are re-queued at once. After a `refresh_reuse`, the

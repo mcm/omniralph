@@ -27,7 +27,6 @@ import {
 } from "./harnesses.js";
 import {
   getDesiredHarnessVersion,
-  setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
 } from "./app-settings.js";
@@ -103,15 +102,10 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     expect(await getHarnessOverview(db, orgB, a)).toBeNull();
     expect((await getHarnessOverview(db, orgA, a))?.id).toBe(a);
 
-    const config = {
-      maxConcurrency: 2,
-      acceptedTaskTypes: ["query" as const, "coding" as const, "query" as const],
-      poolLimits: { long: 1 },
-    };
+    const config = { maxConcurrency: 2, poolLimits: { long: 1 } };
     expect(await updateHarnessConfig(db, orgB, a, config)).toBeNull();
     expect(await updateHarnessConfig(db, orgA, a, config)).toMatchObject({
       maxConcurrency: 2,
-      acceptedTaskTypes: ["query", "coding"],
       poolLimits: { long: 1 },
     });
     expect(await setHarnessDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
@@ -127,14 +121,14 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     expect(await revokeHarness(db, a, { organizationId: orgA })).not.toBeNull();
   });
 
-  it("resolves a harness's own values, else its organization's defaults", async () => {
+  it("resolves a harness's own max concurrency, else its organization's, and its reported task types", async () => {
     const [org] = await db.insert(organizations).values({ name: "Defaults" }).returning();
     const organizationId = org!.id;
     const inheriting = await enroll(organizationId, "inheriting");
     const own = await enroll(organizationId, "own");
     await db
       .update(harnesses)
-      .set({ maxConcurrency: 2, acceptedTaskTypes: ["review"] })
+      .set({ maxConcurrency: 2, reportedAcceptedTaskTypes: ["review"] })
       .where(eq(harnesses.id, own));
     const config = async (harnessId: string) => {
       const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
@@ -143,7 +137,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const effective = async (harnessId: string) =>
       (await getHarnessOverview(db, organizationId, harnessId))?.effective;
 
-    // No organization settings: every task type, 5 at once.
+    // No organization setting and nothing reported: every task type, 5 at once.
     const builtIn = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 };
     expect(await config(inheriting)).toEqual(builtIn);
     expect(await effective(inheriting)).toEqual(builtIn);
@@ -151,8 +145,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     expect(await config(own)).toEqual(ownConfig);
 
     await setDefaultMaxConcurrency(db, organizationId, 8, null);
-    await setAllowedTaskTypeDefaults(db, organizationId, ["query"], null);
-    const changed = { acceptedTaskTypes: ["query"], maxConcurrency: 8 };
+    const changed = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 8 };
     expect(await config(inheriting)).toEqual(changed);
     expect(await effective(inheriting)).toEqual(changed);
     expect(await config(own)).toEqual(ownConfig);
@@ -169,38 +162,23 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const overview = async () => (await getHarnessOverview(db, organizationId, a))!;
 
     expect(
-      await updateHarnessConfig(db, organizationId, a, {
-        maxConcurrency: 2,
-        acceptedTaskTypes: ["review"],
-        poolLimits: {},
-      }),
-    ).toMatchObject({ maxConcurrency: 2, acceptedTaskTypes: ["review"] });
+      await updateHarnessConfig(db, organizationId, a, { maxConcurrency: 2, poolLimits: {} }),
+    ).toMatchObject({ maxConcurrency: 2 });
     expect((await overview()).effective).toEqual({
-      acceptedTaskTypes: ["review"],
+      acceptedTaskTypes: ["query", "review", "coding"],
       maxConcurrency: 2,
     });
 
-    // Back to the organization's max concurrency, keeping the task types override.
+    // Back to the organization's max concurrency.
     expect(
-      await updateHarnessConfig(db, organizationId, a, {
-        maxConcurrency: null,
-        acceptedTaskTypes: ["review"],
-        poolLimits: {},
-      }),
-    ).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: ["review"] });
-    expect(
-      await updateHarnessConfig(db, organizationId, a, {
-        maxConcurrency: null,
-        acceptedTaskTypes: null,
-        poolLimits: {},
-      }),
-    ).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: null });
+      await updateHarnessConfig(db, organizationId, a, { maxConcurrency: null, poolLimits: {} }),
+    ).toMatchObject({ maxConcurrency: null });
     const inheriting = await overview();
     expect(inheriting.effective).toEqual({
       acceptedTaskTypes: ["query", "review", "coding"],
       maxConcurrency: 7,
     });
-    expect(inheriting.defaults).toEqual(inheriting.effective);
+    expect(inheriting.defaults).toEqual({ maxConcurrency: 7 });
   });
 
   it("soft-deletes only revoked harnesses of the organization and hides them", async () => {
@@ -363,22 +341,29 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const inheriting = await enroll(org, "coding-a-inherits");
     const reviewOnly = await enroll(org, "coding-b-review-only");
     const revoked = await enroll(org, "coding-c-revoked");
-    await updateHarnessConfig(db, org, reviewOnly, {
-      maxConcurrency: null,
+    await recordHarnessHeartbeat(db, reviewOnly, {
+      version: "1.0.0",
       acceptedTaskTypes: ["review"],
-      poolLimits: {},
     });
     // A pin to a harness that was revoked since counts as none.
     await pinRepositoryToHarness(db, { harnessId: revoked, repositoryId: repo.id });
     await revokeHarness(db, revoked, { organizationId: org });
     await enroll(orgB, "coding-other-org");
 
-    // Unpinned: every active harness that accepts coding (its own types, else the default).
+    // Unpinned: every active harness that accepts coding (the task types it reports, all
+    // until it reports any).
     const unpinned = (harnessIds: string[]) => ({ pinned: false, harnessIds });
     expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
-    await setAllowedTaskTypeDefaults(db, org, ["review"], null);
+    await recordHarnessHeartbeat(db, inheriting, {
+      version: "1.0.0",
+      acceptedTaskTypes: ["query"],
+    });
     expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([]));
-    await setAllowedTaskTypeDefaults(db, org, ["review", "coding"], null);
+    await recordHarnessHeartbeat(db, inheriting, {
+      version: "1.0.0",
+      acceptedTaskTypes: ["review", "coding"],
+    });
+    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
 
     // Pinned: its active pinned harnesses, whatever they accept.
     await pinRepositoryToHarness(db, { harnessId: reviewOnly, repositoryId: repo.id });
@@ -386,6 +371,24 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       pinned: true,
       harnessIds: [reviewOnly],
     });
+  });
+
+  it("stores the reported accepted task types, keeping them when a heartbeat has none", async () => {
+    const a = await enroll(orgA, "a-task-types");
+    const reported = async () => (await getHarnessOverview(db, orgA, a))!;
+    expect((await reported()).reportedAcceptedTaskTypes).toBeNull();
+    expect((await reported()).effective.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
+    const heartbeat = (acceptedTaskTypes?: string[]) =>
+      recordHarnessHeartbeat(db, a, { version: "1.0.0", acceptedTaskTypes });
+    expect((await heartbeat(["coding", "query"]))?.reportedAcceptedTaskTypes).toEqual([
+      "coding",
+      "query",
+    ]);
+    // Effective task types are in task type order.
+    expect((await reported()).effective.acceptedTaskTypes).toEqual(["query", "coding"]);
+    // An older agent reports none: the last report stays.
+    expect((await heartbeat())?.reportedAcceptedTaskTypes).toEqual(["coding", "query"]);
+    expect((await heartbeat(["review"]))?.reportedAcceptedTaskTypes).toEqual(["review"]);
   });
 
   it("replaces the reported installables with each heartbeat's", async () => {

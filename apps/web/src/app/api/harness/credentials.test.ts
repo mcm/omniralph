@@ -344,7 +344,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
       it("gives a started ralph job's token a write credential", async () => {
         const harnessId = await newAgent({
-          acceptedTaskTypes: ["coding"],
+          reportedAcceptedTaskTypes: ["coding"],
         });
         // Targeted at the harness, so the claim takes it before any other queued ralph job.
         const jobId = await newJob({
@@ -533,7 +533,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         ) {
           // A current harness: query and review runs need a minimum version.
           const harnessId = await newAgent({
-            acceptedTaskTypes: ["coding", "query", "review"],
+            reportedAcceptedTaskTypes: ["coding", "query", "review"],
             reportedVersion: "99.0.0",
           });
           const { job } = await new PostgresDispatcher({ db }).createAndPublish({
@@ -892,7 +892,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
   describe("pinning a repository", () => {
     it("pins and enqueues repo.sync targeted at the harness, which it can run and get credentials for", async () => {
-      const harnessId = await newAgent({ acceptedTaskTypes: [] });
+      const harnessId = await newAgent({ reportedAcceptedTaskTypes: [] });
       const dispatcher = new PostgresDispatcher({ db });
       const pinned = await pinRepository(db, dispatcher, { harnessId, repositoryId: gitlabRepoId });
       expect(pinned.result).toBe("pinned");

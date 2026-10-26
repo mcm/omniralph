@@ -21,18 +21,15 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Checkbox,
   Field,
   InlineCode,
   Input,
-  Label,
   Muted,
   Skeleton,
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconCheck, IconClock, IconCloudDownload, IconTrash } from "@tabler/icons-react";
 import { defaultPoolLimit, HarnessVersion, POOLS } from "@omniralph/shared";
-import { TASK_TYPES } from "@omniralph/tasks";
 import { AppHeader } from "@/components/app-header";
 import { Freshness } from "@/components/freshness";
 import { Timestamp } from "@/components/list-table";
@@ -66,7 +63,6 @@ import {
   formatPoolLimits,
   HarnessStatusBadge,
   JobTargetLink,
-  TaskTypeBadges,
   UpdateStatusBadge,
   withClientOnline,
 } from "../harness-parts";
@@ -108,39 +104,11 @@ function Fact({
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-/** What each task type the harness may accept runs. */
-const TASK_TYPE_HINTS: Record<(typeof TASK_TYPES)[number], string> = {
-  query: "Read-only questions: replies, code questions, learned rules, triage.",
-  review: "Pull request reviews.",
-  coding: "Coding tasks that change code and push it.",
-};
-
-const TASK_TYPE_LABELS: Record<(typeof TASK_TYPES)[number], string> = {
-  query: "Query",
-  review: "Review",
-  coding: "Coding",
-};
-
-const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
-
-/** Task types as the form words them: "Query, Review and Coding", "None". */
-function taskTypeList(taskTypes: readonly string[]): string {
-  return taskTypes.length === 0
-    ? "None"
-    : listFormat.format(
-        taskTypes.map((t) => TASK_TYPE_LABELS[t as (typeof TASK_TYPES)[number]] ?? t),
-      );
-}
-
 export interface ConfigDraft {
   /** Use the organization's max concurrency (stored as null). */
   inheritMaxConcurrency: boolean;
   /** The harness's own max concurrency, used unless it inherits. */
   maxConcurrency: string;
-  /** Use the organization's task types (stored as null). */
-  inheritTaskTypes: boolean;
-  /** The harness's own task types, used unless it inherits. */
-  taskTypes: readonly string[];
   /** Blank for the pool's default. */
   limits: Readonly<Record<string, string>>;
 }
@@ -153,26 +121,16 @@ export function configDraft(harness: HarnessRow): ConfigDraft {
   return {
     inheritMaxConcurrency: harness.overrides.maxConcurrency === null,
     maxConcurrency: String(harness.maxConcurrency),
-    inheritTaskTypes: harness.overrides.acceptedTaskTypes === null,
-    taskTypes: harness.acceptedTaskTypes.filter((t) =>
-      (TASK_TYPES as readonly string[]).includes(t),
-    ),
     limits: Object.fromEntries(
       Object.entries(harness.poolLimits).map(([name, limit]) => [name, String(limit)]),
     ),
   };
 }
 
-/**
- * The draft as compared and saved: null for inherited fields, task types in their listed
- * order, blank limits null.
- */
+/** The draft as compared and saved: null for inherited fields, blank limits null. */
 function configValues(draft: ConfigDraft): Record<string, SettingValue> {
   return {
     maxConcurrency: draft.inheritMaxConcurrency ? null : typedNumber(draft.maxConcurrency),
-    acceptedTaskTypes: draft.inheritTaskTypes
-      ? null
-      : TASK_TYPES.filter((t) => draft.taskTypes.includes(t)),
     ...Object.fromEntries(
       POOLS.map((pool) => [pool, draft.limits[pool]?.trim() ? Number(draft.limits[pool]) : null]),
     ),
@@ -184,8 +142,6 @@ export function configInput(draft: ConfigDraft): HarnessConfigForm {
   const values = configValues(draft);
   return {
     maxConcurrency: values.maxConcurrency as number | null,
-    acceptedTaskTypes:
-      values.acceptedTaskTypes === null ? null : [...(values.acceptedTaskTypes as string[])],
     // Blank limits use the default.
     poolLimits: Object.fromEntries(
       POOLS.filter((pool) => values[pool] !== null).map((pool) => [pool, values[pool] as number]),
@@ -208,14 +164,6 @@ function configSpecs(defaults: HarnessRow["defaults"]): SettingSpec[] {
       label: "Max concurrency",
       format: (value) =>
         value === null ? inheritsText(String(defaults.maxConcurrency)) : formatSettingValue(value),
-    },
-    {
-      key: "acceptedTaskTypes",
-      label: "Accepted task types",
-      format: (value) =>
-        value === null
-          ? inheritsText(taskTypeList(defaults.acceptedTaskTypes))
-          : taskTypeList(value as readonly string[]),
     },
     ...POOLS.map((pool) => ({
       key: pool,
@@ -456,8 +404,8 @@ export function versionInput(draft: VersionDraft): { version: string } | { error
 }
 
 /**
- * The harness's central settings, saved together: concurrency and pool limits, task types
- * and its desired version override. They reach the harness with its next heartbeat. Pinned
+ * The harness's central settings, saved together: concurrency and pool limits and its
+ * desired version override. They reach the harness with its next heartbeat. Pinned
  * repositories are edited from each repository's settings (the overview lists them).
  */
 export function HarnessSettingsSection({
@@ -491,12 +439,6 @@ export function HarnessSettingsSection({
     versionOverride: versionValue(versionDraft),
   });
   const changes = settingChanges(specs, values(saved, savedVersion), values(draft, version));
-
-  const toggle = (taskType: string, on: boolean) =>
-    setDraft((d) => ({
-      ...d,
-      taskTypes: TASK_TYPES.filter((t) => (t === taskType ? on : d.taskTypes.includes(t))),
-    }));
 
   const prepare = () => {
     const changed = new Set(changes.map((change) => change.key));
@@ -532,7 +474,7 @@ export function HarnessSettingsSection({
       id="harness-settings"
       title="Settings"
       showTitle={false}
-      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Concurrency, task types and the version are inherited from the organization (Settings › Harness defaults) unless you override them here."
+      description="Central settings, returned to the harness in every heartbeat response (every 20 seconds). Concurrency and the version are inherited from the organization (Settings › Harness defaults) unless you override them here."
       changes={changes}
       prepare={prepare}
       onDiscard={() => {
@@ -616,34 +558,6 @@ export function HarnessSettingsSection({
             ))}
           </div>
         </div>
-      </SettingsSubsection>
-
-      <SettingsSubsection
-        id="harness-task-types"
-        title="Task types"
-        description="Which tasks this host may run. Housekeeping jobs (repository syncs) always run."
-      >
-        <InheritableSetting
-          id="task-types-source"
-          label="Accepted task types"
-          inherited={draft.inheritTaskTypes}
-          organizationValue={taskTypeList(defaults.acceptedTaskTypes)}
-          readOnly={readOnly}
-          onInheritChange={(inherit) => setDraft((d) => ({ ...d, inheritTaskTypes: inherit }))}
-        >
-          {TASK_TYPES.map((taskType) => (
-            <div key={taskType} className="settings-check settings-check-center">
-              <Checkbox
-                id={`task-type-${taskType}`}
-                checked={draft.taskTypes.includes(taskType)}
-                disabled={readOnly}
-                onCheckedChange={(checked) => toggle(taskType, checked === true)}
-              />
-              <Label htmlFor={`task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
-              <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
-            </div>
-          ))}
-        </InheritableSetting>
       </SettingsSubsection>
 
       <SettingsSubsection
@@ -1127,12 +1041,6 @@ function StatusCard({
             ) : (
               "None"
             )}
-          </Fact>
-          <Fact label="Accepted task types">
-            <Stack gap={1}>
-              <TaskTypeBadges accepted={harness.acceptedTaskTypes} />
-              <ConfigSource override={harness.overrides.acceptedTaskTypes !== null} />
-            </Stack>
           </Fact>
           <Fact label="Running jobs" wide>
             <Stack gap={1}>

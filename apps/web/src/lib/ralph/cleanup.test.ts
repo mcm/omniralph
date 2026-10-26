@@ -153,7 +153,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
         {
           organizationId: orgId,
           name: "agent-a",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }];
@@ -378,7 +378,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     const { run } = await epicWithPullRequest();
     const [{ id: agentB }] = (await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "agent-b", acceptedTaskTypes: ["coding"] })
+      .values({ organizationId: orgId, name: "agent-b", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: harnesses.id })) as [{ id: string }];
     const [other] = await db
       .insert(ralphLanes)

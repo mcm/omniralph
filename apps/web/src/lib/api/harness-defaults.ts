@@ -3,9 +3,8 @@ import { isoDate } from "./schemas";
 
 /** Settings › Harness defaults (`/api/ui/harness-defaults`, `/api/ui/host-tools/**`, admins). */
 
-/** An organization's task types and max concurrency, saved or built in. */
+/** An organization's max concurrency, saved or built in. */
 export const organizationDefaultsSchema = z.object({
-  allowedTaskTypes: z.array(z.string()),
   maxConcurrency: z.number(),
 });
 export type OrganizationDefaults = z.infer<typeof organizationDefaultsSchema>;
@@ -34,11 +33,12 @@ export type HarnessDefaults = z.infer<typeof harnessDefaultsSchema>;
 
 /**
  * `PUT /api/ui/harness-defaults`: the Defaults tab's save, in one request. `defaults`
- * (`{ allowedTaskTypes, maxConcurrency }`, checked in `setOrganizationDefaults`), then
- * `version` (a version, `latest`, or blank to not manage versions); each only when changed.
+ * (`{ maxConcurrency }`, its range checked in `setOrganizationDefaults`), then `version` (a
+ * version, `latest`, or blank to not manage versions); each only when changed. Strict: task
+ * types are the agent's own (its local `acceptedTaskTypes`), so sending any is a 400.
  */
-export const harnessDefaultsSaveSchema = z.object({
-  defaults: z.unknown().optional(),
+export const harnessDefaultsSaveSchema = z.strictObject({
+  defaults: z.strictObject({ maxConcurrency: z.unknown() }).optional(),
   version: z.string().max(200).optional(),
 });
 export type HarnessDefaultsSave = z.infer<typeof harnessDefaultsSaveSchema>;

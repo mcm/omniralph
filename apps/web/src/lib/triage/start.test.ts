@@ -11,7 +11,6 @@ import {
   ralphRuns,
   createRun,
   repositories,
-  setAllowedTaskTypeDefaults,
   triageRuns,
   upsertScmConnection,
   replaceRoutingRules,
@@ -286,13 +285,11 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       expect(await db.select().from(triageRuns)).toEqual([]);
       expect(linear.activities).toEqual([]);
 
-      // Ask on triages it, whatever the organization's task types.
+      // Ask on triages it.
       await setAsk(true);
-      await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
       expect(await startTriage(mention(issue.id), deps())).toMatchObject({ status: "queued" });
     } finally {
       await setAsk(true);
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
     }
   });
 

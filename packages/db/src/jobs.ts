@@ -796,6 +796,11 @@ export async function recordHarnessHeartbeat(
     installables?: { name: string; version: string }[];
     /** The Claude models the harness can run; replaces the last report (none clears it). */
     models?: { value: string; displayName: string }[];
+    /**
+     * The task types the agent runs (its local `acceptedTaskTypes`); replaces the last report.
+     * Older agents send none, which keeps it.
+     */
+    acceptedTaskTypes?: readonly string[];
     now?: Date;
   },
 ): Promise<typeof harnesses.$inferSelect | null> {
@@ -813,6 +818,7 @@ export async function recordHarnessHeartbeat(
       failedVersions: input.failedVersions ?? [],
       reportedInstallables: input.installables ?? [],
       reportedModels: input.models ?? [],
+      ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
       ...(handled !== null && {
         updateRequestId: clearIfHandled(harnesses.updateRequestId),
         updateRequestVersion: clearIfHandled(harnesses.updateRequestVersion),
@@ -831,12 +837,14 @@ export async function recordHarnessHeartbeat(
         failedVersions: previous.failedVersions,
         reportedInstallables: previous.reportedInstallables,
         reportedModels: previous.reportedModels,
+        reportedAcceptedTaskTypes: previous.reportedAcceptedTaskTypes,
         updateRequestId: previous.updateRequestId,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
-  // What the fleet shows changed (version, update state, installs): not a steady heartbeat.
+  // What the fleet shows changed (version, update state, installs, task types): not a steady
+  // heartbeat.
   const after = {
     reportedVersion: row.reportedVersion,
     selfUpdate: row.selfUpdate,
@@ -844,6 +852,7 @@ export async function recordHarnessHeartbeat(
     failedVersions: row.failedVersions,
     reportedInstallables: row.reportedInstallables,
     reportedModels: row.reportedModels,
+    reportedAcceptedTaskTypes: row.reportedAcceptedTaskTypes,
     updateRequestId: row.updateRequestId,
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {

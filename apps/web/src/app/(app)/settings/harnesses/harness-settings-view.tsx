@@ -1,18 +1,7 @@
 "use client";
 
-import {
-  Button,
-  Checkbox,
-  Field,
-  InlineCode,
-  Input,
-  Label,
-  Muted,
-  Skeleton,
-  Stack,
-} from "@iamthemcmaster/ui";
+import { Button, Field, InlineCode, Input, Skeleton, Stack } from "@iamthemcmaster/ui";
 import { IconCloudDownload } from "@tabler/icons-react";
-import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { useCurrentUser } from "@/components/current-user";
@@ -52,39 +41,12 @@ import { HostToolsCatalog } from "./host-tools-catalog";
 
 export type { OrganizationDefaults };
 
-const TASK_TYPE_LABELS: Record<TaskType, string> = {
-  query: "Query",
-  review: "Review",
-  coding: "Coding",
-};
-
-/** What each task type runs. */
-const TASK_TYPE_HINTS: Record<TaskType, string> = {
-  query: "Read-only questions: replies, code questions, learned rules, triage.",
-  review: "Pull request reviews.",
-  coding: "Coding runs that change code and push it.",
-};
-
-const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
-
-function formatTaskTypes(types: readonly string[]): string {
-  return types.length === 0
-    ? "None"
-    : listFormat.format(types.map((t) => TASK_TYPE_LABELS[t as TaskType] ?? t));
-}
-
 const DEFAULTS_SPECS: SettingSpec[] = [
-  {
-    key: "allowedTaskTypes",
-    label: "Task types",
-    format: (value) => (Array.isArray(value) ? formatTaskTypes(value) : formatSettingValue(value)),
-  },
   { key: "maxConcurrency", label: "Max concurrency" },
   { key: "version", label: "Desired version", format: formatSettingValue },
 ];
 
 interface DefaultsDraft {
-  taskTypes: readonly string[];
   maxConcurrency: string;
   /** A version, `latest`, or blank to not manage versions. */
   version: string;
@@ -92,16 +54,14 @@ interface DefaultsDraft {
 
 function defaultsDraft(defaults: OrganizationDefaults, version: string | null): DefaultsDraft {
   return {
-    taskTypes: defaults.allowedTaskTypes,
     maxConcurrency: String(defaults.maxConcurrency),
     version: version ?? "",
   };
 }
 
-/** The draft as compared and saved: task types in their listed order. */
+/** The draft as compared and saved. */
 function defaultsValues(draft: DefaultsDraft): Record<string, SettingValue> {
   return {
-    allowedTaskTypes: TASK_TYPES.filter((t) => draft.taskTypes.includes(t)),
     maxConcurrency: typedNumber(draft.maxConcurrency),
     version: draft.version.trim(),
   };
@@ -119,8 +79,8 @@ function versionSuccess(version: string): string {
 }
 
 /**
- * The organization's harness defaults, saved together: the task types and max concurrency
- * harnesses use unless they set their own, and the version harnesses run.
+ * The organization's harness defaults, saved together: the max concurrency harnesses use
+ * unless they set their own, and the version harnesses run.
  */
 export function DefaultsSection({
   desiredVersion,
@@ -137,23 +97,11 @@ export function DefaultsSection({
   const values = defaultsValues(draft);
   const changes = settingChanges(DEFAULTS_SPECS, defaultsValues(saved), values);
 
-  const toggle = (taskType: TaskType, on: boolean) =>
-    setDraft((d) => ({
-      ...d,
-      taskTypes: TASK_TYPES.filter((t) => (t === taskType ? on : d.taskTypes.includes(t))),
-    }));
-
   const prepare = () => {
     const changed = new Set(changes.map((change) => change.key));
-    const defaultsChanged = changed.has("allowedTaskTypes") || changed.has("maxConcurrency");
     const save: HarnessDefaultsSave = {
-      ...(defaultsChanged
-        ? {
-            defaults: {
-              allowedTaskTypes: [...(values.allowedTaskTypes as string[])],
-              maxConcurrency: Number(draft.maxConcurrency),
-            },
-          }
+      ...(changed.has("maxConcurrency")
+        ? { defaults: { maxConcurrency: Number(draft.maxConcurrency) } }
         : {}),
       ...(changed.has("version") ? { version: draft.version } : {}),
     };
@@ -193,29 +141,9 @@ export function DefaultsSection({
       onDiscard={() => setDraft(saved)}
       confirm={{
         consequence:
-          "Every harness without its own setting uses these with its next claim or heartbeat, and harnesses without their own version override update to the desired version. Running jobs aren't cancelled.",
+          "Every harness without its own setting uses these with its next heartbeat, and harnesses without their own version override update to the desired version. Running jobs aren't cancelled.",
       }}
     >
-      <SettingsSubsection
-        id="default-task-types"
-        title="Task types"
-        description={`Which tasks harnesses may run. Housekeeping jobs (repository syncs) always run. Default: ${formatTaskTypes(builtInDefaults.allowedTaskTypes)}.`}
-      >
-        <div className="settings-group" role="group" aria-label="Task types">
-          {TASK_TYPES.map((taskType) => (
-            <div key={taskType} className="settings-check settings-check-center">
-              <Checkbox
-                id={`default-task-type-${taskType}`}
-                checked={draft.taskTypes.includes(taskType)}
-                onCheckedChange={(checked) => toggle(taskType, checked === true)}
-              />
-              <Label htmlFor={`default-task-type-${taskType}`}>{TASK_TYPE_LABELS[taskType]}</Label>
-              <Muted>{TASK_TYPE_HINTS[taskType]}</Muted>
-            </div>
-          ))}
-        </div>
-      </SettingsSubsection>
-
       <SettingsSubsection id="default-concurrency" title="Concurrency">
         <div className="settings-row">
           <Field
@@ -282,7 +210,7 @@ export function DefaultsSection({
 function DefaultsSkeleton() {
   return (
     <Stack gap={6}>
-      {[3, 1, 2].map((rows, i) => (
+      {[1, 2].map((rows, i) => (
         <Stack key={i} gap={3}>
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-4 w-2/3" />

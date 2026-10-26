@@ -326,6 +326,12 @@ active legacy `review.run` jobs and renamed run-spec ones `review.task`.)
 
 - **Trust:** `harnesses.accepted_task_types` (default `query`, `review`) says which task types a
   host may run. `system` jobs are always accepted. This replaces the per-harness capability toggles.
+  _Since TOOL-615 the host decides: the harness's local `acceptedTaskTypes` (all by default) goes in
+  every heartbeat and claim, the claim filters by it, and the control panel only stores what it
+  reports (`harnesses.reported_accepted_task_types`, read-only). Migration
+  `0102_harness_reported_task_types.sql` filled it from each harness's own value, else its
+  organization's `tasks.allowedTypes`, else every type, then dropped `accepted_task_types` and the
+  `tasks.allowedTypes` setting._
 - **Concurrency:** `short` and `long` pools are seeded per organization (`pools`).
   _Since TOOL-577 a job's pool is derived from its task type (`poolForTaskType` in
   `@omniralph/shared`: `long` for coding, `short` for query and review, none for `system`):

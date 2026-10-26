@@ -25,10 +25,10 @@ import {
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
-const defaults = { acceptedTaskTypes: ["query", "review"], maxConcurrency: 6 };
+const defaults = { maxConcurrency: 6 };
 
 function harness(overrides: HarnessRow["overrides"]): HarnessRow {
-  const acceptedTaskTypes = overrides.acceptedTaskTypes ?? defaults.acceptedTaskTypes;
+  const acceptedTaskTypes = ["query", "review"];
   const maxConcurrency = overrides.maxConcurrency ?? defaults.maxConcurrency;
   return {
     id: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f",
@@ -51,8 +51,8 @@ function harness(overrides: HarnessRow["overrides"]): HarnessRow {
   } as unknown as HarnessRow;
 }
 
-const inheriting = harness({ acceptedTaskTypes: null, maxConcurrency: null });
-const overriding = harness({ acceptedTaskTypes: ["coding"], maxConcurrency: 2 });
+const inheriting = harness({ maxConcurrency: null });
+const overriding = harness({ maxConcurrency: 2 });
 
 /** The opening tag of the element with `id`. */
 function tag(html: string, id: string): string {
@@ -98,16 +98,18 @@ describe("HarnessSettingsSection", () => {
   it("says what each inherited setting inherits, with an Override button and no controls", () => {
     const html = render(inheriting);
     expect(html).toContain("Inherits 6 from the organization.");
-    expect(html).toContain("Inherits Query and Review from the organization.");
     expect(html).toContain("Inherits 1.4.0 from the organization.");
     expect(html).not.toContain("Use organization default");
     expect(html).not.toContain("the organization&#x27;s 6");
-    for (const id of ["max-concurrency", "task-type-query", "desired-version"]) {
+    for (const id of ["max-concurrency", "desired-version"]) {
       expect(tag(html, id)).toBe("");
     }
-    for (const name of ["max concurrency", "accepted task types", "desired version"]) {
+    for (const name of ["max concurrency", "desired version"]) {
       expect(html).toContain(`aria-label="Override ${name}"`);
     }
+    // Task types are the agent's own: no control for them.
+    expect(html).not.toContain("accepted task types");
+    expect(html).not.toContain("task-type-");
   });
 
   it("names a version the organization doesn't set", () => {
@@ -122,32 +124,29 @@ describe("HarnessSettingsSection", () => {
   it("shows the harness's own values, editable, when it overrides them", () => {
     const html = render({ ...overriding, desiredVersionOverride: "1.3.2" } as HarnessRow);
     expect(html).toContain("Overrides the organization&#x27;s 6.");
-    expect(html).toContain("Overrides the organization&#x27;s Query and Review.");
     expect(html).toContain("Overrides the organization&#x27;s 1.4.0.");
-    for (const name of ["max concurrency", "accepted task types", "desired version"]) {
+    for (const name of ["max concurrency", "desired version"]) {
       expect(html).toContain(`aria-label="Inherit ${name} from the organization"`);
     }
     expect(tag(html, "max-concurrency")).toContain('value="2"');
     expect(tag(html, "max-concurrency")).not.toMatch(/ disabled=""/);
-    expect(tag(html, "task-type-coding")).toContain('aria-checked="true"');
-    expect(tag(html, "task-type-query")).toContain('aria-checked="false"');
-    expect(tag(html, "task-type-query")).not.toMatch(/ disabled=""/);
     expect(tag(html, "desired-version")).toContain('value="1.3.2"');
   });
 
-  it("saves concurrency, task types and the version with one save", () => {
+  it("saves concurrency and the version with one save", () => {
     const html = render(inheriting);
     expect(html.match(/<form/g)).toHaveLength(1);
     expect(html.match(/type="submit"/g)).toHaveLength(1);
     expect(html).toContain("Save settings");
-    for (const title of ["Concurrency", "Task types", "Version"]) {
+    for (const title of ["Concurrency", "Version"]) {
       expect(html).toContain(`>${title}</h3>`);
     }
+    expect(html).not.toContain(">Task types</h3>");
     expect(html).not.toContain("Pinned repositories");
     expect(html).toContain("Update now</button>");
   });
 
-  it("overrides from the organization's values and inherits again", async () => {
+  it("overrides from the organization's value and saves only what changed", async () => {
     renderLive(<HarnessSettingsSection harness={inheriting} globalDesiredVersion="1.4.0" />);
     await userEvent.click(screen.getByRole("button", { name: "Override max concurrency" }));
     const input = screen.getByLabelText("Jobs at once") as HTMLInputElement;
@@ -156,19 +155,6 @@ describe("HarnessSettingsSection", () => {
     expect(screen.getByText("Overrides the organization's 6.")).toBeTruthy();
     await userEvent.clear(input);
     await userEvent.type(input, "3");
-    await userEvent.click(screen.getByRole("button", { name: "Override accepted task types" }));
-    expect(document.activeElement?.id).toBe("task-type-query");
-    expect(screen.getByRole("checkbox", { name: "Query" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(screen.getByText("2 unsaved changes")).toBeTruthy();
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Inherit accepted task types from the organization" }),
-    );
-    expect(screen.queryByRole("checkbox", { name: "Query" })).toBeNull();
-    expect(screen.getByText("Inherits Query and Review from the organization.")).toBeTruthy();
-    expect(document.activeElement?.id).toBe("task-types-source-override");
     expect(screen.getByText("1 unsaved change")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
@@ -181,7 +167,7 @@ describe("HarnessSettingsSection", () => {
     await waitFor(() =>
       expect(saves(inheriting.id)).toEqual([
         {
-          config: { maxConcurrency: 3, acceptedTaskTypes: null, poolLimits: {} },
+          config: { maxConcurrency: 3, poolLimits: {} },
         },
       ]),
     );
@@ -285,7 +271,7 @@ describe("HarnessSettingsSection, live", () => {
     await confirmSave();
 
     // The refetch after the save brings the saved values; the last heartbeat is older.
-    const saved = harness({ acceptedTaskTypes: null, maxConcurrency: 3 });
+    const saved = harness({ maxConcurrency: 3 });
     rerender(<HarnessSettingsSection harness={saved} globalDesiredVersion="1.4.0" />);
     expect(await screen.findByText("Saved — waiting for build-01 to pick it up")).toBeTruthy();
 
@@ -308,7 +294,7 @@ describe("HarnessSettingsSection, live", () => {
     expect(input().value).toBe("2");
 
     // Clean: another tab's change shows up.
-    const changed = harness({ acceptedTaskTypes: ["coding"], maxConcurrency: 4 });
+    const changed = harness({ maxConcurrency: 4 });
     rerender(<HarnessSettingsSection harness={changed} globalDesiredVersion="1.4.0" />);
     expect(input().value).toBe("4");
 
@@ -317,7 +303,7 @@ describe("HarnessSettingsSection, live", () => {
     await userEvent.type(input(), "7");
     rerender(
       <HarnessSettingsSection
-        harness={harness({ acceptedTaskTypes: ["coding"], maxConcurrency: 5 })}
+        harness={harness({ maxConcurrency: 5 })}
         globalDesiredVersion="1.4.0"
       />,
     );
@@ -431,33 +417,20 @@ describe("configInput", () => {
   it("saves null for inherited fields", () => {
     expect(configInput(configDraft(inheriting))).toEqual({
       maxConcurrency: null,
-      acceptedTaskTypes: null,
       poolLimits: {},
     });
   });
 
   it("saves an override starting from the inherited values", () => {
     const draft = { ...configDraft(inheriting), inheritMaxConcurrency: false };
-    expect(configInput(draft)).toEqual({
-      maxConcurrency: 6,
-      acceptedTaskTypes: null,
-      poolLimits: {},
-    });
-    expect(
-      configInput({ ...draft, inheritTaskTypes: false, taskTypes: ["coding", "query"] }),
-    ).toEqual({ maxConcurrency: 6, acceptedTaskTypes: ["query", "coding"], poolLimits: {} });
+    expect(configInput(draft)).toEqual({ maxConcurrency: 6, poolLimits: {} });
   });
 
   it("saves the harness's own values and switches back to inheriting", () => {
     const draft = { ...configDraft(overriding), limits: { long: "1", short: " " } };
-    expect(configInput(draft)).toEqual({
-      maxConcurrency: 2,
-      acceptedTaskTypes: ["coding"],
-      poolLimits: { long: 1 },
-    });
-    expect(configInput({ ...draft, inheritMaxConcurrency: true, inheritTaskTypes: true })).toEqual({
+    expect(configInput(draft)).toEqual({ maxConcurrency: 2, poolLimits: { long: 1 } });
+    expect(configInput({ ...draft, inheritMaxConcurrency: true })).toEqual({
       maxConcurrency: null,
-      acceptedTaskTypes: null,
       poolLimits: { long: 1 },
     });
   });
