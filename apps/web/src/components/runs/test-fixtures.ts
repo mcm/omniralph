@@ -5,6 +5,9 @@ import { inboxItem, NOW } from "@/screens/inbox/test-fixtures";
 
 const at = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
 
+/** The ISO time `minutes` from the tests' now (negative: ago). */
+export const NOW_AT = at;
+
 /** One open question of each kind, with the options the server offers for it. */
 export const QUESTIONS: Record<RunQuestion["kind"], RunQuestion> = {
   repository: {
@@ -113,4 +116,107 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     ...overrides,
   };
   return detail;
+}
+
+type Step = RunDetail["steps"][number];
+type Attempt = RunDetail["attempts"][number];
+
+const MINUTE_MS = 60_000;
+
+/** An epic's story step. */
+export function storyStep(
+  id: string,
+  status: Extract<Step, { kind: "story" }>["status"],
+  durationMs = 0,
+): Step {
+  return {
+    kind: "story",
+    id,
+    workItem: { tracker: "linear", identifier: `TOOL-${id}`, url: null },
+    title: `Story ${id}`,
+    status,
+    attempts: durationMs > 0 ? 1 : 0,
+    durationMs,
+    commit: null,
+    lastFeedback: null,
+    lane: null,
+  };
+}
+
+/** A finished (or failed) attempt of a run. */
+export function attempt(id: string, overrides: Partial<Attempt> = {}): Attempt {
+  return {
+    id,
+    label: `Built story ${id}`,
+    type: "repo.sync",
+    status: "completed",
+    agent: null,
+    deliveries: 1,
+    cancelRequested: false,
+    createdAt: at(-50),
+    startedAt: at(-50),
+    finishedAt: at(-40),
+    tokens: { in: 0, out: 0 },
+    error: null,
+    step: null,
+    transcriptEvents: 0,
+    ...overrides,
+  };
+}
+
+/** An epic of three stories: one done (13m), one running (5m), one pending. */
+export function epicRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
+  return runDetail(null, {
+    status: "running",
+    progress: { done: 1, total: 3 },
+    steps: [
+      storyStep("1", "completed", 13 * MINUTE_MS),
+      storyStep("2", "running", 5 * MINUTE_MS),
+      storyStep("3", "pending"),
+    ],
+    attempts: [attempt("a1", { step: "1", label: "Built TOOL-1" })],
+    ...overrides,
+  });
+}
+
+/** A running review: two passes (one done), and the correlation still queued. */
+export function reviewRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
+  const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  return runDetail(null, {
+    id: "run-3",
+    kind: "review",
+    status: "running",
+    origin: "pr_webhook",
+    title: "Review !12",
+    progress: null,
+    steps: [
+      {
+        kind: "review_pass",
+        id: "pass-1",
+        taskName: "Security",
+        status: "completed",
+        tokens: { in: 0, out: 0 },
+        durationMs: 45_000,
+        openFindings: counts,
+      },
+      {
+        kind: "review_pass",
+        id: "pass-2",
+        taskName: "Correctness",
+        status: "running",
+        tokens: { in: 0, out: 0 },
+        durationMs: null,
+        openFindings: counts,
+      },
+      {
+        kind: "correlation",
+        id: "corr-1",
+        label: "Merge the passes' findings",
+        status: "queued",
+        tokens: { in: 0, out: 0 },
+        durationMs: null,
+      },
+    ],
+    ...overrides,
+  });
 }

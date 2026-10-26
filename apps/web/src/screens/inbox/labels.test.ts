@@ -162,6 +162,13 @@ describe("inboxItemLabel", () => {
       "fail",
       "Update failed 15 days ago",
     ],
+    [
+      "agent_update_failed (with its version)",
+      { kind: "agent_update_failed", run: null, version: "1.4.0" },
+      "Agent update failed",
+      "fail",
+      "Update to 1.4.0 failed 15 days ago",
+    ],
     ["run", { kind: "run", run: run("ask") }, "Ask · running", "run", "Running for 15 days"],
   ];
 

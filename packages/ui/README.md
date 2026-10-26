@@ -174,7 +174,8 @@ truncated with an ellipsis and keeps the full text in `title`.
   `MetaBadge` (optional decorative Tabler icon + text, optional `mono`). Icons that carry
   meaning are `role="img"` named after the kind ("Organization", "Branch", "Merge
   request", "Pull request", "Agent"), so a badge reads e.g. "GitLab acme/api".
-- `SizeBadge` (`S` | `M` | `L`): one mono letter, named and tooltipped "Size S" etc.
+- `SizeBadge` (`XS` | `S` | `M` | `L` | `XL`, `T_SHIRT_SIZES`): the mono letters, named and
+  tooltipped "Size S", "Size XL" etc.
 - `RefBadge`: the shared badge shape, for screen epics that need another kind.
 
 ## Status
@@ -217,15 +218,19 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   optional `info` (provenance behind an ⓘ `InfoPopover` right after the title, Design
   rule 11; `infoLabel` defaults to "About this card"), optional right-aligned `actions`
   and children.
-- `ProgressCard`: the one progress view (rule 10). `title`, optional `titleHref`, and
-  `steps` (`{ id, label, state, meta?, href? }`, `state` `done` | `waiting` | `running` |
-  `failed` | `blocked` | `pending`). One bar segment per step (done `--or-sec`, waiting
-  `--or-acc`, running `--or-run`, failed `--or-fail`, others `--or-border`), a one-line
-  count, and the steps as a numbered `<ol>`. The bar is a `progressbar` (`aria-valuenow`
-  done steps, `aria-valuemax` total, `aria-valuetext` the count line).
-- `progressSummary(steps)`: the count line, e.g. "2 of 4 done · 1 waiting on you · 1
-  blocked": the done count, then waiting, running, failed and blocked when non-zero, or
-  "No steps yet".
+- `ProgressCard`: the one progress view (rule 10). `title`, optional `titleHref`,
+  `actions` (right of the title, e.g. an "Open run" link), `summarySuffix` (appended to the
+  count line, e.g. a total duration) and `steps` (`{ id, label, state, meta?, href? }`,
+  `state` `done` | `waiting` | `running` | `failed` | `blocked` | `pending` | `canceled`).
+  One bar segment per step (done `--or-sec`, waiting `--or-acc`, running `--or-run`, failed
+  `--or-fail`, others `--or-border`), a one-line count, and the steps as a numbered `<ol>`
+  (a canceled step shows a dash icon instead of a dot). The bar is a `progressbar`
+  (`aria-valuenow` done steps, `aria-valuemax` total, `aria-valuetext` the count line).
+  With `onSelectStep(id)` the steps are buttons (step `href`s are ignored) and the
+  `selectedStepId` one is bold with `aria-current="step"`.
+- `progressSummary(steps, suffix?)`: the count line, e.g. "8 of 9 done · 1 canceled · 3h
+  31m": the done count, then waiting, running, failed, blocked and canceled when non-zero,
+  then the suffix, or "No steps yet".
 - `SaveBar`: `changes` (`{ id, label, from?, to?, effect? }`), `onSave`, `onDiscard`,
   `saving?`, `error?`. Renders nothing without changes; otherwise a sticky `region` named
   "Unsaved changes" listing each change (label, from → to, effect sentence), a ghost
@@ -260,6 +265,10 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   (`aria-current="true"`), `select?` (`{ checked, onChange, label }`, a `Checkbox`) and
   `actions?`. The whole row is clickable through an absolutely positioned row link; the
   checkbox and actions are its siblings. Tab order: checkbox, row link, actions.
+- `ActivityList`: `entries` (`{ id, at, text }`, `at` a `Date` or ISO string, `text` a
+  sentence node), optional `aria-label` (default "Activity") and `limit` (default 10). An
+  `<ol>` with a fixed-width mono date column (`activityDate(at)`, local "Oct 24 14:02") and
+  the sentence; past `limit` entries a ghost "Show all {n}" button reveals the rest.
 - `nestedInteractiveElements(root)`: every `a`, `button` or `input` inside an `a` or
   `button`. Lists and tables return none; screen tests can assert the same.
 

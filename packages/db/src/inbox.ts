@@ -9,7 +9,12 @@
  * Every item kind is one query over all of the organizations, so a feed and the counts take
  * a fixed number of queries whatever the number of runs.
  */
-import { INSTALL_JOB_TYPE, REPO_SYNC_JOB_TYPE, WORKTREE_CLEANUP_JOB_TYPE } from "@omniralph/shared";
+import {
+  INSTALL_JOB_TYPE,
+  REPO_SYNC_JOB_TYPE,
+  WORKTREE_CLEANUP_JOB_TYPE,
+  type TriageSize,
+} from "@omniralph/shared";
 import { and, eq, gt, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
@@ -25,6 +30,7 @@ import {
 } from "./run-index.js";
 import { DESIRED_AGENT_VERSION_KEY } from "./app-settings.js";
 import { inboxItemStates, type RalphIssueRef } from "./schema.js";
+import { triageIssueKey, triageSizesOf } from "./triage-size.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -103,7 +109,13 @@ export type InboxFacts =
       };
     }
   | { kind: "stopped_epic"; error: string | null }
-  | { kind: "prd_ready"; jobId: string; outcome: "prd" | "reformat" }
+  | {
+      kind: "prd_ready";
+      jobId: string;
+      outcome: "prd" | "reformat";
+      /** The work item's size from its triage's last result; null when it has none. */
+      size: TriageSize | null;
+    }
   | {
       kind: "pr_waiting";
       lane: {
@@ -493,11 +505,12 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
   const result = await db.execute<{
     id: string;
     organization_id: string;
+    linear_issue_id: string;
     job_id: string | null;
     outcome: "prd" | "reformat";
     since: string;
   }>(sql`
-    select t.id, t.organization_id, tj.id as job_id,
+    select t.id, t.organization_id, t.linear_issue_id, tj.id as job_id,
       t.last_result -> 'outcome' ->> 'outcome' as outcome,
       ${iso("coalesce(tj.finished_at, t.updated_at)")} as since
     from triage_runs t
@@ -513,13 +526,29 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
         select 1 from ralph_runs r
         where r.organization_id = t.organization_id and r.linear_issue_id = t.linear_issue_id
           and r.created_at >= t.created_at)`);
+  const issues = result.rows.map((row) => ({
+    organizationId: row.organization_id,
+    linearIssueId: row.linear_issue_id,
+  }));
+  const sizes = await triageSizesOf(db, issues);
   return result.rows.map((row) => ({
     key: `prd_ready:${row.id}:${row.job_id ?? row.id}`,
     tab: "needs_you",
     organizationId: row.organization_id,
     since: new Date(row.since),
     run: { id: row.id, kind: "triage" },
-    facts: { kind: "prd_ready", jobId: row.job_id ?? row.id, outcome: row.outcome },
+    facts: {
+      kind: "prd_ready",
+      jobId: row.job_id ?? row.id,
+      outcome: row.outcome,
+      size:
+        sizes.get(
+          triageIssueKey({
+            organizationId: row.organization_id,
+            linearIssueId: row.linear_issue_id,
+          }),
+        ) ?? null,
+    },
   }));
 }
 

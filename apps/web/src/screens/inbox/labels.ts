@@ -108,7 +108,12 @@ export function inboxItemLabel(item: InboxItem, now: number): InboxItemLabel {
     case "agent_offline":
       return failed("Agent offline", `Offline for ${durationSince(item.since, now)}`);
     case "agent_update_failed":
-      return failed("Agent update failed", `Update failed ${relativeSince(item.since, now)}`);
+      return failed(
+        "Agent update failed",
+        item.version
+          ? `Update to ${item.version} failed ${relativeSince(item.since, now)}`
+          : `Update failed ${relativeSince(item.since, now)}`,
+      );
     case "run":
       return {
         rowLabel: `${kindOf(item)} · running`,

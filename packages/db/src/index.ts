@@ -770,6 +770,12 @@ export {
   type InboxTab,
 } from "./inbox.js";
 export {
+  latestTriageSizes,
+  triageIssueKey,
+  triageSizesOf,
+  type TriageIssueRef,
+} from "./triage-size.js";
+export {
   countRunsSince,
   diffSettings,
   listSettingsChanges,

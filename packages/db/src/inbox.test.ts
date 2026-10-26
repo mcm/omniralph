@@ -365,6 +365,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       outcome: string,
       issue = `triage-${name}`,
       openQuestions: string[] = [],
+      size?: string,
     ) => {
       const [row] = await db
         .insert(triageRuns)
@@ -374,7 +375,11 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
           linearAgentSessionId: `triage-session-${name}`,
           trigger: "label",
           status: "completed",
-          lastResult: { summary: "s", error: null, outcome: { outcome, openQuestions } },
+          lastResult: {
+            summary: "s",
+            error: null,
+            outcome: { outcome, openQuestions, ...(size ? { size } : {}) },
+          },
           createdAt: ago(100),
           updatedAt: ago(90),
         })
@@ -382,7 +387,9 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       ids[name] = row!.id;
       await job(`${name}Job`, { type: "triage.run", triageRunId: row!.id, finishedAt: ago(90) });
     };
-    await triage("prd", "prd");
+    await triage("prd", "prd", "triage-prd", [], "XL");
+    // A ready PRD whose outcome has no size.
+    await triage("prdNoSize", "reformat");
     await triage("prdStarted", "reformat", "issue-prdRun");
     await ralphRun("prdRun", { createdAt: ago(80) });
     await triage("unchanged", "unchanged");
@@ -534,6 +541,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         `question:${ids.runningTriage}:permission:<at>`,
         `stopped:${ids.stopped}:<at>`,
         `prd_ready:${ids.prd}:${ids.prdJob}`,
+        `prd_ready:${ids.prdNoSize}:${ids.prdNoSizeJob}`,
         `pr:${ids.prReadyLane}:approved`,
         `failed:${ids.failed}:${ids.failedAttempt2}`,
         `failed:${ids.failedReview}:none`,
@@ -563,6 +571,16 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     expect(byKind.get(`stopped_epic:${ids.stopped}`)?.run).toEqual({
       id: ids.stopped,
       kind: "request",
+    });
+    expect(byKind.get(`prd_ready:${ids.prd}`)?.facts).toEqual({
+      kind: "prd_ready",
+      jobId: ids.prdJob,
+      outcome: "prd",
+      size: "XL",
+    });
+    expect(byKind.get(`prd_ready:${ids.prdNoSize}`)?.facts).toMatchObject({
+      outcome: "reformat",
+      size: null,
     });
     const failedRun = items.find((i) => i.key.startsWith(`failed:${ids.failed}`))!;
     expect(failedRun.facts).toEqual({

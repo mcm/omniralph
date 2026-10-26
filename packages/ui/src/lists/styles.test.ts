@@ -56,6 +56,11 @@ describe("lists.css", () => {
     expect(phone!.get(".or-cards")?.display).toBe("flex");
   });
 
+  it("gives the activity date a fixed-width mono column", () => {
+    expect(top.get(".or-activity__date")).toMatchObject({ flex: "none", width: "92px" });
+    expect(top.get(".or-activity__entry")?.display).toBe("flex");
+  });
+
   it("styles selected and bad rows", () => {
     expect(top.get('.or-tbl__row[aria-current="true"]')?.background).toBe("var(--or-sel)");
     expect(top.get('.or-cardrow[aria-current="true"]')?.background).toBe("var(--or-sel)");

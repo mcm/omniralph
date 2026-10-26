@@ -175,14 +175,16 @@ export function MetaBadge({ icon: Icon, text, mono, ...rest }: MetaBadgeProps) {
 }
 
 /** T-shirt sizes. */
-export type TShirtSize = "S" | "M" | "L";
+export type TShirtSize = "XS" | "S" | "M" | "L" | "XL";
+
+export const T_SHIRT_SIZES: readonly TShirtSize[] = ["XS", "S", "M", "L", "XL"];
 
 export interface SizeBadgeProps {
   size: TShirtSize;
   className?: string;
 }
 
-/** A size: one mono letter, named and tooltipped "Size S" etc. */
+/** A size: its mono letters, named and tooltipped "Size S" etc. */
 export function SizeBadge({ size, className }: SizeBadgeProps) {
   const label = `Size ${size}`;
   return (
