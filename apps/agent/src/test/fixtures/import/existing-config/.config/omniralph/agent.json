@@ -1,0 +1,6 @@
+{
+  "server": "https://old.omniralph.example",
+  "agentId": "3c1d0b8e-0000-4000-8000-000000000080",
+  "refreshToken": "ort_stale_token",
+  "workspaceRoot": "/srv/old/repos"
+}

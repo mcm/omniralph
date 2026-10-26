@@ -62,7 +62,10 @@ the config file `~/.config/omniralph/harness.json`. Self-update can't cross the 
 2. `npm install -g @omniralph/agent`.
 3. `omniralph-agent import`: it reads the old install's config and writes
    `~/.config/omniralph/agent.json`, so the machine comes back as the same agent without enrolling
-   again.
+   again. It makes no network call, leaves the old install untouched and prints one line per
+   setting. `--dry-run` prints the same summary without writing anything; `--force` backs up and
+   replaces an existing `agent.json`. When pm2 runs the old daemon, it prints the commands that
+   replace it.
 4. Start `omniralph-agent start` under pm2, tmux or systemd as before.
 5. `npm uninstall -g @omniralph/harness` once the agent is back.
 

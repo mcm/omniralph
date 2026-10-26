@@ -9,3 +9,5 @@ evals/reports
 packages/engine/test/fixtures/eval-cases
 # rendered prompts of built-in tasks: must match the prompt builders byte for byte
 packages/tasks/src/builtin/__snapshots__
+# not valid JSON on purpose: the import test's invalid-config fixture
+apps/agent/src/test/fixtures/import/invalid-json

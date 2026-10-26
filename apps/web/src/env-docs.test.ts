@@ -66,6 +66,8 @@ const NOT_CONFIGURED = new Set([
   "PATH",
   "GIT_ASKPASS",
   "GIT_TERMINAL_PROMPT",
+  // pm2's own home, where `import` looks for a running pm2 daemon.
+  "PM2_HOME",
 ]);
 
 const sorted = (set: Set<string>) => [...set].sort();

@@ -82,10 +82,18 @@ describe("omniralph-agent CLI", () => {
     expect(out.stdout).toBe(USAGE);
   });
 
-  it("names the agent in its usage, never the old package or the AI", () => {
+  it("names the agent in its usage, never the old package (outside import) or the AI", () => {
     expect(USAGE).toMatch(/^Usage: omniralph-agent /);
-    expect(USAGE).not.toMatch(/harness/i);
+    const importSection = USAGE.slice(USAGE.indexOf("  import "), USAGE.indexOf("  update "));
+    expect(importSection).toContain("@omniralph/harness");
+    expect(USAGE.replace(importSection, "")).not.toMatch(/harness/i);
     expect(USAGE).not.toMatch(/\bralph\b/i);
+  });
+
+  it("lists import and its options in its usage", () => {
+    for (const option of ["import", "--from <file>", "--force", "--dry-run"]) {
+      expect(USAGE).toContain(option);
+    }
   });
 
   it("prints the package.json version with --version", async () => {
