@@ -3,16 +3,16 @@ import { agents } from "@omniralph/db";
 import { createEnrollmentToken, enrollAgent, expect, FIXTURE_IDS, test } from "./fixtures";
 
 test.describe("smoke", () => {
-  test("an admin signs in and opens the repositories", async ({ page, signIn }) => {
+  test("an admin signs in and opens the repos", async ({ page, signIn }) => {
     await signIn("admin");
-    await page.goto("/repositories");
-    await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeVisible();
+    await page.goto("/repos");
+    await expect(page.getByRole("heading", { level: 1, name: "Repos" })).toBeVisible();
   });
 
-  test("a member signs in and opens the repositories", async ({ page, signIn }) => {
+  test("a member signs in and opens the repos", async ({ page, signIn }) => {
     await signIn("member");
-    await page.goto("/repositories");
-    await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeVisible();
+    await page.goto("/repos");
+    await expect(page.getByRole("heading", { level: 1, name: "Repos" })).toBeVisible();
   });
 
   test("an agent enrolls through the API with a token from the database", async ({

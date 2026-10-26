@@ -33,7 +33,8 @@ and states) instead of linear.app; also only outside production.
   refresh them (it replaces the previous seed). Online agents heartbeat in 2099, so they
   stay online however long after seeding the panel renders.
 - `ids.ts`: fixed IDs (`FIXTURE_IDS`) for naming detail pages, e.g.
-  `/runs/${FIXTURE_IDS.ralphRuns.running}` or `/runs/${FIXTURE_IDS.triageRuns.completed}`.
+  `/runs/${FIXTURE_IDS.ralphRuns.running}`, `/runs/${FIXTURE_IDS.triageRuns.completed}` or
+  `/repos/${FIXTURE_IDS.repositories.controlPanel}`.
 
 Covered: an admin and a member (and a second organization for the switcher), a pending
 invitation, GitHub and GitLab connections with repositories (one disabled, one disconnected),
@@ -45,5 +46,6 @@ learned and custom rules, repositories at every review depth, a custom agent and
 unlike the built-ins), and jobs in every status.
 
 All data is fake: emails are `@fixtures.example`, hosts `*.fixtures.example`, external IDs
-and tokens start with `fixture`. The repository pages for a GitHub or GitLab connection call
-the provider's API; with fixture credentials they show their error state.
+and tokens start with `fixture`. The Repos add-repo sheet's picker for a GitHub or GitLab
+connection (`/repos?add=github&connection=${FIXTURE_IDS.scmConnections.github}`) calls the
+provider's API; with fixture credentials it shows its error state.

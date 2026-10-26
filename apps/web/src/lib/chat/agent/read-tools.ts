@@ -654,7 +654,7 @@ export const listRepositoriesTool = defineChatTool({
     return {
       repositories: page.repositories.map((repo) => ({
         id: repo.id,
-        url: `${appUrl}/repositories/${repo.id}/settings`,
+        url: `${appUrl}/repos/${repo.id}`,
         fullPath: repo.fullPath,
         provider: repo.provider,
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
@@ -669,7 +669,7 @@ export const listRepositoriesTool = defineChatTool({
         page.repositories.length,
         page.total,
         page.total > page.repositories.length,
-        `${appUrl}/repositories`,
+        `${appUrl}/repos`,
       ),
     };
   },
@@ -759,7 +759,7 @@ export const askAboutCodeTool = defineChatTool({
       case "query_disabled":
         return {
           error: "query_disabled",
-          message: `Ask is turned off for ${outcome.repository.fullPath}, so I can't answer questions about its code. Nothing was queued. An admin can turn on the repo's Ask switch on ${appUrl}/repositories/${outcome.repository.id}/settings.`,
+          message: `Ask is turned off for ${outcome.repository.fullPath}, so I can't answer questions about its code. Nothing was queued. An admin can turn on the repo's Ask switch on ${appUrl}/repos/${outcome.repository.id}?section=ask.`,
         };
       case "no_capable_agent":
         return {

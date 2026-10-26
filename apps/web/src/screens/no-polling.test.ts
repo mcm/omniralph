@@ -3,10 +3,11 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-// Inbox, Runs (TOOL-642) and Repos (TOOL-694) are live: change events refresh their queries, and they poll only
-// as the live data layer's fallback while the realtime connection is down (TOOL-632). No query
-// of theirs sets a `refetchInterval` of its own; `refetchInterval: false` (a query that must
-// never poll, like a story's diff from GitHub or GitLab) is the one value allowed.
+// Inbox, Runs (TOOL-642) and Repos (TOOL-694) are live: change events refresh their queries, and
+// they poll only as the live data layer's fallback while the realtime connection is down
+// (TOOL-632). No query of theirs, nor of the shared components the Repos epic (TOOL-645) built
+// for them and Settings, sets a `refetchInterval` of its own; `refetchInterval: false` (a query
+// that must never poll, like a story's diff from GitHub or GitLab) is the one value allowed.
 
 const WEB = path.resolve(__dirname, "../..");
 const SCANNED = [
@@ -15,6 +16,11 @@ const SCANNED = [
   "src/app/(app)/page.tsx",
   "src/app/(app)/runs",
   "src/app/(app)/repos",
+  "src/components/use-staged-card.ts",
+  "src/components/change-history-popover.tsx",
+  "src/components/connection-health.tsx",
+  "src/components/connect-gitlab-form.tsx",
+  "src/components/connect-github-button.tsx",
 ];
 
 function walk(full: string): string[] {
@@ -54,11 +60,15 @@ function pollingIntervals(file: string): string[] {
   return found;
 }
 
-describe("Inbox and Runs polling", () => {
-  it("scans the screens, the run components and their pages", () => {
+describe("Inbox, Runs and Repos polling", () => {
+  it("scans the screens, the run components, the shared Repos components and their pages", () => {
     expect(files).toContain("src/screens/inbox/queries.ts");
     expect(files).toContain("src/screens/runs/queries.ts");
     expect(files).toContain("src/screens/repos/queries.ts");
+    expect(files).toContain("src/screens/repos/add-repo-sheet.tsx");
+    expect(files).toContain("src/app/(app)/repos/[id]/page.tsx");
+    expect(files).toContain("src/components/change-history-popover.tsx");
+    expect(files).toContain("src/components/connection-health.tsx");
     expect(files).toContain("src/components/runs/use-run-detail.ts");
     expect(files).toContain("src/app/(app)/runs/[id]/page.tsx");
   });

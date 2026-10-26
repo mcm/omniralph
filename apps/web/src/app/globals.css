@@ -151,13 +151,6 @@ body {
   flex: 0 1 auto;
   max-width: 100%;
 }
-/* Below 768px the actions wrap under the title: a leading ghost action (a link out of the
-   panel) pulls back by its padding so its icon lines up with the title. */
-@media (max-width: 767.98px) {
-  .page-header-actions > .page-header-ghost:first-child {
-    margin-left: calc(-1 * var(--space-4));
-  }
-}
 @media (max-width: 639.98px) {
   .page-header-title {
     font-size: var(--text-headline-sm);
@@ -179,27 +172,6 @@ body {
   font-size: var(--text-sm);
   color: var(--text-primary);
   text-decoration: none;
-}
-.list-title:hover .list-title-text {
-  text-decoration: underline;
-}
-.list-title-text {
-  overflow-wrap: anywhere;
-}
-/* A title that shares its line with a leading icon and wraps beside it. */
-.list-title-fill {
-  flex: 1 1 0;
-  min-width: 0;
-}
-@media (max-width: 767px) {
-  /* The repository name fills its cell without widening it, so a long one truncates in the
-     middle instead of pushing the row's switch and menu out of view. */
-  .repositories-title {
-    display: flex;
-    flex-wrap: nowrap;
-    width: 0;
-    min-width: 100%;
-  }
 }
 .list-nowrap {
   white-space: nowrap;
@@ -232,12 +204,6 @@ body {
 }
 .list-table th {
   white-space: nowrap;
-}
-@media (min-width: 768px) {
-  /* The title column keeps a readable measure; the table scrolls inside its card instead. */
-  .list-col-main {
-    min-width: 14rem;
-  }
 }
 .list-time {
   font-size: var(--text-xs);
@@ -275,18 +241,8 @@ body {
   text-align: right;
   white-space: nowrap;
 }
-.list-actions-group {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-}
 .list-phone-meta {
   display: none;
-}
-.list-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 @media (max-width: 767.98px) {
   .list-col-wide,
@@ -300,10 +256,6 @@ body {
   .list-table th:last-child,
   .list-table td:last-child {
     padding-inline-end: 0;
-  }
-  /* Row actions stack so the title column keeps the width. */
-  .list-actions-group {
-    flex-direction: column;
   }
   .list-phone-meta {
     display: flex;
@@ -800,11 +752,6 @@ body {
 .settings-mono {
   font-family: var(--font-mono);
 }
-.settings-inline-error {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--danger-fg);
-}
 .settings-changes {
   margin: var(--space-3) 0 0;
   display: flex;
@@ -931,15 +878,6 @@ body {
   gap: var(--space-6);
   min-width: 0;
 }
-/* The section's shape while its repository loads (whiteout skeletons, DESIGN.md). */
-.settings-section-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-}
 .settings-section {
   /* Clear the sticky app header when a link or a failed validation scrolls here. */
   scroll-margin-top: calc(52px + var(--space-4));
@@ -996,11 +934,6 @@ body {
 }
 .settings-section-body {
   padding-inline: var(--space-6);
-}
-.settings-section-off {
-  display: block;
-  padding-block: var(--space-6) 0;
-  max-width: 72ch;
 }
 .settings-sub {
   display: flex;
@@ -1072,47 +1005,6 @@ body {
 .settings-section-status[data-state="invalid"] {
   color: var(--danger-fg);
   font-weight: var(--font-weight-medium);
-}
-.settings-pin-list {
-  display: flex;
-  flex-direction: column;
-  max-width: 56rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--border-subtle);
-}
-.settings-pin {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  padding-block: var(--space-2);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.settings-pin-main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-width: 0;
-}
-.settings-pin-name {
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.settings-pin-detail {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.settings-pin-badges {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 @media (max-width: 767.98px) {
   .settings-section-header,
@@ -1221,22 +1113,6 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-/* Repository selection (GitHub/GitLab connection pages): the listing's error. */
-.repo-selection-error {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-.repo-selection-error-detail {
-  overflow-wrap: anywhere;
-}
-.repo-selection-error-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 /* Analytics (app/(app)/analytics): every grid reflows by a minimum width, never a fixed
@@ -1848,56 +1724,10 @@ body {
   max-width: calc(var(--space-8) * 12);
   overflow-wrap: anywhere;
 }
-/* A raised panel: a connection on Repositories, a repository on the selection pages. */
-.repo-panel {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-raised);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-}
 .repo-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-}
-.repo-select-all {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-/* Placeholder rows while a selection page's list loads from the code host. */
-.repo-selection-loading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.repo-select-name {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-.repo-external-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-accent);
-  white-space: nowrap;
-}
-@media (min-width: 768px) {
-  .repo-rule-cell {
-    min-width: 17.5rem;
-  }
-}
-.repo-rule-text {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.repo-rule-text-disabled {
-  color: var(--text-secondary);
 }
 .empty-value {
   color: var(--text-secondary);
@@ -1995,7 +1825,7 @@ body {
   gap: var(--space-2);
 }
 
-/* Navigation feedback (components/link.tsx, components/list-pagination.tsx): a link whose
+/* Navigation feedback (components/link.tsx): a link whose
    page is loading dims and pulses, after a short delay so fast navigations don't flicker. */
 .link-status {
   display: none;

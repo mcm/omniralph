@@ -412,7 +412,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect(list.repositories).toEqual([
       expect.objectContaining({
         id: other.repositoryId,
-        url: `${APP_URL}/repositories/${other.repositoryId}/settings`,
+        url: `${APP_URL}/repos/${other.repositoryId}`,
         fullPath: "other/api",
         webUrl: "https://github.com/other/api",
         reviewsEnabled: true,

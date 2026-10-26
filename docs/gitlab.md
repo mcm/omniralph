@@ -7,7 +7,7 @@ mint short-lived clone tokens for agents. For `ralph` runs ([linear.md](linear.m
 the push tokens for running coding jobs and opens, updates and marks ready the run's merge request.
 Agents never see the bot token.
 
-There are no GitLab env vars. The base URL and token are entered under **Repositories › Connect
+There are no GitLab env vars. The base URL and token are entered under **Repos › Add repo › Connect
 GitLab** and stored encrypted with `ENCRYPTION_KEY`. Sign-in with GitLab is a separate OAuth
 application (`AUTH_GITLAB_*`, see [env.md](env.md)).
 
@@ -106,7 +106,7 @@ bot user on the same instance can't be connected to a second organization ("alre
 another organization"); give each organization its own service account, or remove the connection
 from the first organization.
 
-**Repositories › Code-host connections › Remove** (admins) deletes a connection: the webhooks of
+Removing a connection (admins, `DELETE /api/ui/scm-connections/{id}`) deletes it: the webhooks of
 its connected projects are deleted from GitLab (a webhook that can't be deleted is reported, so you
 can remove it under the project's **Settings › Webhooks**), then the connection, its projects and
 their reviews, rules, agent pins and coding runs. The bot user can then be connected again, from
@@ -134,8 +134,8 @@ hour ago (by an overlapping or repeated run of the cron) isn't rotated again.
 
 ## Connection health
 
-After rotating, the same cron checks each connection (read-only). **Repositories › Code-host
-connections** shows each GitLab connection's token expiry, when it was last checked ("Not checked
+After rotating, the same cron checks each connection (read-only). **Repos › Add repo**
+shows each GitLab connection's token expiry, when it was last checked ("Not checked
 yet" before the first run) and a warning listing its problems:
 
 | Problem                       | What to do                                                                                                     |

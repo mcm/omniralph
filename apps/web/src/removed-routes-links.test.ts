@@ -4,19 +4,24 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 // Runs (`/runs`, TOOL-642) replaced the Coding (`/coding`, once `/ralph`), Reviews, Triage and
-// Jobs pages and a repository's Reviews tab, and those routes are gone: nothing in the app may
-// link to them. This scans every source file under `src` (tests too) for string literals and
-// template strings that start with one of the old routes, so a link built from a template
-// (`/repositories/${id}/reviews`) is caught as well. Links to a run use `runHref` and
-// `runListHref` (`src/lib/runs/hrefs.ts`).
+// Jobs pages and a repository's Reviews tab, and Repos (`/repos`, TOOL-645) replaced the old
+// repository pages (`/repositories`, its pickers and tabs). Those routes are gone: nothing in
+// the app may link to them. This scans every source file under `src` (tests too) for string
+// literals and template strings that start with one of the old routes, so a link built from a
+// template (`/repositories/${id}/settings`) is caught as well. Links to a run use `runHref` and
+// `runListHref` (`src/lib/runs/hrefs.ts`); links to a repo go to `/repos/{id}`. The GitHub
+// App's install and callback routes keep their `/repositories/github/…` paths.
 
 const SRC = path.resolve(__dirname);
 const SELF = "src/removed-routes-links.test.ts";
 
 /** An old route at the start of a literal: the path itself, or followed by `/`, `?` or `#`. */
 const REMOVED_ROUTE = /^\/(?:coding|ralph|reviews|triage|jobs)(?=$|[/?#])/;
-/** A repository's Reviews tab, with `${…}` (or anything) as the repository. */
-const REPOSITORY_REVIEWS = /^\/repositories\/[^/?#]+\/reviews(?=$|[/?#])/;
+/**
+ * The old repository pages, with `${…}` (or anything) as the repository: all but the GitHub
+ * App's install and callback routes (`GITHUB_INSTALL_PATH`, `GITHUB_CALLBACK_PATH`).
+ */
+const REPOSITORY_PAGES = /^\/repositories(?=$|[/?#])(?!\/github\/(?:install|callback)(?:$|[?#]))/;
 
 interface Allowed {
   /** The whole literal text. */
@@ -31,6 +36,11 @@ const ALLOWED: Allowed[] = [
     text: /^\/(?:coding|ralph|triage)$/,
     files: /^src\/lib\/(?:ralph|triage|linear)\/[^/]+\.test\.ts$/,
     reason: "Omniralph's Linear commands (`/coding`, `/ralph`, `/triage`) in replies, not routes",
+  },
+  {
+    text: /^\/repositories$/,
+    files: /^src\/lib\/navigation\.test\.ts$/,
+    reason: "The navigation test checks that no page and no entry answers the old path",
   },
 ];
 
@@ -75,7 +85,7 @@ const files = walk(SRC)
   .map((file) => path.relative(path.dirname(SRC), file).split(path.sep).join("/"))
   .filter((file) => file !== SELF);
 
-const isRemovedRoute = (text: string) => REMOVED_ROUTE.test(text) || REPOSITORY_REVIEWS.test(text);
+const isRemovedRoute = (text: string) => REMOVED_ROUTE.test(text) || REPOSITORY_PAGES.test(text);
 
 function scan(entries: { file: string; code: string }[]) {
   const hits: string[] = [];
@@ -91,7 +101,7 @@ function scan(entries: { file: string; code: string }[]) {
   return { hits, used };
 }
 
-describe("links to the removed run pages", () => {
+describe("links to the removed run and repository pages", () => {
   const { hits, used } = scan(
     files.map((file) => ({ file, code: readFileSync(path.join(path.dirname(SRC), file), "utf8") })),
   );
@@ -111,12 +121,19 @@ describe("links to the removed run pages", () => {
       'const e = <a href="/jobs">Jobs</a>;',
       "const f = `/repositories/${id}/reviews?page=2`;",
       'const g = "/repositories/r1/reviews";',
+      "const k = `/repositories/${id}/rules`;",
+      'const m = "/repositories?page=2";',
+      "const n = `/repositories/gitlab/${id}`;",
       // Not the old routes.
       'const h = "/runs?kind=review";',
       'const i = "/api/ui/jobs/x/cancel";',
       'const j = "/codingx";',
-      "const k = `/repositories/${id}/rules`;",
       'const l = "Reply `/coding` again.";',
+      "const o = `/repos/${id}?section=ask`;",
+      'const p = "/api/ui/repositories/r1/reviews";',
+      'const q = "/repositories/github/install?organization=o1";',
+      'const r = "/repositories/github/callback";',
+      'const s = "/repositoriesx";',
     ].join("\n");
     expect(
       scan([{ file: "src/x.tsx", code: sample }]).hits.map((hit) => hit.split(": ")[1]),
@@ -128,25 +145,27 @@ describe("links to the removed run pages", () => {
       '"/jobs"',
       '"/repositories/${}/reviews?page=2"',
       '"/repositories/r1/reviews"',
+      '"/repositories/${}/rules"',
+      '"/repositories?page=2"',
+      '"/repositories/gitlab/${}"',
     ]);
   });
 
   it("has none of the old pages, and no redirects to them", () => {
-    for (const page of [
-      "coding",
-      "ralph",
-      "reviews",
-      "triage",
-      "jobs",
-      "repositories/[id]/reviews",
-    ]) {
+    for (const page of ["coding", "ralph", "reviews", "triage", "jobs", "repositories"]) {
       expect(existsSync(path.join(SRC, "app/(app)", page)), page).toBe(false);
     }
     const config = readFileSync(path.join(SRC, "../next.config.ts"), "utf8");
     expect(config).not.toMatch(/\bredirects\b/);
+    // The GitHub App's install and callback routes stay where its Setup URL points.
+    for (const route of ["install", "callback"]) {
+      expect(existsSync(path.join(SRC, "app/(oauth)/repositories/github", route, "route.ts"))).toBe(
+        true,
+      );
+    }
   });
 
-  it("finds no link to /coding, /ralph, /reviews, /triage, /jobs or a repository's reviews", () => {
+  it("finds no link to /coding, /ralph, /reviews, /triage, /jobs or the old repository pages", () => {
     expect(hits).toEqual([]);
   });
 

@@ -946,7 +946,7 @@ const FINDING_TEMPLATES = [
     severity: "medium",
     category: "performance",
     title: "N+1 query in the repository list",
-    path: "src/app/(app)/repositories/page.tsx",
+    path: "src/screens/repos/repos-view.tsx",
     body: "Each row loads its connection separately.",
   },
   {

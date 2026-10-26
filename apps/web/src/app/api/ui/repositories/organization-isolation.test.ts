@@ -2,8 +2,6 @@
 // sees or changes the other's, and gets a 404 on its URLs.
 import { randomBytes } from "node:crypto";
 import {
-  addMember,
-  setActiveOrganization,
   closeDb,
   connectRepository,
   disconnectRepository,
@@ -272,25 +270,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     }
   });
 
-  it("shows the coding policy to admins only; members get a 403 but see the repository", async () => {
-    const [member] = await db
-      .insert(users)
-      .values({ id: "alpha-member", email: "member@alpha.io" })
-      .returning();
-    expect(
-      await addMember(db, { organizationId: a.orgId, userId: member!.id, role: "member" }),
-    ).toBe("added");
-    await setActiveOrganization(db, { userId: member!.id, organizationId: a.orgId });
-    state.userId = member!.id;
-    expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 403 });
-    expect(await call(repositoryDetail.GET, a.repoId)).toMatchObject({ status: 200 });
-    state.userId = a.userId;
-    expect(await call(repositoryCoding.GET, a.repoId)).toMatchObject({ status: 200 });
-  });
-
   it("returns 404 for another organization's repository pages", async () => {
     state.userId = a.userId;
-    for (const handler of [repositoryDetail.GET, repositoryCoding.GET, repositoryRules.GET]) {
+    for (const handler of [repositoryDetail.GET, repositoryRules.GET]) {
       expect(await call(handler, b.repoId)).toMatchObject({ status: 404 });
     }
   });

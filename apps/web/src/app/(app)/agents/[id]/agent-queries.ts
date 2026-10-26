@@ -59,7 +59,7 @@ export function useAgentHostTools(agentId: string) {
 
 /**
  * What a change to an agent can affect: every agent list and detail, and the
- * repositories pages (which show pins and the agents serving them).
+ * Repos screen (which shows pins and the agents serving them).
  */
 export function agentChanged(keys: QueryKeys): QueryKey[] {
   return [keys.agents.all, keys.repositories.all];

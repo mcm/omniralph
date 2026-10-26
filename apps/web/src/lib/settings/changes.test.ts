@@ -7,7 +7,6 @@ import {
   sameSettingValue,
   settingChanges,
   withDefault,
-  withoutFieldErrors,
   type SettingSpec,
 } from "./changes";
 
@@ -66,17 +65,6 @@ describe("settingChanges", () => {
   it("is empty when nothing changed", () => {
     const values = { enabled: true, model: "opus", commands: [] };
     expect(settingChanges(specs, values, { ...values, commands: [] })).toEqual([]);
-  });
-});
-
-describe("withoutFieldErrors", () => {
-  it("drops a field's errors, including its list items", () => {
-    expect(
-      withoutFieldErrors(
-        { verifyCommands: "a", "verifyCommands.2": "b", model: "c", verifyCommandsX: "d" },
-        ["verifyCommands"],
-      ),
-    ).toEqual({ model: "c", verifyCommandsX: "d" });
   });
 });
 

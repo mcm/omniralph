@@ -89,7 +89,8 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
   closed: approvals and change requests aren't seen. The production App's subscription is added
   at cutover, by a person in the App's settings.
 - `setup_url` + `setup_on_update`: after installing (or changing the installation's repositories)
-  GitHub returns to **Repositories › Connect GitHub**'s callback, which records the installation.
+  GitHub returns to **Repos › Add repo › Connect GitHub**'s callback
+  (`/repositories/github/callback`), which records the installation and opens its picker.
 - `request_oauth_on_install` must stay **false**: turning it on disables the Setup URL, and the
   callback depends on it.
 
@@ -166,7 +167,7 @@ repository's review depth (Standard by default).
 
 ### Removing an installation
 
-**Repositories › Code-host connections › Remove** (admins) deletes the installation's connection
+Removing the connection (admins, `DELETE /api/ui/scm-connections/{id}`) deletes the installation's connection
 from the organization together with its repositories and their reviews, rules, agent pins and
 coding runs (jobs are kept, without their repository). The App stays installed on GitHub; connect
 it again with **Connect GitHub**, from the same or another organization.

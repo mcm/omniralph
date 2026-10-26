@@ -668,13 +668,12 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       // story playbook's rounds.
       const run = await enqueue();
       expect(run.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", review]);
-      const coding = await codingRoute.GET(new Request("http://localhost/api/ui"), {
+      const detail = await detailRoute.GET(new Request("http://localhost/api/ui"), {
         params: Promise.resolve({ id: repoId }),
       });
-      expect(((await coding.json()) as { roundLimits: unknown }).roundLimits).toEqual({
-        maxReviewRounds: 5,
-        maxFixRounds: 1,
-      });
+      expect(
+        ((await detail.json()) as { coding: { roundLimits: unknown } }).coding.roundLimits,
+      ).toEqual({ review: 5, fix: 1 });
 
       // The same bindings again change nothing.
       expect(

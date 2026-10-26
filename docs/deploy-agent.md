@@ -424,7 +424,7 @@ types the agent runs) is configured centrally and delivered in every heartbeat r
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | Max concurrency (parallel jobs)                                     | **Agents › <agent>**                                                                  | 1                                                                  |
 | Concurrency per pool (1 to max concurrency)                         | **Agents › <agent>**                                                                  | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
-| Pinned repositories                                                 | **Repository › Settings › Agents › Pinning** (the agent's overview lists them, read-only) | none (every agent is eligible for every repo)                    |
+| Pinned repositories                                                 | **Repos › Agents** (the agent's overview lists them, read-only) | none (every agent is eligible for every repo)                    |
 | Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Settings › Agent defaults**; per-agent override on **Agents › <agent>**                | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
@@ -499,7 +499,7 @@ stopped, then start it again. The agent then also claims its organization's `ral
   `coding` accepted on it until its runs finish. If you untick `coding` on it or revoke it, the lane's
   next job goes to an agent its repository is pinned to, else to any agent that accepts `coding`,
   which recreates the branch worktree from the pushed branch.
-- A repository pinned to agents (**Repository › Settings › Agents › Pinning**) starts its runs on a pinned
+- A repository pinned to agents (**Repos › Agents**) starts its runs on a pinned
   agent, so at least one of them needs to accept `coding`, or the run's jobs are never picked up.
 - Coding sessions are long and write code: give the agents that run them their own host (or keep **Max
   concurrency** at 1) if you also develop on it.

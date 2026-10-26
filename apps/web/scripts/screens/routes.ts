@@ -120,6 +120,54 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/repos/[id]/page.tsx",
     auth: "signed-in",
   },
+  {
+    // A staged Reviews change: the save bar lists it with its effect.
+    name: "repo-reviews-unsaved",
+    path: `/repos/${ids.repositories.controlPanel}`,
+    page: "(app)/repos/[id]/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: 'section#reviews input[type="checkbox"]' }],
+    viewportOnly: true,
+  },
+  {
+    // The organization's agents that can be pinned.
+    name: "repo-agents-menu",
+    path: `/repos/${ids.repositories.controlPanel}?section=agents`,
+    page: "(app)/repos/[id]/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: 'button[aria-label="Pin agent"]' }],
+    viewportOnly: true,
+  },
+  {
+    name: "repo-rules",
+    path: `/repos/${ids.repositories.controlPanel}?section=rules`,
+    page: "(app)/repos/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // The add-repo sheet's connections and their health.
+    name: "repos-add",
+    path: "/repos",
+    page: "(app)/repos/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: 'button[aria-label="Add repo"]' }],
+    viewportOnly: true,
+  },
+  {
+    // A connection's picker (with fixture credentials, its error state).
+    name: "repos-add-github",
+    path: `/repos?add=github&connection=${ids.scmConnections.github}`,
+    page: "(app)/repos/page.tsx",
+    auth: "signed-in",
+    viewportOnly: true,
+  },
+  {
+    name: "repos-add-gitlab",
+    path: `/repos?add=gitlab&connection=${ids.scmConnections.gitlab}`,
+    page: "(app)/repos/page.tsx",
+    auth: "signed-in",
+    viewportOnly: true,
+  },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "agents", path: "/agents", page: "(app)/agents/page.tsx", auth: "signed-in" },
   {
@@ -187,63 +235,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     steps: [
       { action: "fill", selector: '[id^="host-tool-path-"]', value: "/opt/semgrep/bin/semgrep" },
     ],
-    viewportOnly: true,
-  },
-  {
-    name: "repositories",
-    path: "/repositories",
-    page: "(app)/repositories/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "repositories-github",
-    path: `/repositories/github/${ids.scmConnections.github}`,
-    page: "(app)/repositories/github/[connectionId]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "repositories-gitlab",
-    path: `/repositories/gitlab/${ids.scmConnections.gitlab}`,
-    page: "(app)/repositories/gitlab/[connectionId]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "repository-rules",
-    path: `/repositories/${ids.repositories.controlPanel}/rules`,
-    page: "(app)/repositories/[id]/rules/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "repository-settings",
-    path: `/repositories/${ids.repositories.controlPanel}/settings`,
-    page: "(app)/repositories/[id]/settings/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    // Failed validation: the save footer counts the fields that need attention.
-    name: "repository-settings-invalid",
-    path: `/repositories/${ids.repositories.controlPanel}/settings`,
-    page: "(app)/repositories/[id]/settings/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#path-excludes", value: "!*.snap" },
-      { action: "click", selector: '#review-settings [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
-  {
-    name: "repository-agents",
-    path: `/repositories/${ids.repositories.controlPanel}/agents`,
-    page: "(app)/repositories/[id]/agents/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    // Pinned agents are picked from a searchable list.
-    name: "repository-agents-picker",
-    path: `/repositories/${ids.repositories.controlPanel}/agents`,
-    page: "(app)/repositories/[id]/agents/page.tsx",
-    auth: "signed-in",
-    steps: [{ action: "click", selector: "#pinned-agents" }],
     viewportOnly: true,
   },
   {
