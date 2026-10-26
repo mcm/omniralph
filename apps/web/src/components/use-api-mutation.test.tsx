@@ -310,6 +310,23 @@ describe("useApiMutation", () => {
       expect(seenInOnSuccess).toEqual({ name: "build-09" });
     });
 
+    it("with exact, writes only the query at the key, not the sub-resources under it", async () => {
+      const { client, mutationFn, result } = setup({
+        applyResult: (_data, cache) =>
+          cache.set<{ name: string }>(
+            cache.keys.agents.detail("h1"),
+            (previous) => previous && { ...previous, name: "saved" },
+            { exact: true },
+          ),
+      });
+      client.setQueryData(keys.agents.detail("h1"), { name: "old" });
+      client.setQueryData(keys.agents.part("h1", "runs"), { runs: [] });
+      mutationFn.mockResolvedValue({ ok: true } as never);
+      await act(() => result.current.mutateAsync("h1"));
+      expect(client.getQueryData(keys.agents.detail("h1"))).toEqual({ name: "saved" });
+      expect(client.getQueryData(keys.agents.part("h1", "runs"))).toEqual({ runs: [] });
+    });
+
     it("reconciles in the background: the mutation doesn't wait on the refetch", async () => {
       const { client, mutationFn, result } = setup({
         applyResult: (_data, cache) =>

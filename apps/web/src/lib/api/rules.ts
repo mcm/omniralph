@@ -19,8 +19,8 @@ export const ruleViewSchema = z.object({
 }) satisfies z.ZodType<RuleView>;
 
 /**
- * `GET /api/ui/repositories/{id}/rules?next=`: a connected repository with its rules, polled.
- * A repository of another of the user's organizations answers 409 `enter_organization`.
+ * `GET /api/ui/repositories/{id}/rules`: a connected repository of any of the user's
+ * organizations with its rules, oldest first, live.
  */
 export const repositoryRulesSchema = z.object({
   repository: z.object({
@@ -38,3 +38,10 @@ export type RepositoryRules = z.infer<typeof repositoryRulesSchema>;
  * the rule switched on or off. (`POST …/rules` takes a `RuleInput`.)
  */
 export type RuleChange = RuleInput | { enabled: boolean };
+
+/**
+ * What `POST /api/ui/repositories/{id}/rules` and `PATCH …/rules/{ruleId}` answer: the added
+ * or changed rule, so the Rules section shows it without a refetch.
+ */
+export const ruleSaveResultSchema = z.object({ ok: z.literal(true), rule: ruleViewSchema });
+export type RuleSaveResult = z.infer<typeof ruleSaveResultSchema>;

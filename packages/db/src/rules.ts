@@ -3,7 +3,7 @@
  * generated from false-positive dismissals. Enabled rules are part of the
  * review config resolved at enqueue time (`getRepositoryReviewSettings`).
  */
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { Rule } from "./reviews.js";
@@ -49,11 +49,8 @@ export interface RuleEntry {
   } | null;
 }
 
-/** A repository's rules, oldest first, with their creators and source findings. */
-export async function listRepositoryRules(
-  db: Database,
-  repositoryId: string,
-): Promise<RuleEntry[]> {
+/** Rules matching `where` with their creators and source findings, oldest first. */
+async function selectRuleEntries(db: Database, where: SQL | undefined): Promise<RuleEntry[]> {
   const rows = await db
     .select({
       rule: rules,
@@ -70,7 +67,7 @@ export async function listRepositoryRules(
     .leftJoin(users, eq(users.id, rules.createdBy))
     .leftJoin(findings, eq(findings.id, rules.sourceFindingId))
     .leftJoin(reviews, eq(reviews.id, findings.reviewId))
-    .where(eq(rules.repositoryId, repositoryId))
+    .where(where)
     .orderBy(asc(rules.createdAt), asc(rules.id));
   return rows.map(({ rule, creator, finding, reviewRunId }) => ({
     id: rule.id,
@@ -83,6 +80,24 @@ export async function listRepositoryRules(
     createdBy: creator,
     sourceFinding: finding && { ...finding, reviewRunId },
   }));
+}
+
+/** A repository's rules, oldest first, with their creators and source findings. */
+export function listRepositoryRules(db: Database, repositoryId: string): Promise<RuleEntry[]> {
+  return selectRuleEntries(db, eq(rules.repositoryId, repositoryId));
+}
+
+/** One rule of a repository with its creator and source finding; null when it has none such. */
+export async function getRepositoryRule(
+  db: Database,
+  repositoryId: string,
+  ruleId: string,
+): Promise<RuleEntry | null> {
+  const [entry] = await selectRuleEntries(
+    db,
+    and(eq(rules.id, ruleId), eq(rules.repositoryId, repositoryId)),
+  );
+  return entry ?? null;
 }
 
 /** Adds an admin-written rule (enabled). */

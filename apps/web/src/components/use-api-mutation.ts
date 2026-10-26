@@ -53,9 +53,14 @@ export interface MutationCache {
   /**
    * Writes every cached query under the `queryKey` prefix (or creates the exact query
    * when none is cached): cancels their in-flight fetches first, so a fetch that started
-   * before the change can't overwrite it, and snapshots them for a rollback.
+   * before the change can't overwrite it, and snapshots them for a rollback. With `exact`,
+   * only the query at `queryKey` itself (not the sub-resources under it).
    */
-  set<T>(queryKey: QueryKey, updater: (previous: T | undefined) => T | undefined): Promise<void>;
+  set<T>(
+    queryKey: QueryKey,
+    updater: (previous: T | undefined) => T | undefined,
+    options?: { exact?: boolean },
+  ): Promise<void>;
 }
 
 /** A cached query before a mutation changed it (`state` undefined: it wasn't cached). */
@@ -84,9 +89,13 @@ function mutationCache(
   return {
     keys,
     get: <T>(queryKey: QueryKey) => client.getQueryData<T>(queryKey),
-    set: async <T>(queryKey: QueryKey, updater: (previous: T | undefined) => T | undefined) => {
-      await client.cancelQueries({ queryKey });
-      const queries = client.getQueryCache().findAll({ queryKey });
+    set: async <T>(
+      queryKey: QueryKey,
+      updater: (previous: T | undefined) => T | undefined,
+      { exact = false }: { exact?: boolean } = {},
+    ) => {
+      await client.cancelQueries({ queryKey, exact });
+      const queries = client.getQueryCache().findAll({ queryKey, exact });
       if (queries.length === 0) {
         const next = updater(undefined);
         if (next === undefined) return;
