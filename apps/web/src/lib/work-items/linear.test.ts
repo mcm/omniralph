@@ -60,6 +60,7 @@ function linearAgent(
     tracker,
     teams: ["team-a", "team-b"],
     projectId: "project-1",
+    projectName: "Control panel",
     missingRef: "ENG-9999",
     async seed(input) {
       const team = fake.teams.find((t) => t.id === input.teamId)!;

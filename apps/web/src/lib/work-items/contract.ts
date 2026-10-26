@@ -10,6 +10,7 @@ import {
   WORK_ITEM_STATES,
   WorkItemConflictError,
   WorkItemNotFoundError,
+  WorkItemProjectNotFoundError,
   type TrackerWorkflowState,
   type WorkItem,
   type WorkItemStateCategory,
@@ -42,6 +43,8 @@ export interface WorkItemTrackerAgent {
   teams: [string, string];
   /** A project items can be in. */
   projectId: string;
+  /** That project's name. */
+  projectName: string;
   /** A ref no work item has. */
   missingRef: string;
   seed(input: SeedWorkItem): Promise<{ id: string; identifier: string }>;
@@ -545,6 +548,30 @@ export function describeWorkItemTrackerContract(
           parentId: parent.id,
         });
         await expect(h.labelId(teamA, "brand-new")).resolves.toEqual(expect.any(String));
+      });
+
+      it("creates a work item in a project given by its name, ignoring case", async () => {
+        const item = await tracker.create({
+          teamId: teamA,
+          projectName: h.projectName.toUpperCase(),
+          title: "By name",
+          description: "",
+        });
+        expect(item.project).toMatchObject({ id: h.projectId, name: h.projectName });
+        expect((await tracker.get(item.id)).project).toMatchObject({ id: h.projectId });
+      });
+
+      it("creates nothing for a project name the tracker doesn't have", async () => {
+        await expect(
+          tracker.create({
+            teamId: teamA,
+            projectName: "No such project",
+            title: "Lost",
+            description: "",
+          }),
+        ).rejects.toBeInstanceOf(WorkItemProjectNotFoundError);
+        const { items } = await allPages(tracker, { teamId: teamA, limit: 50 });
+        expect(items.map((item) => item.title)).not.toContain("Lost");
       });
 
       it("creates a plain work item", async () => {

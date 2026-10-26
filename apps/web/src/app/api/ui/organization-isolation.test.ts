@@ -268,6 +268,7 @@ const workItemTriage = await import("./work-items/[id]/triage/route");
 const workItemRepository = await import("./work-items/[id]/repository/route");
 const workItemMove = await import("./work-items/[id]/move/route");
 const workItemCancel = await import("./work-items/[id]/cancel/route");
+const workItemCreate = await import("./work-items/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
@@ -1305,6 +1306,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             }),
             call(workItemMove.POST, { params: { id }, path, body: { to: "needs_refining" } }),
             call(workItemCancel.POST, { params: { id }, path, method: "POST" }),
+            // A new work item for the other organization's repo.
+            call(workItemCreate.POST, {
+              path: "/api/ui/work-items",
+              method: "POST",
+              body: { repositoryId: other.repoId, title: "Planted", triageNow: true },
+            }),
           ];
           for (const attempt of await Promise.all(attempts)) {
             expect(attempt).toMatchObject({ status: 404 });
@@ -1315,6 +1322,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           expect(theirs.stateChanges).toEqual([]);
           expect(theirs.delegations).toEqual([]);
           expect(theirs.labelChanges).toEqual([]);
+          expect(theirs.created).toEqual([]);
         }
       }
       state.userId = null;

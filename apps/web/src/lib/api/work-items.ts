@@ -168,3 +168,24 @@ export const workItemRepositoryResultSchema = z.object({
 
 /** `POST /api/ui/work-items/{id}/move`. */
 export const workItemMoveBodySchema = z.object({ to: z.literal("needs_refining") });
+
+// ── New work item (`POST /api/ui/work-items`) ──────────────────────────────────────────────
+
+/** `POST /api/ui/work-items`: a work item for a repo with Coding on and a work item match. */
+export const createWorkItemBodySchema = z.object({
+  repositoryId: z.uuid({ error: "Choose a repo." }),
+  /** Required, at most 255 characters (checked by the service). */
+  title: z.string().max(10_000, { error: "The title is too long." }),
+  /** Markdown; optional. */
+  description: z.string().max(200_000, { error: "The description is too long." }).default(""),
+  /** Triage now: Om turns it into a PRD and sizes it. */
+  triageNow: z.boolean().default(true),
+});
+export const createWorkItemResultSchema = z.object({
+  /** The new item's row, for the Backlog to insert without a refetch. */
+  item: workItemRowSchema,
+  /** `started`, `failed` (the item was created; `triageError` says why) or null (not asked). */
+  triage: z.enum(["started", "failed"]).nullable(),
+  triageError: z.string().optional(),
+});
+export type CreateWorkItemResponse = z.infer<typeof createWorkItemResultSchema>;
