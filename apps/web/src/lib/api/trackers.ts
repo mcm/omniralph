@@ -43,3 +43,30 @@ export const trackerStateMappingSchema = z.object({
   ),
 });
 export type TrackerStateMappingView = z.infer<typeof trackerStateMappingSchema>;
+
+/** Wire format of the organization's tracker labels: `/api/ui/trackers/labels`. */
+
+/** At most this many labels in each list. */
+export const MAX_TRACKER_LABELS = 50;
+
+const labelListSchema = (field: string) =>
+  z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, `${field} can't be blank.`)
+        .max(100, `${field} can be at most 100 characters.`),
+    )
+    .max(MAX_TRACKER_LABELS, `Use at most ${MAX_TRACKER_LABELS} labels.`);
+
+/**
+ * `GET`, the body of `PUT` and its answer: labels matched ignoring case. `manualLabels` mark a
+ * story as a manual step (Om files manual steps with the first), so it needs at least one;
+ * `blockedLabels` keep Om off a work item (and its sub-issues) whichever repo it routes to.
+ */
+export const trackerLabelsSchema = z.strictObject({
+  manualLabels: labelListSchema("Manual labels").min(1, "Add at least one manual label."),
+  blockedLabels: labelListSchema("Blocked labels"),
+});
+export type TrackerLabelsView = z.infer<typeof trackerLabelsSchema>;

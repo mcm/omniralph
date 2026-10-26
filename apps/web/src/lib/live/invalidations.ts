@@ -46,7 +46,11 @@ const SETTINGS_INVALIDATIONS: Record<
   "repository.coding": (keys, id) => repositoryKeys(keys, id),
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.harnesses.all],
-  routing_rules: (keys) => [keys.settings.detail("routing")],
+  // The routing rules, and the tracker labels routing applies.
+  routing_rules: (keys) => [
+    keys.settings.detail("routing"),
+    keys.settings.detail("tracker-labels"),
+  ],
   connection: (keys) => [keys.connections.all],
   organization: (keys) => [keys.organization.all],
   // Agents and repositories show the defaults they inherit.
