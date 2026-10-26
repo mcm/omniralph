@@ -145,12 +145,12 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         {
           organizationId: orgId,
           name: "agent-a",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
         {
           organizationId: orgId,
           name: "agent-b",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];

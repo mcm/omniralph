@@ -222,7 +222,7 @@ the agent lists but the installed version doesn't provide fails the run.
 
 ## Locking a harness down
 
-The harness enforces both settings in its local config (`~/.config/omniralph/harness.json`)
+The harness enforces these settings in its local config (`~/.config/omniralph/harness.json`)
 itself, whatever the control panel asks; see [deploy-harness.md](deploy-harness.md#4-enroll) for
 the file.
 
@@ -245,6 +245,10 @@ the file.
   blocked prefix).
 - **`dataDir`** (default `~/.omniralph`): where installables and their caches live. It holds code
   the harness runs, so keep it writable only by the harness's user.
+- **`acceptedTaskTypes`** (default all of `query`, `review` and `coding`): the task types the
+  harness runs. It reports them in every heartbeat and claim and is only handed jobs of those types,
+  so a host you don't trust to push code can leave out `coding`. Housekeeping jobs (`repo.sync`,
+  installs) always run.
 
 Changes to the local config apply when the harness restarts.
 

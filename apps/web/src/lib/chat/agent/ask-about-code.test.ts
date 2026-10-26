@@ -18,7 +18,6 @@ import {
   organizations,
   repositories,
   saveChatConnection,
-  setAllowedTaskTypeDefaults,
   upsertChatChannelPlaybookSetting,
   upsertScmConnection,
   type ChatConnection,
@@ -75,7 +74,7 @@ describe("queryClaimableHarnesses", () => {
       reportedVersion: "0.9.0",
       revokedAt: null,
       lastHeartbeatAt: now,
-      acceptedTaskTypes: null,
+      reportedAcceptedTaskTypes: null,
       effective: { acceptedTaskTypes: ["query", "review"], maxConcurrency: 5 },
       reportedInstallables: [],
       pinnedRepositories: [],
@@ -95,12 +94,12 @@ describe("queryClaimableHarnesses", () => {
       harness({ name: "unknown", reportedVersion: null }),
       harness({
         name: "no-query",
-        acceptedTaskTypes: ["review", "coding"],
+        reportedAcceptedTaskTypes: ["review", "coding"],
         effective: { acceptedTaskTypes: ["review", "coding"], maxConcurrency: 5 },
       }),
-      // Inheriting an organization default without query tasks.
+      // Reporting no query tasks.
       harness({
-        name: "no-query-default",
+        name: "no-query-reported",
         effective: { acceptedTaskTypes: ["review"], maxConcurrency: 5 },
       }),
     ];
@@ -545,18 +544,16 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       expect(off.message).toContain("Ask switch");
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
-      // Ask on answers, whatever the organization's task types (on a harness taking queries).
-      await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
+      // Ask on answers (on a harness taking queries).
       await setAsk(true);
-      await setAgent(harnessId, { acceptedTaskTypes: ["query"] });
+      await setAgent(harnessId, { reportedAcceptedTaskTypes: ["query"] });
       expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
         { status: "started" },
       );
       expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
     } finally {
       await setAsk(true);
-      await setAgent(harnessId, { acceptedTaskTypes: null });
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
+      await setAgent(harnessId, { reportedAcceptedTaskTypes: null });
     }
     expect(h.thread.post).not.toHaveBeenCalled();
   });

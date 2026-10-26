@@ -8,13 +8,13 @@ import {
   closeDb,
   createDb,
   createHostTool,
+  captureChanges,
   getHarnessOverview,
   jobs,
   listHarnessAudit,
   listHarnessHostTools,
   listHarnessOverview,
   listRecentHarnessAudit,
-  setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   setHarnessHostToolPath,
@@ -24,6 +24,7 @@ import {
   writeHarnessAudit,
   type Database,
   organizations,
+  type RecordedChange,
 } from "@omniralph/db";
 import type { HeartbeatResponse } from "@omniralph/shared";
 import {
@@ -33,6 +34,7 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HarnessDetail, HarnessList } from "@/lib/api/harnesses";
 import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -169,7 +171,6 @@ const updateHarnessConfig = (
   id: string,
   config: {
     maxConcurrency: number | null;
-    acceptedTaskTypes: string[] | null;
     poolLimits: Record<string, number>;
   },
 ) => ui(harnessSettings.PUT, id, { method: "PUT", body: { config } });
@@ -206,6 +207,19 @@ const installInstallable = (id: string, body: { name: string; version?: string }
   ui(harnessInstalls.POST, id, { body });
 const setHostToolPath = (id: string, hostToolId: string, path: string) =>
   ui(harnessHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
+const harnessList = await import("@/app/api/ui/harnesses/route");
+async function listHarnesses() {
+  const response = await harnessList.GET(new Request("http://localhost/api/ui/harnesses"), {
+    params: Promise.resolve({}),
+  });
+  return ((await response.json()) as HarnessList).harnesses;
+}
+async function getHarness(id: string) {
+  const response = await harnessDetail.GET(new Request(`http://localhost/api/ui/harnesses/${id}`), {
+    params: Promise.resolve({ id }),
+  });
+  return ((await response.json()) as HarnessDetail).harness;
+}
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
 
 describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", () => {
@@ -350,7 +364,8 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("reaches the harness in its next heartbeat response", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      // A new harness inherits the organization's (built-in) defaults.
+      // A new harness inherits the organization's (built-in) defaults; an older agent, which
+      // reports no task types, is sent every type.
       expect(before).toMatchObject({
         maxConcurrency: 5,
         pollIntervalSeconds: 5,
@@ -358,13 +373,9 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         pinnedRepoIds: [],
       });
 
-      expect(
-        await updateHarnessConfig(harnessId, {
-          maxConcurrency: 4,
-          acceptedTaskTypes: [],
-          poolLimits: {},
-        }),
-      ).toEqual({ ok: true });
+      expect(await updateHarnessConfig(harnessId, { maxConcurrency: 4, poolLimits: {} })).toEqual({
+        ok: true,
+      });
       expect(await pinRepository(harnessId, repoA)).toEqual({ ok: true });
 
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
@@ -372,7 +383,6 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         maxConcurrency: 4,
         // Legacy constants: harnesses claim jobs instead of polling queue topics.
         pollIntervalSeconds: 5,
-        acceptedTaskTypes: [],
         pinnedRepoIds: [repoA],
         topics: [],
       });
@@ -382,23 +392,73 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(unpinned.pinnedRepoIds).toEqual([]);
     });
 
-    it("saves the accepted task types and they reach the harness", async () => {
+    it("stores the task types the agent reports, publishing a change only when they differ", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
-      const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(before.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
+      const reported = { ...HEARTBEAT, acceptedTaskTypes: ["coding", "query"] };
+      const agentChanges = (changes: RecordedChange[]) =>
+        changes.filter((c) => c.resource === "agent" && c.ids.includes(harnessId));
+      // The first heartbeat announces the agent online: get that out of the way.
+      await sendHeartbeat(accessToken);
 
-      expect(
-        await updateHarnessConfig(harnessId, {
-          maxConcurrency: 1,
-          acceptedTaskTypes: ["query", "coding", "query"],
-          poolLimits: {},
-        }),
-      ).toEqual({ ok: true });
+      const first = await captureChanges(
+        async () =>
+          (await (await sendHeartbeat(accessToken, reported)).json()) as HeartbeatResponse,
+      );
+      // An agent that reports its own task types isn't sent any.
+      expect(first.result.acceptedTaskTypes).toBeUndefined();
+      expect(agentChanges(first.changes)).toEqual([
+        expect.objectContaining({ resource: "agent", ids: [harnessId], organizationId: orgId }),
+      ]);
       const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(row!.acceptedTaskTypes).toEqual(["query", "coding"]);
-      const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(after.acceptedTaskTypes).toEqual(["query", "coding"]);
-      expect(after.topics).toEqual([]);
+      expect(row!.reportedAcceptedTaskTypes).toEqual(["coding", "query"]);
+
+      // The same report again changes nothing and publishes nothing.
+      const same = await captureChanges(() => sendHeartbeat(accessToken, reported));
+      expect(agentChanges(same.changes)).toEqual([]);
+
+      // The list and the detail show them read-only, in task type order.
+      const listed = await listHarnesses();
+      expect(listed.find((h) => h.id === harnessId)?.acceptedTaskTypes).toEqual([
+        "query",
+        "coding",
+      ]);
+      expect((await getHarness(harnessId)).acceptedTaskTypes).toEqual(["query", "coding"]);
+
+      // An older agent reports none: it keeps the last report and is sent it.
+      const legacy = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
+      expect(legacy.acceptedTaskTypes).toEqual(["query", "coding"]);
+      expect(legacy.topics).toEqual([]);
+
+      // A bad report is refused.
+      const bad = await sendHeartbeat(accessToken, { ...HEARTBEAT, acceptedTaskTypes: [] });
+      expect(bad.status).toBe(400);
+    });
+
+    it("refuses task types in the Settings tab's save: the agent decides them", async () => {
+      const { harnessId } = await enrolledHarness();
+      for (const body of [
+        { config: { maxConcurrency: 2, acceptedTaskTypes: ["review"], poolLimits: {} } },
+        { config: { maxConcurrency: 2, acceptedTaskTypes: null, poolLimits: {} } },
+        { acceptedTaskTypes: ["review"] },
+        { version: "1.4.0", acceptedTaskTypes: ["review"] },
+      ]) {
+        const response = await harnessSettings.PUT(
+          new Request("http://localhost/api/ui", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }),
+          { params: Promise.resolve({ id: harnessId }) },
+        );
+        expect(response.status).toBe(400);
+      }
+      // Nothing was saved.
+      const harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      expect(harness).toMatchObject({
+        maxConcurrency: null,
+        desiredVersion: null,
+        reportedAcceptedTaskTypes: null,
+      });
     });
 
     it("sends the effective per-pool limits and stores the edited ones", async () => {
@@ -407,11 +467,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(initial.poolLimits).toEqual({ short: 5, long: 4 });
 
       // Unset: the long pool leaves one slot for short jobs.
-      const config = {
-        maxConcurrency: 3,
-        acceptedTaskTypes: ["query", "review", "coding"],
-        poolLimits: {},
-      };
+      const config = { maxConcurrency: 3, poolLimits: {} };
       expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
       const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(defaults.poolLimits).toEqual({ short: 3, long: 2 });
@@ -452,38 +508,31 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       const row = async () => harnessRow((await getHarnessOverview(db, orgId, harnessId))!);
       await setDefaultMaxConcurrency(db, orgId, 6, null);
-      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
       try {
         expect(await row()).toMatchObject({
-          acceptedTaskTypes: ["query", "review"],
+          acceptedTaskTypes: ["query", "review", "coding"],
           maxConcurrency: 6,
-          overrides: { acceptedTaskTypes: null, maxConcurrency: null },
-          defaults: { acceptedTaskTypes: ["query", "review"], maxConcurrency: 6 },
+          overrides: { maxConcurrency: null },
+          defaults: { maxConcurrency: 6 },
           effectivePoolLimits: { short: 6, long: 5 },
         });
 
-        // Override both.
-        expect(
-          await updateHarnessConfig(harnessId, {
-            maxConcurrency: 2,
-            acceptedTaskTypes: ["coding"],
-            poolLimits: {},
-          }),
-        ).toEqual({ ok: true });
+        // Override it.
+        expect(await updateHarnessConfig(harnessId, { maxConcurrency: 2, poolLimits: {} })).toEqual(
+          { ok: true },
+        );
         expect(await row()).toMatchObject({
-          acceptedTaskTypes: ["coding"],
           maxConcurrency: 2,
-          overrides: { acceptedTaskTypes: ["coding"], maxConcurrency: 2 },
+          overrides: { maxConcurrency: 2 },
           effectivePoolLimits: { short: 2, long: 1 },
         });
         expect(await heartbeat()).toMatchObject({
           maxConcurrency: 2,
-          acceptedTaskTypes: ["coding"],
           poolLimits: { short: 2, long: 1 },
         });
 
-        // Back to the organization's max concurrency only; pool limits are checked against it.
-        const inheritMax = { maxConcurrency: null, acceptedTaskTypes: ["coding"] };
+        // Back to the organization's max concurrency; pool limits are checked against it.
+        const inheritMax = { maxConcurrency: null };
         expect(
           await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 7 } }),
         ).toMatchObject({ ok: false });
@@ -491,38 +540,24 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
           await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 6 } }),
         ).toEqual({ ok: true });
         const [stored] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-        expect(stored).toMatchObject({
-          maxConcurrency: null,
-          acceptedTaskTypes: ["coding"],
-          poolLimits: { short: 6 },
-        });
-        expect(await heartbeat()).toMatchObject({
-          maxConcurrency: 6,
-          acceptedTaskTypes: ["coding"],
-        });
+        expect(stored).toMatchObject({ maxConcurrency: null, poolLimits: { short: 6 } });
+        expect(await heartbeat()).toMatchObject({ maxConcurrency: 6 });
 
-        // Back to inheriting both: an organization change reaches the harness.
+        // Inheriting: an organization change reaches the harness.
         expect(
-          await updateHarnessConfig(harnessId, {
-            maxConcurrency: null,
-            acceptedTaskTypes: null,
-            poolLimits: {},
-          }),
+          await updateHarnessConfig(harnessId, { maxConcurrency: null, poolLimits: {} }),
         ).toEqual({ ok: true });
         await setDefaultMaxConcurrency(db, orgId, 3, null);
         expect(await row()).toMatchObject({
-          acceptedTaskTypes: ["query", "review"],
           maxConcurrency: 3,
-          overrides: { acceptedTaskTypes: null, maxConcurrency: null },
+          overrides: { maxConcurrency: null },
         });
         expect(await heartbeat()).toMatchObject({
           maxConcurrency: 3,
-          acceptedTaskTypes: ["query", "review"],
           poolLimits: { short: 3, long: 2 },
         });
       } finally {
         await setDefaultMaxConcurrency(db, orgId, null, null);
-        await setAllowedTaskTypeDefaults(db, orgId, null, null);
       }
     });
 
@@ -689,14 +724,12 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       });
     });
 
-    it("rejects invalid values, unknown task types and pools, and non-admins", async () => {
+    it("rejects invalid values, unknown pools, and non-admins", async () => {
       const { harnessId } = await enrolledHarness();
-      const valid = { maxConcurrency: 2, acceptedTaskTypes: ["review"], poolLimits: {} };
+      const valid = { maxConcurrency: 2, poolLimits: {} };
       const invalid: Parameters<typeof updateHarnessConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
         { ...valid, maxConcurrency: 1.5 },
-        { ...valid, acceptedTaskTypes: ["deploy"] },
-        { ...valid, acceptedTaskTypes: ["system"] },
         { ...valid, poolLimits: { short: 0 } },
         { ...valid, poolLimits: { short: 3 } },
         { ...valid, poolLimits: { long: 1.5 } },
@@ -717,7 +750,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
   describe("settings save", () => {
     it("saves every change in one request and names the ones it didn't save when one fails", async () => {
       const { harnessId } = await enrolledHarness();
-      const config = { maxConcurrency: 3, acceptedTaskTypes: ["review"], poolLimits: {} };
+      const config = { maxConcurrency: 3, poolLimits: {} };
       const save = (body: object) => ui(harnessSettings.PUT, harnessId, { method: "PUT", body });
 
       expect(await save({ config, version: "nope" })).toEqual({
@@ -1255,11 +1288,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       // A revoked harness can't be configured or pinned.
       expect(
-        await updateHarnessConfig(harnessId, {
-          maxConcurrency: 2,
-          acceptedTaskTypes: [],
-          poolLimits: {},
-        }),
+        await updateHarnessConfig(harnessId, { maxConcurrency: 2, poolLimits: {} }),
       ).toMatchObject({ ok: false });
       expect(await pinRepository(harnessId, repoB)).toMatchObject({ ok: false });
     });

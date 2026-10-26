@@ -178,22 +178,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
   });
 
-  it("keeps task-type and concurrency defaults per organization", async () => {
+  it("keeps concurrency defaults per organization", async () => {
     state.userId = a.userId;
-    expect(
-      await setOrganizationDefaults({ allowedTaskTypes: ["review"], maxConcurrency: 3 }),
-    ).toEqual({ ok: true });
-    expect((await harnessDefaults()).defaults).toEqual({
-      allowedTaskTypes: ["review"],
-      maxConcurrency: 3,
-    });
+    expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({ ok: true });
+    expect((await harnessDefaults()).defaults).toEqual({ maxConcurrency: 3 });
 
     // The other organization still has the built-in defaults.
     state.userId = b.userId;
-    expect((await harnessDefaults()).defaults).toEqual({
-      allowedTaskTypes: ["query", "review", "coding"],
-      maxConcurrency: 5,
-    });
+    expect((await harnessDefaults()).defaults).toEqual({ maxConcurrency: 5 });
   });
 
   it("keeps host tools per organization", async () => {

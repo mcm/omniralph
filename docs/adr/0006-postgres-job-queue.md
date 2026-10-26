@@ -12,7 +12,8 @@
 > no longer have a `capability`; the claim selects by task type (in the harness's
 > `accepted_task_types`), pool (in the claim request's `pools`) and `min_harness_version`, and
 > per-pool limits (`harnesses.pool_limits`) replace per-capability limits and
-> `enabledCapabilities`. `ClaimRequest` is `{ pools, waitSeconds? }`. Agents are now called
+> `enabledCapabilities`. `ClaimRequest` is `{ pools, waitSeconds? }` (since TOOL-615 also
+> `acceptedTaskTypes`, the harness's local list, which the claim filters by). Agents are now called
 > harnesses (`target_harness_id`, `/api/harness/*`). The queue, leases, retries and long-poll below
 > are unchanged.
 

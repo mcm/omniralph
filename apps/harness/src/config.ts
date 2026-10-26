@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { AcceptedTaskTypes } from "@omniralph/shared";
+import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { z } from "zod";
 
 /** Installables a harness accepts when its config doesn't say. */
@@ -22,8 +24,8 @@ const AbsolutePath = z
   .refine((value) => path.isAbsolute(value), { message: "must be an absolute path" });
 
 /**
- * The harness's only local configuration. Everything else (concurrency,
- * accepted task types, pool limits, pinned repos) comes from the control panel
+ * The harness's only local configuration. Everything else (concurrency, pool
+ * limits, pinned repos) comes from the control panel
  * in every heartbeat response. The optional keys are left out when unset, so
  * rewriting the file (token rotation) never adds them; use the accessors below
  * for their defaults.
@@ -44,6 +46,11 @@ export const HarnessConfig = z.object({
     .optional(),
   /** Absolute path prefixes the harness never executes, configured or discovered. */
   blockedExecPaths: z.array(AbsolutePath).optional(),
+  /**
+   * The task types the agent runs jobs of (`query`, `review`, `coding`; `system` jobs always
+   * run): reported in every heartbeat and claim. Default: all of them.
+   */
+  acceptedTaskTypes: AcceptedTaskTypes.optional(),
 });
 export type HarnessConfig = z.infer<typeof HarnessConfig>;
 
@@ -62,6 +69,12 @@ export function defaultDataDir(home = homedir()): string {
 
 export function dataDir(config: HarnessConfig, home = homedir()): string {
   return config.dataDir ?? defaultDataDir(home);
+}
+
+/** The task types the agent runs (`acceptedTaskTypes`, default all), in `TASK_TYPES` order. */
+export function acceptedTaskTypes(config: Pick<HarnessConfig, "acceptedTaskTypes">): TaskType[] {
+  const accepted = config.acceptedTaskTypes;
+  return accepted ? TASK_TYPES.filter((type) => accepted.includes(type)) : [...TASK_TYPES];
 }
 
 function packagePatternRegExp(pattern: string): RegExp {

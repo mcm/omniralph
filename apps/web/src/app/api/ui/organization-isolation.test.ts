@@ -12,7 +12,7 @@ import {
   closeDb,
   createInvitation,
   getActiveOrganization,
-  getAllowedTaskTypeDefaults,
+  getDefaultMaxConcurrency,
   getDesiredHarnessVersion,
   listHostTools,
   getIntegration,
@@ -1113,7 +1113,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   it("refuses every harness change on the other organization's harness and repositories", async () => {
     state.userId = a.adminId;
     const theirs = { id: b.harnessId };
-    const config = { maxConcurrency: 4, acceptedTaskTypes: ["query", "review"], poolLimits: {} };
+    const config = { maxConcurrency: 4, poolLimits: {} };
     const refused = [
       await call(harnessSettings.PUT, { method: "PUT", params: theirs, body: { config } }),
       await call(harnessSettings.PUT, {
@@ -2924,7 +2924,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(
         await call(harnessDefaults.PUT, {
           method: "PUT",
-          body: { defaults: { allowedTaskTypes: ["review"], maxConcurrency: 3 }, version: "1.4.0" },
+          body: { defaults: { maxConcurrency: 3 }, version: "1.4.0" },
         }),
       ).toEqual({ status: 200, body: { ok: true } });
       const added = await call(hostToolCatalog.POST, { body: { name: "beta-tool" } });
@@ -2939,12 +2939,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
       expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
       expect(await getDesiredHarnessVersion(db, b.orgId)).not.toBe("1.4.0");
-      expect(await getAllowedTaskTypeDefaults(db, a.orgId)).toEqual(["review"]);
-      expect(await getAllowedTaskTypeDefaults(db, b.orgId)).toEqual(["query", "review", "coding"]);
+      expect(await getDefaultMaxConcurrency(db, a.orgId)).toBe(3);
+      expect(await getDefaultMaxConcurrency(db, b.orgId)).toBe(5);
 
       state.userId = b.adminId;
       expect((await call(harnessDefaults.GET)).body).toMatchObject({
-        defaults: { allowedTaskTypes: ["query", "review", "coding"] },
+        defaults: { maxConcurrency: 5 },
       });
     });
   });

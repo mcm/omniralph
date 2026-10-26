@@ -18,7 +18,6 @@ import {
   lockRun,
   ralphRuns,
   saveIntegration,
-  setAllowedTaskTypeDefaults,
   updateLane,
   updateRepositoryCoding,
   setTrackerLabels,
@@ -514,16 +513,11 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     const blocked = created(linear.add({ identifier: "ENG-51", title: "Blocked" }).id);
     expect(await startRun(blocked, deps())).toEqual({ status: "manual", repository: "acme/api" });
 
-    try {
-      // Coding on builds it although the organization's task types leave coding out.
-      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
-      await setCodingEnabled(db, repoId);
-      const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
-      expect(await startRun(on, deps())).toMatchObject({ status: "started" });
-      expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
-    } finally {
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
-    }
+    // Coding on builds it.
+    await setCodingEnabled(db, repoId);
+    const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
+    expect(await startRun(on, deps())).toMatchObject({ status: "started" });
+    expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
   });
 
   describe("the repository question", () => {

@@ -165,8 +165,8 @@ export function EnrollHarnessDialog() {
             <DialogHeader>
               <DialogTitle>{connected.name} connected</DialogTitle>
               <DialogDescription>
-                It enrolled with the token and is in the fleet. Its task types, concurrency and
-                pinned repositories are on its page.
+                It enrolled with the token and is in the fleet. Its concurrency and pinned
+                repositories are on its page.
               </DialogDescription>
             </DialogHeader>
             <DialogBody>

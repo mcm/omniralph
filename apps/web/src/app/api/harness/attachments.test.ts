@@ -102,7 +102,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
       .values({
         organizationId: orgId,
         name: "coder-1",
-        acceptedTaskTypes: ["query", "review", "coding"],
+        reportedAcceptedTaskTypes: ["query", "review", "coding"],
       })
       .returning();
     harnessId = agent!.id;

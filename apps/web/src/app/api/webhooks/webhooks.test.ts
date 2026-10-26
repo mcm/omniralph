@@ -17,7 +17,6 @@ import {
   webhookDeliveries,
   type Database,
   organizations,
-  setAllowedTaskTypeDefaults,
 } from "@omniralph/db";
 import { reviewTriggerContext } from "@omniralph/shared";
 import {
@@ -383,18 +382,13 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       expect(await prJobs(githubRepoId, number)).toHaveLength(1);
     });
 
-    it("reviews by the repository's own switch, whatever the organization's task types", async () => {
+    it("reviews by the repository's own switch", async () => {
       // A new repository has reviews on.
       expect((await getRepository(db, githubRepoId))?.reviewsEnabled).toBe(true);
-      try {
-        await setAllowedTaskTypeDefaults(db, orgId, ["query", "coding"], null);
-        const number = ++prCounter;
-        const on = await github(githubRequest(githubPayload("opened", { number })));
-        expect(await on.json()).toMatchObject({ status: "enqueued" });
-        expect(await prJobs(githubRepoId, number)).toHaveLength(1);
-      } finally {
-        await setAllowedTaskTypeDefaults(db, orgId, null, null);
-      }
+      const number = ++prCounter;
+      const on = await github(githubRequest(githubPayload("opened", { number })));
+      expect(await on.json()).toMatchObject({ status: "enqueued" });
+      expect(await prJobs(githubRepoId, number)).toHaveLength(1);
     });
 
     it("returns 200 and does nothing for disabled and unknown repos", async () => {

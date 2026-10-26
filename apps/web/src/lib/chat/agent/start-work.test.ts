@@ -324,7 +324,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     connection = saved;
     [{ id: harnessId }] = (await db
       .insert(harnesses)
-      .values({ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] })
+      .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: harnesses.id })) as [{ id: string }];
   }, 180_000);
 

@@ -1,17 +1,14 @@
 import "server-only";
 import {
   createHostTool,
-  DEFAULT_ALLOWED_TASK_TYPES,
   DEFAULT_MAX_CONCURRENCY,
   deleteHostTool,
   DESIRED_HARNESS_VERSION_KEY,
-  getAllowedTaskTypeDefaults,
   getAppSetting,
   getDefaultMaxConcurrency,
   listHostTools,
   MAX_MAX_CONCURRENCY,
   MIN_MAX_CONCURRENCY,
-  setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   setDesiredHarnessVersion,
   TRACK_LATEST_HARNESS_VERSION,
@@ -19,7 +16,6 @@ import {
   type Database,
 } from "@omniralph/db";
 import { HARNESS_PACKAGE, HarnessVersion } from "@omniralph/shared";
-import { TASK_TYPES } from "@omniralph/tasks";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import type {
@@ -51,15 +47,14 @@ export interface DefaultsActor {
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
 const NPM_TIMEOUT_MS = 2_000;
 
-/** The Defaults tab: the desired version (with `latest` resolved) and the task-type and concurrency defaults. */
+/** The Defaults tab: the desired version (with `latest` resolved) and the concurrency default. */
 export async function loadHarnessDefaults(
   db: Database,
   organizationId: string,
 ): Promise<HarnessDefaults> {
-  const [setting, resolved, allowedTaskTypes, maxConcurrency] = await Promise.all([
+  const [setting, resolved, maxConcurrency] = await Promise.all([
     getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY),
     organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    getAllowedTaskTypeDefaults(db, organizationId),
     getDefaultMaxConcurrency(db, organizationId),
   ]);
   return {
@@ -73,11 +68,8 @@ export async function loadHarnessDefaults(
         }
       : null,
     packageName: HARNESS_PACKAGE,
-    defaults: { allowedTaskTypes, maxConcurrency },
-    builtInDefaults: {
-      allowedTaskTypes: [...DEFAULT_ALLOWED_TASK_TYPES],
-      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-    },
+    defaults: { maxConcurrency },
+    builtInDefaults: { maxConcurrency: DEFAULT_MAX_CONCURRENCY },
   };
 }
 
@@ -132,14 +124,13 @@ export async function trackLatestHarnessVersion(
   return { ok: true, version };
 }
 
-const OrganizationDefaultsInput = z.object({
-  allowedTaskTypes: z.array(z.enum(TASK_TYPES)),
+const OrganizationDefaultsInput = z.strictObject({
   maxConcurrency: z.number().int().min(MIN_MAX_CONCURRENCY).max(MAX_MAX_CONCURRENCY),
 });
 
 /**
- * Sets the task types and max concurrency every harness of the organization inherits unless it
- * sets its own; they take effect with the next claim or heartbeat.
+ * Sets the max concurrency every harness of the organization inherits unless it sets its own;
+ * it takes effect with the next heartbeat.
  */
 export async function setOrganizationDefaults(
   db: Database,
@@ -150,22 +141,16 @@ export async function setOrganizationDefaults(
   if (!parsed.success) {
     return {
       ok: false,
-      error: `Max concurrency must be ${MIN_MAX_CONCURRENCY}–${MAX_MAX_CONCURRENCY} and task types known ones.`,
+      error: `Max concurrency must be ${MIN_MAX_CONCURRENCY}–${MAX_MAX_CONCURRENCY}.`,
     };
   }
-  await setAllowedTaskTypeDefaults(
-    db,
-    admin.organization.id,
-    parsed.data.allowedTaskTypes,
-    admin.id,
-  );
   await setDefaultMaxConcurrency(db, admin.organization.id, parsed.data.maxConcurrency, admin.id);
   await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };
 }
 
 /**
- * The Defaults tab's save, as one request: the task-type and concurrency defaults, then the
+ * The Defaults tab's save, as one request: the concurrency default, then the
  * desired version, each only when sent. It stops at the first that fails; the error names
  * what it didn't save. What it saved is recorded in the change history.
  */
@@ -194,7 +179,7 @@ function saveDefaultsInOrder(
     ...(save.defaults !== undefined
       ? [
           {
-            label: "task types and concurrency",
+            label: "max concurrency",
             run: () => setOrganizationDefaults(db, admin, save.defaults),
           },
         ]

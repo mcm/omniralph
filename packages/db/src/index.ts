@@ -149,6 +149,7 @@ export {
 } from "./harness-auth.js";
 export {
   effectiveHarnessConfig,
+  harnessAcceptedTaskTypes,
   findJobPage,
   getHarnessDefaults,
   getHarnessOverview,
@@ -232,15 +233,11 @@ export {
   DEFAULT_CHAT_PLAYBOOKS,
   DESIRED_HARNESS_VERSION_KEY,
   LATEST_HARNESS_VERSION_KEY,
-  ALLOWED_TASK_TYPES_KEY,
-  DEFAULT_ALLOWED_TASK_TYPES,
   DEFAULT_MAX_CONCURRENCY,
   DEFAULT_MAX_CONCURRENCY_KEY,
   MAX_MAX_CONCURRENCY,
   MIN_MAX_CONCURRENCY,
-  getAllowedTaskTypeDefaults,
   getDefaultMaxConcurrency,
-  setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
   TRACK_LATEST_HARNESS_VERSION,
   getAppSetting,

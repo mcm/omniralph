@@ -1,7 +1,7 @@
 import {
   claimJob,
   getHarness,
-  resolveHarnessConfig,
+  harnessAcceptedTaskTypes,
   type Database,
   type SettledJob,
 } from "@omniralph/db";
@@ -63,8 +63,8 @@ async function post(req: Request): Promise<Response> {
       // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
       const agent = await getHarness(db, harnessId);
       if (!agent || agent.revokedAt) return unauthorized();
-      // Its own accepted task types, else the organization's default (read each time too).
-      const { acceptedTaskTypes } = await resolveHarnessConfig(db, agent);
+      // The task types it runs: the request's, else the ones it last reported (older agents).
+      const acceptedTaskTypes = body.data.acceptedTaskTypes ?? harnessAcceptedTaskTypes(agent);
       const run = await claimNext(db, { ...agent, acceptedTaskTypes }, body.data.pools);
       if (run) return Response.json(run satisfies ClaimRun);
       await reconcileDueJobs(db, organizationId);

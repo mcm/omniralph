@@ -4,8 +4,9 @@ import { hasClaimableJob, type Database } from "@omniralph/db";
 /**
  * The heartbeat's `claimable`: whether a claim for `claimablePools` would find
  * a job for the harness right now (`hasClaimableJob`, with the harness's
- * resolved accepted task types). Undefined, so the response omits it, when the
- * request carried no `claimablePools` (no free slot, long-polling, or an older harness).
+ * accepted task types: the ones the request reports, else the ones it last
+ * reported). Undefined, so the response omits it, when the request carried no
+ * `claimablePools` (no free slot, long-polling, or an older harness).
  */
 export async function heartbeatClaimable(
   db: Database,

@@ -1,6 +1,7 @@
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   effectivePoolLimit,
+  poolForTaskType,
   type Heartbeat,
   type HeartbeatResponse,
   type JobFailure,
@@ -16,7 +17,7 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
-import { execPathBlocked, type HarnessConfig } from "./config.js";
+import { acceptedTaskTypes, execPathBlocked, type HarnessConfig } from "./config.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
 import type { ModelReporter } from "./models.js";
@@ -87,9 +88,10 @@ export interface DaemonOptions {
   /**
    * The local config: paths it blocks (`blockedExecPaths`) are never reported
    * as host tools, and no run executes a host tool, installable command or
-   * installable MCP server under them.
+   * installable MCP server under them. Its `acceptedTaskTypes` (default all) go
+   * in every heartbeat and claim: only their jobs (and `system` jobs) are claimed.
    */
-  localConfig?: Pick<HarnessConfig, "blockedExecPaths">;
+  localConfig?: Pick<HarnessConfig, "blockedExecPaths" | "acceptedTaskTypes">;
   /** The `PATH` host tools are discovered on (default: the harness process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
   /** The Claude models reported in every heartbeat (none when unset). */
@@ -350,6 +352,7 @@ export class AgentDaemon implements DrainableDaemon {
         installables,
         hostTools,
         models,
+        acceptedTaskTypes: this.acceptedTaskTypes(),
         ...this.options.updater?.report(),
         ...this.wakeReport(),
       });
@@ -423,13 +426,12 @@ export class AgentDaemon implements DrainableDaemon {
     if (
       !previous ||
       previous.maxConcurrency !== config.maxConcurrency ||
-      JSON.stringify(previous.poolLimits) !== JSON.stringify(config.poolLimits) ||
-      previous.acceptedTaskTypes.join() !== config.acceptedTaskTypes.join()
+      JSON.stringify(previous.poolLimits) !== JSON.stringify(config.poolLimits)
     ) {
       this.options.logger.info(
         {
           maxConcurrency: config.maxConcurrency,
-          acceptedTaskTypes: config.acceptedTaskTypes,
+          acceptedTaskTypes: this.acceptedTaskTypes(),
           poolLimits: config.poolLimits,
           claimablePools: this.claimablePools(),
         },
@@ -587,8 +589,19 @@ export class AgentDaemon implements DrainableDaemon {
   // --- Claiming --------------------------------------------------------------------------
 
   /** The pools of the harness's organization, from the heartbeat. */
+  /**
+   * The pools of the heartbeat's `poolLimits` that the accepted task types run in (a job's
+   * pool follows from its task type): no claim asks for a pool it would get no job from.
+   */
   private pools(): string[] {
-    return this.config ? Object.keys(this.config.poolLimits) : [];
+    if (!this.config) return [];
+    const accepted = new Set<string>(this.acceptedTaskTypes().map((type) => poolForTaskType(type)));
+    return Object.keys(this.config.poolLimits).filter((pool) => accepted.has(pool));
+  }
+
+  /** The task types the agent runs: its local `acceptedTaskTypes`, default all. */
+  acceptedTaskTypes(): ReturnType<typeof acceptedTaskTypes> {
+    return acceptedTaskTypes(this.options.localConfig ?? {});
   }
 
   /**
@@ -668,8 +681,9 @@ export class AgentDaemon implements DrainableDaemon {
       this.claim = { controller, pools };
       let start: JobStartResponse | null;
       try {
+        const acceptedTaskTypes = this.acceptedTaskTypes();
         start = await this.options.api.claim(
-          wakeMode ? { pools, waitSeconds: 0 } : { pools },
+          wakeMode ? { pools, acceptedTaskTypes, waitSeconds: 0 } : { pools, acceptedTaskTypes },
           controller.signal,
         );
         this.claimBackoffMs = 0;

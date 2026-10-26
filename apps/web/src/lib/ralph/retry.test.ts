@@ -123,7 +123,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     await db.delete(harnesses);
     [{ id: agentA }] = (await db
       .insert(harnesses)
-      .values([{ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] }])
+      .values([{ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] }])
       .returning({ id: harnesses.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();

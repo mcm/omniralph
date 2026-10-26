@@ -142,7 +142,7 @@ export const repositoryHarnessSchema = z.object({
   revoked: z.boolean(),
   /** It is updating itself to its desired version. */
   updating: z.boolean(),
-  /** Task types it may claim jobs of, the organization's defaults filled in. */
+  /** Task types it claims jobs of, as it reports them (all until it reports any). */
   acceptedTaskTypes: z.array(z.string()),
 });
 

@@ -8,6 +8,7 @@ import {
   HostToolName,
   InstallablePackageName,
   InstallableVersion,
+  TASK_TYPES,
 } from "@omniralph/tasks";
 import { z } from "zod";
 import { JobRepository, JobToken } from "./job-basics.js";
@@ -89,6 +90,18 @@ export type JobTaskType = z.infer<typeof JobTaskType>;
 export function isJobTaskType(value: string): value is JobTaskType {
   return (JOB_TASK_TYPES as readonly string[]).includes(value);
 }
+
+/**
+ * The task types an agent runs jobs of (its local `acceptedTaskTypes`): a non-empty subset of
+ * `TASK_TYPES`, each once. `system` jobs are always accepted.
+ */
+export const AcceptedTaskTypes = z
+  .array(z.enum(TASK_TYPES))
+  .min(1)
+  .refine((types) => new Set(types).size === types.length, {
+    message: "must not list a task type twice",
+  });
+export type AcceptedTaskTypes = z.infer<typeof AcceptedTaskTypes>;
 
 const poolName = z.string().min(1).max(64);
 
@@ -304,6 +317,11 @@ export const Heartbeat = z.object({
    * then says whether a claim would find a job. Absent otherwise.
    */
   claimablePools: z.array(poolName).max(32).optional(),
+  /**
+   * The task types the agent runs (its local `acceptedTaskTypes`, all when unset). Absent from
+   * older agents, which take the response's `acceptedTaskTypes` instead.
+   */
+  acceptedTaskTypes: AcceptedTaskTypes.optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -347,8 +365,12 @@ export const HeartbeatResponse = z.object({
    * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
    */
   pollIntervalSeconds: z.int().min(1).optional(),
-  /** Task types the harness may claim jobs of (`system` is always accepted). */
-  acceptedTaskTypes: z.array(JobTaskType),
+  /**
+   * @deprecated Agents decide their task types locally and report them
+   * (`Heartbeat.acceptedTaskTypes`). Sent only to older agents, which require it and don't
+   * report theirs: the task types the control panel last had for them.
+   */
+  acceptedTaskTypes: z.array(JobTaskType).optional(),
   /**
    * Effective concurrency limits of the `short` and `long` pools. The
    * harness only claims a pool's jobs while it runs fewer than this.
@@ -489,6 +511,11 @@ export const ClaimRequest = z.object({
    * harness accepts) and `system` jobs are claimed.
    */
   pools: z.array(poolName).max(32),
+  /**
+   * The task types the agent runs (its local `acceptedTaskTypes`): only their jobs (and
+   * `system` jobs) are claimed. Absent from older agents: the ones they last reported.
+   */
+  acceptedTaskTypes: AcceptedTaskTypes.optional(),
   waitSeconds: z.int().min(0).max(MAX_CLAIM_WAIT_SECONDS).default(MAX_CLAIM_WAIT_SECONDS),
 });
 export type ClaimRequest = z.input<typeof ClaimRequest>;

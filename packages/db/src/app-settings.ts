@@ -1,5 +1,4 @@
 /** Per-organization settings (`app_settings`): one JSON value per organization and key. */
-import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
@@ -61,7 +60,6 @@ export async function setAppSetting(
 const SETTING_SECTIONS: Record<string, "agent_defaults" | "connection" | undefined> = {
   "harness.desiredVersion": "agent_defaults",
   "harness.maxConcurrency": "agent_defaults",
-  "tasks.allowedTypes": "agent_defaults",
   "chat.playbooks": "connection",
 };
 
@@ -169,48 +167,6 @@ export async function setChatPlaybookDefaults(
   updatedBy: string | null,
 ): Promise<void> {
   await setAppSetting(db, organizationId, CHAT_PLAYBOOKS_KEY, playbooks, updatedBy);
-}
-
-/**
- * The task types the organization's harnesses accept unless they set their own
- * (a subset of `TASK_TYPES`, in that order). Absent: `DEFAULT_ALLOWED_TASK_TYPES`.
- */
-export const ALLOWED_TASK_TYPES_KEY = "tasks.allowedTypes";
-
-/** The task types allowed when the organization hasn't chosen any: all of them. */
-export const DEFAULT_ALLOWED_TASK_TYPES: readonly TaskType[] = TASK_TYPES;
-
-function isTaskType(value: unknown): value is TaskType {
-  return (TASK_TYPES as readonly unknown[]).includes(value);
-}
-
-/** The organization's allowed task types; absent or not a list of task types is the built-in default. */
-export async function getAllowedTaskTypeDefaults(
-  db: Pick<Database, "select">,
-  organizationId: string,
-): Promise<TaskType[]> {
-  const setting = await getAppSetting(db, organizationId, ALLOWED_TASK_TYPES_KEY);
-  const value = setting?.value;
-  if (!Array.isArray(value) || !value.every(isTaskType)) return [...DEFAULT_ALLOWED_TASK_TYPES];
-  return TASK_TYPES.filter((type) => value.includes(type));
-}
-
-/**
- * Sets (or, with null, clears back to the built-in default) the organization's allowed task
- * types. Throws on a type not in `TASK_TYPES`; duplicates are dropped.
- */
-export async function setAllowedTaskTypeDefaults(
-  db: Database,
-  organizationId: string,
-  types: readonly string[] | null,
-  updatedBy: string | null,
-): Promise<void> {
-  if (types !== null) {
-    const unknown = types.filter((type) => !isTaskType(type));
-    if (unknown.length > 0) throw new Error(`Unknown task types: ${unknown.join(", ")}`);
-  }
-  const value = types === null ? null : TASK_TYPES.filter((type) => types.includes(type));
-  await setAppSetting(db, organizationId, ALLOWED_TASK_TYPES_KEY, value, updatedBy);
 }
 
 /**

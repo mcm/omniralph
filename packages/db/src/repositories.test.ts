@@ -2,7 +2,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
   connectionCredentials,
@@ -97,8 +96,6 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     // A new repository has Reviews and Ask on and Coding off.
     expect(repositorySwitches(repo)).toEqual({ reviews: true, coding: false, ask: true });
     try {
-      // The organization's allowed task types no longer change a repository's switches.
-      await setAllowedTaskTypeDefaults(db, orgId, ["coding"], null);
       expect(repositorySwitches((await getRepository(db, repo.id))!)).toEqual({
         reviews: true,
         coding: false,
@@ -163,7 +160,6 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       expect(await setRepositorySwitches(db, randomUUID(), repo.id, { coding: true })).toBeNull();
       expect((await getRepository(db, repo.id))?.reviewsEnabled).toBe(false);
     } finally {
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
       await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
     }
   });

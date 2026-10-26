@@ -35,11 +35,12 @@ const HELLO_FIXTURE = fileURLToPath(
 );
 
 const ORG_ID = randomUUID();
+/** The task types every claim carries when the local config sets none. */
+const ALL_TYPES = ["query", "review", "coding"];
 
 function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   return {
     maxConcurrency: 1,
-    acceptedTaskTypes: ["query", "review"],
     // The short pool may use every slot (as the control panel's default).
     poolLimits: { short: overrides.maxConcurrency ?? 1 },
     pinnedRepoIds: [],
@@ -133,7 +134,7 @@ function runResponse(j: JobPayload): JobStartResponse {
 
 /**
  * An in-memory stand-in for `POST /api/harness/claim`: hands out the first
- * queued job of a requested pool (or a `system` job, which has none), else holds the claim until a job is
+ * queued job of a requested pool and accepted task type (or a `system` job, which has neither), else holds the claim until a job is
  * pushed, the claim is aborted or 50s pass (null). A claim with
  * `waitSeconds: 0` returns null at once when there's no job.
  */
@@ -142,6 +143,8 @@ class FakeClaims {
   private readonly waiting = new Set<() => void>();
   /** Pools of every claim, in order. */
   readonly calls: string[][] = [];
+  /** `acceptedTaskTypes` of every claim, in order. */
+  readonly accepted: ClaimRequest["acceptedTaskTypes"][] = [];
   /** `waitSeconds` of every claim, in order (undefined: the default long-poll). */
   readonly waits: (number | undefined)[] = [];
   /** Pools of every aborted claim. */
@@ -155,16 +158,23 @@ class FakeClaims {
   }
 
   readonly claim = async (
-    { pools, waitSeconds }: ClaimRequest,
+    { pools, acceptedTaskTypes, waitSeconds }: ClaimRequest,
     signal?: AbortSignal,
   ): Promise<JobStartResponse | null> => {
     this.calls.push(pools);
+    this.accepted.push(acceptedTaskTypes);
     this.waits.push(waitSeconds);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {
       for (;;) {
-        const index = this.jobs.findIndex((j) => j.pool === null || pools.includes(j.pool));
+        const index = this.jobs.findIndex(
+          (j) =>
+            j.taskType === "system" ||
+            (j.pool !== null &&
+              pools.includes(j.pool) &&
+              (acceptedTaskTypes ?? []).some((type) => type === j.taskType)),
+        );
         if (index >= 0) return runResponse(this.jobs.splice(index, 1)[0]!);
         if (waitSeconds === 0) return null;
         const outcome = await new Promise<"pushed" | "timeout">((resolve, reject) => {
@@ -499,12 +509,49 @@ describe("AgentDaemon", () => {
       installables: [],
       hostTools: [],
       models: [],
+      // Its local accepted task types: all by default.
+      acceptedTaskTypes: ["query", "review", "coding"],
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(api.heartbeat).toHaveBeenCalledTimes(2);
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ freeSlots: 1 }));
+    await daemon.shutdown();
+  });
+
+  it("claims only the task types of its local config, reporting them in heartbeats and claims", async () => {
+    const codingId = randomUUID();
+    const reviewId = randomUUID();
+    const runReviewTask = vi.fn(async (spec: RunSpec) => ({ review: spec.jobId }));
+    const runCodingTask = vi.fn(async () => ({}));
+    const { api, claims, daemon } = setup({
+      runReviewTask,
+      runCodingTask,
+      localConfig: { acceptedTaskTypes: ["review"] },
+      config: centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
+    });
+    claims.push(
+      job(codingId, {
+        type: "ralph.story",
+        taskType: "coding",
+        pool: "long",
+        taskId: "builtin:test-task",
+      }),
+      job(reviewId, { taskType: "review", taskId: "builtin:test-task" }),
+    );
+    void daemon.run();
+    await settle();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ acceptedTaskTypes: ["review"] }),
+    );
+    // Never the long pool (no accepted task type runs in it), and its types in every claim.
+    expect(claims.calls.length).toBeGreaterThan(0);
+    expect(claims.calls.every((pools) => pools.join() === "short")).toBe(true);
+    expect(claims.accepted.every((types) => types?.join() === "review")).toBe(true);
+    expect(runReviewTask).toHaveBeenCalledTimes(1);
+    expect(api.submitResult).toHaveBeenCalledWith(reviewId, { result: { review: reviewId } });
+    expect(runCodingTask).not.toHaveBeenCalled();
     await daemon.shutdown();
   });
 
@@ -541,7 +588,10 @@ describe("AgentDaemon", () => {
     claims.push(job(id));
     void daemon.run();
     await settle();
-    expect(api.claim).toHaveBeenCalledWith({ pools: ["short"] }, expect.any(AbortSignal));
+    expect(api.claim).toHaveBeenCalledWith(
+      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
+      expect.any(AbortSignal),
+    );
     expect(seen).toEqual({ jobToken: `job-token-${id}`, workspaceRoot: "/tmp/omniralph-test" });
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { findings: [], jobId: id } });
     expect(claims.calls).toEqual([["short"], ["short"]]);
@@ -614,8 +664,8 @@ describe("AgentDaemon", () => {
       expect.objectContaining({ runningJobIds: [], freeSlots: 1 }),
     );
     expect(api.claim.mock.calls.map(([body]) => body)).toEqual([
-      { pools: ["short"] },
-      { pools: ["short"] },
+      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
+      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
     ]);
     expect(daemon.status().runningJobIds).toEqual([]);
     await daemon.shutdown();
@@ -1615,7 +1665,7 @@ describe("AgentDaemon wake mode", () => {
     wakes[0]!.emit("connected");
     await settle();
     expect(api.claim).toHaveBeenCalledWith(
-      { pools: ["short"], waitSeconds: 0 },
+      { pools: ["short"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
       expect.any(AbortSignal),
     );
     // No job: nothing more until a trigger, heartbeats or not.
@@ -1819,7 +1869,7 @@ describe("AgentDaemon wake mode", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(api.claim).toHaveBeenCalledTimes(3);
     expect(api.claim).toHaveBeenLastCalledWith(
-      { pools: ["short"], waitSeconds: 0 },
+      { pools: ["short"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
       expect.any(AbortSignal),
     );
     await vi.advanceTimersByTimeAsync(10_000);

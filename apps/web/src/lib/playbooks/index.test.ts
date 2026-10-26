@@ -374,7 +374,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         ["bare", "graph-only", "capable"].map((name) => ({
           organizationId: orgId,
           name,
-          acceptedTaskTypes: ["review"],
+          reportedAcceptedTaskTypes: ["review"],
           reportedVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
           reportedInstallables:
             name === "bare" ? [] : [{ name: "@omniralph/code-graph", version: "1.0.0" }],

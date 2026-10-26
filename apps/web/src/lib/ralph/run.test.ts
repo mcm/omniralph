@@ -35,6 +35,7 @@ import {
   ralphRuns,
   repositories,
   claimJob,
+  recordHarnessHeartbeat,
   updateRepositoryCoding,
   setTrackerLabels,
   DEFAULT_TRACKER_LABELS,
@@ -43,7 +44,6 @@ import {
   type Database,
   type Job,
   organizations,
-  setAllowedTaskTypeDefaults,
   type LinearRun,
 } from "@omniralph/db";
 import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
@@ -224,12 +224,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         {
           organizationId: orgId,
           name: "agent-a",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
         {
           organizationId: orgId,
           name: "agent-b",
-          acceptedTaskTypes: ["query", "review", "coding"],
+          reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
@@ -1677,8 +1677,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
 
-  it("sticks to an agent inheriting coding tasks until the organization's default turns them off", async () => {
-    await db.update(harnesses).set({ acceptedTaskTypes: null }).where(eq(harnesses.id, agentA));
+  it("sticks to an agent that hasn't reported its task types until it reports no coding", async () => {
+    await db
+      .update(harnesses)
+      .set({ reportedAcceptedTaskTypes: null })
+      .where(eq(harnesses.id, agentA));
     const epic = linear.add({ identifier: "ENG-38", title: "Epic" });
     linear.add({ identifier: "ENG-39", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
     linear.add({ identifier: "ENG-40", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
@@ -1700,22 +1703,25 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     };
-    try {
-      await finishOnA();
-      expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
-      await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
-      await finishOnA();
-      expect((await activeJob(run.id)).targetHarnessId).toBeNull();
-    } finally {
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
-    }
+    await finishOnA();
+    expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
+    await recordHarnessHeartbeat(db, agentA, {
+      version: CODING_TASKS_MIN_HARNESS_VERSION,
+      acceptedTaskTypes: ["query", "review"],
+    });
+    await finishOnA();
+    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
   });
 
   it("never sticks to an agent of another organization", async () => {
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [foreign] = await db
       .insert(harnesses)
-      .values({ organizationId: other!.id, name: "globex-1", acceptedTaskTypes: ["coding"] })
+      .values({
+        organizationId: other!.id,
+        name: "globex-1",
+        reportedAcceptedTaskTypes: ["coding"],
+      })
       .returning();
     const epic = linear.add({ identifier: "ENG-18", title: "Epic" });
     linear.add({ identifier: "ENG-19", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
@@ -2423,7 +2429,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
         await db
           .update(harnesses)
-          .set({ acceptedTaskTypes: ["review"] })
+          .set({ reportedAcceptedTaskTypes: ["review"] })
           .where(eq(harnesses.id, agentB));
         expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentA);
       });
@@ -2432,7 +2438,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const [other] = await db.insert(organizations).values({ name: "Initech" }).returning();
         const [foreign] = await db
           .insert(harnesses)
-          .values({ organizationId: other!.id, name: "initech-1", acceptedTaskTypes: ["coding"] })
+          .values({
+            organizationId: other!.id,
+            name: "initech-1",
+            reportedAcceptedTaskTypes: ["coding"],
+          })
           .returning();
         await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
         expect(await laneHarnessId(db, run(), lane(foreign!.id))).toBe(agentA);

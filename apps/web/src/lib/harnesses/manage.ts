@@ -12,7 +12,6 @@ import {
   type Database,
 } from "@omniralph/db";
 import { HarnessVersion, HostToolPath, POOLS } from "@omniralph/shared";
-import { TASK_TYPES } from "@omniralph/tasks";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import type {
@@ -46,7 +45,6 @@ const UNKNOWN_HARNESS: Failure = {
 
 const HarnessConfig = z.object({
   maxConcurrency: z.number().int().min(1).max(32).nullable(),
-  acceptedTaskTypes: z.array(z.enum(TASK_TYPES)).nullable(),
   poolLimits: z.partialRecord(z.enum(POOLS), z.number().int().min(1)),
 });
 
@@ -68,8 +66,7 @@ export async function updateHarnessConfig(
   ) {
     return {
       ok: false,
-      error:
-        "Max concurrency must be 1–32, task types known ones, and each pool limit 1 to the max concurrency.",
+      error: "Max concurrency must be 1–32 and each pool limit 1 to the max concurrency.",
     };
   }
   if (!(await updateHarnessConfigRow(db, organizationId, harnessId, parsed.data))) {
@@ -146,7 +143,7 @@ export async function saveHarnessSettings(
     ...(save.config
       ? [
           {
-            label: "concurrency and task types",
+            label: "concurrency",
             run: () => updateHarnessConfig(db, organizationId, harnessId, save.config!),
           },
         ]

@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { setAllowedTaskTypeDefaults } from "./app-settings.js";
 import { ensureChatThread, listThreadRuns, saveChatConnection } from "./chat.js";
 import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
@@ -294,13 +293,11 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(
       await updateRepositoryCoding(db, repoA, { ...policy, codingInstructions: "  " }),
     ).toMatchObject({ codingEnabled: true, codingInstructions: null });
-    // By path, whatever the organization's allowed task types.
-    await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
+    // By path.
     expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
       "acme/a-web",
       "acme/b-api",
     ]);
-    await setAllowedTaskTypeDefaults(db, orgId, null, null);
     await updateRepositoryCoding(db, repoB, { codingEnabled: false });
     expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
     await updateRepositoryCoding(db, repoB, { codingEnabled: true });

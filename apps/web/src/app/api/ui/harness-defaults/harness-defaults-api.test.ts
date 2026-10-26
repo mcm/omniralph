@@ -21,7 +21,6 @@ const state = vi.hoisted(() => ({
   updatedBy: null as string | null,
   latest: null as { version: string | null; error: string | null } | null,
   latestCheck: null as { version: string | null; error: string | null; checkedAt: Date } | null,
-  allowedTaskTypes: null as string[] | null,
   maxConcurrency: null as number | null,
   hostTools: [] as {
     id: string;
@@ -37,7 +36,6 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@omniralph/db", async () => {
   const { HOST_TOOL_NAME_PATTERN } = await import("@omniralph/shared");
-  const { TASK_TYPES } = await import("@omniralph/tasks");
   return {
     // The change history is covered by its own tests: a save just runs.
     withSettingsChanges: async (
@@ -48,10 +46,8 @@ vi.mock("@omniralph/db", async () => {
     ) => save(db),
     TRACK_LATEST_HARNESS_VERSION: "latest",
     DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
-    DEFAULT_ALLOWED_TASK_TYPES: ["query", "review", "coding"],
     DEFAULT_MAX_CONCURRENCY: 5,
     // Nothing saved: the built-in defaults, as the real getters return them.
-    getAllowedTaskTypeDefaults: async () => state.allowedTaskTypes ?? ["query", "review", "coding"],
     getDefaultMaxConcurrency: async () => state.maxConcurrency ?? 5,
     getAppSetting: async () =>
       state.version === null
@@ -67,20 +63,7 @@ vi.mock("@omniralph/db", async () => {
         .map((t) => ({ ...t, createdAt: new Date(), updatedAt: new Date() })),
     MIN_MAX_CONCURRENCY: 1,
     MAX_MAX_CONCURRENCY: 32,
-    // The organization-defaults setters, with their validation.
-    setAllowedTaskTypeDefaults: async (
-      _db: unknown,
-      organizationId: string,
-      types: string[] | null,
-      updatedBy: string,
-    ) => {
-      if (types?.some((t) => !(TASK_TYPES as readonly string[]).includes(t))) {
-        throw new Error("Unknown task types");
-      }
-      state.organizationId = organizationId;
-      state.allowedTaskTypes = types;
-      state.updatedBy = updatedBy;
-    },
+    // The organization-defaults setter, with its validation.
     setDefaultMaxConcurrency: async (
       _db: unknown,
       organizationId: string,
@@ -201,7 +184,6 @@ describe("Settings › Harness defaults API", () => {
     state.updatedBy = null;
     state.latest = null;
     state.latestCheck = null;
-    state.allowedTaskTypes = null;
     state.maxConcurrency = null;
     state.hostTools = [];
     requests.length = 0;
@@ -301,20 +283,19 @@ describe("Settings › Harness defaults API", () => {
           updatedAt: "2026-10-01T00:00:00.000Z",
           latest: null,
           packageName: "@omniralph/harness",
-          defaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
-          builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+          defaults: { maxConcurrency: 5 },
+          builtInDefaults: { maxConcurrency: 5 },
         },
       });
     });
 
     it("shows the organization's saved defaults", async () => {
-      state.allowedTaskTypes = ["review"];
       state.maxConcurrency = 2;
       expect((await getDefaults()).body).toMatchObject({
         desiredVersion: null,
         updatedAt: null,
-        defaults: { allowedTaskTypes: ["review"], maxConcurrency: 2 },
-        builtInDefaults: { allowedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 },
+        defaults: { maxConcurrency: 2 },
+        builtInDefaults: { maxConcurrency: 5 },
       });
     });
 
@@ -329,105 +310,90 @@ describe("Settings › Harness defaults API", () => {
     });
 
     it("saves the defaults, then the version, in one request; a failure names what isn't saved", async () => {
-      expect(
-        await saveDefaults({
-          defaults: { allowedTaskTypes: ["review"], maxConcurrency: 4 },
-          version: "1.6.0",
-        }),
-      ).toEqual({ ok: true });
-      expect(state).toMatchObject({
-        allowedTaskTypes: ["review"],
-        maxConcurrency: 4,
-        version: "1.6.0",
+      expect(await saveDefaults({ defaults: { maxConcurrency: 4 }, version: "1.6.0" })).toEqual({
+        ok: true,
       });
+      expect(state).toMatchObject({ maxConcurrency: 4, version: "1.6.0" });
 
-      expect(
-        await saveDefaults({
-          defaults: { allowedTaskTypes: ["query"], maxConcurrency: 99 },
-          version: "1.7.0",
-        }),
-      ).toEqual({
+      expect(await saveDefaults({ defaults: { maxConcurrency: 99 }, version: "1.7.0" })).toEqual({
         ok: false,
-        error:
-          "Max concurrency must be 1–32 and task types known ones. Not saved: task types and concurrency and the desired version.",
+        error: "Max concurrency must be 1–32. Not saved: max concurrency and the desired version.",
       });
-      expect(state).toMatchObject({ allowedTaskTypes: ["review"], version: "1.6.0" });
+      expect(state).toMatchObject({ maxConcurrency: 4, version: "1.6.0" });
 
       // The defaults are saved before a bad version.
-      expect(
-        await saveDefaults({
-          defaults: { allowedTaskTypes: ["coding"], maxConcurrency: 4 },
-          version: "next",
-        }),
-      ).toEqual({
+      expect(await saveDefaults({ defaults: { maxConcurrency: 3 }, version: "next" })).toEqual({
         ok: false,
         error:
           "Enter a version like 1.4.0 or latest, or leave it blank. Not saved: the desired version.",
       });
-      expect(state).toMatchObject({ allowedTaskTypes: ["coding"], version: "1.6.0" });
+      expect(state).toMatchObject({ maxConcurrency: 3, version: "1.6.0" });
+    });
+
+    it("refuses task types with 400 and saves nothing: each agent decides its own", async () => {
+      for (const body of [
+        { acceptedTaskTypes: ["review"] },
+        { acceptedTaskTypes: ["review"], version: "1.6.0" },
+        { defaults: { acceptedTaskTypes: ["review"], maxConcurrency: 4 } },
+        { defaults: { allowedTaskTypes: ["review"], maxConcurrency: 4 } },
+      ]) {
+        const response = await defaultsRoute.PUT(
+          new Request("http://localhost/api/ui", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }),
+          { params: Promise.resolve({}) },
+        );
+        expect(response.status).toBe(400);
+      }
+      expect(state).toMatchObject({ maxConcurrency: null, version: null, updatedBy: null });
     });
   });
 
   describe("organization defaults", () => {
-    it("saves the organization's task types and max concurrency", async () => {
-      expect(
-        await setOrganizationDefaults({
-          allowedTaskTypes: ["coding", "query"],
-          maxConcurrency: 8,
-        }),
-      ).toEqual({ ok: true });
+    it("saves the organization's max concurrency", async () => {
+      expect(await setOrganizationDefaults({ maxConcurrency: 8 })).toEqual({ ok: true });
       expect(state).toMatchObject({
         organizationId: "org-1",
-        allowedTaskTypes: ["coding", "query"],
         maxConcurrency: 8,
         updatedBy: "admin-1",
       });
 
-      // No task types and the bounds are valid.
-      expect(await setOrganizationDefaults({ allowedTaskTypes: [], maxConcurrency: 1 })).toEqual({
-        ok: true,
-      });
-      expect(state).toMatchObject({ allowedTaskTypes: [], maxConcurrency: 1 });
-      expect(
-        await setOrganizationDefaults({
-          allowedTaskTypes: ["query", "review", "coding"],
-          maxConcurrency: 32,
-        }),
-      ).toEqual({ ok: true });
-      expect(state).toMatchObject({
-        allowedTaskTypes: ["query", "review", "coding"],
-        maxConcurrency: 32,
-      });
+      // The bounds are valid.
+      expect(await setOrganizationDefaults({ maxConcurrency: 1 })).toEqual({ ok: true });
+      expect(state).toMatchObject({ maxConcurrency: 1 });
+      expect(await setOrganizationDefaults({ maxConcurrency: 32 })).toEqual({ ok: true });
+      expect(state).toMatchObject({ maxConcurrency: 32 });
     });
 
-    it("rejects unknown task types and max concurrency outside 1–32", async () => {
+    it("rejects max concurrency outside 1–32", async () => {
       for (const bad of [
-        { allowedTaskTypes: ["query"], maxConcurrency: 0 },
-        { allowedTaskTypes: ["query"], maxConcurrency: 33 },
-        { allowedTaskTypes: ["query"], maxConcurrency: 2.5 },
-        { allowedTaskTypes: ["query"], maxConcurrency: Number.NaN },
-        { allowedTaskTypes: ["system"], maxConcurrency: 5 },
-        { allowedTaskTypes: ["ralph"], maxConcurrency: 5 },
+        { maxConcurrency: 0 },
+        { maxConcurrency: 33 },
+        { maxConcurrency: 2.5 },
+        { maxConcurrency: Number.NaN },
+        { maxConcurrency: "4" },
       ]) {
         expect(await setOrganizationDefaults(bad)).toEqual({
           ok: false,
-          error: "Max concurrency must be 1–32 and task types known ones.",
+          error: "Max concurrency must be 1–32.",
         });
       }
-      expect(state.allowedTaskTypes).toBeNull();
       expect(state.maxConcurrency).toBeNull();
     });
 
     it("is admin-only", async () => {
       state.user = user("member");
-      expect(
-        await setOrganizationDefaults({ allowedTaskTypes: ["query"], maxConcurrency: 3 }),
-      ).toEqual({ ok: false, error: expect.any(String) });
+      expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({
+        ok: false,
+        error: expect.any(String),
+      });
       state.user = null;
-      expect(
-        await setOrganizationDefaults({ allowedTaskTypes: ["query"], maxConcurrency: 3 }),
-      ).toEqual({ ok: false, error: expect.any(String) });
-      expect(state.allowedTaskTypes).toBeNull();
+      expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({
+        ok: false,
+        error: expect.any(String),
+      });
       expect(state.maxConcurrency).toBeNull();
     });
   });

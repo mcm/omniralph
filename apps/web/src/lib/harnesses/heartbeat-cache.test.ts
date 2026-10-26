@@ -232,7 +232,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         expect(
           await manage.updateHarnessConfig(db, orgId, harnessId, {
             maxConcurrency: 3,
-            acceptedTaskTypes: null,
             poolLimits: {},
           }),
         ).toEqual({ ok: true });
@@ -293,15 +292,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "organization defaults",
       async ({ orgId }) => {
-        await defaults.setOrganizationDefaults(db, admin(orgId), {
-          allowedTaskTypes: ["review"],
-          maxConcurrency: 7,
-        });
+        await defaults.setOrganizationDefaults(db, admin(orgId), { maxConcurrency: 7 });
       },
-      (response) => {
-        expect(response.maxConcurrency).toBe(7);
-        expect(response.acceptedTaskTypes).toEqual(["review"]);
-      },
+      (response) => expect(response.maxConcurrency).toBe(7),
     ],
     [
       "organization version",

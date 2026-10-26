@@ -20,7 +20,6 @@ import {
   scmConnections,
   type Database,
   organizations,
-  setAllowedTaskTypeDefaults,
   setDefaultMaxConcurrency,
 } from "@omniralph/db";
 import {
@@ -664,7 +663,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
 
     it("never claims task types the harness doesn't accept", async () => {
       const { organizationId, job } = await claimOrg();
-      const untrusted = await newAgent({ organizationId, acceptedTaskTypes: ["review"] });
+      const untrusted = await newAgent({ organizationId, reportedAcceptedTaskTypes: ["review"] });
       const jobId = await job();
       expect((await claimAs(untrusted.accessToken)).status).toBe(204);
       expect((await jobRow(jobId)).status).toBe("queued");
@@ -672,7 +671,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
 
     it("claims system RPCs without a pool, also on a harness accepting no task types, with one lifecycle token", async () => {
       const { organizationId, job } = await claimOrg();
-      const agent = await newAgent({ organizationId, acceptedTaskTypes: [] });
+      const agent = await newAgent({ organizationId, reportedAcceptedTaskTypes: [] });
       const jobId = await job("repo.sync", { taskType: "system" });
       const res = await claimAs(agent.accessToken, { pools: [], waitSeconds: 0 });
       const body = (await res.json()) as JobStartResponse & { action: "run" };
@@ -1342,7 +1341,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     });
 
     it("sends undelivered messages for the harness's running ralph jobs and applies its acknowledgements", async () => {
-      const { harnessId, accessToken } = await newAgent({ acceptedTaskTypes: ["coding"] });
+      const { harnessId, accessToken } = await newAgent({ reportedAcceptedTaskTypes: ["coding"] });
       const [run] = await db
         .insert(ralphRuns)
         .values({
@@ -1439,19 +1438,21 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       return job.id;
     }
 
-    async function heartbeatAs(accessToken: string) {
+    async function heartbeatAs(accessToken: string, report: object = {}) {
       const res = await heartbeat(
         agentRequest("heartbeat", accessToken, {
-          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
+          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1, ...report },
         }),
       );
       expect(res.status).toBe(200);
       return (await res.json()) as HeartbeatResponse;
     }
 
-    function claimLong(accessToken: string) {
+    function claimLong(accessToken: string, request: object = {}) {
       return claim(
-        agentRequest("claim", accessToken, { body: { pools: ["long"], waitSeconds: 0 } }),
+        agentRequest("claim", accessToken, {
+          body: { pools: ["long"], waitSeconds: 0, ...request },
+        }),
       );
     }
 
@@ -1464,7 +1465,11 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         version: "0.2.0",
       }))!;
       const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      expect(row).toMatchObject({ maxConcurrency: null, acceptedTaskTypes: null, poolLimits: {} });
+      expect(row).toMatchObject({
+        maxConcurrency: null,
+        reportedAcceptedTaskTypes: null,
+        poolLimits: {},
+      });
       const accessToken = await getTokenSigner().signAccessToken(harnessId);
 
       const jobId = await codingJob(organizationId);
@@ -1498,43 +1503,68 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       }
     });
 
-    it("lets a harness's own task types turn off a type the organization allows", async () => {
+    it("claims by the task types an older agent last reported when its claim carries none", async () => {
       const organizationId = await newOrg();
-      const own = await newAgent({ organizationId, acceptedTaskTypes: ["query", "review"] });
+      const own = await newAgent({
+        organizationId,
+        reportedAcceptedTaskTypes: ["query", "review"],
+      });
       const jobId = await codingJob(organizationId);
       expect((await claimLong(own.accessToken)).status).toBe(204);
       expect((await jobRow(jobId)).status).toBe("queued");
     });
 
-    it("keeps a harness's own values and gives inheriting harnesses the organization's new defaults", async () => {
+    it("claims by the claim request's task types: an agent reporting review can't claim coding", async () => {
       const organizationId = await newOrg();
-      const own = await newAgent({
-        organizationId,
-        maxConcurrency: 2,
-        acceptedTaskTypes: ["query", "coding"],
-      });
+      const agent = await newAgent({ organizationId });
+      // Its heartbeat reports review only: stored, and no task types come back.
+      const response = await heartbeatAs(agent.accessToken, { acceptedTaskTypes: ["review"] });
+      expect(response.acceptedTaskTypes).toBeUndefined();
+      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, agent.harnessId));
+      expect(row!.reportedAcceptedTaskTypes).toEqual(["review"]);
+
+      const jobId = await codingJob(organizationId);
+      // Nor does the heartbeat say a claim for the long pool would find a job.
+      expect(
+        await heartbeatAs(agent.accessToken, {
+          acceptedTaskTypes: ["review"],
+          claimablePools: ["long"],
+        }),
+      ).toMatchObject({ claimable: false });
+      expect(
+        await heartbeatAs(agent.accessToken, {
+          acceptedTaskTypes: ["review", "coding"],
+          claimablePools: ["long"],
+        }),
+      ).toMatchObject({ claimable: true });
+      // The claim's own types count, not the stored ones (now review and coding).
+      expect((await claimLong(agent.accessToken, { acceptedTaskTypes: ["review"] })).status).toBe(
+        204,
+      );
+      expect((await jobRow(jobId)).status).toBe("queued");
+      expect(
+        (await claimLong(agent.accessToken, { acceptedTaskTypes: ["review", "coding"] })).status,
+      ).toBe(200);
+      expect((await jobRow(jobId)).status).toBe("running");
+      // A bad list is refused.
+      expect((await claimLong(agent.accessToken, { acceptedTaskTypes: [] })).status).toBe(400);
+    });
+
+    it("keeps a harness's own max concurrency and gives inheriting harnesses the organization's new default", async () => {
+      const organizationId = await newOrg();
+      const own = await newAgent({ organizationId, maxConcurrency: 2 });
       const inheriting = await newAgent({ organizationId });
 
       await setDefaultMaxConcurrency(db, organizationId, 3, null);
-      await setAllowedTaskTypeDefaults(db, organizationId, ["query", "review"], null);
 
       expect(await heartbeatAs(own.accessToken)).toMatchObject({
         maxConcurrency: 2,
-        acceptedTaskTypes: ["query", "coding"],
         poolLimits: { short: 2, long: 1 },
       });
       expect(await heartbeatAs(inheriting.accessToken)).toMatchObject({
         maxConcurrency: 3,
-        acceptedTaskTypes: ["query", "review"],
         poolLimits: { short: 3, long: 2 },
       });
-
-      // Coding is off by the new default for the inheriting harness only.
-      const jobId = await codingJob(organizationId);
-      expect((await claimLong(inheriting.accessToken)).status).toBe(204);
-      expect((await jobRow(jobId)).status).toBe("queued");
-      expect((await claimLong(own.accessToken)).status).toBe(200);
-      expect((await jobRow(jobId)).status).toBe("running");
     });
   });
 
@@ -1669,7 +1699,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     });
 
     it("refuses credentials and job routes for a job of another organization", async () => {
-      const foreign = await otherAgent({ acceptedTaskTypes: ["query", "review", "coding"] });
+      const foreign = await otherAgent({
+        reportedAcceptedTaskTypes: ["query", "review", "coding"],
+      });
       const jobId = await newJob({ repositoryId });
       await db
         .update(jobs)

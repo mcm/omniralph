@@ -12,7 +12,6 @@ import {
   JOB_LEASE_SECONDS,
   LEGACY_POLL_INTERVAL_SECONDS,
   effectivePoolLimits,
-  isJobTaskType,
   type HeartbeatResponse,
   type JobMessageDelivery,
 } from "@omniralph/shared";
@@ -44,7 +43,7 @@ import { liveRoute } from "@/lib/live/request";
 const NPM_TIMEOUT_MS = 5_000;
 
 /**
- * Harness heartbeat (every 20s). Records the reported version and
+ * Harness heartbeat (every 20s). Records the reported version, accepted task types and
  * self-update state (last-seen in Redis; the harness row only when the report
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the harness keeps,
  * applies the acknowledged job messages and returns the central configuration,
@@ -81,6 +80,7 @@ async function post(req: Request): Promise<Response> {
     handledUpdateRequestId: body.data.handledUpdateRequestId,
     installables: body.data.installables,
     models: body.data.models,
+    acceptedTaskTypes: body.data.acceptedTaskTypes,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =
@@ -113,17 +113,16 @@ async function post(req: Request): Promise<Response> {
   if (!agent) return badRequest("unknown_agent");
   await announceOnline(db, harnessId);
   await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
-  const [pinnedRepoIds, running, organizationVersion, hostTools, config] =
-    await Promise.all([
-      listHarnessPinnedRepositoryIds(db, harnessId),
-      classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
-      agent.desiredVersion
-        ? null
-        : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-      listHarnessHostTools(db, agent.organizationId, harnessId),
-      // Its own max concurrency and accepted task types, else the organization's defaults.
-      resolveHarnessConfig(db, agent),
-    ]);
+  const [pinnedRepoIds, running, organizationVersion, hostTools, config] = await Promise.all([
+    listHarnessPinnedRepositoryIds(db, harnessId),
+    classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
+    agent.desiredVersion
+      ? null
+      : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    listHarnessHostTools(db, agent.organizationId, harnessId),
+    // Its own max concurrency, else the organization's default, and its reported task types.
+    resolveHarnessConfig(db, agent),
+  ]);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.
   const renewedAt = new Date();
@@ -155,7 +154,8 @@ async function post(req: Request): Promise<Response> {
 
   const claimable = await heartbeatClaimable(
     db,
-    { ...agent, acceptedTaskTypes: config.acceptedTaskTypes },
+    // The task types it reports now, else (older agents) the ones it last reported.
+    { ...agent, acceptedTaskTypes: body.data.acceptedTaskTypes ?? config.acceptedTaskTypes },
     body.data.claimablePools,
   );
 
@@ -163,7 +163,10 @@ async function post(req: Request): Promise<Response> {
     maxConcurrency: config.maxConcurrency,
     // Legacy fields: old harnesses require them; `topics: []` stops their polling.
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
-    acceptedTaskTypes: config.acceptedTaskTypes.filter(isJobTaskType),
+    // Only older agents, which don't report their task types, take (and require) these.
+    ...(body.data.acceptedTaskTypes === undefined && {
+      acceptedTaskTypes: config.acceptedTaskTypes,
+    }),
     // The `short` and `long` pools (a job's pool follows from its task type).
     poolLimits: effectivePoolLimits(agent.poolLimits, config.maxConcurrency),
     pinnedRepoIds,

@@ -71,6 +71,8 @@ Local config keys (set by hand in the config file; enroll writes only the first 
                       [] allows none; * matches anything but /)
   blockedExecPaths    Absolute path prefixes never executed, symlinks resolved (default: [])
   dataDir             Installables and caches directory (default: ~/.omniralph)
+  acceptedTaskTypes   Task types this agent runs: a non-empty subset of "query", "review" and
+                      "coding" (default: all; system jobs always run)
 `;
 
 export interface Io {
