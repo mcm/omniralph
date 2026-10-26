@@ -138,4 +138,26 @@ describe("ProgressCard", () => {
     await user.click(screen.getByRole("button", { name: /Approve the PRD/ }));
     expect(onSelectStep).toHaveBeenCalledWith("b");
   });
+
+  it("shows the step panel inside the selected step, under it", () => {
+    render(
+      <ProgressCard
+        title="Plan"
+        steps={STEPS}
+        selectedStepId="c"
+        onSelectStep={vi.fn()}
+        stepPanel={<p>Transcript of the stories</p>}
+      />,
+    );
+    const panel = screen.getByText("Transcript of the stories").parentElement!;
+    expect(panel.className).toBe("or-step__panel");
+    const step = panel.closest("li")!;
+    expect(step.className).toContain("or-step--selected");
+    expect(panel.previousElementSibling).toBe(screen.getByRole("button", { current: "step" }));
+  });
+
+  it("shows no step panel without step selection", () => {
+    render(<ProgressCard title="Plan" steps={STEPS} stepPanel={<p>Panel</p>} />);
+    expect(screen.queryByText("Panel")).toBeNull();
+  });
 });

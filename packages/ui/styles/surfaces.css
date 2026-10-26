@@ -123,6 +123,7 @@
 
 .or-step {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 30px;
@@ -208,6 +209,18 @@
 .or-step--selected .or-step__label {
   color: var(--or-text);
   font-weight: 600;
+}
+
+/* The selected step's panel (its transcript, attempts…) on a line of its own under it. */
+.or-step__panel {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 4px 0 10px 26px;
+  padding: 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-surf);
+  font-size: 13px;
 }
 
 .or-step__link {

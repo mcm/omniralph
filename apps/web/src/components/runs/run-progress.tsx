@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, ProgressCard, type HeadingLevel } from "@omniralph/ui";
+import type { ReactNode } from "react";
 import type { RunDetail } from "@/lib/api/runs";
 import { runHref } from "@/lib/runs/hrefs";
 import { progressTitle, stepsToProgress } from "./progress";
@@ -19,6 +20,8 @@ export type RunProgressProps = {
       mode: "select";
       selectedStepId: string | undefined;
       onSelectStep: (stepId: string) => void;
+      /** Shown inside the card under the selected step (its `StepPanel`). */
+      stepPanel?: ReactNode;
     }
 );
 
@@ -26,7 +29,7 @@ export type RunProgressProps = {
  * A run's progress card (Design rule 10) from its detail: its steps' states and durations,
  * titled by kind ("Stories", "Review passes", "Turns"; an epic in the Inbox is "Epic
  * progress"). In `link` mode it carries an "Open run" link; in `select` mode the steps are
- * selectable.
+ * selectable, with `stepPanel` under the selected one.
  */
 export function RunProgress(props: RunProgressProps) {
   const { run, headingLevel, className } = props;
@@ -47,6 +50,7 @@ export function RunProgress(props: RunProgressProps) {
       }
       selectedStepId={props.mode === "select" ? props.selectedStepId : undefined}
       onSelectStep={props.mode === "select" ? props.onSelectStep : undefined}
+      stepPanel={props.mode === "select" ? props.stepPanel : undefined}
     />
   );
 }
