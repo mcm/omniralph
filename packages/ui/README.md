@@ -275,6 +275,13 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   "Close" button and a scrim click close it, and focus returns to the trigger, or to the
   element focused when it opened. It sits above the shell's drawer and below menus,
   tooltips and `ConfirmDialog`s opened from inside it.
+- `SummaryCells`: the only summary or stat-tile component (Fleet, connection pages,
+  Analytics). `cells` (`{ id, label, value, detail?, info? }`, `value`, `detail` and
+  `info` nodes) and optional `aria-label` (which makes the card a named `region`). One
+  card (`.or-card.or-stats`) with the cells side by side, wrapping to two columns at
+  768 px and narrower. Each cell is a `group` named by its `label`; `info` renders right
+  after the label (e.g. an `InfoPopover` or the app's change history ⓘ), then the value
+  and the optional `detail` line.
 - `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
   and decorative `icon`. There is no hint prop (rule 3).
 
@@ -334,6 +341,15 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   phone width and a content area narrowed by a side panel. No Next.js imports, no hints.
 - `useSplitWide(ref)`: whether the element is at least 880 px wide
   (`SPLIT_WIDE_MIN_WIDTH`, followed with a `ResizeObserver`; false until measured).
+
+- `SectionNav`: a settings area's own navigation. Props: `title` (visible, names the
+  `nav`), `badge?` (under the title, e.g. an `OrgBadge`), `currentPath`, `groups`
+  (`{ label, items: { label, href, indicator?: { tone: "fail", label } }[] }[]`),
+  `headingLevel?` (1–3, default 2; group headings are one level below) and `className?`.
+  One list per group under a visible group heading (the list is named by it); a group
+  without items is left out. The active entry (`isNavActive`) gets `aria-current="page"`;
+  an indicator draws a coral dot and its `label` joins the entry's accessible name
+  ("GitLab, 1 failed delivery", `sectionNavItemName`). Links go through `UiProvider`.
 
 ## Shell
 

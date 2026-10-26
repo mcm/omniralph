@@ -98,6 +98,15 @@ describe("layout.css", () => {
     ).toBe("minmax(0, 1fr) var(--or-split-size)");
   });
 
+  it("fills the active section nav entry like the shell's and pushes the dot to the end", () => {
+    expect(declarations(base, '.or-subnav__item[aria-current="page"]')).toEqual({
+      background: "var(--or-sel)",
+      color: "var(--or-text)",
+    });
+    expect(declarations(base, ".or-subnav__list")["list-style"]).toBe("none");
+    expect(declarations(base, ".or-subnav__dot")["margin-left"]).toBe("auto");
+  });
+
   it("uses only --or- tokens for colors", () => {
     for (const [, value] of css.matchAll(/var\((--[a-z0-9-]+)/g)) {
       expect(value).toMatch(/^--or-/);

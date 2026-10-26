@@ -556,3 +556,71 @@
   padding: 12px 20px;
   border-top: 1px solid var(--or-line);
 }
+
+/* Summary cells: one card, the cells side by side; two columns at 768 px and narrower */
+.or-stats {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  padding: 0;
+}
+
+.or-stats__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-left: 1px solid var(--or-line);
+}
+
+.or-stats__cell:first-child {
+  border-left: 0;
+}
+
+.or-stats__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+}
+
+.or-stats__label {
+  color: var(--or-ter);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.or-stats__value {
+  min-width: 0;
+  color: var(--or-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.or-stats__detail {
+  min-width: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .or-stats {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .or-stats__cell {
+    border-top: 1px solid var(--or-line);
+    border-left: 0;
+  }
+
+  .or-stats__cell:nth-child(-n + 2) {
+    border-top: 0;
+  }
+
+  .or-stats__cell:nth-child(2n) {
+    border-left: 1px solid var(--or-line);
+  }
+}
