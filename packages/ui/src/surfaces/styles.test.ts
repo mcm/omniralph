@@ -85,4 +85,29 @@ describe("surfaces.css", () => {
     expect(declarations(".or-savebar")).toMatchObject({ position: "sticky" });
     expect(css).not.toMatch(/box-shadow/);
   });
+
+  it("opens the sheet from the right at 480 px", () => {
+    expect(declarations(".or-sheet")).toMatchObject({
+      position: "fixed",
+      top: "0",
+      right: "0",
+      bottom: "0",
+      width: "min(480px, 100vw)",
+    });
+    expect(declarations(".or-sheet").left).toBeUndefined();
+  });
+
+  it("makes the sheet full screen at 768 px and narrower", () => {
+    const phone = css.match(/@media \(max-width: 768px\) \{((?:[^{}]*\{[^}]*\})*)\s*\}/)?.[1] ?? "";
+    const sheet = phone.match(/(?:^|\})\s*\.or-sheet\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(sheet).toMatch(/left:\s*0/);
+    expect(sheet).toMatch(/width:\s*100%/);
+  });
+
+  it("keeps the sheet above the shell's drawer and below menus and tooltips", () => {
+    const z = (selector: string) => Number(declarations(selector)["z-index"]);
+    expect(z(".or-sheet")).toBeGreaterThan(z(".or-sheet__scrim"));
+    expect(z(".or-sheet__scrim")).toBeGreaterThan(41);
+    expect(z(".or-sheet")).toBeLessThan(50);
+  });
 });

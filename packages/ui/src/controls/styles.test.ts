@@ -97,4 +97,23 @@ describe("controls.css", () => {
     expect(declarationsFor(".or-tab__count--need").color).toBe("var(--or-acc)");
     expect(declarationsFor(".or-tab__count--fail").color).toBe("var(--or-fail)");
   });
+
+  it("draws the section index as the tab strip, scrolling instead of wrapping", () => {
+    expect(declarationsFor(".or-tabs")).toMatchObject({
+      "flex-wrap": "nowrap",
+      "overflow-x": "auto",
+    });
+    expect(declarationsFor(".or-section-index__item").flex).toBe("none");
+    expect(declarationsFor(".or-section-index__list")["list-style"]).toBe("none");
+    expect(declarationsFor(".or-section-index .or-tab")["text-decoration"]).toBe("none");
+  });
+
+  it("marks the current section entry like the selected tab", () => {
+    expect(declarationsFor('.or-tab[aria-current="true"]')).toEqual(
+      declarationsFor('.or-tab[aria-selected="true"]'),
+    );
+    expect(declarationsFor('.or-tab[aria-current="true"]')["border-bottom-color"]).toBe(
+      "var(--or-text)",
+    );
+  });
 });
