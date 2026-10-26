@@ -117,6 +117,7 @@ describe("AgentDetailView", () => {
               type: "review.run",
               taskType: "review",
               target: { label: "acme/api!7", url: null },
+              runId: null,
             },
           ],
         },

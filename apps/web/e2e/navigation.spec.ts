@@ -1,7 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
-const JOBS_API = /\/api\/ui\/jobs(\?|$)/;
+const AGENTS_API = /\/api\/ui\/agents(\?|$)/;
 
 /** Holds the requests `route` matches until `release()`. */
 function hold() {
@@ -33,27 +33,27 @@ test.describe("navigation feedback", () => {
     await signIn("member");
     await openRepositories(page);
 
-    // The Jobs page itself (its server payload) and its data both take a while.
+    // The Agents page itself (its server payload) and its data both take a while.
     const pageLoad = hold();
     await page.route(
-      (url) => url.pathname === "/jobs" && url.searchParams.has("_rsc"),
+      (url) => url.pathname === "/agents" && url.searchParams.has("_rsc"),
       pageLoad.handler,
     );
     const data = hold();
-    await page.route(JOBS_API, data.handler);
+    await page.route(AGENTS_API, data.handler);
 
-    const link = page.getByRole("link", { name: "Jobs", exact: true }).first();
+    const link = page.getByRole("link", { name: "Agents", exact: true }).first();
     await link.click();
     await expect(link.locator(".link-status[data-pending]")).toBeAttached();
 
     pageLoad.release();
-    await expect(page).toHaveURL(/\/jobs$/);
+    await expect(page).toHaveURL(/\/agents$/);
     await expect(link.locator(".link-status[data-pending]")).not.toBeAttached();
     // The page renders at once, with its skeleton while the data loads.
-    await expect(page.getByLabel("Loading jobs")).toBeVisible();
+    await expect(page.getByLabel("Loading agents")).toBeVisible();
 
     data.release();
-    await expect(page.getByLabel("Loading jobs")).not.toBeAttached();
+    await expect(page.getByLabel("Loading agents")).not.toBeAttached();
     await expect(page.locator("main table")).toBeVisible();
   });
 
@@ -64,15 +64,15 @@ test.describe("navigation feedback", () => {
     await signIn("member");
     await openRepositories(page);
     // A 4xx isn't retried in the background, so the error shows at once.
-    await page.route(JOBS_API, (route) =>
-      route.fulfill({ status: 400, json: { error: "The jobs couldn't be read." } }),
+    await page.route(AGENTS_API, (route) =>
+      route.fulfill({ status: 400, json: { error: "The agents couldn't be read." } }),
     );
-    await page.goto("/jobs");
+    await page.goto("/agents");
 
-    const error = page.getByRole("alert").filter({ hasText: "Couldn't load jobs" });
-    await expect(error).toContainText("The jobs couldn't be read.");
+    const error = page.getByRole("alert").filter({ hasText: "Couldn't load agents" });
+    await expect(error).toContainText("The agents couldn't be read.");
 
-    await page.unroute(JOBS_API);
+    await page.unroute(AGENTS_API);
     await error.getByRole("button", { name: "Retry" }).click();
     await expect(error).not.toBeAttached();
     await expect(page.locator("main table")).toBeVisible();

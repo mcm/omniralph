@@ -94,7 +94,7 @@ const { enqueueInstall } = await import("@/lib/agents/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
 const jobCancel = await import("@/app/api/ui/jobs/[id]/cancel/route");
 const jobRerun = await import("@/app/api/ui/jobs/[id]/rerun/route");
-const jobList = await import("@/app/api/ui/jobs/route");
+const { isRerunnable } = await import("@/lib/jobs/rerun-kind");
 const { POST: enroll } = await import("@/app/api/agent/enroll/route");
 const { POST: postEnrollment } = await import("@/app/api/ui/agent-enrollments/route");
 const { POST: token } = await import("@/app/api/agent/token/route");
@@ -195,13 +195,6 @@ const requestAgentUpdate = (id: string) => ui(agentUpdate.POST, id);
 const revokeAgent = (id: string) => ui(agentRevoke.POST, id);
 const cancelJob = (id: string) => ui(jobCancel.POST, id);
 const rerunJob = (id: string) => ui(jobRerun.POST, id);
-async function listedJob(id: string) {
-  const response = await jobList.GET(new Request("http://localhost/api/ui/jobs"), {
-    params: Promise.resolve({}),
-  });
-  const { jobs } = (await response.json()) as { jobs: { id: string }[] };
-  return jobs.find((job) => job.id === id);
-}
 const deleteAgent = (id: string) => ui(agentDetail.DELETE, id, { method: "DELETE" });
 const installInstallable = (id: string, body: { name: string; version?: string }) =>
   ui(agentInstalls.POST, id, { body });
@@ -1432,8 +1425,8 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(await jobRow(queued!.id)).toMatchObject({ status: "canceled" });
 
       expect(await cancelJob(running!.id)).toMatchObject({ ok: true, warning: expect.any(String) });
-      // The Jobs page shows it cancel-requested until its agent confirms.
-      expect(await listedJob(running!.id)).toMatchObject({
+      // It shows as cancel-requested until its agent confirms.
+      expect(await jobRow(running!.id)).toMatchObject({
         status: "running",
         cancelRequested: true,
       });
@@ -1461,7 +1454,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
   });
 
   describe("rerun job", () => {
-    it("queues a failed install again for its agent, and the Jobs page offers it", async () => {
+    it("queues a failed install again for its agent, which can be rerun", async () => {
       const { agentId } = await enrolledAgent();
       const installed = await enqueueInstall(db, new PostgresDispatcher({ db }), {
         organizationId: orgId,
@@ -1473,7 +1466,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         .update(jobs)
         .set({ status: "failed", error: "npm failed", finishedAt: new Date() })
         .where(eq(jobs.id, installed.jobId));
-      expect(await listedJob(installed.jobId)).toMatchObject({ rerunnable: true });
+      expect(isRerunnable(await jobRow(installed.jobId))).toBe(true);
 
       const rerun = await rerunJob(installed.jobId);
       expect(rerun).toEqual({ ok: true });
@@ -1489,7 +1482,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         payload: failed.payload,
         dedupeKey: failed.dedupeKey,
       });
-      expect(await listedJob(copies[0]!.id)).toMatchObject({ rerunnable: false });
+      expect(isRerunnable(await jobRow(copies[0]!.id))).toBe(false);
       // The failed job stays as it was; a second rerun finds the copy queued.
       expect(failed).toMatchObject({ status: "failed", error: "npm failed" });
       expect(await rerunJob(installed.jobId)).toMatchObject({

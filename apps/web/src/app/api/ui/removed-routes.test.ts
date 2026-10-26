@@ -17,6 +17,25 @@ describe("routes the configuration model removed", () => {
     expect(servedByRouteHandler(path)).toBe(false);
   });
 
+  it.each([
+    // Runs replaced the Coding, Reviews, Triage and Jobs pages and their endpoints.
+    "/api/ui/coding-runs",
+    "/api/ui/coding-runs/x",
+    "/api/ui/reviews",
+    "/api/ui/reviews/x",
+    "/api/ui/reviews/x/rerun",
+    "/api/ui/triage",
+    "/api/ui/triage/x",
+    "/api/ui/jobs",
+  ])("%s has no handler (404): Runs replaced its page", (path) => {
+    expect(servedByRouteHandler(path)).toBe(false);
+  });
+
+  it("keeps cancelling and rerunning a job (the step panel's Cancel attempt, Fleet's Rerun)", () => {
+    expect(servedByRouteHandler("/api/ui/jobs/x/cancel")).toBe(true);
+    expect(servedByRouteHandler("/api/ui/jobs/x/rerun")).toBe(true);
+  });
+
   it("has no pinnable repositories search: pins are edited from the repo's settings", () => {
     // `/api/ui/agents/[id]` answers the path itself, with 404 for an unknown agent.
     expect(existsSync(join(__dirname, "agents/pinnable-repositories"))).toBe(false);

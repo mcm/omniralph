@@ -146,7 +146,7 @@ export function InstallForm({
         body: input,
         organizationId,
       }),
-    invalidate: (keys) => [keys.agents.detail(agentId), keys.jobs.all],
+    invalidate: (keys) => [keys.agents.detail(agentId)],
     success: (_, input) =>
       `Installing ${input.name}@${input.version}; the agent picks it up with its next claim.`,
     onSuccess: (result) => {

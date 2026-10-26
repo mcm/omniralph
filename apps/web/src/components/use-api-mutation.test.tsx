@@ -46,7 +46,7 @@ describe("useApiMutation", () => {
     const { client, mutationFn, result } = setup({ onSuccess });
     client.setQueryData(keys.agents.list(), ["old"]);
     client.setQueryData(keys.agents.detail("h1"), { name: "old" });
-    const other = keys.jobs.list();
+    const other = keys.runs.list();
     client.setQueryData(other, ["job"]);
 
     mutationFn.mockResolvedValue({ ok: true } as never);

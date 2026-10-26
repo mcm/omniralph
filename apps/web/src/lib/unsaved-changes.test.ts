@@ -41,23 +41,25 @@ describe("unsavedAnchorId", () => {
 
 describe("guardedHref", () => {
   it("returns the in-app destination of a plain click", () => {
-    expect(guardedHref(plainClick, anchor("/jobs?job=1#job-1"), HERE)).toBe("/jobs?job=1#job-1");
+    expect(guardedHref(plainClick, anchor("/runs/1?step=s1#finding-1"), HERE)).toBe(
+      "/runs/1?step=s1#finding-1",
+    );
   });
 
   it("lets new tabs, downloads, other sites and same-page links through", () => {
-    expect(guardedHref({ ...plainClick, metaKey: true }, anchor("/jobs"), HERE)).toBeNull();
-    expect(guardedHref({ ...plainClick, button: 1 }, anchor("/jobs"), HERE)).toBeNull();
-    expect(guardedHref(plainClick, anchor("/jobs", { target: "_blank" }), HERE)).toBeNull();
+    expect(guardedHref({ ...plainClick, metaKey: true }, anchor("/runs"), HERE)).toBeNull();
+    expect(guardedHref({ ...plainClick, button: 1 }, anchor("/runs"), HERE)).toBeNull();
+    expect(guardedHref(plainClick, anchor("/runs", { target: "_blank" }), HERE)).toBeNull();
     expect(guardedHref(plainClick, anchor("/export", { download: true }), HERE)).toBeNull();
     expect(guardedHref(plainClick, anchor("https://github.com/x"), HERE)).toBeNull();
     expect(guardedHref(plainClick, anchor("#settings-coding-tools"), HERE)).toBeNull();
     expect(
-      guardedHref({ ...plainClick, defaultPrevented: true }, anchor("/jobs"), HERE),
+      guardedHref({ ...plainClick, defaultPrevented: true }, anchor("/runs"), HERE),
     ).toBeNull();
   });
 });
 
-function setup(dirty: boolean, href = "/jobs") {
+function setup(dirty: boolean, href = "/runs") {
   const win = Object.assign(new EventTarget(), { location: { href: HERE } });
   const link = anchor(href);
   const root = Object.assign(new EventTarget(), { closest: () => link });
@@ -82,7 +84,7 @@ describe("installUnsavedGuard", () => {
     const { click, onLeave } = setup(true);
     const event = click();
     expect(event.defaultPrevented).toBe(true);
-    expect(onLeave).toHaveBeenCalledWith("/jobs");
+    expect(onLeave).toHaveBeenCalledWith("/runs");
   });
 
   it("asks the browser to confirm an unload while a card is dirty", () => {

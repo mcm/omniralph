@@ -32,20 +32,13 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(liveInvalidations(event({ resource: "run", runId: RUN }))).toEqual([
       keys.runs.lists,
       keys.runs.detail(RUN),
-      keys.reviews.all,
-      keys.triage.lists,
-      keys.triage.detail(RUN),
-      keys.jobs.all,
       keys.inbox.all,
       keys.analytics.all,
     ]);
   });
 
-  it("run without a run (system work): attempts only", () => {
-    expect(liveInvalidations(event({ resource: "run" }))).toEqual([
-      keys.jobs.all,
-      keys.analytics.all,
-    ]);
+  it("run without a run (system work): Analytics only", () => {
+    expect(liveInvalidations(event({ resource: "run" }))).toEqual([keys.analytics.all]);
   });
 
   it("transcript: only that run's transcript", () => {
@@ -293,7 +286,7 @@ describe("createLiveInvalidator", () => {
       queryFn: async () => "analytics",
       meta: { liveThrottleMs: 10_000 },
     });
-    client.getQueryCache().build(client, { queryKey: keys.jobs.list(), queryFn: async () => [] });
+    client.getQueryCache().build(client, { queryKey: keys.runs.list(), queryFn: async () => [] });
     const invalidate = vi.spyOn(client, "invalidateQueries");
     const invalidator = createLiveInvalidator(client);
     const calls = (queryKey: QueryKey) =>
@@ -307,7 +300,7 @@ describe("createLiveInvalidator", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     }
     expect(calls(throttledKey)).toBe(1);
-    expect(calls(keys.jobs.list())).toBe(5);
+    expect(calls(keys.runs.list())).toBe(5);
 
     // The trailing invalidation delivers the burst's last event when the window ends.
     await vi.advanceTimersByTimeAsync(5_000);

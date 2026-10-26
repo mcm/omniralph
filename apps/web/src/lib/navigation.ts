@@ -13,9 +13,8 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
  * never an old one kept for compatibility: Runs points at `/runs` (every run of every
  * kind), the other entries at today's pages until their epics replace them (TOOL-575,
  * "Coexistence with today's pages"); every entry is visible to members and admins.
- * Runs lights up for `/runs/**` only. Today's Reviews, Triage and Jobs pages (deleted with
- * the old run pages) and Analytics (its own entry in Epic 10) have no entry and stay
- * reachable by URL; the other Settings pages light up Settings.
+ * Runs lights up for `/runs/**` only. Analytics (its own entry in Epic 10) has no entry and
+ * stays reachable by URL; the other Settings pages light up Settings.
  *
  * Inbox comes first (a phone tab); Backlog (after Runs, a phone tab) and Ask (bottom, a
  * phone tab) are added by Epics 8 and 9 with their pages. The live indicators come from

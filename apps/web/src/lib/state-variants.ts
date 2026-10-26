@@ -4,8 +4,7 @@ import type { AuditEventName } from "@/lib/agents/display";
 import type { JobRow } from "@/lib/agents/rows";
 import type { AgentUpdateStatus } from "@/lib/agents/update";
 import type { RalphMessageState, RalphRunRow, RalphStoryView } from "@/lib/ralph/display";
-import type { ReviewDetailView, ReviewRow } from "@/lib/reviews/display";
-import type { TriageRunStatus } from "@/lib/triage/display";
+import type { ReviewRow } from "@/lib/reviews/display";
 
 /**
  * The State Vocabulary Rule (apps/web/DESIGN.md): every run, story, job, review
@@ -28,14 +27,6 @@ export const RALPH_RUN_STATUS_VARIANTS: Record<RalphRunRow["status"], IntentVari
   pending: "neutral",
   running: "info",
   waiting: "warning",
-  completed: "success",
-  failed: "danger",
-  stopped: "neutral",
-};
-
-export const TRIAGE_RUN_STATUS_VARIANTS: Record<TriageRunStatus, IntentVariant> = {
-  queued: "neutral",
-  running: "info",
   completed: "success",
   failed: "danger",
   stopped: "neutral",
@@ -75,16 +66,6 @@ export const REVIEW_STATUS_VARIANTS: Record<ReviewRow["status"], IntentVariant> 
   failed: "danger",
   budget_exhausted: "danger",
   skipped: "neutral",
-};
-
-type FindingStatus = ReviewDetailView["files"][number]["findings"][number]["status"];
-
-export const FINDING_STATUS_VARIANTS: Record<FindingStatus, IntentVariant> = {
-  open: "warning",
-  dismissed: "neutral",
-  resolved: "success",
-  superseded: "neutral",
-  merged: "neutral",
 };
 
 /**

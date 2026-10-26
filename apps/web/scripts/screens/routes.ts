@@ -76,19 +76,38 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/runs/[id]/steps/[stepId]/page.tsx",
     auth: "signed-in",
   },
-  { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
-  { name: "jobs", path: "/jobs", page: "(app)/jobs/page.tsx", auth: "signed-in" },
   {
-    // A `#job-<id>` link to a failed job: the highlight covers the job and its reason row.
-    name: "jobs-targeted",
-    path: "/jobs?status=failed",
-    page: "(app)/jobs/page.tsx",
+    name: "runs-reviews",
+    path: `/runs?kind=review&repository=${ids.repositories.controlPanel}`,
+    page: "(app)/runs/page.tsx",
     auth: "signed-in",
-    steps: [{ action: "click", selector: 'tr[data-has-error] a[href^="#job-"]' }],
-    // What the link shows: the page scrolled to the row (a full page would draw the
-    // sticky header over it).
-    viewportOnly: true,
   },
+  {
+    // The featured review's pass (every severity and finding status) on its Findings tab.
+    name: "run-review",
+    path: `/runs/${fixtureId("reviewRun", 1)}?step=${ids.reviews.featured}&tab=findings`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "run-triage-completed",
+    path: `/runs/${ids.triageRuns.completed}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "run-triage-failed",
+    path: `/runs/${ids.triageRuns.failed}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "run-triage-running",
+    path: `/runs/${ids.triageRuns.running}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "agents", path: "/agents", page: "(app)/agents/page.tsx", auth: "signed-in" },
   {
     name: "agent-online",
@@ -157,25 +176,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     ],
     viewportOnly: true,
   },
-  { name: "triage", path: "/triage", page: "(app)/triage/page.tsx", auth: "signed-in" },
-  {
-    name: "triage-run-completed",
-    path: `/triage/${ids.triageRuns.completed}`,
-    page: "(app)/triage/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "triage-run-failed",
-    path: `/triage/${ids.triageRuns.failed}`,
-    page: "(app)/triage/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "triage-run-running",
-    path: `/triage/${ids.triageRuns.running}`,
-    page: "(app)/triage/[id]/page.tsx",
-    auth: "signed-in",
-  },
   {
     name: "repositories",
     path: "/repositories",
@@ -192,12 +192,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     name: "repositories-gitlab",
     path: `/repositories/gitlab/${ids.scmConnections.gitlab}`,
     page: "(app)/repositories/gitlab/[connectionId]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "repository-reviews",
-    path: `/repositories/${ids.repositories.controlPanel}/reviews`,
-    page: "(app)/repositories/[id]/reviews/page.tsx",
     auth: "signed-in",
   },
   {
@@ -238,13 +232,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
     steps: [{ action: "click", selector: "#pinned-agents" }],
     viewportOnly: true,
-  },
-  { name: "reviews", path: "/reviews", page: "(app)/reviews/page.tsx", auth: "signed-in" },
-  {
-    name: "review",
-    path: `/reviews/${ids.reviews.featured}`,
-    page: "(app)/reviews/[id]/page.tsx",
-    auth: "signed-in",
   },
   {
     name: "settings-chat-accounts",

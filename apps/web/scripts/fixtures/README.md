@@ -33,7 +33,7 @@ and states) instead of linear.app; also only outside production.
   refresh them (it replaces the previous seed). Online agents heartbeat in 2099, so they
   stay online however long after seeding the panel renders.
 - `ids.ts`: fixed IDs (`FIXTURE_IDS`) for naming detail pages, e.g.
-  `/runs/${FIXTURE_IDS.ralphRuns.running}` or `/reviews/${FIXTURE_IDS.reviews.featured}`.
+  `/runs/${FIXTURE_IDS.ralphRuns.running}` or `/runs/${FIXTURE_IDS.triageRuns.completed}`.
 
 Covered: an admin and a member (and a second organization for the switcher), a pending
 invitation, GitHub and GitLab connections with repositories (one disabled, one disconnected),

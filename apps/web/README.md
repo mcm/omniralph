@@ -80,10 +80,10 @@ refused with 409 `organization_switched` (a visible tab polling beside the one t
 ```ts
 const keys = useQueryKeys();
 const { organization } = useCurrentUser();
-const jobs = useQuery({
-  queryKey: keys.jobs.list({ page }),
+const repositories = useQuery({
+  queryKey: keys.repositories.list({ page }),
   queryFn: ({ signal }) =>
-    api.get("/api/ui/jobs", jobListSchema, {
+    api.get("/api/ui/repositories", repositoryListSchema, {
       params: { page },
       organizationId: organization.id,
       signal,
@@ -96,7 +96,7 @@ Paginated lists keep `page` (and filters) in the URL (`useSearchParams`) and use
 keepPreviousData`; wrap the table in `.list-pending` with `aria-busy={query.isPlaceholderData}`, so
 the previous page stays, dimmed, while the next one loads (`repositories-view.tsx`). A filter
 select shows the chosen value at once: hold the choice in state keyed to the URL it was made on,
-query with it, and `router.push` the new URL (`useRunListParams` in `coding/ralph-runs-view.tsx`).
+query with it, and `router.push` the new URL.
 
 **Live updates** (`src/lib/live`, `src/components/live`). The UI is live without polling:
 the server publishes a change event (IDs only, `src/lib/live/events.ts`) on Ably for every write,
@@ -231,7 +231,7 @@ database, at 1440px and 390px in the dark and light themes:
 
 ```sh
 pnpm --filter @omniralph/web verify:screens
-pnpm --filter @omniralph/web verify:screens --routes "settings-*,/reviews/**" --theme dark --viewport 390
+pnpm --filter @omniralph/web verify:screens --routes "settings-*,/runs/**" --theme dark --viewport 390
 ```
 
 **Prerequisites:** Docker only (a local or remote daemon). No secrets, no OAuth, no browser on

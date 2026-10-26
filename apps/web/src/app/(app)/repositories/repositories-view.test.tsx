@@ -143,6 +143,21 @@ describe("RepositoriesView", () => {
     expect(table().getAttribute("aria-busy")).toBe("false");
   });
 
+  it("links a repository to its pages, and its reviews to Runs", async () => {
+    mockFetch({
+      "GET /api/ui/repositories": list([repo(1)], { connections: [] }),
+    });
+    renderView("member");
+    await waitFor(() => expect(table()?.textContent).toContain("acme/repo-1"));
+    const id = repo(1).id;
+    expect(
+      Array.from(table().querySelectorAll("a.repositories-title"), (a) => a.getAttribute("href")),
+    ).toEqual([`/repositories/${id}/rules`]);
+    await userEvent.click(screen.getByRole("button", { name: "Actions for acme/repo-1" }));
+    const reviews = await screen.findByRole("menuitem", { name: /Reviews/ });
+    expect(reviews.getAttribute("href")).toBe(`/runs?kind=review&repository=${id}`);
+  });
+
   it("disconnects a repository and updates the list without a reload", async () => {
     let connected = true;
     const seen = mockFetch({

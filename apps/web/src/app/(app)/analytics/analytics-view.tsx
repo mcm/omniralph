@@ -58,6 +58,7 @@ import {
   type RalphAnalyticsData,
 } from "@/lib/analytics/display";
 import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
+import { runListHref } from "@/lib/runs/hrefs";
 import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
 import { ProviderIcon } from "@/components/provider-icon";
 import type { AnalyticsRepository } from "@/lib/api/analytics";
@@ -94,7 +95,10 @@ function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; coun
 
 function RepositoryLink({ repository }: { repository: AnalyticsRepository }) {
   return (
-    <Link href={`/repositories/${repository.id}/reviews`} className="analytics-repo-link">
+    <Link
+      href={runListHref({ kind: ["review"], repositoryId: repository.id })}
+      className="analytics-repo-link"
+    >
       <ProviderIcon provider={repository.provider} size={12} />
       <MonoValue value={repository.fullPath} />
     </Link>

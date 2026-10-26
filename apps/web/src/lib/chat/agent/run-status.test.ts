@@ -149,7 +149,13 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
       })
       .returning();
     if (organizationId === orgId) {
-      await mapThreadRun(db, { organizationId, chatThreadId: chatThread.id, jobId: job!.id });
+      const run = await mapThreadRun(db, {
+        organizationId,
+        chatThreadId: chatThread.id,
+        jobId: job!.id,
+      });
+      // The job is its ask run's attempt now.
+      return { ...job!, chatThreadRunId: run!.id };
     }
     return job!;
   }
@@ -297,7 +303,7 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
     expect(result).toEqual({
       runType: "query",
       id: job.id,
-      url: `${APP_URL}/jobs#job-${job.id}`,
+      url: `${APP_URL}/runs/${job.chatThreadRunId}`,
       task: "builtin:ask-about-code",
       status: "running",
       cancelRequested: false,

@@ -233,14 +233,8 @@ const runStepDiff = await import("./runs/[id]/steps/[stepId]/diff/route");
 const runFindings = await import("./runs/[id]/findings/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
-const reviewList = await import("./reviews/route");
-const reviewDetail = await import("./reviews/[id]/route");
-const reviewRerun = await import("./reviews/[id]/rerun/route");
-const jobList = await import("./jobs/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
 const jobRerun = await import("./jobs/[id]/rerun/route");
-const triageList = await import("./triage/route");
-const triageDetail = await import("./triage/[id]/route");
 const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
 const settingsHistory = await import("./settings-history/route");
@@ -2098,123 +2092,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
-  it("lists and shows each organization's own reviews to its members, and 404s on the other's", async () => {
-    for (const [own, other] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      for (const userId of [own.adminId, own.memberId]) {
-        state.userId = userId;
-        const list = await call(reviewList.GET);
-        expect(list).toMatchObject({ status: 200, body: { repository: null, total: 1 } });
-        expect((list.body.reviews as { id: string }[]).map((r) => r.id)).toEqual([own.reviewId]);
-        const repositoryList = await call(reviewList.GET, {
-          path: `/api/ui?repository=${own.repoId}`,
-        });
-        expect(repositoryList).toMatchObject({
-          status: 200,
-          body: { repository: { id: own.repoId }, reviews: [{ id: own.reviewId }] },
-        });
-
-        const detail = await call(reviewDetail.GET, { params: { id: own.reviewId } });
-        expect(detail).toMatchObject({ status: 200, body: { review: { id: own.reviewId } } });
-        expect(JSON.stringify(detail.body)).toContain(own.findingId);
-        for (const { body } of [list, repositoryList, detail]) {
-          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
-        }
-
-        expect(await call(reviewDetail.GET, { params: { id: other.reviewId } })).toMatchObject({
-          status: 404,
-        });
-        expect(await call(reviewDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
-          status: 404,
-        });
-        expect(
-          await call(reviewList.GET, { path: `/api/ui?repository=${other.repoId}` }),
-        ).toMatchObject({ status: 404 });
-      }
-    }
-  });
-
-  it("refuses to re-run the other organization's review, and its own members reach it", async () => {
-    const rerun = (id: string) =>
-      call(reviewRerun.POST, { params: { id }, body: { mode: "fresh", depth: null } });
-    state.userId = a.adminId;
-    expect(await rerun(b.reviewId)).toMatchObject({
-      status: 404,
-      body: { error: "That review doesn't exist." },
-    });
-    expect(await rerun("not-a-uuid")).toMatchObject({ status: 404 });
-    state.userId = b.memberId;
-    expect(await rerun(b.reviewId)).not.toMatchObject({ status: 403 });
-    expect(await rerun(b.reviewId)).not.toMatchObject({ status: 404 });
-  });
-
-  it("sends a member of both organizations to switch to the review's organization", async () => {
-    const [user] = await db
-      .insert(users)
-      .values({ id: "both-reviews-member", email: "both-reviews@alpha.io" })
-      .returning();
-    await db.insert(organizationMembers).values([
-      { organizationId: a.orgId, userId: user!.id, role: "member" },
-      { organizationId: b.orgId, userId: user!.id, role: "member" },
-    ]);
-    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
-    state.userId = user!.id;
-
-    const pages: [string, Promise<{ status: number; body: Record<string, unknown> }>][] = [];
-    const reviewPage = `/reviews/${b.reviewId}`;
-    pages.push([
-      reviewPage,
-      call(reviewDetail.GET, {
-        params: { id: b.reviewId },
-        path: `/api/ui?${new URLSearchParams({ next: reviewPage })}`,
-      }),
-    ]);
-    const repositoryPage = `/repositories/${b.repoId}/reviews?status=queued`;
-    pages.push([
-      repositoryPage,
-      call(reviewList.GET, {
-        path: `/api/ui?${new URLSearchParams({ repository: b.repoId, next: repositoryPage })}`,
-      }),
-    ]);
-    for (const [page, response] of pages) {
-      const { status, body } = await response;
-      expect(status, page).toBe(409);
-      expect(body).toMatchObject({ code: "enter_organization" });
-      expect(JSON.stringify(body)).not.toContain(b.name);
-      const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-      expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-        organizationId: b.orgId,
-        next: page,
-      });
-    }
-  });
-
-  it("lists each organization's own jobs to its members, and none of the other's", async () => {
-    for (const [own, other] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      for (const userId of [own.adminId, own.memberId]) {
-        state.userId = userId;
-        const list = await call(jobList.GET);
-        expect(list.status).toBe(200);
-        expect((list.body.jobs as { id: string }[]).map((j) => j.id)).toEqual([own.jobId]);
-        const running = await call(jobList.GET, { path: "/api/ui?status=running" });
-        expect((running.body.jobs as { id: string }[]).map((j) => j.id)).toEqual([own.jobId]);
-        // A link to the other's job opens no page for it.
-        const linked = await call(jobList.GET, { path: `/api/ui?job=${other.jobId}` });
-        expect(linked).toMatchObject({ status: 200, body: { targetJobId: null } });
-        const target = await call(jobList.GET, { path: `/api/ui?job=${own.jobId}` });
-        expect(target).toMatchObject({ status: 200, body: { targetJobId: own.jobId } });
-        for (const { body } of [list, running, linked, target]) {
-          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
-        }
-      }
-    }
-  });
-
   it("refuses to cancel the other organization's job, and lets its own members cancel it", async () => {
     state.userId = a.adminId;
     expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
@@ -2283,93 +2160,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
       status: 400,
       body: { error: expect.not.stringContaining("doesn't exist") },
-    });
-  });
-
-  // Last: the triage jobs created here would show on the job lists above.
-  it("lists and shows each organization's own triage runs to its members, and 404s on the other's", async () => {
-    const triageJobIds = new Map<string, string>();
-    for (const tenant of [a, b]) {
-      const { job } = await insertJob(db, {
-        organizationId: tenant.orgId,
-        type: "triage.run",
-        taskType: "query",
-        payload: {
-          trigger: {
-            kind: "linear.triage",
-            context: {
-              triageRunId: tenant.triageRunId,
-              issue: {
-                identifier: `${tenant.name.toUpperCase()}-9`,
-                title: `${tenant.name} issue`,
-              },
-            },
-          },
-        },
-      });
-      triageJobIds.set(tenant.name, job.id);
-    }
-    for (const [own, other] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      for (const userId of [own.adminId, own.memberId]) {
-        state.userId = userId;
-        const list = await call(triageList.GET);
-        expect(list.status).toBe(200);
-        expect(list.body.runs).toMatchObject([
-          { id: own.triageRunId, issue: { identifier: `${own.name.toUpperCase()}-9` } },
-        ]);
-        const queued = await call(triageList.GET, { path: "/api/ui?status=queued" });
-        expect((queued.body.runs as { id: string }[]).map((r) => r.id)).toEqual([own.triageRunId]);
-        const failed = await call(triageList.GET, { path: "/api/ui?status=failed" });
-        expect(failed).toMatchObject({ status: 200, body: { runs: [], total: 0 } });
-
-        const detail = await call(triageDetail.GET, { params: { id: own.triageRunId } });
-        expect(detail).toMatchObject({ status: 200, body: { run: { id: own.triageRunId } } });
-        expect((detail.body.run as { jobs: { id: string }[] }).jobs.map((j) => j.id)).toEqual([
-          triageJobIds.get(own.name),
-        ]);
-        for (const { body } of [list, queued, detail]) {
-          const json = JSON.stringify(body);
-          for (const marker of markers(other)) expect(json).not.toContain(marker);
-          expect(json).not.toContain(triageJobIds.get(other.name));
-        }
-
-        expect(await call(triageDetail.GET, { params: { id: other.triageRunId } })).toMatchObject({
-          status: 404,
-        });
-        expect(await call(triageDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
-          status: 404,
-        });
-      }
-    }
-  });
-
-  it("sends a member of both organizations to switch to the triage run's organization", async () => {
-    const [user] = await db
-      .insert(users)
-      .values({ id: "both-triage-member", email: "both-triage@alpha.io" })
-      .returning();
-    await db.insert(organizationMembers).values([
-      { organizationId: a.orgId, userId: user!.id, role: "member" },
-      { organizationId: b.orgId, userId: user!.id, role: "member" },
-    ]);
-    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
-    state.userId = user!.id;
-
-    const page = `/triage/${b.triageRunId}`;
-    const { status, body } = await call(triageDetail.GET, {
-      params: { id: b.triageRunId },
-      path: `/api/ui?${new URLSearchParams({ next: page })}`,
-    });
-    expect(status).toBe(409);
-    expect(body).toMatchObject({ code: "enter_organization" });
-    expect(JSON.stringify(body)).not.toContain(b.name);
-    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-      organizationId: b.orgId,
-      next: page,
     });
   });
 
@@ -2449,12 +2239,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = user!.id;
     state.cookies.clear();
 
-    // The run's page asks the API, which answers 409 with the signed path that switches to
-    // the run's organization and comes back to the page, which then gets the run.
-    const page = `/triage/${b.triageRunId}`;
+    // The agent's page asks the API, which answers 409 with the signed path that switches to
+    // the agent's organization and comes back to the page, which then gets the agent.
+    const page = `/agents/${b.agentId}`;
     const open = () =>
-      call(triageDetail.GET, {
-        params: { id: b.triageRunId },
+      call(agentDetail.GET, {
+        params: { id: b.agentId },
         path: `/api/ui?${new URLSearchParams({ next: page })}`,
       });
     const refused = await open();
@@ -2468,7 +2258,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
     const opened = await open();
     expect(opened.status).toBe(200);
-    expect(JSON.stringify(opened.body)).toContain(b.triageRunId);
+    expect(JSON.stringify(opened.body)).toContain(b.agentId);
     state.cookies.clear();
   });
 

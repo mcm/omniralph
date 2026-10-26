@@ -9,7 +9,7 @@ import type { SessionUser } from "./current-user";
 import { mockFetch, TEST_ORGANIZATION_ID, testUser } from "./query-test-utils";
 
 const nav = vi.hoisted(() => ({
-  pathname: "/reviews",
+  pathname: "/analytics",
   router: { push: vi.fn(), refresh: vi.fn() },
 }));
 vi.mock("next/navigation", () => ({
@@ -69,7 +69,7 @@ beforeEach(() => {
 
 describe("AppShell", () => {
   it("renders the page in the main landmark of the 2.0 frame", () => {
-    renderShell("/reviews");
+    renderShell("/analytics");
     const main = screen.getByRole("main");
     expect(within(main).getByRole("heading", { name: "Page content" })).toBeTruthy();
     expect(screen.getAllByRole("main")).toHaveLength(1);
@@ -81,7 +81,7 @@ describe("AppShell", () => {
   });
 
   it("lists Inbox, Runs, Repos and Agents, then Settings, each linking its 2.0 page", () => {
-    renderShell("/reviews");
+    renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
       .filter((link) => link.classList.contains("or-nav__item"))
@@ -138,7 +138,7 @@ describe("AppShell", () => {
   });
 
   it("shows the same organization picker in the sidebar and the drawer", async () => {
-    renderShell("/reviews", twoOrganizations);
+    renderShell("/analytics", twoOrganizations);
     const inSidebar = within(sidebar()).getByRole("button", { name: "Organization: Acme" });
     const { user, drawer } = await openDrawer();
     const inDrawer = within(drawer).getByRole("button", { name: "Organization: Acme" });
@@ -157,7 +157,7 @@ describe("AppShell", () => {
   });
 
   it("opens the user menu from the sidebar footer and the phone avatar", async () => {
-    renderShell("/reviews");
+    renderShell("/analytics");
     const user = userEvent.setup();
     for (const trigger of [
       within(sidebar()).getByRole("button", { name: "Ada" }),
@@ -172,7 +172,7 @@ describe("AppShell", () => {
   });
 
   it("mounts the toaster", () => {
-    renderShell("/reviews");
+    renderShell("/analytics");
     expect(screen.getByRole("region", { name: "Notifications" })).toBeTruthy();
   });
 
@@ -194,7 +194,7 @@ describe("AppShell", () => {
         <Probe />
       </AppShell>
     );
-    nav.pathname = "/reviews";
+    nav.pathname = "/analytics";
     const { rerender } = render(shell(twoOrganizations));
     clients[0]!.setQueryData([testUser.organization.id, "probe"], 1);
     // A re-render in the same scope keeps the cache.
@@ -207,7 +207,7 @@ describe("AppShell", () => {
   });
 
   it("shows no search control, keyboard-shortcut indicators or hints in the sidebar or drawer", async () => {
-    renderShell("/reviews");
+    renderShell("/analytics");
     const check = () => {
       expect(screen.queryAllByRole("search")).toHaveLength(0);
       expect(screen.queryAllByRole("searchbox")).toHaveLength(0);
@@ -231,7 +231,7 @@ describe("AppShell nav indicators", () => {
       "GET /api/ui/live/token": { token: null },
       "GET /api/ui/inbox/counts": { needsYou: 4, problems: 1, running: 2 },
     });
-    renderShell("/reviews");
+    renderShell("/analytics");
     const inbox = await within(sidebar()).findByRole("link", { name: "Inbox, 4 need you" });
     expect(inbox.querySelector(".or-nav__count")!.textContent).toBe("4");
     // On the icon rail the label is hidden by CSS but kept in the accessible name.
@@ -266,7 +266,7 @@ describe("AppShell nav indicators", () => {
       "GET /api/ui/live/token": { token: null },
       "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
     });
-    renderShell("/reviews", { ...twoOrganizations, scope: "all" });
+    renderShell("/analytics", { ...twoOrganizations, scope: "all" });
     await waitFor(() =>
       expect(seen.some((request) => request.path === "/api/ui/inbox/counts")).toBe(true),
     );

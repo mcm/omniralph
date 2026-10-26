@@ -253,7 +253,7 @@ describe("user-facing wording", () => {
   const harness = scan(HARNESS, harnessFiles);
 
   it("scans the pages, components and message builders", () => {
-    expect(files).toContain("apps/web/src/app/(app)/triage/page.tsx");
+    expect(files).toContain("apps/web/src/app/(app)/runs/page.tsx");
     expect(files).toContain("apps/web/src/lib/linear/webhook.ts");
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });

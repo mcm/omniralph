@@ -153,7 +153,13 @@ export type EnqueueChatAskOutcome =
       requirements: RunAgentRequirements;
     }
   | { status: "failed"; error: string }
-  | { status: "enqueued" | "duplicate"; jobId: string; repository: Repository };
+  | {
+      status: "enqueued" | "duplicate";
+      jobId: string;
+      /** The ask run the job is an attempt of (its page on Runs); null if it couldn't be mapped. */
+      runId: string | null;
+      repository: Repository;
+    };
 
 export interface EnqueueChatAskDeps {
   db: Database;
@@ -267,12 +273,17 @@ export async function enqueueChatAsk(
     dedupeKey: chatAskDedupeKey(input.chatThreadId, question),
   });
   // The thread's query run: a follow-up's context, and the thread of the run's events.
-  await mapThreadRun(db, {
+  const run = await mapThreadRun(db, {
     organizationId: input.organizationId,
     chatThreadId: input.chatThreadId,
     jobId: job.id,
   });
-  return { status: created ? "enqueued" : "duplicate", jobId: job.id, repository };
+  return {
+    status: created ? "enqueued" : "duplicate",
+    jobId: job.id,
+    runId: run?.id ?? null,
+    repository,
+  };
 }
 
 export type RetryChatAskOutcome =

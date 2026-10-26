@@ -52,7 +52,7 @@ describe("QueryProvider", () => {
     const shell = renderClient(A);
     const client = shell.client();
     client.setQueryData(queryKeys(A).agents.list(), ["build-01"]);
-    client.setQueryData(queryKeys(A).jobs.detail("j1"), { id: "j1" });
+    client.setQueryData(queryKeys(A).runs.detail("j1"), { id: "j1" });
     shell.switchTo(B);
     expect(shell.client()).toBe(client);
     expect(client.getQueryCache().getAll()).toHaveLength(0);

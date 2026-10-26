@@ -46,6 +46,8 @@ export interface ReviewRepositoryRef {
 
 export interface ReviewListEntry {
   id: string;
+  /** The review run the review is a pass of; null for reviews from before review runs. */
+  reviewRunId: string | null;
   repository: ReviewRepositoryRef;
   prNumber: number;
   prTitle: string | null;
@@ -82,6 +84,7 @@ export function emptyFindingCounts(): Record<FindingSeverity, number> {
 
 const reviewColumns = {
   id: reviews.id,
+  reviewRunId: reviews.reviewRunId,
   prNumber: reviews.prNumber,
   prTitle: reviews.prTitle,
   headSha: reviews.headSha,

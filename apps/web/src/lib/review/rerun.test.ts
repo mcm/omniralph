@@ -18,7 +18,12 @@ import {
   organizations,
 } from "@omniralph/db";
 import type { ChangeRequest, ChangeRequestState, InlineComment, ScmAdapter } from "@omniralph/scm";
-import { reviewTriggerContext, type Finding, type ReviewJobResult } from "@omniralph/shared";
+import {
+  RerunReviewInput,
+  reviewTriggerContext,
+  type Finding,
+  type ReviewJobResult,
+} from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -27,7 +32,6 @@ import {
 import { captureChanges } from "@omniralph/db/changes";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Adapters from "@/lib/scm/adapters";
 import type * as Tasks from "@omniralph/tasks";
 
@@ -159,18 +163,9 @@ function fakeAdapter() {
 const state = vi.hoisted(() => ({
   orgId: "",
   db: undefined as unknown as Database,
-  user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   scm: undefined as unknown as ReturnType<typeof fakeAdapter>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/auth/session", () => ({
-  // The signed-in user works in `state.orgId`.
-  requireUser: async (role: Role = "member") =>
-    assertRole(
-      state.user && { ...state.user, organization: { id: state.orgId, name: "Acme" } },
-      role,
-    ),
-}));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
   scmAdapterFor: () => state.scm.adapter,
@@ -183,41 +178,35 @@ const { enqueueReview } = await import("./enqueue");
 const { onReviewJobCompleted, onReviewJobFailed } = await import("./jobs");
 const { onCorrelationFailed } = await import("./correlate");
 const { getDispatcher } = await import("@/lib/dispatch");
-const rerunRoute = await import("@/app/api/ui/reviews/[id]/rerun/route");
+const { rerunOrganizationReview } = await import("@/lib/reviews/manage");
 
 type RerunOutcome =
   { ok: true; reviewId: string } | { ok: false; error: string; activeReviewId?: string };
 
 /**
- * Re-runs through `POST /api/ui/reviews/{id}/rerun`, answering as the server action did: the
- * review of the same head already running (`active`) as an error with its ID.
+ * Re-runs the organization's review as a review run's retry does (`rerunOrganizationReview`),
+ * with the body checked as `RerunReviewInput`: the review of the same head already running
+ * (`active`) is an error with its ID.
  */
 async function rerunReview(reviewId: string, input: unknown): Promise<RerunOutcome> {
-  const response = await rerunRoute.POST(
-    new Request("http://localhost/api/ui", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    }),
-    { params: Promise.resolve({ id: reviewId }) },
+  const options = RerunReviewInput.safeParse(input);
+  if (!options.success) return { ok: false, error: "Invalid re-run options." };
+  const result = await rerunOrganizationReview(
+    state.db,
+    getDispatcher(),
+    state.orgId,
+    reviewId,
+    options.data,
   );
-  const body = (await response.json()) as {
-    error: string;
-    reviewId: string;
-    active: boolean;
-    message?: string;
-  };
-  if (!response.ok) return { ok: false, error: body.error };
-  return body.active
-    ? { ok: false, error: body.message!, activeReviewId: body.reviewId }
-    : { ok: true, reviewId: body.reviewId };
+  if (result.ok) return { ok: true, reviewId: result.reviewId };
+  return result.activeReviewId
+    ? { ok: false, error: result.error, activeReviewId: result.activeReviewId }
+    : { ok: false, error: result.error };
 }
 
 const databaseAvailable = testDatabaseAvailable();
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
-const admin = { id: "admin-1", role: "admin" as const, name: null, email: null, image: null };
-const member = { id: "member-1", role: "member" as const, name: null, email: null, image: null };
 
 describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, () => {
   let testDb: TestDatabase;
@@ -255,7 +244,6 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
 
   beforeEach(() => {
     state.scm = fakeAdapter();
-    state.user = admin;
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -771,23 +759,6 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(payload.mode).toBe("full");
       expect(payload.previousReview?.openFindings).toHaveLength(1);
       expect(payload.reviewConfig.profile.id).toBe("standard");
-    });
-
-    it("lets members re-run a review", async () => {
-      const { number, review } = await reviewedPr();
-      state.user = member;
-      const res = await rerunReview(review.id, { mode: "fresh", depth: null });
-      if (!res.ok) throw new Error(res.error);
-      expect(await prJobs(number)).toHaveLength(1);
-    });
-
-    it("rejects a signed-out user", async () => {
-      const { number, review } = await reviewedPr();
-      state.user = null;
-      const res = await rerunReview(review.id, { mode: "fresh", depth: null });
-      expect(res.ok).toBe(false);
-      expect(state.scm.calls.getChangeRequest).toHaveLength(0);
-      expect(await prJobs(number)).toHaveLength(0);
     });
 
     it("refuses a closed or merged PR without creating a job", async () => {

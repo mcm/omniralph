@@ -39,7 +39,14 @@ export interface RuleEntry {
   /** Null for learned rules (and creators whose account was deleted). */
   createdBy: { id: string; name: string | null; email: string | null } | null;
   /** The dismissed finding a learned rule came from, while it exists. */
-  sourceFinding: { id: string; reviewId: string; title: string; path: string } | null;
+  sourceFinding: {
+    id: string;
+    reviewId: string;
+    /** The review run of the finding's review; null for reviews from before review runs. */
+    reviewRunId: string | null;
+    title: string;
+    path: string;
+  } | null;
 }
 
 /** A repository's rules, oldest first, with their creators and source findings. */
@@ -57,13 +64,15 @@ export async function listRepositoryRules(
         title: findings.title,
         path: findings.path,
       },
+      reviewRunId: reviews.reviewRunId,
     })
     .from(rules)
     .leftJoin(users, eq(users.id, rules.createdBy))
     .leftJoin(findings, eq(findings.id, rules.sourceFindingId))
+    .leftJoin(reviews, eq(reviews.id, findings.reviewId))
     .where(eq(rules.repositoryId, repositoryId))
     .orderBy(asc(rules.createdAt), asc(rules.id));
-  return rows.map(({ rule, creator, finding }) => ({
+  return rows.map(({ rule, creator, finding, reviewRunId }) => ({
     id: rule.id,
     repositoryId: rule.repositoryId,
     kind: rule.kind,
@@ -72,7 +81,7 @@ export async function listRepositoryRules(
     createdAt: rule.createdAt,
     updatedAt: rule.updatedAt,
     createdBy: creator,
-    sourceFinding: finding,
+    sourceFinding: finding && { ...finding, reviewRunId },
   }));
 }
 

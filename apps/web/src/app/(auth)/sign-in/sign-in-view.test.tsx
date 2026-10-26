@@ -24,7 +24,7 @@ function renderSignIn(props: Partial<React.ComponentProps<typeof SignInView>> = 
     <AuthShell>
       <SignInView
         providers={[GITHUB]}
-        callbackUrl="/coding"
+        callbackUrl="/runs"
         error={null}
         devSignIn={false}
         {...props}
@@ -47,7 +47,7 @@ describe("SignInView", () => {
     const user = userEvent.setup();
     renderSignIn();
     await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-    expect(actions.signInWithProvider).toHaveBeenCalledWith("github", "/coding");
+    expect(actions.signInWithProvider).toHaveBeenCalledWith("github", "/runs");
     expect(
       (screen.getByRole("button", { name: "Redirecting to GitHub…" }) as HTMLButtonElement)
         .disabled,
@@ -77,6 +77,6 @@ describe("SignInView", () => {
     const form = submit.form!;
     expect(form.getAttribute("action")).toBe("/sign-in/dev");
     expect(form.method).toBe("get");
-    expect((form.elements.namedItem("callbackUrl") as HTMLInputElement).value).toBe("/coding");
+    expect((form.elements.namedItem("callbackUrl") as HTMLInputElement).value).toBe("/runs");
   });
 });

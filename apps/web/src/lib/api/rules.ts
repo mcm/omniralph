@@ -13,7 +13,9 @@ export const ruleViewSchema = z.object({
   enabled: z.boolean(),
   createdAt: isoDate,
   createdBy: z.string().nullable(),
-  sourceFinding: z.object({ href: z.string(), title: z.string(), path: z.string() }).nullable(),
+  sourceFinding: z
+    .object({ href: z.string().nullable(), title: z.string(), path: z.string() })
+    .nullable(),
 }) satisfies z.ZodType<RuleView>;
 
 /**

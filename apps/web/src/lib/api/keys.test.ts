@@ -31,7 +31,7 @@ describe("queryKeys", () => {
   });
 
   it("keeps organizations apart", () => {
-    expect(queryKeys("a").jobs.list()).not.toEqual(queryKeys("b").jobs.list());
+    expect(queryKeys("a").runs.list()).not.toEqual(queryKeys("b").runs.list());
   });
 });
 

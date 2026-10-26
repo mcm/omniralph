@@ -260,11 +260,6 @@ export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-/** Where a job is shown on the Jobs page. */
-export function jobHref(jobId: string): string {
-  return `/jobs#job-${jobId}`;
-}
-
 /**
  * The Linear URL of another issue of the run's workspace, derived from the
  * run's own issue URL (`https://linear.app/<workspace>/issue/<ID>/…`); null
