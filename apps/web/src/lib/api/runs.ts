@@ -53,6 +53,8 @@ export const workItemRefSchema = z.object({
   identifier: z.string(),
   url: z.string().nullable(),
 });
+/** A run's work item: its reference plus its URL ID (`linear-<issue id>`, the Backlog's). */
+export const runWorkItemRefSchema = workItemRefSchema.extend({ id: z.string() });
 export const pullRequestRefSchema = z.object({
   provider,
   number: z.number(),
@@ -68,7 +70,8 @@ export const runRowSchema = z.object({
   origin: z.enum(RUN_ORIGINS),
   organization: organizationRefSchema,
   title: z.string(),
-  workItem: workItemRefSchema.nullable(),
+  /** The work item it builds or triages; null for a run without one (chat, review, ask). */
+  workItem: runWorkItemRefSchema.nullable(),
   repository: repositoryRefSchema.nullable(),
   branch: z.string().nullable(),
   pullRequest: pullRequestRefSchema.nullable(),

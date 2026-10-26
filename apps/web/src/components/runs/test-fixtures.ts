@@ -82,6 +82,7 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     title: "Build the billing export",
     workItem: {
+      id: "linear-issue-tool-42",
       tracker: "linear",
       identifier: "TOOL-42",
       url: "https://linear.app/acme/issue/TOOL-42",

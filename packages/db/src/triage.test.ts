@@ -8,6 +8,7 @@ import {
   createTriageRun,
   finishTriageRunJob,
   getActiveTriageRun,
+  listIssueTriageRuns,
   getTriageRun,
   getTriageRunBySession,
   getTriageRunDetail,
@@ -130,6 +131,20 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
       await setTriageRunStatus(db, run.id, status);
       expect(await getActiveTriageRun(db, orgId, "issue-1")).toBeNull();
     }
+  });
+
+  it("lists the issue's runs in its organization, newest first", async () => {
+    const { run: first } = await createTriageRun(db, runInput());
+    await setTriageRunStatus(db, first.id, "completed");
+    const { run: second } = await createTriageRun(db, runInput());
+    await createTriageRun(db, runInput({ linearIssueId: "issue-2" }));
+    await createTriageRun(db, runInput({ organizationId: otherOrgId }));
+    expect((await listIssueTriageRuns(db, orgId, "issue-1")).map((r) => r.id)).toEqual([
+      second.id,
+      first.id,
+    ]);
+    expect(await listIssueTriageRuns(db, orgId, "issue-1", 1)).toHaveLength(1);
+    expect(await listIssueTriageRuns(db, orgId, "issue-3")).toEqual([]);
   });
 
   it("sets and clears the current job", async () => {

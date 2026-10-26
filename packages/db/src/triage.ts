@@ -104,6 +104,26 @@ export async function getActiveTriageRun(
   return row ?? null;
 }
 
+/** The organization's triage runs of a Linear issue, newest first (at most `limit`, default 50). */
+export async function listIssueTriageRuns(
+  db: Executor,
+  organizationId: string,
+  linearIssueId: string,
+  limit = 50,
+): Promise<TriageRun[]> {
+  return db
+    .select()
+    .from(triageRuns)
+    .where(
+      and(
+        eq(triageRuns.organizationId, organizationId),
+        eq(triageRuns.linearIssueId, linearIssueId),
+      ),
+    )
+    .orderBy(desc(triageRuns.createdAt), desc(triageRuns.id))
+    .limit(limit);
+}
+
 /**
  * Sets the `triage.run` job whose outcome the run applies next (null once
  * applied). Returns null if the run is gone.

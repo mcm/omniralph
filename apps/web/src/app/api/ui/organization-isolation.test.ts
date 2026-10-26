@@ -261,6 +261,13 @@ const backlogList = await import("./backlog/route");
 const backlogCounts = await import("./backlog/counts/route");
 const backlogUpNext = await import("./backlog/up-next/route");
 const { resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
+const workItemDetail = await import("./work-items/[id]/route");
+const workItemPrd = await import("./work-items/[id]/prd/route");
+const workItemStart = await import("./work-items/[id]/start/route");
+const workItemTriage = await import("./work-items/[id]/triage/route");
+const workItemRepository = await import("./work-items/[id]/repository/route");
+const workItemMove = await import("./work-items/[id]/move/route");
+const workItemCancel = await import("./work-items/[id]/cancel/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
@@ -1210,6 +1217,112 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       resetBacklogCache();
       for (const own of [a, b]) {
         await db.delete(workItemMatches).where(eq(workItemMatches.repositoryId, own.repoId));
+        await db
+          .update(repositories)
+          .set({ codingEnabled: false })
+          .where(eq(repositories.id, own.repoId));
+      }
+      for (const id of linear.values()) {
+        await db.delete(integrationRows).where(eq(integrationRows.id, id));
+      }
+    }
+  });
+
+  it("opens and acts on each organization's own work items only, 404 on the other's", async () => {
+    const linear = new Map<string, string>();
+    const workspaces = new Map<string, FakeLinearGateway>();
+    const itemId = (tenant: Tenant) => `linear-${tenant.name}-work-item`;
+    try {
+      for (const own of [a, b]) {
+        const integration = await saveIntegration(db, {
+          organizationId: own.orgId,
+          provider: "linear",
+          externalId: `${own.name}-work-item-workspace`,
+          name: `${own.name} workspace`,
+          credentials: { accessToken: "t" },
+          installedByUserId: null,
+        });
+        if (integration === "other_organization") throw new Error("setup");
+        linear.set(own.orgId, integration.id);
+        const workspace = new FakeLinearGateway();
+        workspace.add({
+          id: `${own.name}-work-item`,
+          identifier: `${own.name.toUpperCase()}-WI1`,
+          title: `${own.name} work item`,
+          description: `${own.name} PRD`,
+        });
+        workspaces.set(own.orgId, workspace);
+        state.linear.set(own.orgId, workspace);
+        await db
+          .update(repositories)
+          .set({ codingEnabled: true })
+          .where(eq(repositories.id, own.repoId));
+      }
+      resetBacklogCache();
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const opened = await call(workItemDetail.GET, {
+            params: { id: itemId(own) },
+            path: `/api/ui/work-items/${itemId(own)}`,
+          });
+          expect(opened.status).toBe(200);
+          expect(opened.body).toMatchObject({
+            title: `${own.name} work item`,
+            organization: { id: own.orgId },
+          });
+          for (const marker of markers(other)) {
+            expect(JSON.stringify(opened.body)).not.toContain(marker);
+          }
+          // Its own item, asked in the other organization: not found.
+          expect(
+            await call(workItemDetail.GET, {
+              params: { id: itemId(own) },
+              path: `/api/ui/work-items/${itemId(own)}?organization=${other.orgId}`,
+            }),
+          ).toMatchObject({ status: 404 });
+
+          const id = itemId(other);
+          const path = `/api/ui/work-items/${id}`;
+          const attempts = [
+            call(workItemDetail.GET, { params: { id }, path }),
+            call(workItemPrd.PUT, {
+              params: { id },
+              path,
+              method: "PUT",
+              body: { markdown: "Taken over", baseUpdatedAt: "2026-01-01T00:00:01.000Z" },
+            }),
+            call(workItemStart.POST, { params: { id }, path, method: "POST" }),
+            call(workItemTriage.POST, { params: { id }, path, method: "POST" }),
+            call(workItemRepository.PUT, {
+              params: { id },
+              path,
+              method: "PUT",
+              body: { repositoryId: own.repoId },
+            }),
+            call(workItemMove.POST, { params: { id }, path, body: { to: "needs_refining" } }),
+            call(workItemCancel.POST, { params: { id }, path, method: "POST" }),
+          ];
+          for (const attempt of await Promise.all(attempts)) {
+            expect(attempt).toMatchObject({ status: 404 });
+          }
+          // Nothing reached the other organization's tracker.
+          const theirs = workspaces.get(other.orgId)!;
+          expect(theirs.issueUpdates).toEqual([]);
+          expect(theirs.stateChanges).toEqual([]);
+          expect(theirs.delegations).toEqual([]);
+          expect(theirs.labelChanges).toEqual([]);
+        }
+      }
+      state.userId = null;
+      expect((await call(workItemDetail.GET, { params: { id: itemId(a) } })).status).toBe(401);
+    } finally {
+      state.linear.clear();
+      resetBacklogCache();
+      for (const own of [a, b]) {
         await db
           .update(repositories)
           .set({ codingEnabled: false })

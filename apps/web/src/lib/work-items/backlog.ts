@@ -273,6 +273,21 @@ export async function loadOrganizationBacklog(deps: {
   return { entries: entries.sort(compareBacklogEntries), truncated };
 }
 
+/** One organization's Backlog from the cache, computed with `tracker` on a miss. */
+export function organizationBacklog(deps: {
+  db: Database;
+  organizationId: string;
+  tracker: () => Promise<WorkItemTracker>;
+}): Promise<OrganizationBacklog> {
+  return cachedBacklog(deps.organizationId, async () =>
+    loadOrganizationBacklog({
+      db: deps.db,
+      organizationId: deps.organizationId,
+      tracker: await deps.tracker(),
+    }),
+  );
+}
+
 /** Shown when an organization's tracker couldn't be read. */
 export const TRACKER_UNAVAILABLE_REASON = "Linear didn't answer. Try again in a moment.";
 
@@ -304,13 +319,11 @@ async function loadScope(
   const results = await Promise.all(
     organizations.map(async (organization) => {
       try {
-        const backlog = await cachedBacklog(organization.id, async () =>
-          loadOrganizationBacklog({
-            db: deps.db,
-            organizationId: organization.id,
-            tracker: await getTracker(organization.id),
-          }),
-        );
+        const backlog = await organizationBacklog({
+          db: deps.db,
+          organizationId: organization.id,
+          tracker: () => getTracker(organization.id),
+        });
         return { organization, backlog };
       } catch (error) {
         if (error instanceof TrackerNotConnectedError) return { organization, backlog: null };

@@ -353,7 +353,13 @@ export interface RunRepository {
 export interface RunListEntry extends RunIndexEntry {
   /** The work item's title, a PR/MR title, or an ask's question; null without one. */
   title: string | null;
-  workItem: { identifier: string; title: string | null; url: string | null } | null;
+  /** The work item: its Linear issue ID (null where the run didn't keep it), key, title and URL. */
+  workItem: {
+    issueId: string | null;
+    identifier: string;
+    title: string | null;
+    url: string | null;
+  } | null;
   repository: RunRepository | null;
   branch: string | null;
   pullRequest: { number: number; url: string | null } | null;
@@ -429,6 +435,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
     db.execute<{
       id: string;
       mode: "epic" | "request";
+      linear_issue_id: string | null;
       linear_identifier: string | null;
       linear_title: string | null;
       linear_url: string | null;
@@ -439,7 +446,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       stories_done: string;
       first_request: string | null;
     }>(sql`
-      select r.id, r.mode, r.linear_identifier, r.linear_title, r.linear_url,
+      select r.id, r.mode, r.linear_issue_id, r.linear_identifier, r.linear_title, r.linear_url,
         l.branch, l.pr_number, l.pr_url,
         (select m.text from ralph_messages m where m.run_id = r.id and m.kind = 'request'
           order by m.created_at, m.id limit 1) as first_request,
@@ -457,7 +464,12 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       // A chat run has no issue: what it was asked to do.
       title: row.linear_title ?? row.first_request ?? row.linear_identifier,
       workItem: row.linear_identifier
-        ? { identifier: row.linear_identifier, title: row.linear_title, url: row.linear_url }
+        ? {
+            issueId: row.linear_issue_id,
+            identifier: row.linear_identifier,
+            title: row.linear_title,
+            url: row.linear_url,
+          }
         : null,
       branch: row.branch,
       pullRequest: row.pr_number !== null ? { number: row.pr_number, url: row.pr_url } : null,
@@ -535,12 +547,13 @@ async function triageFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
     // The issue as the newest attempt that read it saw it (the run keeps only Linear's ID).
     db.execute<{
       id: string;
+      linear_issue_id: string;
       identifier: string | null;
       title: string | null;
       url: string | null;
       branch: string | null;
     }>(sql`
-      select t.id, i.issue ->> 'identifier' as identifier, i.issue ->> 'title' as title,
+      select t.id, t.linear_issue_id, i.issue ->> 'identifier' as identifier, i.issue ->> 'title' as title,
         i.issue ->> 'url' as url, i.branch
       from triage_runs t
       left join lateral (
@@ -559,7 +572,12 @@ async function triageFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
     facts.set(row.id, {
       title: row.title || row.identifier,
       workItem: row.identifier
-        ? { identifier: row.identifier, title: row.title || null, url: row.url || null }
+        ? {
+            issueId: row.linear_issue_id,
+            identifier: row.identifier,
+            title: row.title || null,
+            url: row.url || null,
+          }
         : null,
       branch: row.branch || null,
       pullRequest: null,

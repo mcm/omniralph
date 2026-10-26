@@ -1,7 +1,7 @@
 /**
  * The unified run list (`GET /api/ui/runs`): its query, its cursor and its rows on the wire.
  */
-import type { RunCursor, RunKind, RunListEntry } from "@omniralph/db";
+import { workItemUrlId, type RunCursor, type RunKind, type RunListEntry } from "@omniralph/db";
 import { z } from "zod";
 import {
   RUN_KINDS,
@@ -105,11 +105,14 @@ export function runRow(entry: RunListEntry, organization: ScopedOrganization): R
     origin: entry.origin,
     organization: { id: organization.id, name: organization.name, role: organization.role },
     title: title ? truncate(title, RUN_TITLE_MAX_LENGTH) : fallbackTitle(entry),
-    workItem: entry.workItem && {
-      tracker: "linear",
-      identifier: entry.workItem.identifier,
-      url: webUrl(entry.workItem.url),
-    },
+    workItem: entry.workItem?.issueId
+      ? {
+          id: workItemUrlId("linear", entry.workItem.issueId),
+          tracker: "linear",
+          identifier: entry.workItem.identifier,
+          url: webUrl(entry.workItem.url),
+        }
+      : null,
     repository: repository && {
       id: repository.id,
       provider: repository.provider,

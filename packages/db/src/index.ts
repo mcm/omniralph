@@ -687,6 +687,7 @@ export {
   type TriageRunReplyResult,
   type TriageRunRetryResult,
   getTriageRunDetail,
+  listIssueTriageRuns,
   listTriageRuns,
   TRIAGE_RUN_PAGE_SIZE,
   type TriageRunJob,
