@@ -59,37 +59,6 @@ describe("ConnectionHealth", () => {
     expect(problemItem(html, "rotation_failed")).toBe("Rotating the bot token failed: boom");
   });
 
-  it("explains that an access token bot's clones fail and to reconnect with a service account", () => {
-    const text = problemItem(
-      render(health([{ code: "access_token_bot", message: "group or project access token" }])),
-      "access_token_bot",
-    );
-    expect(text).toContain("clones and pushes will fail");
-    expect(text).toContain("Reconnect GitLab with a service account's personal access token");
-  });
-
-  it("states when the token expires for token_expiring and rotation_unsupported", () => {
-    const html = render(
-      health([
-        {
-          code: "rotation_unsupported",
-          message: "This GitLab instance can't rotate the bot token.",
-        },
-        { code: "token_expiring", message: "The bot token expires on 2026-10-09." },
-      ]),
-    );
-    expect(problemItem(html, "rotation_unsupported")).toBe(
-      `This GitLab instance can't rotate the bot token. The bot token expires on ${EXPIRY}.`,
-    );
-    expect(problemItem(html, "token_expiring")).toContain(`The bot token expires on ${EXPIRY}.`);
-    expect(
-      problemItem(
-        render(health([{ code: "rotation_unsupported", message: "Can't rotate." }], null)),
-        "rotation_unsupported",
-      ),
-    ).toContain("GitLab doesn't report when the bot token expires");
-  });
-
   it("offers admins a Recreate webhook button for missing and outdated webhooks only", () => {
     const problems: Health["problems"] = [
       {

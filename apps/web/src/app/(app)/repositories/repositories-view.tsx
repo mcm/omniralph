@@ -80,11 +80,11 @@ import { useApiMutation } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
 import {
   connectedGitLabSchema,
-  repositoryListSchema,
+  legacyRepositoryListSchema,
   repositorySetupSchema,
   type ConnectionRow,
-  type RepositoryList,
-  type RepositoryRow,
+  type LegacyRepositoryList as RepositoryList,
+  type LegacyRepositoryRow as RepositoryRow,
 } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { pageRange, parsePage, totalPages } from "@/lib/pagination";
@@ -103,7 +103,7 @@ export function useRepositoryList(page: number) {
   return useQuery({
     queryKey: keys.repositories.list({ page }),
     queryFn: ({ signal }) =>
-      api.get("/api/ui/repositories", repositoryListSchema, {
+      api.get("/api/ui/repositories/overview", legacyRepositoryListSchema, {
         params: { page: page > 1 ? page : undefined },
         organizationId: organization.id,
         signal,

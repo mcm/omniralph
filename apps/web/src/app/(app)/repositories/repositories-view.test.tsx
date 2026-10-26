@@ -11,7 +11,7 @@ import {
   queryWrapper,
   testUser,
 } from "@/components/query-test-utils";
-import type { ConnectionRow, RepositoryList } from "@/lib/api/repositories";
+import type { ConnectionRow, LegacyRepositoryList as RepositoryList } from "@/lib/api/repositories";
 import { RepositoriesView, TaskTypeBadges, type RepositoryRow } from "./repositories-view";
 
 const nav = vi.hoisted(() => ({
@@ -89,7 +89,7 @@ beforeEach(() => {
 describe("RepositoriesView", () => {
   it("shows a skeleton, then the repositories and the connections with their health", async () => {
     mockFetch({
-      "GET /api/ui/repositories": list([repo(1)]),
+      "GET /api/ui/repositories/overview": list([repo(1)]),
       "GET /api/ui/repositories/setup": SETUP,
     });
     renderView();
@@ -104,19 +104,19 @@ describe("RepositoriesView", () => {
 
   it("shows members the repositories only, without asking for the admin setup", async () => {
     const seen = mockFetch({
-      "GET /api/ui/repositories": list([repo(1)], { connections: [] }),
+      "GET /api/ui/repositories/overview": list([repo(1)], { connections: [] }),
     });
     renderView("member");
     await waitFor(() => expect(table()?.textContent).toContain("acme/repo-1"));
     expect(screen.queryByText("Code-host connections")).toBeNull();
     expect(screen.queryByRole("button", { name: /Connect GitLab/ })).toBeNull();
-    expect(seen.map((request) => request.path)).toEqual(["/api/ui/repositories"]);
+    expect(seen.map((request) => request.path)).toEqual(["/api/ui/repositories/overview"]);
   });
 
   it("keeps the previous page on screen, dimmed, while the next one loads", async () => {
     let release: () => void = () => {};
     const seen = mockFetch({
-      "GET /api/ui/repositories": async (request) => {
+      "GET /api/ui/repositories/overview": async (request) => {
         if (request.query.get("page") !== "2")
           return jsonResponse(list([repo(1), repo(2)], { total: 3 }));
         await new Promise<void>((resolve) => (release = resolve));
@@ -145,7 +145,7 @@ describe("RepositoriesView", () => {
 
   it("links a repository to its pages, and its reviews to Runs", async () => {
     mockFetch({
-      "GET /api/ui/repositories": list([repo(1)], { connections: [] }),
+      "GET /api/ui/repositories/overview": list([repo(1)], { connections: [] }),
     });
     renderView("member");
     await waitFor(() => expect(table()?.textContent).toContain("acme/repo-1"));
@@ -161,7 +161,7 @@ describe("RepositoriesView", () => {
   it("disconnects a repository and updates the list without a reload", async () => {
     let connected = true;
     const seen = mockFetch({
-      "GET /api/ui/repositories": () => jsonResponse(list(connected ? [repo(1)] : [])),
+      "GET /api/ui/repositories/overview": () => jsonResponse(list(connected ? [repo(1)] : [])),
       "GET /api/ui/repositories/setup": SETUP,
       [`DELETE /api/ui/repositories/${repo(1).id}`]: () => {
         connected = false;
@@ -180,7 +180,7 @@ describe("RepositoriesView", () => {
   it("recreates a webhook and drops the problem from the connection's health", async () => {
     let fixed = false;
     mockFetch({
-      "GET /api/ui/repositories": () =>
+      "GET /api/ui/repositories/overview": () =>
         jsonResponse(
           list([repo(1)], {
             connections: [
@@ -204,7 +204,7 @@ describe("RepositoriesView", () => {
   it("removes a connection and its repositories without a reload", async () => {
     let removed = false;
     mockFetch({
-      "GET /api/ui/repositories": () =>
+      "GET /api/ui/repositories/overview": () =>
         jsonResponse(removed ? list([], { connections: [] }) : list([repo(1)])),
       "GET /api/ui/repositories/setup": SETUP,
       [`DELETE /api/ui/scm-connections/${CONNECTION_ID}`]: () => {
@@ -225,7 +225,7 @@ describe("RepositoriesView", () => {
   it("connects GitLab and goes on to pick its projects once the list knows the connection", async () => {
     let connected = false;
     const seen = mockFetch({
-      "GET /api/ui/repositories": () =>
+      "GET /api/ui/repositories/overview": () =>
         jsonResponse(list([], { connections: connected ? [gitlab] : [] })),
       "GET /api/ui/repositories/setup": SETUP,
       "POST /api/ui/gitlab-connections": () => {
@@ -256,7 +256,7 @@ describe("RepositoriesView", () => {
   it("shows a failed load in place with a retry", async () => {
     let fail = true;
     mockFetch({
-      "GET /api/ui/repositories": () =>
+      "GET /api/ui/repositories/overview": () =>
         fail ? jsonResponse({ error: "Database unavailable." }, 500) : jsonResponse(list([])),
       "GET /api/ui/repositories/setup": SETUP,
     });

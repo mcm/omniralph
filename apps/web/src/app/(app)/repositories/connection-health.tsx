@@ -15,35 +15,9 @@ import { useApiMutation } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
 import type { ConnectionHealthRow, ConnectionProblemRow } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
-import { formatDate } from "@/lib/format-date";
+import { problemText, WEBHOOK_PROBLEM_CODES } from "@/lib/connections/health";
 
 export type { ConnectionHealthRow, ConnectionProblemRow };
-
-const WEBHOOK_PROBLEMS = new Set(["webhook_missing", "webhook_events_outdated"]);
-
-function expiry(tokenExpiresAt: string | null): string {
-  return tokenExpiresAt
-    ? `The bot token expires on ${formatDate(tokenExpiresAt)}.`
-    : "GitLab doesn't report when the bot token expires.";
-}
-
-/** What the connection's admins are told about a problem. */
-export function problemText(problem: ConnectionProblemRow, health: ConnectionHealthRow): string {
-  switch (problem.code) {
-    case "access_token_bot":
-      return (
-        "The bot token is a group or project access token, so agents' clones and pushes will fail: " +
-        "GitLab doesn't let those create the project access tokens agents use. Reconnect GitLab " +
-        "with a service account's personal access token (api scope, Maintainer on the projects)."
-      );
-    case "token_expiring":
-      return `${expiry(health.tokenExpiresAt)} Omniralph rotates it daily; if it isn't rotated in time, reconnect GitLab with a new token.`;
-    case "rotation_unsupported":
-      return `${problem.message} ${expiry(health.tokenExpiresAt)}`;
-    default:
-      return problem.message;
-  }
-}
 
 function RecreateWebhookButton({ repositoryId }: { repositoryId: string }) {
   const recreate = useApiMutation({
@@ -107,9 +81,11 @@ export function ConnectionHealth({
                   >
                     <Cluster gap={2}>
                       <span className="flex-1">{problemText(problem, health)}</span>
-                      {isAdmin && problem.repositoryId && WEBHOOK_PROBLEMS.has(problem.code) && (
-                        <RecreateWebhookButton repositoryId={problem.repositoryId} />
-                      )}
+                      {isAdmin &&
+                        problem.repositoryId &&
+                        WEBHOOK_PROBLEM_CODES.includes(problem.code) && (
+                          <RecreateWebhookButton repositoryId={problem.repositoryId} />
+                        )}
                     </Cluster>
                   </li>
                 ))}

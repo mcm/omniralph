@@ -209,6 +209,7 @@ const agentInstallables = await import("./agents/[id]/installables/route");
 const agentInstalls = await import("./agents/[id]/installs/route");
 const agentHostTools = await import("./agents/[id]/host-tools/route");
 const repositoryList = await import("./repositories/route");
+const repositoryOverview = await import("./repositories/overview/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
 const repositoryDetail = repository;
@@ -1285,24 +1286,72 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       next: `/agents/${b.agentId}`,
     });
   });
-  it("lists each organization's own repositories, and its connections to its admins only", async () => {
+  it("lists each organization's own repositories on the Repos rail, and 404s on the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
     ] as const) {
       for (const userId of [own.adminId, own.memberId]) {
         state.userId = userId;
-        const { status, body } = await call(repositoryList.GET);
-        expect(status).toBe(200);
-        expect((body.repositories as { id: string }[]).map((r) => r.id)).toEqual([own.repoId]);
-        expect((body.connections as { id: string }[]).map((c) => c.id)).toEqual(
+        for (const organization of [undefined, "all", own.orgId]) {
+          const query = organization ? `?organization=${organization}` : "";
+          const { status, body } = await call(repositoryList.GET, { path: `/api/ui${query}` });
+          expect(status).toBe(200);
+          expect(body.repositories as { id: string; organization: { id: string } }[]).toEqual([
+            expect.objectContaining({
+              id: own.repoId,
+              organization: expect.objectContaining({ id: own.orgId }),
+            }),
+          ]);
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        }
+        expect(
+          await call(repositoryList.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
+        // The old Repositories page's list shows the connections to admins only.
+        const legacy = await call(repositoryOverview.GET);
+        expect((legacy.body.repositories as { id: string }[]).map((r) => r.id)).toEqual([
+          own.repoId,
+        ]);
+        expect((legacy.body.connections as { id: string }[]).map((c) => c.id)).toEqual(
           userId === own.adminId ? [own.connectionId] : [],
         );
-        for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        for (const marker of markers(other)) {
+          expect(JSON.stringify(legacy.body)).not.toContain(marker);
+        }
       }
       // The Connect buttons' setup is for admins.
       state.userId = own.memberId;
       expect(await call(repositorySetup.GET)).toMatchObject({ status: 403 });
+    }
+    // A member of both gets both organizations' repositories under organization=all, each
+    // with their role there.
+    const [both] = await db
+      .insert(users)
+      .values({ id: "repos-rail-both", email: "repos-both@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: both!.id, role: "admin" },
+      { organizationId: b.orgId, userId: both!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: both!.id, organizationId: a.orgId });
+    try {
+      state.userId = both!.id;
+      const all = await call(repositoryList.GET, { path: "/api/ui?organization=all" });
+      expect(all.status).toBe(200);
+      const rows = all.body.repositories as {
+        id: string;
+        organization: { id: string; role: string };
+      }[];
+      expect(new Map(rows.map((r) => [r.id, r.organization]))).toEqual(
+        new Map([
+          [a.repoId, expect.objectContaining({ id: a.orgId, role: "admin" })],
+          [b.repoId, expect.objectContaining({ id: b.orgId, role: "member" })],
+        ]),
+      );
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, both!.id));
+      await db.delete(users).where(eq(users.id, both!.id));
     }
   });
 

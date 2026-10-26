@@ -12,7 +12,10 @@ import {
 } from "@/components/query-test-utils";
 import { api } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/keys";
-import { repositoryListSchema, type RepositoryList } from "@/lib/api/repositories";
+import {
+  legacyRepositoryListSchema,
+  type LegacyRepositoryList as RepositoryList,
+} from "@/lib/api/repositories";
 import { GitHubReposView } from "./github/[connectionId]/github-repos-view";
 import { GitLabProjectsView } from "./gitlab/[connectionId]/gitlab-projects-view";
 
@@ -130,7 +133,7 @@ describe("GitHub repository picker", () => {
         saved = true;
         return jsonResponse({ ok: true });
       },
-      "GET /api/ui/repositories": () => {
+      "GET /api/ui/repositories/overview": () => {
         events.push("list");
         return jsonResponse(repositoryList(saved ? ["acme/api", "acme/web"] : ["acme/api"]));
       },
@@ -140,7 +143,7 @@ describe("GitHub repository picker", () => {
     const listKey = keys.repositories.list({ page: 1 });
     await client.prefetchQuery({
       queryKey: listKey,
-      queryFn: () => api.get("/api/ui/repositories", repositoryListSchema),
+      queryFn: () => api.get("/api/ui/repositories/overview", legacyRepositoryListSchema),
     });
     render(<GitHubReposView />, { wrapper: queryWrapper(client) });
     router.push.mockImplementation(() => {

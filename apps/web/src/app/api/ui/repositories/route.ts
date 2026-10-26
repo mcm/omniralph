@@ -1,55 +1,21 @@
-import {
-  listRepositoryOverviewPage,
-  listScmConnections,
-  REPOSITORY_PAGE_SIZE,
-  repositorySwitches,
-} from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
 import type { RepositoryList } from "@/lib/api/repositories";
-import { hasRole } from "@/lib/auth/roles";
+import { resolveOrganizationScope } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
-import { parsePage } from "@/lib/pagination";
-import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { loadRepositoryList } from "@/lib/repositories/list";
 
-const listQuery = z.object({ page: z.string().optional() });
+const listQuery = z.object({ organization: z.string().optional() });
 
 /**
- * A page of the active organization's connected repositories, and (admins only) its code-host
- * connections with their health: the Repositories page.
+ * The Repos rail: every connected repository of the active organization, one of the user's
+ * organizations (`organization=<id>`) or all of them (`organization=all`), with its
+ * switches and status, capped at 500 (`truncated`). Another organization answers 404.
  */
 export const GET = apiHandler(
   { query: listQuery },
   async ({ user, query }): Promise<RepositoryList> => {
-    const db = getDb();
-    const organizationId = user.organization.id;
-    const [repos, connections] = await Promise.all([
-      listRepositoryOverviewPage(db, organizationId, {
-        page: parsePage(query.page),
-        pageSize: REPOSITORY_PAGE_SIZE,
-      }),
-      hasRole(user, "admin") ? listScmConnections(db, organizationId) : [],
-    ]);
-    return {
-      page: repos.page,
-      pageSize: repos.pageSize,
-      total: repos.total,
-      repositories: repos.repositories.map((repo) => ({
-        id: repo.id,
-        provider: repo.provider,
-        fullPath: repo.fullPath,
-        webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
-        taskTypes: repositorySwitches(repo),
-        depth: repo.reviewDepth,
-        pinnedAgents: repo.pinnedAgents,
-        lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
-      })),
-      connections: connections.map((connection) => ({
-        id: connection.id,
-        provider: connection.provider,
-        name: connection.name,
-        health: connection.health,
-      })),
-    };
+    const organizations = await resolveOrganizationScope(user, query.organization);
+    return loadRepositoryList(getDb(), organizations);
   },
 );
