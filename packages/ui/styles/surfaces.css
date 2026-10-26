@@ -223,6 +223,28 @@
   font-size: 13px;
 }
 
+/* A step's own view: a chevron link beside its button, shown only at phone width. */
+.or-step__open {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--or-radius-sm);
+  color: var(--or-ter);
+}
+
+.or-step__open:hover {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-step__open:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
+}
+
 .or-step__link {
   color: inherit;
   text-decoration: none;
@@ -324,6 +346,14 @@
 }
 
 @media (max-width: 768px) {
+  .or-step__open {
+    display: inline-flex;
+  }
+
+  .or-progress-card--step-links .or-step__panel {
+    display: none;
+  }
+
   .or-savebar {
     flex-direction: column;
     align-items: stretch;

@@ -5,6 +5,7 @@ import {
   parseRunFilters,
   runFiltersHref,
   runInListHref,
+  runStepHref,
 } from "./filters";
 
 const REPO = "0b7c2a7e-6f43-4c0a-9a43-2f1c3e0d5a11";
@@ -75,5 +76,19 @@ describe("Runs URLs", () => {
       ),
     ).toBe("/runs/r1?kind=epic&step=s1&attempt=a1&tab=attempts");
     expect(runInListHref("r1", NO_RUN_FILTERS, { step: null, tab: "" })).toBe("/runs/r1");
+  });
+});
+
+describe("runStepHref", () => {
+  it("links a step's own view, keeping the filters, the attempt and the tab", () => {
+    expect(runStepHref("r1", "s1", NO_RUN_FILTERS)).toBe("/runs/r1/steps/s1");
+    expect(
+      runStepHref(
+        "r1",
+        "s1",
+        { ...NO_RUN_FILTERS, kind: ["epic"], repository: [REPO] },
+        { attempt: "a1", tab: "attempts" },
+      ),
+    ).toBe(`/runs/r1/steps/s1?kind=epic&repository=${REPO}&attempt=a1&tab=attempts`);
   });
 });

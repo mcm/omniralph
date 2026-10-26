@@ -1,6 +1,6 @@
 "use client";
 
-import { IconMinus } from "@tabler/icons-react";
+import { IconChevronRight, IconMinus } from "@tabler/icons-react";
 import { useId, type ReactNode } from "react";
 import { useLinkComponent } from "../provider/index.js";
 import { StatusDot, type StatusTone } from "../status/index.js";
@@ -38,6 +38,12 @@ export interface ProgressCardProps {
   onSelectStep?: (stepId: string) => void;
   /** With `onSelectStep`, shown inside the selected step, under it (e.g. its transcript). */
   stepPanel?: ReactNode;
+  /**
+   * With `onSelectStep`, each step also gets a chevron link to its own view (`.or-step__open`,
+   * named "Open {label}"), beside its button. The chevrons show only at phone width (768 px
+   * and narrower), where the inline `stepPanel` is hidden instead.
+   */
+  stepHref?: (stepId: string) => string;
   className?: string;
 }
 
@@ -68,6 +74,7 @@ export function ProgressCard({
   selectedStepId,
   onSelectStep,
   stepPanel,
+  stepHref,
   className,
 }: ProgressCardProps) {
   const LinkComponent = useLinkComponent();
@@ -75,6 +82,7 @@ export function ProgressCard({
   const summary = progressSummary(steps, summarySuffix);
   const done = steps.filter((step) => step.state === "done").length;
   const width = steps.length > 0 ? `${100 / steps.length}%` : undefined;
+  const stepLinks = onSelectStep !== undefined && stepHref !== undefined;
 
   return (
     <Card
@@ -90,7 +98,13 @@ export function ProgressCard({
       titleId={titleId}
       headingLevel={headingLevel}
       actions={actions}
-      className={["or-progress-card", className].filter(Boolean).join(" ")}
+      className={[
+        "or-progress-card",
+        stepLinks ? "or-progress-card--step-links" : undefined,
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <div
         className="or-progress"
@@ -156,6 +170,15 @@ export function ProgressCard({
                 ) : (
                   content
                 )}
+                {stepLinks ? (
+                  <LinkComponent
+                    href={stepHref(step.id)}
+                    className="or-step__open"
+                    aria-label={`Open ${step.label}`}
+                  >
+                    <IconChevronRight size={16} stroke={1.75} aria-hidden="true" />
+                  </LinkComponent>
+                ) : null}
                 {selected && stepPanel !== undefined ? (
                   <div className="or-step__panel">{stepPanel}</div>
                 ) : null}

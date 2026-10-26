@@ -71,6 +71,16 @@ describe("surfaces.css", () => {
     expect(declarations(".or-more-info__summary::-webkit-details-marker").display).toBe("none");
   });
 
+  it("shows the step chevrons, and hides the inline step panel, only at phone width", () => {
+    expect(declarations(".or-step__open").display).toBe("none");
+    const phone = css.match(/@media \(max-width: 768px\) \{((?:[^{}]*\{[^}]*\})*)\s*\}/)?.[1] ?? "";
+    expect(phone).toMatch(/\.or-step__open\s*\{[^}]*display:\s*inline-flex/);
+    expect(phone).toMatch(
+      /\.or-progress-card--step-links \.or-step__panel\s*\{[^}]*display:\s*none/,
+    );
+    expect(declarations(".or-progress-card--step-links .or-step__panel").display).toBeUndefined();
+  });
+
   it("keeps the save bar in view and gives nothing a glow", () => {
     expect(declarations(".or-savebar")).toMatchObject({ position: "sticky" });
     expect(css).not.toMatch(/box-shadow/);

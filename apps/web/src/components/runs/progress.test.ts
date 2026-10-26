@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { RunStep } from "@/lib/api/runs";
-import { formatDuration, progressTitle, stepState, stepsToProgress } from "./progress";
+import {
+  formatDuration,
+  progressTitle,
+  stepState,
+  stepStatusLine,
+  stepsToProgress,
+} from "./progress";
 import { storyStep } from "./test-fixtures";
 
 const MINUTE = 60_000;
@@ -108,5 +114,21 @@ describe("progressTitle", () => {
       expect(progressTitle(kind, "link")).toBe("Turns");
       expect(progressTitle(kind, "select")).toBe("Turns");
     }
+  });
+});
+
+describe("stepStatusLine", () => {
+  it("reads the step's name and state, toned like its dot", () => {
+    expect(stepStatusLine(storyStep("2", "running"))).toEqual({
+      tone: "run",
+      text: "Story 2 · Running",
+      state: "Running",
+    });
+    expect(stepStatusLine(storyStep("3", "exhausted")).tone).toBe("fail");
+    expect(stepStatusLine(storyStep("4", "manual"))).toMatchObject({
+      tone: "need",
+      text: "Story 4 · Waiting on you",
+    });
+    expect(stepStatusLine(storyStep("1", "completed")).tone).toBe("neutral");
   });
 });

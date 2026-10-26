@@ -1,4 +1,4 @@
-import { FIXTURE_IDS } from "../fixtures/ids";
+import { FIXTURE_IDS, fixtureId } from "../fixtures/ids";
 
 /**
  * One screen `verify:screens` captures. `page` is the `page.tsx` it renders
@@ -67,6 +67,13 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     name: "run-epic-failed",
     path: `/runs/${ids.ralphRuns.failed}`,
     page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // The running epic's first story as its own view (the phone step page).
+    name: "run-epic-step",
+    path: `/runs/${ids.ralphRuns.running}/steps/${fixtureId("ralphStory", 100)}`,
+    page: "(app)/runs/[id]/steps/[stepId]/page.tsx",
     auth: "signed-in",
   },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },

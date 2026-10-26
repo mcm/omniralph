@@ -160,4 +160,34 @@ describe("ProgressCard", () => {
     render(<ProgressCard title="Plan" steps={STEPS} stepPanel={<p>Panel</p>} />);
     expect(screen.queryByText("Panel")).toBeNull();
   });
+
+  it("gives each selectable step a chevron link to its own view, beside its button", () => {
+    render(
+      <ProgressCard
+        title="Plan"
+        steps={STEPS}
+        selectedStepId="c"
+        onSelectStep={vi.fn()}
+        stepHref={(id) => `/runs/1/steps/${id}`}
+        stepPanel={<p>Panel</p>}
+      />,
+    );
+    const card = screen.getByRole("region", { name: "Plan" });
+    expect(card.className).toContain("or-progress-card--step-links");
+    const link = screen.getByRole("link", { name: "Open Approve the PRD" });
+    expect(link.getAttribute("href")).toBe("/runs/1/steps/b");
+    expect(link.className).toBe("or-step__open");
+    // A sibling of the step's button, never inside it.
+    expect(link.closest("button")).toBeNull();
+    expect(link.querySelector("a, button")).toBeNull();
+    expect(link.previousElementSibling?.tagName).toBe("BUTTON");
+    expect(screen.getAllByRole("link")).toHaveLength(STEPS.length);
+    expect(screen.getByText("Panel")).toBeTruthy();
+  });
+
+  it("draws no chevron links without step selection", () => {
+    render(<ProgressCard title="Plan" steps={STEPS} stepHref={(id) => `/s/${id}`} />);
+    expect(screen.queryByRole("link", { name: /^Open / })).toBeNull();
+    expect(screen.getByRole("region", { name: "Plan" }).className).not.toContain("step-links");
+  });
 });

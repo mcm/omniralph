@@ -250,6 +250,17 @@ describe("AppShell nav indicators", () => {
     ]);
   });
 
+  it("puts the running dot on the phone tab bar's Runs tab, on a run's page too", async () => {
+    mockFetch({
+      "GET /api/ui/live/token": { token: null },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 3 },
+    });
+    renderShell("/runs/123/steps/456");
+    const runsTab = await within(tabBar()).findByRole("link", { name: "Runs, 3 running" });
+    expect(runsTab.getAttribute("aria-current")).toBe("page");
+    expect(runsTab.querySelector(".or-nav__pip")!.classList.contains("or-dot--run")).toBe(true);
+  });
+
   it("hides the count at 0 and asks for every organization under All organizations", async () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },

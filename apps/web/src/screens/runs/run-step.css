@@ -1,0 +1,38 @@
+/*
+ * A step of a run as its own view (Design board MobileRun): the back link to the run, the
+ * step's status line and its panel at full width, at every viewport. Only `--or-` tokens.
+ */
+.or-run-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px 28px 32px;
+}
+
+.or-run-step__back {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--or-sec);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-run-step__back:hover {
+  color: var(--or-text);
+}
+
+.or-run-step .or-step-panel {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .or-run-step {
+    padding: 12px 16px 24px;
+  }
+}
