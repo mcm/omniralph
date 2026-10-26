@@ -2,6 +2,7 @@ import {
   HEARTBEAT_INTERVAL_SECONDS,
   effectivePoolLimit,
   poolForTaskType,
+  type AgentHostReport,
   type Heartbeat,
   type HeartbeatResponse,
   type JobFailure,
@@ -18,6 +19,7 @@ import {
   type JobOutput,
 } from "./capabilities/index.js";
 import { acceptedTaskTypes, execPathBlocked, type AgentConfig } from "./config.js";
+import { agentHost } from "./host.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
 import type { ModelReporter } from "./models.js";
@@ -96,6 +98,8 @@ export interface DaemonOptions {
   hostToolSearchPath?: () => string | undefined;
   /** The Claude models reported in every heartbeat (none when unset). */
   models?: Pick<ModelReporter, "current">;
+  /** The machine the agent runs on, reported in every heartbeat (default `agentHost()`). */
+  host?: () => AgentHostReport;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
   /**
@@ -353,6 +357,7 @@ export class AgentDaemon implements DrainableDaemon {
         hostTools,
         models,
         acceptedTaskTypes: this.acceptedTaskTypes(),
+        host: (this.options.host ?? (() => agentHost()))(),
         ...this.options.updater?.report(),
         ...this.wakeReport(),
       });

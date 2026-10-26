@@ -148,6 +148,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       ["installables", { installables: [{ name: "gh", version: "2.0.0" }] }],
       ["models", { models: [{ value: "opus", displayName: "Opus" }] }],
       ["handled update request", { handledUpdateRequestId: randomUUID() }],
+      ["host", { host: { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "w" } } }],
     ])("writes the row when the %s changed", async (_name, change) => {
       const agentId = await newAgent();
       await recordHeartbeat(db, agentId, REPORT, at(0));

@@ -59,6 +59,26 @@ describe("protocol", () => {
     expect(Heartbeat.safeParse({ ...base, models: tooMany }).success).toBe(false);
   });
 
+  it("accepts an optional host, so older agents validate", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.parse(base).host).toBeUndefined();
+    const plain = { hostname: "build-01", coder: null };
+    expect(Heartbeat.parse({ ...base, host: plain }).host).toEqual(plain);
+    const coder = { hostname: "ws-1", coder: { owner: "steve", workspace: "omniralph" } };
+    expect(Heartbeat.parse({ ...base, host: coder }).host).toEqual(coder);
+    expect(
+      Heartbeat.safeParse({ ...base, host: { hostname: "x".repeat(255), coder: null } }).success,
+    ).toBe(true);
+    expect(
+      Heartbeat.safeParse({ ...base, host: { hostname: "x".repeat(256), coder: null } }).success,
+    ).toBe(false);
+    expect(Heartbeat.safeParse({ ...base, host: { hostname: "build-01" } }).success).toBe(false);
+    expect(
+      Heartbeat.safeParse({ ...base, host: { hostname: "ws-1", coder: { owner: "steve" } } })
+        .success,
+    ).toBe(false);
+  });
+
   it("defaults a heartbeat's host tools to none and validates them", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
     expect(Heartbeat.parse(base).hostTools).toEqual([]);

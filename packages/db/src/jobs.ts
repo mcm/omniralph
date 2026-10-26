@@ -21,7 +21,12 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
-import { agentVersionAtLeast, isJobTaskType, poolForTaskType } from "@omniralph/shared";
+import {
+  agentVersionAtLeast,
+  isJobTaskType,
+  poolForTaskType,
+  type AgentHostReport,
+} from "@omniralph/shared";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveHostToolPath } from "./host-tools.js";
@@ -799,6 +804,8 @@ export async function recordAgentHeartbeat(
      * Older agents send none, which keeps it.
      */
     acceptedTaskTypes?: readonly string[];
+    /** The machine the agent runs on; replaces the last report. Older agents send none, which keeps it. */
+    host?: AgentHostReport;
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
@@ -817,6 +824,7 @@ export async function recordAgentHeartbeat(
       reportedInstallables: input.installables ?? [],
       reportedModels: input.models ?? [],
       ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
+      ...(input.host && { reportedHost: input.host }),
       ...(handled !== null && {
         updateRequestId: clearIfHandled(agents.updateRequestId),
         updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
@@ -836,12 +844,13 @@ export async function recordAgentHeartbeat(
         reportedInstallables: previous.reportedInstallables,
         reportedModels: previous.reportedModels,
         reportedAcceptedTaskTypes: previous.reportedAcceptedTaskTypes,
+        reportedHost: previous.reportedHost,
         updateRequestId: previous.updateRequestId,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
-  // What the fleet shows changed (version, update state, installs, task types): not a steady
+  // What the fleet shows changed (version, update state, installs, task types, host): not a steady
   // heartbeat.
   const after = {
     reportedVersion: row.reportedVersion,
@@ -851,6 +860,7 @@ export async function recordAgentHeartbeat(
     reportedInstallables: row.reportedInstallables,
     reportedModels: row.reportedModels,
     reportedAcceptedTaskTypes: row.reportedAcceptedTaskTypes,
+    reportedHost: row.reportedHost,
     updateRequestId: row.updateRequestId,
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {
