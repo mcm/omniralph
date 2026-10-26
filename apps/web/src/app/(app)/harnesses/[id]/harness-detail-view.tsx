@@ -29,7 +29,7 @@ import {
   Stack,
 } from "@iamthemcmaster/ui";
 import { IconBan, IconCheck, IconClock, IconCloudDownload, IconTrash } from "@tabler/icons-react";
-import { defaultPoolLimit, HarnessVersion, POOLS } from "@omniralph/shared";
+import { defaultPoolLimit, AgentVersion, POOLS } from "@omniralph/shared";
 import { AppHeader } from "@/components/app-header";
 import { Freshness } from "@/components/freshness";
 import { Timestamp } from "@/components/list-table";
@@ -397,7 +397,7 @@ function versionValue(draft: VersionDraft): string | null {
 export function versionInput(draft: VersionDraft): { version: string } | { error: string } {
   const version = versionValue(draft);
   if (version === null) return { version: "" };
-  if (!HarnessVersion.safeParse(version.replace(/^v(?=\d)/, "")).success) {
+  if (!AgentVersion.safeParse(version.replace(/^v(?=\d)/, "")).success) {
     return { error: "Enter a version like 1.4.0, or inherit the organization's." };
   }
   return { version };

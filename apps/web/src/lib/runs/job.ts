@@ -20,7 +20,7 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
  * (`SETUP_COMMANDS_MIN_HARNESS_VERSION`), and a custom task the
  * `minHarnessVersion` of the `requirements` stored with it: the highest that
  * applies. Only harnesses with every installable and host tool in
- * `requirements` (`deriveHarnessRequirements` of the task and its agent)
+ * `requirements` (`deriveAgentRequirements` of the task and its agent)
  * claim the job.
  */
 export function runSpecJobInput(

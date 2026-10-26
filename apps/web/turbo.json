@@ -7,7 +7,7 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.env.example",
         "$TURBO_ROOT$/docs/env.md",
-        "$TURBO_ROOT$/apps/harness/src/**",
+        "$TURBO_ROOT$/apps/agent/src/**",
         "$TURBO_ROOT$/packages/*/src/**",
         "$TURBO_ROOT$/packages/*/scripts/**"
       ]

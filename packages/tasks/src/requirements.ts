@@ -66,7 +66,7 @@ export type RequirementAgentFields = { tools: Pick<AgentTools, "mcpServers"> };
  * task's `requires`, plus each installable whose MCP servers the agent lists
  * (`<package>:<server>`), each once and sorted.
  */
-export function deriveHarnessRequirements(
+export function deriveAgentRequirements(
   task: Partial<Pick<TaskDefinition, "requires">>,
   agent?: RequirementAgentFields | null,
 ): Pick<TaskRequirements, "installables" | "hostTools"> {
@@ -85,7 +85,7 @@ export function deriveHarnessRequirements(
  * What a run of `task` (on `agent`) needs: the harness release that runs its
  * task type, its setup and teardown commands (if any) and every task-type
  * variable its template uses (`minHarnessVersion` in `catalog`), whichever is
- * highest; and the installables and host tools of `deriveHarnessRequirements`.
+ * highest; and the installables and host tools of `deriveAgentRequirements`.
  */
 export function deriveTaskRequirements(
   task: RequirementFields,
@@ -105,6 +105,6 @@ export function deriveTaskRequirements(
   }
   return {
     minHarnessVersion: versions.reduce(higherVersion),
-    ...deriveHarnessRequirements(task, agent),
+    ...deriveAgentRequirements(task, agent),
   };
 }

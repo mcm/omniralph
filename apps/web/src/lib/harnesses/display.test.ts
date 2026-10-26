@@ -18,17 +18,17 @@ describe("isHarnessOnline", () => {
 
 describe("HARNESS_INSTALL_COMMAND", () => {
   it("installs the harness package", () => {
-    expect(HARNESS_INSTALL_COMMAND).toBe("npm install -g @omniralph/harness");
+    expect(HARNESS_INSTALL_COMMAND).toBe("npm install -g @omniralph/agent");
   });
 });
 
 describe("enrollCommand", () => {
   it("builds the command and quotes only when needed", () => {
     expect(enrollCommand("https://omniralph.example.com", "ore_abc-DEF_1")).toBe(
-      "omniralph-harness enroll --server https://omniralph.example.com --token ore_abc-DEF_1",
+      "omniralph-agent enroll --server https://omniralph.example.com --token ore_abc-DEF_1",
     );
     expect(enrollCommand("https://x.example/it's here", "t")).toBe(
-      `omniralph-harness enroll --server 'https://x.example/it'\\''s here' --token t`,
+      `omniralph-agent enroll --server 'https://x.example/it'\\''s here' --token t`,
     );
   });
 });

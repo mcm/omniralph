@@ -84,7 +84,7 @@ describe("docs/env.md", () => {
   });
 
   it("documents every variable the control panel and the agent read", () => {
-    const used = sourceEnvVars(["apps/web/src", "apps/harness/src", "packages"]);
+    const used = sourceEnvVars(["apps/web/src", "apps/agent/src", "packages"]);
     const undocumented = sorted(used).filter(
       (name) => !docs.has(name) && !NOT_CONFIGURED.has(name),
     );

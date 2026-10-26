@@ -32,7 +32,7 @@ import { harnessListSchema } from "@/lib/api/harnesses";
 import type { HarnessRow } from "@/lib/harnesses/rows";
 import {
   HarnessStatusBadge,
-  HarnessVersion,
+  AgentVersion,
   formatPoolLimits,
   JobTargetLink,
   RepositoryBadges,
@@ -94,7 +94,7 @@ function HarnessTableRow({
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
         <div className="list-cell-stack">
-          <HarnessVersion harness={harness} />
+          <AgentVersion harness={harness} />
           {!harness.revoked && <UpdateStatusBadge harness={harness} />}
         </div>
       </TableCell>
@@ -204,7 +204,7 @@ export function HarnessesView() {
           title="Harnesses"
           description={
             <>
-              Hosts running <InlineCode>omniralph-harness</InlineCode>. Their concurrency and pool
+              Hosts running <InlineCode>omniralph-agent</InlineCode>. Their concurrency and pool
               limits are configured here and reach them with their next heartbeat. Each host sets
               the task types it runs in its own config.
             </>

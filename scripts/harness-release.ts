@@ -2,12 +2,12 @@
 //
 // Usage (run after `pnpm install`):
 //   tsx scripts/harness-release.ts status
-//     Prints whether apps/harness/package.json's version should be published now, and writes
+//     Prints whether apps/agent/package.json's version should be published now, and writes
 //     `version`, `tag` and `publish` (true|false) to $GITHUB_OUTPUT when it is set. It should
 //     when no changeset that releases a package is pending (they belong in the Version Packages
 //     pull request first) and that version isn't on npm yet.
 //   tsx scripts/harness-release.ts notes <version> <out-file>
-//     Writes that version's section of apps/harness/CHANGELOG.md to out-file (the GitHub
+//     Writes that version's section of apps/agent/CHANGELOG.md to out-file (the GitHub
 //     Release notes). Fails when the changelog has no section for the version.
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { changesetReleases } from "./check-harness-changeset.js";
 
-export const HARNESS = "@omniralph/harness";
+export const AGENT = "@omniralph/agent";
 
 export function releaseTag(version: string): string {
   return `agent-v${version}`;
@@ -70,10 +70,10 @@ export function pendingReleaseChangesets(
 }
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const harnessDir = path.join(repoRoot, "apps/harness");
+const agentDir = path.join(repoRoot, "apps/agent");
 
-function harnessVersion(): string {
-  const manifest = JSON.parse(readFileSync(path.join(harnessDir, "package.json"), "utf8")) as {
+function agentVersion(): string {
+  const manifest = JSON.parse(readFileSync(path.join(agentDir, "package.json"), "utf8")) as {
     version: string;
   };
   return manifest.version;
@@ -97,7 +97,7 @@ function writeOutputs(outputs: Record<string, string | boolean>): void {
 }
 
 function status(): void {
-  const version = harnessVersion();
+  const version = agentVersion();
   const tag = releaseTag(version);
   const pending = pendingReleaseChangesets(readPendingChangesets());
   if (pending.length > 0) {
@@ -107,15 +107,15 @@ function status(): void {
     writeOutputs({ version, tag, publish: false });
     return;
   }
-  const result = spawnSync("npm", ["view", `${HARNESS}@${version}`, "version", "--json"], {
+  const result = spawnSync("npm", ["view", `${AGENT}@${version}`, "version", "--json"], {
     encoding: "utf8",
   });
   if (result.error) throw result.error;
   const publish = !isPublished(result, version);
   console.log(
     publish
-      ? `${HARNESS}@${version} isn't on npm yet: releasing it as ${tag}.`
-      : `${HARNESS}@${version} is already on npm: nothing to release.`,
+      ? `${AGENT}@${version} isn't on npm yet: releasing it as ${tag}.`
+      : `${AGENT}@${version} is already on npm: nothing to release.`,
   );
   writeOutputs({ version, tag, publish });
 }
@@ -125,10 +125,10 @@ function notes(version: string | undefined, outFile: string | undefined): void {
     console.error("Usage: harness-release.ts notes <version> <out-file>");
     process.exit(2);
   }
-  const changelog = readFileSync(path.join(harnessDir, "CHANGELOG.md"), "utf8");
+  const changelog = readFileSync(path.join(agentDir, "CHANGELOG.md"), "utf8");
   const section = changelogSection(changelog, version);
   if (section === undefined) {
-    console.error(`::error::apps/harness/CHANGELOG.md has no section for ${version}`);
+    console.error(`::error::apps/agent/CHANGELOG.md has no section for ${version}`);
     process.exit(1);
   }
   writeFileSync(outFile, `${section}\n`);

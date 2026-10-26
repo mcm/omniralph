@@ -9,7 +9,7 @@
 import { getStoredPlaybook, listStoredPlaybooks, type StoredPlaybook } from "@omniralph/db";
 import {
   BUILTIN_PLAYBOOKS,
-  deriveHarnessRequirements,
+  deriveAgentRequirements,
   getBuiltinPlaybook,
   isBuiltinId,
   Playbook,
@@ -217,7 +217,7 @@ export async function getPlaybookTask(
  * `playbooks` resolve it (the `requirements` of `runSpecJobInput`): a custom
  * playbook's at least the harness version stored with it, and every
  * playbook's installables and host tools derived from it as it is now
- * (`deriveHarnessRequirements` of its run spec).
+ * (`deriveAgentRequirements` of its run spec).
  */
 export async function taskRunRequirements(
   playbooks: PlaybookSource,
@@ -229,7 +229,7 @@ export async function taskRunRequirements(
   ]);
   return {
     minHarnessVersion: stored?.minHarnessVersion ?? null,
-    ...deriveHarnessRequirements(task, playbook && playbookRunSpec(playbook).agent),
+    ...deriveAgentRequirements(task, playbook && playbookRunSpec(playbook).agent),
   };
 }
 

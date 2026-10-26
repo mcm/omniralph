@@ -1,5 +1,5 @@
 import "server-only";
-import { harnessWakeChannel, orgWakeChannel, type AblyToken } from "@omniralph/shared";
+import { agentWakeChannel, orgWakeChannel, type AblyToken } from "@omniralph/shared";
 import { SignJWT } from "jose";
 
 type Env = Record<string, string | undefined>;
@@ -46,7 +46,7 @@ export async function signAblyToken(
   return signAblyJwt(config, {
     clientId: input.harnessId,
     capability: {
-      [harnessWakeChannel(input.harnessId)]: ["subscribe"],
+      [agentWakeChannel(input.harnessId)]: ["subscribe"],
       [orgWakeChannel(input.organizationId)]: ["subscribe"],
     },
     ttlSeconds: ABLY_TOKEN_TTL_SECONDS,

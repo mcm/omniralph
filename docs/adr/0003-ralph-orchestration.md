@@ -43,7 +43,7 @@ materializes the epic, routes it to a repository, keeps run and story state in P
 `JobDispatcher`, applies their outcomes, talks to Linear and opens the PR/MR through typed
 `ScmAdapter` operations.
 
-Agents (`apps/harness/src/capabilities/ralph/`) run short, self-contained jobs on the `ralph-jobs`
+Agents (`apps/agent/src/capabilities/ralph/`) run short, self-contained jobs on the `ralph-jobs`
 topics, using the v1 job lifecycle, repo cache and credential broker unchanged:
 
 - `ralph.story`: one attempt at one story in the epic's long-lived branch worktree: Claude session,

@@ -1,4 +1,4 @@
-import { HarnessUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
+import { AgentUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
 import { z } from "zod";
 import type { AuditEventName } from "@/lib/harnesses/display";
 import type { HarnessRow } from "@/lib/harnesses/rows";
@@ -19,7 +19,7 @@ export const harnessRowSchema = z.object({
   desiredVersionOverride: z.string().nullable(),
   tracksLatest: z.boolean(),
   selfUpdate: z.enum(SELF_UPDATE_SUPPORT).nullable(),
-  update: HarnessUpdateReport.nullable(),
+  update: AgentUpdateReport.nullable(),
   failedVersions: z.array(z.string()),
   updateRequest: z.object({ version: z.string(), requestedAt: isoDate }).nullable(),
   updateStatus: z.enum(["up_to_date", "updating", "failed", "manual"]),
@@ -76,7 +76,7 @@ export const createdEnrollmentSchema = mutationResultSchema.extend({
   token: z.string(),
   /** 1 hour from its creation. */
   expiresAt: isoDate,
-  /** The `omniralph-harness enroll …` command to run on the harness host. */
+  /** The `omniralph-agent enroll …` command to run on the harness host. */
   command: z.string(),
 });
 export type CreatedEnrollment = z.infer<typeof createdEnrollmentSchema>;

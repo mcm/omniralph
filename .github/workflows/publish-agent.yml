@@ -1,6 +1,6 @@
 name: Publish agent
 
-# Releases @omniralph/harness with changesets (see apps/harness/README.md › Releasing):
+# Releases @omniralph/agent with changesets (see apps/agent/README.md › Releasing):
 # - while changesets are pending on main, opens or updates the "Version Packages" pull request
 #   (branch changeset-release/main), which bumps the version and writes CHANGELOG.md;
 # - once that pull request is merged, publishes the new version through npm trusted publishing
@@ -42,7 +42,7 @@ jobs:
       # suites aren't part of the published package, and CI already covers them on main. This
       # also skips the web app's private @iamthemcmaster/ui dependency, so no npm token is needed.
       - name: Install
-        run: pnpm install --frozen-lockfile --filter='@omniralph/harness...' --filter=omniralph
+        run: pnpm install --frozen-lockfile --filter='@omniralph/agent...' --filter=omniralph
 
       # Creates or updates the Version Packages pull request while changesets are pending; does
       # nothing otherwise (no publish-script: this workflow publishes and tags itself, below).
@@ -68,7 +68,7 @@ jobs:
 
       - name: Typecheck, lint and test
         if: steps.release.outputs.publish == 'true'
-        run: pnpm turbo run typecheck lint test --filter='@omniralph/harness...'
+        run: pnpm turbo run typecheck lint test --filter='@omniralph/agent...'
 
       # Fails before publishing when CHANGELOG.md has no entry for the version.
       - name: Release notes

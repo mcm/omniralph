@@ -1,4 +1,4 @@
-import type { HarnessUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
+import type { AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
 
 /**
  * Where a harness stands against its desired version:
@@ -21,7 +21,7 @@ export function harnessUpdateStatus(agent: {
   version: string | null;
   desiredVersion: string | null;
   selfUpdate: SelfUpdateSupport | null;
-  update: HarnessUpdateReport | null;
+  update: AgentUpdateReport | null;
   failedVersions: string[];
   /** An admin's "Update now" the harness hasn't acted on yet. */
   updateRequested?: boolean;

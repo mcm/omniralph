@@ -129,7 +129,7 @@ describe("HarnessesView", () => {
           id: ENROLLMENT_ID,
           token: "ore_secret",
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-          command: "omniralph-harness enroll --server https://x --token ore_secret",
+          command: "omniralph-agent enroll --server https://x --token ore_secret",
         });
       },
       [`/api/ui/harness-enrollments/${ENROLLMENT_ID}`]: () =>

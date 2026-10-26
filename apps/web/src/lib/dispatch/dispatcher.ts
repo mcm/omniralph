@@ -11,7 +11,7 @@ import {
   type Job,
   type NewJobInput,
 } from "@omniralph/db";
-import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
+import { agentWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
 import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
 import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
@@ -99,7 +99,7 @@ export class PostgresDispatcher implements JobDispatcher {
   private async wake(job: Pick<Job, "organizationId" | "targetHarnessId">): Promise<void> {
     if (!this.wakePublisher) return;
     const channel = job.targetHarnessId
-      ? harnessWakeChannel(job.targetHarnessId)
+      ? agentWakeChannel(job.targetHarnessId)
       : orgWakeChannel(job.organizationId);
     try {
       await this.wakePublisher.wake(channel);

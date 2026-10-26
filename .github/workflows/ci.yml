@@ -36,10 +36,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # A pull request that changes the harness, or a workspace package it bundles, must add a
-      # changeset for @omniralph/harness (or an empty one). Not for the Version Packages pull
-      # request, which consumes the changesets. See apps/harness/README.md › Releasing.
-      - name: Check for a harness changeset
+      # A pull request that changes the agent, or a workspace package it bundles, must add a
+      # changeset for @omniralph/agent (or an empty one). Not for the Version Packages pull
+      # request, which consumes the changesets. See apps/agent/README.md › Releasing.
+      - name: Check for an agent changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
         run: pnpm exec tsx scripts/check-harness-changeset.ts "origin/$BASE_REF"
         env:

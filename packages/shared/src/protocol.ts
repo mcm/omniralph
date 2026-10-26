@@ -170,15 +170,15 @@ export function effectivePoolLimits(
 }
 
 /** The npm package agents run and update themselves to. */
-export const HARNESS_PACKAGE = "@omniralph/harness";
+export const AGENT_PACKAGE = "@omniralph/agent";
 
 /** A semantic version (semver 2.0, no leading `v`), e.g. `1.4.0` or `1.5.0-beta.1`. */
 export const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 /** An agent version: valid semver, at most 64 characters. */
-export const HarnessVersion = z.string().max(64).regex(SEMVER_PATTERN);
-export type HarnessVersion = z.infer<typeof HarnessVersion>;
+export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
+export type AgentVersion = z.infer<typeof AgentVersion>;
 
 /**
  * Whether agent `version` is at least `minimum`, comparing major.minor.patch
@@ -211,11 +211,11 @@ export type SelfUpdateSupport = (typeof SELF_UPDATE_SUPPORT)[number];
  * running ones finish), `installing`, or `confirming` (running a freshly
  * installed version that hasn't stayed up for a minute yet).
  */
-export const HARNESS_UPDATE_STATES = ["idle", "draining", "installing", "confirming"] as const;
-export type HarnessUpdateStateName = (typeof HARNESS_UPDATE_STATES)[number];
+export const AGENT_UPDATE_STATES = ["idle", "draining", "installing", "confirming"] as const;
+export type AgentUpdateStateName = (typeof AGENT_UPDATE_STATES)[number];
 
-export const HarnessUpdateReport = z.object({
-  state: z.enum(HARNESS_UPDATE_STATES),
+export const AgentUpdateReport = z.object({
+  state: z.enum(AGENT_UPDATE_STATES),
   /** The version being installed or confirmed. */
   version: z.string().max(64).nullable(),
   /** The version before the update (the rollback target). */
@@ -225,18 +225,18 @@ export const HarnessUpdateReport = z.object({
   /** Why the last update failed, if it did. */
   error: z.string().max(2000).nullable(),
 });
-export type HarnessUpdateReport = z.infer<typeof HarnessUpdateReport>;
+export type AgentUpdateReport = z.infer<typeof AgentUpdateReport>;
 
 /**
  * An admin's "Update now" from the control panel: the agent updates to
  * `version` at once, even if it failed before (it's taken off the failed
  * versions), and reports `id` back as `handledUpdateRequestId`.
  */
-export const HarnessUpdateRequest = z.object({
+export const AgentUpdateRequest = z.object({
   id: z.uuid(),
-  version: HarnessVersion,
+  version: AgentVersion,
 });
-export type HarnessUpdateRequest = z.infer<typeof HarnessUpdateRequest>;
+export type AgentUpdateRequest = z.infer<typeof AgentUpdateRequest>;
 
 /** An installable installed on a harness, as its heartbeat reports it. */
 export const ReportedInstallable = z.object({
@@ -298,7 +298,7 @@ export const Heartbeat = z.object({
   /** Whether the agent updates itself to `desiredVersion` (absent from older agents). */
   selfUpdate: z.enum(SELF_UPDATE_SUPPORT).optional(),
   /** The agent's self-update progress. */
-  update: HarnessUpdateReport.optional(),
+  update: AgentUpdateReport.optional(),
   /** Versions that failed to install or to stay up; the agent never retries them. */
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
   /** The last `updateRequest` the agent acted on; the control panel then clears it. */
@@ -325,9 +325,9 @@ export const Heartbeat = z.object({
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
-/** Ably channel that wakes one harness for jobs targeted at it. */
-export function harnessWakeChannel(harnessId: string): string {
-  return `harness:${harnessId}`;
+/** Ably channel that wakes one agent for jobs targeted at it (still `harness:<id>` until TOOL-584). */
+export function agentWakeChannel(agentId: string): string {
+  return `harness:${agentId}`;
 }
 
 /** Ably channel that wakes an organization's harnesses for untargeted jobs. */
@@ -397,9 +397,9 @@ export const HeartbeatResponse = z.object({
    * The version the agent should run (the agent's override, else its
    * organization's setting); null when none is chosen. Agents under pm2 update themselves to it.
    */
-  desiredVersion: HarnessVersion.nullable().default(null),
+  desiredVersion: AgentVersion.nullable().default(null),
   /** An update an admin asked for and the agent hasn't acted on yet. */
-  updateRequest: HarnessUpdateRequest.nullable().default(null),
+  updateRequest: AgentUpdateRequest.nullable().default(null),
   /**
    * The organization's host tools with this harness's configured paths: the
    * harness reports on each in its next heartbeat. A configured path wins;

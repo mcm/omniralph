@@ -41,7 +41,7 @@ function harnessDefaults(overrides: Partial<HarnessDefaults> = {}): HarnessDefau
     desiredVersion: "1.4.0",
     updatedAt: null,
     latest: null,
-    packageName: "@omniralph/harness",
+    packageName: "@omniralph/agent",
     defaults: builtIn,
     builtInDefaults: builtIn,
     ...overrides,

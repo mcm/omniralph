@@ -1,9 +1,9 @@
-// Fails a pull request that changes @omniralph/harness, or a workspace package it bundles,
-// without adding a changeset that names @omniralph/harness or an empty changeset
+// Fails a pull request that changes @omniralph/agent, or a workspace package it bundles,
+// without adding a changeset that names @omniralph/agent or an empty changeset
 // (`pnpm changeset --empty`, the deliberate "no release note" opt-out).
 //
 // The bundled packages are private devDependencies, so `changeset status` doesn't map their
-// changes to the harness: this check does, from the workspace graph.
+// changes to the agent: this check does, from the workspace graph.
 //
 // Usage: tsx scripts/check-harness-changeset.ts <base-ref>   (e.g. origin/main; run after `pnpm install`)
 import { execFileSync } from "node:child_process";
@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const HARNESS = "@omniralph/harness";
+export const AGENT = "@omniralph/agent";
 
 export interface Changeset {
   path: string;
@@ -21,7 +21,7 @@ export interface Changeset {
 export interface CheckInput {
   /** Repo-relative paths the pull request changes. */
   changedFiles: string[];
-  /** Repo-relative directories of the harness and the workspace packages it depends on. */
+  /** Repo-relative directories of the agent and the workspace packages it depends on. */
   packageDirs: string[];
   /** The `.changeset/*.md` files the pull request adds or edits. */
   changesets: Changeset[];
@@ -60,14 +60,14 @@ export function touchedPackageDirs(changedFiles: string[], packageDirs: string[]
   });
 }
 
-export function checkHarnessChangeset({
+export function checkAgentChangeset({
   changedFiles,
   packageDirs,
   changesets,
 }: CheckInput): CheckResult {
   const touched = touchedPackageDirs(changedFiles, packageDirs);
   if (touched.length === 0) {
-    return { ok: true, message: `No changes to ${HARNESS} or its workspace packages.` };
+    return { ok: true, message: `No changes to ${AGENT} or its workspace packages.` };
   }
 
   for (const changeset of changesets) {
@@ -76,19 +76,19 @@ export function checkHarnessChangeset({
     if (releases.length === 0) {
       return { ok: true, message: `${changeset.path} is an empty changeset: no release note.` };
     }
-    if (releases.includes(HARNESS)) {
-      return { ok: true, message: `${changeset.path} adds a changeset for ${HARNESS}.` };
+    if (releases.includes(AGENT)) {
+      return { ok: true, message: `${changeset.path} adds a changeset for ${AGENT}.` };
     }
   }
 
   return {
     ok: false,
     message: [
-      `This pull request changes ${touched.join(", ")}, which ${HARNESS} bundles,`,
-      `but adds no changeset for ${HARNESS}.`,
-      `Run \`pnpm changeset\` and pick ${HARNESS} (also for changes made only in a bundled`,
+      `This pull request changes ${touched.join(", ")}, which ${AGENT} bundles,`,
+      `but adds no changeset for ${AGENT}.`,
+      `Run \`pnpm changeset\` and pick ${AGENT} (also for changes made only in a bundled`,
       "workspace package), or `pnpm changeset --empty` if the change needs no release note.",
-      "See apps/harness/README.md › Releasing.",
+      "See apps/agent/README.md › Releasing.",
     ].join("\n"),
   };
 }
@@ -99,10 +99,10 @@ function git(repoRoot: string, args: string[]): string[] {
     .filter((line) => line !== "");
 }
 
-function harnessPackageDirs(repoRoot: string): string[] {
+function agentPackageDirs(repoRoot: string): string[] {
   const output = execFileSync(
     "pnpm",
-    ["--filter", `${HARNESS}...`, "ls", "--depth", "-1", "--json"],
+    ["--filter", `${AGENT}...`, "ls", "--depth", "-1", "--json"],
     { cwd: repoRoot, encoding: "utf8" },
   );
   const packages = JSON.parse(output) as { name: string; path: string }[];
@@ -124,8 +124,8 @@ function main(): void {
     .filter((file) => existsSync(path.join(repoRoot, file)))
     .map((file) => ({ path: file, content: readFileSync(path.join(repoRoot, file), "utf8") }));
 
-  const packageDirs = harnessPackageDirs(repoRoot);
-  const result = checkHarnessChangeset({ changedFiles, packageDirs, changesets });
+  const packageDirs = agentPackageDirs(repoRoot);
+  const result = checkAgentChangeset({ changedFiles, packageDirs, changesets });
   if (result.ok) {
     console.log(`check-harness-changeset: ${result.message}`);
   } else {

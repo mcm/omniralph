@@ -134,7 +134,7 @@ export function UpdateStatusBadge({
 }
 
 /** The reported version, and the desired one when it differs. */
-export function HarnessVersion({ harness }: { harness: HarnessRow }) {
+export function AgentVersion({ harness }: { harness: HarnessRow }) {
   const target = harness.updateRequest?.version ?? harness.desiredVersion;
   return harness.version ? (
     <span className="list-text text-numeric list-nowrap">

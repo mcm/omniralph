@@ -15,8 +15,8 @@ import {
   parseInstallableMcpServerRef,
 } from "./installables.js";
 import {
-  HARNESS_TOOLS,
-  HARNESS_TOOLS_BY_TASK_TYPE,
+  AGENT_TOOLS,
+  AGENT_TOOLS_BY_TASK_TYPE,
   LINEAR_TOOLS,
   SINK_KINDS,
   TASK_TYPES,
@@ -27,7 +27,7 @@ import {
 export const TaskTypeSchema = z.enum(TASK_TYPES);
 export const TriggerKindSchema = z.enum(TRIGGER_KINDS);
 export const SinkKindSchema = z.enum(SINK_KINDS);
-export const HarnessToolSchema = z.enum(HARNESS_TOOLS);
+export const AgentToolSchema = z.enum(AGENT_TOOLS);
 export const LinearToolSchema = z.enum(LINEAR_TOOLS);
 
 const Name = z.string().trim().min(1).max(200);
@@ -46,7 +46,7 @@ export const AgentTools = z.object({
   /** Claude Code tool names (`Read`, `Grep`, `Bash`, …). */
   builtin: z.array(z.string().min(1).max(100)).default([]),
   /** Harness tools from the `omniralph` MCP server. */
-  harness: z.array(HarnessToolSchema).default([]),
+  harness: z.array(AgentToolSchema).default([]),
   /** Read-only Linear tools (need `toolSettings.linearRead`). */
   linear: z.array(LinearToolSchema).default([]),
   /**
@@ -382,7 +382,7 @@ export function harnessToolsProblem(
   tools: Pick<AgentTools, "harness">,
   taskType: TaskType,
 ): string | null {
-  const allowed = HARNESS_TOOLS_BY_TASK_TYPE[taskType];
+  const allowed = AGENT_TOOLS_BY_TASK_TYPE[taskType];
   const disallowed = tools.harness.filter((tool) => !allowed.includes(tool));
   if (disallowed.length === 0) return null;
   return `${taskType} runs can't use the harness tool${disallowed.length > 1 ? "s" : ""} ${disallowed.join(", ")}.`;

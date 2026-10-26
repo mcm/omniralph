@@ -1,5 +1,5 @@
 import { CHANGE_RESOURCES as DB_CHANGE_RESOURCES } from "@omniralph/db";
-import { harnessWakeChannel, orgWakeChannel } from "@omniralph/shared";
+import { agentWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
 import {
   CHANGE_RESOURCES,
@@ -79,11 +79,11 @@ describe("change channels", () => {
 
   it("never equal an agent's wake channel", () => {
     for (const id of [ID, ORG]) {
-      const wake = [orgWakeChannel(id), harnessWakeChannel(id)];
+      const wake = [orgWakeChannel(id), agentWakeChannel(id)];
       expect(wake).not.toContain(orgChangesChannel(id));
       expect(wake).not.toContain(userChangesChannel(id));
     }
     expect(orgWakeChannel(ORG)).toBe(`org:${ORG}`);
-    expect(harnessWakeChannel(ID)).toBe(`harness:${ID}`);
+    expect(agentWakeChannel(ID)).toBe(`harness:${ID}`);
   });
 });
