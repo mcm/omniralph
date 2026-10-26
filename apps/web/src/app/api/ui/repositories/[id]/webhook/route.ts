@@ -1,4 +1,4 @@
-import { apiHandler } from "@/lib/api/handler";
+import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import { requireRepositoryAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { recreateGitLabWebhook } from "@/lib/repositories/manage";
@@ -10,7 +10,8 @@ import { recreateGitLabWebhook } from "@/lib/repositories/manage";
 export const POST = apiHandler<"member", undefined, undefined, { id: string }>(
   {},
   async ({ user, params }) => {
-    const { organization } = await requireRepositoryAccess(user, params.id, "admin");
+    const { repository, organization } = await requireRepositoryAccess(user, params.id, "admin");
+    if (repository.disconnectedAt) throw ApiRouteError.notFound();
     return recreateGitLabWebhook(getDb(), user, organization.id, params.id);
   },
 );

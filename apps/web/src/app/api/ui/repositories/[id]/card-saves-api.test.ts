@@ -1296,13 +1296,19 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       expect(await options()).toEqual({ status: 200, body: { status: "unavailable" } });
     });
 
-    it("answers 403 for members and 404 for another organization's or an unknown repo", async () => {
+    it("answers 403 for members and 404 for another organization's, an unknown or a removed repo", async () => {
+      const removedId = await connect(orgId, "gitlab", "acme/removed");
+      await db
+        .update(repositories)
+        .set({ disconnectedAt: new Date() })
+        .where(eq(repositories.id, removedId));
       state.user = MEMBER;
       expect((await options()).status).toBe(403);
       state.user = ADMIN;
       expect((await options(otherRepoId)).status).toBe(404);
       expect((await options(randomUUID())).status).toBe(404);
       expect((await options("not-a-uuid")).status).toBe(404);
+      expect((await options(removedId)).status).toBe(404);
       expect(linear.organizations).toEqual([]);
     });
   });

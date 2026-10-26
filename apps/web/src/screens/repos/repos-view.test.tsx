@@ -210,6 +210,18 @@ describe("the rail", () => {
     expect(within(portal!).queryByRole("img", { name: "Organization" })).toBeNull();
   });
 
+  it("marks each repo badge with its code host", async () => {
+    renderRepos();
+    await waitFor(() => expect(railRows()).toHaveLength(2));
+    const [portal, web] = railRows();
+    expect(
+      within(portal!.querySelector(".or-ref")!).getByRole("img", { name: "GitLab" }),
+    ).toBeTruthy();
+    expect(
+      within(web!.querySelector(".or-ref")!).getByRole("img", { name: "GitHub" }),
+    ).toBeTruthy();
+  });
+
   it("leads each row with its organization under All organizations, and asks for all", async () => {
     rows = [portalRow(), betaRow()];
     renderRepos({ user: allOrganizations });
@@ -381,6 +393,16 @@ describe("the layout", () => {
     expect(article.getAttribute("aria-label")).toBe("managed-services/customer-portal");
     expect(rowLink(railRows()[0]!).getAttribute("aria-current")).toBe("page");
     expect(rowLink(railRows()[1]!).getAttribute("aria-current")).toBeNull();
+  });
+
+  it("shows both panes from 880 px and one at a time below it", async () => {
+    renderRepos();
+    await waitFor(() => expect(railRows()).toHaveLength(2));
+    resize(879);
+    expect(detailPane().querySelector(".or-repo-detail")).toBeNull();
+    resize(880);
+    await loadedDetail();
+    expect(rowLink(railRows()[0]!).getAttribute("aria-current")).toBe("page");
   });
 
   it("shows no detail on /repos when the container is narrow", async () => {
@@ -682,6 +704,39 @@ describe("the section index", () => {
     }
   });
 
+  it("marks the section in view as current, watching the detail pane", async () => {
+    type Entry = { target: Element; isIntersecting: boolean };
+    const observed: { callback: (entries: Entry[]) => void; root: Element | null }[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        constructor(callback: (entries: Entry[]) => void, options: { root: Element | null }) {
+          observed.push({ callback, root: options.root });
+        }
+      },
+    );
+    renderRepos({ repositoryId: REPO_PORTAL });
+    const article = await loadedDetail();
+    const index = within(article).getByRole("navigation", { name: "Sections" });
+    await waitFor(() => expect(observed.length).toBeGreaterThan(0));
+    const { callback, root } = observed.at(-1)!;
+    expect(root).toBe(article.closest(".or-split__detail"));
+    act(() =>
+      callback([
+        { target: article.querySelector("section#reviews")!, isIntersecting: false },
+        { target: article.querySelector("section#rules")!, isIntersecting: true },
+      ]),
+    );
+    expect(within(index).getByRole("link", { name: "Rules" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(
+      within(index).getByRole("link", { name: "Reviews" }).getAttribute("aria-current"),
+    ).toBeNull();
+  });
+
   it("scrolls to ?section= on load", async () => {
     const scrolled: string[] = [];
     vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
@@ -705,7 +760,12 @@ describe("the section index", () => {
     renderRepos({ repositoryId: REPO_PORTAL });
     const article = await loadedDetail();
     const index = within(article).getByRole("navigation", { name: "Sections" });
+    const scrolled: string[] = [];
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this.id);
+    });
     await userEvent.setup().click(within(index).getByRole("link", { name: "Agents" }));
+    expect(scrolled).toEqual(["agents"]);
     expect(replace).toHaveBeenCalledTimes(1);
     const url = new URL(String(replace.mock.calls[0]![2]), "http://localhost");
     expect(url.searchParams.get("section")).toBe("agents");
@@ -770,6 +830,55 @@ describe("live updates", () => {
     await waitFor(() => expect(listRequests().length).toBe(before + 1));
     await waitFor(() => expect(dot(railRows()[0]!)?.getAttribute("aria-label")).toBe("1 running"));
     expect(dot(railRows()[0]!)!.classList.contains("or-dot--run")).toBe(true);
+  });
+
+  it("refetch the open repo's detail on a run event too", async () => {
+    const live = fakeAbly();
+    renderRepos({ live, repositoryId: REPO_PORTAL });
+    await loadedDetail();
+    await connected(live);
+    const detail = detailRequests(REPO_PORTAL).length;
+    deliver(live, { resource: "run", runId: "44444444-4444-4444-8444-444444444444" });
+    await waitFor(() => expect(detailRequests(REPO_PORTAL).length).toBe(detail + 1));
+  });
+
+  it("refetch the list and detail on a connection event, showing its problem", async () => {
+    const live = fakeAbly();
+    renderRepos({ live, repositoryId: REPO_PORTAL });
+    await loadedDetail();
+    await connected(live);
+    const lists = listRequests().length;
+    const detail = detailRequests(REPO_PORTAL).length;
+    const status = {
+      running: 0,
+      problems: [{ code: "connection" as const, message: "The GitLab token has expired." }],
+    };
+    rows = [portalRow({ status }), webRow()];
+    details[REPO_PORTAL] = repoDetail(portalRow({ status }));
+    deliver(live, { resource: "connection", ids: ["77777777-7777-4777-8777-777777777777"] });
+    await waitFor(() => expect(listRequests().length).toBe(lists + 1));
+    await waitFor(() => expect(detailRequests(REPO_PORTAL).length).toBe(detail + 1));
+    await waitFor(() =>
+      expect(dot(railRows()[0]!)?.getAttribute("aria-label")).toBe("The GitLab token has expired."),
+    );
+    expect(dot(railRows()[0]!)!.classList.contains("or-dot--fail")).toBe(true);
+    const notice = await within(detailPane()).findByRole("region", { name: "Problems" });
+    expect(notice.textContent).toContain("The GitLab token has expired.");
+  });
+
+  it("refetch a repo's detail on a settings event for it, and no other repo's", async () => {
+    const live = fakeAbly();
+    const { client } = renderRepos({ live, repositoryId: REPO_PORTAL });
+    await loadedDetail();
+    await connected(live);
+    const keys = queryKeys(TEST_ORGANIZATION_ID);
+    client.setQueryData(keys.repositories.detail(REPO_WEB), details[REPO_WEB]);
+    const lists = listRequests().length;
+    const detail = detailRequests(REPO_PORTAL).length;
+    deliver(live, { resource: "settings", section: "repository.reviews", subjectId: REPO_PORTAL });
+    await waitFor(() => expect(detailRequests(REPO_PORTAL).length).toBe(detail + 1));
+    await waitFor(() => expect(listRequests().length).toBe(lists + 1));
+    expect(client.getQueryState(keys.repositories.detail(REPO_WEB))!.isInvalidated).toBe(false);
   });
 
   it("refetch the list and detail on an agent event (an agent going offline)", async () => {

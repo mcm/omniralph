@@ -1203,6 +1203,19 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(after!.webhookId).toBe(api.webhookId);
       expect((await health(connectionId))!.problems).toHaveLength(3);
     });
+
+    it("answers 404 for a removed repo and doesn't touch GitLab", async () => {
+      const { api } = await withWebhookProblems();
+      await state.db
+        .update(repositories)
+        .set({ disconnectedAt: new Date() })
+        .where(eq(repositories.id, api.id));
+      const { result, changes } = await captureChanges(() => recreateGitLabWebhook(api.id));
+      expect(result).toEqual({ ok: false, status: 404, error: expect.any(String) });
+      expect(changes).toEqual([]);
+      expect(deletedHooks).toEqual([]);
+      expect(hookRequests).toEqual([]);
+    });
   });
 
   describe("removing a connection", () => {

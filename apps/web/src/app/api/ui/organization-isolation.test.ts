@@ -1908,6 +1908,46 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           path: `/api/ui?${new URLSearchParams({ organization: b.orgId })}`,
         }),
       ).toMatchObject({ status: 200 });
+      // Picking and adding repos, connecting GitLab and loading a repo's tracker options in
+      // the other organization get past the access check: what answers is the code host
+      // (no GitHub App configured here, GitLab unreachable) or the tracker, not a 403/404.
+      expect(
+        await call(selectable.GET, {
+          params: { id: b.connectionId },
+          path: `/api/ui?${new URLSearchParams({ provider: "github", organization: b.orgId })}`,
+        }),
+      ).toMatchObject({ status: 502, body: { code: "listing_failed" } });
+      expect(
+        await call(selectable.POST, {
+          method: "POST",
+          params: { id: b.connectionId },
+          body: { provider: "github", ids: [500], organizationId: b.orgId },
+        }),
+      ).toMatchObject({
+        status: 400,
+        body: { error: expect.stringContaining("Couldn't list the installation's repositories") },
+      });
+      const offline = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+      try {
+        expect(
+          await call(gitlabConnections.POST, {
+            body: {
+              baseUrl: "https://gitlab.example.com",
+              token: "glpat-x",
+              organizationId: b.orgId,
+            },
+          }),
+        ).toMatchObject({
+          status: 400,
+          body: { error: expect.stringContaining("Couldn't reach GitLab") },
+        });
+      } finally {
+        offline.mockRestore();
+      }
+      expect(await call(repositoryTrackerOptions.GET, { params: { id: b.repoId } })).toMatchObject({
+        status: 200,
+        body: { status: "disconnected" },
+      });
       // A member of the active organization: its connections and setup stay admin-only.
       expect(await call(scmConnectionList.GET)).toMatchObject({ status: 403 });
       expect(await call(repositorySetup.GET)).toMatchObject({ status: 403 });

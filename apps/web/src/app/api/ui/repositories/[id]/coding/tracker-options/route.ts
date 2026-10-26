@@ -1,4 +1,4 @@
-import { apiHandler } from "@/lib/api/handler";
+import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { CodingTrackerOptions } from "@/lib/api/repositories";
 import { requireRepositoryAccess } from "@/lib/api/scope";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
@@ -11,7 +11,8 @@ import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
 export const GET = apiHandler<"member", undefined, undefined, { id: string }>(
   {},
   async ({ user, params }): Promise<CodingTrackerOptions> => {
-    const { organization } = await requireRepositoryAccess(user, params.id, "admin");
+    const { repository, organization } = await requireRepositoryAccess(user, params.id, "admin");
+    if (repository.disconnectedAt) throw ApiRouteError.notFound();
     try {
       const options = await getLinearSettingsOptions(organization.id);
       if (!options) return { status: "disconnected" };

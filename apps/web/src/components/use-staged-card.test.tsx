@@ -26,8 +26,9 @@ interface Thing {
 
 const KEY = queryKeys(TEST_ORGANIZATION_ID).agents.detail("thing");
 
+// Trailing spaces don't count as a change (like a list put back in another order).
 const toChanges = (saved: Thing, draft: Thing): StagedChange[] => [
-  ...(draft.name !== saved.name
+  ...(draft.name.trimEnd() !== saved.name
     ? [{ id: "name", label: "Name", from: saved.name, to: draft.name, effect: "Renames it." }]
     : []),
   ...(draft.enabled !== saved.enabled
@@ -277,5 +278,20 @@ describe("useStagedCard", () => {
     link.addEventListener("click", (event) => event.preventDefault());
     await user.click(link);
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("isn't dirty for an edit with no change to save, and doesn't ask before leaving", async () => {
+    renderThing();
+    const user = userEvent.setup();
+    await screen.findByRole("textbox", { name: "Name" });
+    await user.type(nameInput(), " ");
+    expect(nameInput().value).toBe("alpha ");
+    expect(changeItems()).toEqual([]);
+    const link = screen.getByRole("link", { name: "Elsewhere" });
+    link.addEventListener("click", (event) => event.preventDefault());
+    await user.click(link);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(request).not.toHaveBeenCalled();
   });
 });
