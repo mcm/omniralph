@@ -17,6 +17,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { captureChanges } from "@omniralph/db/changes";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedWorkItemMatch } from "@/lib/api/work-item-matches";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -70,6 +71,16 @@ async function call(handler: Handler, method: "GET" | "PUT", id: string, body?: 
 
 const put = (id: string, body: unknown) => call(workItemMatch.PUT, "PUT", id, body);
 const detail = async (id: string) => (await call(repositoryDetail.GET, "GET", id)).body;
+
+/** The repository's `repository.coding` change, as a save or clear of its match records it. */
+const codingChange = (repositoryId: string) => ({
+  resource: "settings",
+  section: "repository.coding",
+  ids: [repositoryId],
+  subjectId: repositoryId,
+  organizationId: state.orgId,
+  at: expect.any(Date),
+});
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -144,14 +155,17 @@ describe.skipIf(!databaseAvailable)("PUT /api/ui/repositories/{id}/work-item-mat
   it("saves a match, shows it on the repo and clears it", async () => {
     expect(await detail(api)).toMatchObject({ workItemMatch: null, routingRules: [] });
 
-    const saved = await put(api, {
-      match: {
-        tracker: "linear",
-        team: " SOC ",
-        project: null,
-        labels: ["product:portal", "Product:Portal"],
-      },
-    });
+    const { result: saved, changes } = await captureChanges(() =>
+      put(api, {
+        match: {
+          tracker: "linear",
+          team: " SOC ",
+          project: null,
+          labels: ["product:portal", "Product:Portal"],
+        },
+      }),
+    );
+    expect(changes).toEqual([codingChange(api)]);
     expect(saved).toEqual({
       status: 200,
       body: {
@@ -172,7 +186,10 @@ describe.skipIf(!databaseAvailable)("PUT /api/ui/repositories/{id}/work-item-mat
     expect((await detail(api)).workItemMatch).toEqual(saved.body.workItemMatch);
 
     // Saving again replaces it.
-    await put(api, { match: { tracker: "linear", team: "MOD", withoutProject: true } });
+    const replaced = await captureChanges(() =>
+      put(api, { match: { tracker: "linear", team: "MOD", withoutProject: true } }),
+    );
+    expect(replaced.changes).toEqual([codingChange(api)]);
     expect((await detail(api)).workItemMatch).toMatchObject({
       team: "MOD",
       project: null,
@@ -180,12 +197,19 @@ describe.skipIf(!databaseAvailable)("PUT /api/ui/repositories/{id}/work-item-mat
       labels: [],
     });
 
-    expect(await put(api, { match: null })).toEqual({
+    const cleared = await captureChanges(() => put(api, { match: null }));
+    expect(cleared.result).toEqual({
       status: 200,
       body: { ok: true, workItemMatch: null, warnings: [] },
     });
+    expect(cleared.changes).toEqual([codingChange(api)]);
     expect((await detail(api)).workItemMatch).toBeNull();
     expect(await db.select().from(workItemMatches)).toEqual([]);
+
+    // Clearing a repo with no match changes nothing, so publishes nothing.
+    const again = await captureChanges(() => put(api, { match: null }));
+    expect(again.result.status).toBe(200);
+    expect(again.changes).toEqual([]);
   });
 
   it("warns about each other repo whose match overlaps", async () => {
@@ -210,7 +234,10 @@ describe.skipIf(!databaseAvailable)("PUT /api/ui/repositories/{id}/work-item-mat
   });
 
   it("validates the match", async () => {
-    const empty = await put(api, { match: { tracker: "linear", team: "  " } });
+    const { result: empty, changes } = await captureChanges(() =>
+      put(api, { match: { tracker: "linear", team: "  " } }),
+    );
+    expect(changes).toEqual([]);
     expect(empty.status).toBe(400);
     expect(empty.body.fieldErrors).toEqual({ "match.team": "Enter the team's key, e.g. ENG." });
 
@@ -230,17 +257,25 @@ describe.skipIf(!databaseAvailable)("PUT /api/ui/repositories/{id}/work-item-mat
   it("needs the tracker connected to save, not to clear", async () => {
     await put(api, { match: { tracker: "linear", team: "ENG" } });
     await db.delete(integrations);
-    expect(await put(web, { match: { tracker: "linear", team: "ENG" } })).toEqual({
+    const refused = await captureChanges(() =>
+      put(web, { match: { tracker: "linear", team: "ENG" } }),
+    );
+    expect(refused.result).toEqual({
       status: 409,
       body: { error: TRACKER_NOT_CONNECTED, code: "tracker_not_connected" },
     });
+    expect(refused.changes).toEqual([]);
     expect((await put(api, { match: null })).status).toBe(200);
     expect(await db.select().from(workItemMatches)).toEqual([]);
   });
 
   it("is for admins only", async () => {
     state.user = { id: adminId, role: "member" };
-    expect((await put(api, { match: { tracker: "linear", team: "ENG" } })).status).toBe(403);
+    const refused = await captureChanges(() =>
+      put(api, { match: { tracker: "linear", team: "ENG" } }),
+    );
+    expect(refused.result.status).toBe(403);
+    expect(refused.changes).toEqual([]);
     expect((await put(api, { match: null })).status).toBe(403);
     expect(await db.select().from(workItemMatches)).toEqual([]);
     // Members still read the repo's match.

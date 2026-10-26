@@ -28,6 +28,7 @@ import {
   createUser,
   deletePlaybook,
   deleteRule,
+  deleteWorkItemMatch,
   dismissFinding,
   deleteScmConnection,
   enrollHarness,
@@ -55,6 +56,7 @@ import {
   revokeHarness,
   saveChatConnection,
   saveIntegration,
+  saveWorkItemMatch,
   setDefaultMaxConcurrency,
   setHarnessHostToolPath,
   setRepositorySwitches,
@@ -617,6 +619,26 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         settingsEvent("repository.reviews", repoId),
         settingsEvent("repository.coding", repoId),
       ]);
+    });
+
+    it("work item match saves and clears publish the repository's coding section", async () => {
+      const match = {
+        tracker: "linear" as const,
+        team: "ENG",
+        project: null,
+        withoutProject: false,
+        labels: ["web"],
+      };
+      expect(
+        await published(() =>
+          saveWorkItemMatch(db, { organizationId: orgId, repositoryId: repoId, userId, match }),
+        ),
+      ).toEqual([settingsEvent("repository.coding", repoId)]);
+      expect(await published(() => deleteWorkItemMatch(db, orgId, repoId))).toEqual([
+        settingsEvent("repository.coding", repoId),
+      ]);
+      // Nothing to clear, nothing published.
+      expect(await published(() => deleteWorkItemMatch(db, orgId, repoId))).toEqual([]);
     });
 
     it("routing rules and agent defaults publish their section", async () => {
