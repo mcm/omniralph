@@ -20,7 +20,9 @@ import { useCurrentUser } from "@/components/current-user";
 import { ApiError } from "@/lib/api/client";
 import type { RepositoryDetail, RepositoryProblemItem } from "@/lib/api/repositories";
 import { runListHref } from "@/lib/runs/hrefs";
+import { AdvancedSection } from "./advanced-section";
 import { AgentsCard } from "./agents-card";
+import { AskCard } from "./ask-card";
 import { CodingCard } from "./coding-card";
 import { useProblemAction } from "./mutations";
 import { useRepositoryDetail } from "./queries";
@@ -50,6 +52,7 @@ export type RepoSectionId = (typeof REPO_SECTIONS)[number]["id"];
 const CARD_SECTIONS: Partial<Record<RepoSectionId, true>> = {
   reviews: true,
   coding: true,
+  ask: true,
   agents: true,
   rules: true,
 };
@@ -199,14 +202,18 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
             <ReviewsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : section.id === "coding" ? (
             <CodingCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+          ) : section.id === "ask" ? (
+            <AskCard detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : section.id === "agents" ? (
             <AgentsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : section.id === "rules" ? (
             <RulesSection detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : (
-            <h2 id={`or-repo-section-${section.id}`} className="or-repo-section__title">
-              {section.label}
-            </h2>
+            <AdvancedSection
+              detail={detail}
+              titleId={`or-repo-section-${section.id}`}
+              onRemove={() => setConfirmRemove(true)}
+            />
           )}
         </section>
       ))}

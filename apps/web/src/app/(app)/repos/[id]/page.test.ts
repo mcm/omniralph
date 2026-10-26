@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { isValidElement, type ReactElement } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ReposView } from "@/screens/repos/repos-view";
 import RepoPage from "./page";
+
+// The view imports the "Show advanced settings" server action, which is server-only.
+vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
 
 describe("the repo page", () => {
   it("renders the Repos view with the repo open, inside a Suspense boundary", async () => {

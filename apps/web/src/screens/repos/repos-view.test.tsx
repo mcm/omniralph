@@ -17,6 +17,7 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import { ShowAdvancedProvider } from "@/components/show-advanced";
 import { queryKeys } from "@/lib/api/keys";
 import type { RepositoryDetail, RepositoryListItem } from "@/lib/api/repositories";
 import { createQueryClient } from "@/lib/api/query-client";
@@ -43,6 +44,8 @@ const nav = vi.hoisted(() => ({
   search: new URLSearchParams(),
   router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
+vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
@@ -136,17 +139,19 @@ function renderRepos(
   const view = <ReposView repositoryId={options.repositoryId} />;
   const utils = render(
     <CurrentUserProvider user={user}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          {options.live ? (
-            <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-              {view}
-            </LiveProvider>
-          ) : (
-            view
-          )}
-        </UiProvider>
-      </QueryClientProvider>
+      <ShowAdvancedProvider initial={false}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            {options.live ? (
+              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                {view}
+              </LiveProvider>
+            ) : (
+              view
+            )}
+          </UiProvider>
+        </QueryClientProvider>
+      </ShowAdvancedProvider>
     </CurrentUserProvider>,
   );
   return { ...utils, client };
