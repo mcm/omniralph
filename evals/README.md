@@ -18,7 +18,7 @@ part of it.
 
 > `pnpm eval` spends real Claude tokens (a full run is 27 cases × 3 profiles,
 > Deep on Opus). It is not part of `pnpm test` or CI. The offline tests
-> (`packages/engine/src/eval/*.test.ts`) check the harness and the corpus with
+> (`packages/engine/src/eval/*.test.ts`) check the eval runner and the corpus with
 > a recorded fake provider.
 
 ## Running
