@@ -376,6 +376,26 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       expect(await resolveRoute(deps(), other.id)).toMatchObject({ repository: { id: api } });
     });
 
+    it("reads prefetched choices instead of looking each issue up", async () => {
+      await rules([api, team("ENG")]);
+      const chosen = linear.add({ title: "Chosen" });
+      const none = linear.add({ title: "None" });
+      const unlisted = linear.add({ title: "Unlisted" });
+      await choose(unlisted.id, docs);
+      const choices = new Map<string, string | null>([
+        [chosen.id, web],
+        [none.id, null],
+      ]);
+      const router = await createRouter({ ...deps(), choices });
+      expect(await router.resolve(chosen.id)).toMatchObject({
+        repository: { id: web },
+        chosen: true,
+      });
+      expect(await router.resolve(none.id)).toMatchObject({ repository: { id: api }, rule: 1 });
+      // An issue the map doesn't cover is looked up.
+      expect(await router.resolve(unlisted.id)).toMatchObject({ manual: { id: docs } });
+    });
+
     it("comes before the default rules", async () => {
       const parent = linear.add({ title: "Epic" });
       await runOf(parent.id, parent.identifier, api, "your selection");

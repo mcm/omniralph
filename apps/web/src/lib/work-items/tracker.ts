@@ -146,9 +146,15 @@ export const LIST_CANDIDATES_MAX_LIMIT = 50;
 
 export interface ListCandidatesInput {
   teamId?: string;
+  /** The team by its key (`ENG`), ignoring case. */
+  teamKey?: string;
   projectId?: string;
+  /** The project by its name, ignoring case. */
+  projectName?: string;
   /** Items carrying any of these labels (by ID). */
   labelIds?: string[];
+  /** Items carrying a label of any of these names, ignoring case. */
+  labelNames?: string[];
   /** True: only items delegated to Omniralph; false: only items that aren't. */
   delegatedToOmniralph?: boolean;
   /** Items in one of these states. */
@@ -254,6 +260,12 @@ export interface WorkItemTracker {
   stories(ref: WorkItemRef): Promise<WorkItemStory[]>;
   /** The item's comments, oldest first. */
   comments(ref: WorkItemRef): Promise<WorkItemComment[]>;
+  /**
+   * The item's routing fields and its parent's, as `listCandidates` carries them
+   * `withRoutingFields` (for an item no page carried, e.g. a follow-up's source).
+   * Throws `WorkItemNotFoundError` for an unknown ref.
+   */
+  routingFields(ref: WorkItemRef): Promise<WorkItemRouting>;
   /** Every team of the tracker. */
   listTeams(): Promise<TrackerTeam[]>;
   /** A team's workflow states, in order. */

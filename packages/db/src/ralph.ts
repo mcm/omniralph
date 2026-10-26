@@ -25,6 +25,7 @@ import {
 } from "drizzle-orm";
 import type { ChatPlatform } from "./chat.js";
 import { currentChangeCollector, recordChange } from "./changes.js";
+import { recordWorkItemChange } from "./work-items.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
 import {
@@ -284,6 +285,14 @@ export async function createRun(
         });
       }
       recordRunChange(tx, row);
+      // The issue leaves the Backlog: it has a run now.
+      if (row.linearIssueId) {
+        recordWorkItemChange(tx, {
+          organizationId: row.organizationId,
+          tracker: "linear",
+          externalIds: [row.linearIssueId],
+        });
+      }
       return row;
     });
     if (row) return { run: row, created: true };

@@ -5,6 +5,7 @@
  */
 import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
+import { recordWorkItemChange } from "./work-items.js";
 import type { Database } from "./client.js";
 import { repositoryLink, repositoryLinkColumns, type RepositoryLink } from "./agents.js";
 import type { JobStatus } from "./jobs.js";
@@ -365,13 +366,24 @@ export async function stopTriageRun(db: Database, runId: string): Promise<Triage
   });
 }
 
-/** Records a live `run` change for a triage run. */
-function recordTriageRunChange(db: Executor, run: { id: string; organizationId: string }): void {
+/**
+ * Records a live `run` change for a triage run, and a `work_item` change of its issue (the
+ * Backlog shows whether triage runs on it, and the size it gave).
+ */
+function recordTriageRunChange(
+  db: Executor,
+  run: { id: string; organizationId: string; linearIssueId: string },
+): void {
   recordChange(db, {
     resource: "run",
     ids: [run.id],
     runId: run.id,
     organizationId: run.organizationId,
+  });
+  recordWorkItemChange(db, {
+    organizationId: run.organizationId,
+    tracker: "linear",
+    externalIds: [run.linearIssueId],
   });
 }
 

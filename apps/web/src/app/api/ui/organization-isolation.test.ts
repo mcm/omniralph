@@ -67,6 +67,8 @@ import {
   upsertStories,
   updateStory,
   users,
+  saveWorkItemMatch,
+  workItemMatches,
   type Database,
 } from "@omniralph/db";
 import {
@@ -255,6 +257,10 @@ const jobRerun = await import("./jobs/[id]/rerun/route");
 const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
 const settingsHistory = await import("./settings-history/route");
+const backlogList = await import("./backlog/route");
+const backlogCounts = await import("./backlog/counts/route");
+const backlogUpNext = await import("./backlog/up-next/route");
+const { resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
@@ -1090,6 +1096,125 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ).toBe(401);
     } finally {
       state.linear.clear();
+      for (const id of linear.values()) {
+        await db.delete(integrationRows).where(eq(integrationRows.id, id));
+      }
+    }
+  });
+
+  it("lists only each organization's own Backlog, counts and Up next, and 404s on the other's", async () => {
+    const linear = new Map<string, string>();
+    const titles = (body: Record<string, unknown>) =>
+      Object.values(body as Record<string, Array<{ title: string; organization: { id: string } }>>)
+        .flat()
+        .map((row) => row.title);
+    try {
+      for (const own of [a, b]) {
+        const integration = await saveIntegration(db, {
+          organizationId: own.orgId,
+          provider: "linear",
+          externalId: `${own.name}-backlog-workspace`,
+          name: `${own.name} workspace`,
+          credentials: { accessToken: "t" },
+          installedByUserId: null,
+        });
+        if (integration === "other_organization") throw new Error("setup");
+        linear.set(own.orgId, integration.id);
+        const workspace = new FakeLinearGateway();
+        workspace.teams = [{ id: `${own.name}-team`, key: "ENG", name: `${own.name} team` }];
+        workspace.add({
+          identifier: `${own.name.toUpperCase()}-BL1`,
+          title: `${own.name} backlog item`,
+          teamId: `${own.name}-team`,
+        });
+        state.linear.set(own.orgId, workspace);
+        expect(
+          await saveWorkItemMatch(db, {
+            organizationId: own.orgId,
+            repositoryId: own.repoId,
+            userId: null,
+            match: {
+              tracker: "linear",
+              team: "ENG",
+              project: null,
+              withoutProject: false,
+              labels: [],
+            },
+          }),
+        ).not.toBeNull();
+        await db
+          .update(repositories)
+          .set({ codingEnabled: true })
+          .where(eq(repositories.id, own.repoId));
+      }
+      resetBacklogCache();
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          for (const organization of [undefined, "all", own.orgId]) {
+            const query = organization ? `?organization=${organization}` : "";
+            const listed = await call(backlogList.GET, { path: `/api/ui/backlog${query}` });
+            expect(listed.status).toBe(200);
+            const groups = listed.body.groups as Record<string, unknown>;
+            expect(titles(groups as Record<string, unknown>)).toEqual([`${own.name} backlog item`]);
+            const counts = await call(backlogCounts.GET, { path: `/api/ui/backlog${query}` });
+            expect(counts).toMatchObject({
+              status: 200,
+              body: { readyToStart: 1, needsRefining: 0, total: 1 },
+            });
+            const upNext = await call(backlogUpNext.GET, { path: `/api/ui/backlog${query}` });
+            expect(upNext.status).toBe(200);
+            expect(titles(upNext.body)).toEqual([`${own.name} backlog item`]);
+            for (const { body } of [listed, counts, upNext]) {
+              for (const marker of markers(other)) {
+                expect(JSON.stringify(body)).not.toContain(marker);
+              }
+            }
+          }
+          for (const handler of [backlogList.GET, backlogCounts.GET, backlogUpNext.GET]) {
+            expect(
+              await call(handler, { path: `/api/ui/backlog?organization=${other.orgId}` }),
+            ).toMatchObject({ status: 404 });
+          }
+        }
+      }
+      // A member of both gets both organizations' items under organization=all.
+      const [both] = await db
+        .insert(users)
+        .values({ id: "backlog-both", email: "backlog-both@alpha.io" })
+        .returning();
+      await db.insert(organizationMembers).values([
+        { organizationId: a.orgId, userId: both!.id, role: "member" },
+        { organizationId: b.orgId, userId: both!.id, role: "member" },
+      ]);
+      await setActiveOrganization(db, { userId: both!.id, organizationId: a.orgId });
+      try {
+        state.userId = both!.id;
+        const all = await call(backlogList.GET, { path: "/api/ui/backlog?organization=all" });
+        const rows = (all.body.groups as { readyToStart: Array<{ organization: { id: string } }> })
+          .readyToStart;
+        expect(rows.map((row) => row.organization.id).sort()).toEqual([a.orgId, b.orgId].sort());
+      } finally {
+        await db.delete(organizationMembers).where(eq(organizationMembers.userId, both!.id));
+        await db.delete(users).where(eq(users.id, both!.id));
+      }
+      state.userId = null;
+      for (const handler of [backlogList.GET, backlogCounts.GET, backlogUpNext.GET]) {
+        expect((await call(handler)).status).toBe(401);
+      }
+    } finally {
+      state.linear.clear();
+      resetBacklogCache();
+      for (const own of [a, b]) {
+        await db.delete(workItemMatches).where(eq(workItemMatches.repositoryId, own.repoId));
+        await db
+          .update(repositories)
+          .set({ codingEnabled: false })
+          .where(eq(repositories.id, own.repoId));
+      }
       for (const id of linear.values()) {
         await db.delete(integrationRows).where(eq(integrationRows.id, id));
       }

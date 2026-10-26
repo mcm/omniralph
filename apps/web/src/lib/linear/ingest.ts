@@ -6,6 +6,7 @@ import {
   getIntegrationByExternalId,
   getRunBySession,
   getTriageRunBySession,
+  recordWorkItemChange,
   releaseWebhookDelivery,
   type Database,
 } from "@omniralph/db";
@@ -111,12 +112,31 @@ export async function handleLinearWebhook(
       event: linearEventName(payload),
       rawBody,
     });
+  // Any change to an issue (handled or not) may change the organization's Backlog.
+  if (integration) recordIssueChange(db, integration.organizationId, payload);
   if (event.kind === "ignored") {
     await log?.record({ outcome: "ignored", reasonCode: event.code });
     return reply({ status: "ignored", reason: event.reason });
   }
   if (!integration || !log) return reply({ status: "ignored", reason: "unknown_workspace" });
   return processVerifiedLinearDelivery(deps, { event, integration, deliveryId, log });
+}
+
+/**
+ * Records a live `work_item` change for an `Issue` event: the issue, and its parent (whose
+ * stories it is) when it has one.
+ */
+function recordIssueChange(
+  db: Database,
+  organizationId: string,
+  payload: Record<string, unknown>,
+): void {
+  if (payload.type !== "Issue") return;
+  const data = payload.data as { id?: unknown; parentId?: unknown } | null | undefined;
+  const ids = [data?.id, data?.parentId].filter(
+    (id): id is string => typeof id === "string" && id !== "",
+  );
+  recordWorkItemChange(db, { organizationId, tracker: "linear", externalIds: ids });
 }
 
 /** The delivery's event as the log names it: its type and action (`AgentSessionEvent.created`). */

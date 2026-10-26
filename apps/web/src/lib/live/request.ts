@@ -9,6 +9,8 @@ import {
 import { after } from "next/server";
 import { getDb } from "@/lib/db";
 import { hitRateLimit } from "@/lib/rate-limit";
+// Drops the Backlog cache on the changes that make it stale, wherever changes are collected.
+import "@/lib/work-items/backlog-cache";
 import {
   changeMessage,
   getChangePublisher,

@@ -5,6 +5,7 @@ import {
   captureChanges,
   ChangeCollector,
   currentChangeCollector,
+  onCommittedChange,
   recordChange,
   runWithChangeCollector,
   type Change,
@@ -99,6 +100,37 @@ describe.skipIf(!testDatabaseAvailable())("recordChange in transactions", () => 
     expect(
       await db.select().from(organizations).where(eq(organizations.name, "Rolled back")),
     ).toEqual([]);
+  });
+
+  it("tells committed-change listeners of each committed change, never a rolled-back one", async () => {
+    const heard: string[] = [];
+    const remove = onCommittedChange((c) => {
+      heard.push(...c.ids);
+      throw new Error("a failing listener stops nothing");
+    });
+    try {
+      const { changes } = await captureChanges(async () => {
+        recordChange(db, change("direct"));
+        await db.transaction(async (tx) => {
+          recordChange(tx, change("in-tx"));
+          // Not yet: the transaction hasn't committed.
+          expect(heard).toEqual(["direct"]);
+        });
+        await db
+          .transaction(async (tx) => {
+            recordChange(tx, change("rolled-back"));
+            throw new Error("boom");
+          })
+          .catch(() => undefined);
+      });
+      expect(heard).toEqual(["direct", "in-tx"]);
+      expect(ids(changes)).toEqual(["direct", "in-tx"]);
+    } finally {
+      remove();
+    }
+    recordChange(db, change("after"));
+    await captureChanges(async () => recordChange(db, change("removed")));
+    expect(heard).toEqual(["direct", "in-tx"]);
   });
 
   it("drops a rolled-back savepoint's changes and keeps the rest of its transaction", async () => {
