@@ -90,3 +90,94 @@
     display: none;
   }
 }
+
+/*
+ * Section nav: a settings area's own navigation. A title (and badge), then one list per
+ * group under a small heading; the active entry is filled like the shell's.
+ */
+.or-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 12px;
+}
+
+.or-subnav__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.or-subnav__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.or-subnav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-subnav__group-label {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  color: var(--or-ter);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.or-subnav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--or-radius);
+  color: var(--or-sec);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.or-subnav__item:hover {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-subnav__item[aria-current="page"] {
+  background: var(--or-sel);
+  color: var(--or-text);
+}
+
+.or-subnav__item:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-subnav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-subnav__dot {
+  margin-left: auto;
+}
