@@ -61,6 +61,17 @@ describe("lists.css", () => {
     expect(top.get(".or-activity__entry")?.display).toBe("flex");
   });
 
+  it("lays a transcript row out as time, name and text, and the error in coral", () => {
+    expect(top.get(".or-transcript__row")).toMatchObject({
+      display: "grid",
+      "grid-template-columns": "56px 96px minmax(0, 1fr)",
+    });
+    expect(top.get(".or-transcript__error")).toMatchObject({ color: "var(--or-fail)" });
+    expect(media.get("(max-width: 768px)")?.get(".or-transcript__row")).toMatchObject({
+      "grid-template-columns": "48px minmax(0, 1fr)",
+    });
+  });
+
   it("styles selected and bad rows", () => {
     expect(top.get('.or-tbl__row[aria-current="true"]')?.background).toBe("var(--or-sel)");
     expect(top.get('.or-cardrow[aria-current="true"]')?.background).toBe("var(--or-sel)");

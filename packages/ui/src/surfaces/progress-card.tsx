@@ -36,6 +36,8 @@ export interface ProgressCardProps {
   selectedStepId?: string;
   /** Makes the steps selectable: each renders as a button that calls this with its ID. */
   onSelectStep?: (stepId: string) => void;
+  /** With `onSelectStep`, shown inside the selected step, under it (e.g. its transcript). */
+  stepPanel?: ReactNode;
   className?: string;
 }
 
@@ -54,7 +56,7 @@ function StepIcon({ state }: { state: StepState }) {
 /**
  * The one progress view (Design rule 10): a bar with one segment per step, a one-line
  * count and the steps as an ordered list. With `onSelectStep` the steps are buttons and the
- * selected one is bold with `aria-current`.
+ * selected one is bold with `aria-current`, with `stepPanel` under it.
  */
 export function ProgressCard({
   title,
@@ -65,6 +67,7 @@ export function ProgressCard({
   summarySuffix,
   selectedStepId,
   onSelectStep,
+  stepPanel,
   className,
 }: ProgressCardProps) {
   const LinkComponent = useLinkComponent();
@@ -153,6 +156,9 @@ export function ProgressCard({
                 ) : (
                   content
                 )}
+                {selected && stepPanel !== undefined ? (
+                  <div className="or-step__panel">{stepPanel}</div>
+                ) : null}
               </li>
             );
           })}

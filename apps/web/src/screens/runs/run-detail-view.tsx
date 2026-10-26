@@ -45,12 +45,13 @@ import {
 import { RunDetails } from "@/components/runs/run-details";
 import { RunProgress } from "@/components/runs/run-progress";
 import { RunSession } from "@/components/runs/run-session";
-import { useRunRetry, useRunStop } from "@/components/runs/use-run-actions";
+import { StepPanel } from "@/components/runs/step-panel";
+import { useRunRetry, useRunRetryPending, useRunStop } from "@/components/runs/use-run-actions";
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
 import { RUN_KIND_LABELS } from "../inbox/labels";
-import { parseRunFilters, runInListHref } from "./filters";
+import { NO_RUN_FILTERS, parseRunFilters, runInListHref } from "./filters";
 import { runRowLabel } from "./labels";
 import "@/components/runs/run-cards.css";
 import "./run-detail.css";
@@ -136,6 +137,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
   const retry = useRunRetry(run.id, (result) => {
     if (result.id !== run.id) router.push(runInListHref(result.id, filters));
   });
+  const retrying = useRunRetryPending(run.id);
   const stop = useRunStop(run.id);
 
   const toolbarAction = (item: RunToolbarItem): ToolbarAction =>
@@ -148,7 +150,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
       : {
           label: item.label,
           icon: IconRefresh,
-          disabled: retry.isPending,
+          disabled: retrying,
           onSelect: () => retry.mutate({ target: item.target, selectedStepId: step?.id }),
         };
   const actions = runToolbar(run, step).map(toolbarAction).slice(0, 2) as
@@ -198,6 +200,28 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
                 { scroll: false },
               )
             }
+            stepPanel={
+              step ? (
+                <StepPanel
+                  key={step.id}
+                  run={run}
+                  step={step}
+                  tab={searchParams.get("tab")}
+                  attemptId={searchParams.get("attempt")}
+                  onNavigate={(next) =>
+                    router.replace(
+                      runInListHref(run.id, filters, {
+                        step: step.id,
+                        attempt: next.attempt ?? searchParams.get("attempt"),
+                        tab: next.tab ?? searchParams.get("tab"),
+                      }),
+                      { scroll: false },
+                    )
+                  }
+                  stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
+                />
+              ) : undefined
+            }
           />
         ) : null}
         <RunDetails run={run} />
@@ -221,7 +245,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  * A run of any kind on the Runs screen (Design board Runs): its header badges and toolbar
  * (Design rule 5), its status line, title and, for a waiting, stopped or failed run, why;
  * an open question's form; the progress card with the selected step (`?step=`, else
- * `defaultStep`); the collapsed Details; an epic's or request's collapsed Session; and the
+ * `defaultStep`) and its `StepPanel`; the collapsed Details; an epic's or request's collapsed Session; and the
  * run's Activity. A live query: the run's
  * change events refetch it. `menuItems` adds entries to the ⋯ menu, which may open an
  * element over the detail (`useRunDetailOverlay`).

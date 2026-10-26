@@ -1,0 +1,133 @@
+/*
+ * The selected step's panel inside the progress card: its toolbar beside the tabs, the
+ * transcript and the attempts. Only `--or-` tokens.
+ */
+.or-step-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.or-step-panel__head {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.or-step-panel__tabs .or-tabs {
+  padding-right: 76px;
+}
+
+.or-step-panel .or-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.or-step-panel__feedback {
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-sec);
+}
+
+.or-step-panel__feedback p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-step-panel__subtitle {
+  margin: 0 0 4px;
+  color: var(--or-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-step-panel__empty {
+  margin: 0;
+  color: var(--or-ter);
+}
+
+.or-step-panel__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-transcript__more {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-attempts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-attempt {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--or-line);
+}
+
+.or-attempt:first-child {
+  border-top: 0;
+}
+
+.or-attempt--selected {
+  margin: 0 -8px;
+  padding-right: 8px;
+  padding-left: 8px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-sel);
+}
+
+.or-attempt__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-attempt__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-attempt__cancel-requested {
+  color: var(--or-sec);
+  font-style: italic;
+}
+
+.or-attempt__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 768px) {
+  .or-attempt {
+    flex-direction: column;
+  }
+}

@@ -236,7 +236,9 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   (a canceled step shows a dash icon instead of a dot). The bar is a `progressbar`
   (`aria-valuenow` done steps, `aria-valuemax` total, `aria-valuetext` the count line).
   With `onSelectStep(id)` the steps are buttons (step `href`s are ignored) and the
-  `selectedStepId` one is bold with `aria-current="step"`.
+  `selectedStepId` one is bold with `aria-current="step"`; `stepPanel` (a node, e.g. the
+  step's transcript and attempts) renders inside the selected step, on a line under it
+  (`.or-step__panel`).
 - `progressSummary(steps, suffix?)`: the count line, e.g. "8 of 9 done · 1 canceled · 3h
   31m": the done count, then waiting, running, failed, blocked and canceled when non-zero,
   then the suffix, or "No steps yet".
@@ -278,6 +280,12 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   sentence node), optional `aria-label` (default "Activity") and `limit` (default 10). An
   `<ol>` with a fixed-width mono date column (`activityDate(at)`, local "Oct 24 14:02") and
   the sentence; past `limit` entries a ghost "Show all {n}" button reveals the rest.
+- `Transcript`: `events` (`{ id?, type: "thought" | "action", body, parameter, at }`,
+  oldest first), `startedAt`, optional `error`, `more` (a node after the rows, e.g. "{n}
+  more events · Show all") and `aria-label` (default "Transcript"). An `<ol>` with one row
+  per event: the mono offset from `startedAt` (`transcriptOffset`: "m:ss", or "h:mm:ss"
+  from an hour), the action's name or "thinking", then the action's `parameter` in mono or
+  the thought's text in prose. The `error` renders last, in coral, as an `alert`.
 - `nestedInteractiveElements(root)`: every `a`, `button` or `input` inside an `a` or
   `button`. Lists and tables return none; screen tests can assert the same.
 

@@ -1,9 +1,11 @@
 "use client";
 
+import { useIsMutating } from "@tanstack/react-query";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
 import {
   runRetryResultSchema,
+  type RunAttempt,
   type RunDetail,
   type RunRetryResult,
   type RunRetryTarget,
@@ -21,17 +23,26 @@ export function runRetryKey(runId: string) {
   return ["run-retry", runId] as const;
 }
 
+/** Whether a retry of the run is in flight, from any of its retry buttons. */
+export function useRunRetryPending(runId: string): boolean {
+  return useIsMutating({ mutationKey: runRetryKey(runId) }) > 0;
+}
+
 /**
- * The step a retry starts again: the story or attempt it targets; for the whole run, the
- * selected step unless it is done, else the first step that isn't done.
+ * The step a retry starts again: the story it targets, or the step of the attempt it
+ * targets; for the whole run, the selected step unless it is done, else the first step
+ * that isn't done.
  */
 export function retriedStepId(
   steps: readonly RunStep[],
   target: RunRetryTarget,
   selectedStepId: string | undefined,
+  attempts: readonly Pick<RunAttempt, "id" | "step">[] = [],
 ): string | undefined {
   if (target.kind === "story") return target.storyId;
-  if (target.kind === "attempt") return target.attemptId;
+  if (target.kind === "attempt") {
+    return attempts.find((attempt) => attempt.id === target.attemptId)?.step ?? target.attemptId;
+  }
   const selected = steps.find((step) => step.id === selectedStepId);
   if (selected && stepState(selected.status) !== "done") return selected.id;
   return steps.find((step) => stepState(step.status) !== "done")?.id;
@@ -63,7 +74,7 @@ export function useRunRetry(runId: string, onRetried?: (result: RunRetryResult) 
       }),
     optimistic: ({ target, selectedStepId }, cache) =>
       updateRunDetail(cache, cache.keys.runs.detail(runId), (detail): RunDetail => {
-        const stepId = retriedStepId(detail.steps, target, selectedStepId);
+        const stepId = retriedStepId(detail.steps, target, selectedStepId, detail.attempts);
         return {
           ...detail,
           status: "queued",
@@ -102,5 +113,29 @@ export function useRunStop(runId: string) {
     optimistic: (_variables, cache) => markStopped(cache, runId),
     invalidate: (keys) => [keys.runs.all, keys.inbox.all],
     success: "Run stopped",
+  });
+}
+
+/**
+ * Cancels one attempt of a run (`POST /api/ui/jobs/{id}/cancel`). The attempt reads
+ * "Cancel requested" before the server answers (a queued one is canceled at once, a running
+ * one with its agent's next heartbeat); a failure puts it back with the server's message.
+ */
+export function useAttemptCancel(runId: string) {
+  return useApiMutation<MutationResult, { attemptId: string }>({
+    mutationKey: ["attempt-cancel", runId],
+    mutationFn: ({ attemptId }, { organizationId }) =>
+      api.post(`/api/ui/jobs/${encodeURIComponent(attemptId)}/cancel`, mutationResultSchema, {
+        organizationId,
+      }),
+    optimistic: ({ attemptId }, cache) =>
+      updateRunDetail(cache, cache.keys.runs.detail(runId), (detail) => ({
+        ...detail,
+        attempts: detail.attempts.map((attempt) =>
+          attempt.id === attemptId ? { ...attempt, cancelRequested: true } : attempt,
+        ),
+      })),
+    invalidate: (keys) => [keys.runs.all, keys.inbox.all],
+    success: "Attempt canceled",
   });
 }
