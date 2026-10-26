@@ -35,6 +35,7 @@ import { errorMessage } from "@/lib/ralph/notify";
 import { runSpecJobInput, runSpecMinAgentVersion } from "@/lib/runs/job";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import { ChatThreadContext } from "@/lib/sinks/chat-thread";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 /**
  * Code questions from chat: a question about a repository enqueues a run of
@@ -229,10 +230,7 @@ export async function enqueueChatAsk(
 
   let defaultBranch: string;
   try {
-    defaultBranch = await deps.adapterFor(db, connection).getDefaultBranch({
-      fullPath: repository.fullPath,
-      externalId: repository.externalId,
-    });
+    defaultBranch = await fetchDefaultBranch(deps, connection, repository);
   } catch (error) {
     return {
       status: "failed",

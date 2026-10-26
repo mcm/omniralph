@@ -106,6 +106,8 @@ const projects: Record<string, { id: number; path_with_namespace: string; web_ur
   },
 };
 let nextHookId = 9000;
+/** The default branch `GET /projects/:id` answers per project ID; a project not here fails. */
+const defaultBranches: Record<string, string> = { "101": "main" };
 
 function authorized(request: Request): boolean {
   return request.headers.get("private-token") === TOKEN;
@@ -129,6 +131,12 @@ const server = setupServer(
     return HttpResponse.json(
       Object.values(projects).map((project) => ({ ...project, visibility: "private" })),
     );
+  }),
+  http.get(`${API}/projects/:id`, ({ params }) => {
+    const branch = defaultBranches[String(params.id)];
+    return branch
+      ? HttpResponse.json({ id: Number(params.id), default_branch: branch })
+      : HttpResponse.json({ message: "500 Internal Server Error" }, { status: 500 });
   }),
   http.post(`${API}/projects/:id/hooks`, async ({ request, params }) => {
     hookRequests.push({
@@ -339,6 +347,18 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(deletedHooks).toEqual([]);
       // acme/api was re-enabled with its still-valid cached clone token.
       expect(mintedTokens).toHaveLength(2);
+    });
+
+    it("stores each added project's default branch, and adds it without one when GitLab can't say", async () => {
+      const connectionId = await connectGitLabProjects();
+
+      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({ ok: true });
+      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.defaultBranch])).toEqual([
+        ["acme/api", true, "main"],
+        // GET /projects/102 fails: the project is still added, with no default branch.
+        ["acme/sub/web", true, null],
+      ]);
     });
 
     it("doesn't connect a project that can't mint clone tokens, and connects the others", async () => {
@@ -570,9 +590,11 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
 
     expect(await saveGitHubRepositories(connection!.id, [1, 2, 999])).toEqual({ ok: true });
     let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-      ["acme/one", true],
-      ["acme/two", true],
+    // The adapter can't read the default branches here (no GitHub App configured): the
+    // repositories are added all the same, without one.
+    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.defaultBranch])).toEqual([
+      ["acme/one", true, null],
+      ["acme/two", true, null],
     ]);
 
     expect(await saveGitHubRepositories(connection!.id, [2])).toEqual({ ok: true });

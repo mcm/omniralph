@@ -104,6 +104,7 @@ export {
   removeScmConnectionProblems,
   setRepositoryEnabled,
   setRepositorySwitches,
+  setRepositoryDefaultBranch,
   setRepositoryWebhookId,
   setScmConnectionHealth,
   unpinRepositoryFromAgent,

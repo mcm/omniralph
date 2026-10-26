@@ -1,5 +1,6 @@
 import { createHmac, generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
+  captureChanges,
   connectRepository,
   closeDb,
   createRun,
@@ -16,6 +17,7 @@ import {
   upsertScmConnection,
   webhookDeliveries,
   type Database,
+  type RecordedChange,
   organizations,
 } from "@omniralph/db";
 import { reviewTriggerContext } from "@omniralph/shared";
@@ -94,12 +96,23 @@ const server = setupServer(
 
 function githubPayload(
   action: string,
-  opts: { number: number; head?: string; draft?: boolean; repoId?: number; body?: string },
+  opts: {
+    number: number;
+    head?: string;
+    draft?: boolean;
+    repoId?: number;
+    body?: string;
+    defaultBranch?: string;
+  },
 ) {
   return {
     action,
     installation: { id: 4242 },
-    repository: { id: opts.repoId ?? 100, full_name: "acme/app" },
+    repository: {
+      id: opts.repoId ?? 100,
+      full_name: "acme/app",
+      ...(opts.defaultBranch ? { default_branch: opts.defaultBranch } : {}),
+    },
     pull_request: {
       number: opts.number,
       state: "open",
@@ -142,12 +155,17 @@ function gitlabPayload(
     oldrev?: string;
     changes?: Record<string, unknown>;
     projectId?: number;
+    defaultBranch?: string;
   },
 ) {
   return {
     object_kind: "merge_request",
     user: { username: "pusher" },
-    project: { id: opts.projectId ?? 200, path_with_namespace: "acme/app" },
+    project: {
+      id: opts.projectId ?? 200,
+      path_with_namespace: "acme/app",
+      ...(opts.defaultBranch ? { default_branch: opts.defaultBranch } : {}),
+    },
     object_attributes: {
       iid: opts.iid,
       action,
@@ -684,6 +702,56 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
         .from(webhookDeliveries)
         .where(eq(webhookDeliveries.deliveryId, delivery));
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("default branch", () => {
+    const repositoryChanges = (changes: RecordedChange[]) =>
+      changes.filter((change) => change.resource === "repository");
+
+    it("stores a GitHub repository's default branch from a pull_request delivery, once", async () => {
+      const payload = () =>
+        githubPayload("opened", { number: ++prCounter, defaultBranch: "release" });
+      const first = await captureChanges(() => github(githubRequest(payload())));
+      expect(first.result.status).toBe(200);
+      expect((await getRepository(db, githubRepoId))?.defaultBranch).toBe("release");
+      expect(repositoryChanges(first.changes)).toEqual([
+        expect.objectContaining({ ids: [githubRepoId], organizationId: orgId }),
+      ]);
+
+      const repeat = await captureChanges(() => github(githubRequest(payload())));
+      expect(repeat.result.status).toBe(200);
+      expect(repositoryChanges(repeat.changes)).toEqual([]);
+    });
+
+    it("stores it from deliveries that don't start a review, and not from unverified ones", async () => {
+      await db
+        .update(repositories)
+        .set({ reviewsEnabled: false, defaultBranch: "main" })
+        .where(eq(repositories.id, githubRepoId));
+      const disabled = githubPayload("opened", { number: ++prCounter, defaultBranch: "trunk" });
+      expect(await (await github(githubRequest(disabled))).json()).toMatchObject({
+        status: "ignored",
+      });
+      expect((await getRepository(db, githubRepoId))?.defaultBranch).toBe("trunk");
+
+      const forged = githubPayload("opened", { number: ++prCounter, defaultBranch: "evil" });
+      expect((await github(githubRequest(forged, { secret: "wrong" }))).status).toBe(401);
+      expect((await getRepository(db, githubRepoId))?.defaultBranch).toBe("trunk");
+    });
+
+    it("stores a GitLab project's default branch from a Merge Request Hook, once", async () => {
+      const payload = () => gitlabPayload("open", { iid: ++prCounter, defaultBranch: "develop" });
+      const first = await captureChanges(() => gitlab(gitlabRequest(payload())));
+      expect(first.result.status).toBe(200);
+      expect((await getRepository(db, gitlabRepoId))?.defaultBranch).toBe("develop");
+      expect(repositoryChanges(first.changes)).toEqual([
+        expect.objectContaining({ ids: [gitlabRepoId], organizationId: orgId }),
+      ]);
+
+      const repeat = await captureChanges(() => gitlab(gitlabRequest(payload())));
+      expect(repeat.result.status).toBe(200);
+      expect(repositoryChanges(repeat.changes)).toEqual([]);
     });
   });
 

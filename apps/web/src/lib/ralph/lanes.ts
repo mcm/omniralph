@@ -24,6 +24,7 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository } from "@/lib/routing/resolve";
 import { organizationManualLabels, repositoryAllowsPreparation } from "./epic-loader";
 import type { RalphDeps } from "./run";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 type Executor = Database | RalphTransaction;
 
@@ -137,10 +138,7 @@ async function laneIn(
   try {
     const found = await getRepositoryWithConnection(deps.db, repositoryId);
     if (!found) throw new Error(`repository ${repositoryId} is gone`);
-    const baseBranch = await deps.adapterFor(deps.db, found.connection).getDefaultBranch({
-      fullPath: found.repository.fullPath,
-      externalId: found.repository.externalId,
-    });
+    const baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
     return await ensureLane(tx, { runId: run.id, repositoryId, branch: main.branch, baseBranch });
   } catch (error) {
     console.error(

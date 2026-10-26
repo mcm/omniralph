@@ -64,6 +64,7 @@ import {
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
 import { markRalphActive } from "./active";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
 
@@ -673,10 +674,7 @@ async function startNewRun(
   try {
     const found = await getRepositoryWithConnection(db, chosen.repository.id);
     if (!found) throw new Error(`repository ${chosen.repository.fullPath} is gone`);
-    baseBranch = await deps.adapterFor(db, found.connection).getDefaultBranch({
-      fullPath: found.repository.fullPath,
-      externalId: found.repository.externalId,
-    });
+    baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
   } catch (error) {
     await post(deps, sessionId, {
       type: "error",
