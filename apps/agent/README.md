@@ -74,6 +74,12 @@ Releases are automated with [changesets](https://github.com/changesets/changeset
 `.github/workflows/publish-agent.yml`. Nobody edits `version` or pushes `agent-v*` tags by hand.
 Merging the "Version Packages" pull request is the only release action.
 
+The `@omniralph/agent` line starts at **2.0.0**, to match Omniralph 2.0. `apps/agent/package.json`
+holds `1.0.0`, which is never published, and a `major` changeset takes the first Version Packages
+pull request to 2.0.0. The name's older 0.3.1–0.8.0 releases on npm are deprecated, so
+`scripts/agent-release.ts status` refuses to publish anything below `AGENT_MIN_VERSION` (2.0.0,
+in `packages/shared`).
+
 ### Add a changeset to your pull request
 
 Every pull request that changes this package must add a changeset: a small Markdown file in
@@ -89,7 +95,7 @@ The agent bundles the workspace packages `@omniralph/engine`, `@omniralph/ralph`
 release those private packages, and it doesn't bump the agent when only they change. A pull
 request that changes one of them must add a changeset for `@omniralph/agent` itself.
 
-CI (`ci.yml`, `scripts/check-harness-changeset.ts`) fails a pull request that changes
+CI (`ci.yml`, `scripts/check-agent-changeset.ts`) fails a pull request that changes
 `apps/agent/`, or any workspace package the agent depends on, and adds no
 `@omniralph/agent` changeset. The package list comes from the workspace graph, so a new
 dependency is covered automatically. If the change needs no release note (tests, an internal
@@ -101,11 +107,21 @@ pnpm changeset --empty
 
 Pull requests that touch neither the agent nor its workspace packages need no changeset.
 
+#### Changesets for the old name during the 2.0 freeze
+
+Until the 2.0 cutover, other 2.0 epics still write changesets for `@omniralph/harness`, the
+package's old name. The check accepts those too, and `scripts/check-harness-changeset.ts` still
+runs it from the old path. Before `pnpm changeset version`, the workflow runs
+`scripts/rewrite-legacy-changesets.ts`, which renames the `@omniralph/harness` key to
+`@omniralph/agent` in every pending changeset (keeping the larger bump if a changeset names both),
+so they release as `@omniralph/agent`. Run it yourself after rebasing onto a branch that added
+one. At the cutover, the check stops accepting the old name and the old path is deleted.
+
 ### The Version Packages pull request
 
 When changesets reach `main`, the workflow opens a pull request titled "Version Packages" (branch
 `changeset-release/main`), and updates it on every later push to `main`. The pull request runs
-`pnpm changeset version`, which:
+`scripts/rewrite-legacy-changesets.ts`, then `pnpm changeset version`, which:
 
 - bumps `version` in `apps/agent/package.json` by the largest bump the changesets declare;
 - writes their notes to `apps/agent/CHANGELOG.md`, linking each entry's pull request and author;
@@ -122,7 +138,8 @@ workflow finds no pending changesets and a version that isn't on npm yet, and th
 1. installs only this package and the workspace packages it bundles (the web app and db are left
    to CI, so no npm token is needed);
 2. typechecks, lints and tests them;
-3. reads the version's section of `CHANGELOG.md` (it fails here if there is none);
+3. reads the version's section of `CHANGELOG.md` with `scripts/agent-release.ts notes` (it fails
+   here if there is none);
 4. runs `scripts/smoke-agent-package.sh`;
 5. publishes the tarball the smoke script tested, through npm trusted publishing (OIDC). No npm
    publish token is stored anywhere;
