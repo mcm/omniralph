@@ -293,3 +293,28 @@
     display: block;
   }
 }
+
+/* Agents card: one row per pinned agent (state dot, badge, state text, unpin). */
+.or-repo-agents {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-repo-agents__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border-top: 1px solid var(--or-border);
+}
+
+.or-repo-agents__row:first-child {
+  border-top: 0;
+}
+
+.or-repo-agents__unpin {
+  margin-left: auto;
+}

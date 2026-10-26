@@ -46,6 +46,28 @@ describe("IconButton", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("shows why it is disabled and stays focusable with disabledReason", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <IconButton
+        label="Pin agent"
+        icon={IconRefresh}
+        onClick={onClick}
+        disabled
+        disabledReason="Every agent is already pinned"
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Pin agent" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await user.tab();
+    expect(document.activeElement).toBe(button);
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Every agent is already pinned");
+    await user.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it("renders a link named by its label when href is given", () => {
     render(
       <IconButton label="Open pull request" icon={IconRefresh} href="https://example.com/pr/1" />,
