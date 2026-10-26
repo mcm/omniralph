@@ -11,23 +11,23 @@ are stored, served and checked. The design is
 
 A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 
-| Field                                         | What it does                                                                                                                                                                                                         |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `name`, `description`                   | `builtin:<name>` for a built-in, a UUID for a custom one. Name up to 200 characters, description up to 2000.                                                                                                         |
-| `role`                                        | What kind of run it is ([roles](#roles)). The role fixes the task type, the triggers and the sink.                                                                                                                   |
-| `systemPrompt`, `systemPromptMode`            | The persona's instructions. `append` adds them to Claude Code's preset; `replace` uses them instead of the preset.                                                                                                   |
-| `systemAppend`                                | Role-specific system text (e.g. an output contract), appended after the system prompt.                                                                                                                               |
-| `promptTemplate`                              | The user prompt, rendered for each run ([templates](#templates)).                                                                                                                                                    |
-| `referenceDocs`                               | Named Markdown documents the run can read. A review renders `rubric/universal.md` and `rubric/languages/<language>.md` (for the diff's languages) as `{{rubric}}`, so a reviewer's rubric is its reference docs.     |
-| `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets neither: its review depth sets the model.                                          |
-| `tools`                                       | `builtin` (Claude Code tool names), `agent` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only). |
-| `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `linearRead` (the Linear tools), `network` (beyond the control panel).                                                                                                           |
-| `requires`                                    | Installables and host tools its runs need ([derived requirements](#derived-requirements)).                                                                                                                           |
-| `setupCommands`, `teardownCommands`           | Commands run before and after the session ([below](#setup-and-teardown-commands)).                                                                                                                                   |
-| `outputSchema`                                | A JSON schema of an object the output must match; query roles only, empty for a Markdown answer.                                                                                                                     |
-| `tokenBudget`                                 | A fixed `{ tokens }`, or `null` for **No limit**. A review playbook sets none: its review depth does.                                                                                                                |
+| Field                                         | What it does                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `name`, `description`                   | `builtin:<name>` for a built-in, a UUID for a custom one. Name up to 200 characters, description up to 2000.                                                                                                                                                                                                                                |
+| `role`                                        | What kind of run it is ([roles](#roles)). The role fixes the task type, the triggers and the sink.                                                                                                                                                                                                                                          |
+| `systemPrompt`, `systemPromptMode`            | The persona's instructions. `append` adds them to Claude Code's preset; `replace` uses them instead of the preset.                                                                                                                                                                                                                          |
+| `systemAppend`                                | Role-specific system text (e.g. an output contract), appended after the system prompt.                                                                                                                                                                                                                                                      |
+| `promptTemplate`                              | The user prompt, rendered for each run ([templates](#templates)).                                                                                                                                                                                                                                                                           |
+| `referenceDocs`                               | Named Markdown documents the run can read. A review renders `rubric/universal.md` and `rubric/languages/<language>.md` (for the diff's languages) as `{{rubric}}`, so a reviewer's rubric is its reference docs.                                                                                                                            |
+| `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets neither: its review depth sets the model.                                                                                                                                                                 |
+| `tools`                                       | `builtin` (Claude Code tool names), `agent` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only).                                                                                                                          |
+| `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `linearRead` (the Linear tools), `network` (beyond the control panel).                                                                                                                                                                                                                                  |
+| `requires`                                    | Installables and host tools its runs need ([derived requirements](#derived-requirements)).                                                                                                                                                                                                                                                  |
+| `setupCommands`, `teardownCommands`           | Commands run before and after the session ([below](#setup-and-teardown-commands)).                                                                                                                                                                                                                                                          |
+| `outputSchema`                                | A JSON schema of an object the output must match; query roles only, empty for a Markdown answer.                                                                                                                                                                                                                                            |
+| `tokenBudget`                                 | A fixed `{ tokens }`, or `null` for **No limit**. A review playbook sets none: its review depth does.                                                                                                                                                                                                                                       |
 | `coding`                                      | Story and request playbooks only ([coding settings](#coding-settings)): attempts and rounds per story, stall rounds, attempts per run, review and CI fix rounds, push timing, verify and worktree setup commands, preparation, the epic's completed state, branch cleanup and the `prDescriptionPlaybookId` that writes the PR description. |
-| `variableLimits`, `maxTurns`, `idleTimeoutMs` | Most characters of a variable rendered into the prompt, most turns, and how long a session may go quiet.                                                                                                             |
+| `variableLimits`, `maxTurns`, `idleTimeoutMs` | Most characters of a variable rendered into the prompt, most turns, and how long a session may go quiet.                                                                                                                                                                                                                                    |
 
 A playbook has no task types, skills, sink, pool, triggers or draft PR timing of its own. Parsing
 one that sets them fails with why (`REFUSED_PLAYBOOK_FIELDS`): "A playbook's role sets its task
@@ -62,7 +62,7 @@ decides how the agent runs it:
 | --------- | ------------------------------------------------------------------------------------------------------- |
 | `query`   | One read-only session; its answer (Markdown, or JSON matching an output schema) goes to the sink.       |
 | `review`  | One reviewer of a PR/MR's review run: it reports findings, merged and posted with the other playbooks'. |
-| `coding`  | A session that changes code in a worktree and ships it (Om's stories and requests).                  |
+| `coding`  | A session that changes code in a worktree and ships it (Om's stories and requests).                     |
 
 A run's **pool** (whose concurrency slots it takes) follows from its task type: `long` for coding
 runs, `short` for query and review runs. Nobody picks one.
@@ -113,18 +113,18 @@ rewrite, and responding to reviews and CI; see [Linear](linear.md#4-configure-ro
 it leaves out has its default (`CODING_DEFAULTS` in `packages/tasks/src/definitions.ts`), which is
 what the built-ins use:
 
-| Field | Default | What it does |
-| -- | -- | -- |
-| `maxAttemptsPerStory`, `maxRoundsPerStory`, `stallRounds`, `maxIterationsPerRun` | 3, 8, 3, 50 | How often a story is tried, how many review-loop rounds it gets, how many rounds without a better metric, and story attempts per run. |
-| `maxReviewRounds`, `maxFixRounds` | 3, 3 | How many reviews and failed CI runs of a lane's PR become requests. The request playbook's apply (it runs the rounds); the repo API reports the story playbook's. |
-| `pushTiming` | `per-story` | When the branch is pushed: after each story, or once at the `end`. |
-| `verifyCommands` | none | Quality gates the job runs after the session, before the PRD's. |
-| `runPrdQualityGates` | on | Also run the PRD's `## Quality Gates`. |
-| `worktreeSetupCommand` | none | Run once in a fresh branch worktree (e.g. `pnpm install`). |
-| `allowPreparation` | on | Offer to run a manual story's preparation commands. |
-| `epicCompletedState` | none | The state the epic moves to when every story is complete. |
-| `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes` | on, 60 | Remove the worktree and local branch after the merge, and how long to wait for an answer about unmerged commits. |
-| `prDescriptionPlaybookId` | `builtin:describe-pr` | The `pr-description` playbook that writes the PR title and description. |
+| Field                                                                            | Default               | What it does                                                                                                                                                      |
+| -------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxAttemptsPerStory`, `maxRoundsPerStory`, `stallRounds`, `maxIterationsPerRun` | 3, 8, 3, 50           | How often a story is tried, how many review-loop rounds it gets, how many rounds without a better metric, and story attempts per run.                             |
+| `maxReviewRounds`, `maxFixRounds`                                                | 3, 3                  | How many reviews and failed CI runs of a lane's PR become requests. The request playbook's apply (it runs the rounds); the repo API reports the story playbook's. |
+| `pushTiming`                                                                     | `per-story`           | When the branch is pushed: after each story, or once at the `end`.                                                                                                |
+| `verifyCommands`                                                                 | none                  | Quality gates the job runs after the session, before the PRD's.                                                                                                   |
+| `runPrdQualityGates`                                                             | on                    | Also run the PRD's `## Quality Gates`.                                                                                                                            |
+| `worktreeSetupCommand`                                                           | none                  | Run once in a fresh branch worktree (e.g. `pnpm install`).                                                                                                        |
+| `allowPreparation`                                                               | on                    | Offer to run a manual story's preparation commands.                                                                                                               |
+| `epicCompletedState`                                                             | none                  | The state the epic moves to when every story is complete.                                                                                                         |
+| `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes`                         | on, 60                | Remove the worktree and local branch after the merge, and how long to wait for an answer about unmerged commits.                                                  |
+| `prDescriptionPlaybookId`                                                        | `builtin:describe-pr` | The `pr-description` playbook that writes the PR title and description.                                                                                           |
 
 The control panel reads them with `codingSettings` (`apps/web/src/lib/ralph/coding.ts`): the story
 playbook's for the run as a whole, the request playbook's for requests and their rounds. The agent
@@ -167,14 +167,14 @@ They are served by the Playbooks API (`apps/web/src/app/api/ui/playbooks`), whic
 `deletePlaybook` in `apps/web/src/lib/playbooks/manage.ts`. Paths carry a `builtin:` ID
 URI-encoded (`builtin%3Areview-pr`).
 
-| Request                             | Who     | What it does                                                                                                                                                                                  |
-| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/ui/playbooks`             | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it).              |
-| `GET /api/ui/playbooks/{id}`        | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.                       |
-| `POST /api/ui/playbooks`            | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id }`.                                                                                                                    |
-| `PUT /api/ui/playbooks/{id}`        | Admins  | Replaces a custom playbook. A built-in is refused with 409 `builtin_read_only`.                                                                                                               |
-| `POST /api/ui/playbooks/{id}/clone` | Admins  | Copies a built-in or custom playbook into a new one named `<name> (copy)`; answers `{ ok, id }`. A built-in-only role can't be copied.                                                        |
-| `DELETE /api/ui/playbooks/{id}`     | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                                         |
+| Request                             | Who     | What it does                                                                                                                                                                     |
+| ----------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/ui/playbooks`             | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it). |
+| `GET /api/ui/playbooks/{id}`        | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.          |
+| `POST /api/ui/playbooks`            | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id }`.                                                                                                       |
+| `PUT /api/ui/playbooks/{id}`        | Admins  | Replaces a custom playbook. A built-in is refused with 409 `builtin_read_only`.                                                                                                  |
+| `POST /api/ui/playbooks/{id}/clone` | Admins  | Copies a built-in or custom playbook into a new one named `<name> (copy)`; answers `{ ok, id }`. A built-in-only role can't be copied.                                           |
+| `DELETE /api/ui/playbooks/{id}`     | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                           |
 
 Every save, clone and delete publishes the `playbooks` settings change event with the playbook as
 its subject. A playbook's role can't change on **Save** while anything
@@ -250,24 +250,24 @@ playbooks and the control panel's sinks. A rejected save answers 400 "Fix the hi
 with each error under its playbook field; nothing is stored. The rules, with the field each error
 appears on and an example message:
 
-| Rule                                                                                                   | Field                            | Example error                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The schema: required fields, lengths, ranges, known values                                             | The field                        | `name`: Too small: expected string to have >=1 characters / `setupCommands.0.name`: Use lowercase letters, digits and \_, starting with a letter |
-| No field the role sets (`REFUSED_PLAYBOOK_FIELDS`)                                                     | The field                        | A playbook's role sets where its output goes; remove sink.                                                                                       |
-| A role a custom playbook can take                                                                      | `role`                           | Only a built-in playbook can be a triage playbook.                                                                                               |
-| MCP servers are an installable's                                                                       | `tools.mcpServers.<i>`           | Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.                                                         |
-| Agent tools are allowed for the role's task type                                                       | `tools.agent`                    | review runs can't use the agent tool ship.                                                                                                       |
-| Setup command names are unique                                                                         | `setupCommands.<i>.name`         | Setup command name semgrep is used twice                                                                                                         |
-| Only query roles have an output schema; only story and request playbooks have coding settings          | `outputSchema`, `coding`         | A review playbook can't declare an output schema.                                                                                                |
-| A review playbook sets no model, fallback model or token budget                                        | `model`, `fallbackModel`, `tokenBudget` | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
-| The template parses                                                                                    | `promptTemplate`                 | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
-| Every variable exists for the role's task type and every one of its triggers                           | `promptTemplate`                 | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |
-| A request playbook only uses `epic.prd` and `story.*` inside an optional section                       | `promptTemplate`                 | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |
-| A variable limit names a variable the playbook can use                                                 | `variableLimits.<name>`          | This task can't use hunk.                                                                                                                        |
-| The output schema is an object schema the agent can check output against                            | `outputSchema`                   | The output must be an object: set "type": "object".                                                                                              |
-| A correlation or PR description playbook outputs `{ findings, summary }` / `{ title, body }`          | `outputSchema`                   | … has no output schema: a PR description task outputs { title, body }.                                                                          |
-| The role's sink takes the output (a Markdown answer, or structured output it accepts)                  | `role`                           | The chat-thread sink takes a Markdown answer: remove the output schema.                                                                          |
-| The PR description playbook exists and is a `pr-description` playbook                                  | `coding.prDescriptionPlaybookId` | There is no task 0b7c….                                                                                                                          |
+| Rule                                                                                          | Field                                   | Example error                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The schema: required fields, lengths, ranges, known values                                    | The field                               | `name`: Too small: expected string to have >=1 characters / `setupCommands.0.name`: Use lowercase letters, digits and \_, starting with a letter |
+| No field the role sets (`REFUSED_PLAYBOOK_FIELDS`)                                            | The field                               | A playbook's role sets where its output goes; remove sink.                                                                                       |
+| A role a custom playbook can take                                                             | `role`                                  | Only a built-in playbook can be a triage playbook.                                                                                               |
+| MCP servers are an installable's                                                              | `tools.mcpServers.<i>`                  | Name an installable's MCP server as <package>:<server>; other MCP servers can't be used.                                                         |
+| Agent tools are allowed for the role's task type                                              | `tools.agent`                           | review runs can't use the agent tool ship.                                                                                                       |
+| Setup command names are unique                                                                | `setupCommands.<i>.name`                | Setup command name semgrep is used twice                                                                                                         |
+| Only query roles have an output schema; only story and request playbooks have coding settings | `outputSchema`, `coding`                | A review playbook can't declare an output schema.                                                                                                |
+| A review playbook sets no model, fallback model or token budget                               | `model`, `fallbackModel`, `tokenBudget` | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
+| The template parses                                                                           | `promptTemplate`                        | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
+| Every variable exists for the role's task type and every one of its triggers                  | `promptTemplate`                        | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |
+| A request playbook only uses `epic.prd` and `story.*` inside an optional section              | `promptTemplate`                        | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |
+| A variable limit names a variable the playbook can use                                        | `variableLimits.<name>`                 | This task can't use hunk.                                                                                                                        |
+| The output schema is an object schema the agent can check output against                      | `outputSchema`                          | The output must be an object: set "type": "object".                                                                                              |
+| A correlation or PR description playbook outputs `{ findings, summary }` / `{ title, body }`  | `outputSchema`                          | … has no output schema: a PR description task outputs { title, body }.                                                                           |
+| The role's sink takes the output (a Markdown answer, or structured output it accepts)         | `role`                                  | The chat-thread sink takes a Markdown answer: remove the output schema.                                                                          |
+| The PR description playbook exists and is a `pr-description` playbook                         | `coding.prDescriptionPlaybookId`        | There is no task 0b7c….                                                                                                                          |
 
 Every built-in a custom playbook's role allows passes the same validation as a clone (a test in
 `apps/web/src/lib/playbooks/validation.test.ts`), so a cloned built-in saves unchanged.
@@ -333,21 +333,22 @@ Change or remove the settings named, wait for the runs, then delete.
 
 Each binding takes playbooks of the roles listed (`REPOSITORY_BINDING_ROLES`), built-in or the
 organization's own, and the server checks each pick on save: another organization's playbook, an
-unresolvable one or one of another role is refused under the field. Binding a repo's role is
-admin-only and part of the repo settings API; a save that leaves a binding out keeps it.
+unresolvable one or one of another role is refused under the field. A repo's bindings are its
+Repos page's Playbooks card, saved together by admins with `PUT /api/ui/repositories/{id}/playbooks`
+(`{ bindings: { review, correlation, story, request } }`; every binding is given).
 
-| Setting                                                                                       | Roles                      |
-| --------------------------------------------------------------------------------------------- | -------------------------- |
-| `reviewPlaybookIds` of `PUT /api/ui/repositories/{id}/settings` (run in parallel per review)   | `review`, `review-summary` |
-| `correlationPlaybookId` of `PUT /api/ui/repositories/{id}/settings`                            | `correlation`              |
-| `storyPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                    | `story`                    |
-| `requestPlaybookId` of `PUT /api/ui/repositories/{id}/coding`                                  | `request`                  |
-| `ask` of `PUT /api/ui/integrations/chat-tasks` or a channel override ([chat.md](chat.md#chat-playbooks)) | `chat-ask` |
-| `startWork` of `PUT /api/ui/integrations/chat-tasks` or a channel override                    | `request`                  |
-| A story or request playbook's `coding.prDescriptionPlaybookId`                                | `pr-description`           |
+| Setting                                                                                                  | Roles                      |
+| -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `bindings.review` of `PUT /api/ui/repositories/{id}/playbooks` (run in parallel per review)              | `review`, `review-summary` |
+| `bindings.correlation` of `PUT /api/ui/repositories/{id}/playbooks`                                      | `correlation`              |
+| `bindings.story` of `PUT /api/ui/repositories/{id}/playbooks`                                            | `story`                    |
+| `bindings.request` of `PUT /api/ui/repositories/{id}/playbooks`                                          | `request`                  |
+| `ask` of `PUT /api/ui/integrations/chat-tasks` or a channel override ([chat.md](chat.md#chat-playbooks)) | `chat-ask`                 |
+| `startWork` of `PUT /api/ui/integrations/chat-tasks` or a channel override                               | `request`                  |
+| A story or request playbook's `coding.prDescriptionPlaybookId`                                           | `pr-description`           |
 
-A binding change publishes the repo's `repository.reviews` or `repository.coding` change event.
-Changes apply to the next run; runs already started keep the playbook they were claimed with.
+A binding change records one `repository.playbooks` change-history entry and publishes the repo's
+change event. Changes apply to the next run; runs already started keep the playbook they were claimed with.
 
 ## Walkthrough: a second review playbook
 
@@ -361,8 +362,8 @@ Add a security reviewer next to the default review, with its own rubric:
    what this reviewer looks for (e.g. injection, authz, secrets), and adjust the `promptTemplate`
    if you like (it is checked against the review variables for `pr.updated`, `pr.mention` and
    `review.rerun`).
-3. **Bind it to a repo.** `PUT /api/ui/repositories/{id}/settings` with
-   `reviewPlaybookIds: ["builtin:review-pr", "<id>"]`.
+3. **Bind it to a repo.** `PUT /api/ui/repositories/{id}/playbooks` with the repo's bindings and
+   `review: ["builtin:review-pr", "<id>"]`.
 
 The next push or `@omniralph review` on a PR/MR of that repository starts one review run with both
 playbooks in parallel; the correlation playbook merges findings both reported, and the posted

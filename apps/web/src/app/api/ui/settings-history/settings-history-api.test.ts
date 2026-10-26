@@ -26,9 +26,10 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { type RepositoryCodingInput, type RepositorySettingsInput } from "@omniralph/shared";
+import type { RepositoryCodingInput } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReviewsCardInput } from "@/lib/api/repositories";
 import { settingsHistorySchema, type SettingsHistory } from "@/lib/api/settings-history";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -56,8 +57,10 @@ vi.mock("@/lib/auth/session", () => ({
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const history = await import("./route");
-const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
-const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
+const repositoryReviews = await import("@/app/api/ui/repositories/[id]/reviews/route");
+const repositoryAsk = await import("@/app/api/ui/repositories/[id]/ask/route");
+const repositoryAgents = await import("@/app/api/ui/repositories/[id]/agents/route");
+const repositoryPlaybooks = await import("@/app/api/ui/repositories/[id]/playbooks/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
 const repository = await import("@/app/api/ui/repositories/[id]/route");
 const routingRules = await import("@/app/api/ui/routing-rules/route");
@@ -81,14 +84,12 @@ const person = (id: string, role: Role, name: string): TestUser => ({
 const admin = person("history-admin", "admin", "Ada Admin");
 const member = person("history-member", "member", "Max Member");
 
-const baseSettings: RepositorySettingsInput = {
-  depth: "standard",
+const baseReviews: ReviewsCardInput = {
+  reviewsEnabled: true,
   triggers: { onOpen: true, onPush: true, drafts: false },
+  depth: "standard",
   pathExcludes: [],
-  customInstructions: "",
-  pinnedAgentIds: [],
-  reviewPlaybookIds: ["builtin:review-pr"],
-  correlationPlaybookId: "builtin:correlate-findings",
+  reviewerInstructions: "",
 };
 
 const baseCoding: RepositoryCodingInput = {
@@ -182,15 +183,15 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
   describe("recording", () => {
     it("repository.reviews: records the changed fields once, with the actor", async () => {
       const save = (body: unknown) =>
-        callAction(repositorySettings.PUT, "PUT", { id: repoId }, body);
+        callAction(repositoryReviews.PUT, "PUT", { id: repoId }, body);
       const { result, changes } = await captureChanges(() =>
-        save({ ...baseSettings, triggers: { ...baseSettings.triggers, onPush: false } }),
+        save({ ...baseReviews, triggers: { ...baseReviews.triggers, onPush: false } }),
       );
-      expect(result).toEqual({ ok: true });
+      expect(result).toMatchObject({ ok: true });
       const [entry] = await entries("repository.reviews", repoId);
       expect(entry).toMatchObject({
         actor: { userId: admin.id, name: "Ada Admin" },
-        changes: [{ field: "onPush", label: "Review on push", before: "On", after: "Off" }],
+        changes: [{ field: "onPush", label: "New commits pushed", before: "On", after: "Off" }],
       });
       expect(Date.now() - entry!.changedAt.getTime()).toBeLessThan(60_000);
       // Published once the save committed, with its section and subject.
@@ -203,39 +204,42 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         }),
       );
 
-      // The same values again: nothing recorded, nothing published for the history.
-      await save({ ...baseSettings, triggers: { ...baseSettings.triggers, onPush: false } });
+      // The same values again: nothing recorded, nothing published.
+      const again = await captureChanges(() =>
+        save({ ...baseReviews, triggers: { ...baseReviews.triggers, onPush: false } }),
+      );
+      expect(again.changes).toEqual([]);
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);
 
       // A refused save records nothing either.
-      const refused = await captureChanges(() => save({ ...baseSettings, depth: "nope" }));
+      const refused = await captureChanges(() => save({ ...baseReviews, depth: "nope" }));
       expect(refused.result).toMatchObject({ ok: false });
       expect(refused.changes).toEqual([]);
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);
     });
 
-    it("task-type switches: the reviews switch in reviews, coding and ask in coding", async () => {
+    it("switches: Reviews in repository.reviews, Ask in repository.ask", async () => {
       expect(
         await callAction(
-          repositoryTaskTypes.PUT,
+          repositoryReviews.PUT,
           "PUT",
           { id: otherRepoId },
-          { reviews: false, coding: false, ask: false },
+          { ...baseReviews, reviewsEnabled: false },
         ),
-      ).toEqual({ reviews: false, coding: false, ask: false });
+      ).toMatchObject({ ok: true, card: { enabled: false } });
+      expect(
+        await callAction(repositoryAsk.PUT, "PUT", { id: otherRepoId }, { askEnabled: false }),
+      ).toEqual({ ok: true, card: { enabled: false } });
       expect((await entries("repository.reviews", otherRepoId))[0]!.changes).toEqual([
         { field: "reviews", label: "Reviews", before: "On", after: "Off" },
       ]);
-      expect((await entries("repository.coding", otherRepoId))[0]!.changes).toEqual([
-        { field: "query", label: "Ask about code", before: "On", after: "Off" },
+      expect((await entries("repository.ask", otherRepoId))[0]!.changes).toEqual([
+        { field: "ask", label: "Ask", before: "On", after: "Off" },
       ]);
+      expect(await entries("repository.coding", otherRepoId)).toHaveLength(0);
       // Back on, as the other tests expect.
-      await callAction(
-        repositoryTaskTypes.PUT,
-        "PUT",
-        { id: otherRepoId },
-        { reviews: true, coding: false, ask: true },
-      );
+      await callAction(repositoryReviews.PUT, "PUT", { id: otherRepoId }, baseReviews);
+      await callAction(repositoryAsk.PUT, "PUT", { id: otherRepoId }, { askEnabled: true });
     });
 
     it("repository.coding: the coding policy's changed settings", async () => {
@@ -268,37 +272,17 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       ]);
     });
 
-    it("repository.agents: pins from the repository's settings", async () => {
-      expect(
-        await callAction(
-          repositorySettings.PUT,
-          "PUT",
-          { id: repoId },
-          {
-            ...baseSettings,
-            triggers: { ...baseSettings.triggers, onPush: false },
-            pinnedAgentIds: [agentA],
-          },
-        ),
-      ).toEqual({ ok: true });
+    it("repository.agents: pins from the repo's Agents card", async () => {
+      const pin = (pinnedAgentIds: string[]) =>
+        callAction(repositoryAgents.PUT, "PUT", { id: repoId }, { pinnedAgentIds });
+      expect(await pin([agentA])).toMatchObject({ ok: true });
       // Only the pins changed: no new review settings entry.
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);
       expect((await entries("repository.agents", repoId))[0]!.changes).toEqual([
         { field: "agents", label: "Pinned agents", before: [], after: ["coder-a"] },
       ]);
 
-      expect(
-        await callAction(
-          repositorySettings.PUT,
-          "PUT",
-          { id: repoId },
-          {
-            ...baseSettings,
-            triggers: { ...baseSettings.triggers, onPush: false },
-            pinnedAgentIds: [agentA, agentB],
-          },
-        ),
-      ).toEqual({ ok: true });
+      expect(await pin([agentA, agentB])).toMatchObject({ ok: true });
       expect((await entries("repository.agents", repoId))[0]!.changes).toEqual([
         {
           field: "agents",
@@ -308,6 +292,34 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         },
       ]);
       expect(await entries("repository.agents", otherRepoId)).toHaveLength(0);
+    });
+
+    it("repository.playbooks: the bindings by playbook name", async () => {
+      expect(
+        await callAction(
+          repositoryPlaybooks.PUT,
+          "PUT",
+          { id: otherRepoId },
+          {
+            bindings: {
+              review: ["builtin:summarize-pr"],
+              correlation: "builtin:correlate-findings",
+              story: "builtin:implement-story",
+              request: "builtin:handle-request",
+            },
+          },
+        ),
+      ).toMatchObject({ ok: true });
+      const [entry] = await entries("repository.playbooks", otherRepoId);
+      expect(entry!.changes).toEqual([
+        {
+          field: "review",
+          label: "Review playbook",
+          before: [expect.any(String)],
+          after: [expect.any(String)],
+        },
+      ]);
+      expect(entry!.changes[0]!.before).not.toEqual(entry!.changes[0]!.after);
     });
 
     it("routing_rules: describes each changed rule", async () => {

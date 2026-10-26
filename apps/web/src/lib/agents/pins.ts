@@ -27,8 +27,22 @@ export async function pinRepository(
   });
   if (result !== "pinned" && result !== "already_pinned") return { result };
   if (result === "pinned") await bumpAgentHeartbeat(input.agentId);
+  const syncJobId = await enqueueRepoSync(db, dispatcher, input);
+  return syncJobId ? { result, syncJobId } : { result: "unknown_repository" };
+}
+
+/**
+ * Enqueues a `repo.sync` system RPC targeted at the agent, so it (pre-)clones the
+ * repository; deduped per agent and repository. Answers the job's ID, or null for an unknown
+ * repository.
+ */
+export async function enqueueRepoSync(
+  db: Database,
+  dispatcher: JobDispatcher,
+  input: { agentId: string; repositoryId: string },
+): Promise<string | null> {
   const found = await getRepositoryWithConnection(db, input.repositoryId);
-  if (!found) return { result: "unknown_repository" };
+  if (!found) return null;
   const payload: RepoSyncPayload = {
     repository: jobRepository(found.repository, found.connection),
   };
@@ -42,5 +56,5 @@ export async function pinRepository(
     dedupeKey: `${REPO_SYNC_JOB_TYPE}:${input.agentId}:${input.repositoryId}`,
     targetAgentId: input.agentId,
   });
-  return { result, syncJobId: job.id };
+  return job.id;
 }

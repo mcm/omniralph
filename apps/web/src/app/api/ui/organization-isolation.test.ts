@@ -26,7 +26,9 @@ import {
   listChatIdentities,
   listOrganizationDomains,
   listPendingInvitationsForOrganization,
+  agentRepoPins,
   connectRepository,
+  repositories,
   createDb,
   createAgentEnrollment,
   createCustomRule,
@@ -215,8 +217,10 @@ const repository = await import("./repositories/[id]/route");
 const repositoryDetail = repository;
 const legacyRepositoryDetail = await import("./repositories/[id]/overview/route");
 const repositoryWebhook = await import("./repositories/[id]/webhook/route");
-const repositorySettings = await import("./repositories/[id]/settings/route");
-const repositoryTaskTypes = await import("./repositories/[id]/task-types/route");
+const repositoryReviews = await import("./repositories/[id]/reviews/route");
+const repositoryAsk = await import("./repositories/[id]/ask/route");
+const repositoryAgents = await import("./repositories/[id]/agents/route");
+const repositoryPlaybooks = await import("./repositories/[id]/playbooks/route");
 const repositoryCoding = await import("./repositories/[id]/coding/route");
 const repositoryRules = await import("./repositories/[id]/rules/route");
 const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
@@ -1453,53 +1457,195 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   });
 
   it("refuses every repository settings save on the other organization's repository", async () => {
-    const reviewSettings = {
-      depth: "deep",
-      triggers: { onOpen: false, onPush: false, drafts: false },
-      pathExcludes: [],
-      customInstructions: "",
-      pinnedAgentIds: [],
-      reviewPlaybookIds: ["builtin:review-pr"],
-      correlationPlaybookId: "builtin:correlate-findings",
-    };
+    const cards = (id: string, agentId: string) => [
+      call(repositoryReviews.PUT, {
+        method: "PUT",
+        params: { id },
+        body: {
+          reviewsEnabled: false,
+          triggers: { onOpen: false, onPush: false, drafts: false },
+          depth: "deep",
+          pathExcludes: [],
+          reviewerInstructions: "",
+        },
+      }),
+      call(repositoryAsk.PUT, { method: "PUT", params: { id }, body: { askEnabled: false } }),
+      call(repositoryAgents.PUT, {
+        method: "PUT",
+        params: { id },
+        body: { pinnedAgentIds: [agentId] },
+      }),
+      call(repositoryPlaybooks.PUT, {
+        method: "PUT",
+        params: { id },
+        body: {
+          bindings: {
+            review: ["builtin:summarize-pr"],
+            correlation: "builtin:correlate-findings",
+            story: "builtin:implement-story",
+            request: "builtin:handle-request",
+          },
+        },
+      }),
+    ];
     // A valid coding policy: the other organization's own.
     state.userId = b.adminId;
     const { roundLimits: _limits, ...coding } = (
       await call(repositoryCoding.GET, { params: { id: b.repoId } })
     ).body;
-    const saves = (id: string) => [
-      call(repositorySettings.PUT, { method: "PUT", params: { id }, body: reviewSettings }),
-      call(repositoryTaskTypes.PUT, {
-        method: "PUT",
-        params: { id },
-        body: { reviews: false, coding: false, ask: false },
-      }),
-      call(repositoryCoding.PUT, {
-        method: "PUT",
-        params: { id },
-        body: coding,
-      }),
-    ];
+    const codingSave = (id: string) =>
+      call(repositoryCoding.PUT, { method: "PUT", params: { id }, body: coding });
     state.userId = a.adminId;
-    for (const response of await Promise.all(saves(b.repoId))) {
-      expect(response).toMatchObject({
-        status: 400,
-        body: { error: "That repository isn't connected." },
-      });
+    // The card saves serve any of the user's organizations: the other's repo is not found.
+    for (const response of await Promise.all(cards(b.repoId, b.agentId))) {
+      expect(response).toMatchObject({ status: 404, body: { error: expect.any(String) } });
     }
-    for (const response of await Promise.all(saves("not-a-uuid"))) {
+    expect(await codingSave(b.repoId)).toMatchObject({
+      status: 400,
+      body: { error: "That repository isn't connected." },
+    });
+    for (const response of await Promise.all([
+      ...cards("not-a-uuid", b.agentId),
+      codingSave("not-a-uuid"),
+    ])) {
       expect(response.status).toBe(404);
     }
+    // Pinning the other organization's agent on the admin's own repository is refused.
+    const foreignPin = await call(repositoryAgents.PUT, {
+      method: "PUT",
+      params: { id: a.repoId },
+      body: { pinnedAgentIds: [b.agentId] },
+    });
+    expect(foreignPin).toMatchObject({
+      status: 400,
+      body: { fieldErrors: { pinnedAgentIds: expect.any(String) } },
+    });
     // Members change nothing, in their own organization either.
     state.userId = b.memberId;
-    for (const response of await Promise.all(saves(b.repoId))) expect(response.status).toBe(403);
+    for (const response of await Promise.all([
+      ...cards(b.repoId, b.agentId),
+      codingSave(b.repoId),
+    ])) {
+      expect(response.status).toBe(403);
+    }
     expect(await getRepository(db, b.repoId)).toMatchObject({
       reviewDepth: "standard",
       reviewsEnabled: true,
       askEnabled: true,
       codingEnabled: false,
-      storyPlaybookId: "builtin:implement-story",
+      reviewPlaybookIds: ["builtin:review-pr"],
     });
+    expect(
+      await db.select().from(agentRepoPins).where(eq(agentRepoPins.repositoryId, b.repoId)),
+    ).toEqual([]);
+  });
+
+  it("saves each card of a repo of a non-active organization for its admin, not after they leave", async () => {
+    const [both] = await db
+      .insert(users)
+      .values({ id: "cards-both-admin", email: "cards-both@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: both!.id, role: "member" },
+      { organizationId: b.orgId, userId: both!.id, role: "admin" },
+    ]);
+    await setActiveOrganization(db, { userId: both!.id, organizationId: a.orgId });
+    state.userId = both!.id;
+    const before = await getRepository(db, b.repoId);
+    try {
+      const saves = [
+        call(repositoryAsk.PUT, {
+          method: "PUT",
+          params: { id: b.repoId },
+          body: { askEnabled: false },
+        }),
+        call(repositoryAgents.PUT, {
+          method: "PUT",
+          params: { id: b.repoId },
+          body: { pinnedAgentIds: [b.agentId] },
+        }),
+      ];
+      const [ask, agentsSaved] = await Promise.all(saves);
+      expect(ask).toMatchObject({ status: 200, body: { ok: true, card: { enabled: false } } });
+      expect(agentsSaved).toMatchObject({
+        status: 200,
+        body: { ok: true, card: { pinned: [{ id: b.agentId }] } },
+      });
+      const reviews = await call(repositoryReviews.PUT, {
+        method: "PUT",
+        params: { id: b.repoId },
+        body: {
+          reviewsEnabled: true,
+          triggers: before!.triggers,
+          depth: "quick",
+          pathExcludes: [],
+          reviewerInstructions: "",
+        },
+      });
+      expect(reviews).toMatchObject({ status: 200, body: { card: { depth: "quick" } } });
+      const playbooks = await call(repositoryPlaybooks.PUT, {
+        method: "PUT",
+        params: { id: b.repoId },
+        body: {
+          bindings: {
+            review: ["builtin:summarize-pr"],
+            correlation: before!.correlationPlaybookId,
+            story: before!.storyPlaybookId,
+            request: before!.requestPlaybookId,
+          },
+        },
+      });
+      expect(playbooks).toMatchObject({
+        status: 200,
+        body: { card: { bindings: { review: ["builtin:summarize-pr"] } } },
+      });
+      // An admin of the active organization only is refused (member of the repo's).
+      await db
+        .update(organizationMembers)
+        .set({ role: "member" })
+        .where(
+          and(
+            eq(organizationMembers.userId, both!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+      expect(
+        await call(repositoryAsk.PUT, {
+          method: "PUT",
+          params: { id: b.repoId },
+          body: { askEnabled: true },
+        }),
+      ).toMatchObject({ status: 403 });
+      // After leaving, the repo isn't found.
+      await db
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, both!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+      expect(
+        await call(repositoryAsk.PUT, {
+          method: "PUT",
+          params: { id: b.repoId },
+          body: { askEnabled: true },
+        }),
+      ).toMatchObject({ status: 404 });
+    } finally {
+      // As the other tests expect b's repo.
+      await db
+        .update(repositories)
+        .set({
+          askEnabled: before!.askEnabled,
+          reviewDepth: before!.reviewDepth,
+          reviewPlaybookIds: before!.reviewPlaybookIds,
+        })
+        .where(eq(repositories.id, b.repoId));
+      await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, b.repoId));
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, both!.id));
+      await db.delete(users).where(eq(users.id, both!.id));
+    }
   });
 
   it("shows each organization's own repository rules to its members, and 404s on the other's", async () => {

@@ -1,4 +1,11 @@
-import { RALPH_HISTORY_REWRITE_POLICIES, ReviewDepthSchema } from "@omniralph/shared";
+import {
+  MAX_CUSTOM_INSTRUCTIONS_LENGTH,
+  MAX_PATH_EXCLUDES,
+  MAX_REVIEW_TASKS,
+  PathExcludeGlob,
+  RALPH_HISTORY_REWRITE_POLICIES,
+  ReviewDepthSchema,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { organizationRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
@@ -15,11 +22,7 @@ import { WORK_ITEM_TRACKERS, workItemMatchSchema } from "./work-item-matches";
 
 const provider = z.enum(["github", "gitlab"]);
 
-/**
- * A repository's switches: Reviews, Coding and Ask (externally triggered queries), each on or
- * off. `GET`/`PUT /api/ui/repositories/{id}/task-types` (admins) answer it; `PUT` takes it
- * (`RepositoryTaskTypesInput`).
- */
+/** A repository's switches on the old Repositories pages: Reviews, Coding and Ask. */
 export const repositoryTaskTypesSchema = z.object({
   reviews: z.boolean(),
   coding: z.boolean(),
@@ -422,6 +425,61 @@ export const repositoryDetailSchema = z.object({
   }),
 });
 export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
+
+// ── Card saves (`PUT /api/ui/repositories/{id}/<card>`) ─────────────────────────────────────
+// Each takes exactly its card's fields (any other key answers 400) and answers
+// `{ ok: true, card }` with the saved card in the detail's shape.
+
+const onOff = z.boolean({ error: "Choose on or off." });
+
+/** `PUT /api/ui/repositories/{id}/reviews` body: the whole Reviews card. */
+export const reviewsCardInputSchema = z.strictObject({
+  reviewsEnabled: onOff,
+  triggers: z.strictObject({ onOpen: onOff, onPush: onOff, drafts: onOff }),
+  depth: ReviewDepthSchema,
+  pathExcludes: z
+    .array(PathExcludeGlob)
+    .max(MAX_PATH_EXCLUDES, `At most ${MAX_PATH_EXCLUDES} patterns.`),
+  /** Empty for none; surrounding spaces are dropped. */
+  reviewerInstructions: z
+    .string()
+    .max(
+      MAX_CUSTOM_INSTRUCTIONS_LENGTH,
+      `Reviewer instructions can be at most ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString("en-US")} characters.`,
+    ),
+});
+export type ReviewsCardInput = z.infer<typeof reviewsCardInputSchema>;
+
+/** `PUT /api/ui/repositories/{id}/ask` body. */
+export const askCardInputSchema = z.strictObject({ askEnabled: onOff });
+export type AskCardInput = z.infer<typeof askCardInputSchema>;
+
+/** `PUT /api/ui/repositories/{id}/agents` body: every pinned agent (none: any agent). */
+export const agentsCardInputSchema = z.strictObject({
+  pinnedAgentIds: z.array(z.uuid({ error: "Choose an agent." })).max(100, "At most 100 agents."),
+});
+export type AgentsCardInput = z.infer<typeof agentsCardInputSchema>;
+
+const playbookId = (message: string) => z.string({ error: message }).min(1, message).max(200);
+
+/** `PUT /api/ui/repositories/{id}/playbooks` body: every binding (the server checks roles). */
+export const playbooksCardInputSchema = z.strictObject({
+  bindings: z.strictObject({
+    review: z
+      .array(z.string().min(1).max(200))
+      .min(1, "Choose a review playbook.")
+      .max(MAX_REVIEW_TASKS, `At most ${MAX_REVIEW_TASKS} review playbooks.`)
+      .refine((ids) => new Set(ids).size === ids.length, "Choose each review playbook once."),
+    correlation: playbookId("Choose a playbook that combines review findings."),
+    story: playbookId("Choose a stories playbook."),
+    request: playbookId("Choose a requests playbook."),
+  }),
+});
+export type PlaybooksCardInput = z.infer<typeof playbooksCardInputSchema>;
+
+/** What a card save answers: the saved card, as the detail shows it. */
+export const cardSaveResultSchema = <T extends z.ZodType>(card: T) =>
+  z.object({ ok: z.literal(true), card });
 
 /**
  * `GET`/`PUT /api/ui/repositories/{id}/coding` (admins): the repo's coding policy, exactly what

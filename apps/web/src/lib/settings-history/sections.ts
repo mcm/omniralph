@@ -62,17 +62,18 @@ async function taskNames(db: Database, organizationId: string) {
 
 // ── repository.reviews ──────────────────────────────────────────────────────
 
-const REPOSITORY_REVIEWS_FIELDS: SettingsFields = {
-  reviews: { label: "Reviews" },
-  depth: { label: "Review depth" },
-  onOpen: { label: "Review when opened" },
-  onPush: { label: "Review on push" },
-  drafts: { label: "Review drafts" },
-  pathExcludes: { label: "Excluded paths" },
-  customInstructions: { label: "Custom instructions" },
-  reviewTasks: { label: "Review playbooks" },
-  correlationTask: { label: "Correlation playbook" },
-};
+/** The Reviews card's fields, labeled as the card shows them (PR or MR by provider). */
+function repositoryReviewsFields(provider: Repository["provider"]): SettingsFields {
+  return {
+    reviews: { label: "Reviews" },
+    onOpen: { label: provider === "gitlab" ? "MR opened" : "PR opened" },
+    onPush: { label: "New commits pushed" },
+    drafts: { label: "Drafts too" },
+    depth: { label: "Depth" },
+    pathExcludes: { label: "Skip paths" },
+    reviewerInstructions: { label: "Reviewer instructions" },
+  };
+}
 
 async function readRepositoryReviews(
   db: Database,
@@ -81,30 +82,27 @@ async function readRepositoryReviews(
 ): Promise<SettingsValues | null> {
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return null;
-  const task = await taskNames(db, organizationId);
   return {
     reviews: onOff(repository.reviewsEnabled),
-    depth: REVIEW_DEPTHS[repository.reviewDepth].label,
     onOpen: onOff(repository.triggers.onOpen),
     onPush: onOff(repository.triggers.onPush),
     drafts: onOff(repository.triggers.drafts),
+    depth: REVIEW_DEPTHS[repository.reviewDepth].label,
     pathExcludes: repository.pathExcludes,
-    customInstructions: repository.customInstructions,
-    reviewTasks: repository.reviewPlaybookIds.map(task),
-    correlationTask: task(repository.correlationPlaybookId),
+    reviewerInstructions: repository.customInstructions,
   };
 }
 
+/** The repository's Reviews card (`repository.reviews`). */
 export function trackedRepositoryReviews(
-  organizationId: string,
-  repositoryId: string,
+  repository: Pick<Repository, "id" | "organizationId" | "provider">,
 ): TrackedSettings {
   return {
-    organizationId,
+    organizationId: repository.organizationId,
     section: "repository.reviews",
-    subjectId: repositoryId,
-    fields: REPOSITORY_REVIEWS_FIELDS,
-    read: (db) => readRepositoryReviews(db, organizationId, repositoryId),
+    subjectId: repository.id,
+    fields: repositoryReviewsFields(repository.provider),
+    read: (db) => readRepositoryReviews(db, repository.organizationId, repository.id),
   };
 }
 
@@ -118,9 +116,6 @@ const HISTORY_REWRITE_LABELS: Record<Repository["historyRewrite"], string> = {
 
 const REPOSITORY_CODING_FIELDS: SettingsFields = {
   coding: { label: "Coding" },
-  query: { label: "Ask about code" },
-  storyTask: { label: "Story playbook" },
-  requestTask: { label: "Request playbook" },
   codingInstructions: { label: "Extra instructions" },
   openPullRequestEarly: { label: "Open the pull request early" },
   historyRewrite: { label: "Rewrite history" },
@@ -134,12 +129,8 @@ async function readRepositoryCoding(
 ): Promise<SettingsValues | null> {
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return null;
-  const task = await taskNames(db, organizationId);
   return {
     coding: onOff(repository.codingEnabled),
-    query: onOff(repository.askEnabled),
-    storyTask: task(repository.storyPlaybookId),
-    requestTask: task(repository.requestPlaybookId),
     codingInstructions: repository.codingInstructions,
     openPullRequestEarly: onOff(repository.openPullRequestEarly),
     historyRewrite: HISTORY_REWRITE_LABELS[repository.historyRewrite],
@@ -160,6 +151,25 @@ export function trackedRepositoryCoding(
   };
 }
 
+// ── repository.ask ──────────────────────────────────────────────────────────
+
+/** The repository's Ask card (`repository.ask`). */
+export function trackedRepositoryAsk(
+  organizationId: string,
+  repositoryId: string,
+): TrackedSettings {
+  return {
+    organizationId,
+    section: "repository.ask",
+    subjectId: repositoryId,
+    fields: { ask: { label: "Ask" } },
+    read: async (db) => {
+      const repository = await getRepository(db, repositoryId, organizationId);
+      return repository ? { ask: onOff(repository.askEnabled) } : null;
+    },
+  };
+}
+
 // ── repository.agents ───────────────────────────────────────────────────────
 
 export function trackedRepositoryAgents(
@@ -175,6 +185,46 @@ export function trackedRepositoryAgents(
       (await getRepository(db, repositoryId, organizationId))
         ? { agents: await listRepositoryPinnedAgentNames(db, repositoryId) }
         : null,
+  };
+}
+
+// ── repository.playbooks ────────────────────────────────────────────────────
+
+/** The Playbooks card's bindings, labeled as its selects. */
+const REPOSITORY_PLAYBOOKS_FIELDS: SettingsFields = {
+  review: { label: "Review playbook" },
+  correlation: { label: "Combine review findings playbook" },
+  story: { label: "Stories playbook" },
+  request: { label: "Requests playbook" },
+};
+
+async function readRepositoryPlaybooks(
+  db: Database,
+  organizationId: string,
+  repositoryId: string,
+): Promise<SettingsValues | null> {
+  const repository = await getRepository(db, repositoryId, organizationId);
+  if (!repository) return null;
+  const task = await taskNames(db, organizationId);
+  return {
+    review: repository.reviewPlaybookIds.map(task),
+    correlation: task(repository.correlationPlaybookId),
+    story: task(repository.storyPlaybookId),
+    request: task(repository.requestPlaybookId),
+  };
+}
+
+/** The repository's Playbooks card (`repository.playbooks`). */
+export function trackedRepositoryPlaybooks(
+  organizationId: string,
+  repositoryId: string,
+): TrackedSettings {
+  return {
+    organizationId,
+    section: "repository.playbooks",
+    subjectId: repositoryId,
+    fields: REPOSITORY_PLAYBOOKS_FIELDS,
+    read: (db) => readRepositoryPlaybooks(db, organizationId, repositoryId),
   };
 }
 
