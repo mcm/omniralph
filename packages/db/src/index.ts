@@ -232,6 +232,19 @@ export {
   type WorkItemTracker,
 } from "./work-item-matches.js";
 export {
+  clearWorkItemRepository,
+  getWorkItemOverride,
+  listWorkItemEvents,
+  recordWorkItemEvent,
+  setWorkItemRepository,
+  type RecordWorkItemEventInput,
+  type SetWorkItemRepositoryInput,
+  type WorkItemEvent,
+  type WorkItemEventKind,
+  type WorkItemKey,
+  type WorkItemOverride,
+} from "./work-items.js";
+export {
   CHAT_PLAYBOOKS_KEY,
   DEFAULT_CHAT_PLAYBOOKS,
   DESIRED_AGENT_VERSION_KEY,

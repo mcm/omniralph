@@ -18,6 +18,8 @@ import {
   organizations,
   repositories,
   scmConnections,
+  workItemEvents,
+  workItemOverrides,
 } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
@@ -140,6 +142,51 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       `select indexdef from pg_indexes where tablename = 'hidden_refs' and indexname = 'hidden_refs_repository_ref_uq'`,
     );
     expect(indexes[0]?.indexdef).toMatch(/UNIQUE INDEX .*\(repository_id, ref\)/);
+  });
+
+  it("creates work item overrides and events with their keys and indexes (0106)", async () => {
+    const { rows: keys } = await db.$client.query<{ conname: string; def: string }>(
+      `select conname, pg_get_constraintdef(oid) as def from pg_constraint
+       where conrelid in ('work_item_overrides'::regclass, 'work_item_events'::regclass)
+       order by conname`,
+    );
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        {
+          conname: "work_item_overrides_organization_id_tracker_external_id_pk",
+          def: "PRIMARY KEY (organization_id, tracker, external_id)",
+        },
+        {
+          conname: "work_item_overrides_repository_id_repositories_id_fk",
+          def: expect.stringMatching(/REFERENCES repositories\(id\) ON DELETE SET NULL/),
+        },
+        { conname: "work_item_events_pkey", def: "PRIMARY KEY (id)" },
+      ]),
+    );
+    const { rows: indexes } = await db.$client.query<{ indexname: string; indexdef: string }>(
+      `select indexname, indexdef from pg_indexes
+       where tablename in ('work_item_overrides', 'work_item_events') order by indexname`,
+    );
+    expect(indexes.map((i) => i.indexname)).toEqual(
+      expect.arrayContaining([
+        "work_item_events_item_idx",
+        "work_item_overrides_repository_id_idx",
+      ]),
+    );
+    expect(indexes.find((i) => i.indexname === "work_item_events_item_idx")?.indexdef).toMatch(
+      /\(organization_id, tracker, external_id, created_at\)/,
+    );
+
+    const [org] = await db.insert(organizations).values({ name: "Work items" }).returning();
+    const item = { organizationId: org!.id, tracker: "linear" as const, externalId: "issue-1" };
+    await db.insert(workItemOverrides).values(item);
+    // One choice per work item.
+    await expect(db.insert(workItemOverrides).values(item)).rejects.toThrow();
+    const [event] = await db
+      .insert(workItemEvents)
+      .values({ ...item, actorName: "Om", kind: "created" })
+      .returning();
+    expect(event).toMatchObject({ actorUserId: null, detail: {} });
   });
 
   it("creates the organization tables (0029)", async () => {
