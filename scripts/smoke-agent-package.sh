@@ -43,6 +43,17 @@ mkdir "$work/install"
   bin="$work/install/node_modules/.bin/omniralph-agent"
   "$bin" --version
   "$bin" --help >/dev/null
+
+  # import, offline, on a copy of the full fixture install (git keeps only mode 0644).
+  home="$work/import-home"
+  cp -R "$agent_dir/src/test/fixtures/import/full" "$home"
+  old_config="$home/.config/omniralph/harness.json"
+  sed -i.orig "s#{{home}}#$home#g" "$old_config" && rm "$old_config.orig"
+  chmod 600 "$old_config"
+  new_config="$work/import-new/agent.json"
+  "$bin" import --dry-run --from "$old_config" --config "$new_config" >/dev/null ||
+    fail "import --dry-run failed"
+  [[ ! -e "$new_config" ]] || fail "import --dry-run wrote $new_config"
 )
 
 if [[ -n "$keep_dir" ]]; then

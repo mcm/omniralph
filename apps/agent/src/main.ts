@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { hostname, homedir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -22,6 +23,13 @@ import {
 import { AgentDaemon } from "./daemon.js";
 import { readCredentialRequest, runGitCredential } from "./credential-helper.js";
 import { startHealthServer } from "./healthz.js";
+import {
+  missingConfigHint,
+  runImport,
+  type ImportFs,
+  type Pm2Runner,
+  type ProcessLister,
+} from "./import.js";
 import {
   installablesPrefix,
   npmInstallableInstaller,
@@ -54,6 +62,13 @@ Commands:
                     --workspace-root <dir>  Repo cache directory (default: ~/.omniralph/repos)
   start           Run the agent daemon
                     --healthz-port <port>   Serve GET /healthz on 127.0.0.1:<port>
+  import          Bring over an @omniralph/harness install's config, as the same agent
+                  (offline; the old install is left untouched)
+                    --from <file>           Old config (default: $OMNIRALPH_HARNESS_CONFIG,
+                                            then ~/.config/omniralph/harness.json)
+                    --force                 Replace an existing config (backed up first) and
+                                            skip the check for a running old daemon
+                    --dry-run               Print the summary and write nothing
   update          Ask the running agent (under pm2) to update with its next heartbeat:
                   to the desired version, else the latest on npm, even one that
                   failed before
@@ -104,6 +119,12 @@ export interface MainDeps {
   version?: string;
   /** Home directory for the default config path and `~` (default: `os.homedir()`). */
   homeDir?: string;
+  /** Filesystem for `import` (default: `node:fs`). */
+  importFs?: ImportFs;
+  /** Lists running processes for `import` (default: `/proc/<pid>/cmdline`). */
+  listProcesses?: ProcessLister;
+  /** Runs `pm2` for `import` (default: the `pm2` CLI, when its daemon runs). */
+  runPm2?: Pm2Runner;
 }
 
 const defaultDeps: MainDeps = {
@@ -124,6 +145,9 @@ const OPTIONS = {
   name: { type: "string" },
   "workspace-root": { type: "string" },
   "healthz-port": { type: "string" },
+  from: { type: "string" },
+  force: { type: "boolean" },
+  "dry-run": { type: "boolean" },
 } as const;
 
 /** Parses the CLI arguments, runs the command and returns the process exit code. */
@@ -158,6 +182,24 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
         return await runStart(values, configPath, deps);
       case "update":
         return await runUpdate(configPath, deps);
+      case "import":
+        return await runImport(
+          {
+            from: values.from,
+            config: configPath,
+            force: values.force ?? false,
+            dryRun: values["dry-run"] ?? false,
+          },
+          {
+            io,
+            env: deps.env,
+            homeDir: deps.homeDir,
+            fs: deps.importFs,
+            listProcesses: deps.listProcesses,
+            runPm2: deps.runPm2,
+            now: deps.now,
+          },
+        );
       case "git-credential":
         return await runGitCredential(
           positionals[1],
@@ -225,6 +267,16 @@ async function runEnroll(
   return 0;
 }
 
+async function configExists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 async function runUpdate(configPath: string, deps: MainDeps): Promise<number> {
   // Only for an enrolled agent: the request goes next to its config.
   await readConfig(configPath);
@@ -251,6 +303,10 @@ async function runStart(
       deps.io.stderr(`omniralph-agent: invalid --healthz-port\n`);
       return 1;
     }
+  }
+  if (!(await configExists(configPath))) {
+    deps.io.stderr(`omniralph-agent: ${await missingConfigHint(configPath, deps.homeDir)}\n`);
+    return 1;
   }
   const config = await readConfig(configPath);
   const logger = deps.logger ?? createLogger(deps.env.OMNIRALPH_LOG_LEVEL);

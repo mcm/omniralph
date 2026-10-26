@@ -1,0 +1,10 @@
+{
+  "server": "https://omniralph.example/",
+  "agentId": "0b6f5e0e-8a52-4a4b-9a43-6e8e0c1f9b10",
+  "refreshToken": "ort_fixture_refresh_token_do_not_print",
+  "workspaceRoot": "{{home}}/.omniralph/repos",
+  "dataDir": "{{home}}/.omniralph",
+  "installables": { "allow": [] },
+  "blockedExecPaths": ["/opt/secret-tools"],
+  "acceptedTaskTypes": ["review", "coding"]
+}

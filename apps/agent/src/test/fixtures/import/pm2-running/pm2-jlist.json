@@ -1,0 +1,23 @@
+[
+  {
+    "pid": 4100,
+    "name": "web",
+    "pm2_env": {
+      "status": "online",
+      "pm_exec_path": "/usr/lib/node_modules/serve/bin/serve.js",
+      "args": ["-l", "3000"],
+      "env": { "DATABASE_URL": "postgres://user:pm2-env-secret@db/omniralph" }
+    }
+  },
+  {
+    "pid": 4242,
+    "name": "omniralph-harness",
+    "pm2_env": {
+      "status": "online",
+      "pm_exec_path": "/usr/local/bin/omniralph-harness",
+      "args": ["start", "--healthz-port", "9310"],
+      "env": { "ANTHROPIC_API_KEY": "sk-ant-pm2-env-secret", "OMNIRALPH_LOG_LEVEL": "debug" },
+      "ANTHROPIC_API_KEY": "sk-ant-pm2-env-secret"
+    }
+  }
+]
