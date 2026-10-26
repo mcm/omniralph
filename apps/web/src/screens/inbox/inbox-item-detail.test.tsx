@@ -303,6 +303,13 @@ describe("what went wrong", () => {
     expect(cause.querySelector("pre")!.textContent).toBe("Tests failed\nexpected 3, got 4");
     expect(within(cause).queryByText("Couldn't start")).toBeNull();
     expect(await card("Turns")).toBeTruthy();
+    // Attempts read as their label, never their job type, and carry no shortcut indicator.
+    expect(document.body.textContent).not.toContain("repo.sync");
+    for (const element of document.querySelectorAll("[title], [aria-label]")) {
+      expect(element.getAttribute("title") ?? "").not.toContain("repo.sync");
+      expect(element.getAttribute("aria-label") ?? "").not.toContain("repo.sync");
+    }
+    expect(document.querySelector("kbd, [aria-keyshortcuts]")).toBeNull();
   });
 
   it("shows failed system work's attempt label and the item's reason", async () => {

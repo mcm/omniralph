@@ -312,6 +312,31 @@ describe("the filters", () => {
     });
   });
 
+  it("keep the previous runs on the rail while the filtered list loads", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    seen = mockFetch({
+      "GET /api/ui/runs": async (request) => {
+        if (request.query.getAll("kind").includes("review")) {
+          await held;
+          return jsonResponse({ runs: [reviewRow()], nextCursor: null });
+        }
+        return jsonResponse(pages[""]);
+      },
+      "GET /api/ui/runs/filter-options": FILTER_OPTIONS,
+    });
+    const { navigate } = renderRuns();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+
+    navigate("kind=review");
+    await waitFor(() => expect(lastRunRequest().query.getAll("kind")).toEqual(["review"]));
+    expect(rows()).toHaveLength(3);
+    expect(screen.queryByText("No runs yet")).toBeNull();
+
+    release();
+    await waitFor(() => expect(titles()).toEqual(["Review of pull request #7"]));
+  });
+
   it("offer the scope's repositories with their code-host marks, and write repository parameters", async () => {
     const { navigate } = renderRuns();
     await waitFor(() => expect(rows()).toHaveLength(3));
