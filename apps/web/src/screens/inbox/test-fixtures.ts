@@ -79,4 +79,18 @@ export function agentOfflineItem(overrides: Partial<InboxItem> = {}): InboxItem 
   });
 }
 
+/** A running epic, started `minutes` ago. */
+export function runningItem(id: string, title: string, minutes: number): InboxItem {
+  return inboxItem({
+    key: `run:${id}`,
+    tab: "running",
+    kind: "run",
+    title,
+    run: { id, kind: "epic", status: "running" },
+    reason: "Om is working on it.",
+    since: minutesAgo(minutes),
+    actions: [],
+  });
+}
+
 export const COUNTS: InboxCountsResponse = { needsYou: 2, problems: 1, running: 0 };

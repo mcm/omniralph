@@ -4,3 +4,4 @@ export * from "./icon-button.js";
 export * from "./menu.js";
 export * from "./toolbar.js";
 export * from "./tooltip.js";
+export * from "./text-link.js";
