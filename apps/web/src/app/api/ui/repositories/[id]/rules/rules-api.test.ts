@@ -73,7 +73,9 @@ const { ruleView } = await import("@/lib/rules/display");
 
 const databaseAvailable = testDatabaseAvailable();
 
-type Result = { ok: true; warning?: string } | { ok: false; error: string; fieldErrors?: object };
+type Result =
+  | { ok: true; warning?: string; rule?: Record<string, unknown> }
+  | { ok: false; error: string; fieldErrors?: object };
 
 /** Calls an `/api/ui` rules handler as the Rules tab does; answers its `ActionResult`. */
 async function call<P extends Record<string, string>>(
@@ -453,12 +455,23 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
 
   describe("managing rules", () => {
     it("lets admins add, edit, disable and delete custom rules", async () => {
-      expect(
-        await addCustomRule(repoId, { text: "  Flag every TODO without an issue link.  " }),
-      ).toEqual({
-        ok: true,
+      const added = await addCustomRule(repoId, {
+        text: "  Flag every TODO without an issue link.  ",
       });
       const [rule] = await db.select().from(rules);
+      // The answer is the added rule as the Rules section shows it.
+      expect(added).toEqual({
+        ok: true,
+        rule: {
+          id: rule!.id,
+          kind: "custom",
+          text: "Flag every TODO without an issue link.",
+          enabled: true,
+          createdAt: rule!.createdAt.toISOString(),
+          createdBy: "Ada Admin",
+          sourceFinding: null,
+        },
+      });
       expect(rule).toMatchObject({
         kind: "custom",
         text: "Flag every TODO without an issue link.",
@@ -469,14 +482,21 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
 
       expect(
         await editRule(repoId, rule!.id, { text: "Flag TODOs without an issue link." }),
-      ).toEqual({
+      ).toMatchObject({
         ok: true,
+        rule: { id: rule!.id, text: "Flag TODOs without an issue link.", enabled: true },
       });
-      expect(await setRuleEnabled(repoId, rule!.id, false)).toEqual({ ok: true });
+      expect(await setRuleEnabled(repoId, rule!.id, false)).toMatchObject({
+        ok: true,
+        rule: { id: rule!.id, enabled: false },
+      });
       let [row] = await db.select().from(rules);
       expect(row).toMatchObject({ text: "Flag TODOs without an issue link.", enabled: false });
 
-      expect(await setRuleEnabled(repoId, rule!.id, true)).toEqual({ ok: true });
+      expect(await setRuleEnabled(repoId, rule!.id, true)).toMatchObject({
+        ok: true,
+        rule: { enabled: true },
+      });
       [row] = await db.select().from(rules);
       expect(row!.enabled).toBe(true);
 
@@ -493,7 +513,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         expect.objectContaining({ resource: "repository", ids: [repoId], organizationId: orgId }),
       ];
       const added = await captureChanges(() => addCustomRule(repoId, { text: "Flag TODOs." }));
-      expect(added.result).toEqual({ ok: true });
+      expect(added.result).toMatchObject({ ok: true });
       expect(added.changes).toEqual(repositoryChange);
       const [rule] = await db.select().from(rules);
       for (const write of [
@@ -502,7 +522,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         () => deleteRule(repoId, rule!.id),
       ]) {
         const { result, changes } = await captureChanges(write);
-        expect(result).toEqual({ ok: true });
+        expect(result).toMatchObject({ ok: true });
         expect(changes).toEqual(repositoryChange);
       }
       const refused = await captureChanges(() => addCustomRule(repoId, { text: "  " }));
@@ -519,10 +539,18 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
       const { job } = await dismissFalsePositive();
       await onLearnRuleJobCompleted(db, await complete(job, ruleResult("Do not flag X.")));
       const [learned] = await db.select().from(rules);
-      expect(await editRule(repoId, learned!.id, { text: "Do not flag X in tests." })).toEqual({
+      expect(
+        await editRule(repoId, learned!.id, { text: "Do not flag X in tests." }),
+      ).toMatchObject({
         ok: true,
+        rule: {
+          kind: "learned",
+          text: "Do not flag X in tests.",
+          createdBy: null,
+          sourceFinding: expect.objectContaining({ title: expect.any(String) }),
+        },
       });
-      expect(await setRuleEnabled(repoId, learned!.id, false)).toEqual({ ok: true });
+      expect(await setRuleEnabled(repoId, learned!.id, false)).toMatchObject({ ok: true });
       expect((await db.select().from(rules))[0]).toMatchObject({
         kind: "learned",
         text: "Do not flag X in tests.",

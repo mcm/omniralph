@@ -11,6 +11,7 @@ import {
   type RepositoryDetail,
   type RepositoryList,
 } from "@/lib/api/repositories";
+import { repositoryRulesSchema, type RepositoryRules } from "@/lib/api/rules";
 import { useScopeParam } from "../scope";
 
 /**
@@ -23,6 +24,8 @@ export function reposKeys(keys: QueryKeys) {
     lists: keys.repositories.lists,
     list: (scope: string): QueryKey => keys.repositories.list({ organization: scope }),
     detail: (repositoryId: string): QueryKey => keys.repositories.detail(repositoryId),
+    /** Under the detail, so the repo's change events (a rule learned from a PR) refetch it. */
+    rules: (repositoryId: string): QueryKey => keys.repositories.part(repositoryId, "rules"),
   };
 }
 
@@ -60,5 +63,23 @@ export function useRepositoryDetail(repositoryId: string) {
         organizationId: organization.id,
         signal,
       }),
+  });
+}
+
+/**
+ * A repo's review rules (`GET /api/ui/repositories/{id}/rules`), of any of the user's
+ * organizations. A live query: the repo's change events refetch it.
+ */
+export function useRepositoryRules(repositoryId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<RepositoryRules>({
+    queryKey: reposKeys(keys).rules(repositoryId),
+    queryFn: ({ signal }) =>
+      api.get(
+        `/api/ui/repositories/${encodeURIComponent(repositoryId)}/rules`,
+        repositoryRulesSchema,
+        { organizationId: organization.id, signal },
+      ),
   });
 }

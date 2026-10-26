@@ -105,6 +105,18 @@ function serve(extra: Parameters<typeof mockFetch>[0] = {}) {
                 : jsonResponse({ error: "Not found" }, 404),
       ]),
     ),
+    ...Object.fromEntries(
+      [REPO_PORTAL, REPO_WEB, REPO_BETA].map((id) => [
+        `GET /api/ui/repositories/${id}/rules`,
+        () =>
+          holdReads
+            ? pending()
+            : jsonResponse({
+                repository: { id, provider: "github", fullPath: "x/y", webUrl: "https://x/y" },
+                rules: [],
+              }),
+      ]),
+    ),
     ...extra,
   });
 }

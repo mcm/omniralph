@@ -75,13 +75,17 @@ export function useProblemAction(repositoryId: string) {
     applyResult: async (_result, cache, problem) => {
       const without = (problems: RepositoryProblem[]) =>
         problems.filter((entry) => entry.code !== problem.code);
-      await cache.set<RepositoryDetail>(reposKeys(cache.keys).detail(repositoryId), (previous) =>
-        previous
-          ? {
-              ...previous,
-              status: { ...previous.status, problems: without(previous.status.problems) },
-            }
-          : previous,
+      await cache.set<RepositoryDetail>(
+        reposKeys(cache.keys).detail(repositoryId),
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                status: { ...previous.status, problems: without(previous.status.problems) },
+              }
+            : previous,
+        // Not the repo's sub-resources (its rules, a match check) cached under the detail.
+        { exact: true },
       );
       await updateListRows(cache, (rows) =>
         rows.map((row) =>
@@ -107,8 +111,11 @@ export async function applySavedCard(
   patchDetail: (detail: RepositoryDetail) => RepositoryDetail,
   patchRow?: (row: RepositoryListItem) => RepositoryListItem,
 ) {
-  await cache.set<RepositoryDetail>(reposKeys(cache.keys).detail(repositoryId), (previous) =>
-    previous ? patchDetail(previous) : previous,
+  await cache.set<RepositoryDetail>(
+    reposKeys(cache.keys).detail(repositoryId),
+    (previous) => (previous ? patchDetail(previous) : previous),
+    // Not the repo's sub-resources (its rules, a match check) cached under the detail.
+    { exact: true },
   );
   if (patchRow) {
     await updateListRows(cache, (rows) =>

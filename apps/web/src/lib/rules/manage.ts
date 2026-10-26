@@ -3,6 +3,7 @@ import {
   createCustomRule,
   deleteRule as deleteRuleRow,
   getRepository,
+  getRepositoryRule,
   getRepositoryWithConnection,
   listRepositoryRules,
   updateRule,
@@ -12,17 +13,29 @@ import { RuleInput } from "@omniralph/shared";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { ApiRouteError } from "@/lib/api/handler";
-import type { RepositoryRules } from "@/lib/api/rules";
+import type { RepositoryRules, RuleSaveResult } from "@/lib/api/rules";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { ruleView } from "./display";
+import { ruleView, type RuleView } from "./display";
 
 export const REPOSITORY_NOT_CONNECTED = "That repository isn't connected.";
 export const RULE_NOT_FOUND = "That rule doesn't exist.";
 
+/** The saved rule as the Rules section shows it (with its creator and source finding). */
+async function savedRule(
+  db: Database,
+  repositoryId: string,
+  ruleId: string,
+): Promise<RuleView | null> {
+  const entry = await getRepositoryRule(db, repositoryId, ruleId);
+  return entry && ruleView(entry);
+}
+
 /** A rule switched on or off; anything else sent to a rule is a text edit (`RuleInput`). */
 const EnabledChange = z.object({ enabled: z.boolean() }).strict();
 
-function invalidText(error: z.ZodError): ActionResult {
+type ActionFailure = Extract<ActionResult, { ok: false }>;
+
+function invalidText(error: z.ZodError): ActionFailure {
   const message = error.issues[0]?.message ?? "Enter the rule.";
   return { ok: false, error: message, fieldErrors: { text: message } };
 }
@@ -51,26 +64,35 @@ export async function loadRepositoryRules(
   };
 }
 
-/** Adds an admin-written rule (`RuleInput`); it applies to the next review job of the repository. */
+/**
+ * Adds an admin-written rule (`RuleInput`); it applies to the next review job of the
+ * repository. Answers with the added rule.
+ */
 export async function addCustomRule(
   db: Database,
   admin: { id: string; organizationId: string },
   repositoryId: string,
   input: unknown,
-): Promise<ActionResult> {
+): Promise<RuleSaveResult | ActionFailure> {
   const parsed = RuleInput.safeParse(input);
   if (!parsed.success) return invalidText(parsed.error);
   const repository = await getRepository(db, repositoryId, admin.organizationId);
   if (!repository || repository.disconnectedAt) {
     return { ok: false, error: REPOSITORY_NOT_CONNECTED };
   }
-  await createCustomRule(db, { repositoryId, text: parsed.data.text, createdBy: admin.id });
-  return { ok: true };
+  const created = await createCustomRule(db, {
+    repositoryId,
+    text: parsed.data.text,
+    createdBy: admin.id,
+  });
+  const rule = await savedRule(db, repositoryId, created.id);
+  return rule ? { ok: true, rule } : { ok: false, error: RULE_NOT_FOUND };
 }
 
 /**
  * Changes a custom or learned rule: `{ enabled }` enables or disables it (disabled rules stay
- * listed but aren't sent to reviews), `{ text }` (`RuleInput`) edits it.
+ * listed but aren't sent to reviews), `{ text }` (`RuleInput`) edits it. Answers with the
+ * changed rule.
  */
 export async function changeRule(
   db: Database,
@@ -78,7 +100,7 @@ export async function changeRule(
   repositoryId: string,
   ruleId: string,
   input: unknown,
-): Promise<ActionResult> {
+): Promise<RuleSaveResult | ActionFailure> {
   const enabled = EnabledChange.safeParse(input);
   let change: { text: string } | { enabled: boolean };
   if (enabled.success) change = enabled.data;
@@ -90,8 +112,9 @@ export async function changeRule(
   if (!(await getRepository(db, repositoryId, organizationId))) {
     return { ok: false, error: RULE_NOT_FOUND };
   }
-  const rule = await updateRule(db, { repositoryId, ruleId, ...change });
-  return rule ? { ok: true } : { ok: false, error: RULE_NOT_FOUND };
+  const updated = await updateRule(db, { repositoryId, ruleId, ...change });
+  const rule = updated && (await savedRule(db, repositoryId, updated.id));
+  return rule ? { ok: true, rule } : { ok: false, error: RULE_NOT_FOUND };
 }
 
 /** Deletes a rule. */

@@ -318,3 +318,79 @@
 .or-repo-agents__unpin {
   margin-left: auto;
 }
+
+/* Rules: one row per rule (badge, text, where it came from; switch and actions on the right). */
+.or-repo-rules {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-repo-rules__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--or-border);
+}
+
+.or-repo-rules__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.or-repo-rules__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-repo-rules__text {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A rule switched off reads as secondary text, never by opacity (its controls stay usable). */
+.or-repo-rules__row[data-enabled="false"] .or-repo-rules__text {
+  color: var(--or-sec);
+}
+
+.or-repo-rules__source {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-repo-rules__controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.or-repo-rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.or-repo-rule-form--add {
+  margin-bottom: 16px;
+}
+
+.or-repo-rule-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -516,6 +516,7 @@ export {
   createCustomRule,
   deleteRule,
   getFeedbackWithFinding,
+  getRepositoryRule,
   insertLearnedRule,
   listRepositoryRules,
   updateRule,

@@ -26,6 +26,7 @@ import { useProblemAction } from "./mutations";
 import { useRepositoryDetail } from "./queries";
 import { RemoveRepoDialog } from "./remove-repo-dialog";
 import { ReviewsCard } from "./reviews-card";
+import { RulesSection } from "./rules-section";
 import "./repo-detail.css";
 
 /** Shown for a repo that doesn't exist, was removed, or is outside the user's organizations. */
@@ -50,6 +51,7 @@ const CARD_SECTIONS: Partial<Record<RepoSectionId, true>> = {
   reviews: true,
   coding: true,
   agents: true,
+  rules: true,
 };
 
 const SECTION_IDS: readonly RepoSectionId[] = REPO_SECTIONS.map((section) => section.id);
@@ -199,6 +201,8 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
             <CodingCard detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : section.id === "agents" ? (
             <AgentsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+          ) : section.id === "rules" ? (
+            <RulesSection detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : (
             <h2 id={`or-repo-section-${section.id}`} className="or-repo-section__title">
               {section.label}
