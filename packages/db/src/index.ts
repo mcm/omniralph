@@ -487,6 +487,7 @@ export {
   getReviewDetail,
   listReviews,
   REVIEW_PAGE_SIZE,
+  reviewRunIdsOf,
   type FindingSeverity,
   type ReviewDetail,
   type ReviewListEntry,

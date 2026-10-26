@@ -230,6 +230,7 @@ const runAnswer = await import("./runs/[id]/answer/route");
 const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
 const runSession = await import("./runs/[id]/session/route");
 const runStepDiff = await import("./runs/[id]/steps/[stepId]/diff/route");
+const runFindings = await import("./runs/[id]/findings/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
@@ -1763,7 +1764,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         depth: "standard",
       });
       reviewRunIds.push(reviewRun.id);
-      await createReview(db, {
+      const pass = await createReview(db, {
         reviewRunId: reviewRun.id,
         repositoryId: tenant.repoId,
         prNumber: 8,
@@ -1774,6 +1775,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         depth: "standard",
         model: null,
         budget: 100_000,
+      });
+      await db.insert(findings).values({
+        reviewId: pass.id,
+        path: `${tenant.name}.ts`,
+        startLine: 1,
+        endLine: 1,
+        severity: "high",
+        category: "bug",
+        title: `${tenant.name} finding`,
+        body: "Body",
+        confidence: 0.9,
       });
       const { job: reviewJob } = await insertJob(db, {
         organizationId: tenant.orgId,
@@ -1842,6 +1854,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           ...theirs.attempts,
           `${other.name} question`,
           `${other.name} reviewed change`,
+          `${other.name} finding`,
         ];
         for (const userId of [own.adminId, own.memberId]) {
           state.userId = userId;
@@ -1893,6 +1906,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             });
             details.push(detail, transcript);
           }
+          const ownFindings = await call(runFindings.GET, { params: { id: mine.reviewRunId } });
+          expect(ownFindings).toMatchObject({
+            status: 200,
+            body: { passes: [{ files: [{ findings: [{ title: `${own.name} finding` }] }] }] },
+          });
+          details.push(ownFindings);
           for (const { body } of [...lists, ...details]) {
             for (const marker of theirMarkers) expect(JSON.stringify(body)).not.toContain(marker);
           }
@@ -1900,6 +1919,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           // The other's review run and ask, and their attempts through one's own runs.
           for (const id of [theirs.reviewRunId, theirs.askId]) {
             expect(await call(runDetail.GET, { params: { id } })).toMatchObject({ status: 404 });
+            expect(await call(runFindings.GET, { params: { id } })).toMatchObject({ status: 404 });
           }
           for (const [id, attemptId] of [
             [theirs.reviewRunId, theirs.attempts[0]!],
