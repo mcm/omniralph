@@ -127,6 +127,18 @@ Keyboard-operable form controls (Design rule 12). Each shows the accent focus ri
   `TabPanel value` children for the panels. `countTone` `need` draws the count in the
   accent and `fail` in coral; the count is part of the tab's name ("Needs you, 4"). Arrow
   keys move and select, Home/End jump; the strip scrolls sideways instead of wrapping.
+- `SectionIndex`: in-page links for one long page whose sections all stay rendered, drawn
+  like `Tabs` (`.or-tabs` / `.or-tab`) but a `nav` named by `aria-label`. `sections`
+  (`{ id, label }`, each linking to `#<id>` through `UiProvider`), `active` (its entry gets
+  `aria-current="true"`) and `onNavigate(id)`. A click calls `onNavigate` (e.g. to write
+  `?section=` with `history.replaceState`), scrolls the section into view (`block: "start"`)
+  and focuses its first heading (given `tabindex="-1"`), or the section without one;
+  `scrollToSection(id)` does the same for a deep link. The strip scrolls sideways instead of
+  wrapping. No hint text.
+- `useActiveSection(ids, rootRef?)`: the id of the section nearest the top of the scroll
+  root (the viewport without `rootRef`), from an `IntersectionObserver` on the root's top
+  40% (`ACTIVE_SECTION_ROOT_MARGIN`): the first of `ids` in that band, keeping the last
+  answer while none is. Starts at the first id. Feed it to `SectionIndex`'s `active`.
 
 ## Fields
 
@@ -255,6 +267,13 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   it; Escape closes it and returns focus to the button.
 - `DetailsSection`: a native `<details>` (collapsed) with a chevron `<summary>`, `title`
   default "Details".
+- `Sheet`: a side flow (Radix modal dialog) named by `title`, with optional `description`,
+  controlled `open` + `onOpenChange`, `children` (the scrolling body), an optional `footer`
+  (pinned under the body, e.g. the flow's buttons) and an optional `trigger`. 480 px from
+  the right; full screen at 768 px and narrower. Focus moves in and is trapped; Escape, the
+  "Close" button and a scrim click close it, and focus returns to the trigger, or to the
+  element focused when it opened. It sits above the shell's drawer and below menus,
+  tooltips and `ConfirmDialog`s opened from inside it.
 - `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
   and decorative `icon`. There is no hint prop (rule 3).
 

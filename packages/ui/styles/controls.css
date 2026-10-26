@@ -331,7 +331,8 @@
   color: var(--or-text);
 }
 
-.or-tab[aria-selected="true"] {
+.or-tab[aria-selected="true"],
+.or-tab[aria-current="true"] {
   border-bottom-color: var(--or-text);
   color: var(--or-text);
 }
@@ -353,4 +354,18 @@
 
 .or-tab__count--fail {
   color: var(--or-fail);
+}
+
+/* Section index: in-page links drawn as the tab strip (`.or-tabs` / `.or-tab`). */
+.or-section-index__list {
+  list-style: none;
+}
+
+.or-section-index__item {
+  display: flex;
+  flex: none;
+}
+
+.or-section-index .or-tab {
+  text-decoration: none;
 }

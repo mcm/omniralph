@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button.js";
+import { SectionIndex } from "../controls/section-index.js";
+import { Sheet } from "../surfaces/sheet.js";
 import { ConfirmDialog } from "./confirm-dialog.js";
 import { IconButton } from "./icon-button.js";
 import { Menu } from "./menu.js";
@@ -107,6 +109,46 @@ describe("no keyboard-shortcut indicators", () => {
       />,
     );
     await screen.findByRole("alertdialog");
+    noKbd();
+  });
+
+  it("SectionIndex, after navigating, and Sheet, open with a footer", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <SectionIndex
+          aria-label="Sections"
+          sections={[
+            { id: "reviews", label: "Reviews" },
+            { id: "coding", label: "Coding" },
+          ]}
+          active="reviews"
+          onNavigate={noop}
+        />
+        <section id="reviews">
+          <h2>Reviews</h2>
+        </section>
+        <section id="coding">
+          <h2>Coding</h2>
+        </section>
+      </>,
+    );
+    await user.click(screen.getByRole("link", { name: "Coding" }));
+    noKbd();
+    expect(screen.getByRole("navigation", { name: "Sections" }).textContent).toBe("ReviewsCoding");
+
+    render(
+      <Sheet
+        title="Add repos"
+        description="Pick repos."
+        open
+        onOpenChange={noop}
+        footer={<Button>Done</Button>}
+      >
+        Body
+      </Sheet>,
+    );
+    await screen.findByRole("dialog");
     noKbd();
   });
 });

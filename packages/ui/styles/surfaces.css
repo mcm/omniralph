@@ -362,6 +362,13 @@
   .or-savebar__actions {
     justify-content: flex-end;
   }
+
+  /* The sheet takes the whole screen. */
+  .or-sheet {
+    left: 0;
+    width: 100%;
+    border-left: 0;
+  }
 }
 
 /* Popovers: the ⓘ provenance button and the ID-card details button */
@@ -476,4 +483,76 @@
 
 .or-empty__action {
   margin-top: 8px;
+}
+
+/*
+ * Sheet: a side flow from the right, 480 px wide; full screen at 768 px and narrower. Above
+ * the shell's drawer, below menus, tooltips and confirm dialogs opened from inside it.
+ */
+.or-sheet__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: color-mix(in srgb, var(--or-page) 72%, transparent);
+}
+
+.or-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(480px, 100vw);
+  border-left: 1px solid var(--or-border);
+  background: var(--or-surf);
+  color: var(--or-text);
+}
+
+.or-sheet__head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 12px 20px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-sheet__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.or-sheet__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--or-text);
+}
+
+.or-sheet__description {
+  margin: 0;
+  color: var(--or-sec);
+}
+
+.or-sheet__body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.or-sheet__footer {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--or-line);
 }
