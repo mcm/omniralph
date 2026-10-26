@@ -112,10 +112,10 @@ describe("today's pages inside the 2.0 shell", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const drawer = await screen.findByRole("dialog", { name: "Menu" });
-    await user.click(within(drawer).getByRole("link", { name: "Agents" }));
+    await user.click(within(drawer).getByRole("link", { name: "Fleet" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
     expect(nav.router.push).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Discard and leave" }));
-    expect(nav.router.push).toHaveBeenCalledWith("/agents");
+    expect(nav.router.push).toHaveBeenCalledWith("/fleet");
   });
 });

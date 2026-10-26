@@ -80,7 +80,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Agents, then Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -91,7 +91,7 @@ describe("AppShell", () => {
       ["Runs", "/runs"],
       ["Backlog", "/backlog"],
       ["Repos", "/repos"],
-      ["Agents", "/agents"],
+      ["Fleet", "/fleet"],
       ["Settings", "/settings"],
     ]);
   });
@@ -104,7 +104,7 @@ describe("AppShell", () => {
     ["/backlog/linear-1", "Backlog"],
     ["/repos", "Repos"],
     ["/repos/abc", "Repos"],
-    ["/agents/abc", "Agents"],
+    ["/fleet/abc", "Fleet"],
     ["/settings", "Settings"],
     ["/settings/advanced/routing", "Settings"],
     ["/settings/routing", "Settings"],
@@ -131,7 +131,7 @@ describe("AppShell", () => {
     expect(current(tabBar())).toEqual([]);
   });
 
-  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Agents and Settings in the drawer", async () => {
+  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Fleet and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
@@ -144,7 +144,7 @@ describe("AppShell", () => {
       .filter((link) => link.classList.contains("or-nav__item"));
     expect(entries.map((link) => link.getAttribute("aria-label"))).toEqual([
       "Repos",
-      "Agents",
+      "Fleet",
       "Settings",
     ]);
     expect(current(drawer)).toEqual(["Settings"]);

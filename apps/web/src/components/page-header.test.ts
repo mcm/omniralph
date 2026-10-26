@@ -41,6 +41,7 @@ describe("page headers", () => {
     .filter((path) => !path.startsWith(join(appRoutes, "runs") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "backlog") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "repos") + sep))
+    .filter((path) => !path.startsWith(join(appRoutes, "fleet") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "settings") + sep));
 
   it.each(pages.map((page) => [relative(appRoutes, page), page]))(
