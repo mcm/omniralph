@@ -185,6 +185,18 @@ would ask.
 
 The run's **Routed by** reads like `work item match (Team is SOC, label product:portal)`.
 
+#### Converting routing rules at upgrade
+
+When you upgrade to work item matches (migration `0100_convert_routing_rules`), each
+organization's routing rules are turned into matches, one per rule. A rule converts when it is
+a single AND group (not negated, nothing nested) that tests **Team equals** exactly once, and at
+most once each **Project equals**, **Project is empty** (becomes "no project") and **Labels
+contains any of**, and when its repository has no other rule. An organization converts only
+when every one of its rules converts and no two of the resulting matches overlap (same team and
+project condition, labels that intersect or are both empty). Then its rules are deleted and the
+matches route the same work items to the same repositories. Otherwise its rules are kept as they
+are, no match is created, and they keep routing first, as before.
+
 ### Routing rules
 
 Routing rules are the organization's ordered list,

@@ -1678,6 +1678,282 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     });
   });
 
+  describe("routing rules become work item matches (0100)", () => {
+    type Condition = { field: string; operator: string; value: unknown };
+    const and = (...rules: unknown[]) => ({ combinator: "and", rules });
+    const team = (key: string): Condition => ({ field: "team", operator: "=", value: key });
+    const project = (name: string): Condition => ({ field: "project", operator: "=", value: name });
+    const noProject: Condition = { field: "project", operator: "null", value: null };
+    const labels = (...names: string[]): Condition => ({
+      field: "labels",
+      operator: "containsAny",
+      value: names,
+    });
+
+    /** Migrates a new database up to 0099 and inserts `orgs`' rules (one repo per rule unless named). */
+    async function beforeConversion(
+      name: string,
+      orgs: Record<string, { repo: string; query: unknown }[]>,
+    ) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      cpSync(migrationsFolder, before, { recursive: true });
+      const journalPath = join(before, "meta", "_journal.json");
+      const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { tag: string }[];
+      };
+      const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0100_"));
+      writeFileSync(
+        journalPath,
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+      );
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      await migrate(drizzle(client), { migrationsFolder: before });
+
+      const orgIds: Record<string, string> = {};
+      const repoIds: Record<string, string> = {};
+      for (const [orgName, rules] of Object.entries(orgs)) {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ($1) returning id`,
+          [orgName],
+        );
+        const org = rows[0]!.id;
+        orgIds[orgName] = org;
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        for (const [position, rule] of rules.entries()) {
+          if (!repoIds[rule.repo]) {
+            const { rows: inserted } = await client.query<{ id: string }>(
+              `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+               values ($1, 'github', $2, $2, $3) returning id`,
+              [org, rule.repo, connections[0]!.id],
+            );
+            repoIds[rule.repo] = inserted[0]!.id;
+          }
+          await client.query(
+            `insert into routing_rules (organization_id, position, repository_id, query)
+             values ($1, $2, $3, $4)`,
+            [org, position, repoIds[rule.repo], rule.query],
+          );
+        }
+      }
+      const cleanup = async () => {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      };
+      return { uri, client, orgIds, repoIds, cleanup };
+    }
+
+    async function matchesAndRules(client: pg.Client) {
+      const { rows: matches } = await client.query<{
+        full_path: string;
+        tracker: string;
+        team: string;
+        project: string | null;
+        without_project: boolean;
+        labels: string[];
+      }>(
+        `select r.full_path, m.tracker, m.team, m.project, m.without_project, m.labels
+         from work_item_matches m join repositories r on r.id = m.repository_id
+         where m.organization_id = r.organization_id
+         order by r.full_path`,
+      );
+      const { rows: rules } = await client.query<{ organization_id: string; count: number }>(
+        `select organization_id, count(*)::int as count from routing_rules group by organization_id`,
+      );
+      return { matches, rules };
+    }
+
+    it("converts the production rules of both organizations and deletes them", async () => {
+      const { uri, client, cleanup } = await beforeConversion("routing_conversion_production", {
+        Acme: [
+          { repo: "acme/fans", query: and(team("MOD"), project("Create More Fans")) },
+          { repo: "acme/mod-portal", query: and(team("MOD"), project("Portal")) },
+          { repo: "acme/mod-billing", query: and(team("MOD"), project("Billing")) },
+          { repo: "acme/mod-search", query: and(team("MOD"), project("Search")) },
+          { repo: "acme/mod", query: and(team("MOD"), noProject) },
+          { repo: "acme/omniralph", query: and(team("TOOL"), project("Omniralph")) },
+          { repo: "acme/toolbox", query: and(team("TOOL"), project("Toolbox")) },
+          { repo: "acme/ui-kit", query: and(team("UI"), project("UI Kit")) },
+          { repo: "acme/ui-docs", query: and(team("UI"), project("Docs")) },
+          { repo: "acme/schematic", query: and(team("SCHEM"), project("Schematic Lab")) },
+        ],
+        Beta: [
+          { repo: "beta/portal", query: and(labels("product:portal"), team("SOC")) },
+          { repo: "beta/mobile", query: and(labels("product:mobile"), team("SOC")) },
+          { repo: "beta/api", query: and(labels("product:api"), team("SOC")) },
+          { repo: "beta/admin", query: and(labels("product:admin"), team("SOC")) },
+          { repo: "beta/mss", query: and(team("MSS")) },
+        ],
+      });
+      try {
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        const match = (
+          full_path: string,
+          teamKey: string,
+          projectName: string | null,
+          extra: { without_project?: boolean; labels?: string[] } = {},
+        ) => ({
+          full_path,
+          tracker: "linear",
+          team: teamKey,
+          project: projectName,
+          without_project: extra.without_project ?? false,
+          labels: extra.labels ?? [],
+        });
+        expect(matches).toEqual([
+          match("acme/fans", "MOD", "Create More Fans"),
+          match("acme/mod", "MOD", null, { without_project: true }),
+          match("acme/mod-billing", "MOD", "Billing"),
+          match("acme/mod-portal", "MOD", "Portal"),
+          match("acme/mod-search", "MOD", "Search"),
+          match("acme/omniralph", "TOOL", "Omniralph"),
+          match("acme/schematic", "SCHEM", "Schematic Lab"),
+          match("acme/toolbox", "TOOL", "Toolbox"),
+          match("acme/ui-docs", "UI", "Docs"),
+          match("acme/ui-kit", "UI", "UI Kit"),
+          match("beta/admin", "SOC", null, { labels: ["product:admin"] }),
+          match("beta/api", "SOC", null, { labels: ["product:api"] }),
+          match("beta/mobile", "SOC", null, { labels: ["product:mobile"] }),
+          match("beta/mss", "MSS", null),
+          match("beta/portal", "SOC", null, { labels: ["product:portal"] }),
+        ]);
+        expect(rules).toEqual([]);
+        // No flag or preference is set.
+        const { rows: settings } = await client.query(`select key from app_settings`);
+        expect(settings).toEqual([]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("keeps an organization's rules when one of them is a nested OR group", async () => {
+      const { uri, client, orgIds, cleanup } = await beforeConversion("routing_conversion_nested", {
+        Acme: [
+          {
+            repo: "acme/web",
+            query: and(team("MOD"), {
+              combinator: "or",
+              rules: [project("Portal"), labels("web")],
+            }),
+          },
+          { repo: "acme/fans", query: and(team("MOD"), project("Create More Fans")) },
+        ],
+        // Another organization still converts.
+        Beta: [{ repo: "beta/mss", query: and(team("MSS")) }],
+      });
+      try {
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        expect(matches.map((m) => m.full_path)).toEqual(["beta/mss"]);
+        expect(rules).toEqual([{ organization_id: orgIds.Acme, count: 2 }]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("keeps an organization's rules when two of them target the same repo", async () => {
+      const { uri, client, orgIds, cleanup } = await beforeConversion(
+        "routing_conversion_same_repo",
+        {
+          Acme: [
+            { repo: "acme/web", query: and(team("MOD"), project("Portal")) },
+            { repo: "acme/web", query: and(team("MOD"), project("Billing")) },
+            { repo: "acme/mss", query: and(team("MSS")) },
+          ],
+        },
+      );
+      try {
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        expect(matches).toEqual([]);
+        expect(rules).toEqual([{ organization_id: orgIds.Acme, count: 3 }]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("keeps an organization's rules when their matches would overlap or a rule doesn't convert", async () => {
+      const { uri, client, orgIds, cleanup } = await beforeConversion("routing_conversion_kept", {
+        // Same team, no project, intersecting labels (ignoring case).
+        Overlap: [
+          { repo: "o/portal", query: and(team("SOC"), labels("product:portal", "web")) },
+          { repo: "o/web", query: and(team("soc"), labels("WEB")) },
+        ],
+        // Two team-only rules for one team.
+        Twice: [
+          { repo: "t/one", query: and(team("MSS")) },
+          { repo: "t/two", query: and(team("MSS")) },
+        ],
+        Negated: [{ repo: "n/web", query: { ...and(team("MOD")), not: true } }],
+        Or: [{ repo: "or/web", query: { combinator: "or", rules: [team("MOD")] } }],
+        NoTeam: [{ repo: "nt/web", query: and(project("Portal")) }],
+        TeamNotEqual: [
+          { repo: "tn/web", query: and({ field: "team", operator: "!=", value: "MOD" }) },
+        ],
+        OtherField: [
+          {
+            repo: "of/web",
+            query: and(team("MOD"), { field: "title", operator: "contains", value: "x" }),
+          },
+        ],
+        TwoProjects: [{ repo: "tp/web", query: and(team("MOD"), project("A"), noProject) }],
+        LabelsAll: [
+          {
+            repo: "la/web",
+            query: and(team("MOD"), { field: "labels", operator: "containsAll", value: ["a"] }),
+          },
+        ],
+        Empty: [{ repo: "e/web", query: and() }],
+      });
+      try {
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        expect(matches).toEqual([]);
+        expect(Object.fromEntries(rules.map((r) => [r.organization_id, r.count]))).toEqual(
+          Object.fromEntries(
+            Object.entries(orgIds).map(([org, id]) => [
+              id,
+              ["Overlap", "Twice"].includes(org) ? 2 : 1,
+            ]),
+          ),
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("converts different projects and different labels of one team without conflict", async () => {
+      const { uri, client, cleanup } = await beforeConversion("routing_conversion_distinct", {
+        Acme: [
+          { repo: "a/team", query: and(team("MOD")) },
+          { repo: "a/project", query: and(team("MOD"), project("Portal")) },
+          { repo: "a/label", query: and(team("MOD"), labels("web")) },
+          { repo: "a/both", query: and(team("MOD"), project("Portal"), labels("web")) },
+        ],
+      });
+      try {
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        expect(matches.map((m) => m.full_path)).toEqual([
+          "a/both",
+          "a/label",
+          "a/project",
+          "a/team",
+        ]);
+        expect(rules).toEqual([]);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   it("adds the show advanced settings preference, off for every user, keeping their theme (0095)", async () => {
     await db.execute(sql`create database user_show_advanced`);
     const uri = testDb.uri.replace(/\/[^/]*$/, "/user_show_advanced");

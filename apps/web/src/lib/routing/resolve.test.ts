@@ -327,6 +327,127 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     });
   });
 
+  describe("production rules converted into work item matches (0100)", () => {
+    const and = (...conditions: RoutingQuery["rules"]): RoutingQuery => ({
+      combinator: "and",
+      rules: conditions,
+    });
+    const teamIs = { field: "team", operator: "=" } as const;
+    const projectIs = { field: "project", operator: "=" } as const;
+    // The production shapes, and the match migration 0100 turns each into.
+    const production: Array<{
+      fullPath: string;
+      rule: RoutingQuery;
+      match: Partial<WorkItemMatchFields>;
+    }> = [
+      ...(
+        [
+          ["MOD", "Create More Fans", "acme/fans"],
+          ["MOD", "Portal", "acme/mod-portal"],
+          ["MOD", "Billing", "acme/mod-billing"],
+          ["MOD", "Search", "acme/mod-search"],
+          ["TOOL", "Omniralph", "acme/omniralph"],
+          ["TOOL", "Toolbox", "acme/toolbox"],
+          ["UI", "UI Kit", "acme/ui-kit"],
+          ["UI", "Docs", "acme/ui-docs"],
+          ["SCHEM", "Schematic Lab", "acme/schematic"],
+        ] as const
+      ).map(([key, project, fullPath]) => ({
+        fullPath,
+        rule: and({ ...teamIs, value: key }, { ...projectIs, value: project }),
+        match: { team: key, project },
+      })),
+      {
+        fullPath: "acme/mod",
+        rule: and({ ...teamIs, value: "MOD" }, { field: "project", operator: "null", value: null }),
+        match: { team: "MOD", withoutProject: true },
+      },
+      ...["portal", "mobile", "api", "admin"].map((product) => ({
+        fullPath: `acme/soc-${product}`,
+        rule: and(
+          { field: "labels", operator: "containsAny", value: [`product:${product}`] },
+          { ...teamIs, value: "SOC" },
+        ),
+        match: { team: "SOC", labels: [`product:${product}`] },
+      })),
+      { fullPath: "acme/mss", rule: and({ ...teamIs, value: "MSS" }), match: { team: "MSS" } },
+    ];
+    const repoIds = new Map<string, string>();
+
+    beforeAll(async () => {
+      const connectionId = (
+        await db.select().from(repositories).where(eq(repositories.id, api))
+      )[0]!.connectionId;
+      for (const { fullPath } of production) {
+        const { id } = await connectRepository(db, {
+          connectionId,
+          provider: "github",
+          externalId: `production-${fullPath}`,
+          fullPath,
+        });
+        await db.update(repositories).set({ ralphEnabled: true }).where(eq(repositories.id, id));
+        repoIds.set(fullPath, id);
+      }
+    });
+
+    /** Where the issue goes: a repository's path, `manual …` or `ask`. */
+    const outcome = async (issueId: string) => {
+      const route = await resolveRoute(deps(), issueId);
+      if ("repository" in route) return route.repository.fullPath;
+      if ("manual" in route) return `manual ${route.manual.fullPath}`;
+      return "ask";
+    };
+
+    it("routes each production-shaped issue as the original rules did", async () => {
+      const epic = linear.add({
+        identifier: "TOOL-1",
+        title: "Epic",
+        teamKey: "TOOL",
+        projectName: "Omniralph",
+      });
+      const issues = {
+        fans: linear.add({ title: "Fans", teamKey: "MOD", projectName: "Create More Fans" }),
+        noProject: linear.add({ title: "No project", teamKey: "MOD" }),
+        unknownProject: linear.add({ title: "Unknown", teamKey: "MOD", projectName: "Unknown" }),
+        portal: linear.add({ title: "Portal", teamKey: "SOC", labels: ["product:portal"] }),
+        mss: linear.add({ title: "MSS", teamKey: "MSS" }),
+        subIssue: linear.add({
+          identifier: "TOOL-2",
+          title: "Story",
+          teamKey: "TOOL",
+          parentId: epic.id,
+        }),
+      };
+      const expected = {
+        fans: "acme/fans",
+        noProject: "acme/mod",
+        unknownProject: "ask",
+        portal: "acme/soc-portal",
+        mss: "acme/mss",
+        subIssue: "acme/omniralph",
+      };
+      const outcomes = async () => {
+        const result: Record<string, string> = {};
+        for (const [name, issue] of Object.entries(issues)) result[name] = await outcome(issue.id);
+        return result;
+      };
+
+      await rules(
+        ...production.map((p): [string, RoutingQuery] => [repoIds.get(p.fullPath)!, p.rule]),
+      );
+      expect(await outcomes()).toEqual(expected);
+
+      await rules();
+      for (const p of production) await match(repoIds.get(p.fullPath)!, p.match);
+      expect(await outcomes()).toEqual(expected);
+      // The sub-issue routes as its parent, by the parent's match.
+      expect(await resolveRoute(deps(), issues.subIssue.id)).toMatchObject({
+        by: "sub-issue of TOOL-1 → work item match (Team is TOOL, project Omniralph)",
+        defaultRule: 2,
+      });
+    });
+  });
+
   it("tests the parent's fields", async () => {
     await rules([
       web,
