@@ -42,7 +42,6 @@ const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/settings-section.tsx",
   // Measures globals.css's severity chips against the library's tokens.
   "src/components/severity-ramp.test.ts",
-  "src/components/unsaved-changes.tsx",
   "src/lib/state-variants.ts",
 ];
 

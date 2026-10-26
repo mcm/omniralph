@@ -2,16 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@iamthemcmaster/ui";
+import { ConfirmDialog } from "@omniralph/ui";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { installUnsavedGuard, unsavedSummary } from "@/lib/unsaved-changes";
 
@@ -70,34 +61,22 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   return (
     <UnsavedContext.Provider value={value}>
       {children}
-      <AlertDialog
+      <ConfirmDialog
         open={leaving !== null}
         onOpenChange={(open) => {
           if (!open) setLeaving(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Leave without saving?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {unsavedSummary(value.entries.length)}:{" "}
-              {value.entries.map((entry) => entry.label).join(", ")}. Leaving the page discards
-              them.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction
-              variant="danger"
-              onClick={() => {
-                if (leaving) router.push(leaving);
-              }}
-            >
-              Discard and leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Leave without saving?"
+        description={`${unsavedSummary(value.entries.length)}: ${value.entries
+          .map((entry) => entry.label)
+          .join(", ")}. Leaving the page discards them.`}
+        cancelLabel="Keep editing"
+        confirmLabel="Discard and leave"
+        destructive
+        onConfirm={() => {
+          if (leaving) router.push(leaving);
+        }}
+      />
     </UnsavedContext.Provider>
   );
 }
