@@ -1,13 +1,15 @@
 "use client";
 
 import { EmptyState, StatusLine, toast, Toolbar } from "@omniralph/ui";
+import { DecisionButtons } from "@/components/runs/decision-buttons";
+import { ITEM_HANDLED } from "@/components/runs/decisions";
 import type { InboxItem } from "@/lib/api/inbox";
 import { InboxHeaderBadges } from "./inbox-badges";
 import { inboxItemLabel } from "./labels";
 import { inboxItemUrl, inboxMenuItems } from "./menu";
 
 /** Shown in the detail pane when the URL's item no longer derives an item. */
-export const ITEM_HANDLED = "This item was already handled.";
+export { ITEM_HANDLED };
 
 async function copyLink(item: InboxItem) {
   try {
@@ -20,7 +22,7 @@ async function copyLink(item: InboxItem) {
 
 /**
  * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
- * the pane's heading, and why it's here.
+ * the pane's heading, why it's here, and the decisions on it.
  */
 export function InboxDetail({
   item,
@@ -47,6 +49,7 @@ export function InboxDetail({
         {item.title}
       </h2>
       <p className="or-inbox-detail__reason">{item.reason}</p>
+      <DecisionButtons key={item.key} item={item} />
     </article>
   );
 }

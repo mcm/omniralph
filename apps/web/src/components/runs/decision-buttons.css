@@ -1,0 +1,8 @@
+/* An Inbox item's decision buttons (Design rule 6): one row, wrapping on narrow panes. */
+.or-decisions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
