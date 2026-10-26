@@ -6,7 +6,7 @@ Agent SDK. It needs Node 22 and git ≥ 2.40.
 
 This README covers installing and releasing the package. To set up a host (the agent's user, the
 Claude login, pm2, tmux or systemd), see
-[docs/deploy-harness.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-harness.md).
+[docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
 ## Install
 
@@ -38,7 +38,7 @@ omniralph-agent start --healthz-port 9310
 ```
 
 To run it as a service, see the systemd, tmux and pm2 sections in
-[docs/deploy-harness.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-harness.md).
+[docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
 ## Upgrade
 
@@ -69,7 +69,9 @@ the config file `~/.config/omniralph/harness.json`. Self-update can't cross the 
 4. Start `omniralph-agent start` under pm2, tmux or systemd as before.
 5. `npm uninstall -g @omniralph/harness` once the agent is back.
 
-Self-update works again from then on.
+Self-update works again from then on. The full walkthrough, with what each `import` outcome means,
+is in
+[docs/deploy-agent.md › Moving from @omniralph/harness](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md#moving-from-omniralphharness).
 
 ## Releasing
 

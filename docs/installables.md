@@ -1,25 +1,25 @@
 # Installables and host tools
 
-Some tasks need software on the harness's host: a code graph that gives reviews context, or
-Semgrep/opengrep for a SAST check. Omniralph has two ways to get it there without a harness
+Some tasks need software on the agent's host: a code graph that gives reviews context, or
+Semgrep/opengrep for a SAST check. Omniralph has two ways to get it there without an agent
 release:
 
 - An **installable** is a versioned npm package with an `omniralph` field in its `package.json`
-  declaring the commands, MCP servers and skills it provides. An admin installs it on a harness
-  from the control panel; the harness runs `npm install` into a directory it manages.
-- A **host tool** is software the harness owner installs by hand (with the system package manager,
-  a release binary…). The organization keeps a catalog of host tools by name, and each harness
+  declaring the commands, MCP servers and skills it provides. An admin installs it on an agent
+  from the control panel; the agent runs `npm install` into a directory it manages.
+- A **host tool** is software the agent owner installs by hand (with the system package manager,
+  a release binary…). The organization keeps a catalog of host tools by name, and each agent
   agrees with the control panel on the absolute path it runs each one from.
 
-A task can require either, and only harnesses that have them claim its runs. This page is for
-installable authors, admins and harness owners. The design is
+A task can require either, and only agents that have them claim its runs. This page is for
+installable authors, admins and agent owners. The design is
 [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#installables-and-host-tools); task
-requirements are in [definitions.md](definitions.md#derived-requirements); the harness's local
-config is in [deploy-harness.md](deploy-harness.md#4-enroll).
+requirements are in [definitions.md](definitions.md#derived-requirements); the agent's local
+config is in [deploy-agent.md](deploy-agent.md#4-enroll).
 
 ## Writing an installable
 
-An installable is an ordinary npm package, published to a registry the harness can reach. What
+An installable is an ordinary npm package, published to a registry the agent can reach. What
 makes it an installable is an `omniralph` field in its `package.json`:
 
 ```json
@@ -52,15 +52,15 @@ manifest. The rules:
   normalized (`./bin//x.js` is `bin/x.js`).
 - A `bin` or MCP server `command` must be executable as installed: a native binary, or a script
   with a shebang (`#!/usr/bin/env node`). Also list scripts in the package's npm `bin` field, which
-  makes npm mark them executable on install whatever the tarball's file modes. The harness runs
+  makes npm mark them executable on install whatever the tarball's file modes. The agent runs
   the file by its absolute path, never through `node` or a `bin` link on `PATH`.
 
-Installables run as the harness's user, with no network or filesystem sandbox beyond the run's.
+Installables run as the agent's user, with no network or filesystem sandbox beyond the run's.
 Keep their dependencies small: `npm install` also installs them, and runs their install scripts.
 
 ### Running inside a run
 
-The harness runs an installable's commands and MCP servers by absolute path inside the installed
+The agent runs an installable's commands and MCP servers by absolute path inside the installed
 package, so an executable of the same name that the checkout puts on the run's `PATH` is never
 picked instead:
 
@@ -91,7 +91,7 @@ single Markdown file (named after the file without `.md`, or after its directory
 `name` in the skill's front matter, if any, equal to it.
 
 Claude Code only loads skills from settings or plugins, and most sessions load no settings at all,
-so the harness wraps each required installable's skills in a plugin of its own: it copies them
+so the agent wraps each required installable's skills in a plugin of its own: it copies them
 into `<dataDir>/skill-plugins/<plugin>-<hash>/skills/<skill>/` next to a generated
 `.claude-plugin/plugin.json`, and passes that directory to the session as a local plugin. Nothing
 else from the package comes in (no hooks, agents, commands or MCP config), and no user, project or
@@ -108,7 +108,7 @@ name, fails the run, as do two required installables whose plugin names collide.
 ### Caches
 
 Indexing a repository from scratch on every run is slow, so each installable gets cache
-directories on the harness, passed to its commands (as setup or teardown commands) and MCP servers
+directories on the agent, passed to its commands (as setup or teardown commands) and MCP servers
 as environment variables:
 
 | Variable | Directory | Set |
@@ -116,7 +116,7 @@ as environment variables:
 | `OMNIRALPH_CACHE_DIR` | `<dataDir>/cache/<package>/<repository id>/` | On every run with a repository |
 | `OMNIRALPH_PR_CACHE_DIR` | `<dataDir>/pr-cache/<package>/<repository id>/<number>/` | On a run for a PR/MR (triggers `pr.updated`, `pr.mention`, `review.rerun`, `finding.mention`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`) |
 
-The harness creates them (mode 0700) before the run. The installable owns what goes inside and how
+The agent creates them (mode 0700) before the run. The installable owns what goes inside and how
 it's keyed, e.g. an index per base commit in the repository cache and the PR's own changes on top
 in the PR cache.
 
@@ -127,14 +127,14 @@ default branch's commit); put everything that depends on the PR's changes in
 `OMNIRALPH_PR_CACHE_DIR`, which only that PR's runs see. The PR caches are a separate tree, never
 inside a repository cache.
 
-Caches are best effort. Nothing is stored in the control panel, a run on another harness starts
-cold, and a run without a repository gets neither variable. The harness doesn't prune them: the
-installable (or the harness owner) does.
+Caches are best effort. Nothing is stored in the control panel, a run on another agent starts
+cold, and a run without a repository gets neither variable. The agent doesn't prune them: the
+installable (or the agent owner) does.
 
 ### Testing an installable locally
 
 `npm pack` builds the tarball npm would publish. Install it into a scratch prefix the way the
-harness does, and run the commands from there:
+agent does, and run the commands from there:
 
 ```sh
 npm pack --pack-destination /tmp
@@ -143,64 +143,64 @@ npm install --prefix /tmp/omniralph-prefix --no-audit --no-fund -- /tmp/omniralp
 ```
 
 The `install` RPC only installs from the registry (`<name>@<version>`, never a path, tarball, URL
-or `npm:` alias), so publish the package to try it on a harness.
+or `npm:` alias), so publish the package to try it on an agent.
 
 ## Installing an installable
 
-Admins install or update an installable on one harness at a time: **Harnesses › _harness_ ›
+Admins install or update an installable on one agent at a time: **Agents › _agent_ ›
 Installables**, enter the package name and a version (an exact version such as `1.2.0` or a
 dist-tag; default `latest`) and **Install**. This queues an `install` system RPC targeted at that
-harness; the form isn't shown for a revoked harness. Installing the same name and version again
+agent; the form isn't shown for a revoked agent. Installing the same name and version again
 while the first one is queued or running doesn't queue a second job.
 
-On the harness, the RPC:
+On the agent, the RPC:
 
-1. refuses the package unless the harness's local `installables.allow` matches its name (below);
+1. refuses the package unless the agent's local `installables.allow` matches its name (below);
 2. runs `npm install --prefix <dataDir>/installables --save-exact -- <name>@<version>`, one install
-   at a time, with the harness's own environment and npm config (`~/.npmrc` of the harness's user),
+   at a time, with the agent's own environment and npm config (`~/.npmrc` of the agent's user),
    never a job's credentials;
 3. checks the installed `package.json`: a package without a valid `omniralph` field is removed
    again, or the version installed before is put back, and the job fails with the manifest's
    problems.
 
-The card lists the installables the harness reported in its last heartbeat (name and version) and
+The card lists the installables the agent reported in its last heartbeat (name and version) and
 the install jobs of the last 24 hours with their status, the version installed, or the error. A
-new installable shows up with the next heartbeat after the install, and the harness can claim
+new installable shows up with the next heartbeat after the install, and the agent can claim
 runs that require it from then on.
 
 Installables live in `<dataDir>/installables` (`~/.omniralph/installables` by default), an npm
-prefix of their own, never `npm -g`: they can't collide with the harness package or depend on
-whatever is installed globally. There's no uninstall RPC. To remove one, stop the harness and run
+prefix of their own, never `npm -g`: they can't collide with the agent package or depend on
+whatever is installed globally. There's no uninstall RPC. To remove one, stop the agent and run
 `npm uninstall --prefix ~/.omniralph/installables -- <name>` as its user.
 
 ## Host tools
 
 ### The catalog
 
-An organization's host tools are listed under **Settings › Harnesses › Host tools**, where admins
+An organization's host tools are listed under **Settings › Agent defaults › Host tools**, where admins
 add one with a name (the executable's name, e.g. `opengrep`: up to 64 lowercase letters, digits,
 `.`, `_` and `-`, starting with a letter or digit, unique in the organization) and an optional
 description, or delete one. Tasks require host tools by these names.
 
 ### Paths, negotiated in the heartbeat
 
-Every harness heartbeat negotiates where each host tool is:
+Every agent heartbeat negotiates where each host tool is:
 
 1. The control panel answers a heartbeat with the catalog and, per tool, the path an admin
-   configured for this harness, if any.
-2. On its next heartbeat the harness reports, per tool, whether the configured path is an
+   configured for this agent, if any.
+2. On its next heartbeat the agent reports, per tool, whether the configured path is an
    executable file it may run (**Exists**/**Missing**) and the first executable of that name it
-   discovered on its own `PATH` (the harness process's `PATH`, never a run's; relative entries are
-   skipped). Each report is complete: a tool it leaves out is stored as not found, so a harness
+   discovered on its own `PATH` (the agent process's `PATH`, never a run's; relative entries are
+   skipped). Each report is complete: a tool it leaves out is stored as not found, so an agent
    that stops reporting a tool stops claiming runs that need it.
 3. The **effective path** is the configured path when one is configured, and only if it exists;
    with none configured, the discovered path. A configured path that is missing makes the tool
    unavailable rather than falling back to whatever is on `PATH`.
 
-**Harnesses › _harness_ › Host tools** shows each tool's configured path (admins edit it; blank
+**Agents › _agent_ › Host tools** shows each tool's configured path (admins edit it; blank
 clears it), whether it exists, the discovered path and the effective path, or that the tool is
-unavailable. A new path reaches the harness with its next heartbeat and is checked with the one
-after, so allow about 40 seconds; after a restart the harness has no paths until its second
+unavailable. A new path reaches the agent with its next heartbeat and is checked with the one
+after, so allow about 40 seconds; after a restart the agent has no paths until its second
 heartbeat, and runs needing a host tool are retried meanwhile.
 
 A host tool always runs from its effective absolute path. A setup or teardown command whose first
@@ -211,7 +211,7 @@ requires are resolved this way.
 ## Requiring them in a task
 
 A task's **Requirements** list installables (npm package names) and host tools (catalog names); an
-agent listing `<package>:<server>` MCP servers adds those installables too. Only a harness whose
+agent listing `<package>:<server>` MCP servers adds those installables too. Only an agent whose
 last heartbeat reports every required installable and that has an effective path for every
 required host tool claims the task's runs; others leave them queued. See
 [definitions.md](definitions.md#derived-requirements).
@@ -220,22 +220,22 @@ If an installable or host tool goes away between the claim and the run (or isn't
 after a restart), the run is retried after a minute, before anything is checked out. An MCP server
 the agent lists but the installed version doesn't provide fails the run.
 
-## Locking a harness down
+## Locking an agent down
 
-The harness enforces these settings in its local config (`~/.config/omniralph/harness.json`)
-itself, whatever the control panel asks; see [deploy-harness.md](deploy-harness.md#4-enroll) for
+The agent enforces these settings in its local config (`~/.config/omniralph/agent.json`)
+itself, whatever the control panel asks; see [deploy-agent.md](deploy-agent.md#4-enroll) for
 the file.
 
 - **`installables.allow`** (default `["@omniralph/*"]`): the package names the `install` RPC may
   install. Installing is remote code execution on the host by any admin of the organization, so
   only allow scopes you trust. A pattern is an exact name or contains `*`, which matches anything
   but `/`: `@omniralph/*` matches `@omniralph/code-graph`, not `@omniralph-evil/x`. `[]` refuses
-  every install. A refused install fails its job with "_name_ isn't allowed on this harness".
+  every install. A refused install fails its job with "_name_ isn't allowed on this agent".
   The allowlist only gates new installs: an installable installed before you narrowed it stays
   installed and usable until you remove it.
-- **`blockedExecPaths`** (default `[]`): absolute path prefixes the harness never runs a host tool,
+- **`blockedExecPaths`** (default `[]`): absolute path prefixes the agent never runs a host tool,
   installable command or installable MCP server from, whether an admin configured a host tool's
-  path or the harness discovered it on `PATH`. Prefixes match
+  path or the agent discovered it on `PATH`. Prefixes match
   whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`), after resolving
   symlinks on both sides, so a link into a blocked directory is blocked too. A blocked configured
   path is reported **Missing** (and logged once as a warning), which makes the tool unavailable; a
@@ -244,21 +244,21 @@ the file.
   path, if one is blocked (e.g. a symlink changed since the last heartbeat, or `dataDir` is under a
   blocked prefix).
 - **`dataDir`** (default `~/.omniralph`): where installables and their caches live. It holds code
-  the harness runs, so keep it writable only by the harness's user.
+  the agent runs, so keep it writable only by the agent's user.
 - **`acceptedTaskTypes`** (default all of `query`, `review` and `coding`): the task types the
-  harness runs. It reports them in every heartbeat and claim and is only handed jobs of those types,
+  agent runs. It reports them in every heartbeat and claim and is only handed jobs of those types,
   so a host you don't trust to push code can leave out `coding`. Housekeeping jobs (`repo.sync`,
   installs) always run.
 
-Changes to the local config apply when the harness restarts.
+Changes to the local config apply when the agent restarts.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | -- | -- |
-| Install job fails with "isn't allowed on this harness" | The harness's `installables.allow` doesn't match the package name. |
+| Install job fails with "isn't allowed on this agent" | The agent's `installables.allow` doesn't match the package name. |
 | Install job fails with "isn't a valid installable" | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`). |
-| Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the harness user's `~/.npmrc`. |
-| A task's runs stay queued | No harness has every requirement: check the task's **Requirements** against each harness's **Installables** and **Host tools** cards. |
-| Host tool shows **Missing** | The configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the harness logs a warning for a blocked one). |
-| Host tool shows "Not found on PATH" | Nothing executable of that name is on the harness process's `PATH` outside `blockedExecPaths`; configure a path, or fix the `PATH` of the service that starts the harness (pm2, systemd). |
+| Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`. |
+| A task's runs stay queued | No agent has every requirement: check the task's **Requirements** against each agent's **Installables** and **Host tools** cards. |
+| Host tool shows **Missing** | The configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one). |
+| Host tool shows "Not found on PATH" | Nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`; configure a path, or fix the `PATH` of the service that starts the agent (pm2, systemd). |

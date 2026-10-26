@@ -4,7 +4,7 @@ Omniralph talks to GitLab (gitlab.com or self-managed) as a **bot identity**: on
 GitLab connection. The control panel uses it to read MRs, post reviews as MR discussions, reply to
 and resolve threads, check commenters' access for `@bot` commands, create the project webhooks and
 mint short-lived clone tokens for agents. For `ralph` runs ([linear.md](linear.md)) it also mints
-the push tokens for running ralph jobs and opens, updates and marks ready the run's merge request.
+the push tokens for running coding jobs and opens, updates and marks ready the run's merge request.
 Agents never see the bot token.
 
 There are no GitLab env vars. The base URL and token are entered under **Repositories › Connect
@@ -55,10 +55,10 @@ What the bot does, and the role each action needs:
 | Action                                                           | Role needed    |
 | ---------------------------------------------------------------- | -------------- |
 | Create, delete and check project webhooks                        | **Maintainer** |
-| Mint project access tokens for agents' clones and ralph's pushes | **Maintainer** |
+| Mint project access tokens for agents' clones and Om's pushes | **Maintainer** |
 | Read merge requests, diffs, members, pipelines and job logs      | Reporter       |
 | Post reviews as MR discussions, reply to and resolve threads     | Developer      |
-| Open, update and mark ready ralph's merge requests               | Developer      |
+| Open, update and mark ready Om's merge requests               | Developer      |
 
 The credential broker mints a `read_repository` project access token (Reporter role, named
 `omniralph-read-repository`) per project for agent clones. It expires the next day (UTC), is cached
@@ -105,7 +105,7 @@ from the first organization.
 **Repositories › Code-host connections › Remove** (admins) deletes a connection: the webhooks of
 its connected projects are deleted from GitLab (a webhook that can't be deleted is reported, so you
 can remove it under the project's **Settings › Webhooks**), then the connection, its projects and
-their reviews, rules, agent pins and ralph runs. The bot user can then be connected again, from
+their reviews, rules, agent pins and coding runs. The bot user can then be connected again, from
 this or another organization.
 
 Disconnecting a project deletes its webhook. MRs (open, reopen, marked ready, new commits; drafts
@@ -148,24 +148,24 @@ Webhooks are never changed automatically, since one may have been removed or edi
 **Recreate webhook** (admins, next to each webhook problem) deletes the project's stored webhook if
 it still exists, creates a new one with the current events and secret, and clears the problem.
 
-## Ralph
+## Om
 
 Nothing beyond the requirements above: the service account's token with `api`, Maintainer on the
 project, and the repository's Coding switch on (it needs a work item match). Merge requests are opened as
 drafts by the bot (titled `Draft: …`) and marked ready when the run finishes. If the project
 protects the run's branch, or only allows Maintainers to push, the Developer-role write token can't
-push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by Developers.
+push: Om's branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by Developers.
 
-Omniralph's own review findings on a ralph MR, and `@bot fix [text]` (or any other `@bot` request
-outside a finding's thread, or in one when the run has a Linear agent session) from users with at least Developer access, become requests that ralph
-works on and pushes to the MR's branch ([linear.md](linear.md#reviews-and-bot-requests-on-ralph-prsmrs));
+Omniralph's own review findings on an Om MR, and `@bot fix [text]` (or any other `@bot` request
+outside a finding's thread, or in one when the run has a Linear agent session) from users with at least Developer access, become requests that Om
+works on and pushes to the MR's branch ([linear.md](linear.md#reviews-and-bot-requests-on-om-prsmrs));
 they use the merge request (note) events the webhook already has.
 
-After a ralph MR merges, the webhook's merge request events (action `merge`) start the cleanup of
+After an Om MR merges, the webhook's merge request events (action `merge`) start the cleanup of
 its worktree and local branch on the agent (the reconcile cron is the fallback); nothing else is
 needed for it.
 
-Ralph's CI-fix loop reads the MR's head pipeline, its failed jobs and their traces with the bot
+Om's CI-fix loop reads the MR's head pipeline, its failed jobs and their traces with the bot
 token, and learns that a pipeline finished from the webhook's **Pipeline events** (the reconcile
 cron is the fallback). A webhook without pipeline events is reported as outdated on the connection:
 use **Recreate webhook** there (or tick **Pipeline events** on the project's **Settings ›

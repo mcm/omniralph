@@ -1,6 +1,6 @@
 # Playbooks
 
-Every run a harness does (a review, a code question, a story, a PR description…) runs a
+Every run an agent does (a review, a code question, a story, a PR description…) runs a
 **playbook**: one recipe with a role, prompts, a model, tools and what its runs need. Omniralph
 ships built-in playbooks; organization admins can add their own. This page explains what goes into
 a playbook, what its role fixes, how a run's model and budget are picked, and how custom playbooks
@@ -56,13 +56,13 @@ installable's MCP server as <package>:<server>; other MCP servers can't be used.
 | `reply-to-finding` | query     | `finding.mention`                                                                        | `finding-thread` | Yes           |
 
 A custom playbook can't take a built-in-only role (`CUSTOM_PLAYBOOK_ROLES`). The **task type**
-decides how the harness runs it:
+decides how the agent runs it:
 
 | Task type | What a run is                                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------- |
 | `query`   | One read-only session; its answer (Markdown, or JSON matching an output schema) goes to the sink.       |
 | `review`  | One reviewer of a PR/MR's review run: it reports findings, merged and posted with the other playbooks'. |
-| `coding`  | A session that changes code in a worktree and ships it (ralph's stories and requests).                  |
+| `coding`  | A session that changes code in a worktree and ships it (Om's stories and requests).                  |
 
 A run's **pool** (whose concurrency slots it takes) follows from its task type: `long` for coding
 runs, `short` for query and review runs. Nobody picks one.
@@ -97,11 +97,11 @@ changes a chat answer, a reply or a coding run.
 
 ### How a playbook runs
 
-The harness still runs a run spec with an `agent` (the persona: system prompt, tools, reference
+The agent still runs a run spec with an `agent` field (the persona: system prompt, tools, reference
 docs, model) and a `task` (task type, triggers, template, settings, sink). `playbookRunSpec` builds
 both from a playbook, in one place: the task type, triggers and sink come from the role, a story or
 request playbook's coding settings fill in `CODING_DEFAULTS`, and both halves take the playbook's
-ID and name. So harnesses need no change for playbooks. The control panel looks playbooks up
+ID and name. So agents need no change for playbooks. The control panel looks playbooks up
 through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
 `apps/web/src/lib/playbooks/index.ts`); a job's `task_id` holds the playbook ID.
 
@@ -220,7 +220,7 @@ Every variable has a **source**:
   (`finding.dismissed`), `chat.context` (`chat.request`), `issue.title`, `issue.description`
   (Linear triggers), `epic.prd`, `stories`, `requests` (coding triggers), `story.*`
   (`linear.delegated` only), `reviewRun.tasks` (`run.invoked`).
-- **task type**: what the harness computes while preparing the run, e.g. `diff`, `plan`, `rubric`,
+- **task type**: what the agent computes while preparing the run, e.g. `diff`, `plan`, `rubric`,
   `depth`, `repositoryRules`, `previousFindings`, `conventions` (review), `question`, `hunk`,
   `checkout`, `conventions` (query), `progress`, `feedback`, `attempt`, `today` (coding).
 - **setup**: `setup.<name>`, the output of the playbook's setup command `<name>`.
@@ -264,7 +264,7 @@ appears on and an example message:
 | Every variable exists for the role's task type and every one of its triggers                           | `promptTemplate`                 | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |
 | A request playbook only uses `epic.prd` and `story.*` inside an optional section                       | `promptTemplate`                 | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |
 | A variable limit names a variable the playbook can use                                                 | `variableLimits.<name>`          | This task can't use hunk.                                                                                                                        |
-| The output schema is an object schema the harness can check output against                            | `outputSchema`                   | The output must be an object: set "type": "object".                                                                                              |
+| The output schema is an object schema the agent can check output against                            | `outputSchema`                   | The output must be an object: set "type": "object".                                                                                              |
 | A correlation or PR description playbook outputs `{ findings, summary }` / `{ title, body }`          | `outputSchema`                   | … has no output schema: a PR description task outputs { title, body }.                                                                          |
 | The role's sink takes the output (a Markdown answer, or structured output it accepts)                  | `role`                           | The chat-thread sink takes a Markdown answer: remove the output schema.                                                                          |
 | The PR description playbook exists and is a `pr-description` playbook                                  | `coding.prDescriptionPlaybookId` | There is no task 0b7c….                                                                                                                          |
@@ -274,10 +274,10 @@ Every built-in a custom playbook's role allows passes the same validation as a c
 
 ## Derived requirements
 
-What a playbook's runs need from a harness is derived from it (`playbookRequirements`; for a custom
+What a playbook's runs need from an agent is derived from it (`playbookRequirements`; for a custom
 one, also stored with its row on save and returned as `requirements` by `GET /api/ui/playbooks/{id}`):
 
-- **Minimum harness version**: the highest of the release that runs the role's task type (query
+- **Minimum agent version**: the highest of the release that runs the role's task type (query
   0.9.0, review 0.10.0, coding 0.11.0), 0.10.0 when it has setup or teardown commands, and any
   later release a variable its template uses needs.
 - **Installables** and **host tools**: the playbook's `requires` (`requires.installables`, npm
@@ -286,25 +286,25 @@ one, also stored with its row on save and returned as `requirements` by `GET /ap
   `@omniralph/code-graph:graph`).
 
 Every job of the playbook carries the minimum version (`jobs.min_agent_version`), so only
-harnesses on that release or later claim it; older ones leave it queued. Built-ins carry no stored
+agents on that release or later claim it; older ones leave it queued. Built-ins carry no stored
 requirements; their jobs set the version their task type needs. Jobs also carry the installables
 and host tools (`jobs.required_installables`, `jobs.required_host_tools`), derived from the
-playbook as it is when the job is enqueued: only a harness whose heartbeat reports every
+playbook as it is when the job is enqueued: only an agent whose heartbeat reports every
 installable and that has an effective path for every host tool claims it.
 
-On the harness, a setup or teardown command whose first word is one of the playbook's host tools runs
+On the agent, a setup or teardown command whose first word is one of the playbook's host tools runs
 that tool's negotiated absolute path, and one whose first word names a command of a required
 installable runs that command's `bin` inside the installed package, never an executable of the
 same name the checkout puts on the run's `PATH`. Other commands run as written. The installable
 MCP servers the playbook lists are attached to its sessions from the installed packages (their tools
 are `mcp__<package>_<server>__<tool>`, with every character but letters, digits, `_` and `-`
 replaced by `_` and no leading `_`, e.g. `mcp__omniralph_code-graph_graph__<tool>`). The skills
-of every required installable are loaded into the run's sessions as a harness-written plugin
+of every required installable are loaded into the run's sessions as an agent-written plugin
 (`<package>` lowercased with other characters as `-`, e.g. `omniralph-code-graph:<skill>`); an
 installed installable the run doesn't require adds none. A run whose
-host tool or installable is missing on the harness that claimed it is retried after a minute.
+host tool or installable is missing on the agent that claimed it is retried after a minute.
 
-Each installable gets cache directories on the harness, passed to its commands (as setup or
+Each installable gets cache directories on the agent, passed to its commands (as setup or
 teardown commands) and MCP servers: `OMNIRALPH_CACHE_DIR`, the run's repository cache
 (`<dataDir>/cache/<package>/<repository id>/`), and on a PR trigger (`pr.updated`, `pr.mention`,
 `review.rerun`, `finding.mention`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`)
@@ -312,7 +312,7 @@ teardown commands) and MCP servers: `OMNIRALPH_CACHE_DIR`, the run's repository 
 The PR caches are a separate tree, never inside a repository cache, so data derived from an
 untrusted PR must only go to the PR cache, which other runs never read. The installable owns
 what's inside (including keying by commit, e.g. an index per base commit). Caches are
-best-effort: nothing is stored in the control panel, and a run on another harness starts cold.
+best-effort: nothing is stored in the control panel, and a run on another agent starts cold.
 A run without a repository gets neither variable. Writing, installing and locking down
 installables and host tools is covered in [installables.md](installables.md).
 
@@ -367,5 +367,5 @@ Add a security reviewer next to the default review, with its own rubric:
 The next push or `@omniralph review` on a PR/MR of that repository starts one review run with both
 playbooks in parallel; the correlation playbook merges findings both reported, and the posted
 review's inline comments name the playbook(s) that found each issue. Nothing is deployed and no
-harness changes, as long as it's on a release the playbook's [requirements](#derived-requirements)
+agent changes, as long as it's on a release the playbook's [requirements](#derived-requirements)
 ask for.

@@ -121,7 +121,7 @@ delivers jobs.**
   else `unsupported`), its `update` progress (`idle`/`draining`/`installing`/
   `confirming`) and `failedVersions`; the response carries `desiredVersion`
   (the agent's override, else the global Settings › Agents version). See
-  docs/deploy-harness.md "Self-update".
+  docs/deploy-agent.md "Self-update".
 - **Expiry:** Vercel Cron calls `GET /api/cron/expire-jobs` hourly
   (`apps/web/vercel.json`, `Authorization: Bearer $CRON_SECRET`). It marks jobs
   still `queued` 24h after creation as `expired`; by then their messages have

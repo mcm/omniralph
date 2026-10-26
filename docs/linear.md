@@ -1,21 +1,21 @@
-# Linear (ralph)
+# Linear (Om)
 
-Ralph builds Linear issues: delegate an epic (or a single issue) to the Omniralph Linear app and
-the control panel runs it story by story on a harness, one `ralph.story` coding run per story
+Om builds Linear issues: delegate an epic (or a single issue) to the Omniralph Linear app and
+the control panel runs it story by story on an agent, one `ralph.story` coding run per story
 attempt, then opens a pull/merge request to the repository's default branch. See
 [ADR 0003](adr/0003-ralph-orchestration.md) for how the loop is orchestrated. Stories and
 requests are coding runs of the repository's story and request tasks
-([deploy-harness.md](deploy-harness.md#coding-runs)).
+([deploy-agent.md](deploy-agent.md#coding-runs)).
 
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
-Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Harnesses relay
-their activities through the control panel (`POST /api/harness/jobs/{id}/activities`), download
-[Linear attachments](#attachments) through it (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`)
+Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
+their activities through the control panel (`POST /api/agent/jobs/{id}/activities`), download
+[Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
 and never see a Linear token. Sessions of run-spec tasks with `toolSettings.linearRead` read Linear
 the same way: the `linear_get_issue`, `linear_list_comments`, `linear_search_issues` and
-`linear_get_document` tools of the harness's `omniralph` MCP server call
-`GET /api/harness/runs/{id}/linear/…` (`issues?query=`, `issues/{issueId}`,
+`linear_get_document` tools of the agent's `omniralph` MCP server call
+`GET /api/agent/runs/{id}/linear/…` (`issues?query=`, `issues/{issueId}`,
 `issues/{issueId}/comments`, `documents/{documentId}`) with the run's session token (scope
 `linear:read`); the control panel reads the run's organization's workspace, only for the tools the
 task's agent lists. They are read-only: every Linear write goes through a sink.
@@ -24,22 +24,22 @@ Runs can also start from a Slack or Discord thread: a linked member asks the cha
 the request to a request-mode run in a ralph-enabled repository, whose progress, answers and PR/MR
 follow-ups go to that thread instead of a Linear session. Such runs need no Linear issue (or
 Linear connection) and don't change anything in Linear; see
-[chat.md › Ralph from chat](chat.md#ralph-from-chat). Linear runs behave as described here, and
+[chat.md › Om from chat](chat.md#om-from-chat). Linear runs behave as described here, and
 the chat bot can also report on them and send them guidance.
 
 Triage (the built-in query task `builtin:triage`) uses the same app to rewrite rough issues as PRDs
-ralph can build: see [Triage](#triage).
+Om can build: see [Triage](#triage).
 
 Coming from cyralph? [cutover-from-cyralph.md](cutover-from-cyralph.md) maps its `config.json` to
 the settings below and lists the steps to switch over.
 
-Setting ralph up takes five steps:
+Setting Om up takes five steps:
 
 1. [Create the Linear OAuth app](#1-create-the-linear-oauth-app).
 2. [Set the env vars](#2-set-the-env-vars) on the control panel.
 3. [Connect the workspace](#3-connect-from-settings--integrations) from **Settings › Integrations**.
 4. [Turn coding on and configure routing](#4-configure-routing) on a repository, and enable the
-   `coding` task type on a harness ([deploy-harness.md](deploy-harness.md#ralph)).
+   `coding` task type on an agent ([deploy-agent.md](deploy-agent.md#coding-work)).
 5. [Delegate an issue](#5-delegate-an-issue).
 
 The code host needs the write permissions described in [github-app.md](github-app.md) (Contents and
@@ -71,7 +71,7 @@ control panel yourself), and redelivered events are deduplicated.
 
 ## 2. Set the env vars
 
-On the Vercel project (per environment; [env.md](env.md#linear-app-ralph)):
+On the Vercel project (per environment; [env.md](env.md#linear-app-om)):
 
 | Variable | Value |
 | -- | -- |
@@ -95,7 +95,7 @@ expires) and from the same browser.
   organization already has is refused ("This Linear workspace belongs to another organization");
   disconnect it there first. Webhooks are routed to the organization that connected the
   workspace and ignored for workspaces no organization connected.
-- Runs, routing and ralph's repositories are per organization too: a delegated issue is only
+- Runs, routing and Om's repositories are per organization too: a delegated issue is only
   routed to repositories of the workspace's organization, and its jobs only go to that
   organization's agents. Only its members see the runs under **Coding tasks**.
 - **Disconnect** deletes the stored tokens. Runs can't advance (their stories are re-read from
@@ -107,7 +107,7 @@ expires) and from the same browser.
 
 ## 4. Configure routing
 
-Ralph only builds in repositories with coding on. Which issues build where is decided by each
+Om only builds in repositories with coding on. Which issues build where is decided by each
 repository's [work item match](#work-item-matches) and, when the organization has any, its
 [routing rules](#routing-rules), which apply first. `GET /api/ui/repositories/{id}` reports both:
 the rules that target the repository (`routingRules`, position and condition) beside its match
@@ -121,7 +121,7 @@ Coding off. Coding needs a work item match: turning it on for a repository witho
 "Add a work item match before turning on Coding.", and clearing the match of a repository whose
 Coding is on answers 409 "Turn off Coding before removing the work item match." A repository that
 already had Coding on before work item matches keeps it until it's switched off. The organization's
-**Task types** under **Settings › Harnesses** only set what harnesses accept; they don't change any
+**Task types** under **Settings › Agent defaults** only set what agents accept; they don't change any
 repository's switches.
 
 A repository's coding policy is six settings: on/off, the work item match and the four below.
@@ -155,7 +155,7 @@ tracker labels.
 | Story playbook | `allowPreparation` | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
 | Story playbook | `epicCompletedState` | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
 | Story playbook | `cleanupMergedWorktrees` / `unmergedBranchTimeoutMinutes` | on / 60 | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer. |
-| Organization (`app_settings` `tracker.labels`) | `manualLabels` | `manual` | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
+| Organization (`app_settings` `tracker.labels`) | `manualLabels` | `manual` | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one Om puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
 | Organization (`app_settings` `tracker.labels`) | `blockedLabels` | `under-review`, `blocked` | Linear labels that keep Om off a work item (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear, whichever repository it routes to. A mention handed to a run that is already working is unaffected. |
 
 The organization's tracker labels are read by any member with `GET /api/ui/trackers/labels`
@@ -298,7 +298,7 @@ In an epic with sub-issues, each story is routed with the same [routing order](#
 as delegated issues. A story that matches no rule or work item match of its own falls to the "sub-issue" default and
 stays in the epic's repository. A story a rule routes to another repository with coding on gets a
 lane there: its own branch (the epic's branch name, based on that repository's default branch) and
-its own PR/MR, and the run's start message says so. Stories are routed before ralph decides which
+its own PR/MR, and the run's start message says so. Stories are routed before Om decides which
 are manual: a story is manual when it carries one of the organization's **Manual labels**, and
 its preparation is offered only when the story playbook of the repository it routes to (the epic's
 repository when it stays there) has `allowPreparation` on. A story a rule routes to a repository with
@@ -308,12 +308,12 @@ Follow-ups a story files route as their source story (the "follow-up" default), 
 its lane unless a rule of yours routes them elsewhere. The run detail page shows one section per repository with its branch,
 PR/MR and stories.
 
-Each story's job runs in its lane: that repository's checkout, branch and base branch, its ralph
+Each story's job runs in its lane: that repository's checkout, branch and base branch, its Om
 settings (model, tools, prompt additions, setup command) and its quality gates (its
 `verifyCommands`, plus the PRD's shared gates and its own scoped gates when its
-`runPrdQualityGates` is on; see **Quality gates** above), on the lane's harness
-(see [Harnesses and concurrency](#harnesses-and-concurrency)), so repositories pinned to different
-harnesses each run on theirs.
+`runPrdQualityGates` is on; see **Quality gates** above), on the lane's agent
+(see [Agents and concurrency](#agents-and-concurrency)), so repositories pinned to different
+agents each run on theirs.
 The prompt names the repository. When every story is done, each lane is published in turn: a
 lane no story committed to (every story went elsewhere) gets no PR/MR; every other lane gets its
 own description job and its own PR/MR, and `openPullRequestEarly` follows each repository's own
@@ -404,7 +404,7 @@ How the run behaves:
   **Source › …**. An unfinished story's follow-ups block it; when it
   reported blocked, that's a round (above), not a used attempt. A completed story's follow-ups
   block the stories it blocks.
-- **The end.** When every story is done, an agent writes the PR/MR title and body, the control panel
+- **The end.** When every story is done, Om writes the PR/MR title and body, the control panel
   opens it (or updates the open one) and marks it ready, links it to the agent session and posts a
   final response.
 
@@ -497,7 +497,7 @@ epic as context. The mention's text (without a leading `@name`) is the request.
   It may commit and push the run's branch (never another one: the agent's
   `pre-push` hook rejects that), and rebase and `--force-with-lease` it when asked, unless the
   repository's **History rewrites** setting is `never`. On the **Coding tasks** path the session
-  can't push itself: it calls the `ship` tool and the harness commits, pushes and tells it what
+  can't push itself: it calls the `ship` tool and the agent commits, pushes and tells it what
   happened.
 - **PRs/MRs.** The agent never runs `gh` or `glab`: it asks for a PR/MR change in its result, and
   the control panel makes it (opens it as a draft, updates its title or description, or marks it
@@ -510,7 +510,7 @@ epic as context. The mention's text (without a leading `@name`) is the request.
   session."); one whose run waits is added to that run as a request.
 - A mention without a request does nothing.
 
-### Reviews and `@bot` requests on ralph PRs/MRs
+### Reviews and `@bot` requests on Om PRs/MRs
 
 Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop):
 
@@ -530,7 +530,7 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   pending request ("… Working through it.", or "… I'll work through it as soon as the current
   step finishes."), run as a `ralph.request` job once nothing else runs. A running story agent
   never gets it: story agents don't push, so it waits for the story loop to finish.
-- **People's requests.** On a ralph PR/MR, from users with write access, `@omniralph fix [text]`
+- **People's requests.** On an Om PR/MR, from users with write access, `@omniralph fix [text]`
   (anywhere) and any other `@omniralph` text outside finding threads become requests on that
   lane, delivered the same way; a stopped or finished run resumes. The bot replies in the thread
   with a link to the Linear issue. In a finding's thread, `@omniralph fix [text]` and, when the
@@ -539,24 +539,24 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   back by ID as the review's own request is), so with **Fix review findings** off you choose
   which reviews and findings get fixed. Without a Linear session (or once the run failed),
   questions in finding threads are answered there as before. `review`, `review fresh`,
-  `dismiss` and `help` work as before. On PRs/MRs ralph didn't open, `@omniralph fix` replies
-  that it only works on ralph PRs/MRs.
-- **Failed CI.** When the CI of a ralph PR/MR's head commit finishes and fails (GitHub Actions
+  `dismiss` and `help` work as before. On PRs/MRs Om didn't open, `@omniralph fix` replies
+  that it only works on Om PRs/MRs.
+- **Failed CI.** When the CI of an Om PR/MR's head commit finishes and fails (GitHub Actions
   workflow runs, GitLab pipelines), the failed jobs and the last 4,000 characters of each log
   (at most 5 jobs, then "(N more failed jobs not shown.)"; "(no log available)" when a log can't
   be read) become a request on that lane, and the session says "CI failed on the pull request
   (`<sha7>`: `a`, `b`, `c` and N more). Working on a fix." The agent fixes the cause (not by
   weakening tests or checks; a flaky or infrastructure failure is reported, not "fixed"), runs
   the quality gates and pushes. It's noticed from GitHub `workflow_run` and GitLab **Pipeline
-  events** webhooks, and by `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR.
+  events** webhooks, and by `/api/cron/ralph-reconcile`, which checks every open Om PR/MR.
   Each head commit is acted on once; after **Max CI fix rounds** (`maxFixRounds`, default 3) the
   session says "CI failed again on `<url>` (`<sha7>`). I've already tried to fix CI N time(s) on
   this pull request, so I'm leaving this one for a person." A run with a job queued or running is
   checked again later (it may push again); stopped runs and repositories with **Fix failed CI**
   (`respondToCiFailures`) off are skipped, and a closed or merged PR/MR is no longer followed up.
-- **Cleanup after the merge.** When a ralph PR/MR merges (its merge webhook: GitHub
+- **Cleanup after the merge.** When an Om PR/MR merges (its merge webhook: GitHub
   `pull_request` closed + merged, GitLab **Merge request events** `merge`; the Linear issue moving
-  to a completed state; or `/api/cron/ralph-reconcile`, which checks every open ralph PR/MR), a
+  to a completed state; or `/api/cron/ralph-reconcile`, which checks every open Om PR/MR), a
   `worktree.cleanup` system RPC on the lane's sticky agent (the one holding its worktree; a lane that
   never ran a job has nothing to clean up) stashes the worktree's uncommitted changes, removes
   the branch worktree, and deletes the local branch unless it has commits the merged head doesn't
@@ -604,7 +604,7 @@ links) reach the agent, as in cyralph:
   `attachment-N`, with an extension from the content type) and lets the session read that folder.
 - **Prompt.** Each file is listed with where it came from and its local path; the session opens
   them with the Read tool (which shows images). A file that couldn't be downloaded is listed as
-  such ("Don't guess what it shows"), and the agent says so once in the session as a thought.
+  such ("Don't guess what it shows"), and Om says so once in the session as a thought.
 
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Coding tasks**,
 where admins can also stop a run. A run's page has one section per repository (lane) with its
@@ -615,21 +615,21 @@ run hasn't handled yet, with their repository, author and time), **Messages** (t
 replies passed to a running job's live session, newest first: kind, text, author, job, and
 whether the agent's heartbeat delivered it, it's still waiting, or it couldn't be delivered and
 was kept as guidance), the run's guidance, its progress log and its jobs. **Analytics**
-has a Ralph section: runs started, ralph tokens per day next to reviews, runs per day by status
+has a Coding section: runs started, coding tokens per day next to reviews, runs per day by status
 and story outcomes per day and in total (first attempt, after retries, blocked, exhausted).
 
 ## Triage
 
 Triage (the built-in query task `builtin:triage`, job type `triage.run`) turns a rough Linear
-issue into something ralph can build, without a person in the loop: it does what the `/linear-prd triage` skill does interactively. It reads the
-issue (and, read-only, the repository it routes to), rewrites it as a PRD in the format ralph
+issue into something Om can build, without a person in the loop: it does what the `/linear-prd triage` skill does interactively. It reads the
+issue (and, read-only, the repository it routes to), rewrites it as a PRD in the format Om
 executes, splits large work into sub-issues and lists whatever it couldn't decide as open
 questions. It never writes code, branches, commits or PRs/MRs.
 
 **Setup** (once, on top of steps 1–3 above):
 
-- Let a harness accept `query` tasks under **Harnesses › <harness>** (it applies with the next
-  heartbeat). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until a harness
+- Let an agent accept `query` tasks under **Agents › <agent>** (it applies with the next
+  heartbeat). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until an agent
   that accepts them, at version 0.9.0 or later, claims them.
 - For the label trigger, create a label named `coding:triage` in the Linear workspace (a
   workspace label, or one on each team that should use it). A `ralph:triage` label, its name
@@ -641,7 +641,7 @@ questions. It never writes code, branches, commits or PRs/MRs.
 - **Delegation.** Delegating an issue in a **Needs refining** state (by default Backlog) triages it
   in that agent session, as `/triage` would (see [Delegate an issue](#5-delegate-an-issue)).
 - **Mention.** @mention the app with `/triage` in an issue's comment, e.g. `@omniralph /triage`
-  (the rest of the comment is passed along like a reply). A mention without `/triage` is a ralph
+  (the rest of the comment is passed along like a reply). A mention without `/triage` is an Om
   request, as before.
 - **Label.** Add the `coding:triage` (or `ralph:triage`) label to an issue (the name matches
   ignoring case). The control
@@ -652,7 +652,7 @@ questions. It never writes code, branches, commits or PRs/MRs.
 
 One triage runs per issue at a time: the label on an issue that is being triaged does nothing,
 and a mention or reply from another session is answered that the issue is being triaged in
-another session. Triage reports in the session like ralph does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
+another session. Triage reports in the session like Om does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
 final response with what changed (outcome, size, structure, sub-issues created or updated, the
 status set and the open questions).
 
@@ -663,10 +663,10 @@ whatever the routed repository's coding switch: triage only reads it. With a rep
 out its default branch and the PRD's quality gates and file paths come from the source (CI config
 first, and the repository's `LINEAR.md` if it has one). Without one, triage still runs from Linear
 alone and adds an open question asking which repository the issue belongs in; it never asks the
-"Which repository?" question ralph does.
+"Which repository?" question Om does.
 
 The session is read-only, like a review: only `Read`, `Grep` and `Glob` inside the checkout, no
-shell, no writes, no network, no project settings or hooks, and no Linear token (the harness
+shell, no writes, no network, no project settings or hooks, and no Linear token (the agent
 returns a typed result; the control panel makes every change in Linear). It sees the issue, its
 comments, its sub-issues (with their states and priorities) and blockers, and can read related
 Linear issues, comments and documents with the read-only Linear tools (`linear_get_issue`,
@@ -674,9 +674,9 @@ Linear issues, comments and documents with the read-only Linear tools (`linear_g
 serves for the run's organization. When the routed repository's default branch doesn't exist yet,
 it runs as if no repository were routed.
 
-Like every query task, triage has no code of its own on the harness: the control panel sends the
+Like every query task, triage has no code of its own on the agent: the control panel sends the
 playbook (`builtin:triage`, role `triage`, model `opus`, no token budget)
-with the job, the harness runs it through the fixed query lifecycle
+with the job, the agent runs it through the fixed query lifecycle
 ([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)), and the `triage` sink validates the
 result and applies it to Linear.
 
@@ -689,12 +689,12 @@ Metrics) with a t-shirt size, then:
 | Size | Result |
 | -- | -- |
 | XS, S, M | A single issue: the description carries the user story and its acceptance criteria. |
-| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so ralph builds the epic as `children` without rewriting it. |
+| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
 
 An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
 
-**Reformatting.** An issue that is already triaged but not in ralph's format (an epic with
+**Reformatting.** An issue that is already triaged but not in Om's format (an epic with
 sub-issues, or a PRD with the wrong sections) is reformatted in place:
 
 - The parent's title and description are rewritten.
@@ -719,7 +719,7 @@ back to Backlog or Todo and triage again.
 
 Every ambiguity triage can't resolve from the issue, its comments, its sub-issues and the source
 becomes an open question instead of a guess. They go in a `## Open Questions` section at the very
-end of the description, as a numbered list (never checkboxes, so ralph doesn't read them as
+end of the description, as a numbered list (never checkboxes, so Om doesn't read them as
 acceptance criteria). The section is left out when there are none and removed once all of them
 are answered.
 
@@ -741,9 +741,9 @@ the current job ends. `stop` (or Linear's stop button) stops a running triage an
 Editing the description yourself and triaging again works too, and so does retrying the run from
 Omniralph (see "Retry from Omniralph").
 
-### Ralph refuses issues with open questions
+### Om refuses issues with open questions
 
-Ralph doesn't start a delegated issue, or a `/coding` mention, while the issue's description (or,
+Om doesn't start a delegated issue, or a `/coding` mention, while the issue's description (or,
 for a sub-issue, its parent epic's) has a non-empty `## Open Questions` section: it answers in the
 session that the questions need answering first, and materializes nothing and changes no state.
 Answer them (a reply in the triage session, or by editing the description) and delegate again.
@@ -790,21 +790,21 @@ or state may be in both. Members read the mapping, with every team's workflow st
 errors for an invalid one). Work items also carry `blockedBy` (open issues with a "blocks"
 relation to it; done and canceled ones left out) and `blocked`.
 
-## Harnesses and concurrency
+## Agents and concurrency
 
-Ralph jobs are `coding` tasks in the `long` pool: they run on harnesses that accept the `coding`
-task type ([deploy-harness.md](deploy-harness.md#ralph)). A harness's `long` pool limit caps how
-many of its slots ralph may take; by default that's max concurrency − 1 (at least 1), so a harness
+Coding jobs are `coding` tasks in the `long` pool: they run on agents that accept the `coding`
+task type ([deploy-agent.md](deploy-agent.md#coding-work)). An agent's `long` pool limit caps how
+many of its slots Om may take; by default that's max concurrency − 1 (at least 1), so an agent
 with two or more slots keeps one free for reviews while stories run. Each lane sticks to its own
-harness: a lane's story, request, push and describe jobs and a manual story's preparation go to the harness that started the lane's
-last job while it still accepts `coding`, else to a harness its repository is pinned to, else to
-any harness that accepts `coding`. Lanes of an epic in repositories pinned to different harnesses
-each run on theirs; the run's harness shown on its page is the main lane's. A lane's worktree
-cleanup goes only to its sticky harness, which holds the worktree.
-Triage jobs run in the `short` pool on harnesses that accept `query` tasks; like reviews, they may
-take every slot by default, so lower the pool's limit to keep slots free for other work. Harnesses
-under pm2 update themselves to the version chosen on **Settings › Harnesses**
-([deploy-harness.md](deploy-harness.md#self-update-pm2)).
+agent: a lane's story, request, push and describe jobs and a manual story's preparation go to the agent that started the lane's
+last job while it still accepts `coding`, else to an agent its repository is pinned to, else to
+any agent that accepts `coding`. Lanes of an epic in repositories pinned to different agents
+each run on theirs; the run's agent shown on its page is the main lane's. A lane's worktree
+cleanup goes only to its sticky agent, which holds the worktree.
+Triage jobs run in the `short` pool on agents that accept `query` tasks; like reviews, they may
+take every slot by default, so lower the pool's limit to keep slots free for other work. Agents
+under pm2 update themselves to the version chosen on **Settings › Agent defaults**
+([deploy-agent.md](deploy-agent.md#self-update-pm2)).
 
 ## Troubleshooting
 
@@ -813,11 +813,11 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
   workspace is the connected one.
 - **Runs don't resume after a blocker is done.** **Issues** webhook events are disabled. The
   `/api/cron/ralph-reconcile` cron (every 10 minutes) still catches up waiting runs.
-- **Failed CI on a ralph PR/MR isn't picked up until the cron runs.** The GitHub App lacks
+- **Failed CI on an Om PR/MR isn't picked up until the cron runs.** The GitHub App lacks
   **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
   events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).
-- **Worktrees of merged ralph PRs/MRs stay on the harness host.** The cleanup runs on the lane's
-  sticky harness: if that harness is revoked or no longer accepts `coding`, nothing can reach its
+- **Worktrees of merged Om PRs/MRs stay on the agent host.** The cleanup runs on the lane's
+  sticky agent: if that agent is revoked or no longer accepts `coding`, nothing can reach its
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
@@ -833,7 +833,7 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
 - **Triage never starts from the label.** Neither a `coding:triage` nor a `ralph:triage` label exists in the workspace
   (or under another name), or **Issues** webhook events are disabled. A triage that can't start
   removes the label again; the session it opened says why.
-- **"Triaging …" but nothing happens.** No harness accepts `query` tasks, or none runs version
+- **"Triaging …" but nothing happens.** No agent accepts `query` tasks, or none runs version
   0.9.0 or later.
-- **No harness picks the job up.** No harness accepts the `coding` task type, or the repository is
-  pinned to a harness that doesn't ([deploy-harness.md](deploy-harness.md#ralph)).
+- **No agent picks the job up.** No agent accepts the `coding` task type, or the repository is
+  pinned to an agent that doesn't ([deploy-agent.md](deploy-agent.md#coding-work)).

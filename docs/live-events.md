@@ -32,7 +32,7 @@ comment on `changeEventSchemas` says what each one's `ids` are.
 | `org:<organizationId>:changes` | Changes everyone in the organization can see                                     |
 | `user:<userId>:changes`        | Per-user state (Inbox Done, Skip, Snooze), and the user's own membership changes |
 
-The agents' wake channels (`org:<id>`, `harness:<id>`, [ADR 0009](adr/0009-ably-wake-signals.md))
+The agents' wake channels (`org:<id>`, `agent:<id>`, [ADR 0009](adr/0009-ably-wake-signals.md))
 are separate and never granted to browsers.
 
 ## Recording and publishing
@@ -41,7 +41,7 @@ are separate and never granted to browsers.
   The change goes to the request's collector (AsyncLocalStorage); outside one, recording is a
   no-op. Recorded on a transaction, it is kept only once that transaction commits (`createDb`
   scopes every transaction and savepoint with `withChangeScopes`).
-- `apiHandler`, every `/api/harness/*`, webhook, cron and OAuth callback route (`liveRoute`), the
+- `apiHandler`, every `/api/agent/*`, webhook, cron and OAuth callback route (`liveRoute`), the
   server actions (`runAdminAction` and friends) and webhook work
   deferred until after the response (`liveDeferred`, `liveWaitUntil`) open a collector
   (`apps/web/src/lib/live/request.ts`). After the response (Next `after()`), its de-duplicated
@@ -52,7 +52,7 @@ are separate and never granted to browsers.
   second publishes at once, the second claims the trailing publish (rate-limit key
   `live:transcript:<runId>`), sent when the second ends.
 - Agents: heartbeats publish only when an agent goes from offline to online
-  (`harnesses.live_online`), and the `agent-liveness` cron (every minute) publishes the agents
+  (`agents.live_online`), and the `agent-liveness` cron (every minute) publishes the agents
   whose last heartbeat is older than the online window going offline.
 
 ## Browser token

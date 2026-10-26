@@ -17,7 +17,7 @@ put them in `apps/web/.env.local`.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Harnesses** reads (to track `latest`) the public `@omniralph/harness` package without a token. |
+| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agent defaults** reads (to track `latest`) the public `@omniralph/agent` package without a token. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database
@@ -35,7 +35,7 @@ put them in `apps/web/.env.local`.
 | -- | -- | -- | -- |
 | `ENCRYPTION_KEY` | yes | — | 32-byte AES-256-GCM key (base64 or hex) encrypting SCM and Linear credentials at rest: `openssl rand -base64 32`. Changing it makes stored GitLab and Linear tokens unreadable (reconnect GitLab and Linear). |
 | `APP_URL` | yes (except Vercel production) | `https://$VERCEL_PROJECT_PRODUCTION_URL` on Vercel | Public base URL of the control panel. Webhook URLs, review links in summary comments and the enrollment command use it. |
-| `BOT_HANDLE` | no | `omniralph` | The `@handle` for mention commands on GitHub (`@omniralph review`, `dismiss`, questions, and on ralph PRs `fix` and other requests to ralph). GitHub only: on GitLab the handle is the connection's bot username. A leading `@` is ignored. |
+| `BOT_HANDLE` | no | `omniralph` | The `@handle` for mention commands on GitHub (`@omniralph review`, `dismiss`, questions, and on Om PRs `fix` and other requests to Om). GitHub only: on GitLab the handle is the connection's bot username. A leading `@` is ignored. |
 
 ### Sign-in (Auth.js)
 
@@ -68,7 +68,7 @@ installations is connected to one organization.
 GitLab has no env vars: the base URL, bot token and webhook secret are entered per organization
 under **Repositories › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
 
-### Linear app (ralph)
+### Linear app (Om)
 
 See [linear.md](linear.md). One OAuth application in Linear (**Settings › API › OAuth applications**) for the whole
 deployment, which each organization's admins install into their organization's Linear workspace
@@ -79,9 +79,9 @@ tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `LINEAR_CLIENT_ID` | for ralph | — | The Linear OAuth application's client ID. Without it, **Connect Linear** is disabled. |
-| `LINEAR_CLIENT_SECRET` | for ralph | — | The Linear OAuth application's client secret (code exchange and token refresh). |
-| `LINEAR_WEBHOOK_SECRET` | for ralph | — | The Linear app's webhook signing secret; verifies the `Linear-Signature` HMAC-SHA256 header. Unset → Linear webhooks are rejected. |
+| `LINEAR_CLIENT_ID` | for Om | — | The Linear OAuth application's client ID. Without it, **Connect Linear** is disabled. |
+| `LINEAR_CLIENT_SECRET` | for Om | — | The Linear OAuth application's client secret (code exchange and token refresh). |
+| `LINEAR_WEBHOOK_SECRET` | for Om | — | The Linear app's webhook signing secret; verifies the `Linear-Signature` HMAC-SHA256 header. Unset → Linear webhooks are rejected. |
 
 ### Slack (chat)
 
@@ -117,7 +117,7 @@ connect to yet ([chat.md](chat.md#ordinary-discord-messages-arent-received-yet))
 | `DISCORD_BOT_TOKEN` | for Discord | — | The bot's token (**Bot › Token**); posts replies and leaves servers on disconnect. |
 | `DISCORD_PUBLIC_KEY` | for Discord | — | The application's public key; verifies Discord's interaction signatures (Ed25519). |
 
-### Chat assistant (control-panel agent)
+### Chat assistant (Om in chat)
 
 Answers in Slack and Discord threads with a model from the
 [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). On Vercel the gateway authenticates with
@@ -130,14 +130,14 @@ rate-limited per organization (60 per 10 minutes) and per chat user (10 per minu
 | `AI_GATEWAY_API_KEY` | off Vercel, for the chat assistant | — | AI Gateway API key (Vercel dashboard › **AI Gateway › API keys**). |
 | `CHAT_AGENT_MODEL` | no | `anthropic/claude-haiku-5.5` | AI Gateway model id the chat assistant uses. |
 
-### Harness tokens
+### Agent tokens
 
 See [ADR 0002](adr/0002-agent-auth.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs harness access and job tokens (RS256, 15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
-| `LOCAL_AGENT_SIGNING_KEY` | no | an in-memory key | Local dev/tests only, used when `KMS_AGENT_ISSUER_ID` is unset: an RSA private key PEM. With the in-memory key, tokens die on restart and harnesses refresh. Refused when `VERCEL_ENV=production`. |
+| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs agent access and job tokens (RS256, 15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
+| `LOCAL_AGENT_SIGNING_KEY` | no | an in-memory key | Local dev/tests only, used when `KMS_AGENT_ISSUER_ID` is unset: an RSA private key PEM. With the in-memory key, tokens die on restart and agents refresh. Refused when `VERCEL_ENV=production`. |
 
 ### Job dispatch and cron
 
@@ -146,7 +146,7 @@ See [ADR 0006](adr/0006-postgres-job-queue.md).
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
 | `CRON_SECRET` | yes | — | Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to `/api/cron/*`; requests without it get 401. |
-| `ABLY_API_KEY` | no | — (Ably off) | Ably API key, `<keyName>:<keySecret>` (Ably dashboard › your app › **API Keys**; needs publish and subscribe). When set, each heartbeat hands the harness a 12-hour, subscribe-only JWT for its wake channels (`harness:<harnessId>`, `org:<organizationId>`), signed locally with the key secret; harnesses never see the key. Unset (or malformed, which is logged) means `ably: null` in heartbeats, and harnesses long-poll their claims as before. See [ADR 0009](adr/0009-ably-wake-signals.md). The same key publishes the control panel's live change events and signs the browsers' 1-hour, subscribe-only tokens for them (`GET /api/ui/live/token`); unset, screens fall back to polling. See [live-events.md](live-events.md). |
+| `ABLY_API_KEY` | no | — (Ably off) | Ably API key, `<keyName>:<keySecret>` (Ably dashboard › your app › **API Keys**; needs publish and subscribe). When set, each heartbeat hands the agent a 12-hour, subscribe-only JWT for its wake channels (`agent:<agentId>`, `org:<organizationId>`), signed locally with the key secret; agents never see the key. Unset (or malformed, which is logged) means `ably: null` in heartbeats, and agents long-poll their claims as before. See [ADR 0009](adr/0009-ably-wake-signals.md). The same key publishes the control panel's live change events and signs the browsers' 1-hour, subscribe-only tokens for them (`GET /api/ui/live/token`); unset, screens fall back to polling. See [live-events.md](live-events.md). |
 
 ### Set by Vercel
 
@@ -162,7 +162,9 @@ Set these in the agent's environment (the systemd unit, or the shell that starts
 on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
 config file, and everything else comes from the control panel, including the organization the agent
 was enrolled into (sent with each heartbeat; there's no variable for it). See
-[deploy-harness.md](deploy-harness.md).
+[deploy-agent.md](deploy-agent.md). The agent never reads the old `OMNIRALPH_HARNESS_CONFIG`: only
+`omniralph-agent import` does, to find the config it moves
+([Moving from @omniralph/harness](deploy-agent.md#moving-from-omniralphharness)).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
@@ -171,15 +173,15 @@ was enrolled into (sent with each heartbeat; there's no variable for it). See
 | `ANTHROPIC_API_KEY` | no | — (the host's `claude` login) | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |
 
-The harness sets `OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_ID`, `OMNIRALPH_SERVER` and, for Claude
+The agent sets `OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_ID`, `OMNIRALPH_SERVER` and, for Claude
 sessions, `OMNIRALPH_JOB_TOKEN_FILE` itself for processes inside a job (the `git-credential`
 helper). Don't set them. A query task's session gets the run's `session` token there, which can
-never push; see [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#lifecycle-and-session-tokens). Ralph's Claude sessions, quality gates, setup and
-preparation commands get the harness's environment without any `OMNIRALPH_*` variable, so they can't
-fetch credentials; whatever else the harness's environment holds, they can read.
+never push; see [ADR 0008](adr/0008-agents-tasks-and-the-harness.md#lifecycle-and-session-tokens). Coding sessions, quality gates, setup and
+preparation commands get the agent's environment without any `OMNIRALPH_*` variable, so they can't
+fetch credentials; whatever else the agent's environment holds, they can read.
 
-Ralph needs no extra harness variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
-[deploy-harness.md](deploy-harness.md#ralph)). Self-update under pm2 needs none either: it detects pm2 by
+Coding runs need no extra agent variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Linear token (see
+[deploy-agent.md](deploy-agent.md#coding-work)). Self-update under pm2 needs none either: it detects pm2 by
 the `pm_id` variable pm2 sets, and installs the public package without npm auth.
 
 cyralph's variables (`LINEAR_ACCESS_TOKEN`, `CYRALPH_*`, …) and their equivalents are listed in

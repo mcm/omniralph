@@ -161,7 +161,7 @@ the answer, and `start_ralph_request` started a ralph run that posted into the t
 are started, followed and answered through the responder; nothing else posts into chat on a
 chat-origin run's behalf. The task and agent model is
 [ADR 0008](0008-agents-tasks-and-the-harness.md); this addendum only covers how chat uses it.
-Setup and usage: [chat.md › Ralph from chat](../chat.md#ralph-from-chat).
+Setup and usage: [chat.md › Ralph from chat](../chat.md#om-from-chat).
 
 - **Tools start runs of task definitions.** `ask_about_code` (`read`) starts a run of a query
   task, `start_work` (`action`, replacing `start_ralph_request`) a coding run of a coding task
