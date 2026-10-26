@@ -2198,7 +2198,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   it("refuses to rerun the other organization's job, and its own members may rerun it", async () => {
     state.userId = a.adminId;
     expect(await call(jobRerun.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject({
-      status: 400,
+      status: 404,
       body: { error: "That job doesn't exist." },
     });
     expect(
@@ -2210,6 +2210,60 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       status: 400,
       body: { error: expect.not.stringContaining("doesn't exist") },
     });
+  });
+
+  it("lets a member of both organizations rerun a failed repo sync of the one that isn't active", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-rerun-member", email: "both-rerun@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    const [sync] = await db
+      .insert(jobs)
+      .values({
+        organizationId: b.orgId,
+        type: "repo.sync",
+        taskType: "system",
+        status: "failed",
+        agentId: b.agentId,
+        targetAgentId: b.agentId,
+        repositoryId: b.repoId,
+        payload: { repositoryId: b.repoId },
+      })
+      .returning();
+    try {
+      state.userId = user!.id;
+      // The Repos rail under All organizations offers Retry on b's repo without switching to b.
+      expect(await call(jobRerun.POST, { method: "POST", params: { id: sync!.id } })).toMatchObject(
+        { status: 200, body: { ok: true, jobId: expect.any(String) } },
+      );
+      // A user of a only (a's admin) doesn't reach it.
+      state.userId = a.adminId;
+      expect(await call(jobRerun.POST, { method: "POST", params: { id: sync!.id } })).toMatchObject(
+        { status: 404, body: { error: "That job doesn't exist." } },
+      );
+      // Once the user leaves b, its jobs are not found again.
+      await db
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, user!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+      state.userId = user!.id;
+      expect(await call(jobRerun.POST, { method: "POST", params: { id: sync!.id } })).toMatchObject(
+        { status: 404, body: { error: "That job doesn't exist." } },
+      );
+    } finally {
+      await db.delete(jobs).where(eq(jobs.id, sync!.id));
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
+      await db.delete(users).where(eq(users.id, user!.id));
+    }
   });
 
   it("lists only the user's own organizations in the signed-in layout", async () => {
