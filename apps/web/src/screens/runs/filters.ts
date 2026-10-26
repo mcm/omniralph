@@ -44,9 +44,29 @@ export function runFiltersHref(filters: RunFilters): string {
   return runListHref(filters);
 }
 
-/** A run's URL on the Runs screen, keeping the rail's filters. */
-export function runInListHref(runId: string, filters: RunFilters): string {
+/** What the run detail shows, from its URL (`?step=&attempt=&tab=`). */
+export interface RunDetailState {
+  step?: string | null;
+  attempt?: string | null;
+  tab?: string | null;
+}
+
+/**
+ * A run's URL on the Runs screen, keeping the rail's filters, with what its detail shows:
+ * `/runs/{id}?{filters}&step=&attempt=&tab=`.
+ */
+export function runInListHref(
+  runId: string,
+  filters: RunFilters,
+  state: RunDetailState = {},
+): string {
   const list = runListHref(filters);
   const query = list.indexOf("?");
-  return `/runs/${runId}${query === -1 ? "" : list.slice(query)}`;
+  const search = new URLSearchParams(query === -1 ? "" : list.slice(query + 1));
+  for (const key of ["step", "attempt", "tab"] as const) {
+    const value = state[key];
+    if (value) search.set(key, value);
+  }
+  const text = search.toString();
+  return `/runs/${runId}${text ? `?${text}` : ""}`;
 }

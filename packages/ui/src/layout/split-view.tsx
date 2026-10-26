@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
 import { useLinkComponent } from "../provider/ui-provider.js";
 
 /** The container width (px) from which both panes show side by side. */
@@ -35,6 +42,8 @@ export interface SplitViewProps {
    */
   fixedPane?: "list" | "detail";
   className?: string;
+  /** The size container (the root element), e.g. for `useSplitWide`. */
+  ref?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -53,6 +62,7 @@ export function SplitView({
   listWidth = DEFAULT_SPLIT_LIST_WIDTH,
   fixedPane = "list",
   className,
+  ref,
 }: SplitViewProps) {
   const Link = useLinkComponent();
   const style = {
@@ -61,6 +71,7 @@ export function SplitView({
   } as CSSProperties;
   return (
     <div
+      ref={ref}
       className={["or-split", className].filter(Boolean).join(" ")}
       data-view={view}
       data-fixed={fixedPane}

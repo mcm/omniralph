@@ -64,4 +64,16 @@ describe("Runs URLs", () => {
       `/runs/r1?kind=epic&status=running&repository=${REPO}&repository=${OTHER}`,
     );
   });
+
+  it("adds what the run detail shows: the step, attempt and tab", () => {
+    expect(runInListHref("r1", NO_RUN_FILTERS, { step: "s1" })).toBe("/runs/r1?step=s1");
+    expect(
+      runInListHref(
+        "r1",
+        { ...NO_RUN_FILTERS, kind: ["epic"] },
+        { step: "s1", attempt: "a1", tab: "attempts" },
+      ),
+    ).toBe("/runs/r1?kind=epic&step=s1&attempt=a1&tab=attempts");
+    expect(runInListHref("r1", NO_RUN_FILTERS, { step: null, tab: "" })).toBe("/runs/r1");
+  });
 });

@@ -335,10 +335,15 @@ export const runDetailsSchema = z.object({
 export type RunDetails = z.infer<typeof runDetailsSchema>;
 
 /**
- * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its steps (in order),
- * attempts (newest first) and details.
+ * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its reason, steps (in
+ * order), attempts (newest first) and details.
  */
 export const runDetailSchema = runRowSchema.extend({
+  /**
+   * Why a waiting, stopped or failed run is where it is, in a plain-language sentence (as its
+   * Inbox item says it); null otherwise.
+   */
+  reason: z.string().nullable(),
   steps: z.array(runStepSchema),
   attempts: z.array(runAttemptSchema),
   details: runDetailsSchema,

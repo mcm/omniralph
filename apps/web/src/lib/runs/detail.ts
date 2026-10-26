@@ -24,6 +24,7 @@ import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attem
 import { runActions } from "./actions";
 import { runRow } from "./list";
 import { loadRunQuestion } from "./question";
+import { changeRequestName, runReason } from "./reason";
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
@@ -69,6 +70,8 @@ interface KindFacts {
   details: Pick<RunDetails, "routedBy" | "error" | "waitingOn" | "lanes" | "baseBranch"> & {
     pullRequest: { merged: boolean | null; closed: boolean | null } | null;
   };
+  /** An epic's manual stories, for its reason. */
+  manualStories?: { identifier: string; elsewhere: boolean }[];
   /** Stories as `runActions` sees them. */
   stories?: {
     id: string;
@@ -178,6 +181,9 @@ function ralphKindFacts(
       attempt.storyId && storyById.has(attempt.storyId) ? attempt.storyId : null,
     labelContext,
     details,
+    manualStories: facts.stories
+      .filter((s) => s.status === "manual")
+      .map((s) => ({ identifier: s.identifier, elsewhere: !!s.elsewhere })),
     stories: facts.stories.map((s) => ({
       id: s.id,
       status: s.status,
@@ -270,6 +276,46 @@ function attemptKindFacts(attempts: RunAttemptEntry[], base: AttemptLabelContext
   };
 }
 
+/**
+ * Why a waiting, stopped or failed run is where it is (`runReason`, as its Inbox item says):
+ * a waiting run's open question, else its first manual story, else its blockers.
+ */
+function detailReason(
+  row: RunRow,
+  facts: KindFacts,
+  question: Awaited<ReturnType<typeof loadRunQuestion>>,
+): string | null {
+  switch (row.status) {
+    case "waiting": {
+      if (question) {
+        const { kind, story, tool } = question.facts;
+        return runReason({
+          kind: "question",
+          question: kind,
+          story,
+          tool,
+          pullRequest: row.pullRequest
+            ? changeRequestName(row.pullRequest.provider, row.pullRequest.number)
+            : "pull request",
+        });
+      }
+      const manual = facts.manualStories?.[0];
+      if (manual) return runReason({ kind: "manual_story", ...manual });
+      const blockers = facts.details.waitingOn?.blockers ?? [];
+      if (blockers.length > 0) {
+        return runReason({ kind: "blocked_epic", blockers: blockers.map((b) => b.identifier) });
+      }
+      return null;
+    }
+    case "stopped":
+      return runReason({ kind: "stopped", runKind: row.kind, error: facts.details.error });
+    case "failed":
+      return runReason({ kind: "failed", error: facts.details.error });
+    default:
+      return null;
+  }
+}
+
 /** The run's detail for a user who is `organization.role` in its organization. */
 export async function loadRunDetail(
   db: Database,
@@ -282,7 +328,7 @@ export async function loadRunDetail(
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
-  const question = await loadRunQuestion(db, run, row.workItem?.identifier ?? null);
+  const open = await loadRunQuestion(db, run, row.workItem?.identifier ?? null);
   const base: AttemptLabelContext = {
     workItem: row.workItem?.identifier ?? null,
     repository: row.repository?.fullPath ?? null,
@@ -335,6 +381,7 @@ export async function loadRunDetail(
   const { pullRequest, ...details } = facts.details;
   return {
     ...row,
+    reason: detailReason(row, facts, open),
     steps: facts.steps,
     attempts: attemptViews,
     details: {
@@ -349,7 +396,7 @@ export async function loadRunDetail(
         merged: pullRequest?.merged ?? null,
         closed: pullRequest?.closed ?? null,
       },
-      question,
+      question: open?.question ?? null,
       actions: runActions(row, organization.role, {
         stories: facts.stories,
         attempts: attemptViews,

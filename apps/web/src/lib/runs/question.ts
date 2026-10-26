@@ -164,7 +164,7 @@ export async function loadRunQuestion(
   db: Database,
   run: RunIndexEntry,
   workItem: string | null,
-): Promise<RunQuestion | null> {
+): Promise<{ question: RunQuestion; facts: InboxQuestionCandidate["facts"]["question"] } | null> {
   const questions = await listRunQuestions(db, run);
   const first = [...questions].sort(
     (a, b) =>
@@ -172,7 +172,7 @@ export async function loadRunQuestion(
   )[0];
   if (!first) return null;
   const { repositories } = await loadInboxReferences(db, [first]);
-  return questionView(first, { workItem, repositories });
+  return { question: questionView(first, { workItem, repositories }), facts: first.facts.question };
 }
 
 const closed = () => new ApiRouteError(409, QUESTION_CLOSED_MESSAGE, "question_closed");

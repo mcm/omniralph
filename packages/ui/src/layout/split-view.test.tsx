@@ -71,6 +71,25 @@ describe("SplitView", () => {
   });
 });
 
+describe("SplitView ref", () => {
+  it("is the size container", () => {
+    let element: HTMLDivElement | null = null;
+    render(
+      <SplitView
+        ref={(node) => {
+          element = node;
+        }}
+        list="List"
+        detail={null}
+        view="list"
+        listLabel="Runs"
+      />,
+    );
+    expect(element).not.toBeNull();
+    expect(element!.classList.contains("or-split")).toBe(true);
+  });
+});
+
 describe("useSplitWide", () => {
   type Callback = (entries: { contentRect: { width: number } }[]) => void;
   const observers: {

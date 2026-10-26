@@ -1001,6 +1001,35 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect(view.steps).toEqual([]);
   });
 
+  it("says why a waiting, stopped or failed run is where it is, as its Inbox item does", async () => {
+    const waiting = await newRun();
+    await updateRun(db, waiting.id, {
+      status: "waiting",
+      waitingOn: { blockers: [{ id: "b-1", identifier: "OPS-3", title: "Infra" }], manual: [] },
+    });
+    expect((await detailPage(waiting.id)).reason).toBe(
+      "Waiting on OPS-3, which is outside the epic.",
+    );
+
+    const stopped = await newRun();
+    await updateRun(db, stopped.id, { status: "stopped", error: "Stopped by Ada Admin." });
+    expect((await detailPage(stopped.id)).reason).toBe(
+      "The epic was stopped. Stopped by Ada Admin.",
+    );
+
+    const failed = await newRun({ mode: "request", kind: "single" });
+    await updateRun(db, failed.id, {
+      status: "failed",
+      error: "The agent ran out of turns.\nmore",
+    });
+    expect((await detailPage(failed.id)).reason).toBe(
+      "The run failed. The agent ran out of turns. more",
+    );
+
+    await updateRun(db, failed.id, { status: "running", error: null });
+    expect((await detailPage(failed.id)).reason).toBeNull();
+  });
+
   it("shows a request run's attempts as its steps", async () => {
     const run = await newRun({ mode: "request", kind: "single" });
     await updateRun(db, run.id, { status: "stopped" });
