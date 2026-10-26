@@ -729,6 +729,13 @@
       "when": 1792988525420,
       "tag": "0103_rename_harnesses_to_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1792991545334,
+      "tag": "0104_rename_playbook_agent_keys",
+      "breakpoints": true
     }
   ]
 }

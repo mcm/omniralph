@@ -91,7 +91,7 @@ export const RepositorySettingsInput = z.object({
       `Custom instructions can be at most ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString("en-US")} characters.`,
     ),
   /** Agents the repository is pinned to; empty means any agent. */
-  pinnedHarnessIds: z.array(z.uuid()).max(100),
+  pinnedAgentIds: z.array(z.uuid()).max(100),
   /**
    * Review and review-summary playbooks each review run of the repository's PRs/MRs fans out
    * to, in order (`repositories.review_playbook_ids`); unchanged when left out. The server

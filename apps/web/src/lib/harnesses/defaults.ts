@@ -25,7 +25,7 @@ import type {
   HostToolCatalogRow,
 } from "@/lib/api/harness-defaults";
 import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sections";
-import { organizationHarnessVersion, recordLatestHarnessVersion } from "./desired-version";
+import { organizationAgentVersion, recordLatestHarnessVersion } from "./desired-version";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
 import { saveInOrder } from "./manage";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
@@ -54,7 +54,7 @@ export async function loadHarnessDefaults(
 ): Promise<AgentDefaults> {
   const [setting, resolved, maxConcurrency] = await Promise.all([
     getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY),
-    organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    organizationAgentVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     getDefaultMaxConcurrency(db, organizationId),
   ]);
   return {

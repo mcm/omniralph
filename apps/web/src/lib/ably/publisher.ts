@@ -14,7 +14,7 @@ export function ablyAuthorization(config: AblyConfig): string {
   return `Basic ${Buffer.from(`${config.keyName}:${config.keySecret}`).toString("base64")}`;
 }
 
-/** Publishes wake messages (name `wake`, no data) that make harnesses claim at once. */
+/** Publishes wake messages (name `wake`, no data) that make agents claim at once. */
 export interface WakePublisher {
   /** Publishes a wake to the channel; throws when it fails. */
   wake(channel: string): Promise<void>;

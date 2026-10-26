@@ -277,8 +277,7 @@ export async function runStoryRun(
         server: ctx.server,
         jobId: spec.jobId,
         sessionToken: ctx.sessionToken,
-        // The run spec's `tools.harness` key is renamed `tools.agent` by TOOL-584.
-        tools: spec.agent.tools.harness,
+        tools: spec.agent.tools.agent,
         taskType: spec.taskType,
         tmpDir: prepared.progressDir,
         signal: ctx.signal,
@@ -332,8 +331,7 @@ export async function runRequestRun(
   options: CodingTaskOptions = {},
 ): Promise<RalphRequestResult> {
   const log = ctx.logger.child({ taskId: spec.task.id, agentId: spec.agent.id });
-  // `tools.harness` is the run spec's key until TOOL-584 renames it.
-  const permissions = offeredAgentTools(spec.agent.tools.harness, spec.taskType).includes(
+  const permissions = offeredAgentTools(spec.agent.tools.agent, spec.taskType).includes(
     "ask_permission",
   )
     ? new PermissionRelay({
@@ -368,8 +366,7 @@ export async function runRequestRun(
           server: ctx.server,
           jobId: spec.jobId,
           sessionToken: ctx.sessionToken,
-          // The run spec's `tools.harness` key is renamed `tools.agent` by TOOL-584.
-          tools: spec.agent.tools.harness,
+          tools: spec.agent.tools.agent,
           taskType: spec.taskType,
           // `/ship` sessions leave committing and pushing to the lifecycle.
           ...(!payload.ship && { ship: prepared.ship }),

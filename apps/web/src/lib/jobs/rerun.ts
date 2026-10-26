@@ -64,7 +64,7 @@ export async function rerunJob(
     payload: job.payload,
     repositoryId: job.repositoryId,
     dedupeKey: job.dedupeKey,
-    targetHarnessId: target.id,
+    targetAgentId: target.id,
   });
   return created
     ? { ok: true, jobId: rerun.id }

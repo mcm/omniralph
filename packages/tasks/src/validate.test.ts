@@ -5,8 +5,8 @@ import {
   deriveTaskRequirements,
   getBuiltinRunSpec,
   getBuiltinTask,
-  HARNESS_VERSION_BY_TASK_TYPE,
-  HARNESS_VERSION_FOR_COMMANDS,
+  AGENT_VERSION_BY_TASK_TYPE,
+  AGENT_VERSION_FOR_COMMANDS,
   RunSpecAgent,
   validateTaskDefinition,
   VARIABLES,
@@ -205,11 +205,11 @@ describe("validateTaskDefinition", () => {
     ).toEqual({});
   });
 
-  it("rejects an unknown agent, and one with harness tools the task type doesn't allow", () => {
+  it("rejects an unknown agent, and one with agent tools the task type doesn't allow", () => {
     expect(errors({ ...query, agentId: "builtin:nope" })).toEqual({
       agentId: "There is no agent builtin:nope.",
     });
-    const shipper = RunSpecAgent.parse({ ...customAgent, tools: { harness: ["ship"] } });
+    const shipper = RunSpecAgent.parse({ ...customAgent, tools: { agent: ["ship"] } });
     expect(
       validateTaskDefinition(
         { ...query, agentId: AGENT_ID },
@@ -217,7 +217,7 @@ describe("validateTaskDefinition", () => {
       ),
     ).toEqual({
       ok: false,
-      fieldErrors: { agentId: "query runs can't use the harness tool ship." },
+      fieldErrors: { agentId: "query runs can't use the agent tool ship." },
     });
   });
 
@@ -230,7 +230,7 @@ describe("validateTaskDefinition", () => {
     ).toEqual({ outputSchema: "outputSchema is only allowed on query tasks" });
   });
 
-  it("rejects an output schema that isn't an object, or the harness can't check output against", () => {
+  it("rejects an output schema that isn't an object, or the agent can't check output against", () => {
     const structured = {
       ...query,
       sink: "run-result",
@@ -378,20 +378,20 @@ describe("deriveTaskRequirements", () => {
     return result;
   };
 
-  it("needs the harness release that runs the task type", () => {
+  it("needs the agent release that runs the task type", () => {
     expect(task(query).requirements).toEqual({
-      minHarnessVersion: HARNESS_VERSION_BY_TASK_TYPE.query,
+      minAgentVersion: AGENT_VERSION_BY_TASK_TYPE.query,
       installables: [],
       hostTools: [],
     });
-    expect(task(coding).requirements.minHarnessVersion).toBe(HARNESS_VERSION_BY_TASK_TYPE.coding);
+    expect(task(coding).requirements.minAgentVersion).toBe(AGENT_VERSION_BY_TASK_TYPE.coding);
   });
 
   it("needs the release that runs setup and teardown commands when the task has any", () => {
     expect(
       task({ ...query, teardownCommands: [{ name: "clean", command: "rm -rf tmp" }] }).requirements
-        .minHarnessVersion,
-    ).toBe(HARNESS_VERSION_FOR_COMMANDS);
+        .minAgentVersion,
+    ).toBe(AGENT_VERSION_FOR_COMMANDS);
   });
 
   it("needs the task's installables and host tools and those of its agent's MCP servers", () => {
@@ -415,7 +415,7 @@ describe("deriveTaskRequirements", () => {
       { ...context, getAgent: (id) => (id === AGENT_ID ? graphAgent : null) },
     );
     expect(result.ok && result.requirements).toEqual({
-      minHarnessVersion: HARNESS_VERSION_BY_TASK_TYPE.review,
+      minAgentVersion: AGENT_VERSION_BY_TASK_TYPE.review,
       installables: ["@omniralph/code-graph", "@omniralph/sast"],
       hostTools: ["git", "opengrep"],
     });
@@ -429,20 +429,20 @@ describe("deriveTaskRequirements", () => {
   it("needs the release that provides each task-type variable its template uses", () => {
     const catalog: VariableDefinition[] = VARIABLES.map((variable) =>
       variable.name === "checkout" && variable.source === "taskType"
-        ? { ...variable, minHarnessVersion: "0.40.2" }
+        ? { ...variable, minAgentVersion: "0.40.2" }
         : variable,
     );
     const { definition } = task(query);
-    expect(deriveTaskRequirements(definition, catalog).minHarnessVersion).toBe(
-      HARNESS_VERSION_BY_TASK_TYPE.query,
+    expect(deriveTaskRequirements(definition, catalog).minAgentVersion).toBe(
+      AGENT_VERSION_BY_TASK_TYPE.query,
     );
     const usesCheckout = {
       ...definition,
       promptTemplate: "{{#checkout}}Read the code.{{/checkout}}",
     };
-    expect(deriveTaskRequirements(usesCheckout, catalog).minHarnessVersion).toBe("0.40.2");
-    expect(deriveTaskRequirements(usesCheckout).minHarnessVersion).toBe(
-      HARNESS_VERSION_BY_TASK_TYPE.query,
+    expect(deriveTaskRequirements(usesCheckout, catalog).minAgentVersion).toBe("0.40.2");
+    expect(deriveTaskRequirements(usesCheckout).minAgentVersion).toBe(
+      AGENT_VERSION_BY_TASK_TYPE.query,
     );
   });
 });

@@ -102,7 +102,7 @@ for update skip locked
 
 ### The long-poll
 
-`POST /api/harness/claim` (`apps/web/src/app/api/harness/claim/route.ts`) takes
+`POST /api/harness/claim` (`apps/web/src/app/api/agent/claim/route.ts`) takes
 `ClaimRequest { capabilities, waitSeconds? }`. `waitSeconds` is 0–50 (`MAX_CLAIM_WAIT_SECONDS`,
 the default). The route answers with `JobStartResponse`'s `run` shape (job plus job token, 200) as
 soon as it claims a job. Otherwise it claims again every 2s until `waitSeconds` passes or the agent

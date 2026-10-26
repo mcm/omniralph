@@ -687,7 +687,7 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
       const asks = requests.filter((r) => r.url.includes("/permissions"));
       expect(asks[0]).toMatchObject({
         method: "POST",
-        url: `https://omniralph.example.com/api/harness/jobs/${runSpecValue.jobId}/permissions`,
+        url: `https://omniralph.example.com/api/agent/jobs/${runSpecValue.jobId}/permissions`,
         auth: "Bearer session-token",
         body: { tool: "Bash", detail: "git commit -m 'Fix it'" },
       });
@@ -702,8 +702,7 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
         yield result({ summary: "Couldn't commit." });
       });
       const base = spec();
-      // `harness`: the run spec's tools key until TOOL-584 renames it.
-      const agent = { ...base.agent, tools: { ...base.agent.tools, harness: ["ship" as const] } };
+      const agent = { ...base.agent, tools: { ...base.agent.tools, agent: ["ship" as const] } };
       await run(spec(payload(), { agent }), query, {
         fetch: fn,
         permissionPollIntervalMs: 5,

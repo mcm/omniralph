@@ -25,7 +25,7 @@ describe("repository change lists", () => {
     triggers: { onOpen: true, onPush: true, drafts: false },
     pathExcludes: ["*.snap"],
     customInstructions: "",
-    pinnedHarnessIds: ["h1"],
+    pinnedAgentIds: ["h1"],
   };
   const context = { harnessIds: ["h1", "h2"] };
   const specs = repositorySpecs({
@@ -44,9 +44,9 @@ describe("repository change lists", () => {
   };
 
   it("names harnesses", () => {
-    expect(changes("pinning", { pinnedHarnessIds: [] })).toEqual([
+    expect(changes("pinning", { pinnedAgentIds: [] })).toEqual([
       {
-        key: "pinnedHarnessIds",
+        key: "pinnedAgentIds",
         label: "Pinned harnesses",
         from: "build-01",
         to: "Not set (any harness)",
@@ -61,12 +61,12 @@ describe("repository change lists", () => {
   });
 
   it("doesn't count picking pins in another order or blank exclude lines as changes", () => {
-    const saved = repositoryDraft({ ...settings, pinnedHarnessIds: ["h1", "h2"] });
+    const saved = repositoryDraft({ ...settings, pinnedAgentIds: ["h1", "h2"] });
     expect(
       settingChanges(
         REPOSITORY_CARDS.pinning.map((key) => specs[key]),
         repositoryValues(saved, context),
-        repositoryValues({ ...saved, pinnedHarnessIds: ["h2", "h1"] }, context),
+        repositoryValues({ ...saved, pinnedAgentIds: ["h2", "h1"] }, context),
       ),
     ).toEqual([]);
     expect(changes("files", { pathExcludes: "*.snap\n\n" })).toEqual([]);

@@ -52,7 +52,7 @@ describe("builtin:correlate-findings", () => {
   it("runs with the correlator persona as a query task invoked by a run, with no tools", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
     });
     expect(task).toMatchObject({
       taskType: "query",

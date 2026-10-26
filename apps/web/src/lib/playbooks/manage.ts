@@ -140,7 +140,7 @@ export async function loadPlaybookDetail(
     tokenBudgetLabel: tokenBudgetLabel(playbook),
     requirements: {
       ...derived,
-      minHarnessVersion: resolved.requirements?.minHarnessVersion ?? derived.minHarnessVersion,
+      minAgentVersion: resolved.requirements?.minAgentVersion ?? derived.minAgentVersion,
     },
     usedBy: usage.get(playbook.id),
   };

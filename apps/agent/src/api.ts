@@ -128,29 +128,29 @@ function abortSignal({ signal, timeoutMs = REQUEST_TIMEOUT_MS }: PostOptions): A
   return signal ? AbortSignal.any([timeout, signal]) : timeout;
 }
 
-/** `POST /api/harness/enroll`: exchanges a one-time enrollment token. */
+/** `POST /api/agent/enroll`: exchanges a one-time enrollment token. */
 export function enroll(
   server: string,
   request: EnrollRequest,
   fetchFn: FetchFn = fetch,
 ): Promise<EnrollResponse> {
-  return postJson(fetchFn, `${server}/api/harness/enroll`, request, EnrollResponse);
+  return postJson(fetchFn, `${server}/api/agent/enroll`, request, EnrollResponse);
 }
 
-/** `POST /api/harness/token`: exchanges (and rotates) the refresh token. */
+/** `POST /api/agent/token`: exchanges (and rotates) the refresh token. */
 export function exchangeRefreshToken(
   server: string,
   refreshToken: string,
   fetchFn: FetchFn = fetch,
 ): Promise<TokenResponse> {
-  return postJson(fetchFn, `${server}/api/harness/token`, { refreshToken }, TokenResponse);
+  return postJson(fetchFn, `${server}/api/agent/token`, { refreshToken }, TokenResponse);
 }
 
 /** The authenticated agent API. Every call uses the current access token. */
 export interface ControlPanelApi {
   heartbeat(body: Heartbeat): Promise<HeartbeatResponse>;
   /**
-   * `POST /api/harness/claim`: long-polls for a job of the given pools (or a `system` job).
+   * `POST /api/agent/claim`: long-polls for a job of the given pools (or a `system` job).
    * Null when the wait passed with nothing to claim (204).
    */
   claim(body: ClaimRequest, signal?: AbortSignal): Promise<JobStartResponse | null>;
@@ -182,11 +182,11 @@ export class HttpControlPanelApi implements ControlPanelApi {
   }
 
   heartbeat(body: Heartbeat): Promise<HeartbeatResponse> {
-    return this.post("/api/harness/heartbeat", body, HeartbeatResponse);
+    return this.post("/api/agent/heartbeat", body, HeartbeatResponse);
   }
 
   claim(body: ClaimRequest, signal?: AbortSignal): Promise<JobStartResponse | null> {
-    return this.post("/api/harness/claim", body, JobStartResponse.nullable(), {
+    return this.post("/api/agent/claim", body, JobStartResponse.nullable(), {
       signal,
       timeoutMs: CLAIM_TIMEOUT_MS,
     });
@@ -194,17 +194,13 @@ export class HttpControlPanelApi implements ControlPanelApi {
 
   submitResult(jobId: string, body: JobResult): Promise<JobOutcomeResponse> {
     return this.post(
-      `/api/harness/jobs/${encodeURIComponent(jobId)}/result`,
+      `/api/agent/jobs/${encodeURIComponent(jobId)}/result`,
       body,
       JobOutcomeResponse,
     );
   }
 
   submitFailure(jobId: string, body: JobFailure): Promise<JobOutcomeResponse> {
-    return this.post(
-      `/api/harness/jobs/${encodeURIComponent(jobId)}/fail`,
-      body,
-      JobOutcomeResponse,
-    );
+    return this.post(`/api/agent/jobs/${encodeURIComponent(jobId)}/fail`, body, JobOutcomeResponse);
   }
 }

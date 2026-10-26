@@ -32,7 +32,7 @@ import {
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
-import { runSpecJobInput, runSpecMinHarnessVersion } from "@/lib/runs/job";
+import { runSpecJobInput, runSpecMinAgentVersion } from "@/lib/runs/job";
 import { runTokenBudget } from "@/lib/runs/resolve";
 import { ChatThreadContext } from "@/lib/sinks/chat-thread";
 
@@ -202,7 +202,7 @@ export async function enqueueChatAsk(
   const definitions = organizationPlaybooks(db, input.organizationId);
   const taskRequirements = await taskRunRequirements(definitions, task);
   const requirements: RunHarnessRequirements = {
-    minHarnessVersion: runSpecMinHarnessVersion(task, taskRequirements.minHarnessVersion),
+    minAgentVersion: runSpecMinAgentVersion(task, taskRequirements.minAgentVersion),
     installables: taskRequirements.installables,
     hostTools: taskRequirements.hostTools,
   };

@@ -3,7 +3,7 @@
  * control panel finds the `uploads.linear.app` URLs in the epic, its stories,
  * their comments and the thread, remembers them on the run by attachment ID
  * and lists them in job payloads. Agents download them by ID through
- * `GET /api/harness/jobs/{id}/attachments/{attachmentId}` and never see the
+ * `GET /api/agent/jobs/{id}/attachments/{attachmentId}` and never see the
  * Linear token.
  */
 import { createHash } from "node:crypto";

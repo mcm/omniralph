@@ -21,9 +21,9 @@ import type {
 } from "@/lib/api/harnesses";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
-  deleteHarness as deleteHarnessWithRevoke,
+  deleteAgent as deleteHarnessWithRevoke,
   revokeAgent as revokeHarnessWithJobs,
-} from "@/lib/harness-auth/revoke";
+} from "@/lib/agent-auth/revoke";
 import { recordLatestHarnessVersion } from "./desired-version";
 import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
@@ -235,7 +235,7 @@ export async function revokeAgent(harnessId: string, actor: HarnessActor): Promi
  * Deletes a harness: revokes it if it isn't already (see `revokeAgent`), then
  * removes it from the Harnesses pages for good.
  */
-export async function deleteHarness(harnessId: string, actor: HarnessActor): Promise<ActionResult> {
+export async function deleteAgent(harnessId: string, actor: HarnessActor): Promise<ActionResult> {
   if (
     !(await deleteHarnessWithRevoke(harnessId, {
       organizationId: actor.organizationId,

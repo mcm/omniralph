@@ -320,7 +320,7 @@ The fixtures and helpers there:
   webhook or a cron, and read them back. Name fixture rows with `FIXTURE_IDS`.
 - `request` (Playwright's) calls the panel's HTTP API without a session, e.g. the harness
   API: `enrollHarness(request, await createEnrollmentToken(db), name)` enrolls a harness
-  through `POST /api/harness/enroll`.
+  through `POST /api/agent/enroll`.
 
 Tests run one at a time (one worker) on one seed, so a spec that changes shared fixture rows
 puts them back, or creates its own rows instead (e.g. a new harness with a unique name).

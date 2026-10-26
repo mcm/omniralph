@@ -1,5 +1,5 @@
 export * from "./finding.js";
-export * from "./harness-protocol.js";
+export * from "./agent-protocol.js";
 export * from "./protocol.js";
 export * from "./pools.js";
 export * from "./review-job.js";

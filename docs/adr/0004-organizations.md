@@ -93,7 +93,7 @@ parameter alone. GitLab connect uses the admin's active organization directly.
 ## Consequences
 
 - A user only sees and acts on data of organizations they belong to; DB and page tests
-  (`apps/web/src/app/(app)/organization-isolation.test.ts`, `apps/web/src/app/api/harness/jobs.test.ts`)
+  (`apps/web/src/app/(app)/organization-isolation.test.ts`, `apps/web/src/app/api/agent/jobs.test.ts`)
   seed two organizations and assert neither leaks into the other.
 - Agents can't be shared between organizations: a host serving two organizations runs two
   enrolled agents (separate configs and workspace roots).

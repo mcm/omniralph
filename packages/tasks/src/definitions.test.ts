@@ -8,7 +8,7 @@ import {
   MAX_COMMAND_TIMEOUT_SECONDS,
   RunSpecAgent,
   TaskDefinition,
-  harnessToolsProblem,
+  agentToolsProblem,
   type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "./index.js";
@@ -44,7 +44,7 @@ describe("RunSpecAgent", () => {
       ...agent,
       description: "",
       systemPromptMode: "append",
-      tools: { builtin: [], harness: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
       referenceDocs: [],
       model: null,
       fallbackModel: null,
@@ -59,7 +59,7 @@ describe("RunSpecAgent", () => {
       systemPromptMode: "replace",
       tools: {
         builtin: ["Read", "Grep", "Glob"],
-        harness: ["post_activity"],
+        agent: ["post_activity"],
         linear: ["linear_get_issue"],
         mcpServers: ["code-graph"],
       },
@@ -70,7 +70,7 @@ describe("RunSpecAgent", () => {
     expect(RunSpecAgent.parse(full)).toEqual(full);
   });
 
-  it("passes fields it doesn't know through (the taskTypes older harnesses require)", () => {
+  it("passes fields it doesn't know through (the taskTypes older agents require)", () => {
     expect(RunSpecAgent.parse({ ...agent, taskTypes: ["query"] })).toMatchObject({
       taskTypes: ["query"],
     });
@@ -91,9 +91,9 @@ describe("RunSpecAgent", () => {
     expect(issues(RunSpecAgent.safeParse({ ...agent, systemPromptMode: "prepend" }))).toEqual([
       "systemPromptMode",
     ]);
-    expect(
-      issues(RunSpecAgent.safeParse({ ...agent, tools: { harness: ["delete_repo"] } })),
-    ).toEqual(["tools.harness.0"]);
+    expect(issues(RunSpecAgent.safeParse({ ...agent, tools: { agent: ["delete_repo"] } }))).toEqual(
+      ["tools.agent.0"],
+    );
     expect(
       issues(RunSpecAgent.safeParse({ ...agent, tools: { linear: ["linear_save_issue"] } })),
     ).toEqual(["tools.linear.0"]);
@@ -363,20 +363,18 @@ describe("TaskDefinition", () => {
   });
 });
 
-describe("harnessToolsProblem", () => {
-  it("accepts harness tools the task type allows", () => {
-    expect(
-      harnessToolsProblem({ harness: ["post_activity", "get_attachment"] }, "query"),
-    ).toBeNull();
-    expect(harnessToolsProblem({ harness: ["post_activity", "ship"] }, "coding")).toBeNull();
+describe("agentToolsProblem", () => {
+  it("accepts agent tools the task type allows", () => {
+    expect(agentToolsProblem({ agent: ["post_activity", "get_attachment"] }, "query")).toBeNull();
+    expect(agentToolsProblem({ agent: ["post_activity", "ship"] }, "coding")).toBeNull();
   });
 
-  it("reports harness tools the task type doesn't allow", () => {
-    expect(harnessToolsProblem({ harness: ["post_activity", "ship"] }, "query")).toBe(
-      "query runs can't use the harness tool ship.",
+  it("reports agent tools the task type doesn't allow", () => {
+    expect(agentToolsProblem({ agent: ["post_activity", "ship"] }, "query")).toBe(
+      "query runs can't use the agent tool ship.",
     );
-    expect(harnessToolsProblem({ harness: ["ship", "ship"] }, "review")).toBe(
-      "review runs can't use the harness tools ship, ship.",
+    expect(agentToolsProblem({ agent: ["ship", "ship"] }, "review")).toBe(
+      "review runs can't use the agent tools ship, ship.",
     );
   });
 });

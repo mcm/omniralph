@@ -1,8 +1,8 @@
 /** Job schemas `protocol.ts` and `run-spec.ts` both build on (kept apart so they don't import each other). */
 import { z } from "zod";
-import { JobTokenKind } from "./harness-protocol.js";
+import { JobTokenKind } from "./agent-protocol.js";
 
-/** A freshly signed job token (`HARNESS_TOKEN_TTL_SECONDS`). */
+/** A freshly signed job token (`AGENT_TOKEN_TTL_SECONDS`). */
 export const JobToken = z.object({
   jobId: z.uuid(),
   token: z.string(),

@@ -16,7 +16,7 @@
       "Grep",
       "Glob"
     ],
-    "harness": [],
+    "agent": [],
     "linear": [
       "linear_get_issue",
       "linear_list_comments",

@@ -1,6 +1,6 @@
 /**
  * Review task runs (`review.task` jobs): the trigger context the control
- * panel resolves when it enqueues a review run, and the result a harness
+ * panel resolves when it enqueues a review run, and the result an agent
  * reports to `/result`.
  */
 import { z } from "zod";
@@ -133,7 +133,7 @@ export const MAX_REVIEW_FINDINGS = 500;
 export const MAX_REVIEW_SKIPPED = 10_000;
 
 /**
- * Result of a review task's run (`/api/harness/jobs/{id}/result`). Reviews that
+ * Result of a review task's run (`/api/agent/jobs/{id}/result`). Reviews that
  * stopped on a rate limit or an error are reported through `/fail` instead.
  */
 export const ReviewJobResult = z.object({

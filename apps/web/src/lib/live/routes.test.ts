@@ -14,7 +14,7 @@ function routeFiles(dir: string): string[] {
 
 describe("live change collectors", () => {
   it("are opened by every agent API, webhook and cron route", () => {
-    const files = ["harness", "webhooks", "cron"].flatMap((dir) => routeFiles(join(API, dir)));
+    const files = ["agent", "webhooks", "cron"].flatMap((dir) => routeFiles(join(API, dir)));
     expect(files.length).toBeGreaterThan(20);
     const unwrapped = files.flatMap((file) => {
       const source = readFileSync(file, "utf8");

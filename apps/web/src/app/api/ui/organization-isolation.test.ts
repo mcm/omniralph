@@ -1318,7 +1318,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       triggers: { onOpen: false, onPush: false, drafts: false },
       pathExcludes: [],
       customInstructions: "",
-      pinnedHarnessIds: [],
+      pinnedAgentIds: [],
       reviewPlaybookIds: ["builtin:review-pr"],
       correlationPlaybookId: "builtin:correlate-findings",
     };

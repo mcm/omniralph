@@ -1,6 +1,6 @@
 /**
  * The Linear uploads a run may download through the control panel
- * (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`).
+ * (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`).
  */
 import "server-only";
 import { getRun, type Database, type Job } from "@omniralph/db";

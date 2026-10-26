@@ -304,7 +304,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           name: `Custom ${name}`,
           role,
           definition,
-          requirements: { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] },
+          requirements: { minAgentVersion: "0.40.0", installables: [], hostTools: ["git"] },
         })
         .returning();
       const save = () =>

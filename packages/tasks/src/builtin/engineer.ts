@@ -17,7 +17,7 @@ ${GOOD_NEIGHBOR_RULE}`,
   // Claude Code's own tools, with the user's and the repository's settings (ralph's tool policy).
   tools: {
     builtin: [],
-    harness: ["post_activity", "ask_permission", "get_attachment", "ship"],
+    agent: ["post_activity", "ask_permission", "get_attachment", "ship"],
     linear: [],
     mcpServers: [],
   },

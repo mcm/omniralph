@@ -384,7 +384,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
 
     // Activities are relayed with the session token (the lifecycle token has no `run:activity`), for the run's job.
     expect(new Set(posted.map((p) => p.url))).toEqual(
-      new Set([`https://omniralph.example.com/api/harness/jobs/${run.jobId}/activities`]),
+      new Set([`https://omniralph.example.com/api/agent/jobs/${run.jobId}/activities`]),
     );
     expect(posted.every((p) => p.auth === "Bearer session-token")).toBe(true);
   });
@@ -433,7 +433,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
 
     expect(downloads).toEqual([
       {
-        url: `https://omniralph.example.com/api/harness/jobs/${run.jobId}/attachments/${id}`,
+        url: `https://omniralph.example.com/api/agent/jobs/${run.jobId}/attachments/${id}`,
         auth: "Bearer session-token",
       },
     ]);

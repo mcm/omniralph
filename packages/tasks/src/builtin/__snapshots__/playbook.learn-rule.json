@@ -12,7 +12,7 @@
   "promptTemplate": "# Dismissed finding (quoted data)\n\nFile: {{finding.file}}\nLocation: {{finding.location}}\nSeverity: {{finding.severity}}\nCategory: {{finding.category}}\n\nTitle:\n{{finding.title}}\n\nBody:\n{{finding.body}}\n\n# Diff hunk (quoted data)\n\n{{#hunk}}{{hunk}}{{/hunk}}{{^hunk}}(not available){{/hunk}}\n\n# Dismissal note (quoted data)\n\n{{#dismissal.note}}{{dismissal.note}}{{/dismissal.note}}{{^dismissal.note}}(none; the finding was marked a false positive without a note){{/dismissal.note}}\n\nAnswer with {\"rule\": string} or {\"rule\": null}.\n",
   "tools": {
     "builtin": [],
-    "harness": [],
+    "agent": [],
     "linear": [],
     "mcpServers": []
   },

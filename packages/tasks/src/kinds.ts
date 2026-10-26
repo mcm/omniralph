@@ -1,11 +1,11 @@
 /**
  * The fixed vocabularies agent and task definitions are built from. Adding
- * a value here is a harness or control-panel change; definitions only pick
+ * a value here is an agent or control-panel change; definitions only pick
  * from them.
  */
 
 /**
- * How the harness runs a task: `query` (one read-only session whose output
+ * How the agent runs a task: `query` (one read-only session whose output
  * goes to a sink), `review` (a review run) or `coding` (a session that
  * changes code and ships it).
  */

@@ -44,7 +44,7 @@ function render(
   overrides: {
     taskTypes?: TaskTypes;
     harnesses?: RepositoryHarness[];
-    pinnedHarnessIds?: string[];
+    pinnedAgentIds?: string[];
   } = {},
 ) {
   const Wrapper = queryWrapper(createTestQueryClient());
@@ -63,7 +63,7 @@ function render(
           triggers: { onOpen: true, onPush: true, drafts: false },
           pathExcludes: [],
           customInstructions: "",
-          pinnedHarnessIds: overrides.pinnedHarnessIds ?? [],
+          pinnedAgentIds: overrides.pinnedAgentIds ?? [],
         }}
         harnesses={overrides.harnesses ?? HARNESSES}
         taskTypes={overrides.taskTypes ?? allOn}
@@ -180,14 +180,14 @@ describe("RepositorySettingsView pinned harnesses", () => {
   });
 
   it("shows the pinned harnesses as chips by name", () => {
-    const html = render("harnesses", { pinnedHarnessIds: ["h2"] });
+    const html = render("harnesses", { pinnedAgentIds: ["h2"] });
     expect(text(html)).toContain("build-02");
     expect(text(html)).not.toContain("build-01");
     expect(html).toContain("Only the pinned harness runs this repository&#x27;s jobs.");
   });
 
   it("lists the pinned harnesses below the picker with their status", () => {
-    const html = render("harnesses", { pinnedHarnessIds: ["h2"] });
+    const html = render("harnesses", { pinnedAgentIds: ["h2"] });
     const list = /<ul[^>]*aria-label="Pinned harnesses"[^>]*>(.*?)<\/ul>/.exec(html);
     expect(list).not.toBeNull();
     expect(text(list![1]!)).toMatch(/build-02.*Review.*Offline/);
@@ -204,14 +204,14 @@ describe("RepositorySettingsView pinned harnesses", () => {
   it("lists a pin to a revoked harness as revoked", () => {
     const html = render("harnesses", {
       harnesses: [...HARNESSES, { ...HARNESSES[0]!, id: "h3", name: "old-01", revoked: true }],
-      pinnedHarnessIds: ["h3"],
+      pinnedAgentIds: ["h3"],
     });
     expect(text(html)).toMatch(/old-01.*Revoked/);
     expect(text(html)).toMatch(/“old-01” is not available\. It was revoked or deleted/);
   });
 
   it("keeps a pin to a harness that is no longer pinnable, with a warning", () => {
-    const html = render("harnesses", { pinnedHarnessIds: ["gone"] });
+    const html = render("harnesses", { pinnedAgentIds: ["gone"] });
     expect(text(html)).toMatch(/gone/);
     expect(text(html)).toMatch(/revoked or deleted/);
   });

@@ -42,8 +42,8 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
-const { POST: heartbeat } = await import("@/app/api/harness/heartbeat/route");
-const { getTokenSigner } = await import("@/lib/harness-auth/signer");
+const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
+const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 const { jobDueKey } = await import("@/lib/dispatch/due");
 const { latestVersionKey } = await import("./heartbeat-cache");
@@ -124,7 +124,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     ipCounter += 1;
     const before = postgresCalls;
     const response = await heartbeat(
-      new Request("http://localhost/api/harness/heartbeat", {
+      new Request("http://localhost/api/agent/heartbeat", {
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -193,7 +193,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     const cached = await warm(harnessId);
     expect(cached.pinnedRepoIds).toEqual([]);
     // Last-seen still moves.
-    const seen = Number(await getRedis().get(`harness-last-seen:${harnessId}`));
+    const seen = Number(await getRedis().get(`agent-last-seen:${harnessId}`));
     expect(Date.now() - seen).toBeLessThan(5_000);
     // `claimable` without a due job: false, still from Redis.
     const claimable = await send(harnessId, { claimablePools: ["short"] });
@@ -271,12 +271,12 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
             triggers: { onOpen: true, onPush: true, drafts: false },
             pathExcludes: [],
             customInstructions: "",
-            pinnedHarnessIds: [],
+            pinnedAgentIds: [],
             reviewPlaybookIds: ["builtin:review-pr"],
             correlationPlaybookId: "builtin:correlate-findings",
           },
         );
-        expect(saved).toMatchObject({ status: "saved", unpinnedHarnessIds: [harnessId] });
+        expect(saved).toMatchObject({ status: "saved", unpinnedAgentIds: [harnessId] });
       },
       (response) => expect(response.pinnedRepoIds).toEqual([]),
     ],

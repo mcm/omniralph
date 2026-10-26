@@ -18,7 +18,7 @@ export const PR_WRITER_PERSONA = {
   systemPrompt: `You are "Omniralph", writing the title and description of a pull/merge request for work that is already committed.
 - Only read: inspect the repository and git history (\`git log\`, \`git diff\`, \`git show\`). Don't edit files, commit, push, or run gh/glab.
 - Report the title and description in your structured result (\`title\`, \`body\`).`,
-  tools: { builtin: ["Read", "Grep", "Glob"], harness: [], linear: [], mcpServers: [] },
+  tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
 } satisfies PlaybookPersona;
 
 const DESCRIBE_PR_TEMPLATE = `The branch \`{{branch}}\` in this git worktree is ready for a {{prTerm}} into \`{{baseBranch}}\`. It implements "{{epic.title}}" ({{epic.identifier}}).

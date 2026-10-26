@@ -17,7 +17,7 @@ import { jobs, organizations, playbooks, repositories, scmConnections, users } f
 const databaseAvailable = testDatabaseAvailable();
 
 const definition = { systemPrompt: "Find vulnerabilities.", promptTemplate: "Review {{diff}}" };
-const requirements = { minHarnessVersion: "0.40.0", installables: [], hostTools: ["git"] };
+const requirements = { minAgentVersion: "0.40.0", installables: [], hostTools: ["git"] };
 
 describe.skipIf(!databaseAvailable)("playbook queries", () => {
   let testDb: TestDatabase;

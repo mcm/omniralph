@@ -2326,6 +2326,113 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     });
   });
 
+  describe("playbook and run spec keys say agent (0104)", () => {
+    it("renames tools.harness and minHarnessVersion and keeps every other value", async () => {
+      await db.execute(sql`create database playbook_agent_keys`);
+      const uri = testDb.uri.replace(/\/[^/]*$/, "/playbook_agent_keys");
+      await migrateBefore(uri, "0104_");
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      try {
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('acme') returning id`,
+        );
+        const org = orgs[0]!.id;
+        const tools = (key: string) => ({
+          builtin: ["Read", "Grep"],
+          [key]: ["post_activity", "ship"],
+          linear: ["get_issue"],
+          mcpServers: [],
+        });
+        const definition = (key: string) => ({
+          description: "Implements stories",
+          systemPrompt: "You are an engineer. The harness word in prose stays.",
+          tools: tools(key),
+          coding: { model: "opus", qualityGates: ["pnpm test"] },
+          variables: { harness: "a variable named harness stays" },
+        });
+        const requirements = (key: string) => ({
+          [key]: "0.40.0",
+          installables: ["@acme/linter"],
+          hostTools: ["git"],
+        });
+        const { rows: playbooks } = await client.query<{ id: string }>(
+          `insert into playbooks (organization_id, name, role, definition, requirements)
+           values ($1, 'Custom', 'coding', $2, $3) returning id`,
+          [
+            org,
+            JSON.stringify(definition("harness")),
+            JSON.stringify(requirements("minHarnessVersion")),
+          ],
+        );
+        // Run specs inside job payloads: a pending and a completed job carry the old key;
+        // a job without it is left alone.
+        const payload = (key: string) => ({
+          trigger: { kind: "linear", context: { issue: "TOOL-584", tools: "not an object" } },
+          runSpec: {
+            jobId: "00000000-0000-4000-8000-000000000001",
+            agent: { systemPrompt: "You are Om.", tools: tools(key) },
+            task: { taskType: "coding" },
+          },
+          ref: "main",
+        });
+        const plain = { kind: "review", spec: { prompt: "Review it" }, list: [1, "two", null] };
+        const jobs: Record<string, string> = {};
+        for (const [name, status, body] of [
+          ["pending", "queued", payload("harness")],
+          ["completed", "completed", payload("harness")],
+          ["plain", "queued", plain],
+        ] as const) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into jobs (organization_id, type, task_type, task_id, status, min_agent_version, payload)
+             values ($1, 'run', 'coding', $2, $3, '0.40.0', $4) returning id`,
+            [org, playbooks[0]!.id, status, JSON.stringify(body)],
+          );
+          jobs[name] = rows[0]!.id;
+        }
+        const read = async () => ({
+          playbooks: (
+            await client.query(
+              `select id, organization_id, name, role, definition, requirements, created_at, updated_at
+               from playbooks order by id`,
+            )
+          ).rows,
+          jobs: (
+            await client.query(
+              `select id, organization_id, type, task_type, task_id, status, min_agent_version,
+                 payload, created_at
+               from jobs order by id`,
+            )
+          ).rows as Record<string, unknown>[],
+        });
+        const before = await read();
+
+        await runMigrations(uri);
+        const after = await read();
+
+        expect(after.playbooks).toEqual([
+          {
+            ...before.playbooks[0],
+            definition: definition("agent"),
+            requirements: requirements("minAgentVersion"),
+          },
+        ]);
+        const byId = (rows: Record<string, unknown>[], id: string) =>
+          rows.find((row) => row.id === id);
+        for (const name of ["pending", "completed"]) {
+          expect(byId(after.jobs, jobs[name]!)).toEqual({
+            ...byId(before.jobs, jobs[name]!),
+            payload: payload("agent"),
+          });
+        }
+        expect(byId(after.jobs, jobs.plain!)).toEqual(byId(before.jobs, jobs.plain!));
+        expect(after.jobs).toHaveLength(3);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
   describe("routing rules become work item matches (0100)", () => {
     type Condition = { field: string; operator: string; value: unknown };
     const and = (...rules: unknown[]) => ({ combinator: "and", rules });

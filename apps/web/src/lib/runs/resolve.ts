@@ -33,7 +33,7 @@ export class RunSpecError extends Error {
 
 /**
  * Resolves a run-spec job (one with a `task_id`, which holds a playbook ID)
- * into the `RunSpec` the harness runs: its playbook (built-in or the job's
+ * into the `RunSpec` the agent runs: its playbook (built-in or the job's
  * organization's own, `organizationPlaybooks`) as the run spec's agent and
  * task (`playbookRunSpec`), the trigger (which must be one the playbook's role
  * allows), the repository, the model, the token budget and the job's
@@ -110,7 +110,7 @@ export async function resolveRunSpec(
 }
 
 /**
- * `task` with its derived `pool`, which harnesses up to 0.13 still require in
+ * `task` with its derived `pool`, which agents up to 0.13 still require in
  * a run spec's task (newer ones drop it): a task's pool follows from its type.
  */
 function withLegacyPool(task: TaskDefinition, pool: PoolName): TaskDefinition {
@@ -118,7 +118,7 @@ function withLegacyPool(task: TaskDefinition, pool: PoolName): TaskDefinition {
 }
 
 /**
- * `agent` with the one task type of its run as `taskTypes`, which harnesses
+ * `agent` with the one task type of its run as `taskTypes`, which agents
  * up to 0.13 still require of a run spec's agent (newer ones ignore it): an
  * agent's task types went with agent definitions.
  */

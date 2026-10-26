@@ -26,11 +26,11 @@ const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 const { PostgresDispatcher } = await import("./dispatcher");
 const { hasDueJob, jobDueKey, renewJobsDue, skipJobAndClearDue, syncJobsDueFromPostgres } =
   await import("./due");
-const { getTokenSigner } = await import("@/lib/harness-auth/signer");
+const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { registerJobOutcomeHandler } = await import("@/lib/jobs/handlers");
-const { POST: claim } = await import("@/app/api/harness/claim/route");
-const { POST: fail } = await import("@/app/api/harness/jobs/[id]/fail/route");
-const { POST: result } = await import("@/app/api/harness/jobs/[id]/result/route");
+const { POST: claim } = await import("@/app/api/agent/claim/route");
+const { POST: fail } = await import("@/app/api/agent/jobs/[id]/fail/route");
+const { POST: result } = await import("@/app/api/agent/jobs/[id]/result/route");
 const { GET: expireJobs } = await import("@/app/api/cron/expire-jobs/route");
 
 const JOB_TYPE = "due.test";
@@ -40,7 +40,7 @@ const redisAvailable = await testRedisAvailable();
 let ipCounter = 0;
 function harnessRequest(path: string, accessToken: string, body: unknown): Request {
   ipCounter += 1;
-  return new Request(`http://localhost/api/harness/${path}`, {
+  return new Request(`http://localhost/api/agent/${path}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,

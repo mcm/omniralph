@@ -1,7 +1,7 @@
 /**
  * The variable catalog: every value a prompt template can use. A variable
  * comes from the trigger that started the run, from the task type (the
- * harness computes it while preparing the run) or from a setup command.
+ * agent computes it while preparing the run) or from a setup command.
  * Untrusted values (anything a person or the model outside the run wrote)
  * are fenced when rendered, with the variable's `fence` info string.
  */
@@ -34,11 +34,11 @@ export type VariableDefinition =
       source: "taskType";
       taskTypes: readonly TaskType[];
       /**
-       * The first harness release that provides the variable, when later than
-       * the release that runs its task types (`HARNESS_VERSION_BY_TASK_TYPE`).
+       * The first agent release that provides the variable, when later than
+       * the release that runs its task types (`AGENT_VERSION_BY_TASK_TYPE`).
        * A task whose template uses it requires that release.
        */
-      minHarnessVersion?: string;
+      minAgentVersion?: string;
     })
   | (VariableBase & { source: "setup" });
 

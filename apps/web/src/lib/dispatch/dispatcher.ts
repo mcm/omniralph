@@ -23,7 +23,7 @@ export interface DispatchJobInput extends NewJobInput {
    * Only this agent may claim the job, regardless of pins (e.g. `repo.sync` pre-clones).
    * Must be an agent of the job's organization.
    */
-  targetHarnessId?: string;
+  targetAgentId?: string;
 }
 
 export interface DispatchedJob {
@@ -66,8 +66,8 @@ export class PostgresDispatcher implements JobDispatcher {
   }
 
   async createAndPublish(input: DispatchJobInput): Promise<DispatchedJob> {
-    const { targetHarnessId, ...jobInput } = input;
-    const target = await this.targetFor(jobInput, targetHarnessId);
+    const { targetAgentId, ...jobInput } = input;
+    const target = await this.targetFor(jobInput, targetAgentId);
     const dispatched = await insertJob(this.db, { ...jobInput, targetAgentId: target });
     // Before the wake, so the woken claim finds the job due.
     if (dispatched.created) await syncJobsDue([dispatched.job]);
@@ -110,16 +110,16 @@ export class PostgresDispatcher implements JobDispatcher {
 
   private async targetFor(
     job: Pick<NewJobInput, "organizationId" | "repositoryId">,
-    targetHarnessId: string | undefined,
+    targetAgentId: string | undefined,
   ): Promise<string | null> {
-    if (targetHarnessId) {
-      const target = await getAgent(this.db, targetHarnessId);
+    if (targetAgentId) {
+      const target = await getAgent(this.db, targetAgentId);
       if (target?.organizationId !== job.organizationId) {
         throw new Error(
-          `Agent ${targetHarnessId} isn't in organization ${job.organizationId} of the job`,
+          `Agent ${targetAgentId} isn't in organization ${job.organizationId} of the job`,
         );
       }
-      return targetHarnessId;
+      return targetAgentId;
     }
     return job.repositoryId
       ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId, {

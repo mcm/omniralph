@@ -2,7 +2,7 @@ import { listAgentOverview } from "@omniralph/db";
 import { apiHandler } from "@/lib/api/handler";
 import type { HarnessList } from "@/lib/api/harnesses";
 import { getDb } from "@/lib/db";
-import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
+import { organizationAgentVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
 import { harnessRow } from "@/lib/harnesses/rows";
 
@@ -15,7 +15,7 @@ export const GET = apiHandler({}, async ({ user }): Promise<HarnessList> => {
   const now = new Date();
   const [harnesses, version] = await Promise.all([
     listAgentOverview(db, user.organization.id).then(withLastSeen),
-    organizationHarnessVersion(db, user.organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
+    organizationAgentVersion(db, user.organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
   ]);
   return {
     harnesses: harnesses.map((harness) =>

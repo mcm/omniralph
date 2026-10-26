@@ -15,13 +15,13 @@ import { withLastSeen } from "./last-seen";
  * (`noteAgentOnline`), and the `agent-liveness` cron announces it offline once its
  * last heartbeat is older than `HARNESS_ONLINE_WINDOW_MS` (`sweepAgentLiveness`).
  *
- * With hot state on, `harness-live:{id}` in Redis remembers for a short while that the
+ * With hot state on, `agent-live:{id}` in Redis remembers for a short while that the
  * agent was announced, so a steady heartbeat doesn't touch Postgres for it. The key
  * lives no longer than the online window, so a cron flip that raced a heartbeat is
  * corrected by a heartbeat within that window.
  */
 
-const LIVE_PREFIX = "harness-live:";
+const LIVE_PREFIX = "agent-live:";
 
 export function harnessLiveKey(harnessId: string): string {
   return `${LIVE_PREFIX}${harnessId}`;

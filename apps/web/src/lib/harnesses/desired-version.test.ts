@@ -23,13 +23,13 @@ vi.mock("@omniralph/db", () => ({
   },
 }));
 
-const { LATEST_MAX_AGE_MS, organizationHarnessVersion } = await import("./desired-version");
+const { LATEST_MAX_AGE_MS, organizationAgentVersion } = await import("./desired-version");
 const { NpmRegistryError } = await import("./npm");
 
 const db = {} as Database;
 const later = (ms: number) => new Date(state.now.getTime() + ms);
 
-describe("organizationHarnessVersion", () => {
+describe("organizationAgentVersion", () => {
   beforeEach(() => {
     state.desired = null;
     state.check = null;
@@ -39,14 +39,14 @@ describe("organizationHarnessVersion", () => {
 
   it("passes an exact version (or none) through without reading npm", async () => {
     const fetchLatest = vi.fn(async () => "9.9.9");
-    expect(await organizationHarnessVersion(db, "org-1", { fetchLatest })).toEqual({
+    expect(await organizationAgentVersion(db, "org-1", { fetchLatest })).toEqual({
       version: null,
       tracksLatest: false,
       latestError: null,
       latestCheckedAt: null,
     });
     state.desired = "1.4.0";
-    expect(await organizationHarnessVersion(db, "org-1", { fetchLatest })).toMatchObject({
+    expect(await organizationAgentVersion(db, "org-1", { fetchLatest })).toMatchObject({
       version: "1.4.0",
       tracksLatest: false,
     });
@@ -57,7 +57,7 @@ describe("organizationHarnessVersion", () => {
     state.desired = "latest";
     let latest = "0.4.0";
     const fetchLatest = vi.fn(async () => latest);
-    const resolve = (now: Date) => organizationHarnessVersion(db, "org-1", { fetchLatest, now });
+    const resolve = (now: Date) => organizationAgentVersion(db, "org-1", { fetchLatest, now });
 
     expect(await resolve(state.now)).toEqual({
       version: "0.4.0",
@@ -81,7 +81,7 @@ describe("organizationHarnessVersion", () => {
     const fetchLatest = vi.fn(async (): Promise<string> => {
       throw new NpmRegistryError("the npm registry answered 503");
     });
-    const resolve = (now: Date) => organizationHarnessVersion(db, "org-1", { fetchLatest, now });
+    const resolve = (now: Date) => organizationAgentVersion(db, "org-1", { fetchLatest, now });
 
     expect(await resolve(state.now)).toMatchObject({
       version: "0.4.0",
@@ -103,6 +103,6 @@ describe("organizationHarnessVersion", () => {
     const fetchLatest = async (): Promise<string> => {
       throw new Error("boom");
     };
-    await expect(organizationHarnessVersion(db, "org-1", { fetchLatest })).rejects.toThrow("boom");
+    await expect(organizationAgentVersion(db, "org-1", { fetchLatest })).rejects.toThrow("boom");
   });
 });

@@ -123,7 +123,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/live/token", () => {
     expect(channels.some((c) => c.includes(otherOrg))).toBe(false);
     expect(channels).not.toContain(`org:${orgA}`);
     expect(channels).not.toContain(`org:${orgB}`);
-    expect(channels.some((c) => c.startsWith("harness:") || c.includes("*"))).toBe(false);
+    expect(channels.some((c) => c.startsWith("agent:") || c.includes("*"))).toBe(false);
     for (const operations of Object.values(granted)) expect(operations).toEqual(["subscribe"]);
     expect(JSON.stringify(granted)).not.toMatch(/publish|presence/);
   });

@@ -12,7 +12,7 @@
   "promptTemplate": "# Pull request\n\n{{repository}}, pull request #{{pr.number}}\n\n# Review tasks (quoted data)\n\nEach task below reviewed the pull request on its own. Its findings are a JSON array; each finding has an `id`.\n{{#reviewRun.tasks.items}}\n\n## Task {{taskId}} ({{name}})\n\nSummary:\n{{summary}}{{^summary}}(none){{/summary}}\n\nFindings:\n{{findings}}{{^findings}}(none){{/findings}}\n{{/reviewRun.tasks.items}}\n\nMerge the findings that describe the same issue and write the combined summary. Answer with {\"findings\": [...], \"summary\": string}.\n",
   "tools": {
     "builtin": [],
-    "harness": [],
+    "agent": [],
     "linear": [],
     "mcpServers": []
   },

@@ -58,12 +58,12 @@ async function readCapped(res: Response, max: number): Promise<Buffer | string> 
 
 /**
  * Downloads attachments through the control panel
- * (`GET /api/harness/jobs/{id}/attachments/{attachmentId}`), which fetches them
+ * (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`), which fetches them
  * from Linear with its own token.
  */
 export function controlPanelFetcher(options: ControlPanelFetcherOptions): AttachmentFetcher {
   const fetchFn = options.fetch ?? fetch;
-  const base = `${options.server}/api/harness/jobs/${encodeURIComponent(options.jobId)}/attachments`;
+  const base = `${options.server}/api/agent/jobs/${encodeURIComponent(options.jobId)}/attachments`;
   return async (id) => {
     try {
       const res = await fetchFn(`${base}/${encodeURIComponent(id)}`, {

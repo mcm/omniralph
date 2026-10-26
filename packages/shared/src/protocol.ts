@@ -1,7 +1,7 @@
 /**
  * Job protocol between the control panel and agents: the heartbeat and the
- * job lifecycle endpoints (`/api/harness/heartbeat`, `/api/harness/claim`,
- * `/api/harness/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
+ * job lifecycle endpoints (`/api/agent/heartbeat`, `/api/agent/claim`,
+ * `/api/agent/jobs/{id}/result|fail`). See `docs/adr/0006-postgres-job-queue.md`.
  */
 import {
   HOST_TOOL_NAME_PATTERN,
@@ -63,14 +63,14 @@ export const WORKTREE_CLEANUP_JOB_TYPE = "worktree.cleanup";
 
 /**
  * `system` job that installs or updates an installable (an npm package with an
- * `omniralph` manifest) into the harness's installables prefix. Its payload and
- * result are `InstallPayload`/`InstallResult`. The harness refuses packages its
+ * `omniralph` manifest) into the agent's installables prefix. Its payload and
+ * result are `InstallPayload`/`InstallResult`. The agent refuses packages its
  * local `installables.allow` doesn't allow.
  */
 export const INSTALL_JOB_TYPE = "install";
 
 /**
- * The system RPCs a harness runs: fixed commands with no Claude session,
+ * The system RPCs an agent runs: fixed commands with no Claude session,
  * dispatched by job type (`jobs.type`) as jobs of task type `system`.
  */
 export const SYSTEM_RPCS = [
@@ -86,8 +86,8 @@ export function isSystemRpc(name: string): name is SystemRpcName {
 }
 
 /**
- * How a harness runs a job: `query`, `review` and `coding` run a Claude
- * session; `system` jobs are fixed commands (e.g. `repo.sync`) every harness
+ * How an agent runs a job: `query`, `review` and `coding` run a Claude
+ * session; `system` jobs are fixed commands (e.g. `repo.sync`) every agent
  * accepts.
  */
 export const JOB_TASK_TYPES = ["query", "review", "coding", "system"] as const;
@@ -141,7 +141,7 @@ export function legacyJobRouting(type: string): JobRouting {
 }
 
 /**
- * Per-pool caps on concurrent jobs (`harnesses.pool_limits`), each within
+ * Per-pool caps on concurrent jobs (`agents.pool_limits`), each within
  * `maxConcurrency`. Unset pools use `defaultPoolLimit`.
  */
 export const PoolLimits = z.record(poolName, z.int().min(1).max(1000));
@@ -149,7 +149,7 @@ export type PoolLimits = z.infer<typeof PoolLimits>;
 
 /**
  * A pool's limit when none is set: `long` jobs (hours-long stories) leave one
- * slot free for other work on harnesses with two or more slots; other pools
+ * slot free for other work on agents with two or more slots; other pools
  * may use every slot.
  */
 export function defaultPoolLimit(pool: string, maxConcurrency: number): number {
@@ -219,14 +219,14 @@ export const AgentUpdateRequest = z.object({
 });
 export type AgentUpdateRequest = z.infer<typeof AgentUpdateRequest>;
 
-/** An installable installed on a harness, as its heartbeat reports it. */
+/** An installable installed on an agent, as its heartbeat reports it. */
 export const ReportedInstallable = z.object({
   name: z.string().min(1).max(214),
   version: z.string().min(1).max(64),
 });
 export type ReportedInstallable = z.infer<typeof ReportedInstallable>;
 
-/** A Claude model the harness's login can run (the Agent SDK's `supportedModels()`). */
+/** A Claude model the agent's login can run (the Agent SDK's `supportedModels()`). */
 export const ReportedModel = z.object({
   value: z.string().min(1).max(200),
   displayName: z.string().max(200),
@@ -236,17 +236,17 @@ export type ReportedModel = z.infer<typeof ReportedModel>;
 /** A host tool's name (`HostToolName` of `@omniralph/tasks`, which task definitions require by). */
 export { HOST_TOOL_NAME_PATTERN, HostToolName };
 
-/** An absolute path to a host tool's executable on a harness. */
+/** An absolute path to a host tool's executable on an agent. */
 export const HostToolPath = z
   .string()
   .max(4096)
   .refine((path) => path.startsWith("/"), "must be an absolute path");
 
 /**
- * What a harness found for a host tool of the last heartbeat response's
+ * What an agent found for a host tool of the last heartbeat response's
  * `hostTools`: whether the configured path is a usable executable (null when
  * none is configured; false when it's missing, not executable or blocked by
- * the local `blockedExecPaths`) and the first match on the harness's own
+ * the local `blockedExecPaths`) and the first match on the agent's own
  * `PATH` that isn't blocked.
  */
 export const ReportedHostTool = z.object({
@@ -258,15 +258,15 @@ export const ReportedHostTool = z.object({
 });
 export type ReportedHostTool = z.infer<typeof ReportedHostTool>;
 
-/** A host tool of the organization's catalog, with the path configured for this harness. */
+/** A host tool of the organization's catalog, with the path configured for this agent. */
 export const KnownHostTool = z.object({
   name: HostToolName,
-  /** Null when none is configured: the harness then uses the path it discovers. */
+  /** Null when none is configured: the agent then uses the path it discovers. */
   configuredPath: HostToolPath.nullable(),
 });
 export type KnownHostTool = z.infer<typeof KnownHostTool>;
 
-/** `POST /api/harness/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
+/** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
   version: z.string().min(1).max(64),
   runningJobIds: z.array(z.uuid()).max(100),
@@ -284,16 +284,16 @@ export const Heartbeat = z.object({
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
   /** The last `updateRequest` the agent acted on; the control panel then clears it. */
   handledUpdateRequestId: z.uuid().nullable().optional(),
-  /** The installables installed on the harness (absent from older harnesses). */
+  /** The installables installed on the agent (absent from older agents). */
   installables: z.array(ReportedInstallable).max(100).default([]),
-  /** The Claude models the harness's login can run (absent from older harnesses; none when unknown). */
+  /** The Claude models the agent's login can run (absent from older agents; none when unknown). */
   models: z.array(ReportedModel).max(100).default([]),
-  /** The host tools of the last response's `hostTools`, as the harness found them. */
+  /** The host tools of the last response's `hostTools`, as the agent found them. */
   hostTools: z.array(ReportedHostTool).max(100).default([]),
-  /** When the harness's Ably token (`ably` of a response) expires; absent when it has none. */
+  /** When the agent's Ably token (`ably` of a response) expires; absent when it has none. */
   ablyTokenExpiresAt: z.iso.datetime().optional(),
   /**
-   * The pools the harness would claim from right now (`ClaimRequest.pools`),
+   * The pools the agent would claim from right now (`ClaimRequest.pools`),
    * sent in wake mode while it has a free slot: the response's `claimable`
    * then says whether a claim would find a job. Absent otherwise.
    */
@@ -306,17 +306,17 @@ export const Heartbeat = z.object({
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
-/** Ably channel that wakes one agent for jobs targeted at it (still `harness:<id>` until TOOL-584). */
+/** Ably channel that wakes one agent for jobs targeted at it. */
 export function agentWakeChannel(agentId: string): string {
-  return `harness:${agentId}`;
+  return `agent:${agentId}`;
 }
 
-/** Ably channel that wakes an organization's harnesses for untargeted jobs. */
+/** Ably channel that wakes an organization's agents for untargeted jobs. */
 export function orgWakeChannel(organizationId: string): string {
   return `org:${organizationId}`;
 }
 
-/** A subscribe-only Ably token (JWT) for the harness's two wake channels. */
+/** A subscribe-only Ably token (JWT) for the agent's two wake channels. */
 export const AblyToken = z.object({
   token: z.string().min(1),
   /** ISO timestamp. */
@@ -342,7 +342,7 @@ export const LEGACY_POLL_INTERVAL_SECONDS = 5;
 export const HeartbeatResponse = z.object({
   maxConcurrency: z.int().min(1),
   /**
-   * @deprecated Agents claim jobs through `POST /api/harness/claim`. Always
+   * @deprecated Agents claim jobs through `POST /api/agent/claim`. Always
    * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
    */
   pollIntervalSeconds: z.int().min(1).optional(),
@@ -354,7 +354,7 @@ export const HeartbeatResponse = z.object({
   acceptedTaskTypes: z.array(JobTaskType).optional(),
   /**
    * Effective concurrency limits of the `short` and `long` pools. The
-   * harness only claims a pool's jobs while it runs fewer than this.
+   * agent only claims a pool's jobs while it runs fewer than this.
    */
   poolLimits: PoolLimits,
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
@@ -363,14 +363,14 @@ export const HeartbeatResponse = z.object({
   organizationId: z.uuid(),
   /**
    * @deprecated Vercel Queues topics old agents poll. Always empty, so old agents
-   * stop polling; agents claim jobs through `POST /api/harness/claim`.
+   * stop polling; agents claim jobs through `POST /api/agent/claim`.
    */
   topics: z.array(z.string()).optional(),
   /** @deprecated Vercel Queues region of `topics`. Always `""`. */
   queueRegion: z.string().optional(),
   /** Running jobs the agent must stop (canceled, or no longer its job). */
   cancelJobIds: z.array(z.uuid()),
-  /** New job tokens for the harness's still-running jobs: both of a run-spec job (by `kind`), the single token of a legacy job. */
+  /** New job tokens for the agent's still-running jobs: both of a run-spec job (by `kind`), the single token of a legacy job. */
   jobTokens: z.array(JobToken),
   /** Undelivered messages for the agent's running jobs, oldest first. */
   jobMessages: z.array(JobMessageDelivery).default([]),
@@ -382,14 +382,14 @@ export const HeartbeatResponse = z.object({
   /** An update an admin asked for and the agent hasn't acted on yet. */
   updateRequest: AgentUpdateRequest.nullable().default(null),
   /**
-   * The organization's host tools with this harness's configured paths: the
-   * harness reports on each in its next heartbeat. A configured path wins;
+   * The organization's host tools with this agent's configured paths: the
+   * agent reports on each in its next heartbeat. A configured path wins;
    * when it isn't usable the tool is unavailable (no fallback to `PATH`).
    */
   hostTools: z.array(KnownHostTool).default([]),
   /**
-   * A fresh Ably token, sent when the harness has none or its token expires
-   * within the hour; null when the control panel has Ably off (the harness
+   * A fresh Ably token, sent when the agent has none or its token expires
+   * within the hour; null when the control panel has Ably off (the agent
    * long-polls its claims). Absent from older control panels.
    */
   ably: AblyToken.nullable().optional(),
@@ -424,7 +424,7 @@ export const JOB_SKIP_REASONS = [
   "failed",
   "expired",
   "max_deliveries",
-  /** The job's task type isn't one the harness accepts. */
+  /** The job's task type isn't one the agent accepts. */
   "task_type_not_accepted",
   "skipped",
   /** A review job whose head SHA already has a completed review. */
@@ -434,7 +434,7 @@ export const JobSkipReason = z.enum(JOB_SKIP_REASONS);
 export type JobSkipReason = z.infer<typeof JobSkipReason>;
 
 /**
- * A started job: `run` with the job and its tokens (`POST /api/harness/claim`
+ * A started job: `run` with the job and its tokens (`POST /api/agent/claim`
  * only answers `run`). On `skip` the agent runs nothing.
  */
 export const JobStartResponse = z.discriminatedUnion("action", [
@@ -453,7 +453,7 @@ export const JobStartResponse = z.discriminatedUnion("action", [
       runSpec: RunSpec.optional(),
       /**
        * The job's token, refreshed via heartbeat. For run-spec jobs (with a
-       * `taskId`) the `lifecycle` token, kept by the harness for its own calls;
+       * `taskId`) the `lifecycle` token, kept by the agent for its own calls;
        * for legacy jobs the single token in-job processes (e.g. the
        * `git-credential` helper) use.
        */
@@ -479,17 +479,17 @@ export const JobStartResponse = z.discriminatedUnion("action", [
 ]);
 export type JobStartResponse = z.infer<typeof JobStartResponse>;
 
-/** Longest `POST /api/harness/claim` holds the request while there's nothing to claim. */
+/** Longest `POST /api/agent/claim` holds the request while there's nothing to claim. */
 export const MAX_CLAIM_WAIT_SECONDS = 50;
 
 /**
- * `POST /api/harness/claim` request. The response is `JobStartResponse`'s `run`
+ * `POST /api/agent/claim` request. The response is `JobStartResponse`'s `run`
  * shape (200), or 204 once `waitSeconds` passed with nothing to claim.
  */
 export const ClaimRequest = z.object({
   /**
-   * Pools the harness has a free slot in: only their jobs (of task types the
-   * harness accepts) and `system` jobs are claimed.
+   * Pools the agent has a free slot in: only their jobs (of task types the
+   * agent accepts) and `system` jobs are claimed.
    */
   pools: z.array(poolName).max(32),
   /**
@@ -501,13 +501,13 @@ export const ClaimRequest = z.object({
 });
 export type ClaimRequest = z.input<typeof ClaimRequest>;
 
-/** `POST /api/harness/jobs/{id}/result`: the job's output (e.g. findings for a review). */
+/** `POST /api/agent/jobs/{id}/result`: the job's output (e.g. findings for a review). */
 export const JobResult = z.object({
   result: z.record(z.string(), z.unknown()),
 });
 export type JobResult = z.infer<typeof JobResult>;
 
-/** `POST /api/harness/jobs/{id}/fail` */
+/** `POST /api/agent/jobs/{id}/fail` */
 export const JobFailure = z.object({
   /** Transient failure (e.g. a Claude rate limit): claimable again after `retryAfterSeconds`. */
   retryable: z.boolean(),
@@ -560,7 +560,7 @@ export const InstallResult = z.object({
 export type InstallResult = z.infer<typeof InstallResult>;
 
 /**
- * `POST /api/harness/credentials` response (authenticated with a job token): a
+ * `POST /api/agent/credentials` response (authenticated with a job token): a
  * short-lived, read-only credential for the job's repository.
  */
 export const CloneCredentialResponse = z.object({

@@ -86,7 +86,7 @@ const baseSettings: RepositorySettingsInput = {
   triggers: { onOpen: true, onPush: true, drafts: false },
   pathExcludes: [],
   customInstructions: "",
-  pinnedHarnessIds: [],
+  pinnedAgentIds: [],
   reviewPlaybookIds: ["builtin:review-pr"],
   correlationPlaybookId: "builtin:correlate-findings",
 };
@@ -277,7 +277,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
           {
             ...baseSettings,
             triggers: { ...baseSettings.triggers, onPush: false },
-            pinnedHarnessIds: [agentA],
+            pinnedAgentIds: [agentA],
           },
         ),
       ).toEqual({ ok: true });
@@ -295,7 +295,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
           {
             ...baseSettings,
             triggers: { ...baseSettings.triggers, onPush: false },
-            pinnedHarnessIds: [agentA, agentB],
+            pinnedAgentIds: [agentA, agentB],
           },
         ),
       ).toEqual({ ok: true });

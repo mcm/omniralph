@@ -129,7 +129,7 @@ describe("controlPanelFetcher", () => {
       "Bearer tok-2",
       "Bearer tok-2",
     ]);
-    expect(seen[0]?.url).toBe(`https://cp.example.com/api/harness/jobs/job-1/attachments/${id(1)}`);
+    expect(seen[0]?.url).toBe(`https://cp.example.com/api/agent/jobs/job-1/attachments/${id(1)}`);
   });
 
   it("rejects files over 25 MB", async () => {

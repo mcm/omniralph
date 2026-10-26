@@ -12,7 +12,7 @@ import { renderTemplate, validateTemplate } from "../template.js";
 import { availableVariables, VARIABLES } from "../variables.js";
 
 interface Fixture {
-  /** Whether the harness checked the routed repository out (`checkout`). */
+  /** Whether the agent checked the routed repository out (`checkout`). */
   checkout: boolean;
   input: TriagePromptInput;
 }
@@ -24,7 +24,7 @@ const FIXTURES = JSON.parse(
 const task = getBuiltinTask("builtin:triage")!;
 const agent = getBuiltinRunSpec("builtin:triage")!.agent;
 
-/** The trigger context `enqueueTriage` stores, plus the query variables the harness computes. */
+/** The trigger context `enqueueTriage` stores, plus the query variables the agent computes. */
 function render({ checkout, input }: Fixture): string {
   const context = {
     triageRunId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
@@ -43,7 +43,7 @@ describe("builtin:triage", () => {
       systemPromptMode: "append",
       tools: {
         builtin: ["Read", "Grep", "Glob"],
-        harness: [],
+        agent: [],
         linear: [
           "linear_get_issue",
           "linear_list_comments",

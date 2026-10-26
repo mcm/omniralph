@@ -17,7 +17,7 @@ function entry(event: AuditRow["event"], detail: Record<string, unknown> = {}): 
 const audit: AuditRow[] = [
   entry("result_submitted", { jobId: "abcdef12-0000", status: "completed" }),
   entry("credential_issued", { repository: "acme/api", jobId: "abcdef12-0000" }),
-  entry("auth_failed", { reason: "expired", path: "/api/harness/heartbeat" }),
+  entry("auth_failed", { reason: "expired", path: "/api/agent/heartbeat" }),
   entry("token_refresh", { familyId: "f" }),
   entry("revoke", { revokedBy: "admin-1", requeuedJobIds: ["a", "b"] }),
   entry("enroll", { name: "coder-host", version: "0.1.0" }),
@@ -41,7 +41,7 @@ describe("HarnessAuditLog", () => {
       "Credential issued",
       "Read-only token for acme/api, job abcdef12",
       "Auth failure",
-      "expired on /api/harness/heartbeat",
+      "expired on /api/agent/heartbeat",
       "Token refresh",
       "Revoked",
       "By an admin, 2 running jobs requeued",

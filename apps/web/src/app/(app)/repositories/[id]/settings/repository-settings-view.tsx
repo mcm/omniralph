@@ -66,7 +66,7 @@ interface RepositorySettingsContentProps {
     triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
     pathExcludes: string[];
     customInstructions: string;
-    pinnedHarnessIds: string[];
+    pinnedAgentIds: string[];
   };
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: RepositoryHarness[];
@@ -338,8 +338,8 @@ export function RepositorySettingsContent({
     [harnesses],
   );
   const pinError =
-    errors.pinnedHarnessIds ??
-    Object.entries(errors).find(([key]) => key.startsWith("pinnedHarnessIds."))?.[1];
+    errors.pinnedAgentIds ??
+    Object.entries(errors).find(([key]) => key.startsWith("pinnedAgentIds."))?.[1];
 
   const harnessesSection = (
     <SettingsSection
@@ -348,7 +348,7 @@ export function RepositorySettingsContent({
       showTitle={false}
       description="Which harnesses run this repository's jobs: reviews, questions and coding. Newly pinned harnesses pre-clone the repository."
       {...section(REPOSITORY_SECTIONS.harnesses, (input) =>
-        input.pinnedHarnessIds.some((id) => !settings.pinnedHarnessIds.includes(id))
+        input.pinnedAgentIds.some((id) => !settings.pinnedAgentIds.includes(id))
           ? "Saved; newly pinned harnesses will pre-clone the repository"
           : "Saved; it applies to the next job",
       )}
@@ -358,7 +358,7 @@ export function RepositorySettingsContent({
         title="Pinning"
         description="Only the pinned harnesses run this repository's jobs. Leave all unpinned to let any harness run them. Default: not set (any harness)."
       >
-        {pinnable.length === 0 && draft.pinnedHarnessIds.length === 0 ? (
+        {pinnable.length === 0 && draft.pinnedAgentIds.length === 0 ? (
           <Muted>No harnesses are enrolled yet; any harness that enrolls can run jobs.</Muted>
         ) : (
           <>
@@ -366,18 +366,18 @@ export function RepositorySettingsContent({
               label="Pinned harnesses"
               htmlFor="pinned-harnesses"
               description={
-                draftValues.pinnedHarnessIds.length === 0
+                draftValues.pinnedAgentIds.length === 0
                   ? "Any harness can run this repository's jobs."
-                  : draftValues.pinnedHarnessIds.length === 1
+                  : draftValues.pinnedAgentIds.length === 1
                     ? "Only the pinned harness runs this repository's jobs."
-                    : `Only the ${draftValues.pinnedHarnessIds.length} pinned harnesses run this repository's jobs.`
+                    : `Only the ${draftValues.pinnedAgentIds.length} pinned harnesses run this repository's jobs.`
               }
               error={pinError}
             >
               <MultiSelect
                 id="pinned-harnesses"
-                value={draft.pinnedHarnessIds}
-                onChange={(value) => set("pinnedHarnessIds", value)}
+                value={draft.pinnedAgentIds}
+                onChange={(value) => set("pinnedAgentIds", value)}
                 options={harnessOptions}
                 disabled={disabled}
                 placeholder="Any harness"
@@ -388,13 +388,13 @@ export function RepositorySettingsContent({
               />
             </Field>
             <PinnedHarnessList
-              pinnedIds={draft.pinnedHarnessIds}
+              pinnedIds={draft.pinnedAgentIds}
               harnesses={harnesses}
               disabled={disabled}
               onRemove={(id) =>
                 set(
-                  "pinnedHarnessIds",
-                  draft.pinnedHarnessIds.filter((pinned) => pinned !== id),
+                  "pinnedAgentIds",
+                  draft.pinnedAgentIds.filter((pinned) => pinned !== id),
                 )
               }
             />

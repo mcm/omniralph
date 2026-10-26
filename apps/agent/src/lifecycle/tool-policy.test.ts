@@ -15,9 +15,8 @@ const ALL_BUILTIN = [
   "Task",
 ];
 
-// `harness`: the run spec's tools key until TOOL-584 renames it.
 const agent = (builtin: string[]) => ({
-  tools: { builtin, harness: [], linear: [], mcpServers: [] },
+  tools: { builtin, agent: [], linear: [], mcpServers: [] },
 });
 
 const permissions = (

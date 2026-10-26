@@ -15,7 +15,7 @@ import { latestHarnessVersion, NpmRegistryError } from "./npm";
 /**
  * An idle harness's heartbeat answered from Redis. The response a heartbeat with no
  * running jobs got is cached (`heartbeat-response:{id}`) with the harness's and its
- * organization's change counters (`heartbeat-changes:harness:{id}`,
+ * organization's change counters (`heartbeat-changes:agent:{id}`,
  * `heartbeat-changes:org:{id}`) as they were before its Postgres reads, and the epoch.
  * Every write that changes a heartbeat response bumps a counter after its commit
  * (`bumpHarnessHeartbeat`, `bumpOrganizationHeartbeat`), so the next heartbeat that
@@ -24,14 +24,14 @@ import { latestHarnessVersion, NpmRegistryError } from "./npm";
  * then deletes the epoch); the TTL bounds anything else that slips through.
  *
  * An organization that tracks npm's `latest` also needs it unchanged: it's read from
- * `harness-latest-version:{org}` (refreshed from npm, not Postgres, once it's older
+ * `agent-latest-version:{org}` (refreshed from npm, not Postgres, once it's older
  * than `LATEST_MAX_AGE_MS`).
  */
 
 const RESPONSE_PREFIX = "heartbeat-response:";
-const HARNESS_CHANGES_PREFIX = "heartbeat-changes:harness:";
+const AGENT_CHANGES_PREFIX = "heartbeat-changes:agent:";
 const ORGANIZATION_CHANGES_PREFIX = "heartbeat-changes:org:";
-const LATEST_PREFIX = "harness-latest-version:";
+const LATEST_PREFIX = "agent-latest-version:";
 /** How long a cached response is used at most, whatever the counters say. */
 export const CACHED_RESPONSE_TTL_MS = 3600_000;
 /** Counters outlive any response cached with them; one created afresh starts at a random value. */
@@ -62,7 +62,7 @@ export function heartbeatResponseKey(harnessId: string): string {
 }
 
 export function harnessChangesKey(harnessId: string): string {
-  return `${HARNESS_CHANGES_PREFIX}${harnessId}`;
+  return `${AGENT_CHANGES_PREFIX}${harnessId}`;
 }
 
 export function organizationChangesKey(organizationId: string): string {

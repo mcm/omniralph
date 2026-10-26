@@ -69,7 +69,7 @@ export async function updateRepositoryReviewSettings(
   );
   if (result.status === "saved") {
     // The bumps in the transaction ran before its commit: bump again once it's visible.
-    for (const id of [...result.pinnedHarnessIds, ...result.unpinnedHarnessIds]) {
+    for (const id of [...result.pinnedAgentIds, ...result.unpinnedAgentIds]) {
       await bumpHarnessHeartbeat(id);
     }
   }
@@ -80,7 +80,7 @@ export async function updateRepositoryReviewSettings(
       return {
         ok: false,
         error: "Some selected harnesses don't exist or were revoked.",
-        fieldErrors: { pinnedHarnessIds: "Some selected harnesses don't exist or were revoked." },
+        fieldErrors: { pinnedAgentIds: "Some selected harnesses don't exist or were revoked." },
       };
     case "invalid_bindings":
       return { ok: false, error: "Fix the highlighted fields.", fieldErrors: result.fieldErrors };

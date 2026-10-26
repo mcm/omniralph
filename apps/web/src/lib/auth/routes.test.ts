@@ -4,9 +4,9 @@ import { classifyPath, safeCallbackPath } from "./routes";
 describe("classifyPath", () => {
   it("leaves self-authenticated APIs to their own auth", () => {
     for (const path of [
-      "/api/harness/token",
-      "/api/harness/heartbeat",
-      "/api/harness/queue/iad1/x",
+      "/api/agent/token",
+      "/api/agent/heartbeat",
+      "/api/agent/queue/iad1/x",
       "/api/webhooks/github",
       "/api/cron/expire-jobs",
       "/api/auth/callback/github",
@@ -29,7 +29,9 @@ describe("classifyPath", () => {
 
   it("protects other APIs and every UI page", () => {
     expect(classifyPath("/api/other")).toBe("api");
-    expect(classifyPath("/api/harnessx")).toBe("api");
+    expect(classifyPath("/api/agentx")).toBe("api");
+    expect(classifyPath("/api/agents/abc")).toBe("api");
+    expect(classifyPath("/api/harness/heartbeat")).toBe("api");
     expect(classifyPath("/")).toBe("page");
     expect(classifyPath("/settings/organization")).toBe("page");
     expect(classifyPath("/sign-in-elsewhere")).toBe("page");

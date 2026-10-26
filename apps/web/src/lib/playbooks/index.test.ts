@@ -12,7 +12,7 @@ import {
   scmConnections,
   type Database,
 } from "@omniralph/db";
-import { REVIEW_TASKS_MIN_HARNESS_VERSION } from "@omniralph/shared";
+import { REVIEW_TASKS_MIN_AGENT_VERSION } from "@omniralph/shared";
 import {
   BUILTIN_PLAYBOOKS,
   getBuiltinPlaybook,
@@ -51,7 +51,7 @@ function stored(builtinId: string, overrides: Record<string, unknown> = {}) {
 
 const SECURITY_PROMPT = "You review code for security problems only.";
 
-/** A higher minimum harness version than any task type needs. */
+/** A higher minimum agent version than any task type needs. */
 const STORED_MIN_VERSION = "99.1.0";
 
 describe.skipIf(!databaseAvailable)("playbook resolver", () => {
@@ -81,7 +81,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
     organizationId = orgId,
     from = "builtin:review-pr",
     overrides: Record<string, unknown> = { systemPrompt: SECURITY_PROMPT },
-    requirements: object = { minHarnessVersion: STORED_MIN_VERSION },
+    requirements: object = { minAgentVersion: STORED_MIN_VERSION },
   ) {
     return insertPlaybook(db, organizationId, {
       name: "Security review",
@@ -111,7 +111,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
           role: "review",
           systemPrompt: SECURITY_PROMPT,
         },
-        requirements: { minHarnessVersion: STORED_MIN_VERSION, installables: [], hostTools: [] },
+        requirements: { minAgentVersion: STORED_MIN_VERSION, installables: [], hostTools: [] },
       });
     });
 
@@ -131,7 +131,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         "builtin:review-pr",
         {},
         {
-          minHarnessVersion: 7,
+          minAgentVersion: 7,
         },
       );
       const builtinOnly = await customPlaybook(orgId, "builtin:reply-to-finding", {});
@@ -225,7 +225,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         model: null,
       });
       expect(await mine.getPlaybookRequirements!(row.id)).toMatchObject({
-        minHarnessVersion: STORED_MIN_VERSION,
+        minAgentVersion: STORED_MIN_VERSION,
       });
       expect(await mine.getPlaybook("builtin:review-pr")).toBe(
         getBuiltinPlaybook("builtin:review-pr"),
@@ -241,7 +241,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       expect(await theirs.getPlaybook(row.id)).toBeNull();
     });
 
-    it("gives a custom playbook's job its stored minimum harness version", async () => {
+    it("gives a custom playbook's job its stored minimum agent version", async () => {
       const row = await customPlaybook();
       const playbooks = organizationPlaybooks(db, orgId);
       const input = await taskJobInput(playbooks, (await getPlaybookTask(playbooks, row.id))!, {
@@ -254,16 +254,16 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         orgId,
         "builtin:review-pr",
         {},
-        { minHarnessVersion: "0.0.1" },
+        { minAgentVersion: "0.0.1" },
       );
       const lowInput = await taskJobInput(playbooks, (await getPlaybookTask(playbooks, low.id))!, {
         trigger: { kind: "pr.updated", context: {} },
       });
-      expect(lowInput.minAgentVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
+      expect(lowInput.minAgentVersion).toBe(REVIEW_TASKS_MIN_AGENT_VERSION);
     });
   });
 
-  it("enqueues a review run of a custom review playbook with its stored minimum harness version", async () => {
+  it("enqueues a review run of a custom review playbook with its stored minimum agent version", async () => {
     const task = await customPlaybook();
     const [connection] = await db
       .insert(scmConnections)
@@ -303,15 +303,15 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
     const rows = await Promise.all(
       result.runs.map(async ({ jobId }) => {
         const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId));
-        return { taskId: row!.taskId, minHarnessVersion: row!.minAgentVersion };
+        return { taskId: row!.taskId, minAgentVersion: row!.minAgentVersion };
       }),
     );
     expect(rows).toEqual([
-      { taskId: "builtin:review-pr", minHarnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION },
-      { taskId: task.id, minHarnessVersion: STORED_MIN_VERSION },
+      { taskId: "builtin:review-pr", minAgentVersion: REVIEW_TASKS_MIN_AGENT_VERSION },
+      { taskId: task.id, minAgentVersion: STORED_MIN_VERSION },
     ]);
   });
-  it("gives a run's job the installables and host tools its playbook needs, so only a harness with them claims it", async () => {
+  it("gives a run's job the installables and host tools its playbook needs, so only an agent with them claims it", async () => {
     const reviewPr = getBuiltinPlaybook("builtin:review-pr")!;
     const task = await customPlaybook(
       orgId,
@@ -321,7 +321,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         requires: { hostTools: ["opengrep"] },
       },
       // Stored when the playbook was saved; the job follows the playbook as it is now.
-      { minHarnessVersion: null, installables: ["@omniralph/stale"], hostTools: [] },
+      { minAgentVersion: null, installables: ["@omniralph/stale"], hostTools: [] },
     );
     const [connection] = await db
       .insert(scmConnections)
@@ -375,7 +375,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
           organizationId: orgId,
           name,
           reportedAcceptedTaskTypes: ["review"],
-          reportedVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+          reportedVersion: REVIEW_TASKS_MIN_AGENT_VERSION,
           reportedInstallables:
             name === "bare" ? [] : [{ name: "@omniralph/code-graph", version: "1.0.0" }],
         })),
@@ -386,18 +386,18 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       hostToolId: tool!.id,
       discoveredPath: "/usr/bin/opengrep",
     });
-    const claim = (harnessId: string) =>
+    const claim = (agentId: string) =>
       claimJob(db, {
-        agentId: harnessId,
+        agentId: agentId,
         organizationId: orgId,
         acceptedTaskTypes: ["review"],
         pools: ["short", "long"],
-        agentVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: REVIEW_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: 3,
       });
-    // Drain what the other harnesses can claim: never this run.
-    for (const harness of [bare!, graphOnly!]) {
-      for (let next = await claim(harness.id); next.claim; next = await claim(harness.id)) {
+    // Drain what the other agents can claim: never this run.
+    for (const agent of [bare!, graphOnly!]) {
+      for (let next = await claim(agent.id); next.claim; next = await claim(agent.id)) {
         expect(next.claim.job.id).not.toBe(row!.id);
       }
     }

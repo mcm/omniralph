@@ -7,7 +7,7 @@
  */
 import type { z } from "zod";
 import { validateCodingTask, type PrDescriptionTaskFields } from "./coding.js";
-import { TaskDefinition, harnessToolsProblem, type RunSpecAgent } from "./definitions.js";
+import { TaskDefinition, agentToolsProblem, type RunSpecAgent } from "./definitions.js";
 import { TRIGGERS_BY_TASK_TYPE, type SinkKind, type TaskType, type TriggerKind } from "./kinds.js";
 import { invalidOutputSchema, outputSchemaProblem, type JsonSchema } from "./output-schema.js";
 import { deriveTaskRequirements, type TaskRequirements } from "./requirements.js";
@@ -61,8 +61,8 @@ export type TaskValidation =
  *   a variable not available for every trigger; on a coding task, `epic.prd` or
  *   `story` outside an optional section when a request may start it;
  * - `variableLimits.<name>`: a limit on a variable the task can't use;
- * - `outputSchema`: a schema the harness can't check output against (`invalidOutputSchema`);
- * - `agentId`: an unknown agent, or one with harness tools the task type doesn't allow;
+ * - `outputSchema`: a schema the agent can't check output against (`invalidOutputSchema`);
+ * - `agentId`: an unknown agent, or one with agent tools the task type doesn't allow;
  * - `sink`: a sink that isn't available or doesn't accept the task's output;
  * - coding settings that don't combine (`validateCodingTask`).
  */
@@ -114,7 +114,7 @@ export function validateTaskDefinition(
   if (!agent) {
     add("agentId", `There is no agent ${task.agentId}.`);
   } else {
-    const problem = harnessToolsProblem(agent.tools, task.taskType);
+    const problem = agentToolsProblem(agent.tools, task.taskType);
     if (problem) add("agentId", problem);
   }
 

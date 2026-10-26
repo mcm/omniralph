@@ -4,10 +4,10 @@ import { SignJWT } from "jose";
 
 type Env = Record<string, string | undefined>;
 
-/** Lifetime of a harness's Ably token, in seconds. */
+/** Lifetime of an agent's Ably token, in seconds. */
 export const ABLY_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 
-/** A heartbeat hands out a new Ably token once the harness's expires within this. */
+/** A heartbeat hands out a new Ably token once the agent's expires within this. */
 export const ABLY_TOKEN_RENEW_BEFORE_MS = 60 * 60 * 1000;
 
 /** `ABLY_API_KEY` (`<keyName>:<keySecret>`) split in its two parts. */
@@ -18,7 +18,7 @@ export interface AblyConfig {
 
 /**
  * Ably's config from `ABLY_API_KEY`; null when it is unset (Ably is off and
- * harnesses long-poll their claims). A malformed key is logged and also turns
+ * agents long-poll their claims). A malformed key is logged and also turns
  * Ably off, so a typo can't break heartbeats or dispatch.
  */
 export function getAblyConfig(env: Env = process.env): AblyConfig | null {
@@ -35,18 +35,18 @@ export function getAblyConfig(env: Env = process.env): AblyConfig | null {
 }
 
 /**
- * Signs a harness's Ably JWT locally with the key secret (HS256, `kid` = key
- * name; no Ably call): client ID = the harness, `subscribe` only on its two
+ * Signs an agent's Ably JWT locally with the key secret (HS256, `kid` = key
+ * name; no Ably call): client ID = the agent, `subscribe` only on its two
  * wake channels, valid `ABLY_TOKEN_TTL_SECONDS`.
  */
 export async function signAblyToken(
   config: AblyConfig,
-  input: { harnessId: string; organizationId: string; now?: number },
+  input: { agentId: string; organizationId: string; now?: number },
 ): Promise<AblyToken> {
   return signAblyJwt(config, {
-    clientId: input.harnessId,
+    clientId: input.agentId,
     capability: {
-      [agentWakeChannel(input.harnessId)]: ["subscribe"],
+      [agentWakeChannel(input.agentId)]: ["subscribe"],
       [orgWakeChannel(input.organizationId)]: ["subscribe"],
     },
     ttlSeconds: ABLY_TOKEN_TTL_SECONDS,
@@ -82,13 +82,13 @@ export async function signAblyJwt(
 
 /**
  * The heartbeat response's `ably`: null when Ably is off, a new token when the
- * harness has none (`tokenExpiresAt` absent) or its token expires within
+ * agent has none (`tokenExpiresAt` absent) or its token expires within
  * `ABLY_TOKEN_RENEW_BEFORE_MS`, otherwise undefined (the field is omitted).
  */
 export async function heartbeatAblyToken(
   config: AblyConfig | null,
   input: {
-    harnessId: string;
+    agentId: string;
     organizationId: string;
     tokenExpiresAt: string | undefined;
     now?: number;

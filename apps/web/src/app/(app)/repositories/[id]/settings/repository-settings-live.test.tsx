@@ -43,7 +43,7 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       customInstructions: "",
-      pinnedHarnessIds: [HARNESS_ID],
+      pinnedAgentIds: [HARNESS_ID],
       reviewPlaybookIds: ["builtin:review-pr"],
       correlationPlaybookId: "builtin:correlate-findings",
       storyPlaybookId: "builtin:implement-story",
@@ -141,7 +141,7 @@ describe("RepositorySettingsView", () => {
     expect(put.path).toBe(`${DETAIL}/settings`);
     expect(put.body).toMatchObject({
       customInstructions: "Be terse.",
-      pinnedHarnessIds: [HARNESS_ID],
+      pinnedAgentIds: [HARNESS_ID],
     });
     expect(gets(DETAIL)).toHaveLength(2);
     expect(client.getQueryState(keys.harnesses.list())!.isInvalidated).toBe(true);

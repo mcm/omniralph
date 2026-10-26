@@ -31,8 +31,8 @@ export const ORGANIZATION_SCOPE_COOKIE = "omniralph-organization-scope";
  */
 export const ENTER_ORGANIZATION_PATH = "/api/organizations/enter";
 
-/** Routes that authenticate themselves (harness tokens, webhook signatures, cron secret) or Auth.js. */
-const SELF_AUTHENTICATED_PREFIXES = ["/api/harness", "/api/webhooks", "/api/cron", "/api/auth"];
+/** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */
+const SELF_AUTHENTICATED_PREFIXES = ["/api/agent", "/api/webhooks", "/api/cron", "/api/auth"];
 const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH, TERMS_PATH, PRIVACY_PATH];
 
 function matchesPrefix(pathname: string, prefix: string): boolean {

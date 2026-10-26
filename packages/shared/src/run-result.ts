@@ -1,5 +1,5 @@
 /**
- * What a harness reports when a run finishes (`/api/harness/jobs/{id}/result`),
+ * What an agent reports when a run finishes (`/api/agent/jobs/{id}/result`),
  * per task type. The control panel hands it to the task's sink.
  */
 import { z } from "zod";

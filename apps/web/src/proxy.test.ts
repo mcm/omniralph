@@ -7,8 +7,8 @@ const matches = (url: string) => unstable_doesMiddlewareMatch({ config, url });
 describe("proxy matcher", () => {
   it("skips the self-authenticated APIs", () => {
     for (const url of [
-      "/api/harness/heartbeat",
-      "/api/harness/queue/iad1/api/v3/topic/t/consumer/agents",
+      "/api/agent/heartbeat",
+      "/api/agent/queue/iad1/api/v3/topic/t/consumer/agents",
       "/api/webhooks/github",
       "/api/cron/sweep",
       "/api/auth/session",
@@ -18,7 +18,13 @@ describe("proxy matcher", () => {
   });
 
   it("runs for pages and other APIs", () => {
-    for (const url of ["/", "/harnesses", "/api/other", "/api/harnessx"]) {
+    for (const url of ["/", "/agents", "/api/other", "/api/agentx", "/api/agents"]) {
+      expect(matches(url), url).toBe(true);
+    }
+  });
+
+  it("no longer skips the old /api/harness/* routes", () => {
+    for (const url of ["/api/harness/heartbeat", "/api/harness/token"]) {
       expect(matches(url), url).toBe(true);
     }
   });

@@ -213,9 +213,9 @@ export async function getPlaybookTask(
 }
 
 /**
- * What runs of `task` (a playbook's run spec task) need from a harness as
+ * What runs of `task` (a playbook's run spec task) need from an agent as
  * `playbooks` resolve it (the `requirements` of `runSpecJobInput`): a custom
- * playbook's at least the harness version stored with it, and every
+ * playbook's at least the agent version stored with it, and every
  * playbook's installables and host tools derived from it as it is now
  * (`deriveAgentRequirements` of its run spec).
  */
@@ -228,7 +228,7 @@ export async function taskRunRequirements(
     playbooks.getPlaybook(task.id),
   ]);
   return {
-    minHarnessVersion: stored?.minHarnessVersion ?? null,
+    minAgentVersion: stored?.minAgentVersion ?? null,
     ...deriveAgentRequirements(task, playbook && playbookRunSpec(playbook).agent),
   };
 }

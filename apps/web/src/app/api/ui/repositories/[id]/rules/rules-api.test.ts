@@ -19,7 +19,7 @@ import {
   organizations,
 } from "@omniralph/db";
 import {
-  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
   reviewTriggerContext,
   RunSpecJobPayload,
   type QueryRunResult,
@@ -254,7 +254,7 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         type: "review.learn-rule",
         taskType: "query",
         taskId: "builtin:learn-rule",
-        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
         repositoryId: repoId,
         status: "queued",
         targetAgentId: null,

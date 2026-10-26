@@ -48,9 +48,9 @@ import {
 } from "@omniralph/db";
 import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_HARNESS_VERSION,
+  CODING_TASKS_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
-  QUERY_TASKS_MIN_HARNESS_VERSION,
+  QUERY_TASKS_MIN_AGENT_VERSION,
   RalphPushPayload,
   RalphRequestPayload,
   ralphHiddenRef,
@@ -72,7 +72,7 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeAgent } from "@/lib/harness-auth/revoke";
+import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
@@ -305,7 +305,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -438,7 +438,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const routing = (taskId: string) => ({
       taskType: "coding",
       taskId,
-      minAgentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: CODING_TASKS_MIN_AGENT_VERSION,
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
@@ -560,7 +560,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ralphRunId: run.id,
         dedupeKey: runDedupeKey(run.id),
         taskId: "builtin:describe-pr",
-        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       });
       // A query run of the story task's `prDescriptionTaskId` in a checkout of the branch, with
       // today's payload and the values its template renders.
@@ -846,7 +846,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1023,7 +1023,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         name: "Careful story",
         role,
         definition: { ...definition, promptTemplate: `Be careful.\n${definition.promptTemplate}` },
-        requirements: { minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION },
+        requirements: { minAgentVersion: CODING_TASKS_MIN_AGENT_VERSION },
         createdBy: null,
       });
       await db
@@ -1142,7 +1142,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           agentId: agentA,
           acceptedTaskTypes: ["query", "coding"],
           pools: ["short", "long"],
-          agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+          agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
           maxDeliveries: MAX_JOB_DELIVERIES,
         });
         expect(started.claim?.job.id).toBe(job.id);
@@ -1156,7 +1156,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(gaveUp).toMatchObject({
@@ -1184,7 +1184,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1254,7 +1254,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1313,7 +1313,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentB,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1666,7 +1666,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -1692,7 +1692,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1703,7 +1703,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     await finishOnA();
     expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
     await recordAgentHeartbeat(db, agentA, {
-      version: CODING_TASKS_MIN_HARNESS_VERSION,
+      version: CODING_TASKS_MIN_AGENT_VERSION,
       acceptedTaskTypes: ["query", "review"],
     });
     await finishOnA();
@@ -1730,7 +1730,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -2257,7 +2257,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);

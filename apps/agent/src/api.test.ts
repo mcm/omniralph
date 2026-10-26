@@ -19,7 +19,7 @@ function apiWith(respond: (init: RequestInit) => Response | Promise<Response>) {
 }
 
 describe("HttpControlPanelApi.claim", () => {
-  it("posts the pools to /api/harness/claim and returns the claimed job", async () => {
+  it("posts the pools to /api/agent/claim and returns the claimed job", async () => {
     const id = randomUUID();
     const start = {
       action: "run",
@@ -42,7 +42,7 @@ describe("HttpControlPanelApi.claim", () => {
       jobToken: { ...start.jobToken, kind: "legacy" },
     });
     const [url, init] = fetchFn.mock.calls[0]!;
-    expect(url).toBe(`${SERVER}/api/harness/claim`);
+    expect(url).toBe(`${SERVER}/api/agent/claim`);
     expect(JSON.parse(String(init?.body))).toEqual({ pools: ["short"] });
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer access");
   });
@@ -97,8 +97,7 @@ describe("HttpControlPanelApi.claim", () => {
     // Definition defaults are filled in.
     expect(parsed.runSpec?.agent.tools).toEqual({
       builtin: [],
-      // `harness`: the run spec's tools key until TOOL-584 renames it.
-      harness: [],
+      agent: [],
       linear: [],
       mcpServers: [],
     });
@@ -144,7 +143,7 @@ describe("HttpControlPanelApi.claim", () => {
 });
 
 describe("agent API paths", () => {
-  it("calls only /api/harness/*", async () => {
+  it("calls only /api/agent/*", async () => {
     const { api, fetchFn } = apiWith(() => Response.json({}));
     const ignore = () => undefined;
     await enroll(
@@ -158,12 +157,12 @@ describe("agent API paths", () => {
     await api.submitResult("job-1", {} as never).catch(ignore);
     await api.submitFailure("job-1", {} as never).catch(ignore);
     expect(fetchFn.mock.calls.map(([url]) => String(url))).toEqual([
-      `${SERVER}/api/harness/enroll`,
-      `${SERVER}/api/harness/token`,
-      `${SERVER}/api/harness/heartbeat`,
-      `${SERVER}/api/harness/claim`,
-      `${SERVER}/api/harness/jobs/job-1/result`,
-      `${SERVER}/api/harness/jobs/job-1/fail`,
+      `${SERVER}/api/agent/enroll`,
+      `${SERVER}/api/agent/token`,
+      `${SERVER}/api/agent/heartbeat`,
+      `${SERVER}/api/agent/claim`,
+      `${SERVER}/api/agent/jobs/job-1/result`,
+      `${SERVER}/api/agent/jobs/job-1/fail`,
     ]);
   });
 });

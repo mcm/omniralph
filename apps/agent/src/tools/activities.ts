@@ -68,7 +68,7 @@ export interface ActivityRelayOptions {
 }
 
 /**
- * Posts a job's activities to `POST /api/harness/jobs/{id}/activities`, one at
+ * Posts a job's activities to `POST /api/agent/jobs/{id}/activities`, one at
  * a time and in order. A failed post is logged and dropped: activities are
  * informational and never fail the job.
  */
@@ -77,7 +77,7 @@ export class ActivityRelay {
   private readonly url: string;
 
   constructor(private readonly options: ActivityRelayOptions) {
-    this.url = `${options.server}/api/harness/jobs/${encodeURIComponent(options.jobId)}/activities`;
+    this.url = `${options.server}/api/agent/jobs/${encodeURIComponent(options.jobId)}/activities`;
   }
 
   /** Posts one activity now; throws when the control panel refuses it or can't be reached. */

@@ -3,5 +3,5 @@
 // the rebuilders, not just those its own bundle happens to import.
 import "@/lib/chat/pending-run-events";
 import "@/lib/dispatch/due";
-import "@/lib/harness-auth/auth-state";
+import "@/lib/agent-auth/auth-state";
 import "@/lib/ralph/active";

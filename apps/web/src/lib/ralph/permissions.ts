@@ -3,7 +3,7 @@
  * Linear agent session, or its chat thread). Request sessions
  * bypass Claude Code's permission checks, but a repository's own Claude Code
  * settings can still `ask` about a call (e.g. `"ask": ["Bash(git commit:*)"]`).
- * The agent then asks here (`POST /api/harness/jobs/{id}/permissions`): the
+ * The agent then asks here (`POST /api/agent/jobs/{id}/permissions`): the
  * question is stored on the run and posted as an Allow/Deny elicitation. A
  * reply answers it (`answerPermission`, from `handleReply` or, in chat,
  * `sendToChatRun`); the agent polls

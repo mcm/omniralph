@@ -600,7 +600,7 @@ async function enqueueStory(
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId: await laneHarnessId(deps.db, run, found.lane),
+    targetAgentId: await laneHarnessId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
   // Linked in `tx`: the story (a follow-up filed in it) may not be committed yet.
@@ -755,7 +755,7 @@ async function pushLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId: await laneHarnessId(deps.db, run, lane),
+    targetAgentId: await laneHarnessId(deps.db, run, lane),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "pushing", jobId: job.id } });
@@ -823,7 +823,7 @@ async function describeLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId: await laneHarnessId(deps.db, run, lane),
+    targetAgentId: await laneHarnessId(deps.db, run, lane),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "describing", jobId: job.id } });
@@ -879,7 +879,7 @@ async function enqueuePreparation(
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId: await laneHarnessId(deps.db, run, found.lane),
+    targetAgentId: await laneHarnessId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
   const state = preparationOf(run);
@@ -914,9 +914,9 @@ async function enqueueRequest(
   const found = await usableRepository(deps, tx, run, input.lane);
   if ("action" in found) return found;
   const { lane, repository, connection } = found;
-  const targetHarnessId = await laneHarnessId(deps.db, run, lane);
+  const targetAgentId = await laneHarnessId(deps.db, run, lane);
   const resume =
-    lane.requestClaudeSessionId && targetHarnessId && lane.requestAgentId === targetHarnessId
+    lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId
       : null;
   // Attachments are Linear's; a chat run has none.
@@ -954,7 +954,7 @@ async function enqueueRequest(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetHarnessId,
+    targetAgentId,
   });
   if (!created) return { action: "busy", run };
   const updated = (await updateRun(tx, run.id, { status: "running", requestJobId: job.id })) ?? run;
