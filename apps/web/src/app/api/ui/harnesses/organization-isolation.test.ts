@@ -167,15 +167,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
 
   it("keeps the desired harness version per organization", async () => {
     state.userId = a.userId;
-    expect(await setGlobalHarnessVersion("1.4.0")).toEqual({ ok: true });
-    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
+    expect(await setGlobalHarnessVersion("2.4.0")).toEqual({ ok: true });
+    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
     expect(await getDesiredAgentVersion(db, b.orgId)).toBeNull();
-    expect((await harnessDefaults()).desiredVersion).toBe("1.4.0");
+    expect((await harnessDefaults()).desiredVersion).toBe("2.4.0");
 
     state.userId = b.userId;
     expect((await harnessDefaults()).desiredVersion).toBeNull();
     await setDesiredAgentVersion(db, b.orgId, "2.0.0", b.userId);
-    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
+    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
   });
 
   it("keeps concurrency defaults per organization", async () => {

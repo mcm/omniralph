@@ -2902,7 +2902,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     it("refuses every change outside the active organization, and to members", async () => {
       state.userId = a.memberId;
       for (const response of [
-        await call(harnessDefaults.PUT, { method: "PUT", body: { version: "1.4.0" } }),
+        await call(harnessDefaults.PUT, { method: "PUT", body: { version: "2.4.0" } }),
         await call(hostToolCatalog.POST, { body: { name: "member-tool" } }),
         await call(hostTool.DELETE, { params: { id: a.hostToolId }, method: "DELETE" }),
       ]) {
@@ -2916,7 +2916,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ).toEqual({ status: 400, body: { error: "That host tool doesn't exist." } });
       expect((await listHostTools(db, b.orgId)).map((t) => t.id)).toContain(b.hostToolId);
       expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toContain(a.hostToolId);
-      expect(await getDesiredAgentVersion(db, a.orgId)).not.toBe("1.4.0");
+      expect(await getDesiredAgentVersion(db, a.orgId)).not.toBe("2.4.0");
     });
 
     it("changes only the active organization's harness defaults and host tools", async () => {
@@ -2924,7 +2924,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(
         await call(harnessDefaults.PUT, {
           method: "PUT",
-          body: { defaults: { maxConcurrency: 3 }, version: "1.4.0" },
+          body: { defaults: { maxConcurrency: 3 }, version: "2.4.0" },
         }),
       ).toEqual({ status: 200, body: { ok: true } });
       const added = await call(hostToolCatalog.POST, { body: { name: "beta-tool" } });
@@ -2937,8 +2937,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         }),
       ).toEqual({ status: 200, body: { ok: true } });
 
-      expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
-      expect(await getDesiredAgentVersion(db, b.orgId)).not.toBe("1.4.0");
+      expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
+      expect(await getDesiredAgentVersion(db, b.orgId)).not.toBe("2.4.0");
       expect(await getDefaultMaxConcurrency(db, a.orgId)).toBe(3);
       expect(await getDefaultMaxConcurrency(db, b.orgId)).toBe(5);
 

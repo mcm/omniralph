@@ -27,6 +27,7 @@ import {
 import { recordLatestHarnessVersion } from "./desired-version";
 import { bumpHarnessHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
+import { agentVersionTooOld } from "./min-version";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
 
 /**
@@ -89,8 +90,10 @@ export async function setAgentDesiredVersion(
   const trimmed = version.trim().replace(/^v(?=\d)/, "");
   const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
   if (parsed && !parsed.success) {
-    return { ok: false, error: "Enter a version like 1.4.0, or leave it blank." };
+    return { ok: false, error: "Enter a version like 2.0.0, or leave it blank." };
   }
+  const tooOld = parsed && agentVersionTooOld(parsed.data);
+  if (tooOld) return { ok: false, error: tooOld, fieldErrors: { version: tooOld } };
   if (!(await setHarnessDesiredVersionRow(db, organizationId, harnessId, parsed?.data ?? null))) {
     return UNKNOWN_HARNESS;
   }

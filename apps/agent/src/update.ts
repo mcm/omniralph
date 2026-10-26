@@ -18,8 +18,10 @@ import { randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  AGENT_MIN_VERSION,
   AGENT_PACKAGE,
   AgentVersion,
+  agentVersionAtLeast,
   type AgentUpdateReport,
   type AgentUpdateRequest,
   type AgentUpdateStateName,
@@ -162,9 +164,7 @@ export function npmInstaller(env: NodeJS.ProcessEnv = process.env): Installer {
           (error, stdout, stderr) => {
             if (!error) return resolve(String(stdout).trim());
             const tail = String(stderr).trim().split("\n").slice(-5).join("\n");
-            reject(
-              new Error(`npm view ${AGENT_PACKAGE} version failed: ${tail || error.message}`),
-            );
+            reject(new Error(`npm view ${AGENT_PACKAGE} version failed: ${tail || error.message}`));
           },
         );
       }),
@@ -324,7 +324,7 @@ export class SelfUpdater {
       if (this.phase !== "idle") return;
       if (await this.onRequest(response, daemon)) return;
       const version = this.wantedVersion(response.desiredVersion);
-      if (version) await this.update(version, daemon);
+      if (version && !(await this.refuseTooOld(version))) await this.update(version, daemon);
     } finally {
       this.busy = false;
     }
@@ -377,6 +377,7 @@ export class SelfUpdater {
       await this.save();
       return true;
     }
+    if (await this.refuseTooOld(version)) return true;
     if (version === this.options.runningVersion) {
       log.info({ version, source }, "an update was requested; already running that version");
       await this.save();
@@ -398,6 +399,22 @@ export class SelfUpdater {
     if (this.state.failed.includes(desired)) return null;
     // The protocol validates it already; never hand npm anything but a version.
     return AgentVersion.safeParse(desired).success ? desired : null;
+  }
+
+  /**
+   * True (and `lastError` says why) for a version below `AGENT_MIN_VERSION`: the deprecated 0.x
+   * releases share the package name, and npm must never install one.
+   */
+  private async refuseTooOld(version: string): Promise<boolean> {
+    if (agentVersionAtLeast(version, AGENT_MIN_VERSION)) return false;
+    const error = `Version ${version} is older than ${AGENT_PACKAGE} ${AGENT_MIN_VERSION}`;
+    // The desired version comes with every heartbeat: say it once.
+    if (this.state.lastError !== error) {
+      this.options.logger.warn({ version }, "refusing to update to a version below the minimum");
+      this.state.lastError = error;
+      await this.save();
+    }
+    return true;
   }
 
   private async confirm(): Promise<void> {

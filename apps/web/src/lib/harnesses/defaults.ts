@@ -28,6 +28,7 @@ import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sect
 import { organizationAgentVersion, recordLatestHarnessVersion } from "./desired-version";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
 import { saveInOrder } from "./manage";
+import { agentVersionTooOld } from "./min-version";
 import { latestHarnessVersion, NpmRegistryError } from "./npm";
 
 /**
@@ -94,8 +95,10 @@ export async function setGlobalHarnessVersion(
   }
   const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
   if (parsed && !parsed.success) {
-    return { ok: false, error: "Enter a version like 1.4.0 or latest, or leave it blank." };
+    return { ok: false, error: "Enter a version like 2.0.0 or latest, or leave it blank." };
   }
+  const tooOld = parsed && agentVersionTooOld(parsed.data);
+  if (tooOld) return { ok: false, error: tooOld, fieldErrors: { version: tooOld } };
   await setDesiredAgentVersion(db, admin.organization.id, parsed?.data ?? null, admin.id);
   await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };

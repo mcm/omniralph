@@ -24,7 +24,7 @@ vi.mock("@omniralph/db", () => ({
 }));
 
 const { LATEST_MAX_AGE_MS, organizationAgentVersion } = await import("./desired-version");
-const { NpmRegistryError } = await import("./npm");
+const { latestHarnessVersion, NpmRegistryError } = await import("./npm");
 
 const db = {} as Database;
 const later = (ms: number) => new Date(state.now.getTime() + ms);
@@ -96,6 +96,34 @@ describe("organizationAgentVersion", () => {
     // Never read: no version, so harnesses stay where they are.
     state.check = null;
     expect(await resolve(state.now)).toMatchObject({ version: null, tracksLatest: true });
+  });
+
+  it("ignores a latest below 2.0.0 on npm: the version stays the last one read, or none", async () => {
+    state.desired = "latest";
+    let latest = "0.8.0";
+    const fetchLatest = () =>
+      latestHarnessVersion(async () => Response.json({ "dist-tags": { latest } }));
+    const resolve = (now: Date) => organizationAgentVersion(db, "org-1", { fetchLatest, now });
+
+    expect(await resolve(state.now)).toEqual({
+      version: null,
+      tracksLatest: true,
+      latestError: "No @omniralph/agent 2.0.0 or later on npm yet",
+      latestCheckedAt: state.now,
+    });
+    expect(state.check).toMatchObject({ version: null });
+
+    latest = "2.0.0";
+    state.now = later(LATEST_MAX_AGE_MS);
+    expect(await resolve(state.now)).toMatchObject({ version: "2.0.0", latestError: null });
+
+    // 2.0.0 was read: a later 0.8.0 keeps it.
+    latest = "0.8.0";
+    state.now = later(LATEST_MAX_AGE_MS);
+    expect(await resolve(state.now)).toMatchObject({
+      version: "2.0.0",
+      latestError: "No @omniralph/agent 2.0.0 or later on npm yet",
+    });
   });
 
   it("doesn't swallow unexpected errors", async () => {
