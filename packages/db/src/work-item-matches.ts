@@ -5,6 +5,7 @@
  */
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { recordRepositorySettingsChange } from "./repositories.js";
 import { repositories, workItemMatches } from "./schema.js";
 
 export type WorkItemMatch = typeof workItemMatches.$inferSelect;
@@ -80,8 +81,9 @@ export interface SaveWorkItemMatchInput {
 }
 
 /**
- * Saves (creates or replaces) the repository's match. Null when the repository isn't one of
- * the organization's connected repositories: nothing is saved.
+ * Saves (creates or replaces) the repository's match, publishing the repository's
+ * `repository.coding` change (the match is part of its coding policy). Null when the
+ * repository isn't one of the organization's connected repositories: nothing is saved.
  */
 export async function saveWorkItemMatch(
   db: Database,
@@ -115,10 +117,11 @@ export async function saveWorkItemMatch(
       set: { ...values, updatedAt: new Date() },
     })
     .returning();
+  recordRepositorySettingsChange(db, { id: repositoryId, organizationId }, "repository.coding");
   return saved!;
 }
 
-/** Clears the repository's match; whether it had one. */
+/** Clears the repository's match (publishing its `repository.coding` change); whether it had one. */
 export async function deleteWorkItemMatch(
   db: Pick<Database, "delete">,
   organizationId: string,
@@ -133,5 +136,7 @@ export async function deleteWorkItemMatch(
       ),
     )
     .returning({ repositoryId: workItemMatches.repositoryId });
-  return deleted.length > 0;
+  if (deleted.length === 0) return false;
+  recordRepositorySettingsChange(db, { id: repositoryId, organizationId }, "repository.coding");
+  return true;
 }
