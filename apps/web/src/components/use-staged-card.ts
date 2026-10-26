@@ -66,6 +66,8 @@ export interface StagedCard<T> {
   saving: boolean;
   /** Why the last save failed (the save bar's `error`), until the next edit or save. */
   error: string | undefined;
+  /** The API's machine-readable reason for the last failed save (to show it where it belongs). */
+  errorCode: string | undefined;
   /** The last failed save's field errors, by field path (shown under their fields). */
   fieldErrors: Readonly<Record<string, string>>;
   /** The confirm dialog: render it with the card. */
@@ -98,6 +100,7 @@ export function useStagedCard<T extends object, R>({
 }: UseStagedCardOptions<T, R>): StagedCard<T> {
   const [edits, setEdits] = React.useState<Partial<T>>({});
   const [error, setError] = React.useState<string | undefined>();
+  const [errorCode, setErrorCode] = React.useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = React.useState(NO_FIELD_ERRORS);
   const [confirming, setConfirming] = React.useState<StagedChange[] | null>(null);
 
@@ -114,6 +117,7 @@ export function useStagedCard<T extends object, R>({
 
   const clearErrors = () => {
     setError(undefined);
+    setErrorCode(undefined);
     setFieldErrors(NO_FIELD_ERRORS);
   };
 
@@ -134,6 +138,7 @@ export function useStagedCard<T extends object, R>({
     },
     onError: (failure) => {
       setError(failure.message);
+      setErrorCode(failure.code);
       setFieldErrors(failure.fieldErrors ?? NO_FIELD_ERRORS);
     },
   });
@@ -201,6 +206,7 @@ export function useStagedCard<T extends object, R>({
     submit,
     saving: mutation.isPending,
     error,
+    errorCode,
     fieldErrors,
     dialog,
   };

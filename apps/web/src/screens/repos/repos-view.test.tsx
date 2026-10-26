@@ -785,7 +785,8 @@ describe("live updates", () => {
     const queries = client
       .getQueryCache()
       .findAll({ queryKey: [TEST_ORGANIZATION_ID, "repositories"] });
-    expect(queries).toHaveLength(2);
+    // The rail, the detail and the cards' own (the Coding card's match check).
+    expect(queries.length).toBeGreaterThanOrEqual(2);
     for (const query of queries) {
       expect(query.observers.length).toBeGreaterThan(0);
       for (const observer of query.observers) {

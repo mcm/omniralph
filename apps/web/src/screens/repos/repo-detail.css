@@ -149,6 +149,112 @@
   line-height: 1.4;
 }
 
+/* The Coding card's work item match: a sentence of badges, its editor, conflicts and rules. */
+.or-repo-match {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-repo-match__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.or-repo-match__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.or-repo-match__sentence,
+.or-repo-match__label,
+.or-repo-match__tracker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-repo-match__sentence {
+  min-width: 0;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.or-repo-match__tracker {
+  color: var(--or-text);
+  font-weight: 500;
+}
+
+.or-repo-match__empty,
+.or-repo-match__none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+}
+
+.or-repo-match__help,
+.or-repo-match__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-repo-match__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+}
+
+.or-repo-match__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.or-repo-match__conflicts,
+.or-repo-match__rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-repo-match__conflict,
+.or-repo-match__rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-repo-match__rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .or-repo-error {
   display: flex;
   align-items: center;
