@@ -1,8 +1,10 @@
 "use client";
 
 import { AppFrame, Toaster, UiProvider, type ThemePreference } from "@omniralph/ui";
+import type { ComponentProps } from "react";
 import { usePathname } from "next/navigation";
-import { navItems } from "@/lib/navigation";
+import { navItems, withNavIndicators } from "@/lib/navigation";
+import { useInboxCounts } from "@/screens/inbox/queries";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
@@ -66,7 +68,7 @@ export function AppShell({
                 renderedScopeCookie={scopeCookie}
               >
                 <UiProvider linkComponent={Link}>
-                  <AppFrame
+                  <LiveAppFrame
                     currentPath={pathname}
                     brandHref="/"
                     nav={navItems}
@@ -76,7 +78,7 @@ export function AppShell({
                   >
                     <LiveNoticeSlot />
                     {children}
-                  </AppFrame>
+                  </LiveAppFrame>
                   <Toaster />
                 </UiProvider>
               </OrganizationGuard>
@@ -86,4 +88,13 @@ export function AppShell({
       </CurrentUserProvider>
     </SavedThemeProvider>
   );
+}
+
+/**
+ * `AppFrame` with the nav's live indicators: the Inbox's needs-you count and the Runs dot,
+ * from the Inbox counts (a live query the Inbox's tabs share through the cache).
+ */
+function LiveAppFrame({ nav, ...props }: ComponentProps<typeof AppFrame>) {
+  const counts = useInboxCounts();
+  return <AppFrame {...props} nav={withNavIndicators(nav, counts.data)} />;
 }

@@ -3,6 +3,7 @@ export * from "./brand/index.js";
 export * from "./controls/index.js";
 export * from "./feedback/index.js";
 export * from "./fields/index.js";
+export * from "./layout/index.js";
 export * from "./lists/index.js";
 export * from "./provider/index.js";
 export * from "./shell/index.js";

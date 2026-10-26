@@ -1,5 +1,11 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { InboxView } from "@/screens/inbox/inbox-view";
 
-export default function HomePage() {
-  redirect("/repositories");
+/** The home page: the Inbox, everything only a person can unblock (`src/screens/inbox`). */
+export default function InboxPage() {
+  return (
+    <Suspense>
+      <InboxView />
+    </Suspense>
+  );
 }

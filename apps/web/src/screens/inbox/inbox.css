@@ -1,0 +1,90 @@
+/*
+ * The Inbox (Design boards Main and InboxUVL): a list column with the title and the tabs,
+ * beside the selected item's detail. Only `--or-` tokens.
+ */
+.or-inbox {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-inbox__list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-inbox__title {
+  margin: 0;
+  padding: 20px 20px 12px;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-inbox__list .or-tabs {
+  padding: 0 12px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-inbox__panel {
+  min-height: 0;
+  padding: 8px 0;
+}
+
+.or-inbox__panel .or-empty {
+  padding: 40px 20px;
+}
+
+.or-inbox-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 28px 32px;
+}
+
+.or-inbox-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-inbox-detail__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-inbox-detail__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.or-inbox-detail__reason {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--or-sec);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.or-inbox-detail__empty {
+  padding: 64px 28px;
+}
+
+@media (max-width: 768px) {
+  .or-inbox-detail {
+    padding: 16px 16px 24px;
+  }
+
+  .or-inbox__title {
+    padding: 16px 16px 10px;
+  }
+}

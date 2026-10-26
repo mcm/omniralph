@@ -59,3 +59,32 @@
 .or-status--neutral {
   color: var(--or-sec);
 }
+
+/* Status line: a dot and one sentence, under a detail header. */
+.or-statusline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.or-statusline--need {
+  color: var(--or-acc);
+}
+
+.or-statusline--run,
+.or-statusline--good {
+  color: var(--or-run);
+}
+
+.or-statusline--fail {
+  color: var(--or-fail);
+}
+
+.or-statusline__text {
+  min-width: 0;
+}

@@ -67,3 +67,17 @@ export function queryKeys(organizationId: string): QueryKeys {
     }),
   };
 }
+
+/**
+ * Query keys of the Inbox (`/api/ui/inbox/**`), keyed by organization scope (`all`, or an
+ * organization's id; `useScopeParam`): a feed per tab, and the tab counts. Every Inbox
+ * query sits under `keys.inbox.all`, which the live data layer invalidates.
+ */
+export function inboxKeys(keys: QueryKeys) {
+  return {
+    all: keys.inbox.all,
+    feeds: keys.inbox.lists,
+    feed: (tab: string, scope: string) => keys.inbox.list({ tab, organization: scope }),
+    counts: (scope: string) => [...keys.inbox.all, "counts", { organization: scope }] as QueryKey,
+  };
+}
