@@ -4,12 +4,15 @@ import type { QueryKey } from "@tanstack/react-query";
  * Areas of the panel with their own queries. A mutation invalidates an area's `all` key
  * to refetch every list and detail of it. Transcripts are their own area, keyed by run
  * (`transcripts.detail(runId)`), so a run's live changes don't refetch its transcript.
+ * Diffs are their own area too, which no change event invalidates: a commit's diff never
+ * changes.
  */
 export const QUERY_AREAS = [
   "analytics",
   "chatAccounts",
   "connections",
   "deliveries",
+  "diffs",
   "agents",
   "inbox",
   "jobs",
@@ -86,7 +89,8 @@ export function inboxKeys(keys: QueryKeys) {
  * Query keys of the Runs screen's lists (`/api/ui/runs`), keyed by organization scope: a
  * list per filters (all its pages), and the filters' options. Every list sits under
  * `keys.runs.lists`, which a `run` change event invalidates; a run's detail, Session and
- * findings sit under `keys.runs.detail(id)`.
+ * findings sit under `keys.runs.detail(id)`. A story's diff is keyed by its commit in the
+ * `diffs` area, out of every change event's reach.
  */
 export function runsKeys(keys: QueryKeys) {
   return {
@@ -109,5 +113,7 @@ export function runsKeys(keys: QueryKeys) {
     filterOptions: (scope: string) =>
       [...keys.runs.all, "filter-options", { organization: scope }] as QueryKey,
     filterOptionsAll: [...keys.runs.all, "filter-options"] as QueryKey,
+    diff: (runId: string, stepId: string, commit: string) =>
+      keys.diffs.part(runId, "story", { step: stepId, commit }),
   };
 }

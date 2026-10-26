@@ -1,6 +1,12 @@
 export const packageName = "@omniralph/scm";
 
 export * from "./types.js";
+export {
+  capPatch,
+  countPatchLines,
+  DEFAULT_COMMIT_DIFF_MAX_FILES,
+  MAX_PATCH_LINES,
+} from "./commit-diff.js";
 export { ciLogTail, cleanCiLog, MAX_CI_LOG_CHARS } from "./ci.js";
 export type { ChangeRequestStatus, CiFailedJob, CiState, CiStatus } from "./ci.js";
 export { buildDiffLineIndex, isCommentInDiff, parsePatchLines } from "./diff-lines.js";

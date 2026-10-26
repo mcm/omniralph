@@ -335,6 +335,128 @@
   overflow-wrap: anywhere;
 }
 
+/* Diff: a section per file, unified lines added in mint and removed in coral */
+.or-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-diff__files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-diff__file {
+  min-width: 0;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  overflow: hidden;
+}
+
+.or-diff__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: var(--or-raised);
+  color: var(--or-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.or-diff__toggle:hover {
+  background: var(--or-hover);
+}
+
+.or-diff__toggle:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
+}
+
+.or-diff__chevron {
+  flex: none;
+  color: var(--or-ter);
+  transition: transform 120ms ease;
+}
+
+.or-diff__toggle[aria-expanded="true"] .or-diff__chevron {
+  transform: rotate(90deg);
+}
+
+.or-diff__path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.or-diff__previous {
+  color: var(--or-ter);
+}
+
+.or-diff__stats {
+  flex: none;
+  white-space: nowrap;
+}
+
+.or-diff__stat--add {
+  color: var(--or-run);
+}
+
+.or-diff__stat--del {
+  color: var(--or-fail);
+}
+
+.or-diff__lines {
+  margin: 0;
+  padding: 6px 0;
+  overflow-x: auto;
+  background: var(--or-surf);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-diff__line {
+  display: block;
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.or-diff__line--ctx {
+  color: var(--or-sec);
+}
+
+.or-diff__line--add {
+  color: var(--or-run);
+  background: var(--or-run-glow);
+}
+
+.or-diff__line--del {
+  color: var(--or-fail);
+  background: var(--or-fail-tint);
+}
+
+.or-diff__line--hunk,
+.or-diff__line--meta {
+  color: var(--or-ter);
+}
+
+.or-diff__notice {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--or-sec);
+  font-size: 12px;
+}
+
 @media (max-width: 768px) {
   .or-tblwrap {
     display: none;

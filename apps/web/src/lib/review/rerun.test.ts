@@ -143,6 +143,9 @@ function fakeAdapter() {
     async getChangeRequestState() {
       throw new Error("not used");
     },
+    async getCommitDiff() {
+      throw new Error("not used");
+    },
     async hasWriteAccess() {
       return true;
     },

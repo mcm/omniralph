@@ -46,6 +46,7 @@ import { RunDetails } from "@/components/runs/run-details";
 import { RunProgress } from "@/components/runs/run-progress";
 import { RunSession } from "@/components/runs/run-session";
 import { StepPanel } from "@/components/runs/step-panel";
+import { storyDiffTabs } from "@/components/runs/story-diff";
 import { useRunRetry, useRunRetryPending, useRunStop } from "@/components/runs/use-run-actions";
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
@@ -219,6 +220,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
                     )
                   }
                   stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
+                  tabs={storyDiffTabs(run, step)}
                 />
               ) : undefined
             }

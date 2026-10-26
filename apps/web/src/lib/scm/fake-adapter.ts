@@ -4,6 +4,9 @@ import {
   type ChangeRequestStatus,
   type ChangeRequestUpdate,
   type CiStatus,
+  type CommitDiff,
+  type CommitDiffOptions,
+  CommitNotFoundError,
   type CreatedChangeRequest,
   type NewChangeRequest,
   type OpenChangeRequest,
@@ -61,6 +64,11 @@ export class FakeScmAdapter {
 
   /** Comment IDs whose threads `resolveThread` resolved, in order. */
   readonly resolvedThreads: string[] = [];
+
+  /** `getCommitDiff` answers, keyed by `fullPath@sha`; a missing one is not found. */
+  readonly commitDiffs = new Map<string, CommitDiff>();
+  /** `getCommitDiff` calls, in order. */
+  readonly commitDiffCalls: { repo: RepoRef; sha: string; options?: CommitDiffOptions }[] = [];
 
   /** What `verifyWebhook` answers. */
   webhookValid = true;
@@ -219,6 +227,18 @@ export class FakeScmAdapter {
   async resolveThread(_repo: RepoRef, _number: number, commentId: string): Promise<void> {
     this.call("resolveThread");
     this.resolvedThreads.push(commentId);
+  }
+
+  async getCommitDiff(
+    repo: RepoRef,
+    sha: string,
+    options?: CommitDiffOptions,
+  ): Promise<CommitDiff> {
+    this.call("getCommitDiff");
+    this.commitDiffCalls.push({ repo, sha, options });
+    const diff = this.commitDiffs.get(`${repo.fullPath}@${sha}`);
+    if (!diff) throw new CommitNotFoundError(repo, sha);
+    return diff;
   }
 
   /** As the `ScmAdapter` the orchestrator expects. */

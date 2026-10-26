@@ -121,6 +121,9 @@ function fakeAdapter() {
     async getChangeRequestState() {
       throw new Error("not used");
     },
+    async getCommitDiff() {
+      throw new Error("not used");
+    },
     async hasWriteAccess(_repo, username) {
       calls.hasWriteAccess.push(username);
       return writers.has(username);
