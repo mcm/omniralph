@@ -322,6 +322,10 @@ The fixtures and helpers there:
 - `request` (Playwright's) calls the panel's HTTP API without a session, e.g. the agent
   API: `enrollAgent(request, await createEnrollmentToken(db), name)` enrolls an agent
   through `POST /api/agent/enroll`.
+- `e2e/runs.ts` creates runs as the dispatcher and agents leave them, each under a unique
+  title: `triageRun(db, prefix, status)` (running, failed, or finished with a PRD ready in
+  the Inbox), `finishTriage`, `runningReview` and `addFinding`. Its `open(page, path, api)`
+  waits for the route's first answer.
 
 Tests run one at a time (one worker) on one seed, so a spec that changes shared fixture rows
 puts them back, or creates its own rows instead (e.g. a new agent with a unique name).

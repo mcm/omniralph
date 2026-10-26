@@ -40,7 +40,7 @@ export interface AttemptListProps {
  * A step's attempts, newest first: each one's outcome (`AttemptOutcome`), agent, start time,
  * duration and tokens, and a button that shows its transcript. A queued or running attempt
  * has a "Cancel attempt" icon button that asks to confirm; the attempt reads "Cancel
- * requested" before the server answers.
+ * requested" before the server answers, and until its agent confirms (the attempt ends).
  */
 export function AttemptList({ runId, attempts, selectedAttemptId, onSelect }: AttemptListProps) {
   const now = useClock();
@@ -55,6 +55,8 @@ export function AttemptList({ runId, attempts, selectedAttemptId, onSelect }: At
           const selected = attempt.id === selectedAttemptId;
           const duration = attemptDuration(attempt, now);
           const started = attempt.startedAt ?? attempt.createdAt;
+          // The flag stays on a job its agent canceled: only a live attempt still waits.
+          const cancelPending = attempt.cancelRequested && isLiveAttempt(attempt);
           return (
             <li
               key={attempt.id}
@@ -74,7 +76,7 @@ export function AttemptList({ runId, attempts, selectedAttemptId, onSelect }: At
                   </time>
                   {duration ? <span className="or-mono">{duration}</span> : null}
                   <span className="or-mono">{tokensText(attempt.tokens)}</span>
-                  {attempt.cancelRequested ? (
+                  {cancelPending ? (
                     <span className="or-attempt__cancel-requested">{CANCEL_REQUESTED}</span>
                   ) : null}
                 </div>
