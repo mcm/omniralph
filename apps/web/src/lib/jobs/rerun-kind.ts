@@ -4,7 +4,7 @@ import { reviewIdOfJob } from "@/lib/review/job-review";
 /**
  * How a failed, canceled or expired job is rerun from the Jobs page: `review` re-runs its review on the PR's
  * current head (as the review's Re-run does), `copy` dispatches the same job again (a system
- * RPC to its harness, with no other state behind it). Null: the job can't be rerun from the
+ * RPC to its agent, with no other state behind it). Null: the job can't be rerun from the
  * Jobs page, since its run decides what runs next (retry it from its run:
  * `POST /api/ui/runs/{id}/retry`).
  */

@@ -14,6 +14,6 @@ export const HARNESS_TAB_LABELS = Object.fromEntries(
 ) as Record<HarnessTab, string>;
 
 /** The URL of a harness's tab. */
-export function harnessTabHref(harnessId: string, tab: HarnessTab): string {
-  return tab === "overview" ? `/harnesses/${harnessId}` : `/harnesses/${harnessId}/${tab}`;
+export function harnessTabHref(agentId: string, tab: HarnessTab): string {
+  return tab === "overview" ? `/harnesses/${agentId}` : `/harnesses/${agentId}/${tab}`;
 }

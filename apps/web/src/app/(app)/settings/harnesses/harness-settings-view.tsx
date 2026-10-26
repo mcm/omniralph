@@ -20,9 +20,9 @@ import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
 import type {
   AgentDefaults,
-  HarnessDefaultsSave,
+  AgentDefaultsSave,
   OrganizationDefaults,
-} from "@/lib/api/harness-defaults";
+} from "@/lib/api/agent-defaults";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { ACCESS_DENIED_PATH } from "@/lib/auth/routes";
 import { typedNumber } from "@/lib/settings/forms";
@@ -99,7 +99,7 @@ export function DefaultsSection({
 
   const prepare = () => {
     const changed = new Set(changes.map((change) => change.key));
-    const save: HarnessDefaultsSave = {
+    const save: AgentDefaultsSave = {
       ...(changed.has("maxConcurrency")
         ? { defaults: { maxConcurrency: Number(draft.maxConcurrency) } }
         : {}),
@@ -109,7 +109,7 @@ export function DefaultsSection({
       action: () =>
         apiAction(
           ({ organizationId }) =>
-            api.put("/api/ui/harness-defaults", mutationResultSchema, {
+            api.put("/api/ui/agent-defaults", mutationResultSchema, {
               body: save,
               organizationId,
             }),
@@ -132,7 +132,7 @@ export function DefaultsSection({
 
   return (
     <SettingsSection
-      id="harness-defaults"
+      id="agent-defaults"
       title="Defaults"
       showTitle={false}
       description="What every harness of this organization uses unless it sets its own on its page. A harness's own setting always wins, on or off."

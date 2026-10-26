@@ -41,6 +41,8 @@ let ipCounter = 0;
 // The JWT audience and access-token type before the agent rename.
 const OLD_AUDIENCE = "omniralph-harness";
 const OLD_TYP = "harness";
+// The job token claim that named the agent before the rename.
+const OLD_JOB_CLAIM = "harnessId";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 /**
  * Loops of sequential token requests (RSA signing + DB transactions) take ~0.5s alone, but
@@ -132,7 +134,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         type: "review.run",
         taskType: "review",
         status,
-        agentId: agentId,
+        agentId,
       })
       .returning({ id: jobs.id });
     return job!.id;
@@ -173,7 +175,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       expect(tokens).toHaveLength(1);
       expect(tokens[0]!.tokenHash).not.toContain(refreshToken);
 
-      const audit = await listAgentAudit(db, { agentId: agentId, event: "enroll" });
+      const audit = await listAgentAudit(db, { agentId, event: "enroll" });
       expect(audit).toHaveLength(1);
       expect(audit[0]!.ip).toBe(ip);
 
@@ -226,9 +228,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       expect(rows).toHaveLength(3);
       expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
       expect(rows.filter((r) => r.usedAt === null)).toHaveLength(1);
-      expect(await listAgentAudit(db, { agentId: agentId, event: "token_refresh" })).toHaveLength(
-        2,
-      );
+      expect(await listAgentAudit(db, { agentId, event: "token_refresh" })).toHaveLength(2);
     });
 
     it("revokes the family and the agent when a used refresh token is presented again", async () => {
@@ -249,9 +249,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         .from(agentRefreshTokens)
         .where(eq(agentRefreshTokens.agentId, agentId));
       expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
-      expect(await listAgentAudit(db, { agentId: agentId, event: "refresh_reuse" })).toHaveLength(
-        1,
-      );
+      expect(await listAgentAudit(db, { agentId, event: "refresh_reuse" })).toHaveLength(1);
 
       // The legitimate holder's newer token and access token are dead too: re-enroll.
       expect((await refresh(first.refreshToken)).status).toBe(401);
@@ -351,14 +349,14 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         .from(agentRefreshTokens)
         .where(eq(agentRefreshTokens.agentId, agentId));
       expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
-      expect(await listAgentAudit(db, { agentId: agentId, event: "revoke" })).toHaveLength(1);
+      expect(await listAgentAudit(db, { agentId, event: "revoke" })).toHaveLength(1);
     });
 
     it("samples auth_failed audit rows to one per agent per minute", async () => {
       const { agentId, accessToken } = await accessTokenFor();
       await revokeAgent(agentId);
       for (let i = 0; i < 3; i++) await requireAgent(authed(accessToken, newIp()));
-      const failures = await listAgentAudit(db, { agentId: agentId, event: "auth_failed" });
+      const failures = await listAgentAudit(db, { agentId, event: "auth_failed" });
       expect(failures).toHaveLength(1);
       expect(failures[0]!.detail).toMatchObject({ reason: "agent_revoked" });
     });
@@ -416,7 +414,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
           .setIssuedAt()
           .setExpirationTime("15m")
           .sign(privateKey);
-      const old = await sign({ harnessId: agentId, aud: "omniralph-agent" });
+      const old = await sign({ [OLD_JOB_CLAIM]: agentId, aud: "omniralph-agent" });
       expect(
         ((await requireJob(authed(old, newIp()), "credentials:read")) as Response).status,
       ).toBe(401);

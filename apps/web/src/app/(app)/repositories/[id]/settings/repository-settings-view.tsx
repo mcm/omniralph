@@ -26,7 +26,7 @@ import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
 import type { RepositoryDetail } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
-import { isHarnessOnline } from "@/lib/harnesses/display";
+import { isAgentOnline } from "@/lib/agents/display";
 import {
   formatSettingValue,
   settingChanges,
@@ -44,7 +44,7 @@ import {
   type RepositoryDraft,
   type RepositoryValues,
 } from "@/lib/settings/forms";
-import { HARNESS_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
+import { AGENT_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
 import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
@@ -149,7 +149,7 @@ export function RepositorySettingsContent({
   const disabled = !isAdmin;
 
   const pinnable = React.useMemo(() => harnesses.filter((h) => !h.revoked), [harnesses]);
-  const context = React.useMemo(() => ({ harnessIds: pinnable.map((h) => h.id) }), [pinnable]);
+  const context = React.useMemo(() => ({ agentIds: pinnable.map((h) => h.id) }), [pinnable]);
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
   const [draft, setDraft] = useSeededDraft(saved);
   const [errors, setErrors] = React.useState<FieldErrors>({});
@@ -161,7 +161,7 @@ export function RepositorySettingsContent({
   const specs = React.useMemo(
     () =>
       repositorySpecs({
-        harnesses: new Map(harnesses.map((h) => [h.id, h.name])),
+        agents: new Map(harnesses.map((h) => [h.id, h.name])),
       }),
     [harnesses],
   );
@@ -347,7 +347,7 @@ export function RepositorySettingsContent({
       title="Harnesses"
       showTitle={false}
       description="Which harnesses run this repository's jobs: reviews, questions and coding. Newly pinned harnesses pre-clone the repository."
-      {...section(REPOSITORY_SECTIONS.harnesses, (input) =>
+      {...section(REPOSITORY_SECTIONS.agents, (input) =>
         input.pinnedAgentIds.some((id) => !settings.pinnedAgentIds.includes(id))
           ? "Saved; newly pinned harnesses will pre-clone the repository"
           : "Saved; it applies to the next job",
@@ -452,7 +452,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
       tab={tab}
       repository={data.repository}
       settings={data.settings}
-      harnesses={data.harnesses.map((harness) => withClientOnline(harness, now))}
+      harnesses={data.agents.map((harness) => withClientOnline(harness, now))}
       taskTypes={data.taskTypes}
     />
   );
@@ -504,14 +504,14 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
 
 /** `harness` with `online` computed against the browser's clock `now`, not the server's. */
 function withClientOnline(
-  harness: RepositoryDetail["harnesses"][number],
+  harness: RepositoryDetail["agents"][number],
   now: number,
 ): RepositoryHarness {
   const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
   return {
     id: harness.id,
     name: harness.name,
-    online: !harness.revoked && isHarnessOnline(heartbeat, new Date(now)),
+    online: !harness.revoked && isAgentOnline(heartbeat, new Date(now)),
     revoked: harness.revoked,
     updating: harness.updating,
     acceptedTaskTypes: harness.acceptedTaskTypes,
@@ -551,7 +551,7 @@ function PinnedHarnessList({
                 <>
                   <HarnessStatusBadge harness={harness} />
                   {harness.online && harness.updating && (
-                    <Badge variant={HARNESS_UPDATE_STATUS_VARIANTS.updating} dot live>
+                    <Badge variant={AGENT_UPDATE_STATUS_VARIANTS.updating} dot live>
                       Updating
                     </Badge>
                   )}

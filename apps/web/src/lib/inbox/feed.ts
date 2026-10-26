@@ -19,7 +19,7 @@ import {
 import type { InboxAction, InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
 import type { RunRow } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
-import { HARNESS_ONLINE_WINDOW_MS } from "@/lib/harnesses/display";
+import { AGENT_ONLINE_WINDOW_MS } from "@/lib/agents/display";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { truncate } from "@/lib/ralph/display";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
@@ -310,7 +310,7 @@ export async function loadInboxFeed(
     organizationIds: scope.organizations.map((o) => o.id),
     userId: scope.userId,
     tab: TAB_OF_PARAM[tab],
-    onlineWindowMs: HARNESS_ONLINE_WINDOW_MS,
+    onlineWindowMs: AGENT_ONLINE_WINDOW_MS,
   });
   const runIds = [...new Set(items.flatMap((i) => (i.run ? [i.run.id] : [])))];
   const [entries, references] = await Promise.all([
@@ -338,7 +338,7 @@ export async function loadInboxCounts(
   const counts = await countInboxItems(db, {
     organizationIds: scope.organizations.map((o) => o.id),
     userId: scope.userId,
-    onlineWindowMs: HARNESS_ONLINE_WINDOW_MS,
+    onlineWindowMs: AGENT_ONLINE_WINDOW_MS,
   });
   return { needsYou: counts.needs_you, problems: counts.problems, running: counts.running };
 }

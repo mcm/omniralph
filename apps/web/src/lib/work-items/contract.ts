@@ -26,7 +26,7 @@ export interface SeedWorkItem {
 }
 
 /** An adapter under test and its tracker, empty but for two teams and a project. */
-export interface WorkItemTrackerHarness {
+export interface WorkItemTrackerAgent {
   tracker: WorkItemTracker;
   /**
    * Two teams, each with a workflow state of every category; the second team's states are
@@ -77,10 +77,10 @@ async function allPages(
 const identifiers = (items: WorkItem[]) => items.map((item) => item.identifier).sort();
 
 export function describeWorkItemTrackerContract(
-  makeTracker: () => WorkItemTrackerHarness | Promise<WorkItemTrackerHarness>,
+  makeTracker: () => WorkItemTrackerAgent | Promise<WorkItemTrackerAgent>,
 ): void {
   describe("WorkItemTracker contract", () => {
-    let h: WorkItemTrackerHarness;
+    let h: WorkItemTrackerAgent;
     let tracker: WorkItemTracker;
     let teamA: string;
     let teamB: string;

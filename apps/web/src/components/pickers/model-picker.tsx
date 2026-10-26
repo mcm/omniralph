@@ -21,7 +21,7 @@ export interface ModelOption {
   value: string;
   displayName: string;
   /** The harnesses that report it. */
-  harnessIds: readonly string[];
+  agentIds: readonly string[];
 }
 
 export interface ModelPickerProps {
@@ -52,8 +52,8 @@ export interface ModelPickerProps {
 const NONE = "\u0000none";
 
 /** "all harnesses" or "2 of 3 harnesses": how widely a model is reported. */
-export function harnessCoverage(harnessIds: readonly string[], harnessCount: number): string {
-  const count = new Set(harnessIds).size;
+export function harnessCoverage(agentIds: readonly string[], harnessCount: number): string {
+  const count = new Set(agentIds).size;
   if (harnessCount > 0 && count >= harnessCount) return "all harnesses";
   return `${count} of ${harnessCount} ${harnessCount === 1 ? "harness" : "harnesses"}`;
 }
@@ -188,7 +188,7 @@ export function ModelPicker(props: ModelPickerProps) {
                       <span className="picker-option-hint">
                         <span className="picker-option-value">{option.value}</span>
                         {" · "}
-                        {harnessCoverage(option.harnessIds, harnessCount)}
+                        {harnessCoverage(option.agentIds, harnessCount)}
                       </span>
                     </CommandItem>
                   ))}

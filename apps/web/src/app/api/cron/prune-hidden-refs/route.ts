@@ -9,7 +9,7 @@ import { liveRoute } from "@/lib/live/request";
  * refs (`refs/omniralph/runs/<run>`) on the code host once their run
  * completed or failed (the fallback when that deletion was missed), or once
  * they're older than 14 days and their run isn't running (stopped or stuck
- * runs). A harness deletes them with git (`worktree.cleanup`).
+ * runs). An agent deletes them with git (`worktree.cleanup`).
  */
 async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();

@@ -38,7 +38,7 @@ const databaseAvailable = testDatabaseAvailable();
 const redisAvailable = await testRedisAvailable();
 
 let ipCounter = 0;
-function harnessRequest(path: string, accessToken: string, body: unknown): Request {
+function agentRequest(path: string, accessToken: string, body: unknown): Request {
   ipCounter += 1;
   return new Request(`http://localhost/api/agent/${path}`, {
     method: "POST",
@@ -97,18 +97,18 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     await getRedis().flushdb();
   });
 
-  /** An organization of its own with one harness, so other tests' jobs aren't due. */
+  /** An organization of its own with one agent, so other tests' jobs aren't due. */
   async function newOrg() {
     const [org] = await db.insert(organizations).values({ name: "Dueco" }).returning();
     const organizationId = org!.id;
-    async function newHarness() {
-      const [harness] = await db
+    async function newAgent() {
+      const [agent] = await db
         .insert(agents)
         .values({ organizationId, name: "coder-1" })
         .returning();
-      return { id: harness!.id, token: await getTokenSigner().signAccessToken(harness!.id) };
+      return { id: agent!.id, token: await getTokenSigner().signAccessToken(agent!.id) };
     }
-    const harness = await newHarness();
+    const agent = await newAgent();
     async function dispatch() {
       const { job } = await new PostgresDispatcher({ db }).createAndPublish({
         organizationId,
@@ -119,11 +119,11 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
       });
       return job;
     }
-    return { organizationId, harness, newHarness, dispatch };
+    return { organizationId, agent, newAgent, dispatch };
   }
 
   function claimAs(accessToken: string, waitSeconds: number) {
-    return claim(harnessRequest("claim", accessToken, { pools: ["short"], waitSeconds }));
+    return claim(agentRequest("claim", accessToken, { pools: ["short"], waitSeconds }));
   }
 
   async function claimedJobId(res: Response): Promise<string> {
@@ -136,7 +136,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     return value === null ? null : Number(value);
   }
 
-  /** Makes the epoch current and caches the harness's organization and auth state. */
+  /** Makes the epoch current and caches the agent's organization and auth state. */
   async function warm(accessToken: string) {
     expect((await claimAs(accessToken, 0)).status).toBe(204);
     expect(await getRedis().exists(EPOCH_KEY)).toBe(1);
@@ -172,10 +172,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   }
 
   it("wakes a waiting claim for a dispatched job, without querying Postgres before", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
-    await warm(harness.token);
+    const { organizationId, agent, dispatch } = await newOrg();
+    await warm(agent.token);
     postgresCalls = 0;
-    const pending = claimAs(harness.token, 15);
+    const pending = claimAs(agent.token, 15);
     await sleep(4_500);
     // Two idle looks (every 2s), all in Redis.
     expect(postgresCalls).toBe(0);
@@ -194,11 +194,11 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   }, 30_000);
 
   it("doesn't wake a waiting claim for a delayed retry before it's due", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
+    const { organizationId, agent, dispatch } = await newOrg();
     const job = await dispatch();
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(job.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(job.id);
     const failed = await fail(
-      harnessRequest(`jobs/${job.id}/fail`, harness.token, {
+      agentRequest(`jobs/${job.id}/fail`, agent.token, {
         retryable: true,
         retryAfterSeconds: 4,
         error: "rate limited",
@@ -211,7 +211,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     expect(await score(organizationId, job.id)).toBe(retry.availableAt.getTime());
 
     postgresCalls = 0;
-    const pending = claimAs(harness.token, 15);
+    const pending = claimAs(agent.token, 15);
     await sleep(2_500);
     expect(postgresCalls).toBe(0);
     expect(await claimedJobId(await pending)).toBe(job.id);
@@ -220,15 +220,15 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   }, 30_000);
 
   it("wakes a waiting claim when a running job's lease lapses", async () => {
-    const { organizationId, harness, newHarness, dispatch } = await newOrg();
+    const { organizationId, agent, newAgent, dispatch } = await newOrg();
     const job = await dispatch();
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(job.id);
-    // The first harness's last renewal: its lease lapses in 3s.
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(job.id);
+    // The first agent's last renewal: its lease lapses in 3s.
     const leaseExpiresAt = new Date(Date.now() + 3_000);
     await db.update(jobs).set({ leaseExpiresAt }).where(eq(jobs.id, job.id));
     await renewJobsDue(organizationId, [job.id], leaseExpiresAt);
 
-    const other = await newHarness();
+    const other = await newAgent();
     await warm(other.token);
     postgresCalls = 0;
     const pending = claimAs(other.token, 15);
@@ -240,9 +240,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   }, 30_000);
 
   it("rebuilds a flushed Redis from queued and running jobs", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
+    const { organizationId, agent, dispatch } = await newOrg();
     const running = await dispatch();
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(running.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(running.id);
     const queued = await dispatch();
     const done = await dispatch();
     await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, done.id));
@@ -257,26 +257,26 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     expect(await score(organizationId, done.id)).toBeNull();
 
     // The rebuilt set wakes a claim for the queued job.
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(queued.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(queued.id);
   });
 
   it("removes completed, failed, canceled, skipped and expired jobs", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
+    const { organizationId, agent, dispatch } = await newOrg();
     const dispatcher = new PostgresDispatcher({ db });
 
     const completed = await dispatch();
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(completed.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(completed.id);
     const res = await result(
-      harnessRequest(`jobs/${completed.id}/result`, harness.token, { result: {} }),
+      agentRequest(`jobs/${completed.id}/result`, agent.token, { result: {} }),
       ctx(completed.id),
     );
     expect(res.status).toBe(200);
     expect(await score(organizationId, completed.id)).toBeNull();
 
     const failed = await dispatch();
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(failed.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(failed.id);
     await fail(
-      harnessRequest(`jobs/${failed.id}/fail`, harness.token, { retryable: false }),
+      agentRequest(`jobs/${failed.id}/fail`, agent.token, { retryable: false }),
       ctx(failed.id),
     );
     expect((await jobRow(failed.id)).status).toBe("failed");
@@ -301,26 +301,26 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   });
 
   it("drops an entry left behind once a claim finds nothing for it", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
-    await warm(harness.token);
+    const { organizationId, agent, dispatch } = await newOrg();
+    await warm(agent.token);
     const job = await dispatch();
     // Finished behind the due set's back (e.g. a rebuild raced the writer).
     await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, job.id));
     expect(await hasDueJob(db, organizationId)).toBe(true);
-    expect((await claimAs(harness.token, 0)).status).toBe(204);
+    expect((await claimAs(agent.token, 0)).status).toBe(204);
     expect(await score(organizationId, job.id)).toBeNull();
     expect(await hasDueJob(db, organizationId)).toBe(false);
   });
 
   it("skips the expire cron without querying Postgres while no queued job is a day old", async () => {
-    const { harness, dispatch } = await newOrg();
-    await warm(harness.token);
+    const { agent, dispatch } = await newOrg();
+    await warm(agent.token);
     const queued = await dispatch();
     expect(await queuedSince(queued.id)).toBe(queued.createdAt.getTime());
     // A running job that's old doesn't count: only queued jobs expire.
     const running = await dispatch();
     await backdate(running.id);
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(running.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(running.id);
     expect(await queuedSince(running.id)).toBeNull();
 
     postgresCalls = 0;
@@ -330,13 +330,13 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   });
 
   it("runs the expire cron once a queued job is a day old, even a delayed retry", async () => {
-    const { organizationId, harness, dispatch } = await newOrg();
-    await warm(harness.token);
+    const { organizationId, agent, dispatch } = await newOrg();
+    await warm(agent.token);
     const job = await dispatch();
     await backdate(job.id);
-    expect(await claimedJobId(await claimAs(harness.token, 0))).toBe(job.id);
+    expect(await claimedJobId(await claimAs(agent.token, 0))).toBe(job.id);
     await fail(
-      harnessRequest(`jobs/${job.id}/fail`, harness.token, {
+      agentRequest(`jobs/${job.id}/fail`, agent.token, {
         retryable: true,
         retryAfterSeconds: 3600,
         error: "rate limited",
@@ -360,8 +360,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   });
 
   it("drops a queued entry left behind once the expire cron finds nothing for it", async () => {
-    const { harness, dispatch } = await newOrg();
-    await warm(harness.token);
+    const { agent, dispatch } = await newOrg();
+    await warm(agent.token);
     const job = await dispatch();
     await backdate(job.id);
     // Finished behind the set's back.
@@ -401,8 +401,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
   it("claims from Postgres on every look without Redis", async () => {
     vi.stubEnv("REDIS_URL", "");
     await closeRedis();
-    const { harness, dispatch } = await newOrg();
-    const pending = claimAs(harness.token, 15);
+    const { agent, dispatch } = await newOrg();
+    const pending = claimAs(agent.token, 15);
     await sleep(500);
     const job = await dispatch();
     expect(await claimedJobId(await pending)).toBe(job.id);

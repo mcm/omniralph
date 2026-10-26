@@ -58,7 +58,7 @@ process.env.GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
 const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
-const { pinRepository } = await import("@/lib/harnesses/pins");
+const { pinRepository } = await import("@/lib/agents/pins");
 const { POST: credentials } = await import("./credentials/route");
 const { POST: claim } = await import("./claim/route");
 const { codingJobInput } = await import("@/lib/ralph/coding");
@@ -224,7 +224,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
   }
 
   async function issued(agentId: string) {
-    return listAgentAudit(db, { agentId: agentId, event: "credential_issued" });
+    return listAgentAudit(db, { agentId, event: "credential_issued" });
   }
 
   describe("POST /api/agent/credentials", () => {
@@ -232,7 +232,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const agentId = await newAgent();
       const jobId = await newJob({
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId: gitlabRepoId,
       });
       const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
@@ -265,7 +265,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const agentId = await newAgent();
       const jobId = await newJob({
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId: githubRepoId,
       });
       const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
@@ -299,7 +299,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const jobId = await newJob({
           ...ralphJob,
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId: gitlabRepoId,
         });
         const res = await credentials(
@@ -330,7 +330,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const jobId = await newJob({
           ...ralphJob,
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId: githubRepoId,
         });
         const res = await credentials(
@@ -383,7 +383,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           [githubRepoId, "ghs_contents_read"],
         ] as const;
         for (const [repositoryId, password] of readOnly) {
-          const jobId = await newJob({ status: "running", agentId: agentId, repositoryId });
+          const jobId = await newJob({ status: "running", agentId, repositoryId });
           const res = await credentials(
             credentialRequest(
               await jobToken(jobId, agentId, ["credentials:read", "credentials:write"]),
@@ -421,7 +421,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           const jobId = await newJob({
             ...job,
             status: "running",
-            agentId: agentId,
+            agentId,
             repositoryId: githubRepoId,
           });
           const res = await credentials(
@@ -752,7 +752,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const jobId = await newJob({
           ...ralphJob,
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId,
         });
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -785,7 +785,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           })
         ).id;
         const agentId = await newAgent();
-        const jobId = await newJob({ status: "running", agentId: agentId, repositoryId });
+        const jobId = await newJob({ status: "running", agentId, repositoryId });
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
         warn.mockRestore();
@@ -803,7 +803,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const jobId = await newJob({
           ...ralphJob,
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId: githubRepoId,
         });
         const res = await credentials(credentialRequest(await jobToken(jobId, agentId)));
@@ -819,7 +819,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           await newJob({
             ...ralphJob,
             status: "completed",
-            agentId: agentId,
+            agentId,
             repositoryId: githubRepoId,
           }),
           await newJob({
@@ -839,7 +839,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const running = await newJob({
           ...ralphJob,
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId: githubRepoId,
         });
         const expired = await new LocalTokenSigner({
@@ -858,9 +858,9 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const other = await newAgent();
       const cases = [
         await newJob({ status: "queued", repositoryId: gitlabRepoId }),
-        await newJob({ status: "completed", agentId: agentId, repositoryId: gitlabRepoId }),
-        await newJob({ status: "failed", agentId: agentId, repositoryId: gitlabRepoId }),
-        await newJob({ status: "canceled", agentId: agentId, repositoryId: gitlabRepoId }),
+        await newJob({ status: "completed", agentId, repositoryId: gitlabRepoId }),
+        await newJob({ status: "failed", agentId, repositoryId: gitlabRepoId }),
+        await newJob({ status: "canceled", agentId, repositoryId: gitlabRepoId }),
         // Redelivered to (and now running on) another agent.
         await newJob({ status: "running", agentId: other, repositoryId: gitlabRepoId }),
       ];
@@ -876,7 +876,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const agentId = await newAgent();
       const jobId = await newJob({
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId: gitlabRepoId,
       });
       const accessToken = await getTokenSigner().signAccessToken(agentId);
@@ -891,13 +891,13 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
     it("refuses jobs without a repository or with a disconnected one with 403", async () => {
       const agentId = await newAgent();
-      const noRepo = await newJob({ status: "running", agentId: agentId });
+      const noRepo = await newJob({ status: "running", agentId });
       expect((await credentials(credentialRequest(await jobToken(noRepo, agentId)))).status).toBe(
         403,
       );
       const disconnected = await newJob({
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId: disconnectedRepoId,
       });
       const res = await credentials(credentialRequest(await jobToken(disconnected, agentId)));
@@ -912,7 +912,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const agentId = await newAgent({ reportedAcceptedTaskTypes: [] });
       const dispatcher = new PostgresDispatcher({ db });
       const pinned = await pinRepository(db, dispatcher, {
-        harnessId: agentId,
+        agentId,
         repositoryId: gitlabRepoId,
       });
       expect(pinned.result).toBe("pinned");
@@ -948,7 +948,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
 
       // Pinning again while the sync is queued doesn't enqueue a second one.
       const again = await pinRepository(db, dispatcher, {
-        harnessId: agentId,
+        agentId,
         repositoryId: gitlabRepoId,
       });
       expect(again).toEqual({ result: "already_pinned", syncJobId: pinned.syncJobId });
@@ -978,14 +978,14 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
       const before = (await syncJobs()).length;
       const revoked = await newAgent({ revokedAt: new Date() });
       expect(
-        await pinRepository(db, dispatcher, { harnessId: revoked, repositoryId: githubRepoId }),
+        await pinRepository(db, dispatcher, { agentId: revoked, repositoryId: githubRepoId }),
       ).toEqual({
         result: "unknown_agent",
       });
       const agentId = await newAgent();
       expect(
         await pinRepository(db, dispatcher, {
-          harnessId: agentId,
+          agentId,
           repositoryId: disconnectedRepoId,
         }),
       ).toEqual({ result: "unknown_repository" });

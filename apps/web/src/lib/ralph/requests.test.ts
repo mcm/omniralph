@@ -201,40 +201,38 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     return job!;
   }
 
-  async function start(runId: string, harnessId = agentA): Promise<Job> {
+  async function start(runId: string, agentId = agentA): Promise<Job> {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: harnessId,
+      agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
     return job;
   }
 
   async function finish(
     job: Job,
     outcome: Record<string, unknown> | { jobError: string },
-    harnessId = agentA,
+    agentId = agentA,
   ): Promise<void> {
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        agentId: harnessId,
+        agentId,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      expect(await completeJob(db, { jobId: job.id, agentId: harnessId, result: outcome })).toEqual(
-        {
-          status: "completed",
-        },
-      );
+      expect(await completeJob(db, { jobId: job.id, agentId, result: outcome })).toEqual({
+        status: "completed",
+      });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
   }
@@ -287,11 +285,11 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   async function request(
     runId: string,
     outcome: Partial<RalphRequestResult> | { jobError: string } = {},
-    harnessId = agentA,
+    agentId = agentA,
   ): Promise<RalphRequestPayload> {
-    const job = await start(runId, harnessId);
+    const job = await start(runId, agentId);
     expect(job.type).toBe("ralph.request");
-    await finish(job, "jobError" in outcome ? outcome : requestResult(outcome), harnessId);
+    await finish(job, "jobError" in outcome ? outcome : requestResult(outcome), agentId);
     return RalphRequestPayload.parse(ralphJobPayload(job));
   }
 

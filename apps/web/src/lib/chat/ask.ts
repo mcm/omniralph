@@ -25,11 +25,11 @@ import { z } from "zod";
 import { organizationPlaybooks, taskRunRequirements } from "@/lib/playbooks";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
-  queryClaimableHarnesses,
-  type QueryHarnessStatus,
-  type RunHarnessRequirements,
-} from "@/lib/harnesses/claimable";
-import { withLastSeen } from "@/lib/harnesses/last-seen";
+  queryClaimableAgents,
+  type QueryAgentStatus,
+  type RunAgentRequirements,
+} from "@/lib/agents/claimable";
+import { withLastSeen } from "@/lib/agents/last-seen";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
 import { runSpecJobInput, runSpecMinAgentVersion } from "@/lib/runs/job";
@@ -40,7 +40,7 @@ import { ChatThreadContext } from "@/lib/sinks/chat-thread";
  * Code questions from chat: a question about a repository enqueues a run of
  * the channel's "ask about code" playbook (`chatPlaybooksFor`; the built-in
  * `builtin:ask-about-code` unless chosen otherwise, job type `chat.ask`),
- * answered on a harness from a read-only checkout of the default branch,
+ * answered on an agent from a read-only checkout of the default branch,
  * within the task's fixed token budget (or none); the built-in's `chat-thread`
  * sink (`lib/sinks/chat-thread.ts`) records the answer as a run event of the
  * thread, for the chat responder to relay. The control panel never reads the
@@ -145,12 +145,12 @@ export type EnqueueChatAskOutcome =
   | { status: "unknown_repository" }
   /** The repository's query tasks are turned off: nothing was enqueued. */
   | { status: "query_disabled"; repository: Repository }
-  /** No online harness that would get the run can claim it: nothing was enqueued. */
+  /** No online agent that would get the run can claim it: nothing was enqueued. */
   | {
-      status: "no_capable_harness";
-      harnesses: QueryHarnessStatus[];
-      /** What the run would need from a harness. */
-      requirements: RunHarnessRequirements;
+      status: "no_capable_agent";
+      agents: QueryAgentStatus[];
+      /** What the run would need from an agent. */
+      requirements: RunAgentRequirements;
     }
   | { status: "failed"; error: string }
   | { status: "enqueued" | "duplicate"; jobId: string; repository: Repository };
@@ -163,7 +163,7 @@ export interface EnqueueChatAskDeps {
 
 /**
  * Hands a question about one of the organization's connected repositories
- * (`repositoryId`, already matched by the caller) to a harness as a run of
+ * (`repositoryId`, already matched by the caller) to an agent as a run of
  * `task` (a query task taking `chat.request`, validated by the caller)
  * answered from its default branch, and maps the run to the thread. The same
  * question asked again in the thread while the first one runs is not
@@ -201,7 +201,7 @@ export async function enqueueChatAsk(
   const { task } = input;
   const definitions = organizationPlaybooks(db, input.organizationId);
   const taskRequirements = await taskRunRequirements(definitions, task);
-  const requirements: RunHarnessRequirements = {
+  const requirements: RunAgentRequirements = {
     minAgentVersion: runSpecMinAgentVersion(task, taskRequirements.minAgentVersion),
     installables: taskRequirements.installables,
     hostTools: taskRequirements.hostTools,
@@ -210,15 +210,15 @@ export async function enqueueChatAsk(
     listAgentOverview(db, input.organizationId).then(withLastSeen),
     listAgentsUsableHostTools(db, input.organizationId),
   ]);
-  const harnesses = queryClaimableHarnesses(
+  const agents = queryClaimableAgents(
     overview,
     usableHostTools,
     repository.id,
     requirements,
     input.now,
   );
-  if (!harnesses.some((h) => h.capable)) {
-    return { status: "no_capable_harness", harnesses, requirements };
+  if (!agents.some((h) => h.capable)) {
+    return { status: "no_capable_agent", agents, requirements };
   }
 
   let defaultBranch: string;

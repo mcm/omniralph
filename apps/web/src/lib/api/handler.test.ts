@@ -197,11 +197,11 @@ describe("apiHandler", () => {
 
   it("answers other ApiRouteErrors with their status", async () => {
     const handler = apiHandler({}, () => {
-      throw new ApiRouteError(422, "The harness is revoked.", "revoked");
+      throw new ApiRouteError(422, "The agent is revoked.", "revoked");
     });
     expect(await json(await handler(request(), route()))).toEqual({
       status: 422,
-      body: { error: "The harness is revoked.", code: "revoked" },
+      body: { error: "The agent is revoked.", code: "revoked" },
     });
   });
 

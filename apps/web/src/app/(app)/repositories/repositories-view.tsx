@@ -229,7 +229,7 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
     mutationFn: (_: void, { organizationId }) =>
       api.delete(`/api/ui/repositories/${repo.id}`, mutationResultSchema, { organizationId }),
     // Its pins go too: the harness pages list them.
-    invalidate: (keys) => [keys.repositories.all, keys.harnesses.all],
+    invalidate: (keys) => [keys.repositories.all, keys.agents.all],
     success: `Disconnected ${repo.fullPath}`,
   });
   const pending = disconnect.isPending;
@@ -362,9 +362,9 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
         <Badge variant="neutral">{REVIEW_DEPTHS[repo.depth].label}</Badge>
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
-        {repo.pinnedHarnesses.length > 0 ? (
+        {repo.pinnedAgents.length > 0 ? (
           <div className="list-filters">
-            {repo.pinnedHarnesses.map((agent) => (
+            {repo.pinnedAgents.map((agent) => (
               <Badge key={agent.id} variant="neutral">
                 {agent.name}
               </Badge>

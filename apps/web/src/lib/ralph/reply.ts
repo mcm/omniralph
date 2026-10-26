@@ -64,7 +64,7 @@ import {
   SHIP_REQUEST_TEXT,
   type PreparationAnswer,
 } from "@omniralph/ralph";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import type { ActivityContent } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { conversationFor } from "./conversation";
@@ -273,8 +273,8 @@ export async function handleReply(
         "linear.mention",
       );
       if (live) {
-        const liveHarnessId = live.kind === "live" ? live.harnessId : null;
-        return { kind: live.kind, advance: false, note: live.note, liveHarnessId };
+        const liveAgentId = live.kind === "live" ? live.agentId : null;
+        return { kind: live.kind, advance: false, note: live.note, liveAgentId };
       }
     }
     const added = await addInstruction(
@@ -313,7 +313,7 @@ export async function handleReply(
     };
   });
   if (!handled) return null;
-  if ("liveHarnessId" in handled) await bumpHarnessHeartbeat(handled.liveHarnessId);
+  if ("liveAgentId" in handled) await bumpAgentHeartbeat(handled.liveAgentId);
   if (handled.note) await postActivity(conversationFor(run, deps), handled.note);
   // `/coding` on a mention's run: the story loop needs the epic's stories as sub-issues.
   if ("switched" in handled && handled.switched) await materializeStories(deps, run);

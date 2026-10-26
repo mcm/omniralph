@@ -62,7 +62,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
   let orgId: string;
   let repoId: string;
   let otherRepoId: string;
-  let harnessId: string;
+  let agentId: string;
   let seq = 0;
 
   beforeAll(async () => {
@@ -92,7 +92,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
       });
     repoId = (await repo("1", "acme/api")).id;
     otherRepoId = (await repo("2", "acme/web")).id;
-    [{ id: harnessId }] = (await db
+    [{ id: agentId }] = (await db
       .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning({ id: agents.id })) as [{ id: string }];
@@ -200,7 +200,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     const [queued] = await db.select().from(jobs);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      agentId: harnessId,
+      agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
@@ -222,7 +222,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     // A ref it wasn't asked to delete is ignored; one it couldn't delete stays for the sweep.
     await completeJob(db, {
       jobId: queued!.id,
-      agentId: harnessId,
+      agentId,
       result: { ...result([ralphHiddenRef(crypto.randomUUID())]), error: "push rejected" },
     });
     expect(await applyHiddenRefsJob(db, (await getJob(db, queued!.id))!)).toBe(0);
@@ -231,13 +231,13 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     expect(again).toBeDefined();
     await claimJob(db, {
       organizationId: orgId,
-      agentId: harnessId,
+      agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    await completeJob(db, { jobId: again!.id, agentId: harnessId, result: result([ref]) });
+    await completeJob(db, { jobId: again!.id, agentId, result: result([ref]) });
     expect(await applyHiddenRefsJob(db, (await getJob(db, again!.id))!)).toBe(1);
 
     const [row] = await db.select().from(hiddenRefs).where(eq(hiddenRefs.runId, runId));

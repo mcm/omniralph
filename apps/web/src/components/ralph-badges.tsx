@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@iamthemcmaster/ui";
-import type { JobRow } from "@/lib/harnesses/rows";
+import type { JobRow } from "@/lib/agents/rows";
 import type { RalphRunRow, RalphStoryView } from "@/lib/ralph/display";
 import type { TriageRunStatus } from "@/lib/triage/display";
 import {

@@ -1,5 +1,5 @@
 /**
- * Applies a finished `triage.run` job to Linear (harnesses hold no Linear token):
+ * Applies a finished `triage.run` job to Linear (agents hold no Linear token):
  * the issue's title and description become the PRD (with its open questions
  * at the end), a new epic gets its story sub-issues, a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations and a

@@ -43,13 +43,13 @@ import { useApiMutation } from "@/components/use-api-mutation";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
 import {
-  harnessSavedSchema,
-  harnessUpdateRequestedSchema,
-  type HarnessConfigForm,
-  type HarnessDetail,
-  type HarnessSettingsSave,
+  agentSavedSchema,
+  agentUpdateRequestedSchema,
+  type AgentConfigForm,
+  type AgentDetail,
+  type AgentSettingsSave,
   type PinSyncJob,
-} from "@/lib/api/harnesses";
+} from "@/lib/api/agents";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import {
   formatSettingValue,
@@ -58,7 +58,7 @@ import {
   type SettingValue,
 } from "@/lib/settings/changes";
 import { typedNumber } from "@/lib/settings/forms";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import type { AgentRow } from "@/lib/agents/rows";
 import {
   formatPoolLimits,
   HarnessStatusBadge,
@@ -67,7 +67,7 @@ import {
   withClientOnline,
 } from "../harness-parts";
 import { HarnessAuditLog, TokenTheftAlert } from "./harness-audit-log";
-import { HarnessHostTools, type HostToolRow } from "./harness-host-tools";
+import { AgentHostTools, type HostToolRow } from "./harness-host-tools";
 import {
   InstallForm,
   InstallJobs,
@@ -117,7 +117,7 @@ export interface ConfigDraft {
  * The form for a harness. Inherited fields start from the organization's values, so overriding
  * starts from what the harness runs now.
  */
-export function configDraft(harness: HarnessRow): ConfigDraft {
+export function configDraft(harness: AgentRow): ConfigDraft {
   return {
     inheritMaxConcurrency: harness.overrides.maxConcurrency === null,
     maxConcurrency: String(harness.maxConcurrency),
@@ -138,7 +138,7 @@ function configValues(draft: ConfigDraft): Record<string, SettingValue> {
 }
 
 /** What `updateAgentConfig` saves for the draft. */
-export function configInput(draft: ConfigDraft): HarnessConfigForm {
+export function configInput(draft: ConfigDraft): AgentConfigForm {
   const values = configValues(draft);
   return {
     maxConcurrency: values.maxConcurrency as number | null,
@@ -157,7 +157,7 @@ export function inheritsText(value: string): string {
   return `Inherits ${value} from the organization`;
 }
 
-function configSpecs(defaults: HarnessRow["defaults"]): SettingSpec[] {
+function configSpecs(defaults: AgentRow["defaults"]): SettingSpec[] {
   return [
     {
       key: "maxConcurrency",
@@ -289,7 +289,7 @@ export function PickupStatus({ state, harnessName }: { state: Pickup; harnessNam
 }
 
 /** When the harness has picked up the last save: the save's `savedAt`, compared to its heartbeats. */
-function usePickup(harness: Pick<HarnessRow, "name" | "lastHeartbeatAt">) {
+function usePickup(harness: Pick<AgentRow, "name" | "lastHeartbeatAt">) {
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
   const state = pickupState(savedAt, harness.lastHeartbeatAt);
   return {
@@ -312,7 +312,7 @@ const UPDATE_STEP_TEXT = {
 
 /** "Update now" to `version`: requested → updating → updated (or failed), from the harness's reports. */
 export function updateProgress(
-  harness: Pick<HarnessRow, "name" | "version" | "update" | "failedVersions" | "updateRequest">,
+  harness: Pick<AgentRow, "name" | "version" | "update" | "failedVersions" | "updateRequest">,
   version: string,
 ): UpdateProgress {
   const { name, update } = harness;
@@ -378,7 +378,7 @@ export interface VersionDraft {
   version: string;
 }
 
-export function versionDraft(harness: Pick<HarnessRow, "desiredVersionOverride">): VersionDraft {
+export function versionDraft(harness: Pick<AgentRow, "desiredVersionOverride">): VersionDraft {
   return {
     inherit: harness.desiredVersionOverride === null,
     version: harness.desiredVersionOverride ?? "",
@@ -412,7 +412,7 @@ export function HarnessSettingsSection({
   harness,
   globalDesiredVersion,
 }: {
-  harness: HarnessRow;
+  harness: AgentRow;
   globalDesiredVersion: string | null;
 }) {
   const apiAction = useApiAction();
@@ -449,7 +449,7 @@ export function HarnessSettingsSection({
     }
     setVersionError(undefined);
     const configChanged = [...changed].some((key) => key !== "versionOverride");
-    const body: HarnessSettingsSave = {
+    const body: AgentSettingsSave = {
       ...(configChanged && { config: configInput(draft) }),
       ...(versionSave && { version: versionSave.version }),
     };
@@ -458,7 +458,7 @@ export function HarnessSettingsSection({
       action: () =>
         apiAction(
           ({ organizationId }) =>
-            api.put(`/api/ui/harnesses/${harness.id}/settings`, harnessSavedSchema, {
+            api.put(`/api/ui/agents/${harness.id}/settings`, agentSavedSchema, {
               body,
               organizationId,
             }),
@@ -606,12 +606,12 @@ export function HarnessSettingsSection({
 }
 
 /** "Update now", then where the update stands as the harness reports it (requested → updating → updated or failed). */
-function UpdateNow({ harness }: { harness: HarnessRow }) {
+function UpdateNow({ harness }: { harness: AgentRow }) {
   // The version this page asked for; else a pending request made elsewhere.
   const [requested, setRequested] = React.useState<string | null>(null);
   const update = useApiMutation({
     mutationFn: (_: void, { organizationId }) =>
-      api.post(`/api/ui/harnesses/${harness.id}/update`, harnessUpdateRequestedSchema, {
+      api.post(`/api/ui/agents/${harness.id}/update`, agentUpdateRequestedSchema, {
         organizationId,
       }),
     invalidate: harnessChanged,
@@ -643,7 +643,7 @@ function PinSyncList({
   repositories,
   syncJobs,
 }: {
-  repositories: HarnessRow["pinnedRepositories"];
+  repositories: AgentRow["pinnedRepositories"];
   syncJobs: ReadonlyMap<string, PinSyncJob>;
 }) {
   return (
@@ -680,7 +680,7 @@ export function InstallablesSection({
   installables,
   installJobs,
 }: {
-  harness: HarnessRow;
+  harness: AgentRow;
   installables: InstallableRow[];
   installJobs: InstallJobRow[];
 }) {
@@ -711,7 +711,7 @@ export function InstallablesSection({
           title="Install or update"
           description="Starts an install job on this harness; it picks it up with its next claim."
         >
-          <InstallForm harnessId={harness.id} installJobs={installJobs} />
+          <InstallForm agentId={harness.id} installJobs={installJobs} />
         </SettingsSubsection>
       )}
     </SettingsPanel>
@@ -730,7 +730,7 @@ function TableSkeleton({ rows = 3 }: { rows?: number }) {
 }
 
 /** The Installables tab: its own query (installables and install jobs), live. */
-function InstallablesTab({ harness }: { harness: HarnessRow }) {
+function InstallablesTab({ harness }: { harness: AgentRow }) {
   const query = useHarnessInstallables(harness.id);
   return (
     <QueryBoundary query={query} skeleton={<TableSkeleton />} what="installables">
@@ -764,7 +764,7 @@ export function HostToolsSection({
   harness,
   hostTools,
 }: {
-  harness: HarnessRow;
+  harness: AgentRow;
   hostTools: HostToolRow[];
 }) {
   const apiAction = useApiAction();
@@ -811,7 +811,7 @@ export function HostToolsSection({
           action: () =>
             apiAction(
               ({ organizationId }) =>
-                api.put(`/api/ui/harnesses/${harness.id}/host-tools`, harnessSavedSchema, {
+                api.put(`/api/ui/agents/${harness.id}/host-tools`, agentSavedSchema, {
                   body,
                   organizationId,
                 }),
@@ -826,7 +826,7 @@ export function HostToolsSection({
       savedStatus={pickup.status}
     >
       <SettingsSubsection id="host-tools-paths" className="settings-sub-wide" title="Paths">
-        <HarnessHostTools
+        <AgentHostTools
           revoked={harness.revoked}
           hostTools={hostTools}
           paths={paths}
@@ -838,7 +838,7 @@ export function HostToolsSection({
 }
 
 /** The Host tools tab: its own query (the catalog with this harness's paths and reports), live. */
-function HostToolsTab({ harness }: { harness: HarnessRow }) {
+function HostToolsTab({ harness }: { harness: AgentRow }) {
   const query = useHarnessHostTools(harness.id);
   return (
     <QueryBoundary query={query} skeleton={<TableSkeleton />} what="host tools">
@@ -853,23 +853,23 @@ function HostToolsTab({ harness }: { harness: HarnessRow }) {
  * Revoking or deleting the harness. Both leave its pages for the harness list, once the
  * change succeeded and the list was refetched (`useApiMutation` awaits the invalidation).
  */
-function useLeaveHarness(harness: HarnessRow, action: "revoke" | "delete") {
+function useLeaveHarness(harness: AgentRow, action: "revoke" | "delete") {
   const router = useRouter();
   return useApiMutation({
     mutationFn: (_: void, { organizationId }) =>
       action === "revoke"
-        ? api.post(`/api/ui/harnesses/${harness.id}/revoke`, mutationResultSchema, {
+        ? api.post(`/api/ui/agents/${harness.id}/revoke`, mutationResultSchema, {
             organizationId,
           })
-        : api.delete(`/api/ui/harnesses/${harness.id}`, mutationResultSchema, { organizationId }),
+        : api.delete(`/api/ui/agents/${harness.id}`, mutationResultSchema, { organizationId }),
     // The list (and the jobs and repositories it touched); this harness's detail goes with the page.
-    invalidate: (keys) => [keys.harnesses.lists, keys.jobs.all, keys.repositories.all],
+    invalidate: (keys) => [keys.agents.lists, keys.jobs.all, keys.repositories.all],
     success: `${action === "revoke" ? "Revoked" : "Deleted"} ${harness.name}`,
     onSuccess: () => router.push("/harnesses"),
   });
 }
 
-function RevokeSubsection({ harness }: { harness: HarnessRow }) {
+function RevokeSubsection({ harness }: { harness: AgentRow }) {
   const revoke = useLeaveHarness(harness, "revoke");
   return (
     <SettingsSubsection
@@ -914,7 +914,7 @@ function RevokeSubsection({ harness }: { harness: HarnessRow }) {
   );
 }
 
-function DeleteSubsection({ harness }: { harness: HarnessRow }) {
+function DeleteSubsection({ harness }: { harness: AgentRow }) {
   const remove = useLeaveHarness(harness, "delete");
   return (
     <SettingsSubsection
@@ -957,7 +957,7 @@ function DeleteSubsection({ harness }: { harness: HarnessRow }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-function DangerZone({ harness }: { harness: HarnessRow }) {
+function DangerZone({ harness }: { harness: AgentRow }) {
   return (
     <SettingsPanel
       id="harness-danger"
@@ -977,7 +977,7 @@ function StatusCard({
   pinSyncJobs,
   now,
 }: {
-  harness: HarnessRow;
+  harness: AgentRow;
   pinSyncJobs: readonly PinSyncJob[];
   now: number;
 }) {
@@ -1091,9 +1091,9 @@ function DetailSkeleton() {
   );
 }
 
-function HarnessTabContent({ tab, detail }: { tab: HarnessTab; detail: HarnessDetail }) {
+function HarnessTabContent({ tab, detail }: { tab: HarnessTab; detail: AgentDetail }) {
   const now = useNow();
-  const harness = withClientOnline(detail.harness, now);
+  const harness = withClientOnline(detail.agent, now);
   return (
     <>
       <TokenTheftAlert audit={detail.audit} />
@@ -1142,13 +1142,13 @@ function HarnessTabContent({ tab, detail }: { tab: HarnessTab; detail: HarnessDe
 
 /**
  * A harness's tab (Overview, Settings, Installables or Host tools), live: the harness polls
- * (`GET /api/ui/harnesses/{id}`), and the Installables and Host tools tabs poll their own
+ * (`GET /api/ui/agents/{id}`), and the Installables and Host tools tabs poll their own
  * part. A harness of another of the user's organizations switches to it first.
  */
 export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
   const { id } = useParams<{ id: string }>();
   const detail = useHarnessDetail(id);
-  const name = detail.data?.harness.name;
+  const name = detail.data?.agent.name;
   return (
     <>
       <AppHeader
@@ -1164,13 +1164,13 @@ export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
           meta={
             detail.data && (
               <>
-                <HarnessStatus harness={detail.data.harness} />
+                <HarnessStatus harness={detail.data.agent} />
                 <Freshness query={detail} />
               </>
             )
           }
         />
-        <HarnessNav harnessId={id} current={tab} />
+        <HarnessNav agentId={id} current={tab} />
         <QueryBoundary query={detail} skeleton={<DetailSkeleton />} what="the harness">
           {(data) => <HarnessTabContent tab={tab} detail={data} />}
         </QueryBoundary>
@@ -1180,6 +1180,6 @@ export function HarnessDetailView({ tab }: { tab: HarnessTab }) {
 }
 
 /** Online or offline against the browser's ticking clock. */
-function HarnessStatus({ harness }: { harness: HarnessRow }) {
+function HarnessStatus({ harness }: { harness: AgentRow }) {
   return <HarnessStatusBadge harness={withClientOnline(harness, useNow())} />;
 }

@@ -24,7 +24,7 @@ import type { WakePublisher } from "@/lib/ably/publisher";
 import { PostgresDispatcher, type DispatchJobInput } from "./dispatcher";
 
 const ORG_ID = "0b7d9a2e-4c1f-4e8a-9b3d-5f6a7b8c9d0e";
-const HARNESS_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
+const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const REPO_ID = "3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a";
 const db = {} as Database;
 
@@ -55,18 +55,18 @@ beforeEach(() => {
 });
 
 describe("PostgresDispatcher.createAndPublish", () => {
-  it("wakes the target harness's channel when the job has a target", async () => {
+  it("wakes the target agent's channel when the job has a target", async () => {
     vi.mocked(insertJob).mockResolvedValue({
-      job: job({ targetAgentId: HARNESS_ID }),
+      job: job({ targetAgentId: AGENT_ID }),
       created: true,
     });
     const wakes = publisher();
     const dispatcher = new PostgresDispatcher({ db, wakePublisher: wakes });
 
-    await dispatcher.createAndPublish({ ...input, targetAgentId: HARNESS_ID });
+    await dispatcher.createAndPublish({ ...input, targetAgentId: AGENT_ID });
 
-    expect(vi.mocked(insertJob).mock.calls[0]?.[1]).toMatchObject({ targetAgentId: HARNESS_ID });
-    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${HARNESS_ID}`);
+    expect(vi.mocked(insertJob).mock.calls[0]?.[1]).toMatchObject({ targetAgentId: AGENT_ID });
+    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${AGENT_ID}`);
   });
 
   it("wakes the organization's channel when the job has no target", async () => {
@@ -78,7 +78,7 @@ describe("PostgresDispatcher.createAndPublish", () => {
 
   it("wakes the existing job's channel when the job was deduplicated", async () => {
     vi.mocked(insertJob).mockResolvedValue({
-      job: job({ status: "running", targetAgentId: HARNESS_ID }),
+      job: job({ status: "running", targetAgentId: AGENT_ID }),
       created: false,
     });
     const wakes = publisher();
@@ -87,7 +87,7 @@ describe("PostgresDispatcher.createAndPublish", () => {
       dedupeKey: "k",
     });
     expect(result.created).toBe(false);
-    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${HARNESS_ID}`);
+    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${AGENT_ID}`);
   });
 
   it("publishes nothing without a wake publisher", async () => {
@@ -117,7 +117,7 @@ describe("PostgresDispatcher.createAndPublish", () => {
 describe("PostgresDispatcher.republish", () => {
   it("wakes the re-resolved target's channel when the job is still queued", async () => {
     vi.mocked(getJob).mockResolvedValue(job({ repositoryId: REPO_ID }));
-    vi.mocked(pinnedAgentFor).mockResolvedValue(HARNESS_ID);
+    vi.mocked(pinnedAgentFor).mockResolvedValue(AGENT_ID);
     vi.mocked(setQueuedJobTarget).mockResolvedValue(true);
     const wakes = publisher();
 
@@ -125,12 +125,12 @@ describe("PostgresDispatcher.republish", () => {
       new PostgresDispatcher({ db, wakePublisher: wakes }).republish("job-1"),
     ).resolves.toBe(true);
 
-    expect(setQueuedJobTarget).toHaveBeenCalledWith(db, "job-1", HARNESS_ID);
-    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${HARNESS_ID}`);
+    expect(setQueuedJobTarget).toHaveBeenCalledWith(db, "job-1", AGENT_ID);
+    expect(wakes.wake).toHaveBeenCalledExactlyOnceWith(`agent:${AGENT_ID}`);
   });
 
   it("wakes the organization's channel when no agent is pinned", async () => {
-    vi.mocked(getJob).mockResolvedValue(job({ targetAgentId: HARNESS_ID }));
+    vi.mocked(getJob).mockResolvedValue(job({ targetAgentId: AGENT_ID }));
     vi.mocked(setQueuedJobTarget).mockResolvedValue(true);
     const wakes = publisher();
     await new PostgresDispatcher({ db, wakePublisher: wakes }).republish("job-1");

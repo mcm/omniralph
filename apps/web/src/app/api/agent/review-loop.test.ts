@@ -560,7 +560,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         maxFiles: payload.reviewConfig.profile.maxFiles,
       },
     });
-    expect(await reviewRow(reviewId)).toMatchObject({ status: "running", agentId: agentId });
+    expect(await reviewRow(reviewId)).toMatchObject({ status: "running", agentId });
 
     // Agent runs the review and reports the result.
     const output = await agentRun(job.payload);

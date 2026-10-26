@@ -19,7 +19,7 @@ import { RepositorySettingsView, type RepositorySettingsTab } from "./repository
 
 const REPO_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const DETAIL = `/api/ui/repositories/${REPO_ID}`;
-const HARNESS_ID = "0a7c3e1d-5b2f-4c8a-9d6e-1f2a3b4c5d6e";
+const AGENT_ID = "0a7c3e1d-5b2f-4c8a-9d6e-1f2a3b4c5d6e";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("next/navigation", () => ({
@@ -43,16 +43,16 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       customInstructions: "",
-      pinnedAgentIds: [HARNESS_ID],
+      pinnedAgentIds: [AGENT_ID],
       reviewPlaybookIds: ["builtin:review-pr"],
       correlationPlaybookId: "builtin:correlate-findings",
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
       ...overrides,
     },
-    harnesses: [
+    agents: [
       {
-        id: HARNESS_ID,
+        id: AGENT_ID,
         name: "build-01",
         // Five minutes ago: offline, whatever the server computed.
         lastHeartbeatAt: ago(5 * 60_000),
@@ -126,7 +126,7 @@ describe("RepositorySettingsView", () => {
   it("saves, then refetches the repository and invalidates the repositories and harnesses", async () => {
     const user = userEvent.setup();
     const keys = queryKeys(TEST_ORGANIZATION_ID);
-    client.setQueryData(keys.harnesses.list(), []);
+    client.setQueryData(keys.agents.list(), []);
     client.setQueryData(keys.repositories.list(), {});
     view("settings");
     const instructions = await screen.findByLabelText("Custom instructions");
@@ -141,10 +141,10 @@ describe("RepositorySettingsView", () => {
     expect(put.path).toBe(`${DETAIL}/settings`);
     expect(put.body).toMatchObject({
       customInstructions: "Be terse.",
-      pinnedAgentIds: [HARNESS_ID],
+      pinnedAgentIds: [AGENT_ID],
     });
     expect(gets(DETAIL)).toHaveLength(2);
-    expect(client.getQueryState(keys.harnesses.list())!.isInvalidated).toBe(true);
+    expect(client.getQueryState(keys.agents.list())!.isInvalidated).toBe(true);
     expect(client.getQueryState(keys.repositories.list())!.isInvalidated).toBe(true);
   });
 
@@ -154,7 +154,7 @@ describe("RepositorySettingsView", () => {
     expect(within(list).getByText("Offline")).toBeTruthy();
 
     served = detail();
-    served.harnesses[0]!.lastHeartbeatAt = ago(5_000);
+    served.agents[0]!.lastHeartbeatAt = ago(5_000);
     await client.refetchQueries();
     await waitFor(() => expect(within(list).getByText("Online")).toBeTruthy());
   });

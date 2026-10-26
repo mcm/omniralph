@@ -31,8 +31,8 @@ function setup<TData>(options: Partial<Parameters<typeof useApiMutation<TData, s
     () =>
       useApiMutation<TData, string>({
         mutationFn,
-        invalidate: (k) => [k.harnesses.all],
-        success: "Harness renamed",
+        invalidate: (k) => [k.agents.all],
+        success: "Agent renamed",
         ...options,
       }),
     { wrapper: queryWrapper(client) },
@@ -44,8 +44,8 @@ describe("useApiMutation", () => {
   it("toasts success, invalidates the keys by prefix and calls onSuccess", async () => {
     const onSuccess = vi.fn();
     const { client, mutationFn, result } = setup({ onSuccess });
-    client.setQueryData(keys.harnesses.list(), ["old"]);
-    client.setQueryData(keys.harnesses.detail("h1"), { name: "old" });
+    client.setQueryData(keys.agents.list(), ["old"]);
+    client.setQueryData(keys.agents.detail("h1"), { name: "old" });
     const other = keys.jobs.list();
     client.setQueryData(other, ["job"]);
 
@@ -53,9 +53,9 @@ describe("useApiMutation", () => {
     await act(() => result.current.mutateAsync("h1"));
 
     expect(mutationFn).toHaveBeenCalledWith("h1", { organizationId: TEST_ORGANIZATION_ID });
-    expect(ui.toast).toHaveBeenCalledWith("Harness renamed");
-    expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
-    expect(client.getQueryState(keys.harnesses.detail("h1"))?.isInvalidated).toBe(true);
+    expect(ui.toast).toHaveBeenCalledWith("Agent renamed");
+    expect(client.getQueryState(keys.agents.list())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(keys.agents.detail("h1"))?.isInvalidated).toBe(true);
     expect(client.getQueryState(other)?.isInvalidated).toBe(false);
     expect(onSuccess).toHaveBeenCalledWith({ ok: true }, "h1");
   });
@@ -65,7 +65,7 @@ describe("useApiMutation", () => {
     const { client, mutationFn, result } = setup({ onSuccess: () => order.push("navigate") });
     // An observed (mounted) query, so invalidation refetches it.
     const unsubscribe = new QueryObserver(client, {
-      queryKey: keys.harnesses.list(),
+      queryKey: keys.agents.list(),
       queryFn: async () => {
         await new Promise((r) => setTimeout(r, 10));
         order.push("refetched");
@@ -108,7 +108,7 @@ describe("useApiMutation", () => {
     const onError = vi.fn();
     const onSuccess = vi.fn();
     const { client, mutationFn, result } = setup({ onError, onSuccess });
-    client.setQueryData(keys.harnesses.detail("h1"), { name: "optimistic" });
+    client.setQueryData(keys.agents.detail("h1"), { name: "optimistic" });
     const error = new ApiError("That name is taken.", 400, undefined, { name: "Taken" });
     mutationFn.mockRejectedValue(error);
     act(() => result.current.mutate("h1"));
@@ -117,7 +117,7 @@ describe("useApiMutation", () => {
     expect(onError).toHaveBeenCalledWith(error, "h1", undefined);
     expect(onSuccess).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(client.getQueryState(keys.harnesses.detail("h1"))?.isInvalidated).toBe(true),
+      expect(client.getQueryState(keys.agents.detail("h1"))?.isInvalidated).toBe(true),
     );
   });
 
@@ -152,43 +152,42 @@ describe("useApiMutation", () => {
   });
 
   describe("optimistic", () => {
-    type Harness = { name: string };
+    type Agent = { name: string };
 
     it("shows the change while the request is pending", async () => {
       let finish: (value: unknown) => void = () => {};
       const { client, mutationFn, result } = setup({
         optimistic: (name, cache) =>
-          cache.set<Harness>(keys.harnesses.detail("h1"), (previous) => ({ ...previous, name })),
+          cache.set<Agent>(keys.agents.detail("h1"), (previous) => ({ ...previous, name })),
       });
-      client.setQueryData<Harness>(keys.harnesses.detail("h1"), { name: "build-01" });
+      client.setQueryData<Agent>(keys.agents.detail("h1"), { name: "build-01" });
       mutationFn.mockReturnValue(new Promise((resolve) => (finish = resolve)) as never);
 
       act(() => result.current.mutate("build-02"));
       await waitFor(() => expect(mutationFn).toHaveBeenCalled());
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+      expect(client.getQueryData(keys.agents.detail("h1"))).toEqual({ name: "build-02" });
       await act(async () => finish({ ok: true }));
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+      expect(client.getQueryData(keys.agents.detail("h1"))).toEqual({ name: "build-02" });
     });
 
     it("cancels an in-flight fetch so it can't overwrite the change", async () => {
       const { client, mutationFn, result } = setup({
-        optimistic: (name, cache) =>
-          cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+        optimistic: (name, cache) => cache.set<Agent>(keys.agents.detail("h1"), () => ({ name })),
       });
-      client.setQueryData<Harness>(keys.harnesses.detail("h1"), { name: "build-01" });
+      client.setQueryData<Agent>(keys.agents.detail("h1"), { name: "build-01" });
       const unsubscribe = new QueryObserver(client, {
-        queryKey: keys.harnesses.detail("h1"),
-        queryFn: () => new Promise<Harness>(() => {}),
+        queryKey: keys.agents.detail("h1"),
+        queryFn: () => new Promise<Agent>(() => {}),
       }).subscribe(() => {});
       await waitFor(() =>
-        expect(client.getQueryState(keys.harnesses.detail("h1"))?.fetchStatus).toBe("fetching"),
+        expect(client.getQueryState(keys.agents.detail("h1"))?.fetchStatus).toBe("fetching"),
       );
       mutationFn.mockReturnValue(new Promise(() => {}) as never);
       act(() => result.current.mutate("build-02"));
       await waitFor(() => expect(mutationFn).toHaveBeenCalled());
-      expect(client.getQueryState(keys.harnesses.detail("h1"))?.fetchStatus).toBe("idle");
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toEqual({ name: "build-02" });
+      expect(client.getQueryState(keys.agents.detail("h1"))?.fetchStatus).toBe("idle");
+      expect(client.getQueryData(keys.agents.detail("h1"))).toEqual({ name: "build-02" });
       unsubscribe();
     });
 
@@ -197,40 +196,38 @@ describe("useApiMutation", () => {
       const { client, mutationFn, result } = setup({
         onError,
         optimistic: async (name, cache) => {
-          await cache.set<Harness[]>(keys.harnesses.lists, (previous) =>
+          await cache.set<Agent[]>(keys.agents.lists, (previous) =>
             previous?.map(() => ({ name })),
           );
-          await cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name }));
+          await cache.set<Agent>(keys.agents.detail("h1"), () => ({ name }));
           // Not cached before: removed again on rollback.
-          await cache.set<Harness>(keys.harnesses.detail("h2"), () => ({ name }));
+          await cache.set<Agent>(keys.agents.detail("h2"), () => ({ name }));
         },
       });
       const list = [{ name: "build-01" }];
       const detail = { name: "build-01" };
-      client.setQueryData(keys.harnesses.list({ page: 1 }), list);
-      client.setQueryData(keys.harnesses.list({ page: 2 }), list);
-      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      client.setQueryData(keys.agents.list({ page: 1 }), list);
+      client.setQueryData(keys.agents.list({ page: 2 }), list);
+      client.setQueryData(keys.agents.detail("h1"), detail);
       const before = {
-        page1: client.getQueryState(keys.harnesses.list({ page: 1 })),
-        detail: client.getQueryState(keys.harnesses.detail("h1")),
+        page1: client.getQueryState(keys.agents.list({ page: 1 })),
+        detail: client.getQueryState(keys.agents.detail("h1")),
       };
 
       mutationFn.mockRejectedValue(new ApiError("Couldn't save.", 500));
       act(() => result.current.mutate("build-02"));
       await waitFor(() => expect(result.current.isError).toBe(true));
 
-      expect(client.getQueryData(keys.harnesses.list({ page: 1 }))).toBe(list);
-      expect(client.getQueryData(keys.harnesses.list({ page: 2 }))).toBe(list);
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
-      expect(client.getQueryState(keys.harnesses.list({ page: 1 }))?.dataUpdatedAt).toBe(
+      expect(client.getQueryData(keys.agents.list({ page: 1 }))).toBe(list);
+      expect(client.getQueryData(keys.agents.list({ page: 2 }))).toBe(list);
+      expect(client.getQueryData(keys.agents.detail("h1"))).toBe(detail);
+      expect(client.getQueryState(keys.agents.list({ page: 1 }))?.dataUpdatedAt).toBe(
         before.page1?.dataUpdatedAt,
       );
-      expect(client.getQueryState(keys.harnesses.detail("h1"))?.dataUpdatedAt).toBe(
+      expect(client.getQueryState(keys.agents.detail("h1"))?.dataUpdatedAt).toBe(
         before.detail?.dataUpdatedAt,
       );
-      expect(
-        client.getQueryCache().find({ queryKey: keys.harnesses.detail("h2") }),
-      ).toBeUndefined();
+      expect(client.getQueryCache().find({ queryKey: keys.agents.detail("h2") })).toBeUndefined();
       expect(ui.toast).toHaveBeenCalledWith("Couldn't save.", { variant: "danger" });
       expect(onError).toHaveBeenCalledWith(expect.any(ApiError), "build-02", undefined);
     });
@@ -238,13 +235,12 @@ describe("useApiMutation", () => {
     it("reconciles in the background after success, without blocking onSuccess", async () => {
       const order: string[] = [];
       const { client, mutationFn, result } = setup({
-        optimistic: (name, cache) =>
-          cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+        optimistic: (name, cache) => cache.set<Agent>(keys.agents.detail("h1"), () => ({ name })),
         onSuccess: () => order.push("onSuccess"),
       });
       let release: () => void = () => {};
       const unsubscribe = new QueryObserver(client, {
-        queryKey: keys.harnesses.list(),
+        queryKey: keys.agents.list(),
         queryFn: async () => {
           order.push("refetch started");
           await new Promise<void>((resolve) => (release = resolve));
@@ -261,7 +257,7 @@ describe("useApiMutation", () => {
       await act(() => result.current.mutateAsync("build-02"));
       // onSuccess ran while the reconcile refetch is still pending.
       expect(order).toEqual(["refetch started", "onSuccess"]);
-      expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
+      expect(client.getQueryState(keys.agents.list())?.isInvalidated).toBe(true);
       release();
       await waitFor(() => expect(order).toContain("refetched"));
       unsubscribe();
@@ -270,31 +266,31 @@ describe("useApiMutation", () => {
     it("rolls back what it wrote when the optimistic update itself throws", async () => {
       const { client, mutationFn, result } = setup({
         optimistic: async (name, cache) => {
-          await cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name }));
+          await cache.set<Agent>(keys.agents.detail("h1"), () => ({ name }));
           throw new Error("bad update");
         },
       });
       const detail = { name: "build-01" };
-      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      client.setQueryData(keys.agents.detail("h1"), detail);
       act(() => result.current.mutate("build-02"));
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(mutationFn).not.toHaveBeenCalled();
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
+      expect(client.getQueryData(keys.agents.detail("h1"))).toBe(detail);
     });
 
     it("rolls back the optimistic update when the caller's onMutate throws", async () => {
       const { client, mutationFn, result } = setup({
-        optimistic: (name, cache) => cache.set<Harness>(keys.harnesses.detail("h1"), () => ({ name })),
+        optimistic: (name, cache) => cache.set<Agent>(keys.agents.detail("h1"), () => ({ name })),
         onMutate: async () => {
           throw new Error("bad context");
         },
       });
       const detail = { name: "build-01" };
-      client.setQueryData(keys.harnesses.detail("h1"), detail);
+      client.setQueryData(keys.agents.detail("h1"), detail);
       act(() => result.current.mutate("build-02"));
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(mutationFn).not.toHaveBeenCalled();
-      expect(client.getQueryData(keys.harnesses.detail("h1"))).toBe(detail);
+      expect(client.getQueryData(keys.agents.detail("h1"))).toBe(detail);
     });
   });
 
@@ -303,30 +299,30 @@ describe("useApiMutation", () => {
       let seenInOnSuccess: unknown;
       const { client, mutationFn, result } = setup<{ ok: true; id: string; name: string }>({
         applyResult: (data, cache) =>
-          cache.set(cache.keys.harnesses.detail(data.id), () => ({ name: data.name })),
+          cache.set(cache.keys.agents.detail(data.id), () => ({ name: data.name })),
         onSuccess: () => {
-          seenInOnSuccess = client.getQueryData(keys.harnesses.detail("h9"));
+          seenInOnSuccess = client.getQueryData(keys.agents.detail("h9"));
         },
       });
       mutationFn.mockResolvedValue({ ok: true, id: "h9", name: "build-09" });
       await act(() => result.current.mutateAsync("build-09"));
-      expect(client.getQueryData(keys.harnesses.detail("h9"))).toEqual({ name: "build-09" });
+      expect(client.getQueryData(keys.agents.detail("h9"))).toEqual({ name: "build-09" });
       expect(seenInOnSuccess).toEqual({ name: "build-09" });
     });
 
     it("reconciles in the background: the mutation doesn't wait on the refetch", async () => {
       const { client, mutationFn, result } = setup({
         applyResult: (_data, cache) =>
-          cache.set(cache.keys.harnesses.detail("h1"), () => ({ name: "saved" })),
+          cache.set(cache.keys.agents.detail("h1"), () => ({ name: "saved" })),
       });
       const unsubscribe = new QueryObserver(client, {
-        queryKey: keys.harnesses.list(),
+        queryKey: keys.agents.list(),
         queryFn: () => new Promise(() => {}),
       }).subscribe(() => {});
       mutationFn.mockResolvedValue({ ok: true } as never);
       // Resolves although the invalidated list's refetch never finishes.
       await act(() => result.current.mutateAsync("h1"));
-      expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
+      expect(client.getQueryState(keys.agents.list())?.isInvalidated).toBe(true);
       unsubscribe();
     });
   });

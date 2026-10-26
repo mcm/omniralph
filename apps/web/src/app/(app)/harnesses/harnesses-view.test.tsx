@@ -4,17 +4,17 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestQueryClient, queryWrapper, testUser } from "@/components/query-test-utils";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import type { AgentRow } from "@/lib/agents/rows";
 import { HarnessesView } from "./harnesses-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
-const HARNESS_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
+const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const ENROLLMENT_ID = "0b6a3c1e-8f4d-4c2a-9e1b-7d5f3a2c1b0e";
 
-function harness(overrides: Partial<HarnessRow> = {}): HarnessRow {
+function harness(overrides: Partial<AgentRow> = {}): AgentRow {
   return {
-    id: HARNESS_ID,
+    id: AGENT_ID,
     name: "coder-1",
     online: false,
     revoked: false,
@@ -78,13 +78,13 @@ describe("HarnessesView", () => {
     const recent = new Date(Date.now() - 5_000).toISOString();
     mockFetch({
       // The server rendered it offline; the browser's clock decides.
-      "/api/ui/harnesses": () =>
-        json({ harnesses: [harness({ online: false, lastHeartbeatAt: recent })] }),
+      "/api/ui/agents": () =>
+        json({ agents: [harness({ online: false, lastHeartbeatAt: recent })] }),
     });
     renderView();
     expect(screen.getByLabelText("Loading harnesses")).toBeTruthy();
     const link = await screen.findByRole("link", { name: "coder-1" });
-    expect(link.getAttribute("href")).toBe(`/harnesses/${HARNESS_ID}`);
+    expect(link.getAttribute("href")).toBe(`/harnesses/${AGENT_ID}`);
     expect(screen.getAllByText("Online").length).toBeGreaterThan(0);
     // A slow test run can take a few seconds to render, so allow some drift.
     expect(screen.getAllByText(/^\d+s ago$/).length).toBeGreaterThan(0);
@@ -93,8 +93,7 @@ describe("HarnessesView", () => {
   it("shows an old heartbeat as offline", async () => {
     const old = new Date(Date.now() - 120_000).toISOString();
     mockFetch({
-      "/api/ui/harnesses": () =>
-        json({ harnesses: [harness({ online: true, lastHeartbeatAt: old })] }),
+      "/api/ui/agents": () => json({ agents: [harness({ online: true, lastHeartbeatAt: old })] }),
     });
     renderView("member");
     // Members see the name without a link.
@@ -106,8 +105,8 @@ describe("HarnessesView", () => {
   it("shows a failed load in place with a retry", async () => {
     let fail = true;
     mockFetch({
-      "/api/ui/harnesses": () =>
-        fail ? json({ error: "Database unavailable." }, 500) : json({ harnesses: [] }),
+      "/api/ui/agents": () =>
+        fail ? json({ error: "Database unavailable." }, 500) : json({ agents: [] }),
     });
     renderView();
     expect(await screen.findByText("Couldn't load harnesses")).toBeTruthy();
@@ -120,9 +119,8 @@ describe("HarnessesView", () => {
   it("shows the harness that enrolled with the dialog's token, with the list already updated", async () => {
     let enrolled = false;
     const fetch = mockFetch({
-      "/api/ui/harnesses": () =>
-        json({ harnesses: enrolled ? [harness({ name: "build-box" })] : [] }),
-      "/api/ui/harness-enrollments": (init) => {
+      "/api/ui/agents": () => json({ agents: enrolled ? [harness({ name: "build-box" })] : [] }),
+      "/api/ui/agent-enrollments": (init) => {
         expect(JSON.parse(String(init?.body))).toEqual({ name: "build-box" });
         return json({
           ok: true,
@@ -132,11 +130,11 @@ describe("HarnessesView", () => {
           command: "omniralph-agent enroll --server https://x --token ore_secret",
         });
       },
-      [`/api/ui/harness-enrollments/${ENROLLMENT_ID}`]: () =>
+      [`/api/ui/agent-enrollments/${ENROLLMENT_ID}`]: () =>
         json({
           id: ENROLLMENT_ID,
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-          harness: enrolled ? { id: HARNESS_ID, name: "build-box" } : null,
+          agent: enrolled ? { id: AGENT_ID, name: "build-box" } : null,
         }),
     });
     const client = renderView();
@@ -156,9 +154,9 @@ describe("HarnessesView", () => {
     });
     expect(await within(dialog).findByText("build-box connected")).toBeTruthy();
     const open = within(dialog).getByRole("link", { name: "Open build-box" });
-    expect(open.getAttribute("href")).toBe(`/harnesses/${HARNESS_ID}`);
+    expect(open.getAttribute("href")).toBe(`/harnesses/${AGENT_ID}`);
     // The list behind the dialog was refetched before the dialog said so.
-    const listCalls = fetch.mock.calls.filter(([url]) => String(url) === "/api/ui/harnesses");
+    const listCalls = fetch.mock.calls.filter(([url]) => String(url) === "/api/ui/agents");
     expect(listCalls.length).toBe(2);
     await waitFor(() => expect(screen.getAllByText("build-box").length).toBeGreaterThan(0));
   });

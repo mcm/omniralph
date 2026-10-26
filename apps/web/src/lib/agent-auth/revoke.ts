@@ -51,7 +51,7 @@ export async function revokeAgent(
   // Requeued jobs are due again at once; failed and canceled ones leave the due set.
   await syncJobsDue([...revoked.requeuedJobs, ...revoked.failedJobs, ...revoked.canceledJobs]);
   await writeAgentAudit(db, {
-    agentId: agentId,
+    agentId,
     event: "revoke",
     ip: options.ip ?? null,
     detail: {
@@ -115,7 +115,7 @@ export async function deleteAgent(
   }
   if (!(await markAgentDeleted(db, options.organizationId, agentId))) return false;
   await writeAgentAudit(db, {
-    agentId: agentId,
+    agentId,
     event: "delete",
     ip: options.ip ?? null,
     detail: { deletedBy: options.deletedBy ?? null },

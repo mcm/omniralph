@@ -83,7 +83,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
   let repoId: string;
   let connection: ChatConnection;
   let chatThread: ChatThread;
-  let harnessId: string;
+  let agentId: string;
   let scm: FakeScmAdapter;
   let dispatcher: PostgresDispatcher;
   let adapter: Adapter;
@@ -313,7 +313,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     );
     if (saved === "other_organization") throw new Error("taken");
     connection = saved;
-    [{ id: harnessId }] = (await db
+    [{ id: agentId }] = (await db
       .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: agents.id })) as [{ id: string }];
@@ -369,7 +369,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: harnessId,
+      agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
@@ -377,13 +377,13 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     });
     expect(started.claim?.job.id).toBe(job!.id);
     if (!isCleanupJob(type)) {
-      expect(await onRalphJobStarted(db, job!, harnessId)).toEqual({ skip: false });
+      expect(await onRalphJobStarted(db, job!, agentId)).toEqual({ skip: false });
     }
     return job!;
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, agentId: harnessId, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, agentId, result })).toEqual({
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;

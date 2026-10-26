@@ -14,11 +14,11 @@ import { isRerunnable, jobRerunKind } from "./rerun-kind";
 vi.mock("server-only", () => ({}));
 const db = vi.hoisted(() => ({
   jobs: new Map<string, unknown>(),
-  harnesses: new Map<string, unknown>(),
+  agents: new Map<string, unknown>(),
 }));
 vi.mock("@omniralph/db", () => ({
   getJob: async (_db: unknown, id: string) => db.jobs.get(id) ?? null,
-  getAgent: async (_db: unknown, id: string) => db.harnesses.get(id) ?? null,
+  getAgent: async (_db: unknown, id: string) => db.agents.get(id) ?? null,
 }));
 const reviews = vi.hoisted(() => ({ rerunOrganizationReview: vi.fn() }));
 vi.mock("@/lib/reviews/manage", () => reviews);
@@ -27,7 +27,7 @@ const { rerunJob, ALREADY_ACTIVE_WARNING, JOB_NOT_FOUND } = await import("./reru
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const REVIEW_ID = "22222222-2222-4222-8222-222222222222";
-const HARNESS_ID = "33333333-3333-4333-8333-333333333333";
+const AGENT_ID = "33333333-3333-4333-8333-333333333333";
 
 /** A run spec's payload whose trigger context names the review. */
 const reviewPayload = {
@@ -48,9 +48,9 @@ function job(overrides: Partial<Job>): Job {
     payload: { name: "@acme/tool" },
     status: "failed",
     repositoryId: null,
-    agentId: HARNESS_ID,
-    targetAgentId: HARNESS_ID,
-    dedupeKey: `install:${HARNESS_ID}:@acme/tool@latest`,
+    agentId: AGENT_ID,
+    targetAgentId: AGENT_ID,
+    dedupeKey: `install:${AGENT_ID}:@acme/tool@latest`,
     error: "npm failed",
     ...overrides,
   } as Job;
@@ -68,8 +68,8 @@ function dispatcher(created = true) {
 
 beforeEach(() => {
   db.jobs.clear();
-  db.harnesses.clear();
-  db.harnesses.set(HARNESS_ID, { id: HARNESS_ID, organizationId: ORG, revokedAt: null });
+  db.agents.clear();
+  db.agents.set(AGENT_ID, { id: AGENT_ID, organizationId: ORG, revokedAt: null });
   reviews.rerunOrganizationReview.mockReset();
 });
 
@@ -99,7 +99,7 @@ describe("jobRerunKind", () => {
 });
 
 describe("rerunJob", () => {
-  it("dispatches a failed system RPC again to the harness it targeted", async () => {
+  it("dispatches a failed system RPC again to the agent it targeted", async () => {
     const failed = job({});
     const { dispatcher: d, createAndPublish } = dispatcher();
     expect(await rerunJob({} as never, d, ORG, failed.id)).toEqual({
@@ -113,7 +113,7 @@ describe("rerunJob", () => {
         taskType: "system",
         payload: { name: "@acme/tool" },
         dedupeKey: failed.dedupeKey,
-        targetAgentId: HARNESS_ID,
+        targetAgentId: AGENT_ID,
       }),
     );
   });
@@ -128,7 +128,7 @@ describe("rerunJob", () => {
       const { dispatcher: d, createAndPublish } = dispatcher();
       expect(await rerunJob({} as never, d, ORG, ended.id)).toMatchObject({ ok: true });
       expect(createAndPublish).toHaveBeenCalledWith(
-        expect.objectContaining({ type: REPO_SYNC_JOB_TYPE, targetAgentId: HARNESS_ID }),
+        expect.objectContaining({ type: REPO_SYNC_JOB_TYPE, targetAgentId: AGENT_ID }),
       );
     }
   });
@@ -142,11 +142,11 @@ describe("rerunJob", () => {
     });
   });
 
-  it("refuses a system RPC whose harness is gone or revoked", async () => {
+  it("refuses a system RPC whose agent is gone or revoked", async () => {
     const { dispatcher: d, createAndPublish } = dispatcher();
     const untargeted = job({ targetAgentId: null });
     expect(await rerunJob({} as never, d, ORG, untargeted.id)).toMatchObject({ ok: false });
-    db.harnesses.set(HARNESS_ID, { id: HARNESS_ID, organizationId: ORG, revokedAt: new Date() });
+    db.agents.set(AGENT_ID, { id: AGENT_ID, organizationId: ORG, revokedAt: new Date() });
     const revoked = job({ id: "66666666-6666-4666-8666-666666666666" });
     expect(await rerunJob({} as never, d, ORG, revoked.id)).toMatchObject({ ok: false });
     expect(createAndPublish).not.toHaveBeenCalled();

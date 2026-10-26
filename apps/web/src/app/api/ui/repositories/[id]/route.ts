@@ -12,7 +12,7 @@ const detailQuery = z.object({ next: z.string().max(2000).optional() });
 
 /**
  * A connected repository of the active organization with what its Review settings and
- * Harnesses tabs show: polled by its settings pages. `?next=` is the page asking: when the
+ * Agents tabs show: polled by its settings pages. `?next=` is the page asking: when the
  * repository is another of the user's organizations', the 409 that switches to it comes
  * back there.
  */

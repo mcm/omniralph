@@ -26,7 +26,7 @@ const byRalphRun = (job: Pick<Job, "payload">) => invokerKind(job) === "ralph-ru
  *   does the same.
  * - a ralph run's PR/MR description (its story task's `prDescriptionTaskId`):
  *   through the same hooks as a `ralph.describe-pr` job; the delivery makes
- *   its harness the run's sticky harness (or is skipped once the run is
+ *   its agent the run's sticky agent (or is skipped once the run is
  *   over), and `advanceRun` applies the outcome it finds through the run's
  *   `pr_job_id` (`applyPullRequestJob`).
  */
@@ -39,8 +39,8 @@ export const runResultSink: Sink<never, QueryRunResult> = {
     const parsed = QueryRunResult.safeParse(result);
     return parsed.success ? parsed.data : null;
   },
-  onStarted: async (db, job, harnessId) =>
-    byRalphRun(job) ? onRalphJobStarted(db, job, harnessId) : { skip: false },
+  onStarted: async (db, job, agentId) =>
+    byRalphRun(job) ? onRalphJobStarted(db, job, agentId) : { skip: false },
   apply: (db, job, result) =>
     byRalphRun(job) ? onRalphJobFinished(db, job) : applyCorrelationResult(db, job, result),
   onFailed: (db, job, error) =>

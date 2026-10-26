@@ -13,8 +13,8 @@ import {
   REPOSITORY_BINDING_ROLES,
   type RepositoryBinding,
 } from "@/lib/playbooks";
-import { pinRepository } from "@/lib/harnesses/pins";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { pinRepository } from "@/lib/agents/pins";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import type { JobDispatcher } from "@/lib/dispatch";
 
 export type SaveRepositorySettingsResult =
@@ -22,11 +22,11 @@ export type SaveRepositorySettingsResult =
       status: "saved";
       pinnedAgentIds: string[];
       unpinnedAgentIds: string[];
-      /** `repo.sync` jobs enqueued for the newly pinned harnesses. */
+      /** `repo.sync` jobs enqueued for the newly pinned agents. */
       syncJobIds: string[];
     }
   | { status: "unknown_repository" }
-  | { status: "unknown_agents"; harnessIds: string[] }
+  | { status: "unknown_agents"; agentIds: string[] }
   | { status: "invalid_bindings"; fieldErrors: FieldErrors };
 
 /** Why a repository role can't be bound to these playbooks (one of the organization's, of a role it takes). */
@@ -122,7 +122,7 @@ export async function saveRepositorySettings(
   const added = wanted.filter((id) => !current.includes(id));
   const active = await filterActiveAgentIds(db, organizationId, added);
   const unknown = added.filter((id) => !active.has(id));
-  if (unknown.length > 0) return { status: "unknown_agents", harnessIds: unknown };
+  if (unknown.length > 0) return { status: "unknown_agents", agentIds: unknown };
 
   const saved = await updateRepositorySettings(db, organizationId, repositoryId, {
     depth: input.depth,
@@ -137,16 +137,16 @@ export async function saveRepositorySettings(
   if (!saved) return { status: "unknown_repository" };
 
   const syncJobIds: string[] = [];
-  for (const harnessId of added) {
-    const { result, syncJobId } = await pinRepository(db, dispatcher, { harnessId, repositoryId });
-    if (result === "unknown_agent") return { status: "unknown_agents", harnessIds: [harnessId] };
+  for (const agentId of added) {
+    const { result, syncJobId } = await pinRepository(db, dispatcher, { agentId, repositoryId });
+    if (result === "unknown_agent") return { status: "unknown_agents", agentIds: [agentId] };
     if (result === "unknown_repository") return { status: "unknown_repository" };
     if (syncJobId) syncJobIds.push(syncJobId);
   }
   const removed = current.filter((id) => !wanted.includes(id));
-  for (const harnessId of removed) {
-    if (await unpinRepositoryFromAgent(db, { agentId: harnessId, repositoryId })) {
-      await bumpHarnessHeartbeat(harnessId);
+  for (const agentId of removed) {
+    if (await unpinRepositoryFromAgent(db, { agentId, repositoryId })) {
+      await bumpAgentHeartbeat(agentId);
     }
   }
   return { status: "saved", pinnedAgentIds: added, unpinnedAgentIds: removed, syncJobIds };

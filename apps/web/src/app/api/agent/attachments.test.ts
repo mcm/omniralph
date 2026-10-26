@@ -143,7 +143,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
         type: "ralph.story",
         taskType: "coding",
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId,
         ralphRunId: run.id,
         payload: { attachments: listed.map((id) => ({ id, title: "shot.png", sources: ["x"] })) },
@@ -206,7 +206,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
         taskType: "query",
         taskId: "builtin:chat-ask",
         status: "running",
-        agentId: agentId,
+        agentId,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?", attachments } } },
       })
       .returning();

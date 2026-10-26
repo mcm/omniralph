@@ -4,23 +4,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
-import { harnessDefaultsSchema, hostToolCatalogSchema } from "@/lib/api/harness-defaults";
+import { agentDefaultsSchema, hostToolCatalogSchema } from "@/lib/api/agent-defaults";
 import type { QueryKeys } from "@/lib/api/keys";
 
 /** The keys of Settings › Harness defaults' tabs. */
 export const harnessDefaultsKeys = (keys: QueryKeys) => ({
-  defaults: keys.settings.detail("harness-defaults"),
+  defaults: keys.settings.detail("agent-defaults"),
   hostTools: keys.settings.detail("host-tools"),
 });
 
-/** The organization's harness defaults, live (`GET /api/ui/harness-defaults`, admins). */
+/** The organization's harness defaults, live (`GET /api/ui/agent-defaults`, admins). */
 export function useHarnessDefaults() {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
     queryKey: harnessDefaultsKeys(keys).defaults,
     queryFn: ({ signal }) =>
-      api.get("/api/ui/harness-defaults", harnessDefaultsSchema, {
+      api.get("/api/ui/agent-defaults", agentDefaultsSchema, {
         organizationId: organization.id,
         signal,
       }),
@@ -48,7 +48,7 @@ export function useHostToolCatalog() {
  */
 export const harnessDefaultsChanged = (keys: QueryKeys) => [
   harnessDefaultsKeys(keys).defaults,
-  keys.harnesses.all,
+  keys.agents.all,
   keys.repositories.all,
 ];
 
@@ -58,6 +58,6 @@ export const harnessDefaultsChanged = (keys: QueryKeys) => [
  */
 export const hostToolsChanged = (keys: QueryKeys) => [
   harnessDefaultsKeys(keys).hostTools,
-  keys.harnesses.all,
+  keys.agents.all,
   keys.settings.detail("tasks"),
 ];

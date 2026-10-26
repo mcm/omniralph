@@ -65,9 +65,9 @@ describe("evaluateCondition", () => {
     expect(holds("team", "=", "OPS")).toBe(false);
     expect(holds("team", "!=", "OPS")).toBe(true);
     expect(holds("team", "!=", "Eng")).toBe(false);
-    expect(holds("project", "in", ["control panel", "Harness"])).toBe(true);
-    expect(holds("project", "in", ["Harness"])).toBe(false);
-    expect(holds("project", "notIn", ["Harness"])).toBe(true);
+    expect(holds("project", "in", ["control panel", "Agent"])).toBe(true);
+    expect(holds("project", "in", ["Agent"])).toBe(false);
+    expect(holds("project", "notIn", ["Agent"])).toBe(true);
     expect(holds("project", "notIn", ["CONTROL PANEL"])).toBe(false);
     expect(holds("priority", "=", "2")).toBe(true);
     expect(holds("parent", "=", "eng-10")).toBe(true);

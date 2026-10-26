@@ -101,10 +101,10 @@ export async function freshAttempts(tx: RalphTransaction, run: RalphRun): Promis
 /** What happened to a reply for a run with a running job. */
 export type LiveReply =
   /**
-   * Stored for the running job's live session; the agent (`harnessId`, whose heartbeat
+   * Stored for the running job's live session; the agent (`agentId`, whose heartbeat
    * response the caller bumps after the commit) gets it in its next heartbeat.
    */
-  | { kind: "live"; note: null; harnessId: string | null }
+  | { kind: "live"; note: null; agentId: string | null }
   /** Push/PR text kept away from the story agent: a pending request. */
   | { kind: "request"; note: ActivityContent };
 
@@ -145,7 +145,7 @@ export async function queueLiveReply(
     author: author ?? null,
     trigger,
   });
-  return { kind: "live", note: null, harnessId: job.agentId };
+  return { kind: "live", note: null, agentId: job.agentId };
 }
 
 /** The lane a running job works in, null for the main lane. */
@@ -160,7 +160,7 @@ async function jobLaneId(
 
 /**
  * Hands a message to the run's running live-session job, if it has one: a
- * mention on an issue whose run is working right now. Returns the job's harness
+ * mention on an issue whose run is working right now. Returns the job's agent
  * (whose heartbeat response the caller bumps after the commit), or null when no
  * such job runs.
  */
@@ -170,7 +170,7 @@ export async function deliverToRunningJob(
   text: string,
   author: string | undefined,
   trigger: RalphMessageTrigger,
-): Promise<{ harnessId: string | null } | null> {
+): Promise<{ agentId: string | null } | null> {
   const job = await getRunningRunJob(tx, run.id, LIVE_SESSION_JOB_TYPES);
   if (!job) return null;
   await insertMessage(tx, {
@@ -182,7 +182,7 @@ export async function deliverToRunningJob(
     author: author ?? null,
     trigger,
   });
-  return { harnessId: job.agentId };
+  return { agentId: job.agentId };
 }
 
 /**
@@ -238,20 +238,20 @@ export interface JobMessageAcks {
 export async function exchangeJobMessages(
   /** `linear` gives the gateway of an organization's workspace (each run's is told). */
   deps: { db: Database; linear: (organizationId: string) => Promise<LinearGateway> },
-  harnessId: string,
+  agentId: string,
   runningJobIds: readonly string[],
   acks: JobMessageAcks,
 ): Promise<JobMessageDelivery[]> {
   const delivered = new Set(acks.deliveredMessageIds);
   const ids = [...delivered, ...acks.rejectedMessageIds];
-  const acked = await listAgentUndeliveredMessages(deps.db, harnessId, ids);
+  const acked = await listAgentUndeliveredMessages(deps.db, agentId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
   const notes: { run: RalphRun; content: ActivityContent }[] = [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
       // Re-read under the lock: the job's end may have settled them meanwhile.
-      const messages = await listAgentUndeliveredMessages(tx, harnessId, ids);
+      const messages = await listAgentUndeliveredMessages(tx, agentId, ids);
       for (const message of messages.filter((m) => m.runId === runId)) {
         if (delivered.has(message.id)) {
           if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);

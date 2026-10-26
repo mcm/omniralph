@@ -51,15 +51,15 @@ describe("QueryProvider", () => {
   it("drops the previous organization's queries when the organization switches", () => {
     const shell = renderClient(A);
     const client = shell.client();
-    client.setQueryData(queryKeys(A).harnesses.list(), ["build-01"]);
+    client.setQueryData(queryKeys(A).agents.list(), ["build-01"]);
     client.setQueryData(queryKeys(A).jobs.detail("j1"), { id: "j1" });
     shell.switchTo(B);
     expect(shell.client()).toBe(client);
     expect(client.getQueryCache().getAll()).toHaveLength(0);
 
-    client.setQueryData(queryKeys(B).harnesses.list(), ["build-02"]);
+    client.setQueryData(queryKeys(B).agents.list(), ["build-02"]);
     shell.switchTo(B);
-    expect(client.getQueryData(queryKeys(B).harnesses.list())).toEqual(["build-02"]);
+    expect(client.getQueryData(queryKeys(B).agents.list())).toEqual(["build-02"]);
   });
 });
 
@@ -67,14 +67,14 @@ describe("QueryProvider", () => {
 function Page({ fetched }: { fetched: string[] }) {
   const keys = useQueryKeys();
   const query = useQuery({
-    queryKey: keys.harnesses.list(),
+    queryKey: keys.agents.list(),
     queryFn: async () => {
       const organizationId = keys.all[0] as string;
       fetched.push(organizationId);
       return organizationId;
     },
   });
-  return <p>{query.data ? `Harnesses of ${query.data}` : "Loading"}</p>;
+  return <p>{query.data ? `Agents of ${query.data}` : "Loading"}</p>;
 }
 
 describe("switching organizations", () => {
@@ -93,11 +93,11 @@ describe("switching organizations", () => {
       </CurrentUserProvider>
     );
     const { rerender } = render(shell(A));
-    await waitFor(() => expect(screen.getByText(`Harnesses of ${A}`)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(`Agents of ${A}`)).toBeTruthy());
 
     // The shell re-renders in the new organization (the switcher's refresh).
     rerender(shell(B));
-    await waitFor(() => expect(screen.getByText(`Harnesses of ${B}`)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(`Agents of ${B}`)).toBeTruthy());
     expect(fetched).toEqual([A, B]);
     const cached = client!
       .getQueryCache()

@@ -53,7 +53,7 @@ interface SeededOrg {
   doneRunId: string;
   reviewId: string;
   jobId: string;
-  harnessId: string;
+  agentId: string;
 }
 
 /** A tool's result as a loose record. */
@@ -188,7 +188,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       doneRunId: doneRun.id,
       reviewId: review.id,
       jobId: job.id,
-      harnessId: agent!.id,
+      agentId: agent!.id,
     };
   }
 
@@ -232,7 +232,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       "list_reviews",
       "get_review",
       "list_jobs",
-      "list_harnesses",
+      "list_agents",
       "list_repositories",
       "ask_about_code",
       "start_work",
@@ -363,7 +363,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
         type: "review.task",
         status: "queued",
         target: { label: "acme/api#7", url: "https://github.com/acme/api/pull/7" },
-        harness: null,
+        agent: null,
       }),
     ]);
     expect(list).toMatchObject({ shown: 1, more: false });
@@ -377,12 +377,12 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect((await call("list_jobs", { type: "ralph.story" }, acme.id)).jobs).toEqual([]);
   });
 
-  it("list_harnesses returns only the organization's harnesses", async () => {
-    const list = await call("list_harnesses", {}, acme.id);
-    expect(list.harnesses).toEqual([
+  it("list_agents returns only the organization's agents", async () => {
+    const list = await call("list_agents", {}, acme.id);
+    expect(list.agents).toEqual([
       expect.objectContaining({
-        id: acme.harnessId,
-        url: `${APP_URL}/harnesses/${acme.harnessId}`,
+        id: acme.agentId,
+        url: `${APP_URL}/harnesses/${acme.agentId}`,
         name: "acme-agent",
         status: "online",
         version: "1.2.3",

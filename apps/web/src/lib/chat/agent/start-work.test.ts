@@ -121,7 +121,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
   let appRepoId: string;
   let connection: ChatConnection;
   let chatThread: ChatThread;
-  let harnessId: string;
+  let agentId: string;
   let posts: string[];
   let ephemerals: string[];
   let reactions: { threadId: string; messageId: string; emoji: string }[];
@@ -238,14 +238,14 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
   async function startRequestJob(job: Job): Promise<void> {
     const started = await claimJob(db, {
       organizationId: orgId,
-      agentId: harnessId,
+      agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
-    expect(await onRalphJobStarted(db, job, harnessId)).toEqual({ skip: false });
+    expect(await onRalphJobStarted(db, job, agentId)).toEqual({ skip: false });
   }
 
   /** Plays the run's queued (or started) `ralph.request` job to completion with `result`. */
@@ -259,7 +259,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       durationMs: 10,
       ...result,
     };
-    expect(await completeJob(db, { jobId: job.id, agentId: harnessId, result: outcome })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, agentId, result: outcome })).toEqual({
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, ralph());
@@ -322,7 +322,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     );
     if (saved === "other_organization") throw new Error("taken");
     connection = saved;
-    [{ id: harnessId }] = (await db
+    [{ id: agentId }] = (await db
       .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: agents.id })) as [{ id: string }];

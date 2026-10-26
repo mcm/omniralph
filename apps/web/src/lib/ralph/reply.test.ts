@@ -525,9 +525,9 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     const heartbeat = (
       runningJobIds: string[],
       acks: { delivered?: string[]; rejected?: string[] } = {},
-      harnessId = agentA,
+      agentId = agentA,
     ) =>
-      exchangeJobMessages({ db, linear: async () => linear }, harnessId, runningJobIds, {
+      exchangeJobMessages({ db, linear: async () => linear }, agentId, runningJobIds, {
         deliveredMessageIds: acks.delivered ?? [],
         rejectedMessageIds: acks.rejected ?? [],
       });
@@ -956,7 +956,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     it("runs the preparation on the agent of the lane that holds the branch", async () => {
       const { run } = await manualEpic();
       await work(run.id, { commitSha: sha(7) });
-      // The run's harness is only a mirror: the job follows the lane's.
+      // The run's agent is only a mirror: the job follows the lane's.
       await db.update(ralphRuns).set({ agentId: null }).where(eq(ralphRuns.id, run.id));
       await reply(run, "Run it");
       expect(await activeJob(run.id)).toMatchObject({

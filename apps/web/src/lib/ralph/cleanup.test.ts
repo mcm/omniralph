@@ -628,7 +628,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
           reason: "not_ralph",
         });
 
-        // Whatever the harness found, nothing is asked: the branch and the stash stay.
+        // Whatever the agent found, nothing is asked: the branch and the stash stay.
         const stash = sha(90);
         await finish(
           await start(run.id, "worktree.cleanup"),

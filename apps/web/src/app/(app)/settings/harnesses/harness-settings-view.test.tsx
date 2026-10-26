@@ -12,7 +12,7 @@ import {
   testUser,
   TEST_ORGANIZATION_ID,
 } from "@/components/query-test-utils";
-import type { AgentDefaults, HostToolCatalogRow } from "@/lib/api/harness-defaults";
+import type { AgentDefaults, HostToolCatalogRow } from "@/lib/api/agent-defaults";
 import { HarnessSettingsView } from "./harness-settings-view";
 
 const navigation = vi.hoisted(() => ({
@@ -32,11 +32,11 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
   toast: toasts.toast,
 }));
 
-const DEFAULTS = "/api/ui/harness-defaults";
+const DEFAULTS = "/api/ui/agent-defaults";
 const HOST_TOOLS = "/api/ui/host-tools";
 const builtIn = { maxConcurrency: 5 };
 
-function harnessDefaults(overrides: Partial<AgentDefaults> = {}): AgentDefaults {
+function agentDefaults(overrides: Partial<AgentDefaults> = {}): AgentDefaults {
   return {
     desiredVersion: "1.4.0",
     updatedAt: null,
@@ -77,7 +77,7 @@ beforeEach(() => {
 
 describe("HarnessSettingsView › Defaults", () => {
   it("shows a skeleton, then concurrency and the harness version in one section with one save", async () => {
-    mockFetch({ [`GET ${DEFAULTS}`]: harnessDefaults() });
+    mockFetch({ [`GET ${DEFAULTS}`]: agentDefaults() });
     const { container } = renderView();
     expect(screen.getByLabelText("Loading the harness defaults")).toBeTruthy();
     await waitFor(() => expect(version().value).toBe("1.4.0"));
@@ -102,7 +102,7 @@ describe("HarnessSettingsView › Defaults", () => {
       [`GET ${DEFAULTS}`]: () =>
         fail
           ? jsonResponse({ error: "Database unavailable." }, 500)
-          : jsonResponse(harnessDefaults()),
+          : jsonResponse(agentDefaults()),
     });
     renderView();
     await screen.findByText("Couldn't load the harness defaults");
@@ -113,7 +113,7 @@ describe("HarnessSettingsView › Defaults", () => {
 
   it("re-seeds from fresh data unless the section is being edited", async () => {
     let desiredVersion = "1.4.0";
-    mockFetch({ [`GET ${DEFAULTS}`]: () => jsonResponse(harnessDefaults({ desiredVersion })) });
+    mockFetch({ [`GET ${DEFAULTS}`]: () => jsonResponse(agentDefaults({ desiredVersion })) });
     const { client } = renderView();
     await waitFor(() => expect(version().value).toBe("1.4.0"));
 
@@ -132,7 +132,7 @@ describe("HarnessSettingsView › Defaults", () => {
   it("saves only what changed: the version alone", async () => {
     let desiredVersion = "1.4.0";
     const seen = mockFetch({
-      [`GET ${DEFAULTS}`]: () => jsonResponse(harnessDefaults({ desiredVersion })),
+      [`GET ${DEFAULTS}`]: () => jsonResponse(agentDefaults({ desiredVersion })),
       [`PUT ${DEFAULTS}`]: (request) => {
         desiredVersion = (request.body as { version: string }).version;
         return jsonResponse({ ok: true });
@@ -153,7 +153,7 @@ describe("HarnessSettingsView › Defaults", () => {
   });
 
   it("saves the defaults and the version in one request, and refetches the harnesses and repositories", async () => {
-    let saved = harnessDefaults();
+    let saved = agentDefaults();
     const seen = mockFetch({
       [`GET ${DEFAULTS}`]: () => jsonResponse(saved),
       [`PUT ${DEFAULTS}`]: (request) => {
@@ -161,7 +161,7 @@ describe("HarnessSettingsView › Defaults", () => {
           defaults: AgentDefaults["defaults"];
           version: string;
         };
-        saved = harnessDefaults({ defaults: body.defaults, desiredVersion: body.version });
+        saved = agentDefaults({ defaults: body.defaults, desiredVersion: body.version });
         return jsonResponse({ ok: true });
       },
     });
@@ -180,8 +180,8 @@ describe("HarnessSettingsView › Defaults", () => {
       { defaults: { maxConcurrency: 6 }, version: "1.5.0" },
     ]);
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
-      [TEST_ORGANIZATION_ID, "settings", "detail", "harness-defaults"],
-      [TEST_ORGANIZATION_ID, "harnesses"],
+      [TEST_ORGANIZATION_ID, "settings", "detail", "agent-defaults"],
+      [TEST_ORGANIZATION_ID, "agents"],
       [TEST_ORGANIZATION_ID, "repositories"],
     ]);
     expect(version().value).toBe("1.5.0");
@@ -189,7 +189,7 @@ describe("HarnessSettingsView › Defaults", () => {
 
   it("shows a failed save's error and keeps the draft", async () => {
     mockFetch({
-      [`GET ${DEFAULTS}`]: harnessDefaults(),
+      [`GET ${DEFAULTS}`]: agentDefaults(),
       [`PUT ${DEFAULTS}`]: () =>
         jsonResponse({ error: "Enter a version like 2.0.0 or latest, or leave it blank." }, 400),
     });
@@ -266,7 +266,7 @@ describe("HarnessSettingsView › Host tools", () => {
     expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe("");
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
       [TEST_ORGANIZATION_ID, "settings", "detail", "host-tools"],
-      [TEST_ORGANIZATION_ID, "harnesses"],
+      [TEST_ORGANIZATION_ID, "agents"],
       [TEST_ORGANIZATION_ID, "settings", "detail", "tasks"],
     ]);
   });

@@ -56,7 +56,7 @@ function repositoryList(paths: string[]): RepositoryList {
       webUrl: `https://github.com/${fullPath}`,
       taskTypes: { reviews: true, coding: false, ask: true },
       depth: "standard",
-      pinnedHarnesses: [],
+      pinnedAgents: [],
       lastReviewAt: null,
     })),
   };

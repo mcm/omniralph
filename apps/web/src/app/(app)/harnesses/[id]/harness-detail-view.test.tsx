@@ -10,13 +10,13 @@ import {
   queryWrapper,
   TEST_ORGANIZATION_ID,
 } from "@/components/query-test-utils";
-import type { HarnessDetail, InstallJobRow } from "@/lib/api/harnesses";
+import type { AgentDetail, InstallJobRow } from "@/lib/api/agents";
 import { queryKeys } from "@/lib/api/keys";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import type { AgentRow } from "@/lib/agents/rows";
 import { HarnessDetailView } from "./harness-detail-view";
 import { InstallForm } from "./harness-installables";
 
-const HARNESS_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
+const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const REPO_ID = "0b6a3c1e-8f4d-4c2a-9e1b-7d5f3a2c1b0e";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
@@ -27,9 +27,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
-function harness(overrides: Partial<HarnessRow> = {}): HarnessRow {
+function harness(overrides: Partial<AgentRow> = {}): AgentRow {
   return {
-    id: HARNESS_ID,
+    id: AGENT_ID,
     name: "build-01",
     online: true,
     revoked: false,
@@ -64,16 +64,16 @@ function harness(overrides: Partial<HarnessRow> = {}): HarnessRow {
   };
 }
 
-function detail(overrides: Partial<HarnessRow> = {}, syncStatus = "queued"): HarnessDetail {
+function detail(overrides: Partial<AgentRow> = {}, syncStatus = "queued"): AgentDetail {
   return {
-    harness: harness(overrides),
+    agent: harness(overrides),
     globalDesiredVersion: "1.0.0",
     audit: [],
     pinSyncJobs: [
       {
         repositoryId: REPO_ID,
         id: "00000000-0000-4000-8000-000000000009",
-        status: syncStatus as HarnessDetail["pinSyncJobs"][number]["status"],
+        status: syncStatus as AgentDetail["pinSyncJobs"][number]["status"],
         error: null,
         createdAt: "2026-10-16T10:00:00.000Z",
         finishedAt: null,
@@ -92,7 +92,7 @@ describe("HarnessDetailView", () => {
   it("loads the harness and shows its running jobs and pins' syncs as they change", async () => {
     let current = detail();
     const requests = mockFetch({
-      [`GET /api/ui/harnesses/${HARNESS_ID}`]: () => jsonResponse(current),
+      [`GET /api/ui/agents/${AGENT_ID}`]: () => jsonResponse(current),
     });
     const client = createTestQueryClient();
     render(<HarnessDetailView tab="overview" />, { wrapper: queryWrapper(client) });
@@ -123,7 +123,7 @@ describe("HarnessDetailView", () => {
         "completed",
       ),
     };
-    await client.refetchQueries({ queryKey: keys.harnesses.detail(HARNESS_ID) });
+    await client.refetchQueries({ queryKey: keys.agents.detail(AGENT_ID) });
     await waitFor(() => expect(within(pin()).getByText("Completed")).toBeTruthy());
     expect(screen.getByText(/1 \/ 2/)).toBeTruthy();
     expect(document.querySelector(".harness-job-link")?.textContent).toContain("acme/api!7");
@@ -132,7 +132,7 @@ describe("HarnessDetailView", () => {
   it("shows a failed load in place with a retry", async () => {
     let fail = true;
     mockFetch({
-      [`GET /api/ui/harnesses/${HARNESS_ID}`]: () =>
+      [`GET /api/ui/agents/${AGENT_ID}`]: () =>
         fail
           ? jsonResponse({ error: "Something went wrong. Try again." }, 500)
           : jsonResponse(detail()),
@@ -149,16 +149,16 @@ describe("HarnessDetailView", () => {
   it("leaves for the harness list only once the delete succeeded and the list was invalidated", async () => {
     let resolveDelete: (response: Response) => void = () => {};
     const requests = mockFetch({
-      [`GET /api/ui/harnesses/${HARNESS_ID}`]: () => jsonResponse(detail()),
-      [`DELETE /api/ui/harnesses/${HARNESS_ID}`]: () =>
+      [`GET /api/ui/agents/${AGENT_ID}`]: () => jsonResponse(detail()),
+      [`DELETE /api/ui/agents/${AGENT_ID}`]: () =>
         new Promise<Response>((resolve) => {
           resolveDelete = resolve;
         }),
-      "GET /api/ui/harnesses": () => jsonResponse({ harnesses: [] }),
+      "GET /api/ui/agents": () => jsonResponse({ agents: [] }),
     });
     const client = createTestQueryClient();
     // The harness list, cached from before.
-    client.setQueryData(keys.harnesses.list(), { harnesses: [harness()] });
+    client.setQueryData(keys.agents.list(), { agents: [harness()] });
     render(<HarnessDetailView tab="overview" />, { wrapper: queryWrapper(client) });
     await userEvent.click(await screen.findByRole("button", { name: "Delete harness" }));
     await userEvent.click(
@@ -170,13 +170,13 @@ describe("HarnessDetailView", () => {
     resolveDelete(jsonResponse({ ok: true }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/harnesses"));
     expect(requests.some((r) => r.method === "DELETE")).toBe(true);
-    expect(client.getQueryState(keys.harnesses.list())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(keys.agents.list())?.isInvalidated).toBe(true);
   });
 
   it("doesn't leave when revoking fails", async () => {
     mockFetch({
-      [`GET /api/ui/harnesses/${HARNESS_ID}`]: () => jsonResponse(detail()),
-      [`POST /api/ui/harnesses/${HARNESS_ID}/revoke`]: () =>
+      [`GET /api/ui/agents/${AGENT_ID}`]: () => jsonResponse(detail()),
+      [`POST /api/ui/agents/${AGENT_ID}/revoke`]: () =>
         jsonResponse({ error: "That harness doesn't exist." }, 400),
     });
     render(<HarnessDetailView tab="overview" />, {
@@ -197,7 +197,7 @@ describe("InstallForm", () => {
   it("shows the install job it started as it goes from queued to running to done", async () => {
     const JOB_ID = "00000000-0000-4000-8000-000000000001";
     const requests = mockFetch({
-      [`POST /api/ui/harnesses/${HARNESS_ID}/installs`]: { ok: true, jobId: JOB_ID },
+      [`POST /api/ui/agents/${AGENT_ID}/installs`]: { ok: true, jobId: JOB_ID },
     });
     const job = (
       status: InstallJobRow["status"],
@@ -211,7 +211,7 @@ describe("InstallForm", () => {
       error: null,
       createdAt: "2026-10-16T10:00:00.000Z",
     });
-    const { rerender } = render(<InstallForm harnessId={HARNESS_ID} installJobs={[]} />, {
+    const { rerender } = render(<InstallForm agentId={AGENT_ID} installJobs={[]} />, {
       wrapper: queryWrapper(createTestQueryClient()),
     });
     await userEvent.type(screen.getByLabelText("Package name"), "@omniralph/hello");
@@ -221,11 +221,11 @@ describe("InstallForm", () => {
 
     const status = () =>
       document.querySelector("[data-install-status]")?.getAttribute("data-install-status");
-    rerender(<InstallForm harnessId={HARNESS_ID} installJobs={[job("queued")]} />);
+    rerender(<InstallForm agentId={AGENT_ID} installJobs={[job("queued")]} />);
     expect(status()).toBe("queued");
-    rerender(<InstallForm harnessId={HARNESS_ID} installJobs={[job("running")]} />);
+    rerender(<InstallForm agentId={AGENT_ID} installJobs={[job("running")]} />);
     expect(status()).toBe("running");
-    rerender(<InstallForm harnessId={HARNESS_ID} installJobs={[job("completed", "1.2.0")]} />);
+    rerender(<InstallForm agentId={AGENT_ID} installJobs={[job("completed", "1.2.0")]} />);
     expect(status()).toBe("completed");
     expect(screen.getByText("Installed 1.2.0")).toBeTruthy();
   });

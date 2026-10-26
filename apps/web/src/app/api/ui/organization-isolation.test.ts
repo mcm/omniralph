@@ -105,9 +105,9 @@ vi.mock("@/lib/chat/slack-oauth", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   revokeSlackToken: async () => {},
 }));
-vi.mock("@/lib/harnesses/npm", () => ({
+vi.mock("@/lib/agents/npm", () => ({
   NpmRegistryError: class extends Error {},
-  latestHarnessVersion: async () => "9.9.9",
+  latestAgentVersion: async () => "9.9.9",
 }));
 
 const state = vi.hoisted(() => ({
@@ -184,16 +184,16 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 process.env.AUTH_SECRET = randomBytes(32).toString("base64");
 
-const harnessList = await import("./harnesses/route");
-const enrollments = await import("./harness-enrollments/route");
-const enrollment = await import("./harness-enrollments/[id]/route");
-const harnessDetail = await import("./harnesses/[id]/route");
-const harnessSettings = await import("./harnesses/[id]/settings/route");
-const harnessUpdate = await import("./harnesses/[id]/update/route");
-const harnessRevoke = await import("./harnesses/[id]/revoke/route");
-const harnessInstallables = await import("./harnesses/[id]/installables/route");
-const harnessInstalls = await import("./harnesses/[id]/installs/route");
-const agentHostTools = await import("./harnesses/[id]/host-tools/route");
+const agentList = await import("./agents/route");
+const enrollments = await import("./agent-enrollments/route");
+const enrollment = await import("./agent-enrollments/[id]/route");
+const agentDetail = await import("./agents/[id]/route");
+const agentSettings = await import("./agents/[id]/settings/route");
+const agentUpdate = await import("./agents/[id]/update/route");
+const agentRevoke = await import("./agents/[id]/revoke/route");
+const agentInstallables = await import("./agents/[id]/installables/route");
+const agentInstalls = await import("./agents/[id]/installs/route");
+const agentHostTools = await import("./agents/[id]/host-tools/route");
 const repositoryList = await import("./repositories/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
@@ -252,7 +252,7 @@ const channelPlaybooks = await import("./integrations/chat-connections/[id]/chan
 const playbookList = await import("./playbooks/route");
 const playbookDetail = await import("./playbooks/[id]/route");
 const playbookClone = await import("./playbooks/[id]/clone/route");
-const harnessDefaults = await import("./harness-defaults/route");
+const agentDefaults = await import("./agent-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
 const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
@@ -289,7 +289,7 @@ interface Tenant {
   adminId: string;
   memberId: string;
   orgId: string;
-  harnessId: string;
+  agentId: string;
   enrollmentId: string;
   connectionId: string;
   repoId: string;
@@ -325,7 +325,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     await setActiveOrganization(db, { userId: member!.id, organizationId: org.id });
     const created = await createAgentEnrollment(db, {
       organizationId: org.id,
-      name: `${name}-harness`,
+      name: `${name}-agent`,
     });
     const { agentId } = (await enrollAgent(db, {
       enrollmentToken: created.token,
@@ -416,7 +416,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       adminId: admin!.id,
       memberId: member!.id,
       orgId: org.id,
-      harnessId: agentId,
+      agentId,
       enrollmentId: created.id,
       connectionId: connection.id,
       repoId: repo.id,
@@ -465,7 +465,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             analytics: {
               totals: { reviews: 1 },
               findingsBySeverity: { high: 1 },
-              jobsByAgent: [{ agent: { id: own.harnessId }, total: 1 }],
+              jobsByAgent: [{ agent: { id: own.agentId }, total: 1 }],
             },
             ralph: { totals: { runs: 1 } },
             params: { days: 30, repositoryId: null },
@@ -1010,17 +1010,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
-  it("lists each organization's own harnesses to its members, and none of the other's", async () => {
+  it("lists each organization's own agents to its members, and none of the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
     ] as const) {
       for (const userId of [own.adminId, own.memberId]) {
         state.userId = userId;
-        const { status, body } = await call(harnessList.GET);
+        const { status, body } = await call(agentList.GET);
         expect(status).toBe(200);
-        // Its own harnesses (an earlier test enrolled more), none of the other's (the markers).
-        expect((body.harnesses as { id: string }[]).map((h) => h.id)).toContain(own.harnessId);
+        // Its own agents (an earlier test enrolled more), none of the other's (the markers).
+        expect((body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
       }
     }
@@ -1046,11 +1046,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
     expect(row).toMatchObject({ organizationId: b.orgId, name: "beta-2" });
 
-    // Only its own organization sees the enrollment and its harness.
+    // Only its own organization sees the enrollment and its agent.
     const params = { id: body.id as string };
     expect(await call(enrollment.GET, { params })).toMatchObject({
       status: 200,
-      body: { id: body.id, harness: { id: agentId, name: "beta-2" } },
+      body: { id: body.id, agent: { id: agentId, name: "beta-2" } },
     });
     state.userId = a.adminId;
     expect(await call(enrollment.GET, { params })).toMatchObject({ status: 404 });
@@ -1060,7 +1060,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = a.adminId;
     expect(await call(enrollment.GET, { params: { id: a.enrollmentId } })).toMatchObject({
       status: 200,
-      body: { harness: { id: a.harnessId } },
+      body: { agent: { id: a.agentId } },
     });
     expect(await call(enrollment.GET, { params: { id: b.enrollmentId } })).toMatchObject({
       status: 404,
@@ -1075,16 +1075,16 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
   });
 
-  it("shows each organization's own harness pages to its admins, and 404s on the other's", async () => {
+  it("shows each organization's own agent pages to its admins, and 404s on the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
     ] as const) {
       state.userId = own.adminId;
-      const ownParams = { id: own.harnessId };
-      const detail = await call(harnessDetail.GET, { params: ownParams });
-      expect(detail).toMatchObject({ status: 200, body: { harness: { id: own.harnessId } } });
-      const installables = await call(harnessInstallables.GET, { params: ownParams });
+      const ownParams = { id: own.agentId };
+      const detail = await call(agentDetail.GET, { params: ownParams });
+      expect(detail).toMatchObject({ status: 200, body: { agent: { id: own.agentId } } });
+      const installables = await call(agentInstallables.GET, { params: ownParams });
       expect(installables).toMatchObject({ status: 200, body: { installJobs: [] } });
       const hostTools = await call(agentHostTools.GET, { params: ownParams });
       expect(hostTools).toMatchObject({
@@ -1095,40 +1095,40 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
       }
 
-      const otherParams = { id: other.harnessId };
-      for (const handler of [harnessDetail.GET, harnessInstallables.GET, agentHostTools.GET]) {
+      const otherParams = { id: other.agentId };
+      for (const handler of [agentDetail.GET, agentInstallables.GET, agentHostTools.GET]) {
         expect(await call(handler, { params: otherParams })).toMatchObject({ status: 404 });
         expect(await call(handler, { params: { id: "not-a-uuid" } })).toMatchObject({
           status: 404,
         });
       }
-      // Harness pages are admin-only.
+      // Agent pages are admin-only.
       state.userId = own.memberId;
-      for (const handler of [harnessDetail.GET, harnessInstallables.GET, agentHostTools.GET]) {
+      for (const handler of [agentDetail.GET, agentInstallables.GET, agentHostTools.GET]) {
         expect(await call(handler, { params: ownParams })).toMatchObject({ status: 403 });
       }
     }
   });
 
-  it("refuses every harness change on the other organization's harness and repositories", async () => {
+  it("refuses every agent change on the other organization's agent and repositories", async () => {
     state.userId = a.adminId;
-    const theirs = { id: b.harnessId };
+    const theirs = { id: b.agentId };
     const config = { maxConcurrency: 4, poolLimits: {} };
     const refused = [
-      await call(harnessSettings.PUT, { method: "PUT", params: theirs, body: { config } }),
-      await call(harnessSettings.PUT, {
+      await call(agentSettings.PUT, { method: "PUT", params: theirs, body: { config } }),
+      await call(agentSettings.PUT, {
         method: "PUT",
         params: theirs,
         body: { version: "9.9.9" },
       }),
-      await call(harnessUpdate.POST, { method: "POST", params: theirs }),
-      await call(harnessInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
-      // The other's harness, the other's tool, or both.
+      await call(agentUpdate.POST, { method: "POST", params: theirs }),
+      await call(agentInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
+      // The other's agent, the other's tool, or both.
       ...(await Promise.all(
         [
-          [b.harnessId, a.hostToolId],
-          [a.harnessId, b.hostToolId],
-          [b.harnessId, b.hostToolId],
+          [b.agentId, a.hostToolId],
+          [a.agentId, b.hostToolId],
+          [b.agentId, b.hostToolId],
         ].map(([id, hostToolId]) =>
           call(agentHostTools.PUT, {
             method: "PUT",
@@ -1137,12 +1137,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           }),
         ),
       )),
-      await call(harnessRevoke.POST, { method: "POST", params: theirs }),
-      await call(harnessDetail.DELETE, { method: "DELETE", params: theirs }),
+      await call(agentRevoke.POST, { method: "POST", params: theirs }),
+      await call(agentDetail.DELETE, { method: "DELETE", params: theirs }),
     ];
     for (const response of refused) expect(response.status).toBe(400);
 
-    const other = (await getAgentOverview(db, b.orgId, b.harnessId))!;
+    const other = (await getAgentOverview(db, b.orgId, b.agentId))!;
     expect(other).toMatchObject({
       maxConcurrency: null,
       desiredVersion: null,
@@ -1151,34 +1151,34 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       deletedAt: null,
     });
     expect(other.pinnedRepositories).toEqual([]);
-    expect(
-      (await listAgentHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
-    ).toEqual([null]);
+    expect((await listAgentHostTools(db, b.orgId, b.agentId)).map((t) => t.configuredPath)).toEqual(
+      [null],
+    );
     expect(
       (await db.select().from(jobs).where(eq(jobs.organizationId, b.orgId))).map((j) => j.id),
     ).toEqual([b.jobId]);
 
-    // Its own harness still works.
+    // Its own agent still works.
     expect(
-      await call(harnessSettings.PUT, {
+      await call(agentSettings.PUT, {
         method: "PUT",
-        params: { id: a.harnessId },
+        params: { id: a.agentId },
         body: { config },
       }),
     ).toMatchObject({ status: 200, body: { ok: true, savedAt: expect.any(String) } });
     expect(
       await call(agentHostTools.PUT, {
         method: "PUT",
-        params: { id: a.harnessId },
+        params: { id: a.agentId },
         body: { paths: [{ hostToolId: a.hostToolId, path: "/opt/x" }] },
       }),
     ).toMatchObject({ status: 200 });
-    expect(
-      (await listAgentHostTools(db, a.orgId, a.harnessId)).map((t) => t.configuredPath),
-    ).toEqual(["/opt/x"]);
+    expect((await listAgentHostTools(db, a.orgId, a.agentId)).map((t) => t.configuredPath)).toEqual(
+      ["/opt/x"],
+    );
   });
 
-  it("sends a member of both organizations to switch to the harness's organization", async () => {
+  it("sends a member of both organizations to switch to the agent's organization", async () => {
     const [user] = await db
       .insert(users)
       .values({ id: "both-admin", email: "both@alpha.io" })
@@ -1191,11 +1191,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = user!.id;
 
     const open = (next: string) =>
-      call(harnessDetail.GET, {
-        params: { id: b.harnessId },
+      call(agentDetail.GET, {
+        params: { id: b.agentId },
         path: `/api/ui?${new URLSearchParams({ next })}`,
       });
-    const settings = `/harnesses/${b.harnessId}/settings`;
+    const settings = `/harnesses/${b.agentId}/settings`;
     const { status, body } = await open(settings);
     expect(status).toBe(409);
     expect(body).toMatchObject({ code: "enter_organization" });
@@ -1206,14 +1206,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     expect(JSON.stringify(body)).not.toContain(b.name);
 
-    // Only back to the harness's own pages.
+    // Only back to the agent's own pages.
     const elsewhere = await open("/settings/members");
     const elsewhereToken = new URL(
       elsewhere.body.enterPath as string,
       "http://localhost",
     ).searchParams.get("token");
     expect(await readEnterOrganizationToken(elsewhereToken, user!.id)).toMatchObject({
-      next: `/harnesses/${b.harnessId}`,
+      next: `/harnesses/${b.agentId}`,
     });
   });
   it("lists each organization's own repositories, and its connections to its admins only", async () => {
@@ -1282,8 +1282,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         const { status, body } = await call(repositoryDetail.GET, { params: { id: own.repoId } });
         expect(status).toBe(200);
         expect(body).toMatchObject({ repository: { id: own.repoId, fullPath: own.repoPath } });
-        // Its own harnesses (an earlier test enrolled more), none of the other's (the markers).
-        expect((body.harnesses as { id: string }[]).map((h) => h.id)).toContain(own.harnessId);
+        // Its own agents (an earlier test enrolled more), none of the other's (the markers).
+        expect((body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         expect(await call(repositoryDetail.GET, { params: { id: other.repoId } })).toMatchObject({
           status: 404,
@@ -1304,7 +1304,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(await call(repositoryCoding.GET, { params: { id: other.repoId } })).toMatchObject({
         status: 404,
       });
-      // Members see Review settings and Harnesses read-only; the coding policy is for admins.
+      // Members see Review settings and Agents read-only; the coding policy is for admins.
       state.userId = own.memberId;
       expect(await call(repositoryCoding.GET, { params: { id: own.repoId } })).toMatchObject({
         status: 403,
@@ -1439,7 +1439,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
     for (const [tab, handler] of [
       ["settings", repositoryDetail.GET],
-      ["harnesses", repositoryDetail.GET],
+      ["agents", repositoryDetail.GET],
       ["coding", repositoryCoding.GET],
       ["rules", repositoryRules.GET],
     ] as const) {
@@ -2871,19 +2871,19 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(list).toContain(own(b));
     });
   });
-  describe("harness defaults", () => {
-    it("shows each organization's own harness defaults and host tools to its admins only", async () => {
+  describe("agent defaults", () => {
+    it("shows each organization's own agent defaults and host tools to its admins only", async () => {
       for (const [own, other] of [
         [a, b],
         [b, a],
       ] as const) {
         state.userId = own.memberId;
-        for (const handler of [harnessDefaults.GET, hostToolCatalog.GET]) {
+        for (const handler of [agentDefaults.GET, hostToolCatalog.GET]) {
           expect((await call(handler)).status).toBe(403);
         }
 
         state.userId = own.adminId;
-        const defaults = await call(harnessDefaults.GET);
+        const defaults = await call(agentDefaults.GET);
         expect(defaults).toMatchObject({ status: 200, body: { packageName: expect.any(String) } });
 
         const tools = await call(hostToolCatalog.GET);
@@ -2902,7 +2902,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     it("refuses every change outside the active organization, and to members", async () => {
       state.userId = a.memberId;
       for (const response of [
-        await call(harnessDefaults.PUT, { method: "PUT", body: { version: "2.4.0" } }),
+        await call(agentDefaults.PUT, { method: "PUT", body: { version: "2.4.0" } }),
         await call(hostToolCatalog.POST, { body: { name: "member-tool" } }),
         await call(hostTool.DELETE, { params: { id: a.hostToolId }, method: "DELETE" }),
       ]) {
@@ -2919,10 +2919,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(await getDesiredAgentVersion(db, a.orgId)).not.toBe("2.4.0");
     });
 
-    it("changes only the active organization's harness defaults and host tools", async () => {
+    it("changes only the active organization's agent defaults and host tools", async () => {
       state.userId = a.adminId;
       expect(
-        await call(harnessDefaults.PUT, {
+        await call(agentDefaults.PUT, {
           method: "PUT",
           body: { defaults: { maxConcurrency: 3 }, version: "2.4.0" },
         }),
@@ -2943,7 +2943,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(await getDefaultMaxConcurrency(db, b.orgId)).toBe(5);
 
       state.userId = b.adminId;
-      expect((await call(harnessDefaults.GET)).body).toMatchObject({
+      expect((await call(agentDefaults.GET)).body).toMatchObject({
         defaults: { maxConcurrency: 5 },
       });
     });

@@ -14,7 +14,7 @@
  *   branch, and asks nothing. Resuming a stopped run drops one that hasn't
  *   started (`dropKeepBranchCleanups`). Nothing deletes a branch on origin.
  * - The work runs as a `worktree.cleanup` system RPC on the run's sticky
- *   harness (a legacy `ralph.cleanup` job queued before
+ *   agent (a legacy `ralph.cleanup` job queued before
  *   that is still applied), which
  *   holds the lane's branch worktree, once none of the run's jobs is active
  *   (until then the lane's cleanup is `pending`). It stashes uncommitted
@@ -84,7 +84,7 @@ import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
 import { jobSettings } from "./payload";
 import { changeRequestTerm } from "./publish";
-import { advanceRun, FINISHED_RUN_STATUSES, stickyHarnessId, type RalphDeps } from "./run";
+import { advanceRun, FINISHED_RUN_STATUSES, stickyAgentId, type RalphDeps } from "./run";
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
@@ -158,7 +158,7 @@ async function notify(
 
 /**
  * Enqueues a `worktree.cleanup` system RPC for the lane on the lane's sticky
- * harness (the one holding its worktree; its token is the only system RPC token
+ * agent (the one holding its worktree; its token is the only system RPC token
  * that may push).
  * Null when that's impossible: the repository is gone or the lane's agent can't
  * take ralph jobs anymore (`why`, naming the lane's repository).
@@ -174,8 +174,8 @@ async function enqueueCleanupJob(
     return { why: "the repository is no longer connected" };
   }
   const { repository, connection } = found;
-  const harnessId = await stickyHarnessId(deps.db, run, lane);
-  if (!harnessId) {
+  const agentId = await stickyAgentId(deps.db, run, lane);
+  if (!agentId) {
     return {
       why: `the agent that holds the branch in \`${repository.fullPath}\` can't take coding jobs anymore`,
     };
@@ -201,7 +201,7 @@ async function enqueueCleanupJob(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: cleanupDedupeKey(lane.id),
-    targetAgentId: harnessId,
+    targetAgentId: agentId,
   });
   return { jobId: job.id };
 }

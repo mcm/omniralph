@@ -1,6 +1,6 @@
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
-import { sweepAgentLiveness } from "@/lib/harnesses/liveness";
+import { sweepAgentLiveness } from "@/lib/agents/liveness";
 import { liveRoute } from "@/lib/live/request";
 
 /**

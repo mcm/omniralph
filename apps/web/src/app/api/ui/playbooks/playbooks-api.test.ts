@@ -452,23 +452,30 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
 
 describe("/api/ui/agents", () => {
   const APP = join(__dirname, "../../..");
+  const REMOVED = ["/api/ui/agents/form-options", "/api/ui/agents/x/clone", "/api/ui/tasks"];
 
-  it("has no handler (404), so Epic 4 can use it for agents", () => {
+  it("serves the agents (machines), not the definitions playbooks replaced", () => {
     expect(servedByRouteHandler("/api/ui/playbooks")).toBe(true);
     expect(servedByRouteHandler("/api/ui/playbooks/builtin%3Areview-pr/clone")).toBe(true);
+    expect(servedByRouteHandler("/api/ui/agents")).toBe(true);
     for (const path of [
-      "/api/ui/agents",
-      "/api/ui/agents/builtin%3Areview-pr",
       "/api/ui/agents/x/clone",
-      "/api/ui/agents/form-options",
+      "/api/ui/agents/builtin%3Areview-pr/clone",
       "/api/ui/tasks",
       "/api/ui/tasks/form-options",
     ]) {
       expect(servedByRouteHandler(path), path).toBe(false);
     }
+    // `form-options` would be read as an agent ID: no definition handler is left under it.
+    expect(readdirSync(join(__dirname, "../agents")).sort()).toEqual([
+      "[id]",
+      "agents-api.test.ts",
+      "organization-isolation.test.ts",
+      "route.ts",
+    ]);
   });
 
-  it("isn't called by any client code, test or doc", () => {
+  it("has no client code, test or doc calling the definition routes", () => {
     const root = join(APP, "../../../..");
     const files = [
       ...walk(join(root, "apps/web/src")),
@@ -476,7 +483,10 @@ describe("/api/ui/agents", () => {
       ...walk(join(root, "apps/web/scripts")),
       ...walk(join(root, "docs")),
     ].filter((file) => file !== __filename);
-    const callers = files.filter((file) => readFileSync(file, "utf8").includes("/api/ui/agents"));
+    const callers = files.filter((file) => {
+      const text = readFileSync(file, "utf8");
+      return REMOVED.some((path) => text.includes(path));
+    });
     expect(callers).toEqual([]);
   });
 });

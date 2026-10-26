@@ -19,7 +19,7 @@ import {
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { bumpOrganizationHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand, type BotCommandOutcome } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";

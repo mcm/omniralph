@@ -30,7 +30,7 @@ export type EnqueueReplyResult =
 
 /**
  * The `finding.mention` trigger context of a thread reply: the finding (raw
- * `path`, lines and the review's base/head commits, from which the harness
+ * `path`, lines and the review's base/head commits, from which the agent
  * computes its diff hunk; the JSON-quoted `file` and `location` the prompt
  * shows), the question, and what the sink needs to answer in the thread.
  */

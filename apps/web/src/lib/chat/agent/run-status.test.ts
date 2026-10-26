@@ -62,7 +62,7 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
     appUrl: APP_URL,
     chatThread,
     turnMessages: [],
-    // Status comes from the database: nothing reaches the orchestrator or a harness.
+    // Status comes from the database: nothing reaches the orchestrator or an agent.
     ralph: () => {
       ralphCalls += 1;
       return Promise.reject(new Error("get_run_status must not use ralph"));
@@ -303,7 +303,7 @@ describe.skipIf(!databaseAvailable)("get_run_status", () => {
       cancelRequested: false,
       repository: "acme/api",
       question: "Where is auth handled?",
-      harness: null,
+      agent: null,
       outcome: null,
       error: null,
       waitingOnApproval: [],

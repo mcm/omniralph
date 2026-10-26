@@ -11,8 +11,8 @@
  *   runs that were missed, and those older than `HIDDEN_REF_MAX_AGE_DAYS`
  *   whose run isn't running.
  *
- * GitLab's API can't delete custom refs, so a harness deletes them with git:
- * a `worktree.cleanup` system RPC with only `hiddenRefs` (any harness that
+ * GitLab's API can't delete custom refs, so an agent deletes them with git:
+ * a `worktree.cleanup` system RPC with only `hiddenRefs` (any agent that
  * takes system RPCs; its lifecycle token may push). Its outcome marks the
  * refs it reports deleted (`applyHiddenRefsJob`).
  */
@@ -74,7 +74,7 @@ export async function recordStoryHiddenRef(
 
 /**
  * Enqueues a `worktree.cleanup` RPC deleting `refs` of the run in a
- * repository, on any harness. Null when the repository is gone or
+ * repository, on any agent. Null when the repository is gone or
  * disconnected (the sweep tries again).
  */
 export async function enqueueHiddenRefDeletion(

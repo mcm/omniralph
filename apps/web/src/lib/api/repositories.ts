@@ -29,7 +29,7 @@ export const repositoryRowSchema = z.object({
   taskTypes: repositoryTaskTypesSchema,
   /** The depth its reviews run at. */
   depth: ReviewDepthSchema,
-  pinnedHarnesses: z.array(z.object({ id: z.string(), name: z.string() })),
+  pinnedAgents: z.array(z.object({ id: z.string(), name: z.string() })),
   lastReviewAt: isoDate.nullable(),
 });
 export type RepositoryRow = z.infer<typeof repositoryRowSchema>;
@@ -132,8 +132,8 @@ export const saveSelectionSchema = z.object({
 });
 export type SaveSelection = z.infer<typeof saveSelectionSchema>;
 
-/** A harness of the organization, as Repository › Harnesses shows (and pins) it. */
-export const repositoryHarnessSchema = z.object({
+/** An agent of the organization, as Repository › Agents shows (and pins) it. */
+export const repositoryAgentSchema = z.object({
   id: z.string(),
   name: z.string(),
   /** The page computes `online` from it against the browser's clock. */
@@ -148,7 +148,7 @@ export const repositoryHarnessSchema = z.object({
 
 /**
  * `GET /api/ui/repositories/{id}?next=`: a connected repository with what its Review settings
- * and Harnesses tabs show (and the Coding tab's task types), polled. A repository of another
+ * and Agents tabs show (and the Coding tab's task types), polled. A repository of another
  * of the user's organizations answers 409 `enter_organization`.
  */
 export const repositoryDetailSchema = z.object({
@@ -169,8 +169,8 @@ export const repositoryDetailSchema = z.object({
     /** The request playbook its request runs use. */
     requestPlaybookId: z.string(),
   }),
-  /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
-  harnesses: z.array(repositoryHarnessSchema),
+  /** The organization's agents; revoked ones can't be pinned but show in the pinned list. */
+  agents: z.array(repositoryAgentSchema),
   /** Its Reviews, Coding and Ask switches. */
   taskTypes: repositoryTaskTypesSchema,
   /** The work items it builds; null when it has no match. */

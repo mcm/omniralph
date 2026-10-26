@@ -138,7 +138,7 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
         type: "ralph.story",
         taskType: "coding",
         status: "running",
-        agentId: agentId,
+        agentId,
         repositoryId,
         ...values,
       })

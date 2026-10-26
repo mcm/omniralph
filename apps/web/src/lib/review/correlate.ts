@@ -21,7 +21,7 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
-import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
+import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { reviewTaskNames } from "./post";
 import { finishReviewRun } from "./run";
 
@@ -87,7 +87,7 @@ export function correlationContext(
 /**
  * `settleReviewRun`'s `StartCorrelation`: inserts the review run's
  * correlation job (in its transaction, claimable by the repository's pinned
- * harness if any, as the dispatcher routes jobs), or returns why it can't:
+ * agent if any, as the dispatcher routes jobs), or returns why it can't:
  * the repository is gone, or its correlation task isn't a query task taking
  * `run.invoked`.
  */
@@ -125,7 +125,7 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
     reviewRunId: run.id,
     dedupeKey: correlationJobKey(run.id),
     targetAgentId: await pinnedAgentFor(tx, run.organizationId, run.repositoryId, {
-      lastHeartbeats: readHarnessLastSeen,
+      lastHeartbeats: readAgentLastSeen,
     }),
   });
   return { jobId: job.id };

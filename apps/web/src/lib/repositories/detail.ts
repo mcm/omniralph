@@ -16,9 +16,9 @@ import type {
   RepositoryTaskTypes,
 } from "@/lib/api/repositories";
 import { getDb } from "@/lib/db";
-import { organizationAgentVersion } from "@/lib/harnesses/desired-version";
-import { withLastSeen } from "@/lib/harnesses/last-seen";
-import { harnessRow } from "@/lib/harnesses/rows";
+import { organizationAgentVersion } from "@/lib/agents/desired-version";
+import { withLastSeen } from "@/lib/agents/last-seen";
+import { agentRow } from "@/lib/agents/rows";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { storyCodingSettings } from "@/lib/ralph/coding";
@@ -36,14 +36,14 @@ async function connectedRepository(organizationId: string, id: string) {
   return found;
 }
 
-/** A repository with what its Review settings and Harnesses tabs show (`repositoryDetailSchema`). */
+/** A repository with what its Review settings and Agents tabs show (`repositoryDetailSchema`). */
 export async function loadRepositoryDetail(
   organizationId: string,
   id: string,
 ): Promise<RepositoryDetail> {
   const db = getDb();
   const { repository, connection } = await connectedRepository(organizationId, id);
-  const [harnesses, organizationVersion, pinnedAgentIds, workItemMatch, rules] = await Promise.all([
+  const [agents, organizationVersion, pinnedAgentIds, workItemMatch, rules] = await Promise.all([
     listAgentOverview(db, organizationId).then(withLastSeen),
     organizationAgentVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRepositoryPinnedAgentIds(db, id),
@@ -69,8 +69,8 @@ export async function loadRepositoryDetail(
       storyPlaybookId: repository.storyPlaybookId,
       requestPlaybookId: repository.requestPlaybookId,
     },
-    harnesses: harnesses.map((harness) => {
-      const row = harnessRow(harness, now, organizationVersion.version);
+    agents: agents.map((agent) => {
+      const row = agentRow(agent, now, organizationVersion.version);
       return {
         id: row.id,
         name: row.name,

@@ -16,7 +16,7 @@ import {
 import { IconTool } from "@tabler/icons-react";
 import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
-import type { HostToolRow } from "@/lib/api/harnesses";
+import type { HostToolRow } from "@/lib/api/agents";
 import { HOST_TOOL_PATH_VARIANTS } from "@/lib/state-variants";
 
 export type { HostToolRow };
@@ -71,7 +71,7 @@ function HostToolPhoneFacts({ tool }: { tool: HostToolRow }) {
  * unless the harness is revoked, saved by the section around the table), what the harness last
  * reported and the path it runs it from.
  */
-export function HarnessHostTools({
+export function AgentHostTools({
   revoked,
   hostTools,
   paths,

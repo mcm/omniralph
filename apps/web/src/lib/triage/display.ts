@@ -1,6 +1,6 @@
 /** Client-safe types and helpers of the Triage pages: their rows, URL params and labels. */
 import type { TriageOutcome, TriageOutcomeKind, TriageSize } from "@omniralph/shared";
-import type { JobRow } from "@/lib/harnesses/rows";
+import type { JobRow } from "@/lib/agents/rows";
 import { parsePage } from "@/lib/pagination";
 
 export const TRIAGE_RUN_STATUSES = ["queued", "running", "completed", "failed", "stopped"] as const;
@@ -66,7 +66,7 @@ export interface TriageRunRow {
   openQuestions: number | null;
   /** Why the run failed, when it did. */
   error: string | null;
-  /** The harness of its latest job. */
+  /** The agent of its latest job. */
   agent: { id: string; name: string } | null;
   jobCount: number;
   /** ISO timestamps. */

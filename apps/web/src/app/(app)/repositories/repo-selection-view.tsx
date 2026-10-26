@@ -199,7 +199,7 @@ export function RepoSelectionView({
       // The repositories page (not mounted here) is refetched before going there, so it
       // never shows its cached list without the saved repositories.
       { queryKey: keys.repositories.lists, refetchType: "all" },
-      keys.harnesses.all,
+      keys.agents.all,
     ],
     success: () => savedMessage(name),
     onSuccess: () => router.push("/repositories"),

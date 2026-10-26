@@ -22,11 +22,7 @@ import { MonoValue } from "@/components/mono-value";
 import { useApiMutation } from "@/components/use-api-mutation";
 import { JobStatusBadge } from "@/components/ralph-badges";
 import { api } from "@/lib/api/client";
-import {
-  installEnqueuedSchema,
-  type InstallJobRow,
-  type InstallableRow,
-} from "@/lib/api/harnesses";
+import { installEnqueuedSchema, type InstallJobRow, type InstallableRow } from "@/lib/api/agents";
 import { EmptyValue } from "@/components/empty-value";
 
 export type { InstallJobRow, InstallableRow };
@@ -134,10 +130,10 @@ function StartedInstall({ job }: { job: InstallJobRow | undefined }) {
 
 /** Enqueues an `install` job targeted at the harness, then shows that job's state as it changes. */
 export function InstallForm({
-  harnessId,
+  agentId,
   installJobs = [],
 }: {
-  harnessId: string;
+  agentId: string;
   /** The harness's recent install jobs (polled), for the started job's state. */
   installJobs?: readonly InstallJobRow[];
 }) {
@@ -146,11 +142,11 @@ export function InstallForm({
   const [startedJobId, setStartedJobId] = React.useState<string | null>(null);
   const install = useApiMutation({
     mutationFn: (input: { name: string; version: string }, { organizationId }) =>
-      api.post(`/api/ui/harnesses/${harnessId}/installs`, installEnqueuedSchema, {
+      api.post(`/api/ui/agents/${agentId}/installs`, installEnqueuedSchema, {
         body: input,
         organizationId,
       }),
-    invalidate: (keys) => [keys.harnesses.detail(harnessId), keys.jobs.all],
+    invalidate: (keys) => [keys.agents.detail(agentId), keys.jobs.all],
     success: (_, input) =>
       `Installing ${input.name}@${input.version}; the harness picks it up with its next claim.`,
     onSuccess: (result) => {

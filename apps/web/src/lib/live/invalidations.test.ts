@@ -104,7 +104,7 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.agents", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
-      keys.harnesses.all,
+      keys.agents.all,
     ]);
     expect(settings("repository.coding")).toEqual([keys.repositories.all]);
     expect(settings("routing_rules")).toEqual([
@@ -114,9 +114,9 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("connection", ID)).toEqual([keys.connections.all]);
     expect(settings("organization")).toEqual([keys.organization.all]);
     expect(settings("agent_defaults")).toEqual([
-      keys.settings.detail("harness-defaults"),
+      keys.settings.detail("agent-defaults"),
       keys.settings.detail("host-tools"),
-      keys.harnesses.all,
+      keys.agents.all,
       keys.repositories.all,
     ]);
     expect(settings("profile")).toEqual([]);
@@ -130,9 +130,9 @@ describe("LIVE_INVALIDATIONS", () => {
 
   it("agent: the agents list and each agent", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
-      keys.harnesses.lists,
-      keys.harnesses.detail(ID),
-      keys.harnesses.detail(RUN),
+      keys.agents.lists,
+      keys.agents.detail(ID),
+      keys.agents.detail(RUN),
     ]);
   });
 
@@ -207,7 +207,7 @@ describe("createLiveInvalidator", () => {
       keys.transcripts.part(RUN, "attempt", { id: ID }),
       keys.transcripts.detail(OTHER_RUN),
       keys.runs.detail(RUN),
-      keys.harnesses.list(),
+      keys.agents.list(),
     );
     const invalidator = createLiveInvalidator(client);
     invalidator.apply(event({ resource: "transcript", runId: RUN }), scope);
@@ -216,7 +216,7 @@ describe("createLiveInvalidator", () => {
     invalidator.apply(event({ resource: "agent", ids: [ID] }), scope);
     expect(invalidated()).toEqual([
       keys.transcripts.part(RUN, "attempt", { id: ID }),
-      keys.harnesses.list(),
+      keys.agents.list(),
     ]);
   });
 
@@ -231,7 +231,7 @@ describe("createLiveInvalidator", () => {
   });
 
   it("ignores an event for an organization outside the scope", () => {
-    seed(queryKeys(OTHER_ORG).harnesses.list(), keys.harnesses.list());
+    seed(queryKeys(OTHER_ORG).agents.list(), keys.agents.list());
     createLiveInvalidator(client).apply(
       changeEvent(OTHER_ORG, { resource: "agent", ids: [ID] }),
       scope,

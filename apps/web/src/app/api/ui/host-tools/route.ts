@@ -1,9 +1,9 @@
 import { apiHandler } from "@/lib/api/handler";
-import { addHostToolSchema } from "@/lib/api/harness-defaults";
+import { addHostToolSchema } from "@/lib/api/agent-defaults";
 import { getDb } from "@/lib/db";
-import { addHostTool, loadHostToolCatalog } from "@/lib/harnesses/defaults";
+import { addHostTool, loadHostToolCatalog } from "@/lib/agents/defaults";
 
-/** Settings › Harness defaults › Host tools (admins): the organization's catalog. */
+/** Settings › Agent defaults › Host tools (admins): the organization's catalog. */
 export const GET = apiHandler({ access: "admin" }, async ({ user }) => ({
   hostTools: await loadHostToolCatalog(getDb(), user.organization.id),
 }));

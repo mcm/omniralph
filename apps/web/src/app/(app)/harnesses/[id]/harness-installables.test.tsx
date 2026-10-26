@@ -2,7 +2,7 @@ import type * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import type { AgentRow } from "@/lib/agents/rows";
 import { InstallablesSection } from "./harness-detail-view";
 import type { InstallJobRow } from "./harness-installables";
 
@@ -15,7 +15,7 @@ function markup(ui: React.ReactElement): string {
   return renderToStaticMarkup(<Wrapper>{ui}</Wrapper>);
 }
 
-const harness = { id: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f", revoked: false } as HarnessRow;
+const harness = { id: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f", revoked: false } as AgentRow;
 
 const jobs: InstallJobRow[] = [
   {

@@ -46,7 +46,7 @@ import { useApiMutation } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
 import { JOB_STATUSES, type JobList } from "@/lib/api/jobs";
 import { mutationResultSchema } from "@/lib/api/schemas";
-import type { JobRow } from "@/lib/harnesses/rows";
+import type { JobRow } from "@/lib/agents/rows";
 import {
   jobIdFromHash,
   jobListHref,
@@ -294,7 +294,7 @@ function useCancelJob() {
     // The job (Jobs pages, its run's or triage run's page) and the harness running it.
     invalidate: (keys) => [
       keys.jobs.all,
-      keys.harnesses.all,
+      keys.agents.all,
       keys.runs.all,
       keys.triage.all,
       keys.reviews.all,
@@ -327,7 +327,7 @@ function useRerunJob() {
     mutationFn: (job: JobRow, { organizationId }) =>
       api.post(`/api/ui/jobs/${job.id}/rerun`, mutationResultSchema, { organizationId }),
     // The new job (Jobs pages), and the review a review job's rerun starts.
-    invalidate: (keys) => [keys.jobs.all, keys.harnesses.all, keys.reviews.all],
+    invalidate: (keys) => [keys.jobs.all, keys.agents.all, keys.reviews.all],
     success: "Job rerun",
   });
   const pending = useMutationState({

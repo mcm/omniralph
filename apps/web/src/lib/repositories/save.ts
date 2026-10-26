@@ -16,7 +16,7 @@ import type { ActionResult } from "@/lib/action-result";
 import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import {
   settingsActor,
   trackedRepositoryAgents,
@@ -28,7 +28,7 @@ import { saveRepositorySettings } from "./settings";
 import { refusingCodingWithoutMatch } from "./work-item-match";
 
 /**
- * The saves of Repository › Review settings, Coding and Harnesses, for `/api/ui`'s handlers.
+ * The saves of Repository › Review settings, Coding and Agents, for `/api/ui`'s handlers.
  * Each records what it changed in the repository's change history (`withSettingsChanges`).
  */
 
@@ -44,7 +44,7 @@ function invalid(error: Parameters<typeof fieldErrors>[0]): ActionResult {
 /**
  * Saves a repository's review settings, including (when given) its playbook bindings: which
  * review playbooks its review runs fan out to, the playbook correlating their findings, and its
- * story and request playbooks (built-in or the organization's own, of a role the binding takes). Newly pinned harnesses get a `repo.sync`
+ * story and request playbooks (built-in or the organization's own, of a role the binding takes). Newly pinned agents get a `repo.sync`
  * job; the next review job enqueued for the repository uses the new settings.
  */
 export async function updateRepositoryReviewSettings(
@@ -70,7 +70,7 @@ export async function updateRepositoryReviewSettings(
   if (result.status === "saved") {
     // The bumps in the transaction ran before its commit: bump again once it's visible.
     for (const id of [...result.pinnedAgentIds, ...result.unpinnedAgentIds]) {
-      await bumpHarnessHeartbeat(id);
+      await bumpAgentHeartbeat(id);
     }
   }
   switch (result.status) {
@@ -79,8 +79,8 @@ export async function updateRepositoryReviewSettings(
     case "unknown_agents":
       return {
         ok: false,
-        error: "Some selected harnesses don't exist or were revoked.",
-        fieldErrors: { pinnedAgentIds: "Some selected harnesses don't exist or were revoked." },
+        error: "Some selected agents don't exist or were revoked.",
+        fieldErrors: { pinnedAgentIds: "Some selected agents don't exist or were revoked." },
       };
     case "invalid_bindings":
       return { ok: false, error: "Fix the highlighted fields.", fieldErrors: result.fieldErrors };

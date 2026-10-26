@@ -84,7 +84,7 @@ async function onReviewStarted(
   db: Database,
   job: Pick<Job, "id" | "organizationId">,
   state: ReviewJobState,
-  harnessId: string,
+  agentId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
   const review = await getReview(db, state.reviewId);
   const completed =
@@ -103,7 +103,7 @@ async function onReviewStarted(
     if (review?.reviewRunId) await settleAndFinishReviewRun(db, review.reviewRunId);
     return { skip: true, reason: "already_reviewed" };
   }
-  await markReviewRunning(db, state.reviewId, harnessId);
+  await markReviewRunning(db, state.reviewId, agentId);
   if (review?.reviewRunId) await markReviewRunRunning(db, review.reviewRunId);
   return { skip: false };
 }
@@ -192,8 +192,8 @@ async function onReviewFailed(db: Database, state: ReviewJobState, error: string
 
 // The hooks by job, for the `review` sink.
 
-export function onReviewJobStarted(db: Database, job: Job, harnessId: string) {
-  return onReviewStarted(db, job, reviewJobState(job), harnessId);
+export function onReviewJobStarted(db: Database, job: Job, agentId: string) {
+  return onReviewStarted(db, job, reviewJobState(job), agentId);
 }
 
 export function onReviewJobCompleted(db: Database, job: Job): Promise<void> {

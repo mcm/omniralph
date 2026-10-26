@@ -3,7 +3,7 @@ import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
 import type { JobList } from "@/lib/api/jobs";
 import { getDb } from "@/lib/db";
-import { jobRow } from "@/lib/harnesses/rows";
+import { jobRow } from "@/lib/agents/rows";
 import { parseJobListParams } from "@/lib/jobs/list";
 
 const listQuery = z.object({

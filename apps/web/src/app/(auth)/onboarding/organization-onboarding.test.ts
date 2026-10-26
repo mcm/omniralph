@@ -99,7 +99,7 @@ const changeMemberRole = (userId: string, role: Role) =>
 const switchOrganization = (organizationId: string) =>
   callAction(switchRoute.POST, "POST", {}, { organizationId });
 const { GET: listRepositories } = await import("@/app/api/ui/repositories/route");
-const { GET: listHarnesses } = await import("@/app/api/ui/harnesses/route");
+const { GET: listAgents } = await import("@/app/api/ui/agents/route");
 const { default: OnboardingPage } = await import("./page");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -197,7 +197,7 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     ).text();
     expect(repositories).toContain(repo.id);
     expect(repositories).toContain("journey/shared-app");
-    const listed = await listHarnesses(new Request("http://localhost/api/ui/harnesses"), {
+    const listed = await listAgents(new Request("http://localhost/api/ui/agents"), {
       params: Promise.resolve({}),
     });
     expect(await listed.text()).toContain(agentId);

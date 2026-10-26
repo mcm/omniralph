@@ -37,8 +37,8 @@ callback under `src/app/(oauth)`, OAuth connects under `src/app/api/integrations
 
 ```ts
 export const PATCH = apiHandler(
-  { access: "admin", body: renameHarnessSchema },
-  async ({ user, body, params }) => renameHarness(user, params.id, body),
+  { access: "admin", body: renameAgentSchema },
+  async ({ user, body, params }) => renameAgent(user, params.id, body),
 );
 ```
 
@@ -65,7 +65,7 @@ handler can refuse it after a switch in another tab.
 
 **Query keys** (`src/lib/api/keys.ts`). Every key comes from `queryKeys(organizationId)` (in
 components, `useQueryKeys()`) and starts with the active organization's id: `keys.jobs.list(params)`,
-`keys.jobs.detail(id)`, `keys.harnesses.part(id, "runs", params)`. Keys nest by prefix
+`keys.jobs.detail(id)`, `keys.agents.part(id, "runs", params)`. Keys nest by prefix
 (`keys.jobs.all` ⊃ `keys.jobs.lists` ⊃ `keys.jobs.list(params)`), and switching organizations drops
 the other organizations' queries from the cache.
 
@@ -150,14 +150,11 @@ shows the change at once, too:
 ```ts
 const rename = useApiMutation({
   mutationFn: (name: string, { organizationId }) =>
-    api.patch(`/api/ui/harnesses/${id}`, mutationResultSchema, { body: { name }, organizationId }),
+    api.patch(`/api/ui/agents/${id}`, mutationResultSchema, { body: { name }, organizationId }),
   optimistic: (name, cache) =>
-    cache.set<Harness>(
-      cache.keys.harnesses.detail(id),
-      (harness) => harness && { ...harness, name },
-    ),
-  invalidate: (keys) => [keys.harnesses.all],
-  success: "Harness renamed",
+    cache.set<Agent>(cache.keys.agents.detail(id), (agent) => agent && { ...agent, name }),
+  invalidate: (keys) => [keys.agents.all],
+  success: "Agent renamed",
 });
 ```
 
