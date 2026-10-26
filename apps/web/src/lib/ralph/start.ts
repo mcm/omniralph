@@ -29,7 +29,6 @@ import {
   type RalphRunMode,
   type RalphTransaction,
   type Repository,
-  type RepositoryWithSwitches,
 } from "@omniralph/db";
 import {
   hasOpenQuestions,
@@ -197,9 +196,9 @@ async function refuseOpenQuestions(
 async function refuseUnbuildable(
   deps: RalphDeps,
   event: SessionCreatedEvent,
-  repositories: readonly RepositoryWithSwitches[],
+  repositories: readonly Repository[],
   router: Router,
-): Promise<{ refused: StartOutcome } | { candidates: RepositoryWithSwitches[] }> {
+): Promise<{ refused: StartOutcome } | { candidates: Repository[] }> {
   const issue = await deps.linear.getIssue(event.issueId);
   const parent = issue.parentId ? await deps.linear.getIssue(issue.parentId) : null;
   const root = parent ?? issue;
@@ -252,7 +251,7 @@ export interface ManualRoute {
  */
 export async function chooseRepository(
   root: Pick<IssueSummary, "id">,
-  repositories: readonly RepositoryWithSwitches[],
+  repositories: readonly Repository[],
   previous: Pick<RalphRun, "repositoryId" | "routedBy"> | null,
   router: Router,
 ): Promise<ChosenRepository | ManualRoute | null> {
@@ -397,7 +396,7 @@ async function askForRepositoryFirst(
     event: SessionCreatedEvent;
     loaded: LoadedEpic;
     previous: RalphRun | null;
-    repositories: readonly RepositoryWithSwitches[];
+    repositories: readonly Repository[];
     start: StartOptions;
   },
 ): Promise<StartOutcome> {
@@ -599,7 +598,7 @@ async function startNewRun(
     createRouter(deps),
   ]);
   // Before loading: loading a PRD epic creates its story issues.
-  let candidates: RepositoryWithSwitches[];
+  let candidates: Repository[];
   try {
     const blocked = await refuseUnbuildable(deps, event, repositories, router);
     if ("refused" in blocked) return blocked.refused;

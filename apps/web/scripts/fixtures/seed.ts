@@ -205,7 +205,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         ...githubRepo("fixture-labs/control-panel", 1),
         id: R.controlPanel,
         reviewDepth: "standard",
-        ralphEnabled: true,
+        codingEnabled: true,
         pathExcludes: ["**/*.snap", "pnpm-lock.yaml"],
         customInstructions: "Prefer server components; flag any client-side secret.",
         codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
@@ -215,7 +215,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         ...githubRepo("fixture-labs/harness", 2),
         id: R.harness,
         reviewDepth: "deep",
-        ralphEnabled: true,
+        codingEnabled: true,
         triggers: { onOpen: true, onPush: false, drafts: false },
       },
       {
@@ -229,11 +229,11 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         webhookId: "fixture-hook-301",
         createdAt: ago(60 * DAY),
       },
-      { ...githubRepo("fixture-labs/docs", 4), id: R.docs, enabled: false },
+      { ...githubRepo("fixture-labs/docs", 4), id: R.docs, reviewsEnabled: false },
       {
         ...githubRepo("fixture-labs/legacy-dashboard", 5),
         id: R.legacy,
-        enabled: false,
+        reviewsEnabled: false,
         disconnectedAt: ago(20 * DAY),
       },
     ]);

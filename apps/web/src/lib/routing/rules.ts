@@ -62,7 +62,7 @@ export async function loadRoutingRules(
     repositories: repositories.map((repo) => ({
       id: repo.id,
       fullPath: repo.fullPath,
-      codingEnabled: repo.ralphEnabled,
+      codingEnabled: repo.codingEnabled,
     })),
   };
 }

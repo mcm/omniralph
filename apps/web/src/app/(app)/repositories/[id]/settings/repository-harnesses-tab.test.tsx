@@ -46,10 +46,7 @@ function renderTab(pinnedHarnessIds: string[] = []) {
         pinnedHarnessIds,
       }}
       harnesses={HARNESSES}
-      taskTypes={{
-        overrides: { query: null, review: null, coding: null },
-        inherited: { query: true, review: true, coding: false },
-      }}
+      taskTypes={{ reviews: true, coding: true, ask: true }}
     />,
     { wrapper: queryWrapper(createTestQueryClient()) },
   );

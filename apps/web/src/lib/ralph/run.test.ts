@@ -68,6 +68,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -174,7 +175,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, { ralphEnabled: true });
+    await setCodingEnabled(db, repoId);
     const gitlab = (await upsertScmConnection(
       db,
       {
@@ -195,9 +196,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         fullPath: "group/app",
       })
     ).id;
-    await updateRepositoryCoding(db, gitlabRepoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, gitlabRepoId);
     await setRoutingRules(
       db,
       orgId,
@@ -1219,7 +1218,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   describe("push and draft PR timing", () => {
     const setEarly = (openPullRequestEarly: boolean) =>
-      updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly });
+      updateRepositoryCoding(db, repoId, { openPullRequestEarly });
 
     afterEach(async () => {
       vi.restoreAllMocks();
@@ -2313,10 +2312,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     it("treats a story whose rule routes to a repository with coding off like a manual step", async () => {
-      const setCoding = (ralphEnabled: boolean) =>
-        updateRepositoryCoding(db, gitlabRepoId, {
-          ralphEnabled,
-        });
+      const setCoding = (codingEnabled: boolean) =>
+        setCodingEnabled(db, gitlabRepoId, codingEnabled);
       await setCoding(false);
       try {
         const t = crossRepo("Web");
@@ -3013,7 +3010,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("ticks pushed stories in each lane's own draft", async () => {
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
+      await setCodingEnabled(db, repoId);
+      await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
         await withAppDraftsEarly(async () => {
           const t = crossRepo("Web");
@@ -3039,8 +3037,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           expect(app!.body).toBe(appBody);
         });
       } finally {
+        await setCodingEnabled(db, repoId);
         await updateRepositoryCoding(db, repoId, {
-          ralphEnabled: true,
           openPullRequestEarly: false,
         });
       }
@@ -3151,7 +3149,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("opens a draft with a templated body after the first story with openPullRequestEarly", async () => {
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
+      await setCodingEnabled(db, repoId);
+      await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
         const epic = linear.add({
           identifier: "ENG-110",
@@ -3204,15 +3203,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           "Updated [Pull request #1]",
         );
       } finally {
+        await setCodingEnabled(db, repoId);
         await updateRepositoryCoding(db, repoId, {
-          ralphEnabled: true,
           openPullRequestEarly: false,
         });
       }
     });
 
     it("retries an early draft that failed to open after the next story", async () => {
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
+      await setCodingEnabled(db, repoId);
+      await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
         const epic = linear.add({ identifier: "ENG-115", title: "Doohickeys" });
         linear.add({ identifier: "ENG-116", title: "First", parentId: epic.id, priority: 1 });
@@ -3237,8 +3237,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await describePr(run.id);
         expect(scm.changeRequests).toEqual([expect.objectContaining({ number: 1, draft: false })]);
       } finally {
+        await setCodingEnabled(db, repoId);
         await updateRepositoryCoding(db, repoId, {
-          ralphEnabled: true,
           openPullRequestEarly: false,
         });
       }
@@ -3246,12 +3246,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     /** Runs `body` with early drafts on the GitHub repository. */
     async function withEarlyDrafts(body: () => Promise<void>) {
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, openPullRequestEarly: true });
+      await setCodingEnabled(db, repoId);
+      await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
         await body();
       } finally {
+        await setCodingEnabled(db, repoId);
         await updateRepositoryCoding(db, repoId, {
-          ralphEnabled: true,
           openPullRequestEarly: false,
         });
       }
@@ -3577,12 +3578,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     it("posts the failure to the thread", async () => {
       const issue = linear.add({ identifier: "ENG-141", title: "Doomed" });
       const run = await delegateFromChat(issue.id);
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: false });
+      await updateRepositoryCoding(db, repoId, { codingEnabled: false });
       try {
         await work(run.id, { jobError: "the agent crashed" });
       } finally {
+        await setCodingEnabled(db, repoId);
         await updateRepositoryCoding(db, repoId, {
-          ralphEnabled: true,
           openPullRequestEarly: false,
         });
       }

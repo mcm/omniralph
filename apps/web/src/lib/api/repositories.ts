@@ -6,7 +6,18 @@ import { workItemMatchSchema } from "./work-item-matches";
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
 const provider = z.enum(["github", "gitlab"]);
-const taskTypeState = z.object({ on: z.boolean(), inherited: z.boolean() });
+
+/**
+ * A repository's switches: Reviews, Coding and Ask (externally triggered queries), each on or
+ * off. `GET`/`PUT /api/ui/repositories/{id}/task-types` (admins) answer it; `PUT` takes it
+ * (`RepositoryTaskTypesInput`).
+ */
+export const repositoryTaskTypesSchema = z.object({
+  reviews: z.boolean(),
+  coding: z.boolean(),
+  ask: z.boolean(),
+});
+export type RepositoryTaskTypes = z.infer<typeof repositoryTaskTypesSchema>;
 
 /** A connected repository on the Repositories page. */
 export const repositoryRowSchema = z.object({
@@ -14,8 +25,8 @@ export const repositoryRowSchema = z.object({
   provider,
   fullPath: z.string(),
   webUrl: z.string(),
-  /** Query, Reviews and Coding: effective (on/off) and whether that's the organization's default. */
-  taskTypes: z.object({ query: taskTypeState, review: taskTypeState, coding: taskTypeState }),
+  /** Its Reviews, Coding and Ask switches. */
+  taskTypes: repositoryTaskTypesSchema,
   /** The depth its reviews run at. */
   depth: ReviewDepthSchema,
   pinnedHarnesses: z.array(z.object({ id: z.string(), name: z.string() })),
@@ -121,8 +132,6 @@ export const saveSelectionSchema = z.object({
 });
 export type SaveSelection = z.infer<typeof saveSelectionSchema>;
 
-const taskSwitch = z.boolean().nullable();
-
 /** A harness of the organization, as Repository › Harnesses shows (and pins) it. */
 export const repositoryHarnessSchema = z.object({
   id: z.string(),
@@ -162,11 +171,8 @@ export const repositoryDetailSchema = z.object({
   }),
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: z.array(repositoryHarnessSchema),
-  /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
-  taskTypes: z.object({
-    overrides: z.object({ query: taskSwitch, review: taskSwitch, coding: taskSwitch }),
-    inherited: z.object({ query: z.boolean(), review: z.boolean(), coding: z.boolean() }),
-  }),
+  /** Its Reviews, Coding and Ask switches. */
+  taskTypes: repositoryTaskTypesSchema,
   /** The work items it builds; null when it has no match. */
   workItemMatch: workItemMatchSchema.nullable(),
   /**

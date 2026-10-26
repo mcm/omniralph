@@ -52,12 +52,6 @@ export function settingsActor(user: Pick<OrgUser, "id" | "name" | "email">) {
   return { userId: user.id, name: userDisplayName(user) };
 }
 
-/** A repository's task-type switch: on, off, or the organization's default. */
-function switchValue(value: boolean | null): string {
-  if (value === null) return "Organization default";
-  return value ? "On" : "Off";
-}
-
 const onOff = (value: boolean) => (value ? "On" : "Off");
 
 /** Playbook names by ID (built-in and the organization's own); unknown IDs read as themselves. */
@@ -90,7 +84,7 @@ async function readRepositoryReviews(
   if (!repository) return null;
   const task = await taskNames(db, organizationId);
   return {
-    reviews: switchValue(repository.enabled),
+    reviews: onOff(repository.reviewsEnabled),
     depth: REVIEW_DEPTHS[repository.reviewDepth].label,
     onOpen: onOff(repository.triggers.onOpen),
     onPush: onOff(repository.triggers.onPush),
@@ -143,8 +137,8 @@ async function readRepositoryCoding(
   if (!repository) return null;
   const task = await taskNames(db, organizationId);
   return {
-    coding: switchValue(repository.ralphEnabled),
-    query: switchValue(repository.queryEnabled),
+    coding: onOff(repository.codingEnabled),
+    query: onOff(repository.askEnabled),
     storyTask: task(repository.storyPlaybookId),
     requestTask: task(repository.requestPlaybookId),
     codingInstructions: repository.codingInstructions,
@@ -279,7 +273,7 @@ async function readScmConnection(
     name: connection.name,
     url: connection.baseUrl,
     credentials,
-    repositories: connected.filter((r) => r.effective.review).map((r) => r.fullPath),
+    repositories: connected.filter((r) => r.reviewsEnabled).map((r) => r.fullPath),
     ...Object.fromEntries(
       connected
         .filter((r) => r.webhookId)

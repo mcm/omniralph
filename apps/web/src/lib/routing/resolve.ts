@@ -25,7 +25,7 @@ import {
   listRoutingRules,
   listWorkItemMatches,
   type Database,
-  type RepositoryWithSwitches,
+  type Repository,
   type RoutingRule,
   type WorkItemMatchFields,
 } from "@omniralph/db";
@@ -42,7 +42,7 @@ import { describeMatchRoute, describeMatchTie, matchesWorkItem, specificity } fr
 /** Most "route the same as another issue" steps one resolution takes. */
 export const MAX_ROUTE_HOPS = 5;
 
-export type RouteOutcome<R = RepositoryWithSwitches> =
+export type RouteOutcome<R = Repository> =
   /** The issue builds in `repository` (coding on). `by` is its `routed_by`. */
   | ({ repository: R } & RouteMatch)
   /** The issue routes to `manual`, whose coding is off: it's for a person. */
@@ -66,7 +66,7 @@ export interface RouteMatch {
 }
 
 /** A route to a repository (coding on or off), with `rule` set for a direct custom-rule match. */
-export type RoutedOutcome<R = RepositoryWithSwitches> = Exclude<RouteOutcome<R>, { ask: true }>;
+export type RoutedOutcome<R = Repository> = Exclude<RouteOutcome<R>, { ask: true }>;
 
 /** The repository of a routed outcome, coding on or off. */
 export function routedRepository<R>(outcome: RouteOutcome<R>): R | null {
@@ -119,8 +119,8 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
   });
   const memo = new Map<string, Promise<RouteOutcome>>();
 
-  const outcome = (repository: RepositoryWithSwitches, by: string, rule?: number): RoutedOutcome =>
-    repository.effective.coding
+  const outcome = (repository: Repository, by: string, rule?: number): RoutedOutcome =>
+    repository.codingEnabled
       ? { repository, by, ...(rule !== undefined && { rule }) }
       : { manual: repository, by, ...(rule !== undefined && { rule }) };
 
@@ -156,7 +156,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
       return { ask: true, by: describeMatchTie(best.map((c) => c.repository.fullPath)) };
     }
     const by = describeMatchRoute(winner.match);
-    return winner.repository.effective.coding
+    return winner.repository.codingEnabled
       ? { repository: winner.repository, by, workItemMatch: true }
       : { manual: winner.repository, by, workItemMatch: true };
   };

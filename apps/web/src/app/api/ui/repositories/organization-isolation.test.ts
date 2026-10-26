@@ -294,7 +294,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     state.userId = a.userId;
     const refused = { ok: false, error: expect.any(String) };
     expect(
-      await updateRepositoryTaskTypes(b.repoId, { query: false, review: false, coding: false }),
+      await updateRepositoryTaskTypes(b.repoId, { reviews: false, coding: false, ask: false }),
     ).toEqual(refused);
     expect(
       await updateRepositorySettings(b.repoId, {
@@ -317,10 +317,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       }),
     ).toEqual(refused);
     expect(await getRepository(db, b.repoId)).toMatchObject({
-      enabled: null,
+      reviewsEnabled: true,
       disconnectedAt: null,
       reviewDepth: "standard",
-      ralphEnabled: null,
+      codingEnabled: false,
       codingInstructions: null,
       historyRewrite: "when-asked",
     });

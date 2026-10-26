@@ -138,8 +138,8 @@ const OrganizationDefaultsInput = z.object({
 });
 
 /**
- * Sets the task types and max concurrency every harness and repository of the organization
- * inherits unless it sets its own; they take effect with the next claim or heartbeat.
+ * Sets the task types and max concurrency every harness of the organization inherits unless it
+ * sets its own; they take effect with the next claim or heartbeat.
  */
 export async function setOrganizationDefaults(
   db: Database,

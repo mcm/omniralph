@@ -33,11 +33,7 @@ function repo(n: number, overrides: Partial<RepositoryRow> = {}): RepositoryRow 
     provider: "gitlab",
     fullPath: `acme/repo-${n}`,
     webUrl: `https://gitlab.example.com/acme/repo-${n}`,
-    taskTypes: {
-      query: { on: true, inherited: true },
-      review: { on: true, inherited: true },
-      coding: { on: false, inherited: true },
-    },
+    taskTypes: { reviews: true, coding: false, ask: true },
     depth: "standard",
     pinnedHarnesses: [],
     lastReviewAt: null,
@@ -262,28 +258,11 @@ function badges(taskTypes: RepositoryRow["taskTypes"]): string {
 }
 
 describe("TaskTypeBadges", () => {
-  it("shows each task type's effective value and whether it's the organization's default", () => {
-    const html = badges({
-      query: { on: true, inherited: true },
-      review: { on: false, inherited: true },
-      coding: { on: true, inherited: false },
-    });
-    expect(html).toContain('aria-label="Query: On (organization default)"');
-    expect(html).toContain('aria-label="Reviews: Off (organization default)"');
-    expect(html).toContain('aria-label="Coding: On (set for this repository)"');
-    // Overrides say so in the badge itself.
-    expect(html.replace(/<[^>]+>/g, "")).toBe("QueryReviewsCoding on");
-  });
-
-  it("shows an explicit off", () => {
-    const html = badges({
-      query: { on: false, inherited: false },
-      review: { on: true, inherited: false },
-      coding: { on: false, inherited: true },
-    });
-    expect(html).toContain('aria-label="Query: Off (set for this repository)"');
-    expect(html).toContain('aria-label="Reviews: On (set for this repository)"');
-    expect(html).toContain('aria-label="Coding: Off (organization default)"');
-    expect(html.replace(/<[^>]+>/g, "")).toBe("Query offReviews onCoding");
+  it("shows each switch on or off", () => {
+    const html = badges({ reviews: false, coding: true, ask: true });
+    expect(html).toContain('aria-label="Reviews: Off"');
+    expect(html).toContain('aria-label="Coding: On"');
+    expect(html).toContain('aria-label="Ask: On"');
+    expect(html.replace(/<[^>]+>/g, "")).toBe("ReviewsCodingAsk");
   });
 });

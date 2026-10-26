@@ -4,7 +4,6 @@ import {
   type Database,
   type FindingRow,
   type Review,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { MAX_REPLY_QUESTION_LENGTH, REVIEW_REPLY_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -89,11 +88,10 @@ export async function enqueueReply(
   const { finding, review } = input;
   if (!finding.scmCommentId) return { status: "no_thread" };
   const found = await getRepositoryWithConnection(db, review.repositoryId);
-  const switches = found && (await resolveRepositorySwitches(db, found.repository));
-  if (!found || !switches || found.repository.disconnectedAt || !switches.review) {
+  if (!found || found.repository.disconnectedAt || !found.repository.reviewsEnabled) {
     return { status: "repository_unavailable" };
   }
-  if (!switches.query) return { status: "query_disabled" };
+  if (!found.repository.askEnabled) return { status: "query_disabled" };
   const definitions = organizationPlaybooks(db, found.repository.organizationId);
   const task = await getPlaybookTask(definitions, REPLY_TASK_ID);
   if (!task) throw new Error(`Built-in task ${REPLY_TASK_ID} is missing`);

@@ -154,7 +154,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         provider: "github",
         externalId: `ext-${++seq}`,
         fullPath,
-        enabled: true,
+        reviewsEnabled: true,
       });
     repoId = (await repo("acme/web")).id;
     otherRepoId = (await repo("acme/api")).id;
@@ -214,22 +214,28 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       expect(await entries("repository.reviews", repoId)).toHaveLength(1);
     });
 
-    it("task-type switches: the review switch in reviews, coding and query in coding", async () => {
+    it("task-type switches: the reviews switch in reviews, coding and ask in coding", async () => {
       expect(
         await callAction(
           repositoryTaskTypes.PUT,
           "PUT",
           { id: otherRepoId },
-          { query: false, review: null, coding: true },
+          { reviews: false, coding: false, ask: false },
         ),
-      ).toEqual({ ok: true });
+      ).toEqual({ reviews: false, coding: false, ask: false });
       expect((await entries("repository.reviews", otherRepoId))[0]!.changes).toEqual([
-        { field: "reviews", label: "Reviews", before: "On", after: "Organization default" },
+        { field: "reviews", label: "Reviews", before: "On", after: "Off" },
       ]);
       expect((await entries("repository.coding", otherRepoId))[0]!.changes).toEqual([
-        { field: "coding", label: "Coding", before: "Organization default", after: "On" },
-        { field: "query", label: "Ask about code", before: "Organization default", after: "Off" },
+        { field: "query", label: "Ask about code", before: "On", after: "Off" },
       ]);
+      // Back on, as the other tests expect.
+      await callAction(
+        repositoryTaskTypes.PUT,
+        "PUT",
+        { id: otherRepoId },
+        { reviews: true, coding: false, ask: true },
+      );
     });
 
     it("repository.coding: the coding policy's changed settings", async () => {
@@ -238,11 +244,15 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
           repositoryCoding.PUT,
           "PUT",
           { id: repoId },
-          { ...baseCoding, historyRewrite: "always", respondToReviewsAndCi: false },
+          {
+            ...baseCoding,
+            codingEnabled: false,
+            historyRewrite: "always",
+            respondToReviewsAndCi: false,
+          },
         ),
       ).toMatchObject({ historyRewrite: "always", respondToReviewsAndCi: false });
       expect((await entries("repository.coding", repoId))[0]!.changes).toEqual([
-        { field: "coding", label: "Coding", before: "Organization default", after: "On" },
         {
           field: "historyRewrite",
           label: "Rewrite history",
@@ -486,7 +496,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         provider: "github",
         externalId: "history-only",
         fullPath: "acme/history",
-        enabled: true,
+        reviewsEnabled: true,
       });
       subject = repo.id;
       const at = (iso: string) => new Date(iso);

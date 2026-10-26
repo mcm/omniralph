@@ -13,7 +13,6 @@ import {
   repositories,
   setAllowedTaskTypeDefaults,
   triageRuns,
-  updateRepositoryCoding,
   upsertScmConnection,
   replaceRoutingRules,
   type Database,
@@ -25,6 +24,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -102,9 +102,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     await replaceRoutingRules(db, orgId, [
       {
         repositoryId: repoId,
@@ -274,11 +272,11 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
   });
 
   it("skips an issue routed to a repository whose query tasks are off, without posting", async () => {
-    const setQuery = (queryEnabled: boolean | null) =>
-      db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+    const setAsk = (askEnabled: boolean) =>
+      db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repoId));
     const issue = linear.add({ identifier: "ENG-40", title: "Off", labels: ["backend"] });
     try {
-      await setQuery(false);
+      await setAsk(false);
       const event = mention(issue.id);
       expect(await startTriage(event, deps())).toEqual({
         status: "query_disabled",
@@ -288,27 +286,19 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       expect(await db.select().from(triageRuns)).toEqual([]);
       expect(linear.activities).toEqual([]);
 
-      // Inheriting an organization default without query tasks.
-      await setQuery(null);
+      // Ask on triages it, whatever the organization's task types.
+      await setAsk(true);
       await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
-      expect(await startTriage(mention(issue.id), deps())).toMatchObject({
-        status: "query_disabled",
-      });
-      expect(await db.select().from(jobs)).toEqual([]);
-      expect(linear.activities).toEqual([]);
-
-      // Inheriting the built-in default (every task type) triages it.
-      await setAllowedTaskTypeDefaults(db, orgId, null, null);
       expect(await startTriage(mention(issue.id), deps())).toMatchObject({ status: "queued" });
     } finally {
-      await setQuery(null);
+      await setAsk(true);
       await setAllowedTaskTypeDefaults(db, orgId, null, null);
     }
   });
 
   it("reads the routed repository even when its coding is off", async () => {
-    const setCoding = (ralphEnabled: boolean | null) =>
-      db.update(repositories).set({ ralphEnabled }).where(eq(repositories.id, repoId));
+    const setCoding = (codingEnabled: boolean) =>
+      db.update(repositories).set({ codingEnabled }).where(eq(repositories.id, repoId));
     const issue = linear.add({ identifier: "ENG-41", title: "Manual", labels: ["backend"] });
     try {
       await setCoding(false);

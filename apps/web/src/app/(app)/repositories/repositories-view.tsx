@@ -310,18 +310,18 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
 }
 
 const TASK_TYPE_BADGES = [
-  { key: "query", label: "Query" },
-  { key: "review", label: "Reviews" },
+  { key: "reviews", label: "Reviews" },
   { key: "coding", label: "Coding" },
+  { key: "ask", label: "Ask" },
 ] as const;
 
-/** A repository's effective task types: on in green, off in grey; inherited ones say so on hover. */
+/** A repository's switches: on in green, off in grey. */
 export function TaskTypeBadges({ taskTypes }: { taskTypes: RepositoryRow["taskTypes"] }) {
   return (
     <div className="list-filters">
       {TASK_TYPE_BADGES.map(({ key, label }) => {
-        const { on, inherited } = taskTypes[key];
-        const state = `${on ? "On" : "Off"} (${inherited ? "organization default" : "set for this repository"})`;
+        const on = taskTypes[key];
+        const state = on ? "On" : "Off";
         return (
           <Badge
             key={key}
@@ -331,7 +331,6 @@ export function TaskTypeBadges({ taskTypes }: { taskTypes: RepositoryRow["taskTy
             aria-label={`${label}: ${state}`}
           >
             {label}
-            {inherited ? "" : on ? " on" : " off"}
           </Badge>
         );
       })}

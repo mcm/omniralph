@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Link } from "@/components/link";
 import { useParams } from "next/navigation";
 import { Badge, Button, Field, Muted, Skeleton, Stack, Textarea } from "@iamthemcmaster/ui";
 import { IconExternalLink, IconX } from "@tabler/icons-react";
@@ -9,7 +8,6 @@ import {
   fieldErrors as toFieldErrors,
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
   RepositorySettingsInput,
-  RepositoryTaskTypesInput,
   type FieldErrors,
   type ReviewDepth,
 } from "@omniralph/shared";
@@ -51,14 +49,6 @@ import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
 import { repositoryChanged, useRepositoryDetail } from "../repository-queries";
-import {
-  saveWithTaskTypes,
-  TaskTypeSelect,
-  taskTypeOn,
-  taskTypeSpec,
-  type TaskTypeSwitch,
-  type TaskTypesValues,
-} from "./task-types";
 
 /** The repository's settings tabs, by route segment. */
 export type RepositorySettingsTab = "settings" | "harnesses";
@@ -80,8 +70,8 @@ interface RepositorySettingsContentProps {
   };
   /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
   harnesses: RepositoryHarness[];
-  /** Query, Reviews and Coding: the repository's own values and the organization's defaults. */
-  taskTypes: TaskTypesValues;
+  /** Its Reviews, Coding and Ask switches. */
+  taskTypes: RepositoryDetail["taskTypes"];
 }
 
 /** A harness of the organization, as the Harnesses tab shows it. */
@@ -142,9 +132,6 @@ function inputKey(key: keyof RepositoryValues): string {
 
 const onOff = (value: boolean) => formatSettingValue(value);
 
-/** The task-type switches a tab's section saves. */
-const REVIEW_TASK_TYPES = ["review", "query"] as const satisfies readonly TaskTypeSwitch[];
-
 /**
  * The settings of Repository › Review settings or Harnesses: each tab is one section with one
  * save. Only admins edit them; others see them read-only. Forms are seeded from the (polled) data and re-seeded only while they
@@ -165,12 +152,9 @@ export function RepositorySettingsContent({
   const context = React.useMemo(() => ({ harnessIds: pinnable.map((h) => h.id) }), [pinnable]);
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
   const [draft, setDraft] = useSeededDraft(saved);
-  const [typesDraft, setTypesDraft] = useSeededDraft(taskTypes.overrides);
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const set = <K extends keyof RepositoryDraft>(key: K, value: RepositoryDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
-  const setType = (key: TaskTypeSwitch, value: boolean | null) =>
-    setTypesDraft((d) => ({ ...d, [key]: value }));
 
   const savedValues = repositoryValues(saved, context);
   const draftValues = repositoryValues(draft, context);
@@ -182,31 +166,22 @@ export function RepositorySettingsContent({
     [harnesses],
   );
 
-  /** The props of the section saving `keys` and the task-type switches `types`. */
+  /** The props of the section saving `keys`. */
   const section = (
     keys: readonly (keyof RepositoryValues)[],
-    types: readonly TaskTypeSwitch[],
     success: (input: RepositorySettingsInput) => string,
   ) => {
-    const errorKeys = [...keys.map(inputKey), ...types];
-    const changes = [
-      ...settingChanges(
-        types.map((key) => taskTypeSpec(taskTypes, key)),
-        taskTypes.overrides,
-        typesDraft,
-      ),
-      ...settingChanges(
-        keys.map((key) => specs[key]),
-        savedValues,
-        draftValues,
-      ),
-    ];
+    const errorKeys = keys.map(inputKey);
+    const changes = settingChanges(
+      keys.map((key) => specs[key]),
+      savedValues,
+      draftValues,
+    );
     return {
       readOnly: !isAdmin,
       changes,
       onDiscard: () => {
         setDraft((d) => ({ ...d, ...pickKeys(saved, keys as (keyof RepositoryDraft)[]) }));
-        setTypesDraft((d) => ({ ...d, ...pickKeys(taskTypes.overrides, types) }));
         setErrors((e) => withoutFieldErrors(e, errorKeys));
       },
       prepare: () => {
@@ -214,36 +189,21 @@ export function RepositorySettingsContent({
         const parsed = RepositorySettingsInput.safeParse(
           repositoryInput({ ...savedValues, ...pickKeys(draftValues, keys) }, settings.depth),
         );
-        const parsedTypes = RepositoryTaskTypesInput.safeParse(typesDraft);
-        if (!parsed.success || !parsedTypes.success) {
+        if (!parsed.success) {
           setErrors((e) => ({
             ...withoutFieldErrors(e, errorKeys),
-            ...(parsed.success ? {} : toFieldErrors(parsed.error)),
-            ...(parsedTypes.success ? {} : toFieldErrors(parsedTypes.error)),
+            ...toFieldErrors(parsed.error),
           }));
           return null;
         }
-        const settingsChanged = changes.some((change) =>
-          (keys as readonly string[]).includes(change.key),
-        );
         return {
-          // The switches, then the settings; the page refetches once, after both.
           action: () =>
             apiAction(
-              saveWithTaskTypes(
-                repository.id,
-                taskTypes.overrides,
-                parsedTypes.data,
-                types,
-                settingsChanged
-                  ? ({ organizationId }) =>
-                      api.put(
-                        `/api/ui/repositories/${repository.id}/settings`,
-                        mutationResultSchema,
-                        { body: parsed.data, organizationId },
-                      )
-                  : null,
-              ),
+              ({ organizationId }) =>
+                api.put(`/api/ui/repositories/${repository.id}/settings`, mutationResultSchema, {
+                  body: parsed.data,
+                  organizationId,
+                }),
               repositoryChanged,
             ),
           success: success(parsed.data),
@@ -258,30 +218,19 @@ export function RepositorySettingsContent({
 
   const excludeErrors = pathExcludeErrors(draft.pathExcludes, errors);
   const instructionsLength = draft.customInstructions.length;
-  const reviewsOn = taskTypeOn(taskTypes, "review", typesDraft.review);
+  const reviewsOn = taskTypes.reviews;
 
   const reviewSection = (
     <SettingsSection
       id="review-settings"
       title="Review settings"
       showTitle={false}
-      description="How pull and merge requests in this repository are reviewed, and whether Omniralph answers questions about it. Changes apply to the next review; queued and running reviews keep the settings they started with."
-      headerControl={
-        <TaskTypeSelect
-          compact
-          name="review"
-          values={taskTypes}
-          value={typesDraft.review}
-          disabled={disabled}
-          error={errors.review}
-          onChange={(value) => setType("review", value)}
-        />
-      }
+      description="How pull and merge requests in this repository are reviewed. Changes apply to the next review; queued and running reviews keep the settings they started with."
       confirm={{
         consequence:
           "New reviews, mentions and chat questions of this repository use these settings. Queued and running reviews keep the settings they started with.",
       }}
-      {...section(REPOSITORY_SECTIONS.review, REVIEW_TASK_TYPES, appliesNext)}
+      {...section(REPOSITORY_SECTIONS.review, appliesNext)}
     >
       {!reviewsOn && (
         <Muted className="settings-section-off">
@@ -372,30 +321,6 @@ export function RepositorySettingsContent({
           />
         </Field>
       </SettingsSubsection>
-
-      <SettingsSubsection
-        id="review-questions"
-        title="Questions"
-        description="Whether Omniralph answers questions about this repository."
-      >
-        <TaskTypeSelect
-          name="query"
-          values={taskTypes}
-          value={typesDraft.query}
-          disabled={disabled}
-          error={errors.query}
-          onChange={(value) => setType("query", value)}
-        />
-        {isAdmin && (
-          <Muted>
-            Change the organization&apos;s defaults in{" "}
-            <Link href="/settings/harnesses" className="settings-link">
-              Settings › Harnesses
-            </Link>
-            .
-          </Muted>
-        )}
-      </SettingsSubsection>
     </SettingsSection>
   );
 
@@ -422,7 +347,7 @@ export function RepositorySettingsContent({
       title="Harnesses"
       showTitle={false}
       description="Which harnesses run this repository's jobs: reviews, questions and coding. Newly pinned harnesses pre-clone the repository."
-      {...section(REPOSITORY_SECTIONS.harnesses, [], (input) =>
+      {...section(REPOSITORY_SECTIONS.harnesses, (input) =>
         input.pinnedHarnessIds.some((id) => !settings.pinnedHarnessIds.includes(id))
           ? "Saved; newly pinned harnesses will pre-clone the repository"
           : "Saved; it applies to the next job",

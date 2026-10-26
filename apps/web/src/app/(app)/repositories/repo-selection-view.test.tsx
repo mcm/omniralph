@@ -54,11 +54,7 @@ function repositoryList(paths: string[]): RepositoryList {
       provider: "github",
       fullPath,
       webUrl: `https://github.com/${fullPath}`,
-      taskTypes: {
-        query: { on: true, inherited: true },
-        review: { on: true, inherited: true },
-        coding: { on: false, inherited: true },
-      },
+      taskTypes: { reviews: true, coding: false, ask: true },
       depth: "standard",
       pinnedHarnesses: [],
       lastReviewAt: null,

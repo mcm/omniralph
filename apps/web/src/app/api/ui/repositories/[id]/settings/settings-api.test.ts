@@ -8,8 +8,6 @@ import {
   createDb,
   getRepository,
   jobs,
-  resolveRepositorySwitches,
-  setAllowedTaskTypeDefaults,
   upsertScmConnection,
   users,
   type Database,
@@ -20,10 +18,10 @@ import {
   type ReviewTriggerContext,
   type RepositoryCodingInput,
   type RepositorySettingsInput,
-  type RepositoryTaskTypesInput,
 } from "@omniralph/shared";
 import {
   createTestDatabase,
+  setCodingEnabled,
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
@@ -81,7 +79,6 @@ vi.mock("@/lib/auth/session", () => ({
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
-const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
@@ -116,8 +113,6 @@ async function save(
 // The settings tabs' requests, under the names of the server actions they replace.
 const updateRepositorySettings = (id: string, input: RepositorySettingsInput) =>
   save(repositorySettings.PUT, id, input);
-const updateRepositoryTaskTypes = (id: string, input: RepositoryTaskTypesInput) =>
-  save(repositoryTaskTypes.PUT, id, input);
 const updateCoding = (id: string, input: unknown) => save(repositoryCoding.PUT, id, input);
 
 const SHA = (n: number) => n.toString(16).padStart(40, "0");
@@ -177,6 +172,8 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
         fullPath: "acme/api",
       })
     ).id;
+    // Coding on without a work item match, as on a repository that had it before matches.
+    await setCodingEnabled(db, repoId);
     [agentA, agentB, revokedAgent] = (
       await db
         .insert(harnesses)
@@ -665,7 +662,7 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
         }),
       ]);
       expect(await getRepository(db, repoId)).toMatchObject({
-        ralphEnabled: false,
+        codingEnabled: false,
         codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
         openPullRequestEarly: true,
         historyRewrite: "always",
@@ -676,13 +673,28 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       expect(await updateRepositorySettings(repoId, baseSettings)).toEqual({ ok: true });
       expect((await getCoding()).body).toEqual(saved);
 
+      // Switched off, Coding can't come back on without a work item match.
+      const { result: refused, changes: none } = await captureChanges(() =>
+        updateCoding(repoId, { ...baseCoding, codingInstructions: "" }),
+      );
+      expect(refused).toEqual({
+        ok: false,
+        error: "Add a work item match before turning on Coding.",
+      });
+      expect(none).toEqual([]);
+      expect(await getRepository(db, repoId)).toMatchObject({
+        codingEnabled: false,
+        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
+      });
+
       // Empty instructions are none.
+      await setCodingEnabled(db, repoId);
       expect(await updateCoding(repoId, { ...baseCoding, codingInstructions: "" })).toEqual({
         ...baseCoding,
         roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
       });
       expect(await getRepository(db, repoId)).toMatchObject({
-        ralphEnabled: true,
+        codingEnabled: true,
         codingInstructions: null,
       });
     });
@@ -847,76 +859,6 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     expect(await getRepository(db, repoId)).toMatchObject({
       storyPlaybookId: "builtin:implement-story",
       requestPlaybookId: "builtin:handle-request",
-    });
-  });
-
-  describe("task types", () => {
-    const INHERIT = { query: null, review: null, coding: null };
-    const COLUMNS = { query: "queryEnabled", review: "enabled", coding: "ralphEnabled" } as const;
-
-    it("saves each of Query, Reviews and Coding as inherit, on or off", async () => {
-      try {
-        for (const key of ["query", "review", "coding"] as const) {
-          for (const value of [true, false, null]) {
-            expect(await updateRepositoryTaskTypes(repoId, { ...INHERIT, [key]: value })).toEqual({
-              ok: true,
-            });
-            const repo = (await getRepository(db, repoId))!;
-            expect(repo[COLUMNS[key]]).toBe(value);
-            // The others stay inherited.
-            for (const other of ["query", "review", "coding"] as const) {
-              if (other !== key) expect(repo[COLUMNS[other]]).toBeNull();
-            }
-
-            // Inherit follows the organization's default; on and off win over it either way.
-            await setAllowedTaskTypeDefaults(db, orgId, [], null);
-            expect((await resolveRepositorySwitches(db, repo))[key]).toBe(value ?? false);
-            await setAllowedTaskTypeDefaults(db, orgId, ["query", "review", "coding"], null);
-            expect((await resolveRepositorySwitches(db, repo))[key]).toBe(value ?? true);
-            await setAllowedTaskTypeDefaults(db, orgId, null, null);
-          }
-        }
-      } finally {
-        await setAllowedTaskTypeDefaults(db, orgId, null, null);
-        await updateRepositoryTaskTypes(repoId, INHERIT);
-      }
-    });
-
-    it("saves all three at once", async () => {
-      try {
-        expect(
-          await updateRepositoryTaskTypes(repoId, { query: false, review: true, coding: null }),
-        ).toEqual({ ok: true });
-        expect(await getRepository(db, repoId)).toMatchObject({
-          queryEnabled: false,
-          enabled: true,
-          ralphEnabled: null,
-        });
-      } finally {
-        await updateRepositoryTaskTypes(repoId, INHERIT);
-      }
-    });
-
-    it("rejects invalid input, unknown repositories and non-admins without saving", async () => {
-      expect(
-        await updateRepositoryTaskTypes(repoId, {
-          ...INHERIT,
-          review: "on",
-        } as unknown as typeof INHERIT),
-      ).toMatchObject({ ok: false, fieldErrors: { review: expect.any(String) } });
-      expect(await updateRepositoryTaskTypes(randomUUID(), INHERIT)).toEqual({
-        ok: false,
-        error: "That repository isn't connected.",
-      });
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(
-        await updateRepositoryTaskTypes(repoId, { query: false, review: false, coding: false }),
-      ).toMatchObject({ ok: false });
-      expect(await getRepository(db, repoId)).toMatchObject({
-        queryEnabled: null,
-        enabled: null,
-        ralphEnabled: null,
-      });
     });
   });
 });

@@ -36,7 +36,6 @@ import {
   type ScmConnection,
   isLinearRun,
   runReference,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import {
   blockedStories,
@@ -519,7 +518,7 @@ async function laneRepository(
       ? "The run's repository is no longer connected, so I stopped."
       : `\`${found?.repository.fullPath ?? repositoryId}\` is no longer connected, so I stopped.`;
   }
-  if (!(await resolveRepositorySwitches(deps.db, found.repository)).coding) {
+  if (!found.repository.codingEnabled) {
     return (
       `Coding was turned off for \`${found.repository.fullPath}\`, so I stopped. Turn it on under ` +
       "**Repository › Settings › Task types** and delegate the issue again to continue."

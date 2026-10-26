@@ -805,8 +805,8 @@ export const repositories = pgTable(
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => scmConnections.id, { onDelete: "cascade" }),
-    /** Reviews run here; null inherits the organization's allowed task types (`review`). */
-    enabled: boolean("enabled"),
+    /** Reviews run on its pull and merge requests (the Reviews switch). */
+    reviewsEnabled: boolean("reviews_enabled").notNull().default(true),
     /** The depth its reviews run at: their model, token cap, file limit and exploration. */
     reviewDepth: reviewDepth("review_depth").notNull().default("standard"),
     triggers: jsonb("triggers")
@@ -831,15 +831,12 @@ export const repositories = pgTable(
       .notNull()
       .default("builtin:correlate-findings"),
     /**
-     * Linear delegations may build in this repository (ralph); null inherits the
-     * organization's allowed task types (`coding`).
+     * Work items routed here are built (the Coding switch). Turning it on needs a work item
+     * match, and a match can't be removed while it's on.
      */
-    ralphEnabled: boolean("ralph_enabled"),
-    /**
-     * Externally triggered query tasks may run here; null inherits the organization's
-     * allowed task types (`query`).
-     */
-    queryEnabled: boolean("query_enabled"),
+    codingEnabled: boolean("coding_enabled").notNull().default(false),
+    /** Externally triggered queries (mentions, chat, triage) run here (the Ask switch). */
+    askEnabled: boolean("ask_enabled").notNull().default(true),
     /** Extra instructions appended to every story and request prompt; null for none. */
     codingInstructions: text("coding_instructions"),
     /** Open a draft PR after the first pushed story (updated and marked ready at the end). */

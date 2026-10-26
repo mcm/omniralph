@@ -45,6 +45,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -128,9 +129,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 
@@ -991,7 +990,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
             fullPath: "acme/web",
           })
         ).id;
-        await updateRepositoryCoding(db, webId, { ralphEnabled: true });
+        await setCodingEnabled(db, webId);
         await bindCodingPlaybook(db, orgId, webId, "story", web);
         await setRoutingRules(db, orgId, [webId, projectIs("Web")], [repoId, teamIs("ENG")]);
         return webId;
@@ -1000,7 +999,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       async function restore(webId: string) {
         await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
         await setTrackerLabels(db, orgId, null, null);
-        await updateRepositoryCoding(db, webId, { ralphEnabled: false });
+        await updateRepositoryCoding(db, webId, { codingEnabled: false });
         await bindBuiltinPlaybooks(db, webId);
         await bindBuiltinPlaybooks(db, repoId);
       }

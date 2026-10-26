@@ -62,10 +62,7 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
         acceptedTaskTypes: ["review"],
       },
     ],
-    taskTypes: {
-      overrides: { query: null, review: null, coding: true },
-      inherited: { query: true, review: true, coding: true },
-    },
+    taskTypes: { reviews: true, coding: true, ask: true },
     workItemMatch: null,
     routingRules: [],
   };

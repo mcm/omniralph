@@ -6,7 +6,6 @@ import {
   listRoutingRules,
   organizations,
   repositories,
-  setRepositorySwitches,
   upsertScmConnection,
   users,
   type Database,
@@ -15,6 +14,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -139,7 +139,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
     await state.db.insert(users).values({ id: "user-1", name: "Ada" });
     [web, api] = (await repos(org!.id, "acme/web", "acme/api")) as [string, string];
     [foreign] = (await repos(other!.id, "other/repo")) as [string];
-    await setRepositorySwitches(state.db, org!.id, api, { coding: false });
+    await setCodingEnabled(state.db, web);
   }, 180_000);
 
   afterAll(async () => {

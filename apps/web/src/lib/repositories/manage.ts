@@ -6,7 +6,6 @@ import {
   deleteScmConnection,
   disconnectRepository as disconnectRepositoryRow,
   findScmConnection,
-  getAllowedTaskTypeDefaults,
   getRepository,
   getScmConnection,
   listConnectionRepositories,
@@ -105,7 +104,6 @@ async function connectGitLabProjects(
   const known = new Map(
     (await listConnectionRepositories(db, connectionId)).map((repo) => [repo.externalId, repo]),
   );
-  const enabled = await selectedReviewsSwitch(db, organizationId);
   const failed: string[] = [];
   for (const project of projects) {
     const input = {
@@ -113,18 +111,19 @@ async function connectGitLabProjects(
       provider: "gitlab",
       externalId: String(project.id),
       fullPath: project.fullPath,
-      enabled,
     } as const;
     const previous = known.get(input.externalId);
     const hooked = Boolean(previous && !previous.disconnectedAt && previous.webhookId);
-    if (hooked && previous?.effective.review) {
+    if (hooked && previous?.reviewsEnabled) {
       await connectRepository(db, input);
       continue;
     }
 
     // The credential cache needs the repository's row, so a new project gets one with reviews
     // off until it's checked; it's disconnected again if it can't be connected.
-    const added = previous ? null : await connectRepository(db, { ...input, enabled: false });
+    const added = previous
+      ? null
+      : await connectRepository(db, { ...input, reviewsEnabled: false });
     try {
       await adapter.getReadOnlyCloneCredential({
         fullPath: project.fullPath,
@@ -344,14 +343,6 @@ export async function removeScmConnection(
 }
 
 /**
- * The reviews switch a repository ticked on a selection page is connected with: inherit the
- * organization's default, or on when the default leaves reviews off.
- */
-async function selectedReviewsSwitch(db: Database, organizationId: string): Promise<true | null> {
-  return (await getAllowedTaskTypeDefaults(db, organizationId)).includes("review") ? null : true;
-}
-
-/**
  * Saves which repositories of a GitHub App installation get reviews: selected ones are
  * connected (or re-enabled), other connected ones are disabled. Only repositories the
  * installation can access are accepted.
@@ -383,7 +374,6 @@ export async function saveGitHubRepositories(
     settingsActor(admin),
     trackedConnection(organizationId, connectionId),
     async (tx) => {
-      const enabled = await selectedReviewsSwitch(tx, organizationId);
       for (const repo of available) {
         if (!selected.has(String(repo.id))) continue;
         await connectRepository(tx, {
@@ -391,11 +381,10 @@ export async function saveGitHubRepositories(
           provider: "github",
           externalId: String(repo.id),
           fullPath: repo.fullPath,
-          enabled,
         });
       }
       for (const repo of await listConnectionRepositories(tx, connectionId)) {
-        if (!repo.disconnectedAt && repo.effective.review && !selected.has(repo.externalId)) {
+        if (!repo.disconnectedAt && repo.reviewsEnabled && !selected.has(repo.externalId)) {
           await setRepositoryEnabledRow(tx, organizationId, repo.id, false);
         }
       }
@@ -454,7 +443,7 @@ export async function saveGitLabProjects(
       for (const repo of await listConnectionRepositories(tx, connectionId)) {
         if (
           !repo.disconnectedAt &&
-          repo.effective.review &&
+          repo.reviewsEnabled &&
           listedIds.has(repo.externalId) &&
           !selected.has(repo.externalId)
         ) {
@@ -474,7 +463,7 @@ export async function saveGitLabProjects(
 async function reviewedExternalIds(db: Database, connectionId: string): Promise<Set<string>> {
   return new Set(
     (await listConnectionRepositories(db, connectionId))
-      .filter((repo) => !repo.disconnectedAt && repo.effective.review)
+      .filter((repo) => !repo.disconnectedAt && repo.reviewsEnabled)
       .map((repo) => repo.externalId),
   );
 }

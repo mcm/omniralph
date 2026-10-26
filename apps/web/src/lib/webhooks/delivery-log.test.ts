@@ -26,6 +26,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -144,10 +145,10 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
     for (const id of [githubRepo, gitlabRepo]) {
       await db
         .update(repositories)
-        .set({ enabled: null, triggers: { onOpen: true, onPush: true, drafts: false } })
+        .set({ reviewsEnabled: true, triggers: { onOpen: true, onPush: true, drafts: false } })
         .where(eq(repositories.id, id));
     }
-    await setRepositorySwitches(db, orgId, githubRepo, { coding: null });
+    await setCodingEnabled(db, githubRepo);
     scm = new CommentingAdapter("github");
   });
 
@@ -341,7 +342,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
         before: async () => {
           await db
             .update(repositories)
-            .set({ enabled: false })
+            .set({ reviewsEnabled: false })
             .where(eq(repositories.id, githubRepo));
         },
         send: () => sendGitHub(pullRequest("opened", 11)),

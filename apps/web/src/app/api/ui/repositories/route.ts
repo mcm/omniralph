@@ -2,6 +2,7 @@ import {
   listRepositoryOverviewPage,
   listScmConnections,
   REPOSITORY_PAGE_SIZE,
+  repositorySwitches,
 } from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
@@ -38,11 +39,7 @@ export const GET = apiHandler(
         provider: repo.provider,
         fullPath: repo.fullPath,
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
-        taskTypes: {
-          query: { on: repo.queryEnabled, inherited: repo.overrides.query === null },
-          review: { on: repo.enabled, inherited: repo.overrides.review === null },
-          coding: { on: repo.ralphEnabled, inherited: repo.overrides.coding === null },
-        },
+        taskTypes: repositorySwitches(repo),
         depth: repo.reviewDepth,
         pinnedHarnesses: repo.pinnedHarnesses,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,

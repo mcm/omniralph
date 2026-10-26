@@ -7,7 +7,6 @@ import {
   listHarnessesUsableHostTools,
   getJob,
   mapThreadRun,
-  resolveRepositorySwitches,
   setThreadRunJob,
   type Database,
   type Repository,
@@ -195,7 +194,7 @@ export async function enqueueChatAsk(
     return { status: "unknown_repository" };
   }
   const { repository, connection } = found;
-  if (!(await resolveRepositorySwitches(db, repository)).query) {
+  if (!repository.askEnabled) {
     return { status: "query_disabled", repository };
   }
 
@@ -313,7 +312,7 @@ export async function retryChatAsk(
   ) {
     return { status: "unknown_repository" };
   }
-  if (!(await resolveRepositorySwitches(db, found.repository)).query) {
+  if (!found.repository.askEnabled) {
     return { status: "query_disabled", repository: found.repository };
   }
   const { job: copy, created } = await deps.dispatcher.createAndPublish({

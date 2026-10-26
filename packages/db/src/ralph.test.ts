@@ -64,7 +64,9 @@ import {
   disconnectRepository,
   getRepository,
   upsertScmConnection,
+  WorkItemMatchRequiredError,
 } from "./repositories.js";
+import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
 import {
   harnesses,
   hiddenRefs,
@@ -260,17 +262,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
 
   it("adds the coding policy to repositories, with defaults", async () => {
     expect(await getRepository(db, repoA)).toMatchObject({
-      ralphEnabled: null,
+      codingEnabled: false,
       ...CODING_OFF_DEFAULTS,
     });
-    // Inheriting: coding is on while the organization allows it (the built-in default), by path.
-    expect((await listRalphRepositories(db, orgId)).map((r) => [r.id, r.effective.coding])).toEqual(
-      [
-        [repoB, true],
-        [repoA, true],
-      ],
-    );
-    await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
+    // Coding starts off; the organization's allowed task types don't turn it on.
     expect(await listRalphRepositories(db, orgId)).toEqual([]);
 
     const policy = {
@@ -279,30 +274,41 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       historyRewrite: "always",
       respondToReviewsAndCi: false,
     } as const;
+    // Turning Coding on needs a work item match; nothing is saved without one.
+    await expect(
+      updateRepositoryCoding(db, repoA, { codingEnabled: true, ...policy }),
+    ).rejects.toThrow(WorkItemMatchRequiredError);
+    expect(await getRepository(db, repoA)).toMatchObject(CODING_OFF_DEFAULTS);
     for (const id of [repoA, repoB]) {
-      expect(await updateRepositoryCoding(db, id, { ralphEnabled: true, ...policy })).toMatchObject(
-        { ralphEnabled: true, ...policy },
-      );
+      await saveWorkItemMatch(db, {
+        organizationId: orgId,
+        repositoryId: id,
+        userId: null,
+        match: { tracker: "linear", team: id, project: null, withoutProject: false, labels: [] },
+      });
+      expect(
+        await updateRepositoryCoding(db, id, { codingEnabled: true, ...policy }),
+      ).toMatchObject({ codingEnabled: true, ...policy });
     }
     // Blank instructions are none.
     expect(
       await updateRepositoryCoding(db, repoA, { ...policy, codingInstructions: "  " }),
-    ).toMatchObject({ ralphEnabled: true, codingInstructions: null });
-    // An explicit true wins over the organization's default; by path.
+    ).toMatchObject({ codingEnabled: true, codingInstructions: null });
+    // By path, whatever the organization's allowed task types.
+    await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
     expect((await listRalphRepositories(db, orgId)).map((r) => r.fullPath)).toEqual([
       "acme/a-web",
       "acme/b-api",
     ]);
     await setAllowedTaskTypeDefaults(db, orgId, null, null);
-    // An explicit false wins when the organization allows coding.
-    await db.update(repositories).set({ ralphEnabled: false }).where(eq(repositories.id, repoB));
+    await updateRepositoryCoding(db, repoB, { codingEnabled: false });
     expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
-    await db.update(repositories).set({ ralphEnabled: true }).where(eq(repositories.id, repoB));
+    await updateRepositoryCoding(db, repoB, { codingEnabled: true });
 
     await disconnectRepository(db, orgId, repoB);
     expect((await listRalphRepositories(db, orgId)).map((r) => r.id)).toEqual([repoA]);
     expect(
-      await updateRepositoryCoding(db, repoB, { ralphEnabled: true, ...CODING_OFF_DEFAULTS }),
+      await updateRepositoryCoding(db, repoB, { codingEnabled: true, ...CODING_OFF_DEFAULTS }),
     ).toBeNull();
     await connectRepository(db, {
       connectionId: (await getRepository(db, repoB))!.connectionId,
@@ -310,6 +316,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       externalId: "2",
       fullPath: "acme/a-web",
     });
+    for (const id of [repoA, repoB]) {
+      await updateRepositoryCoding(db, id, { codingEnabled: false });
+      await deleteWorkItemMatch(db, orgId, id);
+    }
   });
 
   it("creates a run and finds it by id, session or issue", async () => {
@@ -1237,12 +1247,12 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   });
 
   it("lists the repositories runs can be filtered by: ralph enabled or with runs", async () => {
-    const off = { ralphEnabled: false, ...CODING_OFF_DEFAULTS };
+    const off = { codingEnabled: false, ...CODING_OFF_DEFAULTS };
     await updateRepositoryCoding(db, repoA, off);
     await updateRepositoryCoding(db, repoB, off);
     expect(await listRalphRunRepositories(db, orgId)).toEqual([]);
 
-    await updateRepositoryCoding(db, repoB, { ...off, ralphEnabled: true });
+    await db.update(repositories).set({ codingEnabled: true }).where(eq(repositories.id, repoB));
     expect((await listRalphRunRepositories(db, orgId)).map((r) => r.id)).toEqual([repoB]);
 
     // repoA has a run (its ralph setting was turned off later).
@@ -1275,7 +1285,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         fullPath: "other/api",
       })
     ).id;
-    await updateRepositoryCoding(db, otherRepo, { ralphEnabled: true, ...CODING_OFF_DEFAULTS });
+    await db
+      .update(repositories)
+      .set({ codingEnabled: true })
+      .where(eq(repositories.id, otherRepo));
     const otherInput = runInput({ organizationId: other!.id, repositoryId: otherRepo });
     const { run: otherRun } = await createRun(db, otherInput);
     await upsertStories(db, otherRun.id, [

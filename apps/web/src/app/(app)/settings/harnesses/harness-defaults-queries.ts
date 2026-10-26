@@ -44,7 +44,7 @@ export function useHostToolCatalog() {
 /**
  * What a defaults change affects: this tab, every harness query (the list's and detail's
  * desired version and update state, task types and concurrency they inherit) and every
- * repository query (the task types repositories inherit, the harness version they show).
+ * repository query (the harnesses' task types and version a repository's Harnesses tab shows).
  */
 export const harnessDefaultsChanged = (keys: QueryKeys) => [
   harnessDefaultsKeys(keys).defaults,

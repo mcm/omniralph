@@ -120,7 +120,7 @@ function versionSuccess(version: string): string {
 
 /**
  * The organization's harness defaults, saved together: the task types and max concurrency
- * harnesses and repositories use unless they set their own, and the version harnesses run.
+ * harnesses use unless they set their own, and the version harnesses run.
  */
 export function DefaultsSection({
   desiredVersion,
@@ -187,19 +187,19 @@ export function DefaultsSection({
       id="harness-defaults"
       title="Defaults"
       showTitle={false}
-      description="What every harness and repository of this organization uses unless it sets its own on its page. A harness's or repository's own setting always wins, on or off."
+      description="What every harness of this organization uses unless it sets its own on its page. A harness's own setting always wins, on or off."
       changes={changes}
       prepare={prepare}
       onDiscard={() => setDraft(saved)}
       confirm={{
         consequence:
-          "Every harness and repository without its own setting uses these with its next claim or heartbeat, and harnesses without their own version override update to the desired version. Running jobs aren't cancelled.",
+          "Every harness without its own setting uses these with its next claim or heartbeat, and harnesses without their own version override update to the desired version. Running jobs aren't cancelled.",
       }}
     >
       <SettingsSubsection
         id="default-task-types"
         title="Task types"
-        description={`Which tasks harnesses may run and repositories get. Housekeeping jobs (repository syncs) always run. Default: ${formatTaskTypes(builtInDefaults.allowedTaskTypes)}.`}
+        description={`Which tasks harnesses may run. Housekeeping jobs (repository syncs) always run. Default: ${formatTaskTypes(builtInDefaults.allowedTaskTypes)}.`}
       >
         <div className="settings-group" role="group" aria-label="Task types">
           {TASK_TYPES.map((taskType) => (

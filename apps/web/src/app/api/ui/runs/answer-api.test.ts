@@ -21,7 +21,6 @@ import {
   ralphRuns,
   triageRuns,
   updateLane,
-  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
@@ -33,6 +32,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import type { ScmAdapter } from "@omniralph/scm";
 import { preparationHash } from "@omniralph/ralph";
@@ -190,9 +190,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
         externalId,
         fullPath,
       });
-      await updateRepositoryCoding(db, repository.id, {
-        ralphEnabled: true,
-      });
+      await setCodingEnabled(db, repository.id);
       if (fullPath === "acme/api") repoA = repository.id;
       else repoB = repository.id;
     }

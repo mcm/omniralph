@@ -116,7 +116,7 @@ export async function routeIssues(
         repository: {
           id: repository.id,
           fullPath: repository.fullPath,
-          codingEnabled: repository.effective.coding,
+          codingEnabled: repository.codingEnabled,
         },
         by: route.by,
       };

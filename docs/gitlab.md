@@ -151,7 +151,7 @@ it still exists, creates a new one with the current events and secret, and clear
 ## Ralph
 
 Nothing beyond the requirements above: the service account's token with `api`, Maintainer on the
-project, and coding on under **Repository › Settings › Task types**. Merge requests are opened as
+project, and the repository's Coding switch on (it needs a work item match). Merge requests are opened as
 drafts by the bot (titled `Draft: …`) and marked ready when the run finishes. If the project
 protects the run's branch, or only allows Maintainers to push, the Developer-role write token can't
 push: ralph branches (Linear's branch names, e.g. `user/eng-12-…`) must be pushable by Developers.

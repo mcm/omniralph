@@ -11,7 +11,6 @@ import {
   rateLimits,
   recordFollowUpSource,
   saveWorkItemMatch,
-  setRepositorySwitches,
   upsertScmConnection,
   workItemMatches,
   type Database,
@@ -23,6 +22,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoutingTestResult } from "@/lib/api/routing-rules";
@@ -132,7 +132,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     web = await repo("1", "acme/web");
     api = await repo("2", "acme/api");
     docs = await repo("3", "acme/docs");
-    await setRepositorySwitches(state.db, org!.id, docs, { coding: false });
+    await setCodingEnabled(state.db, web);
+    await setCodingEnabled(state.db, api);
   }, 180_000);
 
   afterAll(async () => {

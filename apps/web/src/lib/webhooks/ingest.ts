@@ -16,7 +16,6 @@ import {
   type WebhookDeliveryRef,
   type WebhookEventRun,
   getRun,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -360,8 +359,7 @@ export async function processVerifiedDelivery(
   if (ci) return handleCi({ ...input, delivery, ci });
   const closed = spec.parseClosed(eventName, body);
   if (closed) return handleClosed({ ...input, delivery, closed });
-  const reviewsOff = async () =>
-    !!repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).review;
+  const reviewsOff = async () => !!repository.disconnectedAt || !repository.reviewsEnabled;
   const event = spec.parse(eventName, body);
   const prState = spec.parseState(eventName, body);
   if (prState) {
@@ -521,7 +519,7 @@ async function handleCi(
 ): Promise<Handled> {
   const { db, repository, delivery, ci, log } = input;
   if (!ci.failed) return skipped("ci_not_failed");
-  if (repository.disconnectedAt || !(await resolveRepositorySwitches(db, repository)).coding) {
+  if (repository.disconnectedAt || !repository.codingEnabled) {
     return skipped("ralph_disabled");
   }
   const lanes = await Promise.all([

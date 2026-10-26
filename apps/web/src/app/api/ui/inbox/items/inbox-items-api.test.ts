@@ -13,7 +13,6 @@ import {
   organizationMembers,
   organizations,
   ralphRuns,
-  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
@@ -26,6 +25,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { REPO_SYNC_JOB_TYPE } from "@omniralph/shared";
 import { and, eq, sql } from "drizzle-orm";
@@ -165,9 +165,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     [{ id: agentId }] = (await db
       .insert(harnesses)
       .values({ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] })

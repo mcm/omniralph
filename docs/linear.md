@@ -113,6 +113,17 @@ repository's [work item match](#work-item-matches) and, when the organization ha
 the rules that target the repository (`routingRules`, position and condition) beside its match
 (`workItemMatch`).
 
+Each repository has three plain switches, none of which inherits anything: **Reviews**, **Coding**
+and **Ask** (questions from `@bot` mentions, chat and triage). Admins read and save them with
+`GET`/`PUT /api/ui/repositories/{id}/task-types`, which takes and answers
+`{ reviews, coding, ask }`, each `true` or `false`. A new repository has Reviews and Ask on and
+Coding off. Coding needs a work item match: turning it on for a repository without one answers 409
+"Add a work item match before turning on Coding.", and clearing the match of a repository whose
+Coding is on answers 409 "Turn off Coding before removing the work item match." A repository that
+already had Coding on before work item matches keeps it until it's switched off. The organization's
+**Task types** under **Settings › Harnesses** only set what harnesses accept; they don't change any
+repository's switches.
+
 A repository's coding policy is six settings: on/off, the work item match and the four below.
 Admins read and save it with `GET`/`PUT /api/ui/repositories/{id}/coding` (the match has its own
 endpoint, `PUT /api/ui/repositories/{id}/work-item-match`). `PUT` takes exactly
@@ -122,7 +133,7 @@ playbook's review and CI fix rounds (read-only).
 
 | Setting | Default | What it does |
 | -- | -- | -- |
-| **Coding** (`codingEnabled`) | the organization's default | Whether work items routed to the repository are built. |
+| **Coding** (`codingEnabled`) | off | Whether work items routed to the repository are built (the Coding switch; turning it on needs a work item match, 409 otherwise). |
 | **Extra instructions** (`codingInstructions`) | none | Text appended to every story and request prompt. |
 | **Open the pull request early** (`openPullRequestEarly`) | off | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. A story playbook that pushes only at the end never opens one early. |
 | **Rewrite history** (`historyRewrite`) | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
@@ -803,8 +814,8 @@ under pm2 update themselves to the version chosen on **Settings › Harnesses**
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
   issue: add a rule that matches it under **Settings › Routing**.
-- **"No repository has coding on".** Turn coding on for a repository under
-  **Repository › Settings › Task types**.
+- **"No repository has coding on".** Give a repository a work item match, then turn its Coding
+  switch on (`PUT /api/ui/repositories/{id}/task-types`).
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
 - **"I couldn't download … attachment(s) from Linear".** `HTTP 401`/`403` or an HTML page means

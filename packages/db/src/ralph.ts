@@ -27,13 +27,11 @@ import type { ChatPlatform } from "./chat.js";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { Job } from "./jobs.js";
-import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import {
-  effectiveRepositorySwitches,
+  codingMayBeOn,
   recordRepositorySettingsChange,
-  switchedOn,
+  WorkItemMatchRequiredError,
   type Repository,
-  type RepositoryWithSwitches,
   type ScmProvider,
 } from "./repositories.js";
 import {
@@ -116,8 +114,8 @@ export const ACTIVE_RALPH_RUN_STATUSES = [
  * Each field left out is unchanged.
  */
 export interface RepositoryCodingUpdate {
-  /** Null inherits the organization's allowed task types (`coding`). */
-  ralphEnabled?: boolean | null;
+  /** The Coding switch: turning it on needs a work item match (`setRepositorySwitches`). */
+  codingEnabled?: boolean;
   /** Appended to every story and request prompt; null (or blank) for none. */
   codingInstructions?: string | null;
   openPullRequestEarly?: boolean;
@@ -129,7 +127,8 @@ export type RepositoryHistoryRewrite = Repository["historyRewrite"];
 
 /**
  * Saves a connected repository's coding policy. Returns null if the repository is unknown or
- * disconnected.
+ * disconnected. Turning Coding on for a repository without a work item match throws
+ * `WorkItemMatchRequiredError` (nothing is saved).
  */
 export async function updateRepositoryCoding(
   db: Executor,
@@ -139,7 +138,7 @@ export async function updateRepositoryCoding(
   const [row] = await db
     .update(repositories)
     .set({
-      ...(input.ralphEnabled !== undefined && { ralphEnabled: input.ralphEnabled }),
+      ...(input.codingEnabled !== undefined && { codingEnabled: input.codingEnabled }),
       ...(input.codingInstructions !== undefined && {
         codingInstructions: input.codingInstructions?.trim() || null,
       }),
@@ -153,33 +152,46 @@ export async function updateRepositoryCoding(
       // Always set, so a save that changes nothing still returns the row.
       updatedAt: new Date(),
     })
-    .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)))
+    .where(
+      and(
+        eq(repositories.id, id),
+        isNull(repositories.disconnectedAt),
+        input.codingEnabled === true ? codingMayBeOn() : undefined,
+      ),
+    )
     .returning();
-  if (row) recordRepositorySettingsChange(db, row, "repository.coding");
-  return row ?? null;
+  if (!row) {
+    if (input.codingEnabled === true) {
+      const [found] = await db
+        .select({ id: repositories.id })
+        .from(repositories)
+        .where(and(eq(repositories.id, id), isNull(repositories.disconnectedAt)));
+      if (found) throw new WorkItemMatchRequiredError("turn_on_coding", id);
+    }
+    return null;
+  }
+  recordRepositorySettingsChange(db, row, "repository.coding");
+  return row;
 }
 
 /**
- * The organization's connected repositories with ralph (coding) effectively enabled (the
- * routing candidates), by path.
+ * The organization's connected repositories with Coding on (the routing candidates), by path.
  */
 export async function listRalphRepositories(
   db: Executor,
   organizationId: string,
-): Promise<RepositoryWithSwitches[]> {
-  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
-  const rows = await db
+): Promise<Repository[]> {
+  return db
     .select()
     .from(repositories)
     .where(
       and(
         eq(repositories.organizationId, organizationId),
-        switchedOn(repositories.ralphEnabled, allowed.includes("coding")),
+        eq(repositories.codingEnabled, true),
         isNull(repositories.disconnectedAt),
       ),
     )
     .orderBy(asc(repositories.fullPath), asc(repositories.id));
-  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
@@ -794,13 +806,12 @@ export async function getRunDetail(
 
 /**
  * The organization's repositories the Ralph runs list can be filtered by:
- * those with ralph enabled or with runs, by full path.
+ * those with Coding on or with runs, by full path.
  */
 export async function listRalphRunRepositories(
   db: Executor,
   organizationId: string,
 ): Promise<{ id: string; provider: ScmProvider; fullPath: string }[]> {
-  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
   return db
     .select({
       id: repositories.id,
@@ -812,7 +823,7 @@ export async function listRalphRunRepositories(
       and(
         eq(repositories.organizationId, organizationId),
         or(
-          switchedOn(repositories.ralphEnabled, allowed.includes("coding")),
+          eq(repositories.codingEnabled, true),
           exists(
             db
               .select({ one: sql`1` })

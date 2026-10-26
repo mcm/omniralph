@@ -7,7 +7,6 @@ import {
   organizations,
   ralphRuns,
   rateLimits,
-  setRepositorySwitches,
   updateRun,
   upsertScmConnection,
   type Database,
@@ -16,6 +15,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -129,7 +129,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing/preview", () => {
       }))!.id;
     web = await repo("1", "acme/web");
     docs = await repo("2", "acme/docs");
-    await setRepositorySwitches(state.db, org!.id, docs, { coding: false });
+    await setCodingEnabled(state.db, web);
   }, 180_000);
 
   afterAll(async () => {

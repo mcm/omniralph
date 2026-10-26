@@ -19,7 +19,6 @@ import {
   ralphRuns,
   saveChatConnection,
   claimJob,
-  updateRepositoryCoding,
   upsertScmConnection,
   webhookDeliveries,
   type ChatConnection,
@@ -39,6 +38,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
@@ -298,9 +298,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
         fullPath: "acme/app",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     const saved = await saveChatConnection(
       db,
       {

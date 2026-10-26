@@ -115,21 +115,19 @@ export const RepositorySettingsInput = z.object({
 });
 export type RepositorySettingsInput = z.infer<typeof RepositorySettingsInput>;
 
-const TaskTypeSwitch = z
-  .boolean({ error: "Choose the organization's default, on or off." })
-  .nullable();
+const TaskTypeSwitch = z.boolean({ error: "Choose on or off." });
 
 /**
- * Which task types a repository runs (`repositories.query_enabled`, `enabled`, `ralph_enabled`):
- * each on, off, or null for the organization's default.
+ * A repository's switches (`repositories.reviews_enabled`, `coding_enabled`, `ask_enabled`):
+ * each on or off. Turning Coding on needs a work item match.
  */
-export const RepositoryTaskTypesInput = z.object({
-  /** Externally triggered query tasks (mentions, chat, triage). */
-  query: TaskTypeSwitch,
+export const RepositoryTaskTypesInput = z.strictObject({
   /** Reviews of its pull and merge requests. */
-  review: TaskTypeSwitch,
-  /** Coding (Linear delegations and requests). */
+  reviews: TaskTypeSwitch,
+  /** Coding: building the work items routed to it. */
   coding: TaskTypeSwitch,
+  /** Externally triggered queries (mentions, chat, triage). */
+  ask: TaskTypeSwitch,
 });
 export type RepositoryTaskTypesInput = z.infer<typeof RepositoryTaskTypesInput>;
 
@@ -153,7 +151,10 @@ export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;
  * story and request playbooks').
  */
 export const RepositoryCodingInput = z.strictObject({
-  /** Whether work items routed to it are built (`repositories.ralph_enabled`). */
+  /**
+   * Whether work items routed to it are built (`repositories.coding_enabled`); turning it on
+   * needs a work item match.
+   */
   codingEnabled: z.boolean({ error: "Choose on or off." }),
   /** Appended to every story and request prompt; empty or null for none. */
   codingInstructions: z

@@ -51,7 +51,7 @@ async function get(req: Request): Promise<Response> {
         baseUrl: connection.baseUrl,
         token: rotation.token,
         projects: repositories
-          .filter((r) => r.effective.review && r.disconnectedAt === null)
+          .filter((r) => r.reviewsEnabled && r.disconnectedAt === null)
           .map((r) => ({
             repositoryId: r.id,
             projectId: r.externalId,

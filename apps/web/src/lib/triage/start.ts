@@ -12,7 +12,6 @@ import {
   createTriageRun,
   getRepositoryWithConnection,
   getTriageRunBySession,
-  resolveRepositorySwitches,
   setTriageRunJob,
   setTriageRunStatus,
   type TriageRun,
@@ -152,7 +151,7 @@ async function resolveRepository(
   const routed = routedRepository(route)!;
   const found = await getRepositoryWithConnection(deps.db, routed.id);
   if (!found) throw new Error(`repository ${routed.fullPath} is gone`);
-  if (!(await resolveRepositorySwitches(deps.db, found.repository)).query) {
+  if (!found.repository.askEnabled) {
     return { status: "query_disabled", repository: found.repository.fullPath };
   }
   const defaultBranch = await deps.adapterFor(deps.db, found.connection).getDefaultBranch({

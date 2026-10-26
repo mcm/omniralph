@@ -6,7 +6,6 @@ import {
   type Feedback,
   type FindingRow,
   type Review,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { LEARN_RULE_JOB_TYPE } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -83,7 +82,7 @@ export async function enqueueLearnRule(
   if (!found || !settings || found.repository.disconnectedAt) {
     return { status: "skipped", reason: "repository_unavailable" };
   }
-  if (!(await resolveRepositorySwitches(db, found.repository)).query) {
+  if (!found.repository.askEnabled) {
     return { status: "skipped", reason: "query_disabled" };
   }
   const definitions = organizationPlaybooks(db, found.repository.organizationId);
