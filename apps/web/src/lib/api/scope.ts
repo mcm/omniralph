@@ -1,8 +1,10 @@
 import "server-only";
 import {
   getMemberOrganization,
+  getRepository,
   getRunIndexEntry,
   listOrganizationsForUser,
+  type Repository,
   type RunIndexEntry,
 } from "@omniralph/db";
 import { z } from "zod";
@@ -89,4 +91,26 @@ export async function requireRunAccess(
     throw new AuthorizationError(`This action requires the ${role} role.`, "forbidden");
   }
   return { run, organization };
+}
+
+/**
+ * For a repo's detail and actions: the repository (by `repositoryId`, which must be a UUID)
+ * of any of the user's organizations, with that organization and the user's role there,
+ * which must be at least `access`. A missing repository, or one of an organization the
+ * user isn't a member of, is not found (404); a member asking for `admin` is forbidden (403).
+ */
+export async function requireRepositoryAccess(
+  user: OrgUser,
+  repositoryId: string,
+  access: Role = "member",
+  { notFoundMessage }: { notFoundMessage?: string } = {},
+): Promise<{ repository: Repository; organization: ScopedOrganization }> {
+  if (!z.uuid().safeParse(repositoryId).success) throw ApiRouteError.notFound(notFoundMessage);
+  const repository = await getRepository(getDb(), repositoryId);
+  const organization = repository && (await membership(user, repository.organizationId));
+  if (!repository || !organization) throw ApiRouteError.notFound(notFoundMessage);
+  if (!hasRole(organization, access)) {
+    throw new AuthorizationError(`This action requires the ${access} role.`, "forbidden");
+  }
+  return { repository, organization };
 }

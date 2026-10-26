@@ -730,6 +730,14 @@ export {
   type RunStatus,
 } from "./run-index.js";
 export {
+  listConnectedRepositories,
+  loadRepositoryStatusFacts,
+  type ConnectedRepository,
+  type RepositoryStatusFacts,
+  type RepositorySyncJob,
+  type StatusAgent,
+} from "./repository-status.js";
+export {
   getRalphRunDetailFacts,
   getReviewRunDetailFacts,
   isRunAttempt,

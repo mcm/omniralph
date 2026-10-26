@@ -1,6 +1,13 @@
 import { RALPH_HISTORY_REWRITE_POLICIES, ReviewDepthSchema } from "@omniralph/shared";
 import { z } from "zod";
+import { organizationRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
+import type { RepositoryListRow, RepositoryListView } from "@/lib/repositories/list";
+import type {
+  RepositoryProblem,
+  RepositoryProblemAction,
+  RepositoryStatus,
+} from "@/lib/repositories/status";
 import { workItemMatchSchema } from "./work-item-matches";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
@@ -19,8 +26,8 @@ export const repositoryTaskTypesSchema = z.object({
 });
 export type RepositoryTaskTypes = z.infer<typeof repositoryTaskTypesSchema>;
 
-/** A connected repository on the Repositories page. */
-export const repositoryRowSchema = z.object({
+/** A connected repository on the old Repositories page (`GET /api/ui/repositories/overview`). */
+export const legacyRepositoryRowSchema = z.object({
   id: z.string(),
   provider,
   fullPath: z.string(),
@@ -32,7 +39,7 @@ export const repositoryRowSchema = z.object({
   pinnedAgents: z.array(z.object({ id: z.string(), name: z.string() })),
   lastReviewAt: isoDate.nullable(),
 });
-export type RepositoryRow = z.infer<typeof repositoryRowSchema>;
+export type LegacyRepositoryRow = z.infer<typeof legacyRepositoryRowSchema>;
 
 /** A problem found by the daily GitLab check (`scm_connections.health`). */
 export const connectionProblemSchema = z.object({
@@ -63,9 +70,12 @@ export const connectionRowSchema = z.object({
 });
 export type ConnectionRow = z.infer<typeof connectionRowSchema>;
 
-/** `GET /api/ui/repositories?page=`: a page of connected repositories, and (admins) the connections. */
-export const repositoryListSchema = z.object({
-  repositories: z.array(repositoryRowSchema),
+/**
+ * `GET /api/ui/repositories/overview?page=`: a page of the active organization's connected
+ * repositories, and (admins) its connections: the old Repositories page, until it's removed.
+ */
+export const legacyRepositoryListSchema = z.object({
+  repositories: z.array(legacyRepositoryRowSchema),
   /** 1-based. */
   page: z.number(),
   pageSize: z.number(),
@@ -74,6 +84,56 @@ export const repositoryListSchema = z.object({
   /** Admins only (empty for members): the organization's code-host connections. */
   connections: z.array(connectionRowSchema),
 });
+export type LegacyRepositoryList = z.infer<typeof legacyRepositoryListSchema>;
+
+/** What a repo problem's button does: a `POST` to `path`, or a link to `href`. */
+export const repositoryProblemActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("post"), label: z.string(), path: z.string() }),
+  z.object({ type: z.literal("link"), label: z.string(), href: z.string() }),
+]) satisfies z.ZodType<RepositoryProblemAction>;
+
+/** Something wrong with a repo; problems come in the order webhook, sync_failed, no_agent_online, connection. */
+export const repositoryProblemSchema = z.object({
+  code: z.enum(["webhook", "sync_failed", "no_agent_online", "connection"]),
+  message: z.string(),
+  action: repositoryProblemActionSchema.optional(),
+}) satisfies z.ZodType<RepositoryProblem>;
+
+/** Whether something runs on a repo and what is wrong with it (its rail dot and notice). */
+export const repositoryStatusSchema = z.object({
+  /** Its runs that are queued or running. */
+  running: z.number(),
+  problems: z.array(repositoryProblemSchema),
+}) satisfies z.ZodType<RepositoryStatus>;
+
+/** A row of the Repos rail (`RepositoryListRow`). */
+export const repositoryListRowSchema = z.object({
+  id: z.string(),
+  /** Its organization, and the user's role there. */
+  organization: organizationRefSchema,
+  provider,
+  fullPath: z.string(),
+  /** The last path segment. */
+  name: z.string(),
+  /** The path before `name`, or null. */
+  group: z.string().nullable(),
+  webUrl: z.string(),
+  reviewsEnabled: z.boolean(),
+  codingEnabled: z.boolean(),
+  askEnabled: z.boolean(),
+  status: repositoryStatusSchema,
+}) satisfies z.ZodType<RepositoryListRow>;
+export type RepositoryListItem = z.infer<typeof repositoryListRowSchema>;
+
+/**
+ * `GET /api/ui/repositories?organization=<id|all>` (members): the Repos rail, every
+ * connected repo of the scope by organization name, then path, at most 500 (`truncated`
+ * when there are more). An organization the user isn't a member of answers 404.
+ */
+export const repositoryListSchema = z.object({
+  repositories: z.array(repositoryListRowSchema),
+  truncated: z.boolean(),
+}) satisfies z.ZodType<RepositoryListView>;
 export type RepositoryList = z.infer<typeof repositoryListSchema>;
 
 /** `GET /api/ui/repositories/setup` (admins): what the Connect buttons need. Not polled. */
