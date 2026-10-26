@@ -13,7 +13,7 @@ export interface PageTab {
 }
 
 /**
- * Tabs between the pages of one resource (a repository, a harness, a settings page). Each tab is
+ * Tabs between the pages of one resource (a repository, an agent, a settings page). Each tab is
  * a link, so leaving a tab with unsaved settings asks first (the unsaved-changes guard watches
  * link clicks). The strip scrolls on its own when the tabs don't fit.
  */
@@ -22,7 +22,7 @@ export function PageTabs({
   tabs,
   current,
 }: {
-  /** The tab list's accessible name, e.g. "Harness pages". */
+  /** The tab list's accessible name, e.g. "Agent pages". */
   label: string;
   tabs: readonly PageTab[];
   current: string;

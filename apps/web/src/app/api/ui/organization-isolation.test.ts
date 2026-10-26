@@ -1195,7 +1195,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         params: { id: b.agentId },
         path: `/api/ui?${new URLSearchParams({ next })}`,
       });
-    const settings = `/harnesses/${b.agentId}/settings`;
+    const settings = `/agents/${b.agentId}/settings`;
     const { status, body } = await open(settings);
     expect(status).toBe(409);
     expect(body).toMatchObject({ code: "enter_organization" });
@@ -1213,7 +1213,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       "http://localhost",
     ).searchParams.get("token");
     expect(await readEnterOrganizationToken(elsewhereToken, user!.id)).toMatchObject({
-      next: `/harnesses/${b.agentId}`,
+      next: `/agents/${b.agentId}`,
     });
   });
   it("lists each organization's own repositories, and its connections to its admins only", async () => {

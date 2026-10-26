@@ -45,17 +45,17 @@ import {
   type RepositoryValues,
 } from "@/lib/settings/forms";
 import { AGENT_UPDATE_STATUS_VARIANTS, stateLabel } from "@/lib/state-variants";
-import { HarnessStatusBadge } from "../../../harnesses/harness-parts";
+import { AgentStatusBadge } from "../../../agents/agent-parts";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RepositoryNav } from "../repository-nav";
 import { repositoryChanged, useRepositoryDetail } from "../repository-queries";
 
 /** The repository's settings tabs, by route segment. */
-export type RepositorySettingsTab = "settings" | "harnesses";
+export type RepositorySettingsTab = "settings" | "agents";
 
 const TAB_LABELS: Record<RepositorySettingsTab, string> = {
   settings: "Review settings",
-  harnesses: "Harnesses",
+  agents: "Agents",
 };
 
 interface RepositorySettingsContentProps {
@@ -68,14 +68,14 @@ interface RepositorySettingsContentProps {
     customInstructions: string;
     pinnedAgentIds: string[];
   };
-  /** The organization's harnesses; revoked ones can't be pinned but show in the pinned list. */
-  harnesses: RepositoryHarness[];
+  /** The organization's agents; revoked ones can't be pinned but show in the pinned list. */
+  agents: RepositoryAgent[];
   /** Its Reviews, Coding and Ask switches. */
   taskTypes: RepositoryDetail["taskTypes"];
 }
 
-/** A harness of the organization, as the Harnesses tab shows it. */
-export interface RepositoryHarness {
+/** An agent of the organization, as the Agents tab shows it. */
+export interface RepositoryAgent {
   id: string;
   name: string;
   online: boolean;
@@ -86,10 +86,10 @@ export interface RepositoryHarness {
   acceptedTaskTypes: string[];
 }
 
-/** Online, Offline or Updating (an offline harness reads as offline even mid-update). */
-function harnessStatusLabel(harness: RepositoryHarness): string {
-  if (!harness.online) return "Offline";
-  return harness.updating ? "Updating" : "Online";
+/** Online, Offline or Updating (an offline agent reads as offline even mid-update). */
+function agentStatusLabel(agent: RepositoryAgent): string {
+  if (!agent.online) return "Offline";
+  return agent.updating ? "Updating" : "Online";
 }
 
 /** "Review, Coding", or "No task types". */
@@ -97,9 +97,9 @@ function taskTypesLabel(taskTypes: string[]): string {
   return taskTypes.length === 0 ? "No task types" : taskTypes.map(stateLabel).join(", ");
 }
 
-/** The picker hint of a pinnable harness: its status and the task types it accepts. */
-export function harnessHint(harness: RepositoryHarness): string {
-  return `${harnessStatusLabel(harness)} · ${taskTypesLabel(harness.acceptedTaskTypes)}`;
+/** The picker hint of a pinnable agent: its status and the task types it accepts. */
+export function agentHint(agent: RepositoryAgent): string {
+  return `${agentStatusLabel(agent)} · ${taskTypesLabel(agent.acceptedTaskTypes)}`;
 }
 
 function InlineError({ message }: { message?: string }) {
@@ -133,7 +133,7 @@ function inputKey(key: keyof RepositoryValues): string {
 const onOff = (value: boolean) => formatSettingValue(value);
 
 /**
- * The settings of Repository › Review settings or Harnesses: each tab is one section with one
+ * The settings of Repository › Review settings or Agents: each tab is one section with one
  * save. Only admins edit them; others see them read-only. Forms are seeded from the (polled) data and re-seeded only while they
  * aren't edited.
  */
@@ -141,14 +141,14 @@ export function RepositorySettingsContent({
   tab,
   repository,
   settings,
-  harnesses,
+  agents,
   taskTypes,
 }: RepositorySettingsContentProps) {
   const isAdmin = useCurrentUser().role === "admin";
   const apiAction = useApiAction();
   const disabled = !isAdmin;
 
-  const pinnable = React.useMemo(() => harnesses.filter((h) => !h.revoked), [harnesses]);
+  const pinnable = React.useMemo(() => agents.filter((h) => !h.revoked), [agents]);
   const context = React.useMemo(() => ({ agentIds: pinnable.map((h) => h.id) }), [pinnable]);
   const saved = React.useMemo(() => repositoryDraft(settings), [settings]);
   const [draft, setDraft] = useSeededDraft(saved);
@@ -161,9 +161,9 @@ export function RepositorySettingsContent({
   const specs = React.useMemo(
     () =>
       repositorySpecs({
-        agents: new Map(harnesses.map((h) => [h.id, h.name])),
+        agents: new Map(agents.map((h) => [h.id, h.name])),
       }),
-    [harnesses],
+    [agents],
   );
 
   /** The props of the section saving `keys`. */
@@ -324,72 +324,69 @@ export function RepositorySettingsContent({
     </SettingsSection>
   );
 
-  const harnessOptions = React.useMemo(
+  const agentOptions = React.useMemo(
     () =>
-      pinnable.map((harness) => ({
-        value: harness.id,
-        label: harness.name,
-        hint: harnessHint(harness),
+      pinnable.map((agent) => ({
+        value: agent.id,
+        label: agent.name,
+        hint: agentHint(agent),
       })),
     [pinnable],
   );
-  const harnessNames = React.useMemo(
-    () => new Map(harnesses.map((h) => [h.id, h.name])),
-    [harnesses],
-  );
+  const agentNames = React.useMemo(() => new Map(agents.map((h) => [h.id, h.name])), [agents]);
   const pinError =
     errors.pinnedAgentIds ??
     Object.entries(errors).find(([key]) => key.startsWith("pinnedAgentIds."))?.[1];
 
-  const harnessesSection = (
+  const agentsSection = (
     <SettingsSection
-      id="harnesses"
-      title="Harnesses"
+      id="agents"
+      title="Agents"
       showTitle={false}
-      description="Which harnesses run this repository's jobs: reviews, questions and coding. Newly pinned harnesses pre-clone the repository."
+      description="Which agents run this repository's jobs: reviews, questions and coding. Newly pinned agents pre-clone the repository."
       {...section(REPOSITORY_SECTIONS.agents, (input) =>
         input.pinnedAgentIds.some((id) => !settings.pinnedAgentIds.includes(id))
-          ? "Saved; newly pinned harnesses will pre-clone the repository"
+          ? "Saved; newly pinned agents will pre-clone the repository"
           : "Saved; it applies to the next job",
       )}
     >
       <SettingsSubsection
-        id="harnesses-pinning"
+        id="agents-pinning"
         title="Pinning"
-        description="Only the pinned harnesses run this repository's jobs. Leave all unpinned to let any harness run them. Default: not set (any harness)."
+        description="Only the pinned agents run this repository's jobs. Leave all unpinned to let any agent run them. Default: not set (any agent)."
       >
         {pinnable.length === 0 && draft.pinnedAgentIds.length === 0 ? (
-          <Muted>No harnesses are enrolled yet; any harness that enrolls can run jobs.</Muted>
+          <Muted>No agents are enrolled yet; any agent that enrolls can run jobs.</Muted>
         ) : (
           <>
             <Field
-              label="Pinned harnesses"
-              htmlFor="pinned-harnesses"
+              label="Pinned agents"
+              htmlFor="pinned-agents"
               description={
                 draftValues.pinnedAgentIds.length === 0
-                  ? "Any harness can run this repository's jobs."
+                  ? "Any agent can run this repository's jobs."
                   : draftValues.pinnedAgentIds.length === 1
-                    ? "Only the pinned harness runs this repository's jobs."
-                    : `Only the ${draftValues.pinnedAgentIds.length} pinned harnesses run this repository's jobs.`
+                    ? "Only the pinned agent runs this repository's jobs."
+                    : `Only the ${draftValues.pinnedAgentIds.length} pinned agents run this repository's jobs.`
               }
               error={pinError}
             >
               <MultiSelect
-                id="pinned-harnesses"
+                id="pinned-agents"
                 value={draft.pinnedAgentIds}
                 onChange={(value) => set("pinnedAgentIds", value)}
-                options={harnessOptions}
+                options={agentOptions}
                 disabled={disabled}
-                placeholder="Any harness"
-                searchPlaceholder="Search harnesses…"
-                searchLabel="Search harnesses"
+                placeholder="Any agent"
+                searchPlaceholder="Search agents…"
+                searchLabel="Search agents"
                 staleMessage="It was revoked or deleted. It's kept until you remove it."
-                staleLabels={harnessNames}
+                staleLabels={agentNames}
               />
             </Field>
-            <PinnedHarnessList
+            <PinnedAgentList
               pinnedIds={draft.pinnedAgentIds}
-              harnesses={harnesses}
+              agents={agents}
               disabled={disabled}
               onRemove={(id) =>
                 set(
@@ -412,7 +409,7 @@ export function RepositorySettingsContent({
 
       <div className="settings-sections">
         {tab === "settings" && reviewSection}
-        {tab === "harnesses" && harnessesSection}
+        {tab === "agents" && agentsSection}
       </div>
     </>
   );
@@ -436,9 +433,9 @@ function SettingsSkeleton() {
 }
 
 /**
- * Repository › Review settings or Harnesses, live (`GET /api/ui/repositories/{id}`).
- * Harnesses' online state is computed against the browser's ticking clock. A save invalidates
- * the repository, the repositories list and the harnesses.
+ * Repository › Review settings or Agents, live (`GET /api/ui/repositories/{id}`).
+ * Agents' online state is computed against the browser's ticking clock. A save invalidates
+ * the repository, the repositories list and the agents.
  */
 export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) {
   const { id } = useParams<{ id: string }>();
@@ -452,7 +449,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
       tab={tab}
       repository={data.repository}
       settings={data.settings}
-      harnesses={data.agents.map((harness) => withClientOnline(harness, now))}
+      agents={data.agents.map((agent) => withClientOnline(agent, now))}
       taskTypes={data.taskTypes}
     />
   );
@@ -502,55 +499,52 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
   );
 }
 
-/** `harness` with `online` computed against the browser's clock `now`, not the server's. */
-function withClientOnline(
-  harness: RepositoryDetail["agents"][number],
-  now: number,
-): RepositoryHarness {
-  const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
+/** `agent` with `online` computed against the browser's clock `now`, not the server's. */
+function withClientOnline(agent: RepositoryDetail["agents"][number], now: number): RepositoryAgent {
+  const heartbeat = agent.lastHeartbeatAt ? new Date(agent.lastHeartbeatAt) : null;
   return {
-    id: harness.id,
-    name: harness.name,
-    online: !harness.revoked && isAgentOnline(heartbeat, new Date(now)),
-    revoked: harness.revoked,
-    updating: harness.updating,
-    acceptedTaskTypes: harness.acceptedTaskTypes,
+    id: agent.id,
+    name: agent.name,
+    online: !agent.revoked && isAgentOnline(heartbeat, new Date(now)),
+    revoked: agent.revoked,
+    updating: agent.updating,
+    acceptedTaskTypes: agent.acceptedTaskTypes,
   };
 }
 
-/** The pinned harnesses with their status, each removable; or that none is pinned. */
-function PinnedHarnessList({
+/** The pinned agents with their status, each removable; or that none is pinned. */
+function PinnedAgentList({
   pinnedIds,
-  harnesses,
+  agents,
   disabled,
   onRemove,
 }: {
   pinnedIds: readonly string[];
-  harnesses: RepositoryHarness[];
+  agents: RepositoryAgent[];
   disabled: boolean;
   onRemove: (id: string) => void;
 }) {
   if (pinnedIds.length === 0) {
-    return <Muted>None pinned: jobs go to any eligible harness</Muted>;
+    return <Muted>None pinned: jobs go to any eligible agent</Muted>;
   }
   return (
-    <ul className="settings-pin-list" aria-label="Pinned harnesses">
+    <ul className="settings-pin-list" aria-label="Pinned agents">
       {pinnedIds.map((id) => {
-        const harness = harnesses.find((h) => h.id === id);
-        const name = harness?.name ?? "Deleted harness";
+        const agent = agents.find((h) => h.id === id);
+        const name = agent?.name ?? "Deleted agent";
         return (
           <li key={id} className="settings-pin">
             <div className="settings-pin-main">
               <span className="settings-pin-name">{name}</span>
               <span className="settings-pin-detail">
-                {harness ? taskTypesLabel(harness.acceptedTaskTypes) : "It no longer exists"}
+                {agent ? taskTypesLabel(agent.acceptedTaskTypes) : "It no longer exists"}
               </span>
             </div>
             <div className="settings-pin-badges">
-              {harness ? (
+              {agent ? (
                 <>
-                  <HarnessStatusBadge harness={harness} />
-                  {harness.online && harness.updating && (
+                  <AgentStatusBadge agent={agent} />
+                  {agent.online && agent.updating && (
                     <Badge variant={AGENT_UPDATE_STATUS_VARIANTS.updating} dot live>
                       Updating
                     </Badge>

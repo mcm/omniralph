@@ -3,16 +3,16 @@ import { agents } from "@omniralph/db";
 import { createEnrollmentToken, enrollAgent, expect, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
-/** The fleet table's row of the harness named `name` (behind the dialog too). */
+/** The fleet table's row of the agent named `name` (behind the dialog too). */
 const fleetRow = (page: Page, name: string) => page.locator("main table tr", { hasText: name });
 
 /** Opens the enrollment dialog, generates a token for `name` and returns it. */
 async function generateToken(page: Page, name: string): Promise<string> {
-  await page.getByRole("button", { name: "Enroll harness" }).click();
+  await page.getByRole("button", { name: "Enroll agent" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill(name);
   // The dialog starts polling the enrollment once it shows the token: wait for the first
-  // answer, so the route is compiled (`next dev`) before the harness enrolls.
+  // answer, so the route is compiled (`next dev`) before the agent enrolls.
   const firstPoll = page.waitForResponse(
     (response) => /\/api\/ui\/agent-enrollments\/[\w-]+$/.test(response.url()) && response.ok(),
   );
@@ -23,18 +23,18 @@ async function generateToken(page: Page, name: string): Promise<string> {
   return token;
 }
 
-test.describe("harnesses", () => {
-  test("the enrollment dialog shows the harness that enrolled with its token", async ({
+test.describe("agents", () => {
+  test("the enrollment dialog shows the agent that enrolled with its token", async ({
     page,
     request,
     signIn,
   }) => {
     await signIn("admin");
-    await page.goto("/harnesses");
-    await expect(page.getByRole("heading", { level: 1, name: "Harnesses" })).toBeVisible();
+    await page.goto("/agents");
+    await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
     const name = `e2e-enroll-${Date.now()}`;
     const token = await generateToken(page, name);
-    await expect(page.getByText("Waiting for the harness to enroll…")).toBeVisible();
+    await expect(page.getByText("Waiting for the agent to enroll…")).toBeVisible();
 
     const { agentId } = await enrollAgent(request, token, "host");
 
@@ -44,19 +44,19 @@ test.describe("harnesses", () => {
     });
     await expect(dialog.getByRole("link", { name: `Open ${name}` })).toHaveAttribute(
       "href",
-      `/harnesses/${agentId}`,
+      `/agents/${agentId}`,
     );
     // The list behind the dialog already shows it, without a reload.
     await expect(fleetRow(page, name)).toHaveCount(1, { timeout: 1_000 });
   });
 
-  test("a harness enrolling after the dialog closed appears in the list", async ({
+  test("an agent enrolling after the dialog closed appears in the list", async ({
     page,
     request,
     signIn,
   }) => {
     await signIn("admin");
-    await page.goto("/harnesses");
+    await page.goto("/agents");
     const name = `e2e-later-${Date.now()}`;
     const token = await generateToken(page, name);
     await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
@@ -66,7 +66,7 @@ test.describe("harnesses", () => {
     await expect(fleetRow(page, name)).toHaveCount(1, { timeout: 5_000 });
   });
 
-  test("a heartbeat flips a harness from offline to online", async ({
+  test("a heartbeat flips an agent from offline to online", async ({
     db,
     page,
     request,
@@ -80,7 +80,7 @@ test.describe("harnesses", () => {
       .where(eq(agents.id, agentId));
 
     await signIn("member");
-    await page.goto("/harnesses");
+    await page.goto("/agents");
     const row = fleetRow(page, name);
     await expect(row).toContainText("Offline");
 

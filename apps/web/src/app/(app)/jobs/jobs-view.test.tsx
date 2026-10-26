@@ -159,7 +159,7 @@ describe("JobsView", () => {
     expect(table()!.getAttribute("aria-busy")).toBe("false");
   });
 
-  it("shows a running job's cancel as requested until the harness confirms it, then canceled", async () => {
+  it("shows a running job's cancel as requested until the agent confirms it, then canceled", async () => {
     let job = jobRow(1, { status: "running" });
     const seen = mockFetch({
       "GET /api/ui/jobs": () => jsonResponse(list([job])),
@@ -185,7 +185,7 @@ describe("JobsView", () => {
     );
     expect(screen.queryByRole("button", { name: /^Cancel job / })).toBeNull();
 
-    // The harness confirms with its heartbeat; the next poll shows the job canceled.
+    // The agent confirms with its heartbeat; the next poll shows the job canceled.
     job = { ...job, status: "canceled", finishedAt: "2026-10-16T10:01:00.000Z" };
     await client.invalidateQueries();
     await waitFor(() =>
@@ -255,15 +255,15 @@ describe("JobsView", () => {
     mockFetch({
       "GET /api/ui/jobs": () => jsonResponse(list([failed])),
       [`POST /api/ui/jobs/${failed.id}/rerun`]: () =>
-        jsonResponse({ error: "The harness this job ran on is gone." }, 400),
+        jsonResponse({ error: "The agent this job ran on is gone." }, 400),
     });
     renderView();
     await waitFor(() => expect(row(failed)).toBeTruthy());
     await userEvent.click(screen.getByRole("button", { name: /^Rerun job / }));
-    expect(await screen.findByText(/queued again for the harness it ran on/)).toBeTruthy();
+    expect(await screen.findByText(/queued again for the agent it ran on/)).toBeTruthy();
     await userEvent.click(await screen.findByRole("button", { name: "Rerun job" }));
     await waitFor(() =>
-      expect(toasts.toast).toHaveBeenCalledWith("The harness this job ran on is gone.", {
+      expect(toasts.toast).toHaveBeenCalledWith("The agent this job ran on is gone.", {
         variant: "danger",
       }),
     );

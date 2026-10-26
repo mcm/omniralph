@@ -52,7 +52,7 @@ export function runMode(run: Pick<RalphRun, "mode">): RalphRunMode {
   return run.mode;
 }
 
-export const DELIVERED_NOTE = "Passed this to the agent that's working right now.";
+export const DELIVERED_NOTE = "Passed this to Om while it's working.";
 
 /** The note for a reply that waits for the running job to finish (cyralph's wording). */
 export function undeliveredNote(mode: RalphRunMode): string {

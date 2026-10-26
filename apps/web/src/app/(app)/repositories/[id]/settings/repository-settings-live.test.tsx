@@ -123,7 +123,7 @@ describe("RepositorySettingsView", () => {
     expect(instructions.value).toBe("Mine.");
   });
 
-  it("saves, then refetches the repository and invalidates the repositories and harnesses", async () => {
+  it("saves, then refetches the repository and invalidates the repositories and agents", async () => {
     const user = userEvent.setup();
     const keys = queryKeys(TEST_ORGANIZATION_ID);
     client.setQueryData(keys.agents.list(), []);
@@ -148,9 +148,9 @@ describe("RepositorySettingsView", () => {
     expect(client.getQueryState(keys.repositories.list())!.isInvalidated).toBe(true);
   });
 
-  it("shows the pinned harnesses' online state against the browser's clock, live", async () => {
-    view("harnesses");
-    const list = await screen.findByRole("list", { name: "Pinned harnesses" });
+  it("shows the pinned agents' online state against the browser's clock, live", async () => {
+    view("agents");
+    const list = await screen.findByRole("list", { name: "Pinned agents" });
     expect(within(list).getByText("Offline")).toBeTruthy();
 
     served = detail();

@@ -73,7 +73,7 @@ test.describe("triage runs", () => {
     await expect(jobRow).toContainText("Running");
     await expect(page.getByText("Wrote a PRD with one story.")).toHaveCount(0);
 
-    // The harness finishes the job, and the sink keeps its result.
+    // The agent finishes the job, and the sink keeps its result.
     await db
       .update(jobs)
       .set({ status: "completed", finishedAt: new Date() })

@@ -382,7 +382,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect(list.agents).toEqual([
       expect.objectContaining({
         id: acme.agentId,
-        url: `${APP_URL}/harnesses/${acme.agentId}`,
+        url: `${APP_URL}/agents/${acme.agentId}`,
         name: "acme-agent",
         status: "online",
         version: "1.2.3",

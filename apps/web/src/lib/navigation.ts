@@ -31,10 +31,9 @@ export const navItems: readonly NavItem[] = [
     phone: "drawer",
   },
   {
-    // Epic 4 renames the route to /agents.
-    id: "fleet",
-    label: "Fleet",
-    href: "/harnesses",
+    id: "agents",
+    label: "Agents",
+    href: "/agents",
     icon: IconServer2,
     placement: "main",
     phone: "drawer",

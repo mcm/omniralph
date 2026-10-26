@@ -30,14 +30,14 @@ and states) instead of linear.app; also only outside production.
 ## What's in it
 
 - `seed.ts`: the data. Timestamps are relative to the seed time, so rerun `fixtures:up` to
-  refresh them (it replaces the previous seed). Online harnesses heartbeat in 2099, so they
+  refresh them (it replaces the previous seed). Online agents heartbeat in 2099, so they
   stay online however long after seeding the panel renders.
 - `ids.ts`: fixed IDs (`FIXTURE_IDS`) for naming detail pages, e.g.
   `/runs/${FIXTURE_IDS.ralphRuns.running}` or `/reviews/${FIXTURE_IDS.reviews.featured}`.
 
 Covered: an admin and a member (and a second organization for the switcher), a pending
 invitation, GitHub and GitLab connections with repositories (one disabled, one disconnected),
-a Linear workspace, about 30 harnesses online, offline, outdated, updating and revoked (the
+a Linear workspace, about 30 agents online, offline, outdated, updating and revoked (the
 control panel pinned to four of them, one revoked), ralph runs in
 every status with stories in every status (attempts, progress logs, follow-ups, a run waiting
 on a manual story), reviews over the last 40 days with findings open, dismissed and restored,

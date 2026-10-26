@@ -48,7 +48,7 @@ test.describe("jobs", () => {
     await expect(status).toContainText("Completed", { timeout: 5_000 });
   });
 
-  test("cancelling a running job shows it requested until the harness confirms, then canceled", async ({
+  test("cancelling a running job shows it requested until the agent confirms, then canceled", async ({
     db,
     page,
     signIn,
@@ -75,7 +75,7 @@ test.describe("jobs", () => {
       .toMatchObject({ status: "running", cancelRequested: true });
     await expect(status).toContainText("Cancel requested");
 
-    // Its harness stops it after the next heartbeat.
+    // Its agent stops it after the next heartbeat.
     await db
       .update(jobs)
       .set({ status: "canceled", finishedAt: new Date() })

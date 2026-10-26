@@ -228,7 +228,7 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
   const disconnect = useApiMutation({
     mutationFn: (_: void, { organizationId }) =>
       api.delete(`/api/ui/repositories/${repo.id}`, mutationResultSchema, { organizationId }),
-    // Its pins go too: the harness pages list them.
+    // Its pins go too: the agent pages list them.
     invalidate: (keys) => [keys.repositories.all, keys.agents.all],
     success: `Disconnected ${repo.fullPath}`,
   });
@@ -371,7 +371,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
             ))}
           </div>
         ) : (
-          <Muted>Any harness</Muted>
+          <Muted>Any agent</Muted>
         )}
       </TableCell>
       <TableCell className={WIDE_COLUMN}>
@@ -565,7 +565,7 @@ function RepositoriesTable({
               <TableHead>Repository</TableHead>
               <TableHead>Task types</TableHead>
               <TableHead className={WIDE_COLUMN}>Review depth</TableHead>
-              <TableHead className={WIDE_COLUMN}>Pinned harnesses</TableHead>
+              <TableHead className={WIDE_COLUMN}>Pinned agents</TableHead>
               <TableHead className={WIDE_COLUMN}>Last review</TableHead>
               <TableHead aria-label="Actions" />
             </TableRow>

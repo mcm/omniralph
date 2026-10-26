@@ -204,7 +204,7 @@ function TriageRunsTable({
               <TableHead className={WIDE_COLUMN}>Status</TableHead>
               <TableHead className={WIDE_COLUMN}>Outcome</TableHead>
               <TableHead className={WIDE_COLUMN}>Trigger</TableHead>
-              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Agent</TableHead>
               <TableHead className={WIDE_COLUMN}>Updated</TableHead>
               <TableHead aria-label="Links" />
             </TableRow>

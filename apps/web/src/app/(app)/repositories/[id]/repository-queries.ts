@@ -15,7 +15,7 @@ function currentPage(): string | undefined {
     : `${window.location.pathname}${window.location.search}`;
 }
 
-/** A repository with its Review settings and Harnesses tabs, live (`GET /api/ui/repositories/{id}`). */
+/** A repository with its Review settings and Agents tabs, live (`GET /api/ui/repositories/{id}`). */
 export function useRepositoryDetail(repositoryId: string) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
@@ -47,7 +47,7 @@ export function useRepositoryRules(repositoryId: string) {
 
 /**
  * What a repository settings save can affect: the repository's pages and the repositories
- * list, and the harness pages (which show the pins).
+ * list, and the agent pages (which show the pins).
  */
 export function repositoryChanged(keys: QueryKeys): QueryKey[] {
   return [keys.repositories.all, keys.agents.all];

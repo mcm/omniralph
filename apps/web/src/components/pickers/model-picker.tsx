@@ -16,11 +16,11 @@ import {
 import { IconAlertTriangle, IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { NOT_AVAILABLE, StaleNote, joinIds, matchesQuery, useAnnouncer } from "./picker-parts";
 
-/** A model some harnesses report they can run (`listReportedModels` in `@omniralph/db`). */
+/** A model some agents report they can run (`listReportedModels` in `@omniralph/db`). */
 export interface ModelOption {
   value: string;
   displayName: string;
-  /** The harnesses that report it. */
+  /** The agents that report it. */
   agentIds: readonly string[];
 }
 
@@ -29,8 +29,8 @@ export interface ModelPickerProps {
   value: string | null;
   onChange: (value: string | null) => void;
   options: readonly ModelOption[];
-  /** How many harnesses the options were gathered from, for "2 of 3 harnesses". */
-  harnessCount: number;
+  /** How many agents the options were gathered from, for "2 of 3 agents". */
+  agentCount: number;
   /** Offers a "None" entry, for optional fields such as a fallback model. */
   allowNone?: boolean;
   /** The "None" entry's text (e.g. "Same as the model"). */
@@ -51,16 +51,16 @@ export interface ModelPickerProps {
 
 const NONE = "\u0000none";
 
-/** "all harnesses" or "2 of 3 harnesses": how widely a model is reported. */
-export function harnessCoverage(agentIds: readonly string[], harnessCount: number): string {
+/** "all agents" or "2 of 3 agents": how widely a model is reported. */
+export function agentCoverage(agentIds: readonly string[], agentCount: number): string {
   const count = new Set(agentIds).size;
-  if (harnessCount > 0 && count >= harnessCount) return "all harnesses";
-  return `${count} of ${harnessCount} ${harnessCount === 1 ? "harness" : "harnesses"}`;
+  if (agentCount > 0 && count >= agentCount) return "all agents";
+  return `${count} of ${agentCount} ${agentCount === 1 ? "agent" : "agents"}`;
 }
 
 /**
- * Chooses one model from those the harnesses report, each with how many harnesses report it.
- * `allowNone` adds a "None" entry. A saved model no harness reports is shown with a warning and
+ * Chooses one model from those the agents report, each with how many agents report it.
+ * `allowNone` adds a "None" entry. A saved model no agent reports is shown with a warning and
  * kept until another is chosen; it is never offered. Works inside the library's `Field`.
  */
 export function ModelPicker(props: ModelPickerProps) {
@@ -68,11 +68,11 @@ export function ModelPicker(props: ModelPickerProps) {
     value,
     onChange,
     options,
-    harnessCount,
+    agentCount,
     allowNone = false,
     noneLabel = "None",
     placeholder = "Choose a model…",
-    staleMessage = "No harness reports it. It's kept until you choose another model.",
+    staleMessage = "No agent reports it. It's kept until you choose another model.",
     disabled = false,
     className,
     error,
@@ -188,7 +188,7 @@ export function ModelPicker(props: ModelPickerProps) {
                       <span className="picker-option-hint">
                         <span className="picker-option-value">{option.value}</span>
                         {" · "}
-                        {harnessCoverage(option.agentIds, harnessCount)}
+                        {agentCoverage(option.agentIds, agentCount)}
                       </span>
                     </CommandItem>
                   ))}
@@ -197,7 +197,7 @@ export function ModelPicker(props: ModelPickerProps) {
               {shown.length === 0 && !showNone ? (
                 <p className="picker-list-note">
                   {options.length === 0
-                    ? "No harness has reported any models yet."
+                    ? "No agent has reported any models yet."
                     : "No matching models."}
                 </p>
               ) : null}

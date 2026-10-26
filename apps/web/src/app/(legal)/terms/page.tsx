@@ -22,7 +22,7 @@ export default function TermsPage() {
       <h2>The service</h2>
       <p>
         Omniralph reviews pull and merge requests in connected repositories, builds Linear issues
-        with AI agents (coding tasks), and answers questions about an organization&apos;s runs,
+        with Om, its AI (coding tasks), and answers questions about an organization&apos;s runs,
         reviews, jobs, agents and repositories in Slack and Discord. Everything belongs to an
         organization: its members share it, and its admins decide what is connected and enabled.
       </p>
@@ -73,9 +73,8 @@ export default function TermsPage() {
       <p>
         You and your organization keep all rights in your code, issues, messages and other content.
         You let the service access, process and store that content only to provide the service, as
-        described in the <Link href="/privacy">privacy policy</Link>. Code and content written by
-        agents for your organization is yours to use, subject to the licenses of the code it is
-        based on.
+        described in the <Link href="/privacy">privacy policy</Link>. Code and content written by Om
+        for your organization is yours to use, subject to the licenses of the code it is based on.
       </p>
 
       <h2>Third-party services</h2>

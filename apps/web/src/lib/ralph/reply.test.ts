@@ -551,14 +551,14 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(await heartbeat([job.id])).toEqual([message]);
 
       expect(await heartbeat([job.id], { delivered: [message!.messageId] })).toEqual([]);
-      expect(last(run, "thought")).toBe("Passed this to the agent that's working right now.");
+      expect(last(run, "thought")).toBe("Passed this to Om while it's working.");
       expect((await getRun(db, run.id))?.guidance.map((g) => g.text)).toEqual([
         "Use a smallint column",
       ]);
       // A repeated acknowledgement changes nothing.
       await heartbeat([job.id], { delivered: [message!.messageId] });
       expect(linear.bodies(run.linearAgentSessionId, "thought").slice(thoughts)).toEqual([
-        "Passed this to the agent that's working right now.",
+        "Passed this to Om while it's working.",
       ]);
 
       // Delivered live, so it isn't applied again; later stories still see it as guidance.

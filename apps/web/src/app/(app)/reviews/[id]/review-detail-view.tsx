@@ -191,13 +191,11 @@ function ReviewSkeleton() {
   return (
     <>
       <FactStrip label="Review facts">
-        {["Head SHA", "Base SHA", "Depth", "Model", "Harness", "Started", "Duration"].map(
-          (label) => (
-            <Fact key={label} label={label}>
-              <Skeleton width="6rem" />
-            </Fact>
-          ),
-        )}
+        {["Head SHA", "Base SHA", "Depth", "Model", "Agent", "Started", "Duration"].map((label) => (
+          <Fact key={label} label={label}>
+            <Skeleton width="6rem" />
+          </Fact>
+        ))}
       </FactStrip>
       <Card>
         <CardHeader>
@@ -288,10 +286,10 @@ function ReviewContent({ review, isAdmin }: { review: ReviewDetail; isAdmin: boo
         <Fact label="Model">
           {review.model ? <MonoValue value={review.model} className="fact-mono" /> : <EmptyValue />}
         </Fact>
-        <Fact label="Harness">
+        <Fact label="Agent">
           {review.agent ? (
             isAdmin ? (
-              <Link href={`/harnesses/${review.agent.id}`} className="review-link">
+              <Link href={`/agents/${review.agent.id}`} className="review-link">
                 {review.agent.name}
               </Link>
             ) : (

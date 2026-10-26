@@ -686,7 +686,7 @@ export function AnalyticsContent({
             <Table className="list-table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Harness</TableHead>
+                  <TableHead>Agent</TableHead>
                   <TableHead className="analytics-num">Jobs</TableHead>
                   <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Completed</TableHead>
                   <TableHead className="analytics-num">Failed</TableHead>
@@ -697,7 +697,7 @@ export function AnalyticsContent({
                   <TableRow key={a.agent.id}>
                     <TableCell className="analytics-cell-text">
                       {isAdmin ? (
-                        <Link href={`/harnesses/${a.agent.id}`} className="analytics-link">
+                        <Link href={`/agents/${a.agent.id}`} className="analytics-link">
                           {a.agent.name}
                         </Link>
                       ) : (

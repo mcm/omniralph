@@ -86,7 +86,7 @@ describe("seedFixtures", () => {
     }
   });
 
-  it("has harnesses online, offline, outdated and revoked", async () => {
+  it("has agents online, offline, outdated and revoked", async () => {
     const rows = await db.select().from(agents);
     const now = Date.now();
     const online = rows.filter(
@@ -98,11 +98,11 @@ describe("seedFixtures", () => {
     );
     expect(online.some((h) => h.reportedVersion !== "1.8.0")).toBe(true);
     expect(rows.some((h) => h.revokedAt)).toBe(true);
-    // Enough for the pinned-harness picker to need its search.
+    // Enough for the pinned-agent picker to need its search.
     expect(rows.length).toBeGreaterThanOrEqual(30);
   });
 
-  it("pins the control panel to a revoked harness among others", async () => {
+  it("pins the control panel to a revoked agent among others", async () => {
     const pins = await db
       .select({ revokedAt: agents.revokedAt })
       .from(agentRepoPins)
@@ -152,7 +152,7 @@ describe("seedFixtures", () => {
     const saved = await listRoutingRules(db, FIXTURE_IDS.organizations.main);
     expect(saved.map((r) => [r.repositoryId, r.query.rules[0]])).toEqual([
       [FIXTURE_IDS.repositories.controlPanel, expect.objectContaining({ field: "labels" })],
-      [FIXTURE_IDS.repositories.harness, expect.objectContaining({ field: "project" })],
+      [FIXTURE_IDS.repositories.agent, expect.objectContaining({ field: "project" })],
       [FIXTURE_IDS.repositories.controlPanel, expect.objectContaining({ field: "team" })],
     ]);
     const parsed = linearRoutingRulesSchema.safeParse({

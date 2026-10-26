@@ -64,7 +64,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Runs, Repos and Fleet, then Settings at the bottom", () => {
+  it("lists Runs, Repos and Agents, then Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -76,7 +76,7 @@ describe("navItems", () => {
     ).toEqual([
       { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repositories", placement: "main", phone: "drawer" },
-      { id: "fleet", label: "Fleet", href: "/harnesses", placement: "main", phone: "drawer" },
+      { id: "agents", label: "Agents", href: "/agents", placement: "main", phone: "drawer" },
       {
         id: "settings",
         label: "Settings",
@@ -101,11 +101,11 @@ describe("navItems", () => {
     ["/analytics", "runs"],
     ["/repositories", "repos"],
     ["/repositories/abc/settings", "repos"],
-    ["/harnesses", "fleet"],
-    ["/harnesses/abc", "fleet"],
+    ["/agents", "agents"],
+    ["/agents/abc", "agents"],
     ["/settings/organization", "settings"],
     ["/settings/routing", "settings"],
-    ["/settings/harnesses", "settings"],
+    ["/settings/agent-defaults", "settings"],
   ])("makes %s active for %s alone", (pathname, id) => {
     expect(navItems.filter((item) => isNavActive(pathname, item)).map((item) => item.id)).toEqual([
       id,

@@ -8,7 +8,7 @@ export {
 } from "./multi-select";
 export {
   ModelPicker,
-  harnessCoverage,
+  agentCoverage,
   type ModelOption,
   type ModelPickerProps,
 } from "./model-picker";

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestQueryClient, queryWrapper } from "@/components/query-test-utils";
 import {
   RepositorySettingsContent,
-  type RepositoryHarness,
+  type RepositoryAgent,
   type RepositorySettingsTab,
 } from "./repository-settings-view";
 
@@ -20,7 +20,7 @@ type TaskTypes = Parameters<typeof RepositorySettingsContent>[0]["taskTypes"];
 
 const allOn: TaskTypes = { reviews: true, coding: true, ask: true };
 
-const HARNESSES: RepositoryHarness[] = [
+const AGENTS: RepositoryAgent[] = [
   {
     id: "h1",
     name: "build-01",
@@ -43,7 +43,7 @@ function render(
   tab: RepositorySettingsTab,
   overrides: {
     taskTypes?: TaskTypes;
-    harnesses?: RepositoryHarness[];
+    agents?: RepositoryAgent[];
     pinnedAgentIds?: string[];
   } = {},
 ) {
@@ -65,7 +65,7 @@ function render(
           customInstructions: "",
           pinnedAgentIds: overrides.pinnedAgentIds ?? [],
         }}
-        harnesses={overrides.harnesses ?? HARNESSES}
+        agents={overrides.agents ?? AGENTS}
         taskTypes={overrides.taskTypes ?? allOn}
       />
     </Wrapper>,
@@ -79,7 +79,7 @@ function text(html: string): string {
 
 /** The labels of every tab. */
 function allLabels(): string[] {
-  return (["settings", "harnesses"] as const).flatMap((tab) =>
+  return (["settings", "agents"] as const).flatMap((tab) =>
     [...render(tab).matchAll(/<label[^>]*>(.*?)<\/label>/g)].map((m) =>
       m[1]!.replace(/<[^>]+>/g, ""),
     ),
@@ -88,7 +88,7 @@ function allLabels(): string[] {
 
 describe("RepositorySettingsView playbook bindings", () => {
   it("has no review, correlation, story or request playbook selects", () => {
-    const html = render("settings") + render("harnesses");
+    const html = render("settings") + render("agents");
     for (const id of [
       "review-task-",
       "correlation-task",
@@ -108,16 +108,16 @@ describe("RepositorySettingsView tabs", () => {
         m[1]!.replace(/<[^>]+>/g, ""),
       );
     expect(saves("settings")).toEqual(["Save review settings"]);
-    expect(saves("harnesses")).toEqual(["Save harnesses"]);
+    expect(saves("agents")).toEqual(["Save agents"]);
   });
 
   it("shows only its own tab's settings", () => {
     const settings = render("settings");
     expect(settings).toContain('id="path-excludes"');
-    expect(settings).not.toContain("Pinned harnesses");
-    const harnesses = render("harnesses");
-    expect(harnesses).toContain("Any harness can run this repository&#x27;s jobs.");
-    expect(harnesses).not.toContain('id="path-excludes"');
+    expect(settings).not.toContain("Pinned agents");
+    const agents = render("agents");
+    expect(agents).toContain("Any agent can run this repository&#x27;s jobs.");
+    expect(agents).not.toContain('id="path-excludes"');
   });
 
   it("names the tab in the breadcrumb-free section only for screen readers", () => {
@@ -148,11 +148,11 @@ describe("RepositorySettingsView tabs", () => {
 
 describe("RepositorySettingsView task types", () => {
   it("has no task-type selects: the switches aren't edited here", () => {
-    for (const tab of ["settings", "harnesses"] as const) {
+    for (const tab of ["settings", "agents"] as const) {
       const html = render(tab);
       expect(html).not.toMatch(/id="task-type-/);
       expect(text(html)).not.toContain("Use organization default");
-      expect(text(html)).not.toContain("Settings › Harnesses");
+      expect(text(html)).not.toContain("Settings › Agents");
     }
   });
 
@@ -163,62 +163,62 @@ describe("RepositorySettingsView task types", () => {
   });
 
   it("never says Ralph", () => {
-    for (const tab of ["settings", "harnesses"] as const) {
+    for (const tab of ["settings", "agents"] as const) {
       expect(text(render(tab))).not.toMatch(/\bRalph\b/);
     }
   });
 });
 
-describe("RepositorySettingsView pinned harnesses", () => {
-  it("picks pinned harnesses from a searchable list, not a checkbox per harness", () => {
-    const html = render("harnesses");
+describe("RepositorySettingsView pinned agents", () => {
+  it("picks pinned agents from a searchable list, not a checkbox per agent", () => {
+    const html = render("agents");
     expect(html).toMatch(
-      /<button[^>]*role="combobox"[^>]*id="pinned-harnesses"|<button[^>]*id="pinned-harnesses"[^>]*role="combobox"/,
+      /<button[^>]*role="combobox"[^>]*id="pinned-agents"|<button[^>]*id="pinned-agents"[^>]*role="combobox"/,
     );
     expect(html).not.toContain('id="pin-h1"');
-    expect(text(html)).toContain("Any harness");
+    expect(text(html)).toContain("Any agent");
   });
 
-  it("shows the pinned harnesses as chips by name", () => {
-    const html = render("harnesses", { pinnedAgentIds: ["h2"] });
+  it("shows the pinned agents as chips by name", () => {
+    const html = render("agents", { pinnedAgentIds: ["h2"] });
     expect(text(html)).toContain("build-02");
     expect(text(html)).not.toContain("build-01");
-    expect(html).toContain("Only the pinned harness runs this repository&#x27;s jobs.");
+    expect(html).toContain("Only the pinned agent runs this repository&#x27;s jobs.");
   });
 
-  it("lists the pinned harnesses below the picker with their status", () => {
-    const html = render("harnesses", { pinnedAgentIds: ["h2"] });
-    const list = /<ul[^>]*aria-label="Pinned harnesses"[^>]*>(.*?)<\/ul>/.exec(html);
+  it("lists the pinned agents below the picker with their status", () => {
+    const html = render("agents", { pinnedAgentIds: ["h2"] });
+    const list = /<ul[^>]*aria-label="Pinned agents"[^>]*>(.*?)<\/ul>/.exec(html);
     expect(list).not.toBeNull();
     expect(text(list![1]!)).toMatch(/build-02.*Review.*Offline/);
     expect(list![1]).toContain('aria-label="Unpin build-02"');
     expect(text(html)).not.toContain("None pinned");
   });
 
-  it("says jobs go to any eligible harness when none is pinned", () => {
-    const html = render("harnesses");
-    expect(html).not.toContain('aria-label="Pinned harnesses"');
-    expect(text(html)).toContain("None pinned: jobs go to any eligible harness");
+  it("says jobs go to any eligible agent when none is pinned", () => {
+    const html = render("agents");
+    expect(html).not.toContain('aria-label="Pinned agents"');
+    expect(text(html)).toContain("None pinned: jobs go to any eligible agent");
   });
 
-  it("lists a pin to a revoked harness as revoked", () => {
-    const html = render("harnesses", {
-      harnesses: [...HARNESSES, { ...HARNESSES[0]!, id: "h3", name: "old-01", revoked: true }],
+  it("lists a pin to a revoked agent as revoked", () => {
+    const html = render("agents", {
+      agents: [...AGENTS, { ...AGENTS[0]!, id: "h3", name: "old-01", revoked: true }],
       pinnedAgentIds: ["h3"],
     });
     expect(text(html)).toMatch(/old-01.*Revoked/);
     expect(text(html)).toMatch(/“old-01” is not available\. It was revoked or deleted/);
   });
 
-  it("keeps a pin to a harness that is no longer pinnable, with a warning", () => {
-    const html = render("harnesses", { pinnedAgentIds: ["gone"] });
+  it("keeps a pin to an agent that is no longer pinnable, with a warning", () => {
+    const html = render("agents", { pinnedAgentIds: ["gone"] });
     expect(text(html)).toMatch(/gone/);
     expect(text(html)).toMatch(/revoked or deleted/);
   });
 
-  it("says any harness runs the jobs when none is enrolled", () => {
-    const html = render("harnesses", { harnesses: [] });
-    expect(html).not.toContain('id="pinned-harnesses"');
-    expect(text(html)).toMatch(/No harnesses are enrolled yet/);
+  it("says any agent runs the jobs when none is enrolled", () => {
+    const html = render("agents", { agents: [] });
+    expect(html).not.toContain('id="pinned-agents"');
+    expect(text(html)).toMatch(/No agents are enrolled yet/);
   });
 });

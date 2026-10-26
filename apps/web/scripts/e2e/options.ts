@@ -17,7 +17,7 @@ Runs the end-to-end specs (apps/web/e2e/*.spec.ts) with Playwright against
 
 Options:
   --grep <regex>         Only tests whose title (file, describe and test
-                         names) matches, e.g. "smoke" or "enroll|harness"
+                         names) matches, e.g. "smoke" or "enroll|agent"
   --grep-invert <regex>  Skip tests whose title matches
   --skip-build           Don't build the workspace packages the panel imports
   --help                 Show this help

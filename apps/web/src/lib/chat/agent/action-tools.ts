@@ -54,7 +54,7 @@ export const startWork = defineChatTool({
       .min(1)
       .max(10_000)
       .describe(
-        "The self-contained instruction for the coding agent: what to change, where and why, with every detail from the conversation it needs (it doesn't read the thread). The users' messages are quoted after it.",
+        "The self-contained instruction for the coding session: what to change, where and why, with every detail from the conversation it needs (it doesn't read the thread). The users' messages are quoted after it.",
       ),
     ship: z
       .boolean()
@@ -173,7 +173,7 @@ async function runReplyAttachments(
 export const replyToRun = defineChatTool({
   tier: "action",
   description:
-    "Passes a message to this thread's coding run (one started with start_work), as if the user had replied to its session: while its session works, its agent gets the message right away (`live`); otherwise it runs as the run's next request once the current step finishes (`queued`). Use it for an answer to a question the run asked in the thread, or when a user wants to steer the run (more detail, a correction, a question for it). Its answer comes back to you as a run event. Not for approval requests (answer_run_permission) or cleanup questions (answer_run_cleanup).",
+    "Passes a message to this thread's coding run (one started with start_work), as if the user had replied to its session: while its session works, it gets the message right away (`live`); otherwise it runs as the run's next request once the current step finishes (`queued`). Use it for an answer to a question the run asked in the thread, or when a user wants to steer the run (more detail, a correction, a question for it). Its answer comes back to you as a run event. Not for approval requests (answer_run_permission) or cleanup questions (answer_run_cleanup).",
   inputSchema: z.object({
     text: z
       .string()
