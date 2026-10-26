@@ -38,7 +38,7 @@ describe("controls.css", () => {
     );
   });
 
-  it.each([".or-switch", ".or-checkbox__input", ".or-seg__option", ".or-tab"])(
+  it.each([".or-switch", ".or-checkbox__input", ".or-radio", ".or-seg__option", ".or-tab"])(
     "%s shows the accent focus ring on :focus-visible",
     (control) => {
       expect(declarationsFor(`${control}:focus-visible`)).toEqual({
@@ -63,6 +63,19 @@ describe("controls.css", () => {
     });
     expect(declarationsFor(".or-checkbox__input:checked").background).toBe("var(--or-solid)");
     expect(declarationsFor(".or-checkbox__input:indeterminate").background).toBe("var(--or-solid)");
+  });
+
+  it("draws the radio round, solid when checked, with mono option labels on request", () => {
+    expect(declarationsFor(".or-radio")).toMatchObject({
+      border: "1.5px solid var(--or-ctl)",
+      "border-radius": "50%",
+    });
+    expect(declarationsFor('.or-radio[data-state="checked"]').background).toBe("var(--or-solid)");
+    expect(declarationsFor(".or-radio-list__options").display).toBe("flex");
+    expect(declarationsFor(".or-radio-list__options")["flex-direction"]).toBe("column");
+    expect(
+      declarationsFor(".or-radio-list__options--mono .or-radio-list__option-label")["font-family"],
+    ).toBe("var(--or-font-mono)");
   });
 
   it("marks the selected segment with --or-sel", () => {

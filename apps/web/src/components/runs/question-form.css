@@ -1,0 +1,12 @@
+/* A run's question: the prompt and its options, then Send answer (and the item's decisions). */
+.or-question {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.or-question__actions {
+  display: flex;
+  gap: 8px;
+}

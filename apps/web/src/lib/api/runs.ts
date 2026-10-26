@@ -280,7 +280,14 @@ export const runQuestionSchema = z.object({
   kind: z.enum(RUN_QUESTION_KINDS),
   /** What is asked, in plain language. */
   prompt: z.string(),
-  options: z.array(z.object({ id: z.string(), label: z.string() })),
+  options: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      /** A repository option's code host (its label is the repo's full path). */
+      provider: provider.optional(),
+    }),
+  ),
   askedAt: isoDate,
   /** When it is answered for the person (a tool call is denied, a branch deleted). */
   expiresAt: isoDate.nullable(),

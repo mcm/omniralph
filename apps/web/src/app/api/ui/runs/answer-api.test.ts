@@ -512,8 +512,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       kind: "repository",
       prompt: "Which repo should Om work in for ENG-90?",
       options: [
-        { id: repoB, label: "acme/web" },
-        { id: repoA, label: "acme/api" },
+        { id: repoB, label: "acme/web", provider: "github" },
+        { id: repoA, label: "acme/api", provider: "github" },
       ],
     });
 

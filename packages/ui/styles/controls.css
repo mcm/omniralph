@@ -1,11 +1,12 @@
 /*
- * Controls: switch, checkbox, segmented control and tabs (ui.css .toggle,
- * input[type=checkbox], .seg, .tabs/.tab). Every control shows the shared focus ring on
+ * Controls: switch, checkbox, radio list, segmented control and tabs (ui.css .toggle,
+ * input[type=checkbox], input[type=radio], .seg, .tabs/.tab). Every control shows the shared focus ring on
  * :focus-visible.
  */
 
 .or-switch:focus-visible,
 .or-checkbox__input:focus-visible,
+.or-radio:focus-visible,
 .or-seg__option:focus-visible,
 .or-tab:focus-visible {
   outline: 2px solid var(--or-acc);
@@ -139,6 +140,102 @@
 .or-checkbox__input:checked:not(:indeterminate) + .or-checkbox__mark .or-checkbox__check,
 .or-checkbox__input:indeterminate + .or-checkbox__mark .or-checkbox__dash {
   display: block;
+}
+
+/* Radio list: a labeled vertical group of round radios */
+.or-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-radio-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.or-radio-list__aside {
+  color: var(--or-ter);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.or-radio-list__label {
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.or-radio-list__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.or-radio-list__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--or-text);
+  font-size: 14px;
+}
+
+.or-radio-list__option[data-disabled] {
+  color: var(--or-ter);
+}
+
+.or-radio-list__option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.or-radio-list__option[data-disabled] .or-radio-list__option-label {
+  cursor: not-allowed;
+}
+
+.or-radio-list__options--mono .or-radio-list__option-label {
+  font-family: var(--or-font-mono);
+  font-size: 13px;
+}
+
+.or-radio {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1.5px solid var(--or-ctl);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.or-radio[data-state="checked"] {
+  border-color: var(--or-solid);
+  background: var(--or-solid);
+}
+
+.or-radio:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.or-radio__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--or-solid-ink);
 }
 
 /* Segmented control */
