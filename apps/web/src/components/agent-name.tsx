@@ -11,7 +11,7 @@ export function AgentName({
 }) {
   if (!agent) return <EmptyValue />;
   return isAdmin ? (
-    <Link href={`/harnesses/${agent.id}`} className="list-text list-text-primary">
+    <Link href={`/agents/${agent.id}`} className="list-text list-text-primary">
       {agent.name}
     </Link>
   ) : (

@@ -26,7 +26,7 @@ let seen: SeenRequest[] = [];
 const saves = (part: string) =>
   seen.filter((r) => r.method === "PUT" && r.path === `/api/ui/repositories/repo-1/${part}`);
 
-const HARNESS = {
+const AGENT = {
   online: true,
   revoked: false,
   updating: false,
@@ -50,9 +50,9 @@ function view(tab: RepositorySettingsTab, pinnedAgentIds: string[] = []) {
         customInstructions: "",
         pinnedAgentIds,
       }}
-      harnesses={[
-        { ...HARNESS, id: "h1", name: "build-01" },
-        { ...HARNESS, id: "h2", name: "build-02", online: false },
+      agents={[
+        { ...AGENT, id: "h1", name: "build-01" },
+        { ...AGENT, id: "h2", name: "build-02", online: false },
       ]}
       taskTypes={{ reviews: true, coding: true, ask: true }}
     />,
@@ -83,10 +83,10 @@ describe("repository settings sections", () => {
     });
   });
 
-  it("adds and removes pinned harnesses, with Discard reverting them", async () => {
+  it("adds and removes pinned agents, with Discard reverting them", async () => {
     const user = userEvent.setup();
-    view("harnesses", ["h1"]);
-    await user.click(screen.getByRole("combobox", { name: /Pinned harnesses/ }));
+    view("agents", ["h1"]);
+    await user.click(screen.getByRole("combobox", { name: /Pinned agents/ }));
     await user.click(await screen.findByRole("option", { name: /build-02/ }));
     await user.keyboard("{Escape}");
     expect(screen.getByText("1 unsaved change")).toBeTruthy();

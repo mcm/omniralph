@@ -64,7 +64,7 @@ export const NOTHING_TO_DO =
 
 /** The response to a mention handed to the job that is running right now. */
 export const PASSED_TO_RUNNING_JOB =
-  "Passed this to the agent that's working on this epic right now; it will answer in that session.";
+  "Passed this to Om while it's working on this epic; it will answer in that session.";
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 

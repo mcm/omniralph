@@ -7,7 +7,7 @@ import { Field } from "@iamthemcmaster/ui";
 import { describe, expect, it, vi } from "vitest";
 import {
   ModelPicker,
-  harnessCoverage,
+  agentCoverage,
   type ModelOption,
   type ModelPickerProps,
 } from "./model-picker";
@@ -18,7 +18,7 @@ const MODELS: ModelOption[] = [
   { value: "haiku", displayName: "Haiku", agentIds: ["h3"] },
 ];
 
-function Harness({
+function Agent({
   initial = null,
   onChange,
   ...props
@@ -28,7 +28,7 @@ function Harness({
     <Field label="Fallback model">
       <ModelPicker
         options={MODELS}
-        harnessCount={3}
+        agentCount={3}
         {...props}
         value={value}
         onChange={(next) => {
@@ -43,33 +43,33 @@ function Harness({
 const trigger = () => screen.getByRole("combobox", { name: /^Fallback model/ });
 const optionTexts = () => screen.getAllByRole("option").map((option) => option.textContent);
 
-describe("harnessCoverage", () => {
-  it("says “all harnesses” or how many of them", () => {
-    expect(harnessCoverage(["h1", "h2", "h3"], 3)).toBe("all harnesses");
-    expect(harnessCoverage(["h1", "h2"], 3)).toBe("2 of 3 harnesses");
-    expect(harnessCoverage(["h1"], 1)).toBe("all harnesses");
-    expect(harnessCoverage([], 1)).toBe("0 of 1 harness");
+describe("agentCoverage", () => {
+  it("says “all agents” or how many of them", () => {
+    expect(agentCoverage(["h1", "h2", "h3"], 3)).toBe("all agents");
+    expect(agentCoverage(["h1", "h2"], 3)).toBe("2 of 3 agents");
+    expect(agentCoverage(["h1"], 1)).toBe("all agents");
+    expect(agentCoverage([], 1)).toBe("0 of 1 agent");
   });
 });
 
 describe("ModelPicker", () => {
   it("names the chosen model and is named by its Field", () => {
-    render(<Harness initial="sonnet" />);
+    render(<Agent initial="sonnet" />);
     expect(trigger().textContent).toBe("Sonnet");
     expect(trigger().id).toBe(screen.getByText("Fallback model").closest("label")?.htmlFor);
   });
 
-  it("shows how many harnesses report each model and selects one on click", async () => {
+  it("shows how many agents report each model and selects one on click", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<Agent onChange={onChange} />);
     expect(trigger().textContent).toBe("Choose a model…");
 
     await user.click(trigger());
     expect(optionTexts()).toEqual([
-      "Opusopus · all harnesses",
-      "Sonnetsonnet · 2 of 3 harnesses",
-      "Haikuhaiku · 1 of 3 harnesses",
+      "Opusopus · all agents",
+      "Sonnetsonnet · 2 of 3 agents",
+      "Haikuhaiku · 1 of 3 agents",
     ]);
     await user.click(screen.getByRole("option", { name: /Haiku/ }));
     expect(onChange).toHaveBeenLastCalledWith("haiku");
@@ -81,7 +81,7 @@ describe("ModelPicker", () => {
   it("offers a None entry for optional fields", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial="opus" allowNone noneLabel="No fallback" onChange={onChange} />);
+    render(<Agent initial="opus" allowNone noneLabel="No fallback" onChange={onChange} />);
 
     await user.click(trigger());
     expect(optionTexts()[0]).toBe("No fallback");
@@ -92,7 +92,7 @@ describe("ModelPicker", () => {
 
   it("has no None entry by default", async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<Agent />);
     await user.click(trigger());
     expect(optionTexts()).toHaveLength(3);
   });
@@ -100,7 +100,7 @@ describe("ModelPicker", () => {
   it("is keyboard-operable: search, arrows and Enter", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<Agent onChange={onChange} />);
 
     await user.tab();
     expect(document.activeElement).toBe(trigger());
@@ -121,10 +121,10 @@ describe("ModelPicker", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a saved model no harness reports, warns about it, and never offers it", async () => {
+  it("keeps a saved model no agent reports, warns about it, and never offers it", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial="claude-3-opus" onChange={onChange} />);
+    render(<Agent initial="claude-3-opus" onChange={onChange} />);
 
     expect(trigger().textContent).toContain("claude-3-opus");
     expect(trigger().textContent).toContain("not available");
@@ -142,10 +142,10 @@ describe("ModelPicker", () => {
     expect(screen.queryByText(/is not available/)).toBeNull();
   });
 
-  it("says when no harness has reported models", async () => {
+  it("says when no agent has reported models", async () => {
     const user = userEvent.setup();
-    render(<Harness options={[]} harnessCount={0} />);
+    render(<Agent options={[]} agentCount={0} />);
     await user.click(trigger());
-    expect(screen.getByText("No harness has reported any models yet.")).toBeTruthy();
+    expect(screen.getByText("No agent has reported any models yet.")).toBeTruthy();
   });
 });

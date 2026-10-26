@@ -12,7 +12,7 @@ import {
   type MultiSelectProps,
 } from "./multi-select";
 
-const HARNESSES: MultiSelectOption[] = [
+const AGENTS: MultiSelectOption[] = [
   { value: "h1", label: "build-01", hint: "linux" },
   { value: "h2", label: "build-02", hint: "linux" },
   { value: "h3", label: "mac-mini", hint: "darwin" },
@@ -20,16 +20,16 @@ const HARNESSES: MultiSelectOption[] = [
   { value: "h5", label: "spare", hint: "linux" },
 ];
 
-function Harness({
+function Agent({
   initial = [],
   onChange,
   ...props
 }: Partial<Omit<MultiSelectProps, "value">> & { initial?: string[] }) {
   const [value, setValue] = React.useState(initial);
   return (
-    <Field label="Pinned harnesses">
+    <Field label="Pinned agents">
       <MultiSelect
-        {...(props.onSearch ? {} : { options: HARNESSES })}
+        {...(props.onSearch ? {} : { options: AGENTS })}
         {...props}
         value={value}
         onChange={(next) => {
@@ -41,7 +41,7 @@ function Harness({
   );
 }
 
-const trigger = () => screen.getByRole("combobox", { name: /^Pinned harnesses/ });
+const trigger = () => screen.getByRole("combobox", { name: /^Pinned agents/ });
 const chips = () =>
   within(screen.queryByRole("list", { name: "Selected" }) ?? document.createElement("ul"))
     .queryAllByRole("listitem")
@@ -50,16 +50,16 @@ const optionTexts = () => screen.getAllByRole("option").map((option) => option.t
 
 describe("MultiSelect", () => {
   it("is named by its Field and its summary", () => {
-    render(<Harness initial={["h1"]} />);
+    render(<Agent initial={["h1"]} />);
     expect(trigger().getAttribute("aria-expanded")).toBe("false");
-    expect(trigger().id).toBe(screen.getByText("Pinned harnesses").closest("label")?.htmlFor);
+    expect(trigger().id).toBe(screen.getByText("Pinned agents").closest("label")?.htmlFor);
     expect(chips()).toEqual(["build-01"]);
   });
 
   it("lists the selected options first, then the rest, and toggles on click", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial={["h3"]} onChange={onChange} />);
+    render(<Agent initial={["h3"]} onChange={onChange} />);
 
     await user.click(trigger());
     expect(trigger().getAttribute("aria-expanded")).toBe("true");
@@ -78,7 +78,7 @@ describe("MultiSelect", () => {
 
   it("searches by label and hint", async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<Agent />);
     await user.click(trigger());
     await user.keyboard("darwin");
     expect(optionTexts()).toEqual([expect.stringContaining("mac-mini")]);
@@ -90,7 +90,7 @@ describe("MultiSelect", () => {
   it("is keyboard-operable and announces changes", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<Agent onChange={onChange} />);
 
     await user.tab();
     expect(document.activeElement).toBe(trigger());
@@ -114,7 +114,7 @@ describe("MultiSelect", () => {
   });
 
   it("collapses the chips to “N selected” past maxChips", () => {
-    render(<Harness initial={["h1", "h2", "h3", "h4"]} maxChips={3} />);
+    render(<Agent initial={["h1", "h2", "h3", "h4"]} maxChips={3} />);
     expect(chips()).toEqual([]);
     expect(trigger().textContent).toBe("4 selected");
     expect(trigger().getAttribute("aria-labelledby")?.split(" ")).toHaveLength(2);
@@ -123,7 +123,7 @@ describe("MultiSelect", () => {
   it("keeps a saved value that isn't an option, warns about it, and never offers it", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial={["h1", "gone"]} onChange={onChange} />);
+    render(<Agent initial={["h1", "gone"]} onChange={onChange} />);
 
     const remove = screen.getByRole("button", { name: "Remove gone" });
     expect(remove.parentElement?.textContent).toContain("not available");
@@ -142,7 +142,7 @@ describe("MultiSelect", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
-      <Harness
+      <Agent
         initial={["h1", "revoked-id"]}
         staleLabels={new Map([["revoked-id", "old-runner"]])}
         onChange={onChange}
@@ -159,7 +159,7 @@ describe("MultiSelect", () => {
       value: `r${i}`,
       label: `repository-${String(i).padStart(3, "0")}`,
     }));
-    render(<Harness options={options} initial={["r7"]} />);
+    render(<Agent options={options} initial={["r7"]} />);
 
     // A wall-clock bound flakes under a loaded test run; the render cap is what keeps it fast.
     await user.click(trigger());
@@ -174,13 +174,13 @@ describe("MultiSelect", () => {
   it("searches asynchronously with onSearch and keeps labels of chosen results", async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn(async (query: string) =>
-      HARNESSES.filter((option) => option.label.includes(query)),
+      AGENTS.filter((option) => option.label.includes(query)),
     );
     const onChange = vi.fn();
     render(
-      <Harness
+      <Agent
         onSearch={onSearch}
-        selectedOptions={[HARNESSES[0]!]}
+        selectedOptions={[AGENTS[0]!]}
         initial={["h1"]}
         onChange={onChange}
       />,
@@ -199,7 +199,7 @@ describe("MultiSelect", () => {
 
   it("says when a search fails", async () => {
     const user = userEvent.setup();
-    render(<Harness onSearch={() => Promise.reject(new Error("down"))} />);
+    render(<Agent onSearch={() => Promise.reject(new Error("down"))} />);
     await user.click(trigger());
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent",

@@ -1,7 +1,7 @@
 // The organization journey end to end, through the real actions, handlers and pages: a new user
 // signs in, creates an organization, connects a repository and enrolls an agent, invites a
 // teammate who gets past the sign-in gate thanks to the invitation, accepts it and sees
-// the shared repositories and harnesses. Roles are per organization.
+// the shared repositories and agents. Roles are per organization.
 import { randomBytes } from "node:crypto";
 import {
   closeDb,
@@ -135,7 +135,7 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     return row!;
   }
 
-  it("creates an organization, invites a teammate who signs in, accepts and sees the shared repositories and harnesses", async () => {
+  it("creates an organization, invites a teammate who signs in, accepts and sees the shared repositories and agents", async () => {
     // A new user without an organization creates one and becomes its admin.
     const founder = await signUp("founder@journey.io");
     expect(await getActiveOrganization(db, founder.id)).toBeNull();
@@ -189,7 +189,7 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     // Accepted invitations no longer open the sign-in gate.
     expect(await hasPendingInvitation(db, teammateEmail)).toBe(false);
 
-    // The teammate sees the organization's repositories, harnesses and members.
+    // The teammate sees the organization's repositories, agents and members.
     const repositories = await (
       await listRepositories(new Request("http://localhost/api/ui/repositories"), {
         params: Promise.resolve({}),

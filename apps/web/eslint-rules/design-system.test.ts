@@ -192,7 +192,7 @@ ruleTester.run("no-bare-timestamp", noBareTimestamp, {
       errors: [{ messageId: "bareTimestamp" }],
     },
     {
-      code: `const x = <Fact label="Enrolled">{formatDateTime(harness.createdAt)}</Fact>;`,
+      code: `const x = <Fact label="Enrolled">{formatDateTime(agent.createdAt)}</Fact>;`,
       errors: [{ messageId: "bareTimestamp" }],
     },
     {

@@ -30,7 +30,7 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
   { access: "admin", query: detailQuery },
   async ({ user, params, query }): Promise<AgentDetail> => {
     await requireResourceInActiveOrganization(user, "agent", params.id, {
-      pathPrefix: `/harnesses/${params.id}`,
+      pathPrefix: `/agents/${params.id}`,
       next: query.next,
     });
     const db = getDb();

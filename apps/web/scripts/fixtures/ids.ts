@@ -9,7 +9,7 @@ const KINDS = {
   scmConnection: 0x0f2,
   repository: 0x0f3,
   integration: 0x0f4,
-  harness: 0x0f5,
+  agent: 0x0f5,
   hostTool: 0x0f6,
   agentAudit: 0x0f7,
   invitation: 0x0f8,
@@ -51,7 +51,7 @@ export const FIXTURE_IDS = {
   },
   repositories: {
     controlPanel: fixtureId("repository", 1),
-    harness: fixtureId("repository", 2),
+    agent: fixtureId("repository", 2),
     platformApi: fixtureId("repository", 3),
     /** Connected but not enabled. */
     docs: fixtureId("repository", 4),
@@ -59,12 +59,12 @@ export const FIXTURE_IDS = {
     legacy: fixtureId("repository", 5),
   },
   integrations: { linear: fixtureId("integration", 1) },
-  harnesses: {
-    online: fixtureId("harness", 1),
-    offline: fixtureId("harness", 2),
-    outdated: fixtureId("harness", 3),
-    updating: fixtureId("harness", 4),
-    revoked: fixtureId("harness", 5),
+  agents: {
+    online: fixtureId("agent", 1),
+    offline: fixtureId("agent", 2),
+    outdated: fixtureId("agent", 3),
+    updating: fixtureId("agent", 4),
+    revoked: fixtureId("agent", 5),
   },
   ralphRuns: {
     running: fixtureId("ralphRun", 1),

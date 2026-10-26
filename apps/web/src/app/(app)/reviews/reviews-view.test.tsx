@@ -32,7 +32,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
-const ERROR = "The harness lost its session (exit code 137) while cloning the repository.";
+const ERROR = "The agent lost its session (exit code 137) while cloning the repository.";
 const YEAR = new Date().getFullYear();
 
 function review(n: number, overrides: Partial<ReviewRow> = {}): ReviewRow {

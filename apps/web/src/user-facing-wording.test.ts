@@ -4,16 +4,18 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-// The product says "Coding" / "Coding tasks", never "Ralph" (TOOL-419). This scans the
-// control panel's pages and components and the modules that build Omniralph's Linear,
-// GitHub/GitLab and chat messages for "ralph" as a word in JSX text, string literals and
-// template literals. Code identifiers aren't strings, so they don't count; import paths and
-// log messages (console.*) aren't shown to anyone, so they're skipped too. Everything else
-// that has to keep the old word is in ALLOWED below, with the reason.
+// The machine that runs jobs is the "agent" and the AI is "Om" (TOOL-570); the product says
+// "Coding" / "Coding tasks", never "Ralph" (TOOL-419). This scans the control panel's pages and
+// components and the modules that build Omniralph's Linear, GitHub/GitLab and chat messages for
+// "ralph" as a word and "harness" anywhere in JSX text, string literals and template literals ("harness"
+// also in the agent, its shared packages and the release scripts). Code identifiers aren't
+// strings, so they don't count; import paths and log messages (console.*) aren't shown to
+// anyone, so they're skipped too. Everything else that has to keep an old word is in its rule's
+// allowlist below, with the reason.
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
-/** Directories (and files) scanned, from the repository root. */
+/** Directories (and files) scanned for "ralph", from the repository root. */
 const SCANNED = [
   "apps/web/src/app",
   "apps/web/src/components",
@@ -43,7 +45,7 @@ interface Allowed {
   reason: string;
 }
 
-const ALLOWED: Allowed[] = [
+const RALPH_ALLOWED: Allowed[] = [
   {
     text: /\bralph\.[a-z-]*/g,
     files: [
@@ -85,7 +87,7 @@ const ALLOWED: Allowed[] = [
     reason: "the reconcile cron's Redis keys and hot-state rebuilder name",
   },
   {
-    text: /\(people may also call them ralph runs\)/g,
+    text: /\(people may also call them ralph runs, their old name\)/g,
     files: ["apps/web/src/lib/chat/agent/prompt.ts"],
     reason: "tells the chat assistant the old name, so it understands people who still use it",
   },
@@ -101,7 +103,52 @@ const ALLOWED: Allowed[] = [
   },
 ];
 
-const WORD = /\bralph\b/i;
+/** Also scanned for "harness": the agent, the packages it bundles and the release scripts. */
+const HARNESS_SCANNED = [
+  ...SCANNED,
+  "apps/agent/src",
+  "packages/tasks/src",
+  "packages/shared/src",
+  "scripts/check-agent-changeset.ts",
+  "scripts/rewrite-legacy-changesets.ts",
+];
+
+const HARNESS_ALLOWED: Allowed[] = [
+  {
+    text: /@omniralph\/harness\b/g,
+    files: ["apps/agent/src/import.ts", "apps/agent/src/main.ts"],
+    reason: "`omniralph-agent import` names the old package it brings a config over from",
+  },
+  {
+    text: /^omniralph-harness$/g,
+    files: ["apps/agent/src/import.ts"],
+    reason: "`import` looks for the old binary's running daemon (pm2 and /proc)",
+  },
+  {
+    text: /\$?OMNIRALPH_HARNESS_CONFIG\b/g,
+    files: ["apps/agent/src/import.ts", "apps/agent/src/main.ts"],
+    reason: "`import` reads the old config's path from the old env var",
+  },
+  {
+    text: /(~\/\.config\/omniralph\/)?harness\.json\b/g,
+    files: ["apps/agent/src/import.ts", "apps/agent/src/main.ts"],
+    reason: "`import` reads the old config file",
+  },
+  {
+    text: /^@omniralph\/harness$/g,
+    files: ["scripts/check-agent-changeset.ts"],
+    reason: "legacy changesets: other 2.0 epics write them until Epic 14 removes the old name",
+  },
+];
+
+interface Rule {
+  word: RegExp;
+  scanned: string[];
+  allowed: Allowed[];
+}
+
+const RALPH: Rule = { word: /\bralph\b/i, scanned: SCANNED, allowed: RALPH_ALLOWED };
+const HARNESS: Rule = { word: /harness/i, scanned: HARNESS_SCANNED, allowed: HARNESS_ALLOWED };
 
 function sourceFiles(entry: string): string[] {
   const full = path.join(root, entry);
@@ -169,21 +216,25 @@ function literalTexts(file: string, code: string): { node: ts.Node; text: string
   return found;
 }
 
-/** Hits of the word left after removing the allowed text, and the allowed entries used. */
-function scan(files: string[]): { hits: Hit[]; used: Set<Allowed> } {
+/** Hits of the rule's word left after removing the allowed text, and the allowed entries used. */
+function scan(
+  rule: Rule,
+  files: string[],
+  read = (file: string) => readFileSync(path.join(root, file), "utf8"),
+): { hits: Hit[]; used: Set<Allowed> } {
   const hits: Hit[] = [];
   const used = new Set<Allowed>();
   for (const file of files) {
-    const allowed = ALLOWED.filter((entry) => entry.files.some((f) => file.endsWith(f)));
-    for (const { node, text } of literalTexts(file, readFileSync(path.join(root, file), "utf8"))) {
-      if (!WORD.test(text)) continue;
+    const allowed = rule.allowed.filter((entry) => entry.files.some((f) => file.endsWith(f)));
+    for (const { node, text } of literalTexts(file, read(file))) {
+      if (!rule.word.test(text)) continue;
       let rest = text;
       for (const entry of allowed) {
         const next = rest.replace(entry.text, "");
         if (next !== rest) used.add(entry);
         rest = next;
       }
-      if (!WORD.test(rest)) continue;
+      if (!rule.word.test(rest)) continue;
       const source = node.getSourceFile();
       const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
       hits.push({ file, line: line + 1, text: text.trim().slice(0, 120) });
@@ -192,9 +243,14 @@ function scan(files: string[]): { hits: Hit[]; used: Set<Allowed> } {
   return { hits, used };
 }
 
+const describeHits = (hits: Hit[]) =>
+  hits.map((hit) => `${hit.file}:${hit.line}: ${JSON.stringify(hit.text)}`);
+
 describe("user-facing wording", () => {
   const files = SCANNED.flatMap(sourceFiles);
-  const { hits, used } = scan(files);
+  const harnessFiles = HARNESS_SCANNED.flatMap(sourceFiles);
+  const ralph = scan(RALPH, files);
+  const harness = scan(HARNESS, harnessFiles);
 
   it("scans the pages, components and message builders", () => {
     expect(files).toContain("apps/web/src/app/(app)/triage/page.tsx");
@@ -202,14 +258,31 @@ describe("user-facing wording", () => {
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });
 
-  it('says "Coding", never "Ralph", in what Omniralph shows or posts', () => {
-    expect(hits.map((hit) => `${hit.file}:${hit.line}: ${JSON.stringify(hit.text)}`)).toEqual([]);
+  it("scans the agent, its shared packages and the release scripts for harness too", () => {
+    expect(harnessFiles).toEqual(expect.arrayContaining(files));
+    expect(harnessFiles).toContain("apps/agent/src/import.ts");
+    expect(harnessFiles).toContain("packages/tasks/src/builtin/triage.ts");
+    expect(harnessFiles).toContain("packages/shared/src/agent-protocol.ts");
+    expect(harnessFiles.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });
 
-  it("keeps every allowlist entry in use and explained", () => {
-    const unused = ALLOWED.filter((entry) => !used.has(entry)).map((entry) => String(entry.text));
+  it('calls the AI "Om", never "Ralph", in what Omniralph shows or posts', () => {
+    expect(describeHits(ralph.hits)).toEqual([]);
+  });
+
+  it('calls the machine "agent", never "harness", in what Omniralph shows or posts', () => {
+    expect(describeHits(harness.hits)).toEqual([]);
+  });
+
+  it.each([
+    ["ralph", RALPH, () => ralph.used],
+    ["harness", HARNESS, () => harness.used],
+  ])("keeps every %s allowlist entry in use and explained", (_word, rule, used) => {
+    const unused = rule.allowed
+      .filter((entry) => !used().has(entry))
+      .map((entry) => String(entry.text));
     expect(unused).toEqual([]);
-    for (const entry of ALLOWED) expect(entry.reason.trim()).not.toBe("");
+    for (const entry of rule.allowed) expect(entry.reason.trim()).not.toBe("");
   });
 });
 
@@ -226,7 +299,33 @@ describe("the wording scan", () => {
     ].join("\n");
     const texts = literalTexts("probe.tsx", code)
       .map(({ text }) => text)
-      .filter((text) => WORD.test(text));
+      .filter((text) => RALPH.word.test(text));
     expect(texts).toEqual(["Start a Ralph run", "ralph", "Ralph "]);
+  });
+
+  it("finds harness in JSX text, strings and templates, not in identifiers, imports or logs", () => {
+    const code = [
+      'import { harnessName } from "@/lib/harnesses/display";',
+      "const harness = harnessName;",
+      "const a = <Button>Enroll harness</Button>;",
+      'const b = "No harnesses yet";',
+      "const c = `Saved — waiting for ${harness} harness`;",
+      'console.warn("harness went away");',
+      'const d = "omniralph-agent";',
+    ].join("\n");
+    const { hits } = scan(HARNESS, ["probe.tsx"], () => code);
+    expect(hits.map((hit) => hit.text)).toEqual(["Enroll harness", "No harnesses yet", "harness"]);
+  });
+
+  it("allows the old names only in the files their entry names", () => {
+    const code = [
+      'const pkg = "@omniralph/harness";',
+      'const env = "OMNIRALPH_HARNESS_CONFIG";',
+      'const file = "harness.json";',
+    ].join("\n");
+    expect(scan(HARNESS, ["apps/agent/src/import.ts"], () => code).hits).toEqual([]);
+    expect(
+      scan(HARNESS, ["apps/web/src/app/probe.tsx"], () => code).hits.map((hit) => hit.text),
+    ).toEqual(["@omniralph/harness", "OMNIRALPH_HARNESS_CONFIG", "harness.json"]);
   });
 });

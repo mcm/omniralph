@@ -7,7 +7,7 @@ const tabs = [
   { value: "reviews", label: "Reviews", icon: IconHistory },
   { value: "rules", label: "Rules", icon: IconGavel },
   { value: "settings", label: "Review settings", icon: IconSettings },
-  { value: "harnesses", label: "Harnesses", icon: IconServer },
+  { value: "agents", label: "Agents", icon: IconServer },
 ] as const;
 
 /** A repository page, as its tab and route segment. */

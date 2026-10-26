@@ -51,7 +51,7 @@ export interface MultiSelectProps {
   searchLabel?: string;
   /** What the warning under the field says about values that aren't options. */
   staleMessage?: string;
-  /** Names for values that aren't options (e.g. a revoked harness), shown instead of the value. */
+  /** Names for values that aren't options (e.g. a revoked agent), shown instead of the value. */
   staleLabels?: ReadonlyMap<string, string>;
   disabled?: boolean;
   className?: string;

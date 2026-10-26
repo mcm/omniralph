@@ -110,7 +110,7 @@ export async function addLaneRequest(
     return {
       delivery: "live",
       run: current,
-      note: `${input.what}. Passing it to the agent that's working right now.`,
+      note: `${input.what}. Passing it to Om while it's working.`,
     };
   }
   await insertMessage(tx, {

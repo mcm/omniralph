@@ -34,7 +34,7 @@ interface SettingsSectionProps {
   /** Hides the save footer (people who can't change the settings). */
   readOnly?: boolean;
   /**
-   * Replaces the footer's "Saved" after a save, e.g. while a harness hasn't picked the
+   * Replaces the footer's "Saved" after a save, e.g. while an agent hasn't picked the
    * change up yet ("Saved — waiting for …", then "Applied").
    */
   savedStatus?: React.ReactNode;
@@ -42,7 +42,7 @@ interface SettingsSectionProps {
 }
 
 /**
- * A section save made of several actions (e.g. a harness's config, then its version): runs them in
+ * A section save made of several actions (e.g. an agent's config, then its version): runs them in
  * order and stops at the first that fails, whose result it returns.
  */
 export async function saveInOrder(

@@ -9,7 +9,7 @@ import { TAG_INPUT_RENDER_LIMIT, TagInput, type TagInputProps } from "./tag-inpu
 
 const LABELS = ["Bug", "Feature", "Chore", "Docs"];
 
-function Harness({
+function Agent({
   initial = [],
   onChange,
   ...props
@@ -55,7 +55,7 @@ describe("TagInput", () => {
   it("filters the options as you type and adds one on click, in order", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial={["Docs"]} onChange={onChange} />);
+    render(<Agent initial={["Docs"]} onChange={onChange} />);
 
     await user.type(input(), "fe");
     const options = screen.getAllByRole("option");
@@ -70,7 +70,7 @@ describe("TagInput", () => {
 
   it("never offers a value that is already selected", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["Bug", "Docs"]} />);
+    render(<Agent initial={["Bug", "Docs"]} />);
     await user.click(input());
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "Feature",
@@ -81,7 +81,7 @@ describe("TagInput", () => {
   it("is keyboard-operable: arrows move, Enter adds, Backspace on an empty query removes", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<Agent onChange={onChange} />);
 
     await user.tab();
     expect(document.activeElement).toBe(input());
@@ -106,7 +106,7 @@ describe("TagInput", () => {
 
   it("removes a chip with its accessible remove button and keeps focus in the field", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["Bug", "Chore"]} />);
+    render(<Agent initial={["Bug", "Chore"]} />);
     await user.click(screen.getByRole("button", { name: "Remove Bug" }));
     expect(chips()).toEqual(["Chore"]);
     expect(document.activeElement).toBe(input());
@@ -115,7 +115,7 @@ describe("TagInput", () => {
   it("adds typed text with allowCustom", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness allowCustom onChange={onChange} />);
+    render(<Agent allowCustom onChange={onChange} />);
 
     await user.type(input(), "Backend{Enter}");
     expect(onChange).toHaveBeenLastCalledWith(["Backend"]);
@@ -128,7 +128,7 @@ describe("TagInput", () => {
   it("only adds options without allowCustom", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<Agent onChange={onChange} />);
 
     await user.type(input(), "Backend{Enter}");
     expect(onChange).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe("TagInput", () => {
   it("stops adding at max", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial={["Bug"]} max={1} onChange={onChange} />);
+    render(<Agent initial={["Bug"]} max={1} onChange={onChange} />);
     await user.type(input(), "fe{Enter}");
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByText("Up to 1 value. Remove one to add another.")).toBeTruthy();
@@ -147,7 +147,7 @@ describe("TagInput", () => {
 
   it("keeps a saved value that isn't an option, warns about it, and never offers it", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["Bug", "Old label"]} allowCustom={false} />);
+    render(<Agent initial={["Bug", "Old label"]} allowCustom={false} />);
 
     const stale = screen.getByRole("button", { name: "Remove Old label" }).parentElement!;
     expect(stale.textContent).toContain("not available");
@@ -165,7 +165,7 @@ describe("TagInput", () => {
   it("renders a bounded number of options from a long list", async () => {
     const user = userEvent.setup();
     const options = Array.from({ length: 500 }, (_, i) => `label-${i}`);
-    render(<Harness options={options} />);
+    render(<Agent options={options} />);
     await user.click(input());
     expect(screen.getAllByRole("option")).toHaveLength(TAG_INPUT_RENDER_LIMIT);
     expect(

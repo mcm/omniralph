@@ -34,7 +34,7 @@ import { toAiTools, type ChatToolRegistry } from "./tools";
  */
 
 export const NOT_CONFIGURED_REPLY =
-  "The Omniralph assistant isn't configured on this deployment yet, so I can't answer here. Ask your Omniralph admin to set it up.";
+  "Om isn't set up in chat on this deployment yet, so I can't answer here. Ask your Omniralph admin to set it up.";
 export const RATE_LIMITED_REPLY =
   "I'm getting a lot of questions right now, so I'm taking a short break. Please ask again in a few minutes.";
 export const ERROR_REPLY =

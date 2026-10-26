@@ -570,7 +570,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       status: "live",
     });
     expect(linear.bodies(sessionId, "thought").at(-1)).toBe(
-      "Omniralph reviewed the pull request with 1 finding. Passing it to the agent that's working right now.",
+      "Omniralph reviewed the pull request with 1 finding. Passing it to Om while it's working.",
     );
     // The heartbeat delivers it to the running job.
     const delivered = await exchangeJobMessages(

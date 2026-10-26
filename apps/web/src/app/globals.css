@@ -1031,7 +1031,7 @@ body {
 .settings-check-center {
   align-items: center;
 }
-/* A harness setting inherited from the organization (harness-detail-view.tsx): where the value
+/* An agent setting inherited from the organization (agent-detail-view.tsx): where the value
    comes from, and the button that overrides it or inherits again. */
 .settings-inherit {
   display: flex;
@@ -1809,9 +1809,9 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* harness: harness list, detail and enroll dialog. */
+/* agent: agent list, detail and enroll dialog. */
 /* A raised row holding an icon, a value and an action (the one-time enrollment secret). */
-.harness-raised-row {
+.agent-raised-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -1820,14 +1820,14 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
-.harness-repo-badge {
+.agent-repo-badge {
   max-width: 100%;
   min-width: 0;
 }
-.harness-secret-row {
+.agent-secret-row {
   padding-block: var(--space-3);
 }
-.harness-secret-text {
+.agent-secret-text {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
@@ -1835,7 +1835,7 @@ body {
   color: var(--text-primary);
   word-break: break-all;
 }
-.harness-path-input {
+.agent-path-input {
   min-width: 14rem;
 }
 /* Phone: each host tool is a block (name, status, effective path, then the path input across
@@ -1856,7 +1856,7 @@ body {
     padding-block: 0;
   }
 }
-/* A host tool's facts on phone (harness-host-tools.tsx): label, then value, one per line. */
+/* A host tool's facts on phone (agent-host-tools.tsx): label, then value, one per line. */
 .host-tool-facts {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1876,50 +1876,50 @@ body {
 }
 /* Phone: the path input takes the cell's width. */
 @media (max-width: 767.98px) {
-  .harness-path-input {
+  .agent-path-input {
     min-width: 0;
     width: 100%;
   }
 }
-.harness-install-name {
+.agent-install-name {
   flex: 2;
   min-width: 16rem;
 }
-.harness-install-version {
+.agent-install-version {
   flex: 1;
   min-width: 10rem;
 }
 /* Task type badges, two to a line, so the fleet list keeps its rows short and fits at 1440. */
-.harness-badge-row {
+.agent-badge-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
   max-width: 9rem;
 }
 /* A running job's target, truncated in the middle so the fleet list fits at 1440. */
-.list-table .harness-job-link {
+.list-table .agent-job-link {
   max-width: 16rem;
   overflow: hidden;
 }
-.list-table .harness-job-link .mono-value-head {
+.list-table .agent-job-link .mono-value-head {
   flex-shrink: 1000;
 }
-.harness-status-grid {
+.agent-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: var(--space-4);
 }
 /* Phone: two columns of short facts; the running jobs (and timestamps) take the row. */
 @media (max-width: 639.98px) {
-  .harness-status-grid {
+  .agent-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .harness-fact-wide {
+  .agent-fact-wide {
     grid-column: 1 / -1;
   }
 }
-/* A pinned repository and its pre-clone's state (harness-detail-view.tsx), one per line. */
-.harness-pin-syncs {
+/* A pinned repository and its pre-clone's state (agent-detail-view.tsx), one per line. */
+.agent-pin-syncs {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -1927,23 +1927,23 @@ body {
   padding: 0;
   list-style: none;
 }
-.harness-pin-syncs li {
+.agent-pin-syncs li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
-/* The install job the form started, live (harness-installables.tsx). */
-.harness-started-install {
+/* The install job the form started, live (agent-installables.tsx). */
+.agent-started-install {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
-.harness-update-failed {
+.agent-update-failed {
   color: var(--danger-fg);
 }
-/* "Saved — waiting for <harness>": not done yet, so not the success check's color. */
+/* "Saved — waiting for <agent>": not done yet, so not the success check's color. */
 .settings-section-status .settings-pickup-pending {
   color: var(--text-tertiary);
 }
@@ -2431,9 +2431,9 @@ body {
   }
 }
 
-/* Enroll harness dialog (harnesses/enroll-harness-dialog.tsx): waiting for the harness to
+/* Enroll agent dialog (agents/enroll-agent-dialog.tsx): waiting for the agent to
    redeem the token. */
-.harness-enroll-waiting {
+.agent-enroll-waiting {
   display: flex;
   align-items: center;
   gap: var(--space-2);

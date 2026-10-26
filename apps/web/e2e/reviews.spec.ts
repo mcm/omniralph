@@ -54,7 +54,7 @@ test.describe("reviews", () => {
     await open(page, `/reviews/${review.id}`, /\/api\/ui\/reviews\/[\w-]+(\?|$)/);
     await expect(page.getByText("Findings appear here when the review completes.")).toBeVisible();
 
-    // The harness reports a finding and the review completes.
+    // The agent reports a finding and the review completes.
     await addFinding(db, review.id, "Stale cache entries");
     await db
       .update(reviews)
@@ -81,7 +81,7 @@ test.describe("reviews", () => {
     await expect(row).toContainText("Running");
     await db
       .update(reviews)
-      .set({ status: "failed", error: "The harness went away." })
+      .set({ status: "failed", error: "The agent went away." })
       .where(eq(reviews.id, review.id));
     await expect(row).toContainText("Failed", { timeout: 5_000 });
 

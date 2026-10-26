@@ -122,7 +122,7 @@ function RunFacts({ run, isAdmin }: { run: TriageRunDetail; isAdmin: boolean }) 
         )}
       </Fact>
       <Fact label="Size">{run.size ? <span>{run.size}</span> : <EmptyValue />}</Fact>
-      <Fact label="Harness">
+      <Fact label="Agent">
         <AgentName agent={run.agent} isAdmin={isAdmin} />
       </Fact>
       <Fact label="Jobs">
@@ -377,7 +377,7 @@ function JobsCard({
               <TableHead className={WIDE_COLUMN} numeric aria-label="Deliveries">
                 <abbr title="Deliveries">Deliv.</abbr>
               </TableHead>
-              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Agent</TableHead>
               <TableHead className={WIDE_COLUMN}>Created → finished</TableHead>
             </TableRow>
           </TableHeader>

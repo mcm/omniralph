@@ -191,9 +191,9 @@ overwrites an edit: `useSeededDraft(saved)` (`src/components/use-seeded-draft.ts
 `SettingsSection`/`SettingsCard` save (a TanStack mutation, `useSettingsSave`) calls the API with
 `useApiAction()` (`src/components/use-api-action.ts`): one request, then one invalidation, awaited
 before the form leaves its saving state. A save made of several changes is one request whose
-handler stops at the first failure and names the changes it didn't save. Changes a harness picks up
-with its next heartbeat answer a `savedAt` and show "Saved — waiting for <harness> to pick it up",
-then "Applied" once the harness's `lastHeartbeatAt` is later (`SettingsSection`'s `savedStatus`).
+handler stops at the first failure and names the changes it didn't save. Changes an agent picks up
+with its next heartbeat answer a `savedAt` and show "Saved — waiting for <agent> to pick it up",
+then "Applied" once the agent's `lastHeartbeatAt` is later (`SettingsSection`'s `savedStatus`).
 
 **Resources of another organization.** A detail handler calls
 `requireResourceInActiveOrganization(user, resource, id, { pathPrefix, next })`
@@ -279,7 +279,7 @@ run in order before the screenshot (e.g. `settings-profiles-confirm`).
 
 `e2e` runs the Playwright specs in `e2e/*.spec.ts` against the real panel on the fixture
 database, to check behaviour a person would otherwise click through (live updates, a
-harness enrolling while the dialog is open):
+agent enrolling while the dialog is open):
 
 ```sh
 pnpm --filter @omniralph/web e2e
@@ -313,14 +313,14 @@ The fixtures and helpers there:
 - `signIn(user?)` signs the test's browser context in as a fixture user (`"admin"`, the
   default, or `"member"`; `FIXTURE_EMAILS`). `page` and `context.request` then share the
   session, so `context.request` calls `/api/ui/*` as that user.
-- `db` is the fixture database (`@omniralph/db`): write rows directly to play a harness, a
+- `db` is the fixture database (`@omniralph/db`): write rows directly to play an agent, a
   webhook or a cron, and read them back. Name fixture rows with `FIXTURE_IDS`.
-- `request` (Playwright's) calls the panel's HTTP API without a session, e.g. the harness
-  API: `enrollHarness(request, await createEnrollmentToken(db), name)` enrolls a harness
+- `request` (Playwright's) calls the panel's HTTP API without a session, e.g. the agent
+  API: `enrollAgent(request, await createEnrollmentToken(db), name)` enrolls an agent
   through `POST /api/agent/enroll`.
 
 Tests run one at a time (one worker) on one seed, so a spec that changes shared fixture rows
-puts them back, or creates its own rows instead (e.g. a new harness with a unique name).
+puts them back, or creates its own rows instead (e.g. a new agent with a unique name).
 Without Ably, live data polls every 10s (changes made in the browser show at once): assert with
 `expect(...).toBeVisible()` and friends, which retry for 20s, rather than reloading. The first visit of each route waits for `next dev` to
 compile it (navigation timeout 3 minutes).

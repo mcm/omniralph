@@ -52,11 +52,11 @@ export const FIXTURE_ENCRYPTION_KEY = Buffer.from("fixture-key-not-a-secret-32by
 /** Fake, fixed `AUTH_SECRET` for running the panel against the fixtures. */
 export const FIXTURE_AUTH_SECRET = "fixture-auth-secret-not-a-secret";
 
-/** The harness version the organization wants (a concrete version: no npm lookup). */
+/** The agent version the organization wants (a concrete version: no npm lookup). */
 export const FIXTURE_DESIRED_VERSION = "1.8.0";
 
 /**
- * Heartbeat of the online harnesses. Far in the future so they stay online
+ * Heartbeat of the online agents. Far in the future so they stay online
  * (heartbeat under a minute old) however long after seeding the panel renders.
  */
 const ONLINE_HEARTBEAT = new Date("2099-01-01T00:00:00Z");
@@ -67,7 +67,7 @@ const DAY = 24 * HOUR;
 
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-const { users: U, organizations: O, repositories: R, harnesses: H, ralphRuns: RR } = FIXTURE_IDS;
+const { users: U, organizations: O, repositories: R, agents: H, ralphRuns: RR } = FIXTURE_IDS;
 
 /** A fake 40-character commit SHA derived from `n`. */
 function sha(n: number): string {
@@ -212,8 +212,8 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         historyRewrite: "always",
       },
       {
-        ...githubRepo("fixture-labs/harness", 2),
-        id: R.harness,
+        ...githubRepo("fixture-labs/agent", 2),
+        id: R.agent,
         reviewDepth: "deep",
         codingEnabled: true,
         triggers: { onOpen: true, onPush: false, drafts: false },
@@ -252,10 +252,10 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       {
         organizationId: O.main,
         position: 1,
-        repositoryId: R.harness,
+        repositoryId: R.agent,
         query: {
           combinator: "and",
-          rules: [{ field: "project", operator: "=", value: "Harness" }],
+          rules: [{ field: "project", operator: "=", value: "Agent" }],
         },
       },
       {
@@ -279,7 +279,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       createdAt: ago(75 * DAY),
     });
 
-    // ── Harnesses ─────────────────────────────────────────────────────────
+    // ── Agents ─────────────────────────────────────────────────────────
     const allTypes = ["query", "review", "coding"];
     const installables = [{ name: "@omniralph/code-graph", version: "0.4.1" }];
     const models = [
@@ -365,13 +365,13 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         enrolledBy: U.admin,
         createdAt: ago(85 * DAY),
       },
-      ...poolHarnesses(allTypes, now),
+      ...poolAgents(allTypes, now),
     ]);
-    // The control panel is pinned to harnesses in every state, one of them revoked.
+    // The control panel is pinned to agents in every state, one of them revoked.
     await tx.insert(agentRepoPins).values(
-      [H.online, H.offline, H.updating, H.revoked].map((harnessId, i) => ({
+      [H.online, H.offline, H.updating, H.revoked].map((agentId, i) => ({
         id: fixtureId("pin", i + 1),
-        agentId: harnessId,
+        agentId: agentId,
         repositoryId: R.controlPanel,
         createdAt: ago((10 - i) * DAY),
       })),
@@ -397,17 +397,17 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       },
     ]);
     const audit: (typeof agentAudit.$inferInsert)[] = [];
-    for (const [i, harnessId] of Object.values(H).entries()) {
+    for (const [i, agentId] of Object.values(H).entries()) {
       audit.push({
         id: fixtureId("agentAudit", i * 10 + 1),
-        agentId: harnessId,
+        agentId: agentId,
         event: "enroll",
         ip: "192.0.2.10",
         createdAt: ago((60 - i * 5) * DAY),
       });
       audit.push({
         id: fixtureId("agentAudit", i * 10 + 2),
-        agentId: harnessId,
+        agentId: agentId,
         event: "token_refresh",
         ip: "192.0.2.10",
         createdAt: ago((i + 1) * HOUR),
@@ -437,15 +437,15 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
   });
 }
 
-/** How many pool harnesses fill the organization out to about 30, for the long pickers. */
-const POOL_HARNESSES = 25;
+/** How many pool agents fill the organization out to about 30, for the long pickers. */
+const POOL_AGENTS = 25;
 
-/** Pool harnesses (`pool-01`…): mostly online, some offline, with varied task types. */
-function poolHarnesses(allTypes: string[], now: Date): (typeof agents.$inferInsert)[] {
+/** Pool agents (`pool-01`…): mostly online, some offline, with varied task types. */
+function poolAgents(allTypes: string[], now: Date): (typeof agents.$inferInsert)[] {
   const ago = (ms: number) => new Date(now.getTime() - ms);
   const taskTypes = [allTypes, ["query", "review"], ["coding"], ["review"]];
-  return Array.from({ length: POOL_HARNESSES }, (_, i) => ({
-    id: fixtureId("harness", 100 + i),
+  return Array.from({ length: POOL_AGENTS }, (_, i) => ({
+    id: fixtureId("agent", 100 + i),
     organizationId: O.main,
     name:
       i === 7
@@ -463,7 +463,7 @@ function poolHarnesses(allTypes: string[], now: Date): (typeof agents.$inferInse
 
 /** Deletes an earlier seed (organizations cascade to almost everything). */
 async function clearFixtures(tx: Tx): Promise<void> {
-  // Audit rows outlive their harness (`set null`), so they go by their own IDs.
+  // Audit rows outlive their agent (`set null`), so they go by their own IDs.
   await tx.delete(agentAudit).where(inArray(agentAudit.agentId, Object.values(H)));
   await tx
     .delete(agentAudit)
@@ -621,7 +621,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       identifier: "FIX-120",
       title: "Rotate the webhook signing secrets",
       status: "waiting",
-      repositoryId: R.harness,
+      repositoryId: R.agent,
       createdDaysAgo: 4,
       progress: "## FIX-121: Accept both secrets during rotation\n- Done.\n---",
       waitingOn: {
@@ -634,7 +634,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
           },
         ],
       },
-      lane: { prNumber: 87, prUrl: "https://github.com/fixture-labs/harness/pull/87" },
+      lane: { prNumber: 87, prUrl: "https://github.com/fixture-labs/agent/pull/87" },
       stories: [
         {
           title: "Accept both secrets during rotation",
@@ -706,7 +706,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       identifier: "FIX-140",
       title: "Experiment: streaming review summaries",
       status: "stopped",
-      repositoryId: R.harness,
+      repositoryId: R.agent,
       createdDaysAgo: 20,
       stories: [
         {
@@ -722,12 +722,12 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       id: RR.pending,
       n: 6,
       identifier: "FIX-150",
-      title: "Document the harness install on Windows",
+      title: "Document the agent install on Windows",
       status: "pending",
       repositoryId: null,
       createdDaysAgo: 0,
       kind: "single",
-      pendingElicitation: { kind: "repository", repositoryIds: [R.controlPanel, R.harness] },
+      pendingElicitation: { kind: "repository", repositoryIds: [R.controlPanel, R.agent] },
       stories: [],
     },
   ];
@@ -919,7 +919,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
 const PR_TITLES = [
   "Add rate limiting to the webhook endpoints",
   "Refactor the job claim query",
-  "Fix flaky harness heartbeat test",
+  "Fix flaky agent heartbeat test",
   "Support GitLab merge request drafts",
   "Cache review depths per request",
   "Move analytics queries to the db package",
@@ -980,15 +980,15 @@ const REVIEW_STATUSES = [
 
 const DEPTH_BY_REPO: Record<string, ReviewDepth> = {
   [R.controlPanel]: "standard",
-  [R.harness]: "deep",
+  [R.agent]: "deep",
   [R.platformApi]: "quick",
   [R.legacy]: "standard",
 };
 
 async function seedReviews(tx: Tx, now: Date): Promise<void> {
   const ago = (ms: number) => new Date(now.getTime() - ms);
-  const repos = [R.controlPanel, R.harness, R.platformApi, R.legacy];
-  const harnessCycle = [H.online, H.online, H.updating, H.outdated, H.offline];
+  const repos = [R.controlPanel, R.agent, R.platformApi, R.legacy];
+  const agentCycle = [H.online, H.online, H.updating, H.outdated, H.offline];
 
   let findingN = 0;
   let feedbackN = 0;
@@ -1010,7 +1010,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
             : REVIEW_STATUSES[i % REVIEW_STATUSES.length]!;
     const done = status !== "running" && status !== "queued";
     const prNumber = 300 + ((i * 7) % 60);
-    const harnessId = status === "queued" ? null : harnessCycle[i % harnessCycle.length]!;
+    const agentId = status === "queued" ? null : agentCycle[i % agentCycle.length]!;
     const budget = REVIEW_DEPTHS[depth].maxTokensPerReview;
     const tokensIn =
       !done || status === "skipped"
@@ -1042,7 +1042,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
         done && status !== "skipped"
           ? "Two issues worth fixing before merge; the rest are minor."
           : null,
-      error: status === "failed" ? "The harness lost its session (exit code 137)." : null,
+      error: status === "failed" ? "The agent lost its session (exit code 137)." : null,
       createdAt,
     });
     await tx.insert(jobs).values({
@@ -1055,16 +1055,16 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       status:
         status === "budget_exhausted" ? "completed" : status === "skipped" ? "skipped" : status,
       repositoryId,
-      agentId: harnessId,
-      deliveryCount: harnessId ? 1 : 0,
+      agentId: agentId,
+      deliveryCount: agentId ? 1 : 0,
       leaseExpiresAt: status === "running" ? new Date(now.getTime() + 5 * MINUTE) : null,
-      error: status === "failed" ? "The harness lost its session (exit code 137)." : null,
+      error: status === "failed" ? "The agent lost its session (exit code 137)." : null,
       result:
         done && status !== "failed"
           ? { usage: { inputTokens: tokensIn, outputTokens: tokensOut } }
           : null,
       createdAt,
-      startedAt: harnessId ? new Date(createdAt.getTime() + 20_000) : null,
+      startedAt: agentId ? new Date(createdAt.getTime() + 20_000) : null,
       finishedAt: done ? new Date(createdAt.getTime() + 4 * MINUTE) : null,
     });
     await tx.insert(reviews).values({
@@ -1084,7 +1084,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       budget,
       durationMs: done && status !== "skipped" ? 60_000 + ((i * 7919) % 180_000) : null,
       model: done ? REVIEW_DEPTHS[depth].model : null,
-      agentId: harnessId,
+      agentId: agentId,
       skippedFiles: featured
         ? [
             { path: "pnpm-lock.yaml", reason: "excluded by path filter" },
@@ -1095,7 +1095,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       scope: done && status !== "skipped" ? { mode: "full", baseSha: base, headSha: head } : null,
       error:
         status === "failed"
-          ? "The harness lost its session (exit code 137)."
+          ? "The agent lost its session (exit code 137)."
           : status === "skipped"
             ? "This head was already reviewed."
             : null,
@@ -1354,7 +1354,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: failedJob,
-      payload: triagePayload(T.failed, "FIX-322", "Faster harness startup"),
+      payload: triagePayload(T.failed, "FIX-322", "Faster agent startup"),
       status: "completed",
       agentId: H.online,
       deliveryCount: 1,
@@ -1443,7 +1443,7 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       payload: { prNumber: 77 },
       status: "expired",
       repositoryId: R.platformApi,
-      error: "No harness claimed the job within 24 hours.",
+      error: "No agent claimed the job within 24 hours.",
       createdAt: ago(3 * DAY),
       finishedAt: ago(2 * DAY),
     },
@@ -1454,7 +1454,7 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       taskType: "system",
       payload: {},
       status: "failed",
-      repositoryId: R.harness,
+      repositoryId: R.agent,
       agentId: H.offline,
       error: "git worktree remove: the worktree has uncommitted changes.",
       createdAt: ago(3 * DAY + 2 * HOUR),

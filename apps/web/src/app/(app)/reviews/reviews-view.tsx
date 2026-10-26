@@ -134,7 +134,7 @@ function ReviewTableRow({
             </span>
             {review.agent ? (
               isAdmin ? (
-                <Link href={`/harnesses/${review.agent.id}`} className="list-text">
+                <Link href={`/agents/${review.agent.id}`} className="list-text">
                   {review.agent.name}
                 </Link>
               ) : (

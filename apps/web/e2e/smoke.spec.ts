@@ -15,7 +15,7 @@ test.describe("smoke", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeVisible();
   });
 
-  test("a harness enrolls through the API with a token from the database", async ({
+  test("an agent enrolls through the API with a token from the database", async ({
     db,
     request,
   }) => {

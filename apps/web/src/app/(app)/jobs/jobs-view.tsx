@@ -164,7 +164,7 @@ function JobTableRow({
           {job.agent ? (
             isAdmin ? (
               <Link
-                href={`/harnesses/${job.agent.id}`}
+                href={`/agents/${job.agent.id}`}
                 className="list-text list-text-primary list-nowrap"
               >
                 {job.agent.name}
@@ -205,7 +205,7 @@ function JobTableRow({
                     <AlertDialogTitle>Cancel this {job.type} job?</AlertDialogTitle>
                     <AlertDialogDescription>
                       {job.status === "queued"
-                        ? "It won't run: harnesses skip it when its message arrives."
+                        ? "It won't run: agents skip it when its message arrives."
                         : "Its agent stops it after its next heartbeat (within about 20 seconds)."}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -237,7 +237,7 @@ function JobTableRow({
                     <AlertDialogDescription>
                       {job.type === REVIEW_TASK_JOB_TYPE
                         ? "Its review runs again on the PR's current head, with the repository's default profile."
-                        : "It's queued again for the harness it ran on."}{" "}
+                        : "It's queued again for the agent it ran on."}{" "}
                       This job stays failed; the rerun is a new job.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -282,7 +282,7 @@ const CANCEL_JOB = ["cancel-job"];
 
 /**
  * Cancels jobs. While a cancel is on its way, its job shows what it will become: a queued
- * job canceled, a running one "Cancel requested" (until its harness confirms, with its next
+ * job canceled, a running one "Cancel requested" (until its agent confirms, with its next
  * heartbeat, and the list's polling shows it canceled). The mutation stays pending until the
  * refetched list has the server's state, so the overlay hands over without a flicker.
  */
@@ -291,7 +291,7 @@ function useCancelJob() {
     mutationKey: CANCEL_JOB,
     mutationFn: (job: JobRow, { organizationId }) =>
       api.post(`/api/ui/jobs/${job.id}/cancel`, mutationResultSchema, { organizationId }),
-    // The job (Jobs pages, its run's or triage run's page) and the harness running it.
+    // The job (Jobs pages, its run's or triage run's page) and the agent running it.
     invalidate: (keys) => [
       keys.jobs.all,
       keys.agents.all,
@@ -450,7 +450,7 @@ function JobsTable({
               <TableHead className={WIDE_COLUMN} numeric aria-label="Deliveries">
                 <abbr title="Deliveries">Deliv.</abbr>
               </TableHead>
-              <TableHead className={WIDE_COLUMN}>Harness</TableHead>
+              <TableHead className={WIDE_COLUMN}>Agent</TableHead>
               <TableHead className={WIDE_COLUMN}>Created → finished</TableHead>
               {isAdmin && <TableHead aria-label="Actions" />}
             </TableRow>
@@ -482,7 +482,7 @@ function JobsTable({
 
 /**
  * The Jobs page, live: the jobs for the URL's filter and page poll (`GET /api/ui/jobs`), so
- * they move through their states as harnesses run them; a new filter or page keeps the
+ * they move through their states as agents run them; a new filter or page keeps the
  * previous results, dimmed, until its own arrive. `?job=<id>` opens the page holding that job.
  */
 export function JobsView() {

@@ -60,7 +60,7 @@ interface SettingsCardProps {
   confirm?: SettingsConfirmation;
   /** Hides the save actions (people who can't change the settings). */
   readOnly?: boolean;
-  /** Disables the save action (e.g. a revoked harness). */
+  /** Disables the save action (e.g. a revoked agent). */
   disabled?: boolean;
   /** More footer buttons, before Discard and Save. */
   actions?: React.ReactNode;

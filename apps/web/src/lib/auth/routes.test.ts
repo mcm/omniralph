@@ -40,7 +40,7 @@ describe("classifyPath", () => {
 
 describe("safeCallbackPath", () => {
   it("keeps same-origin paths", () => {
-    expect(safeCallbackPath("/harnesses?x=1")).toBe("/harnesses?x=1");
+    expect(safeCallbackPath("/agents?x=1")).toBe("/agents?x=1");
     expect(safeCallbackPath(["/jobs", "/x"])).toBe("/jobs");
   });
 

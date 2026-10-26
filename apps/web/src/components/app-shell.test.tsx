@@ -35,7 +35,13 @@ const twoOrganizations: SessionUser = {
 function renderShell(pathname: string, user: SessionUser = testUser) {
   nav.pathname = pathname;
   return render(
-    <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null} showAdvanced={false}>
+    <AppShell
+      user={user}
+      themePreference="dark"
+      organizationCookie={null}
+      scopeCookie={null}
+      showAdvanced={false}
+    >
       <h1>Page content</h1>
     </AppShell>,
   );
@@ -74,7 +80,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Runs, Repos and Fleet, then Settings, each linking its 2.0 page", () => {
+  it("lists Runs, Repos and Agents, then Settings, each linking its 2.0 page", () => {
     renderShell("/reviews");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -83,7 +89,7 @@ describe("AppShell", () => {
     expect(links).toEqual([
       ["Runs", "/runs"],
       ["Repos", "/repositories"],
-      ["Fleet", "/harnesses"],
+      ["Agents", "/agents"],
       ["Settings", "/settings/organization"],
     ]);
   });
@@ -94,7 +100,7 @@ describe("AppShell", () => {
     ["/triage", "Runs"],
     ["/analytics", "Runs"],
     ["/repositories/abc/rules", "Repos"],
-    ["/harnesses/abc", "Fleet"],
+    ["/agents/abc", "Agents"],
     ["/settings/routing", "Settings"],
   ])("marks the entry for %s as the current page: %s", (pathname, label) => {
     renderShell(pathname);
@@ -106,7 +112,7 @@ describe("AppShell", () => {
     expect(current(tabBar())).toEqual(["Runs"]);
   });
 
-  it("puts Runs in the tab bar and Repos, Fleet and Settings in the drawer", async () => {
+  it("puts Runs in the tab bar and Repos, Agents and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
@@ -119,7 +125,7 @@ describe("AppShell", () => {
       .filter((link) => link.classList.contains("or-nav__item"));
     expect(entries.map((link) => link.getAttribute("aria-label"))).toEqual([
       "Repos",
-      "Fleet",
+      "Agents",
       "Settings",
     ]);
     expect(current(drawer)).toEqual(["Settings"]);
@@ -172,7 +178,13 @@ describe("AppShell", () => {
       return null;
     }
     const shell = (user: SessionUser) => (
-      <AppShell user={user} themePreference="dark" organizationCookie={null} scopeCookie={null} showAdvanced={false}>
+      <AppShell
+        user={user}
+        themePreference="dark"
+        organizationCookie={null}
+        scopeCookie={null}
+        showAdvanced={false}
+      >
         <Probe />
       </AppShell>
     );

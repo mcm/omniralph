@@ -505,8 +505,8 @@ epic as context. The mention's text (without a leading `@name`) is the request.
 - **Follow-ups.** Replies in the mention's session are new requests; they continue the same Claude
   conversation when they run on the same agent.
 - **Uncommitted changes** the session leaves are stashed, and the response says so.
-- **Busy issue.** A mention on an issue whose run is working right now is passed to that agent
-  ("Passed this to the agent that's working on this epic right now; it will answer in that
+- **Busy issue.** A mention on an issue whose run is working right now is passed to Om in
+  that session ("Passed this to Om while it's working on this epic; it will answer in that
   session."); one whose run waits is added to that run as a request.
 - A mention without a request does nothing.
 
@@ -526,7 +526,7 @@ Omniralph looks after the PRs/MRs its runs open (cyralph's review-response loop)
   pull request, so I'm leaving this one for a person." Turn it off with **Fix review findings**
   (`respondToReviews`). A stopped or failed run is left alone; a completed one reopens.
 - **Delivery.** If a `ralph.request` job is working in that lane right now, the request is passed
-  to its live session ("… Passing it to the agent that's working right now."). Otherwise it's a
+  to its live session ("… Passing it to Om while it's working."). Otherwise it's a
   pending request ("… Working through it.", or "… I'll work through it as soon as the current
   step finishes."), run as a `ralph.request` job once nothing else runs. A running story agent
   never gets it: story agents don't push, so it waits for the story loop to finish.
