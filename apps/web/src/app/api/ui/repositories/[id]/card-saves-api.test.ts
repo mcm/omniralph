@@ -301,8 +301,8 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       await db
         .insert(agents)
         .values([
-          { organizationId: orgId, name: "coder-a", lastHeartbeatAt: now },
-          { organizationId: orgId, name: "coder-b", lastHeartbeatAt: now },
+          { organizationId: orgId, name: "coder-a", lastHeartbeatAt: now, liveOnline: true },
+          { organizationId: orgId, name: "coder-b", lastHeartbeatAt: now, liveOnline: true },
           { organizationId: orgId, name: "coder-old", revokedAt: now },
           { organizationId: orgId, name: "coder-gone", revokedAt: now, deletedAt: now },
           { organizationId: otherOrgId, name: "coder-foreign" },

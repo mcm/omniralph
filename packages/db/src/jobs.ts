@@ -81,6 +81,20 @@ export function recordJobChanges(db: unknown, changed: readonly JobChangeFields[
 }
 
 /**
+ * Records a live `agent` change for each agent (nulls skipped) whose running attempts an
+ * attempt's start or finish changed: Fleet shows each agent's running count.
+ */
+function recordAgentRunningChange(
+  db: unknown,
+  organizationId: string,
+  agentIds: readonly (string | null)[],
+): void {
+  for (const id of new Set(agentIds)) {
+    if (id) recordChange(db, { resource: "agent", ids: [id], organizationId });
+  }
+}
+
+/**
  * How long a claimed job's lease lasts; the agent's heartbeat renews it.
  * Mirrors `JOB_LEASE_SECONDS` in `@omniralph/shared` (which this package doesn't depend on).
  */
@@ -372,6 +386,11 @@ export async function claimJob(
           tx,
           settled.map((s) => s.job),
         );
+        recordAgentRunningChange(
+          tx,
+          input.organizationId,
+          settled.map((s) => s.job.agentId),
+        );
         return { claim: null, settled };
       }
 
@@ -420,6 +439,12 @@ export async function claimJob(
         .where(eq(jobs.id, job.id))
         .returning();
       recordJobChanges(tx, [...settled.map((s) => s.job), claimed!]);
+      // Its running count changes, and so does an expired lease's previous agent's.
+      recordAgentRunningChange(tx, input.organizationId, [
+        input.agentId,
+        job.agentId,
+        ...settled.map((s) => s.job.agentId),
+      ]);
       return { claim: { action: "run", job: claimed! }, settled };
     }
   });
@@ -632,6 +657,7 @@ export async function completeJob(
       .set({ status, result: input.result, error: null, finishedAt: now })
       .where(eq(jobs.id, input.jobId));
     recordJobChanges(tx, [locked.job]);
+    recordAgentRunningChange(tx, locked.job.organizationId, [input.agentId]);
     return { status };
   });
 }
@@ -662,6 +688,7 @@ export async function failJob(
     const { job } = locked;
     const error = input.error ?? null;
     recordJobChanges(tx, [job]);
+    recordAgentRunningChange(tx, job.organizationId, [input.agentId]);
     if (job.cancelRequested) {
       await tx
         .update(jobs)

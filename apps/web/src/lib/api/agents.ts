@@ -1,7 +1,9 @@
-import { AgentUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
+import { AgentHostReport, AgentUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
 import { z } from "zod";
 import type { AuditEventName } from "@/lib/agents/display";
 import type { AgentRow } from "@/lib/agents/rows";
+import { AGENT_STATUS_KINDS } from "@/lib/fleet/status";
+import { organizationRefSchema, repositoryRefSchema, RUN_KINDS, workItemRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
 
 /** Wire formats of the agent endpoints under `/api/ui`. */
@@ -9,11 +11,18 @@ import { isoDate, mutationResultSchema } from "./schemas";
 const limits = z.record(z.string(), z.number());
 
 /** `AgentRow` on the wire. */
+const fleetTone = z.enum(["run", "fail", "neutral"]);
+
 export const agentRowSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /** `agents.live_online`. */
   online: z.boolean(),
   revoked: z.boolean(),
+  /** `agentStatus` (`lib/fleet/status.ts`). */
+  status: z.object({ kind: z.enum(AGENT_STATUS_KINDS), label: z.string(), tone: fleetTone }),
+  runningCount: z.number(),
+  host: AgentHostReport.nullable(),
   version: z.string().nullable(),
   desiredVersion: z.string().nullable(),
   desiredVersionOverride: z.string().nullable(),
@@ -52,8 +61,42 @@ export const agentRowSchema = z.object({
   createdAt: isoDate,
 }) satisfies z.ZodType<AgentRow>;
 
-/** `GET /api/ui/agents`: the organization's agents (the Agents page). */
-export const agentListSchema = z.object({ agents: z.array(agentRowSchema) });
+/** A Fleet row: an agent with its organization and the user's role there (Design rule 13). */
+export const fleetAgentRowSchema = agentRowSchema.extend({ organization: organizationRefSchema });
+export type FleetAgentRow = z.infer<typeof fleetAgentRowSchema>;
+
+/** The version policy of the organizations in scope (`lib/fleet/status.ts`'s `VersionPolicy`). */
+export const versionPolicySchema = z.object({
+  /** `unset`: none chosen yet, so agents stay on what they run. */
+  mode: z.enum(["latest", "pinned", "unset"]),
+  /** The pinned version; null otherwise. */
+  version: z.string().nullable(),
+  /** The version agents should be on now; null when unknown. */
+  target: z.string().nullable(),
+});
+
+/** Fleet's summary cells, over the non-revoked agents in scope. */
+export const fleetSummarySchema = z.object({
+  total: z.number(),
+  /** From `agents.live_online`. */
+  online: z.number(),
+  offline: z.number(),
+  /** Agents with a running attempt. */
+  busy: z.number(),
+  /** Null under all organizations when they differ ("Varies by organization"). */
+  versionPolicy: versionPolicySchema.nullable(),
+  /** Online agents on and behind their organization's target; any agent whose update failed. */
+  versions: z.object({ onTarget: z.number(), behind: z.number(), updateFailed: z.number() }),
+  /** Agents that report a narrower set of kinds than every kind. */
+  acceptedKinds: z.object({ limited: z.number(), total: z.number() }),
+});
+export type FleetSummary = z.infer<typeof fleetSummarySchema>;
+
+/** `GET /api/ui/agents?organization=`: the agents in scope (Fleet) and their summary. */
+export const agentListSchema = z.object({
+  agents: z.array(fleetAgentRowSchema),
+  summary: fleetSummarySchema,
+});
 export type AgentList = z.infer<typeof agentListSchema>;
 
 /** Most characters of an enrollment's name. */
@@ -140,8 +183,57 @@ export type PinSyncJob = z.infer<typeof pinSyncJobSchema>;
  * `GET /api/ui/agents/{id}`: what every tab of an agent shows (the audit log on every
  * tab, since a token theft warning shows above all of them).
  */
+/** The run an attempt belongs to, as Fleet links it. */
+const attemptRunSchema = z.object({ id: z.string(), kind: z.enum(RUN_KINDS), title: z.string() });
+
+/** An attempt running on the agent (Running now). `type` is the raw job type; never shown. */
+export const runningAttemptSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  /** `describeAttempt`: "Building SOC-1720". */
+  label: z.string(),
+  run: attemptRunSchema.nullable(),
+  repository: repositoryRefSchema.nullable(),
+  workItem: workItemRefSchema.nullable(),
+  /** "Story 1 of 3" when it builds a story of an epic; else null. */
+  step: z.string().nullable(),
+  startedAt: isoDate.nullable(),
+});
+export type RunningAttempt = z.infer<typeof runningAttemptSchema>;
+
+/** A finished attempt of the agent (Recent work). `type` is the raw job type; never shown. */
+export const recentAttemptSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  /** `describeAttempt`: "Cleaned up the SOC-1719 worktree", "Couldn't sync api". */
+  label: z.string(),
+  status: z.enum(JOB_STATUSES),
+  durationMs: z.number().nullable(),
+  finishedAt: isoDate,
+  run: attemptRunSchema.nullable(),
+});
+export type RecentAttempt = z.infer<typeof recentAttemptSchema>;
+
+/** The agent's token health (the Security line). */
+export const agentSecuritySchema = z.object({
+  lastTokenRefreshAt: isoDate.nullable(),
+  /** `refresh_reuse` audit events in the last 30 days. */
+  reuseAlerts30d: z.number(),
+  /** `auth_failed` audit events in the last 30 days. */
+  authFailures30d: z.number(),
+});
+
 export const agentDetailSchema = z.object({
-  agent: agentRowSchema,
+  agent: fleetAgentRowSchema,
+  /** The models it last reported, by display name. */
+  models: z.array(z.object({ value: z.string(), displayName: z.string() })),
+  /** The packages it last reported installed. */
+  installables: z.array(z.object({ name: z.string(), version: z.string() })),
+  /** Its running attempts, oldest first. */
+  runningNow: z.array(runningAttemptSchema),
+  /** Its last 10 finished attempts (system work included), newest first. */
+  recentWork: z.array(recentAttemptSchema),
+  security: agentSecuritySchema,
   /** Settings › Agent defaults version ("1.5.0 (latest on npm)" when it tracks npm's latest); null: not set. */
   globalDesiredVersion: z.string().nullable(),
   /** The 50 most recent audit events, newest first. */

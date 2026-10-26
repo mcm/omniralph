@@ -181,28 +181,42 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories/{id}", () => {
     const rows = await db
       .insert(agents)
       .values([
-        { organizationId: org.acme, name: "atlas", lastHeartbeatAt: now },
-        { organizationId: org.acme, name: "boreas", lastHeartbeatAt: now },
+        { organizationId: org.acme, name: "atlas", lastHeartbeatAt: now, liveOnline: true },
+        { organizationId: org.acme, name: "boreas", lastHeartbeatAt: now, liveOnline: true },
         { organizationId: org.acme, name: "ceres", lastHeartbeatAt: minutesAgo(30) },
         {
           organizationId: org.acme,
           name: "dione",
           lastHeartbeatAt: now,
+          liveOnline: true,
           selfUpdate: "supported",
           updateRequestVersion: "2.0.0",
           updateRequestedAt: now,
         },
-        { organizationId: org.acme, name: "erebus", lastHeartbeatAt: now, revokedAt: now },
-        { organizationId: org.acme, name: "fenrir", lastHeartbeatAt: now },
-        { organizationId: org.acme, name: "gaia", lastHeartbeatAt: now, revokedAt: now },
+        {
+          organizationId: org.acme,
+          name: "erebus",
+          lastHeartbeatAt: now,
+          liveOnline: true,
+          revokedAt: now,
+        },
+        { organizationId: org.acme, name: "fenrir", lastHeartbeatAt: now, liveOnline: true },
+        {
+          organizationId: org.acme,
+          name: "gaia",
+          lastHeartbeatAt: now,
+          liveOnline: true,
+          revokedAt: now,
+        },
         {
           organizationId: org.acme,
           name: "hel",
           lastHeartbeatAt: now,
+          liveOnline: true,
           revokedAt: now,
           deletedAt: now,
         },
-        { organizationId: org.gamma, name: "gamma-agent", lastHeartbeatAt: now },
+        { organizationId: org.gamma, name: "gamma-agent", lastHeartbeatAt: now, liveOnline: true },
       ])
       .returning({ id: agents.id, name: agents.name });
     for (const row of rows) agent[row.name] = row.id;

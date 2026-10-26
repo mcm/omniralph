@@ -10,14 +10,24 @@ import {
   queryWrapper,
   TEST_ORGANIZATION_ID,
 } from "@/components/query-test-utils";
-import type { AgentDetail, InstallJobRow } from "@/lib/api/agents";
+import type { AgentDetail, AgentList, FleetAgentRow, InstallJobRow } from "@/lib/api/agents";
 import { queryKeys } from "@/lib/api/keys";
-import type { AgentRow } from "@/lib/agents/rows";
 import { AgentDetailView } from "./agent-detail-view";
 import { InstallForm } from "./agent-installables";
 
 const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const REPO_ID = "0b6a3c1e-8f4d-4c2a-9e1b-7d5f3a2c1b0e";
+
+/** The list's summary (the legacy page doesn't show it). */
+const SUMMARY: AgentList["summary"] = {
+  total: 0,
+  online: 0,
+  offline: 0,
+  busy: 0,
+  versionPolicy: null,
+  versions: { onTarget: 0, behind: 0, updateFailed: 0 },
+  acceptedKinds: { limited: 0, total: 0 },
+};
 
 const router = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -27,12 +37,16 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 
-function agent(overrides: Partial<AgentRow> = {}): AgentRow {
+function agent(overrides: Partial<FleetAgentRow> = {}): FleetAgentRow {
   return {
     id: AGENT_ID,
     name: "build-01",
     online: true,
     revoked: false,
+    status: { kind: "idle", label: "Idle", tone: "neutral" },
+    runningCount: 0,
+    host: null,
+    organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     version: "1.0.0",
     desiredVersion: null,
     desiredVersionOverride: null,
@@ -64,9 +78,14 @@ function agent(overrides: Partial<AgentRow> = {}): AgentRow {
   };
 }
 
-function detail(overrides: Partial<AgentRow> = {}, syncStatus = "queued"): AgentDetail {
+function detail(overrides: Partial<FleetAgentRow> = {}, syncStatus = "queued"): AgentDetail {
   return {
     agent: agent(overrides),
+    models: [],
+    installables: [],
+    runningNow: [],
+    recentWork: [],
+    security: { lastTokenRefreshAt: null, reuseAlerts30d: 0, authFailures30d: 0 },
     globalDesiredVersion: "1.0.0",
     audit: [],
     pinSyncJobs: [
@@ -104,8 +123,8 @@ describe("AgentDetailView", () => {
     expect(screen.getByText(/0 \/ 2/)).toBeTruthy();
     // Task types are the agent's own (Epic 7's Fleet shows them): no row here.
     expect(screen.queryByText("Accepted task types")).toBeNull();
-    // The page it's on goes along, for a switch to another organization.
-    expect(requests[0]!.query.get("next")).toBe("/");
+    // The agent's organization needs no switch: the API reads it for any membership.
+    expect(requests[0]!.query.get("next")).toBeNull();
 
     // The next poll: a job started, the sync finished.
     current = {
@@ -155,11 +174,11 @@ describe("AgentDetailView", () => {
         new Promise<Response>((resolve) => {
           resolveDelete = resolve;
         }),
-      "GET /api/ui/agents": () => jsonResponse({ agents: [] }),
+      "GET /api/ui/agents": () => jsonResponse({ agents: [], summary: SUMMARY }),
     });
     const client = createTestQueryClient();
     // The agent list, cached from before.
-    client.setQueryData(keys.agents.list(), { agents: [agent()] });
+    client.setQueryData(keys.agents.list(), { agents: [agent()], summary: SUMMARY });
     render(<AgentDetailView tab="overview" />, { wrapper: queryWrapper(client) });
     await userEvent.click(await screen.findByRole("button", { name: "Delete agent" }));
     await userEvent.click(

@@ -3,8 +3,13 @@ import "@/components/pickers/test-dom";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestQueryClient, queryWrapper, testUser } from "@/components/query-test-utils";
-import type { AgentRow } from "@/lib/agents/rows";
+import {
+  createTestQueryClient,
+  queryWrapper,
+  TEST_ORGANIZATION_ID,
+  testUser,
+} from "@/components/query-test-utils";
+import type { AgentList, FleetAgentRow } from "@/lib/api/agents";
 import { AgentsView } from "./agents-view";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
@@ -12,12 +17,27 @@ vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 const AGENT_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
 const ENROLLMENT_ID = "0b6a3c1e-8f4d-4c2a-9e1b-7d5f3a2c1b0e";
 
-function agent(overrides: Partial<AgentRow> = {}): AgentRow {
+/** The list's summary (the legacy page doesn't show it). */
+const SUMMARY: AgentList["summary"] = {
+  total: 0,
+  online: 0,
+  offline: 0,
+  busy: 0,
+  versionPolicy: null,
+  versions: { onTarget: 0, behind: 0, updateFailed: 0 },
+  acceptedKinds: { limited: 0, total: 0 },
+};
+
+function agent(overrides: Partial<FleetAgentRow> = {}): FleetAgentRow {
   return {
     id: AGENT_ID,
     name: "coder-1",
     online: false,
     revoked: false,
+    status: { kind: "idle", label: "Idle", tone: "neutral" },
+    runningCount: 0,
+    host: null,
+    organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     version: "1.0.0",
     desiredVersion: null,
     desiredVersionOverride: null,
@@ -78,7 +98,7 @@ describe("AgentsView", () => {
     const recent = new Date(Date.now() - 5_000).toISOString();
     mockFetch({
       // The server rendered it offline; the browser's clock decides.
-      "/api/ui/agents": () => json({ agents: [agent({ online: false, lastHeartbeatAt: recent })] }),
+      "/api/ui/agents": () => json({ agents: [agent({ online: false, lastHeartbeatAt: recent })], summary: SUMMARY }),
     });
     renderView();
     expect(screen.getByLabelText("Loading agents")).toBeTruthy();
@@ -92,7 +112,7 @@ describe("AgentsView", () => {
   it("shows an old heartbeat as offline", async () => {
     const old = new Date(Date.now() - 120_000).toISOString();
     mockFetch({
-      "/api/ui/agents": () => json({ agents: [agent({ online: true, lastHeartbeatAt: old })] }),
+      "/api/ui/agents": () => json({ agents: [agent({ online: true, lastHeartbeatAt: old })], summary: SUMMARY }),
     });
     renderView("member");
     // Members see the name without a link.
@@ -105,7 +125,7 @@ describe("AgentsView", () => {
     let fail = true;
     mockFetch({
       "/api/ui/agents": () =>
-        fail ? json({ error: "Database unavailable." }, 500) : json({ agents: [] }),
+        fail ? json({ error: "Database unavailable." }, 500) : json({ agents: [], summary: SUMMARY }),
     });
     renderView();
     expect(await screen.findByText("Couldn't load agents")).toBeTruthy();
@@ -118,7 +138,7 @@ describe("AgentsView", () => {
   it("shows the agent that enrolled with the dialog's token, with the list already updated", async () => {
     let enrolled = false;
     const fetch = mockFetch({
-      "/api/ui/agents": () => json({ agents: enrolled ? [agent({ name: "build-box" })] : [] }),
+      "/api/ui/agents": () => json({ agents: enrolled ? [agent({ name: "build-box" })] : [], summary: SUMMARY }),
       "/api/ui/agent-enrollments": (init) => {
         expect(JSON.parse(String(init?.body))).toEqual({ name: "build-box" });
         return json({

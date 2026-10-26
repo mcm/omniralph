@@ -5,6 +5,7 @@ import {
   closeDb,
   createDb,
   createAgentEnrollment,
+  captureChanges,
   createReview,
   enrollAgent,
   feedback,
@@ -20,6 +21,7 @@ import {
   scmConnections,
   type Database,
   organizations,
+  type RecordedChange,
   setDefaultMaxConcurrency,
 } from "@omniralph/db";
 import {
@@ -1406,6 +1408,106 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
         }),
       );
       expect(revoked.status).toBe(401);
+    });
+  });
+
+  describe("live agent events", () => {
+    const agentEvents = (changes: RecordedChange[], agentId: string) =>
+      changes.filter((c) => c.resource === "agent" && c.ids.includes(agentId));
+    const HEARTBEAT = { version: "1.0.0", runningJobIds: [], freeSlots: 1 };
+    const beat = (accessToken: string, body: object) =>
+      captureChanges(async () => {
+        const res = await heartbeat(agentRequest("heartbeat", accessToken, { body }));
+        expect(res.status).toBe(200);
+      });
+
+    it("a heartbeat publishes the agent when what Fleet shows changed, and nothing otherwise", async () => {
+      const { agentId, accessToken } = await newAgent({ name: "live-1" });
+      // The first heartbeat announces the agent online: get that out of the way.
+      await beat(accessToken, HEARTBEAT);
+      const steady = await beat(accessToken, HEARTBEAT);
+      expect(agentEvents(steady.changes, agentId)).toEqual([]);
+
+      const changes: [string, object][] = [
+        ["version", { ...HEARTBEAT, version: "1.1.0" }],
+        [
+          "update state",
+          {
+            ...HEARTBEAT,
+            version: "1.1.0",
+            update: {
+              state: "draining",
+              version: "1.2.0",
+              previous: "1.1.0",
+              startsSincePending: 0,
+              error: null,
+            },
+          },
+        ],
+        [
+          "reported models",
+          { ...HEARTBEAT, version: "1.1.0", models: [{ value: "opus", displayName: "Opus" }] },
+        ],
+        [
+          "installables",
+          { ...HEARTBEAT, version: "1.1.0", installables: [{ name: "gh", version: "2.0.0" }] },
+        ],
+        ["accepted kinds", { ...HEARTBEAT, version: "1.1.0", acceptedTaskTypes: ["review"] }],
+      ];
+      for (const [what, body] of changes) {
+        const changed = await beat(accessToken, body);
+        expect(agentEvents(changed.changes, agentId), what).toEqual([
+          expect.objectContaining({ resource: "agent", ids: [agentId], organizationId: orgId }),
+        ]);
+        // The same report again changes nothing and publishes nothing.
+        const same = await beat(accessToken, body);
+        expect(agentEvents(same.changes, agentId), `${what} again`).toEqual([]);
+      }
+    });
+
+    it("an attempt's start and finish publish the agent that runs it", async () => {
+      const { agentId, accessToken } = await newAgent({ name: "live-2" });
+      const completed = await newJob();
+      const started = await captureChanges(() => startAs(completed, accessToken));
+      expect(agentEvents(started.changes, agentId)).toEqual([
+        expect.objectContaining({ resource: "agent", ids: [agentId], organizationId: orgId }),
+      ]);
+      const finished = await captureChanges(() =>
+        result(
+          agentRequest(`jobs/${completed}/result`, accessToken, { body: { result: {} } }),
+          ctx(completed),
+        ),
+      );
+      expect(finished.result.status).toBe(200);
+      expect(agentEvents(finished.changes, agentId)).toHaveLength(1);
+
+      const failed = await newJob();
+      await startAs(failed, accessToken);
+      const failure = await captureChanges(() =>
+        failAs(failed, accessToken, { retryable: false, error: "boom" }),
+      );
+      expect(failure.result.status).toBe(200);
+      expect(agentEvents(failure.changes, agentId)).toHaveLength(1);
+
+      // A rejected report (the job is over) publishes nothing.
+      const rejected = await captureChanges(() =>
+        result(
+          agentRequest(`jobs/${completed}/result`, accessToken, { body: { result: {} } }),
+          ctx(completed),
+        ),
+      );
+      expect(rejected.result.status).toBe(409);
+      expect(agentEvents(rejected.changes, agentId)).toEqual([]);
+    });
+
+    it("a lapsed lease taken over publishes both agents", async () => {
+      const first = await newAgent({ name: "live-3" });
+      const second = await newAgent({ name: "live-4" });
+      const jobId = await newJob();
+      await startAs(jobId, first.accessToken);
+      const takenOver = await captureChanges(() => startAs(jobId, second.accessToken));
+      expect(agentEvents(takenOver.changes, first.agentId)).toHaveLength(1);
+      expect(agentEvents(takenOver.changes, second.agentId)).toHaveLength(1);
     });
   });
 
