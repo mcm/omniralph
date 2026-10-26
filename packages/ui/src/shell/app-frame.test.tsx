@@ -260,6 +260,38 @@ describe("AppFrame", () => {
     });
   });
 
+  describe("neutral count", () => {
+    const BACKLOG: NavItem = {
+      id: "backlog",
+      label: "Backlog",
+      href: "/backlog",
+      icon: IconInbox,
+      placement: "main",
+      phone: "tab",
+      indicator: { kind: "count", value: 3, label: "3 items", tone: "neutral" },
+    };
+
+    it("draws the .n2 neutral count, never the accent pill, with the label in the name", () => {
+      renderFrame({ nav: [...NAV, BACKLOG] });
+      const backlog = within(sidebar()).getByRole("link", { name: "Backlog, 3 items" });
+      const count = backlog.querySelector(".or-nav__n2")!;
+      expect(count.textContent).toBe("3");
+      expect(count.getAttribute("aria-hidden")).toBe("true");
+      expect(backlog.querySelector(".or-nav__count")).toBeNull();
+      const tab = within(tabBar()).getByRole("link", { name: "Backlog, 3 items" });
+      expect(tab.querySelector(".or-nav__count")).toBeNull();
+    });
+
+    it("isn't a drawer alert", () => {
+      renderFrame({
+        nav: [...NAV.filter((item) => item.phone === "tab"), { ...BACKLOG, phone: "drawer" }],
+      });
+      expect(
+        within(screen.getByRole("banner")).getByRole("button", { name: "Open menu" }),
+      ).toBeTruthy();
+    });
+  });
+
   describe("tab bar", () => {
     it("lists the tab entries in order with 22 px icons, aria-current and indicators", () => {
       renderFrame({ currentPath: "/coding" });

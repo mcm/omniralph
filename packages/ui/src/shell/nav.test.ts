@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavActive, menuButtonName, navAccessibleName } from "./nav.js";
+import { isNavActive, isNavAlert, menuButtonName, navAccessibleName } from "./nav.js";
 
 describe("isNavActive", () => {
   const settings = { href: "/settings" };
@@ -57,5 +57,24 @@ describe("menuButtonName", () => {
     expect(menuButtonName(0)).toBe("Open menu");
     expect(menuButtonName(1)).toBe("Open menu, 1 alert");
     expect(menuButtonName(3)).toBe("Open menu, 3 alerts");
+  });
+});
+
+describe("isNavAlert", () => {
+  it("treats dots and accent counts as alerts, and neutral counts as information", () => {
+    expect(isNavAlert(undefined)).toBe(false);
+    expect(isNavAlert({ kind: "dot", tone: "fail", label: "1 agent offline" })).toBe(true);
+    expect(isNavAlert({ kind: "count", value: 4, label: "4 need you" })).toBe(true);
+    expect(isNavAlert({ kind: "count", value: 4, label: "4 need you", tone: "accent" })).toBe(true);
+    expect(isNavAlert({ kind: "count", value: 3, label: "3 items", tone: "neutral" })).toBe(false);
+  });
+
+  it("names a neutral count in the accessible name like any indicator", () => {
+    expect(
+      navAccessibleName({
+        label: "Backlog",
+        indicator: { kind: "count", value: 3, label: "3 items", tone: "neutral" },
+      }),
+    ).toBe("Backlog, 3 items");
   });
 });

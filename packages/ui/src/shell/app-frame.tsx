@@ -7,7 +7,7 @@ import { Tooltip } from "../actions/tooltip.js";
 import { BrandLockup } from "../brand/wordmark.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { StatusDot } from "../status/status.js";
-import { isNavActive, menuButtonName, navAccessibleName, type NavItem } from "./nav.js";
+import { isNavActive, isNavAlert, menuButtonName, navAccessibleName, type NavItem } from "./nav.js";
 
 /** The signed-in user, as the footer and the phone avatar show them. */
 export interface FrameUser {
@@ -50,8 +50,9 @@ function Indicator({ item }: { item: NavItem }) {
   const { indicator } = item;
   if (!indicator) return null;
   if (indicator.kind === "count") {
+    const neutral = indicator.tone === "neutral";
     return (
-      <span className="or-nav__count" aria-hidden="true">
+      <span className={neutral ? "or-nav__n2" : "or-nav__count"} aria-hidden="true">
         {indicator.value}
       </span>
     );
@@ -165,7 +166,7 @@ export function AppFrame({
   const bottomEntries = nav.filter((item) => item.placement === "bottom");
   const tabs = nav.filter((item) => item.phone === "tab");
   const drawerEntries = nav.filter((item) => item.phone === "drawer");
-  const alerts = drawerEntries.filter((item) => item.indicator).length;
+  const alerts = drawerEntries.filter((item) => isNavAlert(item.indicator)).length;
 
   function closeOnLink(event: MouseEvent<HTMLDivElement>) {
     // Router links (e.g. Next's) prevent the default, so `defaultPrevented` isn't checked;

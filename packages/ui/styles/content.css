@@ -1,0 +1,205 @@
+/*
+ * Markdown: PRDs, work item descriptions and chat answers. Every color, font and radius
+ * comes from the --or- tokens; the width is the caller's (the PRD view sets 68ch).
+ */
+.or-md {
+  min-width: 0;
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
+  font-size: var(--or-font-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.or-md > :first-child {
+  margin-top: 0;
+}
+
+.or-md > :last-child {
+  margin-bottom: 0;
+}
+
+.or-md p,
+.or-md ul,
+.or-md ol,
+.or-md pre,
+.or-md blockquote,
+.or-md .or-md__table {
+  margin: 0 0 12px;
+}
+
+/* Headings */
+.or-md h1,
+.or-md h2,
+.or-md h3,
+.or-md h4,
+.or-md h5,
+.or-md h6 {
+  margin: 24px 0 8px;
+  color: var(--or-text);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.or-md h1 {
+  font-size: 20px;
+}
+
+.or-md h2 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--or-line);
+  font-size: 16px;
+}
+
+.or-md h3 {
+  font-size: 14px;
+}
+
+.or-md h4,
+.or-md h5,
+.or-md h6 {
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+/* Lists, including GFM task lists */
+.or-md ul,
+.or-md ol {
+  padding-left: 22px;
+}
+
+.or-md li + li {
+  margin-top: 4px;
+}
+
+.or-md li > ul,
+.or-md li > ol {
+  margin: 4px 0 0;
+}
+
+.or-md li::marker {
+  color: var(--or-ter);
+}
+
+.or-md .contains-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.or-md .task-list-item input[type="checkbox"] {
+  margin: 0 8px 0 0;
+  vertical-align: -2px;
+  accent-color: var(--or-acc);
+}
+
+/* Code */
+.or-md code {
+  padding: 1px 5px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-family: var(--or-font-mono);
+  font-size: 0.9em;
+}
+
+.or-md pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+  overflow-wrap: normal;
+}
+
+.or-md pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* Quotes and rules */
+.or-md blockquote {
+  padding: 0 0 0 12px;
+  border-left: 3px solid var(--or-border);
+  color: var(--or-sec);
+}
+
+.or-md hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--or-line);
+}
+
+/* Tables (GFM), scrolling sideways when wider than the column */
+.or-md__table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.or-md table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.or-md th,
+.or-md td {
+  padding: 6px 10px;
+  border: 1px solid var(--or-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.or-md th {
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-weight: 600;
+}
+
+/* Links */
+.or-md a {
+  color: var(--or-acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.or-md a:hover {
+  color: var(--or-acc-hover);
+}
+
+.or-md a:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+  border-radius: var(--or-radius-sm);
+}
+
+.or-md img {
+  max-width: 100%;
+}
+
+/* ## Quality Gates: a numbered list (Design rule 19) */
+.or-md .or-md__gates {
+  list-style: decimal;
+}
+
+/* ## Open Questions: a callout */
+.or-md__callout {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  background: var(--or-surf);
+}
+
+.or-md__callout > :first-child {
+  margin-top: 0;
+}
+
+.or-md__callout > :last-child {
+  margin-bottom: 0;
+}
+
+.or-md__callout h2 {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
