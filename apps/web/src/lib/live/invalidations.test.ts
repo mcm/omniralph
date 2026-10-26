@@ -20,6 +20,9 @@ const ID = "33333333-3333-4333-8333-333333333333";
 const keys = queryKeys(ORG);
 const playbooks = playbookKeys(keys);
 
+/** Every repository's list and detail (their status follows runs, agents and connections). */
+const repositoryViews = [keys.repositories.lists, [...keys.repositories.all, "detail"]];
+
 const event = (fields: Partial<ChangeEvent> & { resource: ChangeEvent["resource"] }) =>
   changeEvent(ORG, fields);
 
@@ -28,17 +31,21 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(Object.keys(LIVE_INVALIDATIONS).sort()).toEqual([...CHANGE_RESOURCES].sort());
   });
 
-  it("run: the run's detail and every list that shows runs", () => {
+  it("run: the run's detail, every list that shows runs and the repositories' status", () => {
     expect(liveInvalidations(event({ resource: "run", runId: RUN }))).toEqual([
       keys.runs.lists,
       keys.runs.detail(RUN),
       keys.inbox.all,
       keys.analytics.all,
+      ...repositoryViews,
     ]);
   });
 
-  it("run without a run (system work): Analytics only", () => {
-    expect(liveInvalidations(event({ resource: "run" }))).toEqual([keys.analytics.all]);
+  it("run without a run (system work): Analytics and the repositories' status (sync problems)", () => {
+    expect(liveInvalidations(event({ resource: "run" }))).toEqual([
+      keys.analytics.all,
+      ...repositoryViews,
+    ]);
   });
 
   it("transcript: only that run's transcript", () => {
@@ -72,10 +79,12 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(liveInvalidations(event({ resource: "webhook_event" }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
+      ...repositoryViews,
     ]);
     expect(liveInvalidations(event({ resource: "webhook_event", runId: RUN }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
+      ...repositoryViews,
       keys.runs.detail(RUN),
     ]);
   });
@@ -128,12 +137,13 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([playbooks.all, keys.repositories.all, keys.connections.detail("integrations")]);
   });
 
-  it("agent: the agents list, each agent and the Inbox (offline agents)", () => {
+  it("agent: the agents list, each agent, the Inbox (offline agents) and the repositories' agents", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.agents.lists,
       keys.agents.detail(ID),
       keys.agents.detail(RUN),
       keys.inbox.all,
+      ...repositoryViews,
     ]);
   });
 
@@ -146,10 +156,10 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("connection: connections, the repositories list and the Runs Repo filter", () => {
+  it("connection: connections, the repositories' list and details and the Runs Repo filter", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
-      keys.repositories.lists,
+      ...repositoryViews,
       runsKeys(keys).filterOptionsAll,
     ]);
   });
@@ -272,6 +282,7 @@ describe("createLiveInvalidator", () => {
     expect(scopeInvalidations(other, new Set([ORG, OTHER_ORG]))).toEqual([
       ...liveInvalidations(other),
       keys.inbox.all,
+      ...repositoryViews,
     ]);
   });
 

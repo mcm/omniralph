@@ -78,13 +78,31 @@ function repositoryKeys(keys: QueryKeys, repositoryId: string | undefined): Quer
     : [keys.repositories.all];
 }
 
-/** Every resource's invalidations. A run is shown by Runs (`runs`), the Inbox and Analytics. */
+/**
+ * Every repository's list and detail: their status (running work, problems) and pinned
+ * agents' state follow runs, agents and connections, whose events don't name the repository.
+ */
+function repositoryViews(keys: QueryKeys): QueryKey[] {
+  return [keys.repositories.lists, [...keys.repositories.all, "detail"]];
+}
+
+/**
+ * Every resource's invalidations. A run is shown by Runs (`runs`), the Inbox, Analytics and
+ * its repository's status on Repos.
+ */
 export const LIVE_INVALIDATIONS = {
   run: (event, keys) =>
     event.runId
-      ? [keys.runs.lists, keys.runs.detail(event.runId), keys.inbox.all, keys.analytics.all]
-      : // System work (a repository sync, a cleanup) belongs to no run: Analytics counts it.
-        [keys.analytics.all],
+      ? [
+          keys.runs.lists,
+          keys.runs.detail(event.runId),
+          keys.inbox.all,
+          keys.analytics.all,
+          ...repositoryViews(keys),
+        ]
+      : // System work (a repository sync, a cleanup) belongs to no run: Analytics counts it,
+        // and a failed repository sync is a problem of its repository.
+        [keys.analytics.all, ...repositoryViews(keys)],
   transcript: (event, keys) =>
     event.runId
       ? [keys.transcripts.detail(event.runId)]
@@ -96,8 +114,9 @@ export const LIVE_INVALIDATIONS = {
   inbox_state: (_event, keys) => [keys.inbox.all],
   webhook_event: (event, keys) => [
     keys.deliveries.all,
-    // Connection health shows the latest deliveries.
+    // Connection health shows the latest deliveries; its problems are repositories' problems.
     keys.connections.all,
+    ...repositoryViews(keys),
     ...(event.runId ? [keys.runs.detail(event.runId)] : []),
   ],
   settings: (event, keys) => SETTINGS_INVALIDATIONS[event.section](keys, event.subjectId),
@@ -106,6 +125,8 @@ export const LIVE_INVALIDATIONS = {
     ...event.ids.map((agentId) => keys.agents.detail(agentId)),
     // Agents offline or failing to update are Inbox problems.
     keys.inbox.all,
+    // Repositories show their pinned agents' state and "No agent online".
+    ...repositoryViews(keys),
   ],
   repository: (event, keys) => [
     keys.repositories.lists,
@@ -117,7 +138,8 @@ export const LIVE_INVALIDATIONS = {
   ],
   connection: (_event, keys) => [
     keys.connections.all,
-    keys.repositories.lists,
+    // Connection health problems are repositories' problems.
+    ...repositoryViews(keys),
     runsKeys(keys).filterOptionsAll,
   ],
   organization: (_event, keys) => [keys.organization.all],
@@ -140,13 +162,19 @@ function invalidationsIn(event: ChangeEvent, keys: QueryKeys): QueryKey[] {
  * organizations"), keyed by the active organization like every query: an event of any
  * organization in the scope reaches them.
  */
-export const SCOPE_WIDE_AREAS: readonly QueryArea[] = ["inbox", "runs", "transcripts"];
+export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
+  "inbox",
+  "runs",
+  "transcripts",
+  "repositories",
+];
 
 /**
  * The prefixes `event` invalidates in the cache of a scope: its own organization's keys,
  * plus, for the scope-wide areas (`SCOPE_WIDE_AREAS`), the same prefixes under every other
- * organization of the scope, since "All organizations" keys its Inbox and Runs queries by
- * the active one.
+ * organization of the scope, since "All organizations" keys its Inbox, Runs and Repos
+ * queries by the active one (Repos also opens any organization's repo under the active one's
+ * keys).
  */
 export function scopeInvalidations(event: ChangeEvent, scope: ReadonlySet<string>): QueryKey[] {
   const prefixes = liveInvalidations(event);

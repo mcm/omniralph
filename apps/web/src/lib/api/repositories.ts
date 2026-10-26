@@ -108,6 +108,7 @@ export const repositoryProblemSchema = z.object({
   message: z.string(),
   action: repositoryProblemActionSchema.optional(),
 }) satisfies z.ZodType<RepositoryProblem>;
+export type RepositoryProblemItem = z.infer<typeof repositoryProblemSchema>;
 
 /** Whether something runs on a repo and what is wrong with it (its rail dot and notice). */
 export const repositoryStatusSchema = z.object({

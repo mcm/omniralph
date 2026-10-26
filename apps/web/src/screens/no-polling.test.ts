@@ -3,7 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-// Inbox and Runs (TOOL-642) are live: change events refresh their queries, and they poll only
+// Inbox, Runs (TOOL-642) and Repos (TOOL-694) are live: change events refresh their queries, and they poll only
 // as the live data layer's fallback while the realtime connection is down (TOOL-632). No query
 // of theirs sets a `refetchInterval` of its own; `refetchInterval: false` (a query that must
 // never poll, like a story's diff from GitHub or GitLab) is the one value allowed.
@@ -14,6 +14,7 @@ const SCANNED = [
   "src/components/runs",
   "src/app/(app)/page.tsx",
   "src/app/(app)/runs",
+  "src/app/(app)/repos",
 ];
 
 function walk(full: string): string[] {
@@ -57,6 +58,7 @@ describe("Inbox and Runs polling", () => {
   it("scans the screens, the run components and their pages", () => {
     expect(files).toContain("src/screens/inbox/queries.ts");
     expect(files).toContain("src/screens/runs/queries.ts");
+    expect(files).toContain("src/screens/repos/queries.ts");
     expect(files).toContain("src/components/runs/use-run-detail.ts");
     expect(files).toContain("src/app/(app)/runs/[id]/page.tsx");
   });

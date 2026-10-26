@@ -89,7 +89,7 @@ describe("AppShell", () => {
     expect(links).toEqual([
       ["Inbox", "/"],
       ["Runs", "/runs"],
-      ["Repos", "/repositories"],
+      ["Repos", "/repos"],
       ["Agents", "/agents"],
       ["Settings", "/settings/organization"],
     ]);
@@ -99,7 +99,8 @@ describe("AppShell", () => {
     ["/", "Inbox"],
     ["/runs", "Runs"],
     ["/runs/123", "Runs"],
-    ["/repositories/abc/rules", "Repos"],
+    ["/repos", "Repos"],
+    ["/repos/abc", "Repos"],
     ["/agents/abc", "Agents"],
     ["/settings/routing", "Settings"],
   ])("marks the entry for %s as the current page: %s", (pathname, label) => {
@@ -110,6 +111,13 @@ describe("AppShell", () => {
   it("marks Runs current in the tab bar too", () => {
     renderShell("/runs/123");
     expect(current(tabBar())).toEqual(["Runs"]);
+  });
+
+  it("marks Repos current on a repo's page in the phone drawer too", async () => {
+    renderShell("/repos/abc");
+    expect(current(sidebar())).toEqual(["Repos"]);
+    const { drawer } = await openDrawer();
+    expect(current(drawer)).toEqual(["Repos"]);
   });
 
   it("marks no entry current on /analytics (its own entry comes later)", () => {
