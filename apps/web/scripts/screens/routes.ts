@@ -1,4 +1,4 @@
-import { FIXTURE_IDS, fixtureId } from "../fixtures/ids";
+import { FIXTURE_IDS, FIXTURE_SHARE_TOKENS, fixtureId } from "../fixtures/ids";
 
 /**
  * One screen `verify:screens` captures. `page` is the `page.tsx` it renders
@@ -37,6 +37,25 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     name: "access-denied",
     path: "/access-denied",
     page: "(auth)/access-denied/page.tsx",
+    auth: "signed-out",
+  },
+  // Public review links (no session): open, asking for a password, and gone.
+  {
+    name: "share-review",
+    path: `/share/${FIXTURE_SHARE_TOKENS.open}`,
+    page: "(public)/share/[token]/page.tsx",
+    auth: "signed-out",
+  },
+  {
+    name: "share-review-password",
+    path: `/share/${FIXTURE_SHARE_TOKENS.protected}`,
+    page: "(public)/share/[token]/page.tsx",
+    auth: "signed-out",
+  },
+  {
+    name: "share-review-gone",
+    path: "/share/fixture-share-unknown-token-not-a-secret-0",
+    page: "(public)/share/[token]/page.tsx",
     auth: "signed-out",
   },
   // The onboarding and chat-link shells redirect to sign-in without a

@@ -1590,6 +1590,69 @@ body {
   gap: 6px;
 }
 
+/* Public review page (app/(public)/share): the signed-out frame, a PRD column (68ch). */
+.share-column {
+  width: 100%;
+  max-width: 68ch;
+  align-self: flex-start;
+}
+.share-column > .auth-card {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.share-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.share-title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 22px;
+  line-height: 1.3;
+}
+.share-prd {
+  color: var(--or-text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.share-stories {
+  margin-top: 32px;
+}
+.share-stories h2 {
+  margin: 0 0 8px;
+  color: var(--or-text);
+  font-size: 16px;
+}
+.share-stories ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.share-story {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--or-line);
+  font-size: 14px;
+}
+.share-story-title {
+  flex: 1 1 16ch;
+  color: var(--or-text);
+}
+.share-muted {
+  color: var(--or-sec);
+}
+.share-footer {
+  margin: 32px 0 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
 /* Terms of service and privacy policy (app/(legal)): a readable column of prose. */
 .legal-column {
   width: 100%;

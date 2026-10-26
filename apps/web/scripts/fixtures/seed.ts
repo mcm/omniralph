@@ -38,12 +38,14 @@ import {
   runActivities,
   triageRuns,
   users,
+  workItemShareLinks,
   type Database,
 } from "@omniralph/db";
 import { getBuiltinPlaybook, playbookRequirements } from "@omniralph/tasks";
 import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
+import { createHash } from "node:crypto";
 import { inArray, sql } from "drizzle-orm";
-import { FIXTURE_EMAILS, FIXTURE_IDS, fixtureId } from "./ids";
+import { FIXTURE_EMAILS, FIXTURE_IDS, FIXTURE_SHARE_TOKENS, fixtureId } from "./ids";
 
 /** Fake, fixed `ENCRYPTION_KEY` the fixture credentials are encrypted with (hex of "fixture…"). */
 export const FIXTURE_ENCRYPTION_KEY = Buffer.from("fixture-key-not-a-secret-32bytes").toString(
@@ -278,6 +280,28 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       installedByUserId: U.admin,
       createdAt: ago(75 * DAY),
     });
+
+    // Review links of FIX-101 (`/share/{token}`): one open, one with a password
+    // (`FIXTURE_SHARE_PASSWORD`, hashed as `hashSharePassword` does with a fixed salt).
+    const shareLink = (token: string, passwordHash: string | null) => ({
+      organizationId: O.main,
+      tracker: "linear" as const,
+      externalId: "fixture-issue-fix-101",
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      passwordHash,
+      createdBy: U.admin,
+      createdAt: ago(2 * DAY),
+      expiresAt: new Date(now.getTime() + 28 * DAY),
+    });
+    await tx
+      .insert(workItemShareLinks)
+      .values([
+        shareLink(FIXTURE_SHARE_TOKENS.open, null),
+        shareLink(
+          FIXTURE_SHARE_TOKENS.protected,
+          "scrypt$16384$8$1$Zml4dHVyZS1zYWx0LTE2Yg$UBIBm0nyx-3K5SHS2qQ-b8Pdb7UkQr_faf443N28XrA",
+        ),
+      ]);
 
     // ── Agents ─────────────────────────────────────────────────────────
     const allTypes = ["query", "review", "coding"];

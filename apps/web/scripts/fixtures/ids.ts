@@ -90,6 +90,16 @@ export const FIXTURE_IDS = {
   },
 } as const;
 
+/**
+ * Review links of FIX-101 (`/share/{token}`): 43-character tokens like real ones. The
+ * protected one opens with `FIXTURE_SHARE_PASSWORD`.
+ */
+export const FIXTURE_SHARE_TOKENS = {
+  open: "fixture-share-open-token-not-a-secret-00000",
+  protected: "fixture-share-lock-token-not-a-secret-00000",
+} as const;
+export const FIXTURE_SHARE_PASSWORD = "fixture-password";
+
 /** Sign in as these with the dev sign-in (`/sign-in/dev?email=…`). */
 export const FIXTURE_EMAILS = {
   admin: "admin@fixtures.example",

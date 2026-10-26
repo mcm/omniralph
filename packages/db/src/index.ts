@@ -249,6 +249,17 @@ export {
   type WorkItemOverride,
 } from "./work-items.js";
 export {
+  createWorkItemShareLink,
+  findActiveWorkItemShareLink,
+  getWorkItemShareLink,
+  listActiveWorkItemShareLinks,
+  revokeWorkItemShareLink,
+  type CreateWorkItemShareLinkInput,
+  type ShareLinkActor,
+  type WorkItemShareLink,
+  type WorkItemShareLinkWithCreator,
+} from "./work-item-share-links.js";
+export {
   CHAT_PLAYBOOKS_KEY,
   DEFAULT_CHAT_PLAYBOOKS,
   DESIRED_AGENT_VERSION_KEY,

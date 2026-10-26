@@ -10,6 +10,19 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: process.env.OMNIRALPH_ALLOWED_DEV_ORIGINS?.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
+  // Review links (`/share/{token}`) are private to whoever has them: never indexed, and
+  // their token never leaks through a Referer.
+  async headers() {
+    return [
+      {
+        source: "/share/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
