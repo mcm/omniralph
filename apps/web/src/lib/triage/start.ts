@@ -33,6 +33,7 @@ import type { RalphDeps } from "@/lib/ralph/run";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
 
@@ -154,10 +155,7 @@ async function resolveRepository(
   if (!found.repository.askEnabled) {
     return { status: "query_disabled", repository: found.repository.fullPath };
   }
-  const defaultBranch = await deps.adapterFor(deps.db, found.connection).getDefaultBranch({
-    fullPath: found.repository.fullPath,
-    externalId: found.repository.externalId,
-  });
+  const defaultBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
   return {
     payload: {
       repositoryId: found.repository.id,

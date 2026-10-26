@@ -490,6 +490,31 @@ export async function setRepositoryWebhookId(
 }
 
 /**
+ * Stores a repository's default branch as read from its code host. Writes (and records a live
+ * `repository` change) only when the value differs from the stored one. Returns whether it
+ * changed; false for an unknown repository too.
+ */
+export async function setRepositoryDefaultBranch(
+  db: Database,
+  repositoryId: string,
+  branch: string,
+): Promise<boolean> {
+  const [row] = await db
+    .update(repositories)
+    .set({ defaultBranch: branch })
+    .where(
+      and(
+        eq(repositories.id, repositoryId),
+        sql`${repositories.defaultBranch} is distinct from ${branch}`,
+      ),
+    )
+    .returning({ id: repositories.id, organizationId: repositories.organizationId });
+  if (!row) return false;
+  recordRepositoryChange(db, row);
+  return true;
+}
+
+/**
  * Disconnects a repository of the organization: disables it, removes its agent pins and
  * forgets its webhook. The row (and so its reviews, findings and rules) is kept.
  */

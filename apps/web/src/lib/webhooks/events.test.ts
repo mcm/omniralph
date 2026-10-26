@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
+  parseGitHubEvent,
   parseGitHubInstallationDeleted,
   parseGitHubClosedEvent,
   parseGitHubPullRequestStateEvent,
   parseGitLabCiEvent,
   parseGitLabCommentEvent,
+  parseGitLabEvent,
   parseGitLabClosedEvent,
   parseGitLabPullRequestStateEvent,
+  webhookDefaultBranch,
 } from "./events";
 
 const user = { login: "octocat", type: "User" };
@@ -490,5 +493,62 @@ describe("parseGitLabPullRequestStateEvent", () => {
         object_attributes: { iid: 4, action: "approved", state: "opened" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("default branch", () => {
+  it("reads repository.default_branch from a GitHub pull_request delivery", () => {
+    const body = {
+      action: "opened",
+      repository: { id: 100, full_name: "acme/app", default_branch: "release" },
+      pull_request: {
+        number: 7,
+        state: "open",
+        draft: false,
+        title: "Add login",
+        body: null,
+        user: { login: "octocat" },
+        head: { sha: "b".repeat(40) },
+        base: { sha: "a".repeat(40) },
+      },
+    };
+    expect(parseGitHubEvent("pull_request", body)).toMatchObject({
+      kind: "open",
+      number: 7,
+      defaultBranch: "release",
+    });
+    expect(webhookDefaultBranch("github", body)).toBe("release");
+    const { default_branch: _, ...withoutBranch } = body.repository;
+    expect(parseGitHubEvent("pull_request", { ...body, repository: withoutBranch })).toMatchObject({
+      defaultBranch: null,
+    });
+  });
+
+  it("reads project.default_branch from a GitLab Merge Request Hook", () => {
+    const body = {
+      object_kind: "merge_request",
+      project: {
+        id: 4211,
+        path_with_namespace: "managed-services/customer-portal",
+        default_branch: "develop",
+      },
+      object_attributes: {
+        iid: 12,
+        action: "open",
+        state: "opened",
+        title: "Add login",
+        description: "",
+        draft: false,
+        last_commit: { id: "c".repeat(40) },
+      },
+    };
+    expect(parseGitLabEvent("Merge Request Hook", body)).toMatchObject({
+      kind: "open",
+      number: 12,
+      defaultBranch: "develop",
+    });
+    expect(webhookDefaultBranch("gitlab", body)).toBe("develop");
+    expect(webhookDefaultBranch("gitlab", { project: { id: 4211 } })).toBeNull();
+    expect(webhookDefaultBranch("github", body)).toBeNull();
   });
 });

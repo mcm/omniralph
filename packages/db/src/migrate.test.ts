@@ -3628,4 +3628,60 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       }
     },
   );
+
+  it("adds a nullable default branch to repositories, keeping existing ones (0105)", async () => {
+    await db.execute(sql.raw(`create database default_branch_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/default_branch_before");
+    await migrateBefore(uri, "0105_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = rows[0]!.id;
+      const { rows: connections } = await client.query<{ id: string }>(
+        `insert into scm_connections (organization_id, provider, name, base_url, external_id,
+           encrypted_credentials, bot_username)
+         values ($1, 'gitlab', 'omniralph @ gitlab.example.com', 'https://gitlab.example.com', '77',
+           'x', 'service_account_group_12_omniralph')
+         returning id`,
+        [org],
+      );
+      // Production: a GitLab project with its webhook, reviews and Ask on, Coding off.
+      const { rows: repos } = await client.query<{ id: string }>(
+        `insert into repositories (organization_id, provider, external_id, full_path, connection_id,
+           review_depth, path_excludes, custom_instructions, webhook_id)
+         values ($1, 'gitlab', '4211', 'managed-services/customer-portal', $2, 'deep',
+           '{"*.lock"}', 'Check the API contracts.', '9001')
+         returning id`,
+        [org, connections[0]!.id],
+      );
+
+      await runMigrations(uri);
+
+      const { rows: after } = await client.query<Record<string, unknown>>(
+        `select id, full_path, provider, review_depth, path_excludes, custom_instructions,
+           webhook_id, reviews_enabled, coding_enabled, ask_enabled, default_branch
+         from repositories`,
+      );
+      expect(after).toEqual([
+        {
+          id: repos[0]!.id,
+          full_path: "managed-services/customer-portal",
+          provider: "gitlab",
+          review_depth: "deep",
+          path_excludes: ["*.lock"],
+          custom_instructions: "Check the API contracts.",
+          webhook_id: "9001",
+          reviews_enabled: true,
+          coding_enabled: false,
+          ask_enabled: true,
+          default_branch: null,
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
 });

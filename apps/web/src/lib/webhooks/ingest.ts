@@ -27,6 +27,7 @@ import type { LinearGateway } from "@/lib/linear/gateway";
 import { respondToCiEvent } from "@/lib/ralph/ci";
 import type { ChatSource } from "@/lib/ralph/conversation";
 import { cleanupClosedPullRequest } from "@/lib/ralph/cleanup";
+import { storeDefaultBranch } from "@/lib/repositories/default-branch";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
@@ -42,6 +43,7 @@ import {
   parseGitLabEvent,
   parseGitLabClosedEvent,
   parseGitLabPullRequestStateEvent,
+  webhookDefaultBranch,
   webhookRepositoryId,
   type ChangeRequestEvent,
   type CiEvent,
@@ -244,6 +246,9 @@ export async function handleWebhook(
   if (repository.organizationId !== connection.organizationId) {
     return ignored("unknown_repository");
   }
+  // Every verified delivery names the repository's default branch: keep the stored one current.
+  const defaultBranch = webhookDefaultBranch(provider, body);
+  if (defaultBranch) await storeDefaultBranch(db, repository, defaultBranch);
 
   const eventName = req.headers.get(spec.eventHeader);
   const deliveryId = req.headers.get(spec.deliveryHeader)?.trim();

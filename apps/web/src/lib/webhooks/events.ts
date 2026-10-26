@@ -15,6 +15,26 @@ export interface ChangeRequestEvent {
   description: string | null;
   /** Author username (GitLab events only carry the acting user; it's looked up). */
   author: string | null;
+  /** The repository's default branch (`repository.default_branch` / `project.default_branch`). */
+  defaultBranch: string | null;
+}
+
+/** A delivery's repository (GitHub) or project (GitLab) default branch, when it names one. */
+const GitHubRepositoryBranch = z.object({
+  repository: z.object({ default_branch: z.string().min(1) }),
+});
+const GitLabProjectBranch = z.object({
+  project: z.object({ default_branch: z.string().min(1) }),
+});
+
+/** The default branch a delivery body names (every repository/project payload does), or null. */
+export function webhookDefaultBranch(provider: "github" | "gitlab", body: unknown): string | null {
+  if (provider === "github") {
+    const parsed = GitHubRepositoryBranch.safeParse(body);
+    return parsed.success ? parsed.data.repository.default_branch : null;
+  }
+  const parsed = GitLabProjectBranch.safeParse(body);
+  return parsed.success ? parsed.data.project.default_branch : null;
 }
 
 const GitHubPullRequestEvent = z.object({
@@ -58,6 +78,7 @@ export function parseGitHubEvent(
     title: pr.title,
     description: pr.body ?? null,
     author: pr.user?.login ?? null,
+    defaultBranch: webhookDefaultBranch("github", body),
   };
 }
 
@@ -110,6 +131,7 @@ export function parseGitLabEvent(
     title: mr.title,
     description: mr.description ?? null,
     author: null,
+    defaultBranch: webhookDefaultBranch("gitlab", body),
   };
 }
 

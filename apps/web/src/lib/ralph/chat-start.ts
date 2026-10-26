@@ -23,6 +23,7 @@ import { errorMessage } from "./notify";
 import { addInstruction } from "./requests";
 import { markRalphActive } from "./active";
 import { advanceRun, chatRunBranch, type RalphDeps } from "./run";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 /** How a chat run says it was routed: the agent named the repository. */
 export const ROUTED_BY_CHAT = "the chat request";
@@ -119,10 +120,7 @@ export async function startChatRequest(
     try {
       const found = await getRepositoryWithConnection(db, repository.id);
       if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
-      baseBranch = await deps.adapterFor(db, found.connection).getDefaultBranch({
-        fullPath: found.repository.fullPath,
-        externalId: found.repository.externalId,
-      });
+      baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
     } catch (error) {
       return {
         status: "failed",

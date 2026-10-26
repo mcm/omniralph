@@ -15,6 +15,7 @@ import {
   upsertScmConnection,
   withSettingsChanges,
   type Database,
+  type Repository,
   type ScmConnection,
 } from "@omniralph/db";
 import {
@@ -31,6 +32,7 @@ import type { SelectableRepositories } from "@/lib/api/repositories";
 import { gitlabWebhookUrl } from "@/lib/app-url";
 import type { OrgUser } from "@/lib/auth/session";
 import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
+import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
@@ -70,6 +72,32 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** How many added repositories read their default branch from the code host at a time. */
+const DEFAULT_BRANCH_CONCURRENCY = 4;
+
+/**
+ * Reads and stores the default branch of each added repository that has none stored yet. Best
+ * effort: a repository whose read fails stays added, with no default branch (a later run or
+ * webhook delivery stores it).
+ */
+async function storeAddedDefaultBranches(
+  db: Database,
+  connection: ScmConnection,
+  added: Repository[],
+): Promise<void> {
+  const deps = { db, adapterFor: scmAdapterFor };
+  const pending = added.filter((repo) => repo.defaultBranch === null);
+  for (let i = 0; i < pending.length; i += DEFAULT_BRANCH_CONCURRENCY) {
+    await Promise.all(
+      pending.slice(i, i + DEFAULT_BRANCH_CONCURRENCY).map((repo) =>
+        fetchDefaultBranch(deps, connection, repo).catch((error: unknown) => {
+          console.warn(`Couldn't read the default branch of ${repo.fullPath}`, error);
+        }),
+      ),
+    );
+  }
+}
+
 /** Creates the Omniralph webhook of a GitLab project. Returns its ID. */
 async function createGitLabWebhook(
   gitlab: GitLabSetupClient,
@@ -89,8 +117,8 @@ async function createGitLabWebhook(
  * new one replaces any old one, so there is exactly one per project. Before a project is
  * connected or re-enabled, its read-only clone credential is fetched through `adapter`
  * (minting a project access token, or reusing a valid cached one), so a project agents
- * couldn't clone is never connected. Returns the projects that couldn't be connected, with
- * the reason.
+ * couldn't clone is never connected. Returns the connected repositories, and the projects
+ * that couldn't be connected with the reason.
  */
 async function connectGitLabProjects(
   db: Database,
@@ -100,10 +128,11 @@ async function connectGitLabProjects(
   connectionId: string,
   webhookSecret: string,
   projects: GitLabProject[],
-): Promise<string[]> {
+): Promise<{ connected: Repository[]; failed: string[] }> {
   const known = new Map(
     (await listConnectionRepositories(db, connectionId)).map((repo) => [repo.externalId, repo]),
   );
+  const connected: Repository[] = [];
   const failed: string[] = [];
   for (const project of projects) {
     const input = {
@@ -115,7 +144,7 @@ async function connectGitLabProjects(
     const previous = known.get(input.externalId);
     const hooked = Boolean(previous && !previous.disconnectedAt && previous.webhookId);
     if (hooked && previous?.reviewsEnabled) {
-      await connectRepository(db, input);
+      connected.push(await connectRepository(db, input));
       continue;
     }
 
@@ -130,11 +159,11 @@ async function connectGitLabProjects(
         externalId: input.externalId,
       });
       if (hooked) {
-        await connectRepository(db, input);
+        connected.push(await connectRepository(db, input));
         continue;
       }
       const webhookId = await createGitLabWebhook(gitlab, project.id, webhookSecret);
-      await connectRepository(db, { ...input, webhookId });
+      connected.push(await connectRepository(db, { ...input, webhookId }));
       if (previous?.webhookId) {
         await gitlab
           .deleteProjectHook(project.id, Number(previous.webhookId))
@@ -145,7 +174,7 @@ async function connectGitLabProjects(
       if (added) await disconnectRepositoryRow(db, organizationId, added.id);
     }
   }
-  return failed;
+  return { connected, failed };
 }
 
 /**
@@ -369,6 +398,7 @@ export async function saveGitHubRepositories(
   }
 
   const selected = new Set(selectedRepoIds.map(String));
+  const connected: Repository[] = [];
   await withSettingsChanges(
     db,
     settingsActor(admin),
@@ -376,12 +406,14 @@ export async function saveGitHubRepositories(
     async (tx) => {
       for (const repo of available) {
         if (!selected.has(String(repo.id))) continue;
-        await connectRepository(tx, {
-          connectionId,
-          provider: "github",
-          externalId: String(repo.id),
-          fullPath: repo.fullPath,
-        });
+        connected.push(
+          await connectRepository(tx, {
+            connectionId,
+            provider: "github",
+            externalId: String(repo.id),
+            fullPath: repo.fullPath,
+          }),
+        );
       }
       for (const repo of await listConnectionRepositories(tx, connectionId)) {
         if (!repo.disconnectedAt && repo.reviewsEnabled && !selected.has(repo.externalId)) {
@@ -390,6 +422,7 @@ export async function saveGitHubRepositories(
       }
     },
   );
+  await storeAddedDefaultBranches(db, connection, connected);
   return { ok: true };
 }
 
@@ -423,12 +456,12 @@ export async function saveGitLabProjects(
   const selected = new Set(selectedProjectIds.map(String));
   // One transaction for the history: the adapter's clone credential cache writes on it too
   // (a new project's row exists only there until it commits).
-  const failed = await withSettingsChanges(
+  const { connected, failed } = await withSettingsChanges(
     db,
     settingsActor(admin),
     trackedConnection(organizationId, connectionId),
     async (tx) => {
-      const failed = await connectGitLabProjects(
+      const result = await connectGitLabProjects(
         tx,
         gitlab,
         scmAdapterFor(tx, connection),
@@ -450,9 +483,10 @@ export async function saveGitLabProjects(
           await setRepositoryEnabledRow(tx, organizationId, repo.id, false);
         }
       }
-      return failed;
+      return result;
     },
   );
+  await storeAddedDefaultBranches(db, connection, connected);
   if (failed.length > 0) {
     return { ok: true, warning: `Some projects weren't connected. ${failed.join(" ")}` };
   }

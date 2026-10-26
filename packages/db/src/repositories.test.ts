@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
   connectionCredentials,
@@ -16,6 +17,7 @@ import {
   listRepositoryOverviewPage,
   listScmConnections,
   repositorySwitches,
+  setRepositoryDefaultBranch,
   setRepositoryEnabled,
   setRepositorySwitches,
   upsertScmConnection,
@@ -72,6 +74,44 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(second.id).toBe(first.id);
     expect(second.encryptedCredentials).not.toContain("glpat");
     expect(connectionCredentials(second, key)).toEqual({ token: "glpat-second" });
+  });
+
+  it("stores a repo's default branch only when it changed, recording a repository change", async () => {
+    const [connection] = await db
+      .insert(scmConnections)
+      .values({
+        organizationId: orgId,
+        provider: "gitlab",
+        name: "default-branch",
+        baseUrl: "https://gitlab.example.com",
+        externalId: "default-branch",
+        encryptedCredentials: "x",
+      })
+      .returning();
+    const repo = await connectRepository(db, {
+      connectionId: connection!.id,
+      provider: "gitlab",
+      externalId: "4211",
+      fullPath: "managed-services/customer-portal",
+    });
+    expect(repo.defaultBranch).toBeNull();
+
+    const first = await captureChanges(() => setRepositoryDefaultBranch(db, repo.id, "main"));
+    expect(first.result).toBe(true);
+    expect(first.changes).toEqual([
+      expect.objectContaining({ resource: "repository", ids: [repo.id], organizationId: orgId }),
+    ]);
+    expect((await getRepository(db, repo.id))?.defaultBranch).toBe("main");
+
+    const repeat = await captureChanges(() => setRepositoryDefaultBranch(db, repo.id, "main"));
+    expect(repeat).toEqual({ result: false, changes: [] });
+
+    const renamed = await captureChanges(() => setRepositoryDefaultBranch(db, repo.id, "trunk"));
+    expect(renamed.result).toBe(true);
+    expect(renamed.changes).toHaveLength(1);
+    expect((await getRepository(db, repo.id))?.defaultBranch).toBe("trunk");
+
+    expect(await setRepositoryDefaultBranch(db, randomUUID(), "main")).toBe(false);
   });
 
   it("saves each switch on or off, whatever the organization's task types; Coding needs a work item match", async () => {

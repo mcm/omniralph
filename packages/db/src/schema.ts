@@ -849,6 +849,11 @@ export const repositories = pgTable(
     storyPlaybookId: text("story_playbook_id").notNull().default("builtin:implement-story"),
     /** The request playbook a lane's requests run. */
     requestPlaybookId: text("request_playbook_id").notNull().default("builtin:handle-request"),
+    /**
+     * The repository's default branch as last read from the code host (on add, whenever a
+     * run reads it, and from webhook payloads); null until first read.
+     */
+    defaultBranch: text("default_branch"),
     /** GitLab project webhook ID created on connect (deleted on disconnect). */
     webhookId: text("webhook_id"),
     /**
