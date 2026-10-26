@@ -132,8 +132,8 @@ export function liveInvalidations(event: ChangeEvent): QueryKey[] {
 
 /**
  * Whether an event on the user's own channel changed the user's own record, which the
- * shell applies in place (it re-renders from the server): their theme (`settings`
- * section `profile`) or their memberships (`organization`).
+ * shell applies in place (it re-renders from the server): their theme or advanced
+ * settings preference (`settings` section `profile`) or their memberships (`organization`).
  */
 export function changesUserRecord(event: ChangeEvent): boolean {
   return (
