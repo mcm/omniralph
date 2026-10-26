@@ -3,20 +3,7 @@
  * control panel's Repositories page. Connection credentials are JSON encrypted
  * with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import {
-  and,
-  asc,
-  count,
-  eq,
-  ilike,
-  inArray,
-  isNull,
-  max,
-  or,
-  sql,
-  type AnyColumn,
-} from "drizzle-orm";
-import { getAllowedTaskTypeDefaults } from "./app-settings.js";
+import { and, asc, count, eq, ilike, inArray, isNull, max, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
@@ -26,6 +13,7 @@ import {
   repositories,
   reviews,
   scmConnections,
+  workItemMatches,
   type ScmConnectionHealth,
 } from "./schema.js";
 
@@ -35,69 +23,55 @@ export type ScmConnection = typeof scmConnections.$inferSelect;
 export type Repository = typeof repositories.$inferSelect;
 
 /**
- * Which task types a repository runs: reviews (`enabled`), coding (`ralphEnabled`) and
- * externally triggered queries (`queryEnabled`).
+ * A repository's switches: which task types it runs. Reviews (`reviews_enabled`), Coding
+ * (`coding_enabled`) and Ask (`ask_enabled`: externally triggered queries such as mentions,
+ * chat and triage). None of them inherits from anything.
  */
 export interface RepositorySwitches {
-  review: boolean;
+  reviews: boolean;
   coding: boolean;
-  query: boolean;
+  ask: boolean;
 }
 
-/** A repository's own switch values: null inherits the organization's allowed task types. */
-export type RepositorySwitchOverrides = { [K in keyof RepositorySwitches]: boolean | null };
-
-/** A repository's own switches as `RepositorySwitchOverrides`. */
-export function repositorySwitchOverrides(
-  repository: Pick<Repository, "enabled" | "ralphEnabled" | "queryEnabled">,
-): RepositorySwitchOverrides {
-  return {
-    review: repository.enabled,
-    coding: repository.ralphEnabled,
-    query: repository.queryEnabled,
-  };
-}
-
-/** A repository with its effective switches (`effectiveRepositorySwitches`). */
-export type RepositoryWithSwitches = Repository & { effective: RepositorySwitches };
-
-/**
- * A repository's effective switches: each of its own values when not null, else whether the
- * organization's allowed task types include that type.
- */
-export function effectiveRepositorySwitches(
-  repository: Pick<Repository, "enabled" | "ralphEnabled" | "queryEnabled">,
-  allowedTaskTypes: readonly string[],
+/** A repository's switches as `RepositorySwitches`. */
+export function repositorySwitches(
+  repository: Pick<Repository, "reviewsEnabled" | "codingEnabled" | "askEnabled">,
 ): RepositorySwitches {
   return {
-    review: repository.enabled ?? allowedTaskTypes.includes("review"),
-    coding: repository.ralphEnabled ?? allowedTaskTypes.includes("coding"),
-    query: repository.queryEnabled ?? allowedTaskTypes.includes("query"),
+    reviews: repository.reviewsEnabled,
+    coding: repository.codingEnabled,
+    ask: repository.askEnabled,
   };
 }
 
 /**
- * A repository's effective switches, reading its organization's allowed task types only when
- * it inherits one.
+ * Thrown when a save would leave a repository with Coding on and no work item match: turning
+ * Coding on for a repository without one (`turn_on_coding`), or removing the match of a
+ * repository whose Coding is on (`remove_match`). Nothing is saved.
  */
-export async function resolveRepositorySwitches(
-  db: Pick<Database, "select">,
-  repository: Pick<Repository, "organizationId" | "enabled" | "ralphEnabled" | "queryEnabled">,
-): Promise<RepositorySwitches> {
-  const inherits =
-    repository.enabled === null ||
-    repository.ralphEnabled === null ||
-    repository.queryEnabled === null;
-  const allowed = inherits ? await getAllowedTaskTypeDefaults(db, repository.organizationId) : [];
-  return effectiveRepositorySwitches(repository, allowed);
+export class WorkItemMatchRequiredError extends Error {
+  constructor(
+    readonly action: "turn_on_coding" | "remove_match",
+    readonly repositoryId: string,
+  ) {
+    super(
+      action === "turn_on_coding"
+        ? `Repository ${repositoryId} has no work item match to turn Coding on with`
+        : `Repository ${repositoryId} has Coding on, so its work item match can't be removed`,
+    );
+    this.name = "WorkItemMatchRequiredError";
+  }
 }
 
 /**
- * A SQL condition that a repository switch column is effectively on, given whether the
- * organization allows its task type (null inherits it).
+ * A SQL condition that a repository may have Coding on: it already does (a repository that had
+ * Coding on before work item matches keeps it until switched off), or it has a work item match.
  */
-export function switchedOn(column: AnyColumn, allowed: boolean) {
-  return allowed ? or(isNull(column), eq(column, true)) : eq(column, true);
+export function codingMayBeOn() {
+  return or(
+    eq(repositories.codingEnabled, true),
+    sql`exists (select 1 from ${workItemMatches} where ${workItemMatches.repositoryId} = ${repositories.id})`,
+  );
 }
 
 export interface ScmConnectionInput {
@@ -358,14 +332,15 @@ export interface ConnectRepositoryInput {
   externalId: string;
   fullPath: string;
   webhookId?: string | null;
-  /** Whether reviews are on (default null: the organization's allowed task types decide). */
-  enabled?: boolean | null;
+  /** Whether reviews are on (default on). */
+  reviewsEnabled?: boolean;
 }
 
 /**
  * Connects (or reconnects) a repository: creates it, or re-enables an existing row for the
  * same connection and external ID (clearing `disconnectedAt`) so its history carries over.
- * With `enabled: false` it's connected with reviews off; without `enabled` it inherits.
+ * With `reviewsEnabled: false` it's connected with reviews off, else with reviews on. Its
+ * Coding and Ask switches are kept on reconnect (Coding starts off, Ask on).
  * The repository belongs to its connection's organization.
  */
 export async function connectRepository(
@@ -374,7 +349,7 @@ export async function connectRepository(
 ): Promise<Repository> {
   const set = {
     fullPath: input.fullPath,
-    enabled: input.enabled ?? null,
+    reviewsEnabled: input.reviewsEnabled ?? true,
     disconnectedAt: null,
     ...(input.webhookId !== undefined ? { webhookId: input.webhookId } : {}),
   };
@@ -415,75 +390,79 @@ function inOrganization(organizationId: string | undefined) {
   return organizationId === undefined ? undefined : eq(repositories.organizationId, organizationId);
 }
 
-/** Repositories of a connection, including disconnected ones, with their effective switches. */
+/** Repositories of a connection, including disconnected ones. */
 export async function listConnectionRepositories(
   db: Database,
   connectionId: string,
-): Promise<RepositoryWithSwitches[]> {
-  const rows = await db
+): Promise<Repository[]> {
+  return db
     .select()
     .from(repositories)
     .where(eq(repositories.connectionId, connectionId))
     .orderBy(asc(repositories.fullPath));
-  const [first] = rows;
-  if (!first) return [];
-  const allowed = await getAllowedTaskTypeDefaults(db, first.organizationId);
-  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
 }
 
 /**
- * Turns reviews for a connected repository of the organization on, off, or (null) back to the
- * organization's default. Returns false if it has no such repository or it's disconnected.
+ * Turns reviews for a connected repository of the organization on or off. Returns false if it
+ * has no such repository or it's disconnected.
  */
 export async function setRepositoryEnabled(
   db: Database,
   organizationId: string,
   id: string,
-  enabled: boolean | null,
+  enabled: boolean,
 ): Promise<boolean> {
-  return setRepositorySwitches(db, organizationId, id, { review: enabled });
+  return (await setRepositorySwitches(db, organizationId, id, { reviews: enabled })) !== null;
 }
 
 /**
- * Saves a connected repository's switches: each given one on, off, or (null) inheriting the
- * organization's default; omitted ones are unchanged. Returns false if the organization has no
- * such repository or it's disconnected.
+ * Saves a connected repository's switches: each given one on or off; omitted ones are
+ * unchanged. Answers its saved switches, or null if the organization has no such repository or
+ * it's disconnected. Turning Coding on for a repository without a work item match throws
+ * `WorkItemMatchRequiredError` (nothing is saved); one that already has Coding on keeps it.
  */
 export async function setRepositorySwitches(
   db: Database,
   organizationId: string,
   id: string,
-  switches: Partial<RepositorySwitchOverrides>,
-): Promise<boolean> {
+  switches: Partial<RepositorySwitches>,
+): Promise<RepositorySwitches | null> {
+  const connected = and(
+    eq(repositories.id, id),
+    eq(repositories.organizationId, organizationId),
+    isNull(repositories.disconnectedAt),
+  );
   const rows = await db
     .update(repositories)
     .set({
-      ...(switches.review !== undefined && { enabled: switches.review }),
-      ...(switches.coding !== undefined && { ralphEnabled: switches.coding }),
-      ...(switches.query !== undefined && { queryEnabled: switches.query }),
+      ...(switches.reviews !== undefined && { reviewsEnabled: switches.reviews }),
+      ...(switches.coding !== undefined && { codingEnabled: switches.coding }),
+      ...(switches.ask !== undefined && { askEnabled: switches.ask }),
+      // Always set, so a save that changes nothing still returns the row.
+      updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(repositories.id, id),
-        eq(repositories.organizationId, organizationId),
-        isNull(repositories.disconnectedAt),
-      ),
-    )
-    .returning({ id: repositories.id });
-  if (rows.length > 0) {
-    recordRepositoryChange(db, { id, organizationId });
-    // The review switch is the Reviews section's, the coding and query switches the Coding one's.
-    const sections = [
-      ...(switches.review !== undefined ? (["repository.reviews"] as const) : []),
-      ...(switches.coding !== undefined || switches.query !== undefined
-        ? (["repository.coding"] as const)
-        : []),
-    ];
-    for (const section of sections) {
-      recordRepositorySettingsChange(db, { id, organizationId }, section);
+    .where(and(connected, switches.coding === true ? codingMayBeOn() : undefined))
+    .returning();
+  const [row] = rows;
+  if (!row) {
+    if (switches.coding === true) {
+      const [found] = await db.select({ id: repositories.id }).from(repositories).where(connected);
+      if (found) throw new WorkItemMatchRequiredError("turn_on_coding", id);
     }
+    return null;
   }
-  return rows.length > 0;
+  recordRepositoryChange(db, { id, organizationId });
+  // The reviews switch is the Reviews section's, the coding and ask switches the Coding one's.
+  const sections = [
+    ...(switches.reviews !== undefined ? (["repository.reviews"] as const) : []),
+    ...(switches.coding !== undefined || switches.ask !== undefined
+      ? (["repository.coding"] as const)
+      : []),
+  ];
+  for (const section of sections) {
+    recordRepositorySettingsChange(db, { id, organizationId }, section);
+  }
+  return repositorySwitches(row);
 }
 
 /**
@@ -523,7 +502,7 @@ export async function disconnectRepository(
   return db.transaction(async (tx) => {
     const [row] = await tx
       .update(repositories)
-      .set({ enabled: false, disconnectedAt: now, webhookId: null })
+      .set({ reviewsEnabled: false, disconnectedAt: now, webhookId: null })
       .where(and(eq(repositories.id, id), eq(repositories.organizationId, organizationId)))
       .returning();
     if (!row) return null;
@@ -543,14 +522,12 @@ export interface RepositoryOverview {
   id: string;
   provider: ScmProvider;
   fullPath: string;
-  /** Reviews are on (effective: its own value, else the organization's allowed task types). */
-  enabled: boolean;
-  /** Coding is on (effective, like `enabled`). */
-  ralphEnabled: boolean;
-  /** Externally triggered queries are on (effective, like `enabled`). */
-  queryEnabled: boolean;
-  /** Its own switch values (null inherits the organization's default). */
-  overrides: RepositorySwitchOverrides;
+  /** Reviews run on its pull and merge requests. */
+  reviewsEnabled: boolean;
+  /** Work items routed to it are built. */
+  codingEnabled: boolean;
+  /** Externally triggered queries (mentions, chat, triage) run on it. */
+  askEnabled: boolean;
   connectionId: string;
   connectionName: string;
   /** Instance URL (GitLab) or API URL (GitHub). */
@@ -577,9 +554,9 @@ const overviewColumns = {
   id: repositories.id,
   provider: repositories.provider,
   fullPath: repositories.fullPath,
-  enabled: repositories.enabled,
-  ralphEnabled: repositories.ralphEnabled,
-  queryEnabled: repositories.queryEnabled,
+  reviewsEnabled: repositories.reviewsEnabled,
+  codingEnabled: repositories.codingEnabled,
+  askEnabled: repositories.askEnabled,
   connectionId: repositories.connectionId,
   connectionName: scmConnections.name,
   baseUrl: scmConnections.baseUrl,
@@ -605,22 +582,16 @@ function overviewQuery(db: Database, organizationId: string, search?: string) {
     .$dynamic();
 }
 
-type OverviewRow = Omit<
-  RepositoryOverview,
-  "enabled" | "ralphEnabled" | "queryEnabled" | "overrides" | "pinnedHarnesses" | "lastReviewAt"
-> &
-  Pick<Repository, "enabled" | "ralphEnabled" | "queryEnabled">;
+type OverviewRow = Omit<RepositoryOverview, "pinnedHarnesses" | "lastReviewAt">;
 
 async function withPinsAndLastReview(
   db: Database,
-  organizationId: string,
   rows: OverviewRow[],
 ): Promise<RepositoryOverview[]> {
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
-  const [allowedTaskTypes, pins, lastReviews] = await Promise.all([
-    getAllowedTaskTypeDefaults(db, organizationId),
+  const [pins, lastReviews] = await Promise.all([
     db
       .select({
         repositoryId: harnessRepoPins.repositoryId,
@@ -645,18 +616,11 @@ async function withPinsAndLastReview(
     pinsByRepo.set(pin.repositoryId, list);
   }
   const lastReviewByRepo = new Map(lastReviews.map((r) => [r.repositoryId, r.at]));
-  return rows.map((row) => {
-    const effective = effectiveRepositorySwitches(row, allowedTaskTypes);
-    return {
-      ...row,
-      enabled: effective.review,
-      ralphEnabled: effective.coding,
-      queryEnabled: effective.query,
-      overrides: repositorySwitchOverrides(row),
-      pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
-      lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
-    };
-  });
+  return rows.map((row) => ({
+    ...row,
+    pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
+    lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
+  }));
 }
 
 /** The organization's connected (not disconnected) repositories with their depth, pins and latest review. */
@@ -664,7 +628,7 @@ export async function listRepositoryOverview(
   db: Database,
   organizationId: string,
 ): Promise<RepositoryOverview[]> {
-  return withPinsAndLastReview(db, organizationId, await overviewQuery(db, organizationId));
+  return withPinsAndLastReview(db, await overviewQuery(db, organizationId));
 }
 
 /**
@@ -689,7 +653,7 @@ export async function listRepositoryOverviewPage(
       .offset((page - 1) * pageSize),
   ]);
   return {
-    repositories: await withPinsAndLastReview(db, organizationId, rows),
+    repositories: await withPinsAndLastReview(db, rows),
     total: totalRow?.total ?? 0,
     page,
     pageSize,

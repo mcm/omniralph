@@ -119,7 +119,7 @@ match, extra instructions, open PR early, history rewrite and responding to revi
 | `workspaceBaseDir` | Not needed | Branch worktrees live under `<workspaceRoot>/.branches/` on the harness. |
 | `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Routing** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
 | `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead. |
-| `isActive` | **Task types › Coding** | On by default (the organization's default): only repositories that opted in are routed to, offered in the repository question or pushed to. |
+| `isActive` | The repository's **Coding** switch | Off for a new repository, and it needs a work item match to turn on: only repositories with Coding on are routed to, offered in the repository question or pushed to. |
 | `verifyCommands` | The story and request playbooks' `verifyCommands` | |
 | `runPrdQualityGates` | The playbooks' `runPrdQualityGates` | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
 | `forge`, `gitlabHost` | Not needed | Known from the connection the repository belongs to. |
@@ -190,8 +190,8 @@ For every entry in cyralph's `repositories[]`:
    manual labels, and, where they differ from the built-ins, a custom story and request playbook
    (verify commands, setup command, model, tools, rounds, epic completed state, and
    `runPrdQualityGates` off if cyralph had it unset).
-3. Set **Task types › Coding** to **On** (or leave it on the organization's default), but add no
-   rule targeting it on **Settings › Routing** for now: routing moves in step 4.
+3. Leave its **Coding** switch off for now: turning it on needs the repository's work item match,
+   which routes work items to it, so both move in step 4.
 4. Leave **Story task** and **Request task** on the built-ins: they run cyralph's loop as coding
    runs, where sessions can't push by themselves
    ([deploy-harness.md](deploy-harness.md#coding-runs)).
@@ -306,7 +306,7 @@ Every step before 6 is reversible from the control panel and cyralph's `config.j
 
 | Undo | How |
 | -- | -- |
-| Step 1 | Set **Task types › Coding** to **Off** on the repository: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
+| Step 1 | Turn the repository's **Coding** switch off: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
 | Step 2 | Untick `ralph` on the harness (running jobs finish; queued ones wait for another ralph harness). Set a pm2 harness's version override back to the version it ran. |
 | Step 3 | **Disconnect** Linear on **Settings › Integrations** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
 | Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |

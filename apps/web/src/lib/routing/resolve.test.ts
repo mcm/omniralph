@@ -109,14 +109,14 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       },
       randomBytes(32),
     ))!;
-    const repo = async (externalId: string, fullPath: string, ralphEnabled: boolean) => {
+    const repo = async (externalId: string, fullPath: string, codingEnabled: boolean) => {
       const { id } = await connectRepository(db, {
         connectionId: connection.id,
         provider: "github",
         externalId,
         fullPath,
       });
-      await db.update(repositories).set({ ralphEnabled }).where(eq(repositories.id, id));
+      await db.update(repositories).set({ codingEnabled }).where(eq(repositories.id, id));
       return id;
     };
     api = await repo("1", "acme/api", true);
@@ -385,7 +385,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
           externalId: `production-${fullPath}`,
           fullPath,
         });
-        await db.update(repositories).set({ ralphEnabled: true }).where(eq(repositories.id, id));
+        await db.update(repositories).set({ codingEnabled: true }).where(eq(repositories.id, id));
         repoIds.set(fullPath, id);
       }
     });

@@ -534,33 +534,26 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("enqueues nothing and says so when the repository's query tasks are turned off", async () => {
-    const setQuery = (queryEnabled: boolean | null) =>
-      db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repositoryId));
+    const setAsk = (askEnabled: boolean) =>
+      db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repositoryId));
     const h = await harness();
     try {
-      await setQuery(false);
+      await setAsk(false);
       const off = await ask(h, { repository: "acme/api", question: "How is auth done?" });
       expect(off).toMatchObject({ error: "query_disabled" });
       expect(off.message).toContain("Query tasks are turned off for acme/api");
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
-      // Inheriting an organization default without query tasks.
-      await setQuery(null);
+      // Ask on answers, whatever the organization's task types (on a harness taking queries).
       await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
-      expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
-        { error: "query_disabled" },
-      );
-      expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
-
-      // An explicit switch wins over the organization default (on a harness taking queries).
-      await setQuery(true);
+      await setAsk(true);
       await setAgent(harnessId, { acceptedTaskTypes: ["query"] });
       expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
         { status: "started" },
       );
       expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
     } finally {
-      await setQuery(null);
+      await setAsk(true);
       await setAgent(harnessId, { acceptedTaskTypes: null });
       await setAllowedTaskTypeDefaults(db, orgId, null, null);
     }

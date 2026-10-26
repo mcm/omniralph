@@ -5,10 +5,9 @@
  */
 import type { RoutingRuleInput } from "@omniralph/shared";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import { getAllowedTaskTypeDefaults } from "./app-settings.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { effectiveRepositorySwitches, type RepositoryWithSwitches } from "./repositories.js";
+import type { Repository } from "./repositories.js";
 import {
   followUpSources,
   organizations,
@@ -96,21 +95,19 @@ export async function replaceRoutingRules(
 
 /**
  * The repositories rules can route to: the organization's connected ones, coding on or off,
- * with their effective switches, by full path.
+ * by full path.
  */
 export async function listRoutingRepositories(
   db: Pick<Database, "select">,
   organizationId: string,
-): Promise<RepositoryWithSwitches[]> {
-  const allowed = await getAllowedTaskTypeDefaults(db, organizationId);
-  const rows = await db
+): Promise<Repository[]> {
+  return db
     .select()
     .from(repositories)
     .where(
       and(eq(repositories.organizationId, organizationId), isNull(repositories.disconnectedAt)),
     )
     .orderBy(asc(repositories.fullPath), asc(repositories.id));
-  return rows.map((row) => ({ ...row, effective: effectiveRepositorySwitches(row, allowed) }));
 }
 
 /** The repository Omniralph already uses for an issue, and how it was chosen. */

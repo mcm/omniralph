@@ -32,7 +32,6 @@ import {
   type RalphRun,
   type RalphTransaction,
   getActiveRunOfSameOrigin,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import { buildReviewRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
@@ -163,11 +162,7 @@ export async function respondToReview(
   const found = await findLaneByPullRequest(deps.db, reviewRun.repositoryId, reviewRun.prNumber);
   if (!found) return ignored("not_ralph");
   const target = await getRepositoryWithConnection(deps.db, reviewRun.repositoryId);
-  if (
-    !target ||
-    target.repository.disconnectedAt ||
-    !(await resolveRepositorySwitches(deps.db, target.repository)).coding
-  ) {
+  if (!target || target.repository.disconnectedAt || !target.repository.codingEnabled) {
     return ignored("repository_unavailable");
   }
   if (!target.repository.respondToReviewsAndCi) return ignored("opted_out");

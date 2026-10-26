@@ -111,7 +111,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     });
     await db
       .update(repositories)
-      .set({ ralphEnabled: true })
+      .set({ codingEnabled: true })
       .where(eq(repositories.id, repository.id));
     const [agent] = await db
       .insert(harnesses)
@@ -401,7 +401,8 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
         fullPath: "other/api",
         webUrl: "https://github.com/other/api",
         reviewsEnabled: true,
-        ralphEnabled: true,
+        codingEnabled: true,
+        askEnabled: true,
         reviewDepth: "standard",
       }),
     ]);

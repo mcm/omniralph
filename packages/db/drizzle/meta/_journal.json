@@ -708,6 +708,13 @@
       "when": 1792979046020,
       "tag": "0100_convert_routing_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1792979703844,
+      "tag": "0101_repository_switches",
+      "breakpoints": true
     }
   ]
 }

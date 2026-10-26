@@ -38,6 +38,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,9 +117,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     gitlabRepoId = (
       await connectRepository(db, {
         connectionId: connection.id,
@@ -127,9 +126,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         fullPath: "acme/web",
       })
     ).id;
-    await updateRepositoryCoding(db, gitlabRepoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, gitlabRepoId);
     await setRoutingRules(db, orgId, [gitlabRepoId, projectIs("Web")], [repoId, teamIs("ENG")]);
   }, 180_000);
 
@@ -157,7 +154,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         },
       ])
       .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
-    await updateRepositoryCoding(db, repoId, { ralphEnabled: true, historyRewrite: "when-asked" });
+    await setCodingEnabled(db, repoId);
+    await updateRepositoryCoding(db, repoId, { historyRewrite: "when-asked" });
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -820,7 +818,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     });
 
     it("follows the repository's historyRewrite setting", async () => {
-      await updateRepositoryCoding(db, repoId, { ralphEnabled: true, historyRewrite: "never" });
+      await setCodingEnabled(db, repoId);
+      await updateRepositoryCoding(db, repoId, { historyRewrite: "never" });
       const { epic } = threeStoryEpic();
       const { run } = await session(epic.id, "@omniralph rebase onto main");
       expect((await request(run!.id)).historyRewrite).toBe("never");

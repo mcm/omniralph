@@ -64,10 +64,10 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       .returning();
     expect(repo).toMatchObject({
       reviewDepth: "standard",
-      // Reviews, coding and queries inherit the organization's allowed task types (0076).
-      enabled: null,
-      ralphEnabled: null,
-      queryEnabled: null,
+      // Reviews and Ask start on, Coding off (0101).
+      reviewsEnabled: true,
+      codingEnabled: false,
+      askEnabled: true,
       triggers: { onOpen: true, onPush: true, drafts: false },
       pathExcludes: [],
       storyPlaybookId: "builtin:implement-story",
@@ -837,30 +837,30 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
 
         await runMigrations(uri);
+        // 0076 made every switch inherit (null); 0101 then turned each into the organization's
+        // default, which (with no `tasks.allowedTypes`) is on.
         const { rows } = await client.query<{
           full_path: string;
-          enabled: boolean | null;
-          ralph_enabled: boolean | null;
-          query_enabled: boolean | null;
+          reviews_enabled: boolean;
+          coding_enabled: boolean;
+          ask_enabled: boolean;
         }>(
-          `select full_path, enabled, ralph_enabled, query_enabled from repositories order by full_path`,
+          `select full_path, reviews_enabled, coding_enabled, ask_enabled from repositories order by full_path`,
         );
         expect(rows).toEqual([
-          { full_path: "acme/configured", enabled: null, ralph_enabled: null, query_enabled: null },
-          { full_path: "acme/defaults", enabled: null, ralph_enabled: null, query_enabled: null },
+          {
+            full_path: "acme/configured",
+            reviews_enabled: true,
+            coding_enabled: true,
+            ask_enabled: true,
+          },
+          {
+            full_path: "acme/defaults",
+            reviews_enabled: true,
+            coding_enabled: true,
+            ask_enabled: true,
+          },
         ]);
-
-        // New repositories inherit too: no column default.
-        const { rows: added } = await client.query<{
-          enabled: boolean | null;
-          ralph_enabled: boolean | null;
-          query_enabled: boolean | null;
-        }>(
-          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
-           values ($1, 'github', '3', 'acme/new', $2) returning enabled, ralph_enabled, query_enabled`,
-          [org, connection],
-        );
-        expect(added).toEqual([{ enabled: null, ralph_enabled: null, query_enabled: null }]);
       } finally {
         await client.end();
       }
@@ -1671,6 +1671,154 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
             start_work_playbook_id: "builtin:handle-request",
           },
         ]);
+      } finally {
+        await client.end();
+        rmSync(before, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("repository switches stop inheriting (0101)", () => {
+    it("turns each null switch into the organization's allowed task types, keeping explicit ones", async () => {
+      await db.execute(sql`create database repository_switches`);
+      const uri = testDb.uri.replace(/\/[^/]*$/, "/repository_switches");
+      const before = mkdtempSync(join(tmpdir(), "migrations-"));
+      const client = new pg.Client({ connectionString: uri });
+      try {
+        cpSync(migrationsFolder, before, { recursive: true });
+        const journalPath = join(before, "meta", "_journal.json");
+        const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+          entries: { tag: string }[];
+        };
+        const upTo = journal.entries.findIndex((e) => e.tag.startsWith("0101_"));
+        writeFileSync(
+          journalPath,
+          JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+        );
+        await client.connect();
+        await migrate(drizzle(client), { migrationsFolder: before });
+
+        /** An organization (with `allowedTypes` when given) and its repositories' own switches. */
+        const organization = async (
+          name: string,
+          allowedTypes: unknown,
+          repos: { path: string; enabled?: boolean; ralph?: boolean; query?: boolean }[],
+        ) => {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into organizations (name) values ($1) returning id`,
+            [name],
+          );
+          const org = rows[0]!.id;
+          if (allowedTypes !== undefined) {
+            await client.query(
+              `insert into app_settings (organization_id, key, value) values ($1, 'tasks.allowedTypes', $2)`,
+              [org, JSON.stringify(allowedTypes)],
+            );
+          }
+          const { rows: connections } = await client.query<{ id: string }>(
+            `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+             values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+            [org],
+          );
+          for (const repo of repos) {
+            await client.query(
+              `insert into repositories (organization_id, provider, external_id, full_path, connection_id, enabled, ralph_enabled, query_enabled)
+               values ($1, 'github', $2, $2, $3, $4, $5, $6)`,
+              [
+                org,
+                repo.path,
+                connections[0]!.id,
+                repo.enabled ?? null,
+                repo.ralph ?? null,
+                repo.query ?? null,
+              ],
+            );
+          }
+        };
+        // Production: no setting and every switch null, no work item match anywhere.
+        await organization("Production", undefined, [
+          { path: "prod/a" },
+          { path: "prod/b" },
+          { path: "prod/c" },
+        ]);
+        await organization(
+          "Reviews only",
+          ["review"],
+          [{ path: "reviews/inheriting" }, { path: "reviews/coding", ralph: true }],
+        );
+        // Explicit values are kept; a setting that isn't a list of task types counts as absent.
+        await organization(
+          "Explicit",
+          ["query", "coding"],
+          [
+            { path: "explicit/off", enabled: false, ralph: false, query: false },
+            { path: "explicit/on", enabled: true },
+          ],
+        );
+        await organization("Malformed", ["review", "bogus"], [{ path: "malformed/repo" }]);
+
+        await runMigrations(uri);
+        const { rows } = await client.query<{
+          full_path: string;
+          reviews_enabled: boolean;
+          coding_enabled: boolean;
+          ask_enabled: boolean;
+        }>(
+          `select full_path, reviews_enabled, coding_enabled, ask_enabled from repositories order by full_path`,
+        );
+        const switches = Object.fromEntries(
+          rows.map((r) => [
+            r.full_path,
+            { review: r.reviews_enabled, coding: r.coding_enabled, ask: r.ask_enabled },
+          ]),
+        );
+        expect(switches).toEqual({
+          "prod/a": { review: true, coding: true, ask: true },
+          "prod/b": { review: true, coding: true, ask: true },
+          "prod/c": { review: true, coding: true, ask: true },
+          "reviews/inheriting": { review: true, coding: false, ask: false },
+          "reviews/coding": { review: true, coding: true, ask: false },
+          "explicit/off": { review: false, coding: false, ask: false },
+          "explicit/on": { review: true, coding: true, ask: true },
+          "malformed/repo": { review: true, coding: true, ask: true },
+        });
+        // Production repos keep Coding on without a work item match.
+        const { rows: matches } = await client.query(`select 1 from work_item_matches`);
+        expect(matches).toEqual([]);
+
+        // The old columns are gone; the new ones are not null with defaults.
+        const { rows: columns } = await client.query<{
+          column_name: string;
+          is_nullable: string;
+          column_default: string | null;
+        }>(
+          `select column_name, is_nullable, column_default from information_schema.columns
+           where table_schema = 'public' and table_name = 'repositories'
+             and column_name in ('enabled', 'ralph_enabled', 'query_enabled', 'reviews_enabled', 'coding_enabled', 'ask_enabled')
+           order by column_name`,
+        );
+        expect(columns).toEqual([
+          { column_name: "ask_enabled", is_nullable: "NO", column_default: "true" },
+          { column_name: "coding_enabled", is_nullable: "NO", column_default: "false" },
+          { column_name: "reviews_enabled", is_nullable: "NO", column_default: "true" },
+        ]);
+        // New repositories: Reviews on, Coding off, Ask on.
+        const { rows: orgs } = await client.query<{ id: string; connection: string }>(
+          `select o.id, c.id as connection from organizations o
+           join scm_connections c on c.organization_id = o.id where o.name = 'Production'`,
+        );
+        const { rows: added } = await client.query(
+          `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+           values ($1, 'github', 'new', 'prod/new', $2)
+           returning reviews_enabled, coding_enabled, ask_enabled`,
+          [orgs[0]!.id, orgs[0]!.connection],
+        );
+        expect(added).toEqual([
+          { reviews_enabled: true, coding_enabled: false, ask_enabled: true },
+        ]);
+        await expect(
+          client.query(`update repositories set coding_enabled = null where full_path = 'prod/a'`),
+        ).rejects.toThrow(/null value/);
       } finally {
         await client.end();
         rmSync(before, { recursive: true, force: true });

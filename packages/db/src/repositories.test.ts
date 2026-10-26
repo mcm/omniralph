@@ -9,20 +9,20 @@ import {
   connectRepository,
   deleteScmConnection,
   disconnectRepository,
-  effectiveRepositorySwitches,
   findScmConnectionsByExternalId,
   getRepository,
   getRepositoryWithConnection,
   getScmConnection,
-  listConnectionRepositories,
   listRepositoryOverview,
   listRepositoryOverviewPage,
   listScmConnections,
-  resolveRepositorySwitches,
+  repositorySwitches,
   setRepositoryEnabled,
   setRepositorySwitches,
   upsertScmConnection,
+  WorkItemMatchRequiredError,
 } from "./repositories.js";
+import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
 import {
   harnessRepoPins,
   harnesses,
@@ -75,26 +75,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(connectionCredentials(second, key)).toEqual({ token: "glpat-second" });
   });
 
-  it("resolves effective switches: own value when set, else the organization's task types", async () => {
-    const inheriting = { enabled: null, ralphEnabled: null, queryEnabled: null };
-    expect(effectiveRepositorySwitches(inheriting, ["query", "review", "coding"])).toEqual({
-      review: true,
-      coding: true,
-      query: true,
-    });
-    expect(effectiveRepositorySwitches(inheriting, ["review"])).toEqual({
-      review: true,
-      coding: false,
-      query: false,
-    });
-    // An explicit value wins in either direction.
-    expect(
-      effectiveRepositorySwitches({ enabled: false, ralphEnabled: true, queryEnabled: null }, [
-        "review",
-        "query",
-      ]),
-    ).toEqual({ review: false, coding: true, query: true });
-
+  it("saves each switch on or off, whatever the organization's task types; Coding needs a work item match", async () => {
     const connection = (await upsertScmConnection(
       db,
       {
@@ -113,63 +94,74 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       externalId: "1",
       fullPath: "acme/switches",
     });
-    // A new repository inherits everything; with no organization settings, all is on.
-    expect(repo).toMatchObject({ enabled: null, ralphEnabled: null, queryEnabled: null });
-    expect(await resolveRepositorySwitches(db, repo)).toEqual({
-      review: true,
-      coding: true,
-      query: true,
-    });
+    // A new repository has Reviews and Ask on and Coding off.
+    expect(repositorySwitches(repo)).toEqual({ reviews: true, coding: false, ask: true });
     try {
-      await setAllowedTaskTypeDefaults(db, orgId, ["query"], null);
-      expect(await resolveRepositorySwitches(db, repo)).toEqual({
-        review: false,
+      // The organization's allowed task types no longer change a repository's switches.
+      await setAllowedTaskTypeDefaults(db, orgId, ["coding"], null);
+      expect(repositorySwitches((await getRepository(db, repo.id))!)).toEqual({
+        reviews: true,
         coding: false,
-        query: true,
+        ask: true,
       });
-      expect((await listConnectionRepositories(db, connection.id))[0]?.effective).toEqual({
-        review: false,
-        coding: false,
-        query: true,
-      });
-      expect(await setRepositoryEnabled(db, orgId, repo.id, true)).toBe(true);
+      expect(await setRepositoryEnabled(db, orgId, repo.id, false)).toBe(true);
       expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)).toMatchObject(
-        {
-          enabled: true,
-          ralphEnabled: false,
-          queryEnabled: true,
-          overrides: { review: true, coding: null, query: null },
-        },
+        { reviewsEnabled: false, codingEnabled: false, askEnabled: true },
       );
 
-      // Each switch saves on, off or null (inherit); omitted ones stay as they are.
-      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: true, query: false })).toBe(
-        true,
-      );
-      expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)).toMatchObject(
-        {
-          enabled: true,
-          ralphEnabled: true,
-          queryEnabled: false,
-          overrides: { review: true, coding: true, query: false },
-        },
-      );
-      expect(
-        await setRepositorySwitches(db, orgId, repo.id, {
-          review: null,
-          coding: null,
-          query: null,
-        }),
-      ).toBe(true);
-      expect(await getRepository(db, repo.id)).toMatchObject({
-        enabled: null,
-        ralphEnabled: null,
-        queryEnabled: null,
+      // Coding can't be turned on without a work item match; nothing is saved.
+      await expect(
+        setRepositorySwitches(db, orgId, repo.id, { reviews: true, coding: true, ask: false }),
+      ).rejects.toMatchObject({ action: "turn_on_coding", repositoryId: repo.id });
+      expect(repositorySwitches((await getRepository(db, repo.id))!)).toEqual({
+        reviews: false,
+        coding: false,
+        ask: true,
       });
-      expect(await setRepositoryEnabled(db, orgId, repo.id, null)).toBe(true);
+
+      // With a match it can; omitted switches stay as they are.
+      await saveWorkItemMatch(db, {
+        organizationId: orgId,
+        repositoryId: repo.id,
+        userId: null,
+        match: { tracker: "linear", team: "ENG", project: null, withoutProject: false, labels: [] },
+      });
+      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: true, ask: false })).toEqual(
+        { reviews: false, coding: true, ask: false },
+      );
+      // The match can't be removed while Coding is on.
+      await expect(deleteWorkItemMatch(db, orgId, repo.id)).rejects.toMatchObject({
+        action: "remove_match",
+      });
+      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: false })).toEqual({
+        reviews: false,
+        coding: false,
+        ask: false,
+      });
+      expect(await deleteWorkItemMatch(db, orgId, repo.id)).toBe(true);
+      expect(await deleteWorkItemMatch(db, orgId, repo.id)).toBe(false);
+
+      // A repository that had Coding on before work item matches keeps it until switched off.
+      await db
+        .update(repositories)
+        .set({ codingEnabled: true })
+        .where(eq(repositories.id, repo.id));
+      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: true, ask: true })).toEqual({
+        reviews: false,
+        coding: true,
+        ask: true,
+      });
+      expect(await setRepositorySwitches(db, orgId, repo.id, { coding: false })).toMatchObject({
+        coding: false,
+      });
+      await expect(setRepositorySwitches(db, orgId, repo.id, { coding: true })).rejects.toThrow(
+        WorkItemMatchRequiredError,
+      );
+
       // Another organization can't change it.
-      expect(await setRepositorySwitches(db, randomUUID(), repo.id, { review: false })).toBe(false);
-      expect((await getRepository(db, repo.id))?.enabled).toBeNull();
+      expect(await setRepositorySwitches(db, randomUUID(), repo.id, { reviews: true })).toBeNull();
+      expect(await setRepositorySwitches(db, randomUUID(), repo.id, { coding: true })).toBeNull();
+      expect((await getRepository(db, repo.id))?.reviewsEnabled).toBe(false);
     } finally {
       await setAllowedTaskTypeDefaults(db, orgId, null, null);
       await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
@@ -226,7 +218,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(row).toMatchObject({
       provider: "github",
       fullPath: "acme/web",
-      enabled: true,
+      reviewsEnabled: true,
       connectionName: "acme",
       reviewDepth: "standard",
       pinnedHarnesses: [{ id: agent!.id, name: "coder-1" }],
@@ -234,12 +226,12 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     });
 
     expect(await setRepositoryEnabled(db, orgId, repo.id, false)).toBe(true);
-    expect((await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)?.enabled).toBe(
-      false,
-    );
+    expect(
+      (await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)?.reviewsEnabled,
+    ).toBe(false);
 
     const disconnected = await disconnectRepository(db, orgId, repo.id);
-    expect(disconnected).toMatchObject({ enabled: false, webhookId: null });
+    expect(disconnected).toMatchObject({ reviewsEnabled: false, webhookId: null });
     expect(disconnected?.disconnectedAt).toBeInstanceOf(Date);
     expect((await listRepositoryOverview(db, orgId)).some((r) => r.id === repo.id)).toBe(false);
     expect(
@@ -259,8 +251,8 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     });
     expect(again).toMatchObject({
       id: repo.id,
-      // Inherits the organization's allowed task types again.
-      enabled: null,
+      // Reviews are on again.
+      reviewsEnabled: true,
       disconnectedAt: null,
       fullPath: "acme/web-renamed",
     });
@@ -367,7 +359,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect((await listRepositoryOverview(db, otherId)).map((r) => r.id)).not.toContain(repo.id);
     expect(await setRepositoryEnabled(db, otherId, repo.id, false)).toBe(false);
     expect(await disconnectRepository(db, otherId, repo.id)).toBeNull();
-    expect((await getRepository(db, repo.id))?.enabled).toBeNull();
+    expect((await getRepository(db, repo.id))?.reviewsEnabled).toBe(true);
 
     // Another organization can't change the repository's depth.
     const settings = {

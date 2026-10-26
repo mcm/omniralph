@@ -11,7 +11,7 @@ import {
   RepositoryTaskTypesInput,
   type RepositoryCodingInput,
 } from "@omniralph/shared";
-import type { RepositoryCoding } from "@/lib/api/repositories";
+import type { RepositoryCoding, RepositoryTaskTypes } from "@/lib/api/repositories";
 import type { ActionResult } from "@/lib/action-result";
 import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/settings-history/sections";
 import { repositoryCoding } from "./detail";
 import { saveRepositorySettings } from "./settings";
+import { refusingCodingWithoutMatch } from "./work-item-match";
 
 /**
  * The saves of Repository › Review settings, Coding and Harnesses, for `/api/ui`'s handlers.
@@ -88,35 +89,38 @@ export async function updateRepositoryReviewSettings(
 }
 
 /**
- * Saves which task types a repository runs: Query (externally triggered queries), Reviews and
- * Coding, each on, off, or `null` to inherit the organization's default. The next trigger,
- * claim or delegation uses the new values.
+ * Saves a repository's switches (`RepositoryTaskTypesInput`): Reviews, Coding and Ask, each on
+ * or off. Turning Coding on needs a work item match (409 otherwise; a repository that already
+ * has Coding on keeps it). Publishes the repository's change; the next trigger, claim or
+ * delegation uses the new values. Answers the saved switches.
  */
 export async function updateRepositoryTaskTypes(
   user: Saver,
   repositoryId: string,
   input: unknown,
-): Promise<ActionResult> {
+): Promise<RepositoryTaskTypes | ActionResult> {
   const parsed = RepositoryTaskTypesInput.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
   const organizationId = user.organization.id;
-  // The review switch is part of the review settings; coding and query of the coding settings.
-  const saved = await withSettingsChanges(
-    getDb(),
-    settingsActor(user),
-    [
-      trackedRepositoryReviews(organizationId, repositoryId),
-      trackedRepositoryCoding(organizationId, repositoryId),
-    ],
-    (tx) => setRepositorySwitches(tx, organizationId, repositoryId, parsed.data),
+  // The reviews switch is part of the review settings; coding and ask of the coding settings.
+  const saved = await refusingCodingWithoutMatch(() =>
+    withSettingsChanges(
+      getDb(),
+      settingsActor(user),
+      [
+        trackedRepositoryReviews(organizationId, repositoryId),
+        trackedRepositoryCoding(organizationId, repositoryId),
+      ],
+      (tx) => setRepositorySwitches(tx, organizationId, repositoryId, parsed.data),
+    ),
   );
-  return saved ? { ok: true } : NOT_CONNECTED;
+  return saved ?? NOT_CONNECTED;
 }
 
 /**
  * Saves a repository's coding policy (`RepositoryCodingInput`, validated by the handler): the
  * coding switch, extra instructions, open PR early, history rewrite, and responding to reviews
- * and CI. Publishes the repository's `repository.coding` change; the next job and decision of
+ * and CI. Turning Coding on needs a work item match (409 otherwise). Publishes the repository's `repository.coding` change; the next job and decision of
  * every run pick it up. Answers the saved policy, or why there's none.
  */
 export async function updateRepositoryCodingSettings(
@@ -128,18 +132,20 @@ export async function updateRepositoryCodingSettings(
   const db = getDb();
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository || repository.disconnectedAt) return NOT_CONNECTED;
-  const saved = await withSettingsChanges(
-    db,
-    settingsActor(user),
-    trackedRepositoryCoding(organizationId, repositoryId),
-    (tx) =>
-      updateRepositoryCoding(tx, repositoryId, {
-        ralphEnabled: input.codingEnabled,
-        codingInstructions: input.codingInstructions,
-        openPullRequestEarly: input.openPullRequestEarly,
-        historyRewrite: input.historyRewrite,
-        respondToReviewsAndCi: input.respondToReviewsAndCi,
-      }),
+  const saved = await refusingCodingWithoutMatch(() =>
+    withSettingsChanges(
+      db,
+      settingsActor(user),
+      trackedRepositoryCoding(organizationId, repositoryId),
+      (tx) =>
+        updateRepositoryCoding(tx, repositoryId, {
+          codingEnabled: input.codingEnabled,
+          codingInstructions: input.codingInstructions,
+          openPullRequestEarly: input.openPullRequestEarly,
+          historyRewrite: input.historyRewrite,
+          respondToReviewsAndCi: input.respondToReviewsAndCi,
+        }),
+    ),
   );
   if (!saved) return NOT_CONNECTED;
   return repositoryCoding(db, saved);

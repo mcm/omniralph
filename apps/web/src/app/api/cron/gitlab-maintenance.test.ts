@@ -199,7 +199,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/gitlab-maintenance", () => {
       provider: "gitlab",
       externalId: "12",
       fullPath: "acme/off",
-      enabled: false,
+      reviewsEnabled: false,
     });
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 

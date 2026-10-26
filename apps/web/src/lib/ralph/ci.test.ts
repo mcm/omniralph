@@ -37,6 +37,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -95,8 +96,8 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
       .update(repositories)
       .set({ requestPlaybookId: "builtin:handle-request" })
       .where(eq(repositories.id, id));
+    await setCodingEnabled(db, id);
     return updateRepositoryCoding(db, id, {
-      ralphEnabled: true,
       respondToReviewsAndCi: true,
       ...policy,
     });

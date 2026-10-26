@@ -15,7 +15,6 @@ import {
   repositories,
   claimJob,
   updateLane,
-  updateRepositoryCoding,
   upsertScmConnection,
   webhookDeliveries,
   type Database,
@@ -37,6 +36,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PlaybookCoding } from "@omniralph/tasks";
@@ -98,7 +98,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       .set({ storyPlaybookId: "builtin:implement-story" })
       .where(eq(repositories.id, repoId));
     if (coding) await bindCodingPlaybook(db, orgId, repoId, "story", coding);
-    return updateRepositoryCoding(db, repoId, { ralphEnabled: true });
+    return setCodingEnabled(db, repoId);
   };
 
   beforeAll(async () => {

@@ -12,8 +12,8 @@ run's pull request through the App (Pull requests: write), and the run's branch 
 agent with the brokered write token. The App also lets the control panel look after those PRs:
 Omniralph's own review findings and `@omniralph fix` requests become ralph requests, failed
 workflow runs are read (Actions: read) and handed to the run, and a merge starts the cleanup of the
-branch worktree. The repository must be connected here and have coding on under **Repository ›
-Settings › Task types**. cyralph's separate `/github-webhook` webhook and its `gh` login aren't needed
+branch worktree. The repository must be connected here and have its Coding switch on (it needs a
+work item match). cyralph's separate `/github-webhook` webhook and its `gh` login aren't needed
 ([cutover-from-cyralph.md](cutover-from-cyralph.md)).
 
 Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, see

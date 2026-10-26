@@ -172,7 +172,7 @@ export async function setChatPlaybookDefaults(
 }
 
 /**
- * The task types the organization's harnesses and repositories allow unless they set their own
+ * The task types the organization's harnesses accept unless they set their own
  * (a subset of `TASK_TYPES`, in that order). Absent: `DEFAULT_ALLOWED_TASK_TYPES`.
  */
 export const ALLOWED_TASK_TYPES_KEY = "tasks.allowedTypes";

@@ -442,7 +442,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           provider: "github",
           externalId: `runs-${fullPath}`,
           fullPath,
-          enabled: true,
+          reviewsEnabled: true,
         });
       repoId = (await repo("runs/web")).id;
       otherRepoId = (await repo("runs/api")).id;

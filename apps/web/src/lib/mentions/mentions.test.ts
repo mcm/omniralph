@@ -19,7 +19,6 @@ import {
   reviews,
   setAllowedTaskTypeDefaults,
   updateLane,
-  updateRepositoryCoding,
   upsertScmConnection,
   users,
   type Database,
@@ -39,6 +38,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -546,12 +546,12 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
     });
 
     it("dismisses a false positive without rule generation when query tasks are off", async () => {
-      const setQuery = (queryEnabled: boolean | null) =>
-        db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+      const setAsk = (askEnabled: boolean) =>
+        db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repoId));
       const learnJobs = () => db.select().from(jobs).where(eq(jobs.type, "review.learn-rule"));
       const before = (await learnJobs()).length;
       try {
-        await setQuery(false);
+        await setAsk(false);
         const { number, finding, commentId } = await reviewedPr();
         await threadComment(number, commentId, "@omniralph dismiss");
         const [row] = await db.select().from(findings).where(eq(findings.id, finding.id));
@@ -561,14 +561,14 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         expect(state.scm.calls.replyToComment[0]!.body).toContain("dismissed this finding");
         expect(state.scm.calls.replyToComment[0]!.body).not.toContain("learn");
 
-        // Inheriting an organization default without query tasks.
-        await setQuery(null);
+        // The organization's task types don't turn the repository's Ask switch off.
+        await setAsk(true);
         await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
-        const inheriting = await reviewedPr();
-        await threadComment(inheriting.number, inheriting.commentId, "@omniralph dismiss");
-        expect(await learnJobs()).toHaveLength(before);
+        const on = await reviewedPr();
+        await threadComment(on.number, on.commentId, "@omniralph dismiss");
+        expect(await learnJobs()).toHaveLength(before + 1);
       } finally {
-        await setQuery(null);
+        await setAsk(true);
         await setAllowedTaskTypeDefaults(db, orgId, null, null);
       }
     });
@@ -661,31 +661,24 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
     });
 
     it("skips questions without replying when the repository's query tasks are off", async () => {
-      const setQuery = (queryEnabled: boolean | null) =>
-        db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repoId));
+      const setAsk = (askEnabled: boolean) =>
+        db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repoId));
       const before = (await replyJobs()).length;
       try {
-        await setQuery(false);
+        await setAsk(false);
         const off = await reviewedPr();
         await threadComment(off.number, off.commentId, "Is this reachable, @omniralph?");
         expect(await replyJobs()).toHaveLength(before);
         expect(state.scm.calls.replyToComment).toEqual([]);
 
-        // Inheriting an organization default without query tasks.
-        await setQuery(null);
+        // Ask on answers, whatever the organization's task types.
+        await setAsk(true);
         await setAllowedTaskTypeDefaults(db, orgId, ["review", "coding"], null);
-        const inheriting = await reviewedPr();
-        await threadComment(inheriting.number, inheriting.commentId, "Why, @omniralph?");
-        expect(await replyJobs()).toHaveLength(before);
-        expect(state.scm.calls.replyToComment).toEqual([]);
-
-        // An explicit switch wins over the organization default.
-        await setQuery(true);
         const on = await reviewedPr();
         await threadComment(on.number, on.commentId, "And now, @omniralph?");
         expect(await replyJobs()).toHaveLength(before + 1);
       } finally {
-        await setQuery(null);
+        await setAsk(true);
         await setAllowedTaskTypeDefaults(db, orgId, null, null);
       }
     });
@@ -815,9 +808,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
      * (so requests wait for it, and nothing else runs).
      */
     async function ralphPr(number: number) {
-      await updateRepositoryCoding(db, repoId, {
-        ralphEnabled: true,
-      });
+      await setCodingEnabled(db, repoId);
       runSeq += 1;
       const created = await createRun(db, {
         organizationId: orgId,

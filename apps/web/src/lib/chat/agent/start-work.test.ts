@@ -23,7 +23,6 @@ import {
   claimJob,
   repositories,
   setChatPlaybookDefaults,
-  updateRepositoryCoding,
   upsertChatChannelPlaybookSetting,
   upsertScmConnection,
   type ChatConnection,
@@ -42,6 +41,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { MockLanguageModelV2 } from "ai/test";
 import type { Adapter, Logger, Message, Thread } from "chat";
@@ -294,7 +294,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       },
       key,
     ))!;
-    for (const [externalId, fullPath, ralphEnabled] of [
+    for (const [externalId, fullPath, codingEnabled] of [
       ["1", "acme/app", true],
       ["2", "acme/web", true],
       ["3", "acme/docs", false],
@@ -306,9 +306,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
         fullPath,
       });
       if (fullPath === "acme/app") appRepoId = repository.id;
-      await updateRepositoryCoding(db, repository.id, {
-        ralphEnabled,
-      });
+      await setCodingEnabled(db, repository.id, codingEnabled);
     }
     const saved = await saveChatConnection(
       db,

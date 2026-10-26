@@ -54,10 +54,7 @@ function view(tab: RepositorySettingsTab, pinnedHarnessIds: string[] = []) {
         { ...HARNESS, id: "h1", name: "build-01" },
         { ...HARNESS, id: "h2", name: "build-02", online: false },
       ]}
-      taskTypes={{
-        overrides: { query: null, review: null, coding: true },
-        inherited: { query: true, review: true, coding: true },
-      }}
+      taskTypes={{ reviews: true, coding: true, ask: true }}
     />,
     { wrapper: queryWrapper(createTestQueryClient()) },
   );
@@ -67,7 +64,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   seen = mockFetch({
     "PUT /api/ui/repositories/repo-1/settings": { ok: true },
-    "PUT /api/ui/repositories/repo-1/task-types": { ok: true },
   });
 });
 

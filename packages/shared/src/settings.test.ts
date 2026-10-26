@@ -136,19 +136,24 @@ describe("RepositorySettingsInput", () => {
 });
 
 describe("RepositoryTaskTypesInput", () => {
-  it("accepts on, off and null (the organization's default) for each task type", () => {
-    for (const value of [true, false, null]) {
-      const input = { query: value, review: value, coding: value };
+  it("accepts on and off for each switch", () => {
+    for (const value of [true, false]) {
+      const input = { reviews: value, coding: value, ask: value };
       expect(RepositoryTaskTypesInput.parse(input)).toEqual(input);
     }
   });
 
-  it("rejects a missing or non-boolean switch", () => {
-    const result = RepositoryTaskTypesInput.safeParse({ query: "on", review: null });
+  it("rejects a missing, null (inherit) or non-boolean switch, and the old keys", () => {
+    const result = RepositoryTaskTypesInput.safeParse({ reviews: "on", ask: null });
     expect(fieldErrors(result.error!)).toEqual({
-      query: "Choose the organization's default, on or off.",
-      coding: "Choose the organization's default, on or off.",
+      reviews: "Choose on or off.",
+      coding: "Choose on or off.",
+      ask: "Choose on or off.",
     });
+    expect(
+      RepositoryTaskTypesInput.safeParse({ reviews: true, coding: false, ask: true, query: true })
+        .success,
+    ).toBe(false);
   });
 });
 

@@ -84,7 +84,9 @@ describe("stated defaults", () => {
   it("match the repository column defaults", () => {
     expect(repositories.reviewDepth.default).toBe(DEFAULT_REVIEW_DEPTH);
     expect(repositories.triggers.default).toEqual(REPOSITORY_SETTING_DEFAULTS.triggers);
-    // Null inherits the organization's allowed task types.
-    expect(repositories.ralphEnabled.default).toBeUndefined();
+    // Reviews and Ask start on, Coding off (it needs a work item match).
+    expect(repositories.reviewsEnabled.default).toBe(true);
+    expect(repositories.codingEnabled.default).toBe(false);
+    expect(repositories.askEnabled.default).toBe(true);
   });
 });

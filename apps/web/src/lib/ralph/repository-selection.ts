@@ -18,7 +18,6 @@ import {
   type RalphRun,
   type RalphTransaction,
   type Repository,
-  type RepositoryWithSwitches,
   type ScmProvider,
   isLinearRun,
 } from "@omniralph/db";
@@ -112,7 +111,7 @@ async function selectionCandidates(
   const enabled = await listRalphRepositories(deps.db, run.organizationId);
   const kept = offered
     .map((id) => enabled.find((r) => r.id === id))
-    .filter((r): r is RepositoryWithSwitches => !!r);
+    .filter((r): r is Repository => !!r);
   return kept.length > 0 ? kept : enabled;
 }
 

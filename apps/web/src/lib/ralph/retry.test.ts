@@ -17,7 +17,6 @@ import {
   organizations,
   ralphRuns,
   updateLane,
-  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
@@ -29,6 +28,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
@@ -108,9 +108,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
         fullPath: "acme/api",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     await setRoutingRules(db, orgId, [repoId, teamIs("ENG")]);
   }, 180_000);
 

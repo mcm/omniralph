@@ -321,22 +321,21 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
         });
       }
       let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.enabled, r.webhookId !== null])).toEqual([
-        // Reviews inherit the organization's default (on).
-        ["acme/api", null, true],
-        ["acme/sub/web", null, true],
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.webhookId !== null])).toEqual([
+        ["acme/api", true, true],
+        ["acme/sub/web", true, true],
       ]);
 
       // Deselecting disables; reselecting re-enables without another webhook.
       expect(await saveGitLabProjects(connectionId, [102])).toEqual({ ok: true });
       repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
         ["acme/api", false],
-        ["acme/sub/web", null],
+        ["acme/sub/web", true],
       ]);
       expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({ ok: true });
       repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => r.enabled)).toEqual([null, null]);
+      expect(repos.map((r) => r.reviewsEnabled)).toEqual([true, true]);
       expect(hookRequests).toHaveLength(2);
       expect(deletedHooks).toEqual([]);
       // acme/api was re-enabled with its still-valid cached clone token.
@@ -367,8 +366,8 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(result.ok && result.warning).not.toContain("acme/api:");
       expect(hookRequests.map((r) => r.projectId)).toEqual(["101"]);
       const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.enabled, r.disconnectedAt !== null])).toEqual([
-        ["acme/api", null, false],
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.disconnectedAt !== null])).toEqual([
+        ["acme/api", true, false],
         ["acme/sub/web", false, true],
       ]);
     });
@@ -397,7 +396,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
         ),
       });
       const [repo] = await state.db.select().from(repositories);
-      expect(repo).toMatchObject({ enabled: false, disconnectedAt: null });
+      expect(repo).toMatchObject({ reviewsEnabled: false, disconnectedAt: null });
       expect(hookRequests).toHaveLength(1);
       expect(deletedHooks).toEqual([]);
     });
@@ -413,9 +412,9 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
 
       expect(await saveGitLabProjects(connectionId, [])).toEqual({ ok: true });
       const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
         ["acme/api", false],
-        ["acme/sub/web", null],
+        ["acme/sub/web", true],
       ]);
     });
 
@@ -427,7 +426,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
 
       expect(await saveGitLabProjects(connectionId, [101])).toEqual({ ok: true });
       const [reconnected] = await state.db.select().from(repositories);
-      expect(reconnected).toMatchObject({ enabled: null, disconnectedAt: null });
+      expect(reconnected).toMatchObject({ reviewsEnabled: true, disconnectedAt: null });
       expect(reconnected!.webhookId).not.toBe(repo!.webhookId);
       expect(hookRequests).toHaveLength(2);
     });
@@ -482,7 +481,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
     expect(deletedHooks).toEqual([`101/${repo!.webhookId}`]);
     const [after] = await state.db.select().from(repositories).where(eq(repositories.id, repo!.id));
-    expect(after).toMatchObject({ enabled: false, webhookId: null });
+    expect(after).toMatchObject({ reviewsEnabled: false, webhookId: null });
     expect(after!.disconnectedAt).not.toBeNull();
     expect(await state.db.select().from(harnessRepoPins)).toEqual([]);
     expect(
@@ -572,24 +571,24 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
 
     expect(await saveGitHubRepositories(connection!.id, [1, 2, 999])).toEqual({ ok: true });
     let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-    expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
-      ["acme/one", null],
-      ["acme/two", null],
+    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
+      ["acme/one", true],
+      ["acme/two", true],
     ]);
 
     expect(await saveGitHubRepositories(connection!.id, [2])).toEqual({ ok: true });
     repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-    expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
       ["acme/one", false],
-      ["acme/two", null],
+      ["acme/two", true],
     ]);
 
-    // When the organization's default leaves reviews off, ticking turns them on explicitly.
+    // Ticking turns reviews on, whatever the organization's task types.
     try {
       await setAllowedTaskTypeDefaults(state.db, orgId, ["query", "coding"], null);
       expect(await saveGitHubRepositories(connection!.id, [1, 2])).toEqual({ ok: true });
       repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.enabled])).toEqual([
+      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
         ["acme/one", true],
         ["acme/two", true],
       ]);
@@ -624,7 +623,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     });
     expect(deletedHooks).toEqual([]);
     const [after] = await state.db.select().from(repositories);
-    expect(after).toMatchObject({ enabled: null, disconnectedAt: null });
+    expect(after).toMatchObject({ reviewsEnabled: true, disconnectedAt: null });
   });
   describe("recreating a GitLab webhook", () => {
     /** Connects acme/api and acme/sub/web and records webhook problems for both. */
@@ -678,7 +677,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));
       expect(after!.webhookId).not.toBe(api.webhookId);
       expect(after!.webhookId).toMatch(/^\d+$/);
-      expect(after).toMatchObject({ enabled: null, disconnectedAt: null });
+      expect(after).toMatchObject({ reviewsEnabled: true, disconnectedAt: null });
       expect((await health(connectionId))!.problems).toEqual([
         { code: "rotation_unsupported", message: "Can't rotate." },
         { code: "webhook_events_outdated", message: "acme/sub/web", repositoryId: web.id },

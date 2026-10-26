@@ -3,9 +3,9 @@
  * team, and optionally a project or "no project" and labels). Routing evaluates them in
  * `apps/web/src/lib/routing`; this module only stores them.
  */
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { recordRepositorySettingsChange } from "./repositories.js";
+import { recordRepositorySettingsChange, WorkItemMatchRequiredError } from "./repositories.js";
 import { repositories, workItemMatches } from "./schema.js";
 
 export type WorkItemMatch = typeof workItemMatches.$inferSelect;
@@ -121,22 +121,41 @@ export async function saveWorkItemMatch(
   return saved!;
 }
 
-/** Clears the repository's match (publishing its `repository.coding` change); whether it had one. */
+/**
+ * Clears the repository's match (publishing its `repository.coding` change); whether it had one.
+ * A repository whose Coding is on keeps its match: that throws `WorkItemMatchRequiredError`.
+ */
 export async function deleteWorkItemMatch(
-  db: Pick<Database, "delete">,
+  db: Pick<Database, "delete" | "select">,
   organizationId: string,
   repositoryId: string,
 ): Promise<boolean> {
+  const ofRepository = and(
+    eq(workItemMatches.organizationId, organizationId),
+    eq(workItemMatches.repositoryId, repositoryId),
+  );
   const deleted = await db
     .delete(workItemMatches)
     .where(
       and(
-        eq(workItemMatches.organizationId, organizationId),
-        eq(workItemMatches.repositoryId, repositoryId),
+        ofRepository,
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(repositories)
+            .where(and(eq(repositories.id, repositoryId), eq(repositories.codingEnabled, true))),
+        ),
       ),
     )
     .returning({ repositoryId: workItemMatches.repositoryId });
-  if (deleted.length === 0) return false;
+  if (deleted.length === 0) {
+    const [kept] = await db
+      .select({ repositoryId: workItemMatches.repositoryId })
+      .from(workItemMatches)
+      .where(ofRepository);
+    if (kept) throw new WorkItemMatchRequiredError("remove_match", repositoryId);
+    return false;
+  }
   recordRepositorySettingsChange(db, { id: repositoryId, organizationId }, "repository.coding");
   return true;
 }

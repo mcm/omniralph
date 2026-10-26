@@ -33,7 +33,6 @@ import {
   saveChatConnection,
   saveIntegration,
   updateLane,
-  updateRepositoryCoding,
   updateRun,
   updateStory,
   upsertScmConnection,
@@ -48,6 +47,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -244,9 +244,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         fullPath: "acme/web",
       })
     ).id;
-    await updateRepositoryCoding(db, repoA, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoA);
     [{ id: harnessId }] = (await db
       .insert(harnesses)
       .values({ organizationId: orgId, name: "agent-a", acceptedTaskTypes: ["coding"] })
@@ -2033,9 +2031,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         fullPath: "other/api",
       })
     ).id;
-    await updateRepositoryCoding(db, otherRepo, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, otherRepo);
     await saveIntegration(db, {
       organizationId: other!.id,
       provider: "linear",

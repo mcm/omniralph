@@ -12,7 +12,6 @@ import {
   type RalphRun,
   type Repository,
   type ScmConnection,
-  resolveRepositorySwitches,
 } from "@omniralph/db";
 import {
   buildPullRequestCommentRequest,
@@ -130,8 +129,6 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     }
   };
 
-  const codingEnabled = async () => (await resolveRepositorySwitches(db, repository)).coding;
-
   const refuse = async (what: string): Promise<BotCommandOutcome> => {
     await respond(
       `Sorry @${author}, only people with write access to this repository can ${what}.`,
@@ -227,7 +224,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
   switch (command.kind) {
     case "fix": {
       const found = await ralphLane();
-      if (!found || !(await codingEnabled())) {
+      if (!found || !repository.codingEnabled) {
         await respond(
           `Sorry @${author}, ${inlineCode(`@${handle} fix`)} only works on ${term}s that Omniralph opened.`,
         );
@@ -316,7 +313,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       const found = await inThread();
       if (!found) {
         // Outside finding threads on a ralph PR/MR: a request for ralph.
-        const ralph = (await codingEnabled()) ? await ralphLane() : null;
+        const ralph = repository.codingEnabled ? await ralphLane() : null;
         if (ralph) {
           if (!(await adapter.hasWriteAccess(repo, author))) {
             return refuse("ask for changes");
@@ -331,7 +328,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       }
       // In a review thread of a ralph PR/MR followed in a Linear agent session:
       // routed to that session with the review's context, like the review itself.
-      const ralph = (await codingEnabled()) ? await ralphLane() : null;
+      const ralph = repository.codingEnabled ? await ralphLane() : null;
       if (ralph && isLinearRun(ralph.run) && ralph.run.status !== "failed") {
         return requestRalph(ralph, command.text, found);
       }

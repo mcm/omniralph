@@ -11,7 +11,6 @@ import {
   organizations,
   ralphRuns,
   saveChatConnection,
-  updateRepositoryCoding,
   upsertScmConnection,
   type ChatConnection,
   type ChatThread,
@@ -21,6 +20,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import type { Adapter } from "chat";
 import { eq } from "drizzle-orm";
@@ -89,9 +89,7 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
         fullPath: "acme/app",
       })
     ).id;
-    await updateRepositoryCoding(db, repoId, {
-      ralphEnabled: true,
-    });
+    await setCodingEnabled(db, repoId);
     const saved = await saveChatConnection(
       db,
       {

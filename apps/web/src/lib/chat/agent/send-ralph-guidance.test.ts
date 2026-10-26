@@ -160,7 +160,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
     });
     await db
       .update(repositories)
-      .set({ ralphEnabled: true })
+      .set({ codingEnabled: true })
       .where(eq(repositories.id, repository.id));
     return { id: org!.id, repositoryId: repository.id };
   }

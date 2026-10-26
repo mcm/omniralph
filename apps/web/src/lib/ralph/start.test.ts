@@ -9,7 +9,6 @@ import {
   closeDb,
   createDb,
   getMainLane,
-  getRepository,
   getRun,
   getRunBySession,
   insertJob,
@@ -30,7 +29,6 @@ import {
   type Database,
   type RalphLaneUpdate,
   type RalphRun,
-  type RepositoryCodingUpdate,
   organizations,
   replaceRoutingRules,
 } from "@omniralph/db";
@@ -40,6 +38,7 @@ import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
+  setCodingEnabled,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,11 +124,6 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     adapterFor: () => fakeAdapter,
   });
 
-  const routing = (overrides: Partial<RepositoryCodingUpdate> = {}): RepositoryCodingUpdate => ({
-    ralphEnabled: true,
-    ...overrides,
-  });
-
   /** Replaces the organization's routing rules. */
   const setRules = async (...list: Array<[string, RoutingQuery]>) => {
     const saved = await replaceRoutingRules(
@@ -213,8 +207,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await updateRepositoryCoding(db, repoId, routing());
-    await updateRepositoryCoding(db, otherRepoId, routing());
+    await setCodingEnabled(db, repoId);
+    await setCodingEnabled(db, otherRepoId);
     await setTrackerLabels(db, orgId, null, null);
     await setRules([otherRepoId, labels("frontend")], [repoId, team("ENG")]);
     linear = new FakeLinearGateway();
@@ -471,8 +465,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     await setRules();
-    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: false }));
-    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, repoId, { codingEnabled: false });
+    await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
     const elsewhere = linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
@@ -486,7 +480,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("doesn't build an issue whose rule routes to a repository with coding off", async () => {
-    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
+    await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
     const issue = linear.add({
       identifier: "ENG-55",
       title: "Docs",
@@ -511,32 +505,17 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     expect(await db.select().from(ralphRuns)).toEqual([]);
   });
 
-  it("routes to a repository that inherits coding from the organization, unless it overrides", async () => {
-    // No organization settings: a repository that never set its coding switch is routable.
-    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: null }));
-    expect((await getRepository(db, repoId))?.ralphEnabled).toBeNull();
-    const inherited = created(linear.add({ identifier: "ENG-50", title: "Inherit" }).id);
-    expect(await startRun(inherited, deps())).toMatchObject({ status: "started" });
-    expect(await getRunBySession(db, inherited.sessionId)).toMatchObject({ repositoryId: repoId });
-    await db.delete(jobs);
-    await db.delete(ralphRuns);
-
-    // An explicit false blocks coding although the organization allows it.
-    await updateRepositoryCoding(db, otherRepoId, routing({ ralphEnabled: false }));
-    await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: false }));
-    // Its rule now makes the issue manual.
+  it("routes by the repository's own Coding switch, whatever the organization's task types", async () => {
+    // Coding off blocks it: its rule makes the issue manual.
+    await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
+    await updateRepositoryCoding(db, repoId, { codingEnabled: false });
     const blocked = created(linear.add({ identifier: "ENG-51", title: "Blocked" }).id);
     expect(await startRun(blocked, deps())).toEqual({ status: "manual", repository: "acme/api" });
 
     try {
+      // Coding on builds it although the organization's task types leave coding out.
       await setAllowedTaskTypeDefaults(db, orgId, ["query", "review"], null);
-      // Inheriting a default without coding: not routable.
-      await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: null }));
-      const off = created(linear.add({ identifier: "ENG-52", title: "Off" }).id);
-      expect(await startRun(off, deps())).toEqual({ status: "manual", repository: "acme/api" });
-
-      // An explicit true allows it although the organization doesn't.
-      await updateRepositoryCoding(db, repoId, routing({ ralphEnabled: true }));
+      await setCodingEnabled(db, repoId);
       const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
       expect(await startRun(on, deps())).toMatchObject({ status: "started" });
       expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
@@ -1275,7 +1254,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
           fullPath: "other/ops",
         })
       ).id;
-      await updateRepositoryCoding(db, foreignRepoId, routing());
+      await setCodingEnabled(db, foreignRepoId);
       await replaceRoutingRules(db, other!.id, [
         { repositoryId: foreignRepoId, query: team("OPS") },
       ]);

@@ -612,7 +612,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([settingsEvent("repository.coding", repoId)]);
       expect(
         await published(() =>
-          setRepositorySwitches(db, orgId, repoId, { review: true, coding: false }),
+          setRepositorySwitches(db, orgId, repoId, { reviews: true, coding: false }),
         ),
       ).toEqual([
         { channel: orgChannel, v: 1, resource: "repository", ids: [repoId], organizationId: orgId },

@@ -1376,15 +1376,15 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     }
 
     it("starts the correlation (run.invoked) even when the repository's query tasks are off", async () => {
-      const setQuery = (queryEnabled: boolean | null) =>
-        db.update(repositories).set({ queryEnabled }).where(eq(repositories.id, repositoryId));
+      const setAsk = (askEnabled: boolean) =>
+        db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repositoryId));
       try {
-        await setQuery(false);
+        await setAsk(false);
         const { correlationJob } = await correlatingRun();
         expect(correlationJob).toMatchObject({ taskType: "query", status: "queued" });
         expect(RunSpecJobPayload.parse(correlationJob.payload).trigger.kind).toBe("run.invoked");
       } finally {
-        await setQuery(null);
+        await setAsk(true);
       }
     });
 

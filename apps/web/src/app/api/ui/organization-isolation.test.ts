@@ -1297,7 +1297,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
       expect(coding).toMatchObject({
         status: 200,
-        body: { codingEnabled: true, roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 } },
+        body: { codingEnabled: false, roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 } },
       });
       for (const marker of markers(other))
         expect(JSON.stringify(coding.body)).not.toContain(marker);
@@ -1332,7 +1332,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       call(repositoryTaskTypes.PUT, {
         method: "PUT",
         params: { id },
-        body: { query: false, review: false, coding: false },
+        body: { reviews: false, coding: false, ask: false },
       }),
       call(repositoryCoding.PUT, {
         method: "PUT",
@@ -1355,9 +1355,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     for (const response of await Promise.all(saves(b.repoId))) expect(response.status).toBe(403);
     expect(await getRepository(db, b.repoId)).toMatchObject({
       reviewDepth: "standard",
-      enabled: null,
-      queryEnabled: null,
-      ralphEnabled: null,
+      reviewsEnabled: true,
+      askEnabled: true,
+      codingEnabled: false,
       storyPlaybookId: "builtin:implement-story",
     });
   });
@@ -1474,7 +1474,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     for (const response of refused) expect(response.status).toBe(400);
     expect(await getRepository(db, b.repoId)).toMatchObject({
       disconnectedAt: null,
-      enabled: null,
+      reviewsEnabled: true,
     });
     expect(
       await db.select().from(scmConnections).where(eq(scmConnections.id, b.connectionId)),

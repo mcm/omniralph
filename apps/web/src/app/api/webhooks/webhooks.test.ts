@@ -241,7 +241,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
     for (const id of [githubRepoId, gitlabRepoId]) {
       await db
         .update(repositories)
-        .set({ enabled: null, triggers: { onOpen: true, onPush: true, drafts: false } })
+        .set({ reviewsEnabled: true, triggers: { onOpen: true, onPush: true, drafts: false } })
         .where(eq(repositories.id, id));
     }
   });
@@ -350,7 +350,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       });
       await db
         .update(repositories)
-        .set({ ralphEnabled: false })
+        .set({ codingEnabled: false })
         .where(eq(repositories.id, githubRepoId));
       const jobCount = async () => (await db.select().from(jobs)).length;
       const before = await jobCount();
@@ -383,24 +383,11 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       expect(await prJobs(githubRepoId, number)).toHaveLength(1);
     });
 
-    it("reviews a repository that inherits, unless the organization turns reviews off", async () => {
-      // No organization settings: a new repository (reviews switch null) gets reviews.
-      expect((await getRepository(db, githubRepoId))?.enabled).toBeNull();
-      const inherited = await github(
-        githubRequest(githubPayload("opened", { number: ++prCounter })),
-      );
-      expect(await inherited.json()).toMatchObject({ status: "enqueued" });
-
+    it("reviews by the repository's own switch, whatever the organization's task types", async () => {
+      // A new repository has reviews on.
+      expect((await getRepository(db, githubRepoId))?.reviewsEnabled).toBe(true);
       try {
         await setAllowedTaskTypeDefaults(db, orgId, ["query", "coding"], null);
-        const off = await github(githubRequest(githubPayload("opened", { number: ++prCounter })));
-        expect(await off.json()).toEqual({ status: "ignored", reason: "repository_disabled" });
-
-        // An explicit true wins over the organization's default.
-        await db
-          .update(repositories)
-          .set({ enabled: true })
-          .where(eq(repositories.id, githubRepoId));
         const number = ++prCounter;
         const on = await github(githubRequest(githubPayload("opened", { number })));
         expect(await on.json()).toMatchObject({ status: "enqueued" });
@@ -414,7 +401,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       const number = ++prCounter;
       await db
         .update(repositories)
-        .set({ enabled: false })
+        .set({ reviewsEnabled: false })
         .where(eq(repositories.id, githubRepoId));
       const disabled = await github(githubRequest(githubPayload("opened", { number })));
       expect(disabled.status).toBe(200);
@@ -630,7 +617,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       });
       await db
         .update(repositories)
-        .set({ ralphEnabled: false })
+        .set({ codingEnabled: false })
         .where(eq(repositories.id, gitlabRepoId));
       const event = "Pipeline Hook";
       expect(
@@ -661,7 +648,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
 
       await db
         .update(repositories)
-        .set({ enabled: false })
+        .set({ reviewsEnabled: false })
         .where(eq(repositories.id, gitlabRepoId));
       const disabled = await gitlab(gitlabRequest(gitlabPayload("open", { iid })));
       expect(disabled.status).toBe(200);

@@ -1,18 +1,20 @@
 import "server-only";
 import {
-  getAllowedTaskTypeDefaults,
   getRepositoryWithConnection,
   getWorkItemMatch,
   listHarnessOverview,
   listRepositoryPinnedHarnessIds,
   listRoutingRules,
-  repositorySwitchOverrides,
-  resolveRepositorySwitches,
+  repositorySwitches,
   type Database,
   type Repository,
 } from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
-import type { RepositoryCoding, RepositoryDetail } from "@/lib/api/repositories";
+import type {
+  RepositoryCoding,
+  RepositoryDetail,
+  RepositoryTaskTypes,
+} from "@/lib/api/repositories";
 import { getDb } from "@/lib/db";
 import { organizationHarnessVersion } from "@/lib/harnesses/desired-version";
 import { withLastSeen } from "@/lib/harnesses/last-seen";
@@ -41,12 +43,11 @@ export async function loadRepositoryDetail(
 ): Promise<RepositoryDetail> {
   const db = getDb();
   const { repository, connection } = await connectedRepository(organizationId, id);
-  const [harnesses, organizationVersion, pinnedHarnessIds, allowedTaskTypes, workItemMatch, rules] =
+  const [harnesses, organizationVersion, pinnedHarnessIds, workItemMatch, rules] =
     await Promise.all([
       listHarnessOverview(db, organizationId).then(withLastSeen),
       organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
       listRepositoryPinnedHarnessIds(db, id),
-      getAllowedTaskTypeDefaults(db, organizationId),
       getWorkItemMatch(db, organizationId, id),
       listRoutingRules(db, organizationId),
     ]);
@@ -81,14 +82,7 @@ export async function loadRepositoryDetail(
         acceptedTaskTypes: row.acceptedTaskTypes,
       };
     }),
-    taskTypes: {
-      overrides: repositorySwitchOverrides(repository),
-      inherited: {
-        query: allowedTaskTypes.includes("query"),
-        review: allowedTaskTypes.includes("review"),
-        coding: allowedTaskTypes.includes("coding"),
-      },
-    },
+    taskTypes: repositorySwitches(repository),
     workItemMatch: workItemMatch ? workItemMatchRow(workItemMatch) : null,
     routingRules: rules.flatMap((rule, index) =>
       rule.repositoryId === id
@@ -103,18 +97,27 @@ export async function repositoryCoding(
   db: Database,
   repository: Repository,
 ): Promise<RepositoryCoding> {
-  const [switches, settings] = await Promise.all([
-    resolveRepositorySwitches(db, repository),
-    storyCodingSettings(repository, organizationPlaybooks(db, repository.organizationId)),
-  ]);
+  const settings = await storyCodingSettings(
+    repository,
+    organizationPlaybooks(db, repository.organizationId),
+  );
   return {
-    codingEnabled: switches.coding,
+    codingEnabled: repository.codingEnabled,
     codingInstructions: repository.codingInstructions,
     openPullRequestEarly: repository.openPullRequestEarly,
     historyRewrite: repository.historyRewrite,
     respondToReviewsAndCi: repository.respondToReviewsAndCi,
     roundLimits: { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds },
   };
+}
+
+/** The organization's connected repository's switches (`repositoryTaskTypesSchema`). */
+export async function loadRepositoryTaskTypes(
+  organizationId: string,
+  id: string,
+): Promise<RepositoryTaskTypes> {
+  const { repository } = await connectedRepository(organizationId, id);
+  return repositorySwitches(repository);
 }
 
 /** The organization's connected repository's coding policy (`repositoryCodingSchema`). */

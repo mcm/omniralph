@@ -5,6 +5,7 @@ import {
   getRepositoryWithConnection,
   listOtherWorkItemMatches,
   saveWorkItemMatch,
+  WorkItemMatchRequiredError,
   type Database,
   type WorkItemMatch,
 } from "@omniralph/db";
@@ -16,6 +17,26 @@ import type {
   WorkItemMatchWarning,
 } from "@/lib/api/work-item-matches";
 import { describeMatch, matchesConflict } from "@/lib/routing/match";
+
+/** Answered (409) when Coding is turned on for a repository without a work item match. */
+export const ADD_WORK_ITEM_MATCH_FIRST = "Add a work item match before turning on Coding.";
+/** Answered (409) when the match of a repository whose Coding is on is cleared. */
+export const TURN_OFF_CODING_FIRST = "Turn off Coding before removing the work item match.";
+
+/**
+ * Runs `save`, answering 409 when it would leave the repository with Coding on and no work item
+ * match (`WorkItemMatchRequiredError`): nothing is saved.
+ */
+export async function refusingCodingWithoutMatch<T>(save: () => Promise<T>): Promise<T> {
+  try {
+    return await save();
+  } catch (error) {
+    if (!(error instanceof WorkItemMatchRequiredError)) throw error;
+    throw error.action === "turn_on_coding"
+      ? new ApiRouteError(409, ADD_WORK_ITEM_MATCH_FIRST, "work_item_match_required")
+      : new ApiRouteError(409, TURN_OFF_CODING_FIRST, "coding_enabled");
+  }
+}
 
 /** Answered when the match's tracker isn't connected. */
 export const TRACKER_NOT_CONNECTED = "Connect Linear in Integrations to match work items.";
@@ -38,7 +59,7 @@ export const conflictMessage = (fullPath: string, match: WorkItemMatch) =>
 
 /**
  * Saves (or, with `match` null, clears) the organization's connected repository's work item
- * match. Saving needs its tracker connected; the answer warns about every other repository
+ * match. Clearing needs its Coding off (409 otherwise). Saving needs its tracker connected; the answer warns about every other repository
  * whose match overlaps it (`matchesConflict`).
  */
 export async function saveRepositoryWorkItemMatch(
@@ -55,7 +76,7 @@ export async function saveRepositoryWorkItemMatch(
   if (!found || found.repository.disconnectedAt) throw ApiRouteError.notFound();
 
   if (match === null) {
-    await deleteWorkItemMatch(db, organizationId, repositoryId);
+    await refusingCodingWithoutMatch(() => deleteWorkItemMatch(db, organizationId, repositoryId));
     return { ok: true, workItemMatch: null, warnings: [] };
   }
 
