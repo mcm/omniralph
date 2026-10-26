@@ -409,3 +409,64 @@ export const runAnswerRequestSchema = z.object({
     .max(ANSWER_FIELD_MAX_LENGTH, "Choose one of the offered answers."),
 });
 export type RunAnswerRequest = z.infer<typeof runAnswerRequestSchema>;
+
+/**
+ * Where a message for an attempt is: waiting for its agent's next heartbeat, delivered into
+ * the live session, kept as guidance (its attempt rejected it, or ended before it was
+ * delivered), or not delivered because the attempt ended (a request).
+ */
+export const RUN_MESSAGE_STATES = ["waiting", "delivered", "guidance", "undelivered"] as const;
+export type RunMessageState = (typeof RUN_MESSAGE_STATES)[number];
+
+/** A request not handled yet, with the repo it is for. */
+export const runSessionRequestSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  author: z.string().nullable(),
+  createdAt: isoDate,
+  repository: repositoryRefSchema.nullable(),
+});
+
+/** A message passed to one of the run's attempts while it worked. */
+export const runSessionMessageSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["guidance", "request"]),
+  text: z.string(),
+  author: z.string().nullable(),
+  /** The attempt it was for, and its label (Design rule 4). */
+  attempt: z.object({ id: z.string(), label: z.string() }),
+  state: z.enum(RUN_MESSAGE_STATES),
+  createdAt: isoDate,
+  /** When it was delivered or settled; null while it waits. */
+  settledAt: isoDate.nullable(),
+});
+
+/**
+ * `GET /api/ui/runs/{id}/session?cursor=` (epics and requests): the pending requests (oldest
+ * first), the messages (newest first, `RUN_SESSION_MESSAGE_LIMIT` a page; `cursor` asks for
+ * the page after `nextCursor`), the guidance (newest first), the stories' recommendations and
+ * the progress log.
+ */
+export const runSessionSchema = z.object({
+  pendingRequests: z.array(runSessionRequestSchema),
+  messages: z.array(runSessionMessageSchema),
+  nextCursor: z.string().nullable(),
+  /** `at`: ISO timestamps stored with the run (not checked as dates). */
+  guidance: z.array(z.object({ text: z.string(), at: z.string() })),
+  recommendations: z.array(
+    z.object({
+      story: z.object({
+        id: z.string(),
+        identifier: z.string(),
+        title: z.string(),
+        url: z.string().nullable(),
+      }),
+      title: z.string(),
+      description: z.string(),
+      at: z.string(),
+    }),
+  ),
+  progressLog: z.string(),
+});
+export type RunSession = z.infer<typeof runSessionSchema>;
+export type RunSessionMessageView = z.infer<typeof runSessionMessageSchema>;

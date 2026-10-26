@@ -1,6 +1,6 @@
 // Run questions and run details for the run components' tests, as `/api/ui` answers them.
 import { TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
-import type { RunDetail, RunQuestion } from "@/lib/api/runs";
+import type { RunDetail, RunQuestion, RunSession } from "@/lib/api/runs";
 import { inboxItem, NOW } from "@/screens/inbox/test-fixtures";
 
 const at = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
@@ -221,3 +221,66 @@ export function reviewRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
     ...overrides,
   });
 }
+
+/** An epic's Session with one entry in every subsection. */
+export function runSession(overrides: Partial<RunSession> = {}): RunSession {
+  return {
+    pendingRequests: [
+      {
+        id: "request-1",
+        text: "Open the merge request when the tests pass",
+        author: "Ada",
+        createdAt: at(-50),
+        repository: { id: "repo-2", provider: "gitlab", fullPath: "acme/web" },
+      },
+    ],
+    messages: [
+      {
+        id: "message-2",
+        kind: "guidance",
+        text: "Use the new billing client",
+        author: "Bo",
+        attempt: { id: "a2", label: "Building TOOL-2" },
+        state: "waiting",
+        createdAt: at(-5),
+        settledAt: null,
+      },
+      {
+        id: "message-1",
+        kind: "guidance",
+        text: "Keep the CSV header",
+        author: null,
+        attempt: { id: "a1", label: "Built TOOL-1" },
+        state: "guidance",
+        createdAt: at(-45),
+        settledAt: at(-40),
+      },
+    ],
+    nextCursor: null,
+    guidance: [{ text: "Keep the CSV header", at: at(-40) }],
+    recommendations: [
+      {
+        story: {
+          id: "1",
+          identifier: "TOOL-1",
+          title: "Story 1",
+          url: "https://linear.app/acme/issue/TOOL-1",
+        },
+        title: "Fix the SDK's retry",
+        description: "It retries POSTs.",
+        at: at(-38),
+      },
+    ],
+    progressLog: "## TOOL-1\n- export built\n",
+    ...overrides,
+  };
+}
+
+/** A Session with nothing in it. */
+export const EMPTY_SESSION: RunSession = runSession({
+  pendingRequests: [],
+  messages: [],
+  guidance: [],
+  recommendations: [],
+  progressLog: "",
+});

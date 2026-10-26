@@ -44,6 +44,7 @@ import {
 } from "@/components/runs/run-detail-overlay";
 import { RunDetails } from "@/components/runs/run-details";
 import { RunProgress } from "@/components/runs/run-progress";
+import { RunSession } from "@/components/runs/run-session";
 import { useRunRetry, useRunStop } from "@/components/runs/use-run-actions";
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
@@ -200,6 +201,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
           />
         ) : null}
         <RunDetails run={run} />
+        <RunSession run={run} />
         <RunActivity run={run} reason={reason} headingLevel={3} />
       </div>
       <ConfirmDialog
@@ -219,7 +221,8 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  * A run of any kind on the Runs screen (Design board Runs): its header badges and toolbar
  * (Design rule 5), its status line, title and, for a waiting, stopped or failed run, why;
  * an open question's form; the progress card with the selected step (`?step=`, else
- * `defaultStep`); the collapsed Details; and the run's Activity. A live query: the run's
+ * `defaultStep`); the collapsed Details; an epic's or request's collapsed Session; and the
+ * run's Activity. A live query: the run's
  * change events refetch it. `menuItems` adds entries to the ⋯ menu, which may open an
  * element over the detail (`useRunDetailOverlay`).
  */

@@ -778,6 +778,18 @@ export {
   type TriageIssueRef,
 } from "./triage-size.js";
 export {
+  getRunSession,
+  listRunSessionMessages,
+  RUN_SESSION_MESSAGE_LIMIT,
+  type RunSessionCursor,
+  type RunSessionFacts,
+  type RunSessionMessage,
+  type RunSessionMessagePage,
+  type RunSessionRecommendation,
+  type RunSessionRepository,
+  type RunSessionRequest,
+} from "./run-session.js";
+export {
   countRunsSince,
   diffSettings,
   listSettingsChanges,
