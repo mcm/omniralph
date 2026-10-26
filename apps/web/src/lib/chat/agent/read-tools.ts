@@ -4,6 +4,7 @@ import {
   getDesiredAgentVersion,
   getAgent,
   getJob,
+  jobRunId,
   getReviewDetail,
   getRunDetail,
   jobStatus,
@@ -30,7 +31,7 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import type { RunAgentRequirements } from "@/lib/agents/claimable";
 import { withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow, jobRow } from "@/lib/agents/rows";
-import { RALPH_RUN_STATUSES, jobHref, truncate } from "@/lib/ralph/display";
+import { RALPH_RUN_STATUSES, truncate } from "@/lib/ralph/display";
 import {
   lastRunActivity,
   pendingGuidanceCount,
@@ -314,6 +315,18 @@ async function openPermissionRequests(db: Database, jobIds: readonly string[]) {
   }));
 }
 
+/** A job's page: the run it is an attempt of, on Runs; null for system work (no run). */
+function jobUrl(appUrl: string, runId: string | null): string | null {
+  return runId ? `${appUrl}${runHref(runId)}` : null;
+}
+
+/** A review (a review run's pass): its findings in the run's Findings tab; null before review runs. */
+function reviewUrl(appUrl: string, reviewRunId: string | null, reviewId: string): string | null {
+  return reviewRunId
+    ? `${appUrl}${runHref(reviewRunId, { step: reviewId, tab: "findings" })}`
+    : null;
+}
+
 /** What a query run's trigger context tells about it (a chat question has both). */
 const QueryRunContext = z.object({
   repository: z.string().optional(),
@@ -354,7 +367,7 @@ async function queryRunState(db: Database, organizationId: string, job: Job, app
   return {
     runType: "query" as const,
     id: job.id,
-    url: `${appUrl}${jobHref(job.id)}`,
+    url: jobUrl(appUrl, jobRunId(job)),
     task: job.taskId,
     status: job.status,
     cancelRequested: job.cancelRequested,
@@ -472,15 +485,13 @@ export const listReviewsTool = defineChatTool({
       status: input.status ?? undefined,
       pageSize: CHAT_TOOL_RESULT_LIMIT,
     });
-    const listUrl = repositoryId
-      ? `${appUrl}/repositories/${repositoryId}/reviews`
-      : `${appUrl}/reviews`;
+    const listUrl = `${appUrl}${runListHref({ kind: ["review"], repositoryId })}`;
     return {
       reviews: page.reviews.map((entry) => {
         const review = reviewRow(entry);
         return {
           id: review.id,
-          url: `${appUrl}/reviews/${review.id}`,
+          url: reviewUrl(appUrl, entry.reviewRunId, review.id),
           repository: review.repository.fullPath,
           prNumber: review.prNumber,
           prTitle: review.prTitle,
@@ -527,7 +538,7 @@ export const getReviewTool = defineChatTool({
     );
     return {
       id: review.id,
-      url: `${appUrl}/reviews/${review.id}`,
+      url: reviewUrl(appUrl, detail.review.reviewRunId, review.id),
       repository: review.repository.fullPath,
       prNumber: review.prNumber,
       prTitle: review.prTitle,
@@ -568,13 +579,14 @@ export const listJobsTool = defineChatTool({
       limit: CHAT_TOOL_RESULT_LIMIT + 1,
     });
     const shown = jobs.slice(0, CHAT_TOOL_RESULT_LIMIT);
-    const listUrl = `${appUrl}/jobs${input.status ? `?status=${input.status}` : ""}`;
+    // Jobs have no list of their own: each one's run is on Runs.
+    const listUrl = `${appUrl}${runListHref()}`;
     return {
       jobs: shown.map((entry) => {
         const job = jobRow(entry);
         return {
           id: job.id,
-          url: `${appUrl}${jobHref(job.id)}`,
+          url: jobUrl(appUrl, entry.runId),
           type: job.type,
           taskType: job.taskType,
           status: job.status,
@@ -621,7 +633,7 @@ export const listAgentsTool = defineChatTool({
           runningJobs: agent.runningJobs.map((job) => ({
             type: job.type,
             target: job.target?.label ?? null,
-            url: `${appUrl}${jobHref(job.id)}`,
+            url: jobUrl(appUrl, job.runId),
           })),
           pinnedRepositories: agent.pinnedRepositories.map((r) => r.fullPath),
         };
@@ -773,7 +785,7 @@ export const askAboutCodeTool = defineChatTool({
           runId: outcome.jobId,
           task: task.task.id,
           repository: outcome.repository.fullPath,
-          url: `${appUrl}${jobHref(outcome.jobId)}`,
+          url: jobUrl(appUrl, outcome.runId),
           message:
             "The question was handed to an agent; its answer will be posted in this thread. Tell the user briefly, in your reply, that you're looking into it (don't answer the question yourself).",
         };

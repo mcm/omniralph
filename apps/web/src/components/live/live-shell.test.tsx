@@ -35,7 +35,7 @@ const nav = vi.hoisted(() => ({
   router: { push: vi.fn(), refresh: vi.fn() },
 }));
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/reviews",
+  usePathname: () => "/analytics",
   useRouter: () => nav.router,
 }));
 vi.mock("next/link", async (importOriginal) => ({

@@ -277,6 +277,7 @@ export {
   listActiveJobsByDedupePrefix,
   latestCompletedChatThreadJob,
   skipJob,
+  jobRunId,
   failCompletedJob,
   hasClaimableJob,
   listJobDueStates,

@@ -83,7 +83,11 @@ describe("RulesView", () => {
         rule(2, {
           kind: "learned",
           createdBy: null,
-          sourceFinding: { href: "/reviews/r#finding-f", title: "Null check", path: "a.ts" },
+          sourceFinding: {
+            href: "/runs/r?step=p&tab=findings#finding-f",
+            title: "Null check",
+            path: "a.ts",
+          },
         }),
       ]),
     });

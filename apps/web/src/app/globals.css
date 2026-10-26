@@ -186,12 +186,6 @@ body {
 .list-title-text {
   overflow-wrap: anywhere;
 }
-/* An ID with its title always on the line under it, so every row of the column has the
-   same shape whatever the title's length (Ralph runs). */
-.list-title-stacked {
-  flex-direction: column;
-  align-items: flex-start;
-}
 /* A title that shares its line with a leading icon and wraps beside it. */
 .list-title-fill {
   flex: 1 1 0;
@@ -206,9 +200,6 @@ body {
     width: 0;
     min-width: 100%;
   }
-}
-.list-title-text-muted {
-  color: var(--text-secondary);
 }
 .list-nowrap {
   white-space: nowrap;
@@ -236,56 +227,8 @@ body {
   color: var(--text-secondary);
   text-decoration: none;
 }
-.list-text-primary {
-  color: var(--text-primary);
-  text-decoration: none;
-}
 .list-text-danger {
   color: var(--danger-fg);
-}
-/* A failed row's reason (components/list-error.tsx): its own row under the failed one,
-   across the table's width, clamped to two lines with a "Show all" toggle beside it. The
-   failed row drops its bottom border so the two read as one. */
-.list-table tr[data-has-error],
-.list-table tr[data-has-error] > td {
-  border-bottom-color: transparent;
-}
-.list-table .list-error-row > td {
-  padding-top: 0;
-}
-.list-error-line {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.list-error {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 80ch;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.list-error-expanded {
-  display: block;
-  -webkit-line-clamp: none;
-  line-clamp: none;
-}
-.list-error-toggle {
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font-size: var(--text-xs);
-  color: var(--text-accent);
-  text-decoration: underline;
-  cursor: pointer;
 }
 .list-table th {
   white-space: nowrap;
@@ -345,18 +288,6 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.list-card-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-.list-card-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
 @media (max-width: 767.98px) {
   .list-col-wide,
   .list-label-wide {
@@ -386,68 +317,6 @@ body {
   .list-phone-meta > time {
     order: 1;
     flex-basis: 100%;
-  }
-}
-
-/* Jobs Target column: takes the table's free width, and at least fits `owner/repo#123`; a
-   longer target truncates in the middle, keeping its repository name and PR/MR number. */
-@media (min-width: 768px) {
-  .jobs-col-target {
-    width: 100%;
-    max-width: 0;
-    min-width: 13rem;
-  }
-  /* Nine columns at 1440: a step less padding than other lists so they fit the card. */
-  .jobs-table th,
-  .jobs-table td {
-    padding-inline: var(--space-3);
-  }
-}
-.jobs-type-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  white-space: nowrap;
-}
-.jobs-target {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-}
-.jobs-target > svg {
-  flex-shrink: 0;
-}
-.job-row {
-  scroll-margin-top: var(--space-16);
-}
-/* The Jobs row a link targets (`/jobs?job=<id>#job-<id>`): a 2px accent ring. A failed
-   job's reason row shares it: the ring goes round both rows, with no line between them.
-   No fill: an accent tint under the tinted status badges takes their text below 4.5:1. */
-.list-table tr[data-targeted] {
-  box-shadow:
-    inset 2px 0 var(--accent),
-    inset -2px 0 var(--accent),
-    inset 0 2px var(--accent),
-    inset 0 -2px var(--accent);
-}
-.list-table tr[data-targeted][data-has-error] {
-  box-shadow:
-    inset 2px 0 var(--accent),
-    inset -2px 0 var(--accent),
-    inset 0 2px var(--accent);
-}
-.list-table tr.list-error-row[data-targeted] {
-  box-shadow:
-    inset 2px 0 var(--accent),
-    inset -2px 0 var(--accent),
-    inset 0 -2px var(--accent);
-}
-/* Phone: the Job column takes the free width, so the target in its meta line truncates
-   in the middle instead of widening the table. */
-@media (max-width: 767.98px) {
-  .jobs-col-job {
-    width: 100%;
-    max-width: 0;
   }
 }
 
@@ -1270,24 +1139,11 @@ body {
   gap: var(--space-6);
 }
 
-/* Fact strip (components/fact-strip.tsx): a detail page's key facts, each once. */
-.fact-strip-content {
-  padding: var(--space-4) var(--space-6);
-}
-.fact-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-  gap: var(--space-4) var(--space-6);
-  margin: 0;
-}
 .fact {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
-}
-.fact-wide {
-  grid-column: span 2;
 }
 @media (max-width: 767px) {
   /* A timestamp never wraps; on phone its fact takes the row so it fits. */
@@ -1312,18 +1168,6 @@ body {
   align-items: center;
   gap: var(--space-1) var(--space-2);
 }
-.fact-repo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.fact-repo > svg {
-  flex-shrink: 0;
-}
-.fact-mono {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
 .fact-secondary {
   color: var(--text-secondary);
 }
@@ -1332,159 +1176,14 @@ body {
   display: block;
   font-size: var(--text-xs);
 }
-@media (max-width: 639.98px) {
-  .fact-strip-content {
-    padding: var(--space-4);
-  }
-  .fact-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-3) var(--space-4);
-  }
-}
 
-/* Ralph run detail. */
-.run-error {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.run-error-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.run-job-link {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-accent);
-}
-.run-empty-sections {
-  font-size: var(--text-sm);
-}
 .run-lane-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   overflow-wrap: anywhere;
 }
-.run-guidance {
-  margin: 0;
-  padding-left: var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.run-guidance-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-}
-.run-guidance-text {
-  font-size: var(--text-sm);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.run-code-block {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 40rem;
-  overflow: auto;
-}
 
-/* Review detail: findings grouped under file headers in one card, no nested cards. */
-.review-link {
-  color: var(--text-accent);
-  text-decoration: none;
-}
-.review-tokens {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.review-severity-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-/* Finding counts on one line (Reviews list): never wraps between severities. */
-.severity-counts {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  gap: 2px;
-  white-space: nowrap;
-}
-.severity-counts > * {
-  gap: 2px;
-  padding-inline: var(--space-1);
-}
-/* Reviews list at desktop: every row is one line plus one meta line. The PR column
-   takes the leftover width: its title truncates at the end (full text in the tooltip),
-   its repository in the middle (MonoValue). A failed review's reason has its own row. */
-@media (min-width: 768px) {
-  .review-col-main {
-    width: 100%;
-    min-width: 11rem;
-    max-width: 0;
-  }
-  .review-col-main .list-title {
-    display: flex;
-    flex-wrap: nowrap;
-    max-width: 100%;
-  }
-  .review-col-main .list-title-text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .review-col-main .list-secondary {
-    max-width: 100%;
-  } /* Every other column shrinks to its content, so the spare width goes to the title. */
-  .reviews-table th:not(:first-child) {
-    width: 1%;
-  }
-  .reviews-table .review-col-nowrap {
-    white-space: nowrap;
-  }
-  /* Seven columns at 1440: a step less padding than other lists, for the title. */
-  .reviews-table th,
-  .reviews-table td {
-    padding-inline: var(--space-3);
-  }
-}
-/* Initials on phone ("2C"), words from 768px ("2 critical"). */
-.severity-word {
-  display: none;
-}
-@media (min-width: 768px) {
-  .severity-counts > * {
-    gap: var(--space-1);
-  }
-  .severity-short {
-    display: none;
-  }
-  .severity-word {
-    display: inline;
-  }
-  /* A set too long for its column (SeverityCounts `wordsUpTo`) keeps initials. */
-  .severity-counts-short > * {
-    gap: 1px;
-  }
-  .severity-counts-short .severity-short {
-    display: inline;
-  }
-  .severity-counts-short .severity-word {
-    display: none;
-  }
-}
 /* Finding severity chips: one ramp that only gets quieter, critical > high > medium > low >
    info, in both themes. Text, border and fill contrast against the surface each fall (or
    hold) step by step; `severity-ramp.test.ts` measures it from the theme tokens. Critical
@@ -1518,116 +1217,10 @@ body {
   border-style: dashed;
   color: var(--text-tertiary);
 }
-.review-files {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-.review-file-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-default);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-}
-.review-file-icon {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.review-file-path {
-  flex: 1 1 auto;
-}
-.review-file-count {
-  flex-shrink: 0;
-  font-family: var(--font-body);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-normal);
-  color: var(--text-secondary);
-}
 .review-findings {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.review-finding {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-block: var(--space-4);
-}
-.review-finding + .review-finding {
-  border-top: 1px solid var(--border-subtle);
-}
-.review-finding-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-2) var(--space-3);
-}
-.review-finding-title {
-  flex: 1 1 20rem;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-.review-finding[data-inactive] .review-finding-title {
-  color: var(--text-secondary);
-}
-.review-finding-actions {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-}
-.review-finding-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.review-finding-body {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.review-finding-suggestion {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.review-code-block {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  overflow-x: auto;
-  white-space: pre;
-}
-/* Phone: a suggestion wraps (keeping its indentation) instead of clipping behind a
-   scroll nobody sees. */
-@media (max-width: 767.98px) {
-  .review-code-block {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
 }
 
 /* Repository selection (GitHub/GitLab connection pages): the listing's error. */
@@ -2255,38 +1848,6 @@ body {
   max-width: calc(var(--space-8) * 12);
   overflow-wrap: anywhere;
 }
-/* A request's or message's text in the run detail tables. */
-.run-text-cell {
-  display: block;
-  max-width: calc(var(--space-8) * 16);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-/* A radio with its label and hint (re-run review dialog). */
-.review-radio-option {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-/* A finding's dismissal history. */
-.review-feedback {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-.review-pre-wrap {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.review-path {
-  font-size: var(--text-xs);
-  /* A viewport cap, so a long path truncates instead of widening its table on phone. */
-  max-width: min(40ch, 50vw);
-}
 /* A raised panel: a connection on Repositories, a repository on the selection pages. */
 .repo-panel {
   padding: var(--space-3) var(--space-4);
@@ -2392,11 +1953,6 @@ body {
 }
 .page-tabs > * {
   white-space: nowrap;
-}
-
-/* Triage run detail: a story's or sub-issue's folded body. */
-.triage-story-body {
-  margin-top: var(--space-2);
 }
 
 /* Live data (components/query-boundary.tsx, components/freshness.tsx): a failed load in place

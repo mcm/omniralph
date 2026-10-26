@@ -52,7 +52,7 @@ function renderShell(preference: ThemePreference) {
     <SavedThemeProvider preference={preference}>
       <CurrentUserProvider user={testUser}>
         <AppFrame
-          currentPath="/coding"
+          currentPath="/runs"
           brandHref="/"
           nav={[]}
           user={{ name: "Ada", initials: "A" }}

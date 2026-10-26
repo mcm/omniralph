@@ -41,7 +41,7 @@ describe("classifyPath", () => {
 describe("safeCallbackPath", () => {
   it("keeps same-origin paths", () => {
     expect(safeCallbackPath("/agents?x=1")).toBe("/agents?x=1");
-    expect(safeCallbackPath(["/jobs", "/x"])).toBe("/jobs");
+    expect(safeCallbackPath(["/runs", "/x"])).toBe("/runs");
   });
 
   it("rejects absolute and protocol-relative URLs", () => {

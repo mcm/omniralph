@@ -36,6 +36,7 @@ export const agentRowSchema = z.object({
       type: z.string(),
       taskType: z.string(),
       target: z.object({ label: z.string(), url: z.string().nullable() }).nullable(),
+      runId: z.string().nullable(),
     }),
   ),
   pinnedRepositories: z.array(

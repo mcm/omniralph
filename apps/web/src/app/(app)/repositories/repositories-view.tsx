@@ -88,6 +88,7 @@ import {
 } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { pageRange, parsePage, totalPages } from "@/lib/pagination";
+import { runListHref } from "@/lib/runs/hrefs";
 import { ConnectionHealth } from "./connection-health";
 
 export type { ConnectionRow, RepositoryRow };
@@ -251,7 +252,7 @@ function RepositoryActions({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: bo
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <Link href={`/repositories/${repo.id}/reviews`}>
+            <Link href={runListHref({ kind: ["review"], repositoryId: repo.id })}>
               <IconHistory size={14} />
               Reviews
             </Link>
@@ -343,7 +344,7 @@ function RepositoryTableRow({ repo, isAdmin }: { repo: RepositoryRow; isAdmin: b
   return (
     <TableRow>
       <TableCell className="list-col-main">
-        <Link href={`/repositories/${repo.id}/reviews`} className="list-title repositories-title">
+        <Link href={`/repositories/${repo.id}/rules`} className="list-title repositories-title">
           <ProviderIcon provider={repo.provider} size={14} />
           <MonoValue value={repo.fullPath} className="list-title-text list-title-fill" />
         </Link>

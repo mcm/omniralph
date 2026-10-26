@@ -1,10 +1,9 @@
 "use client";
 
-import { IconGavel, IconHistory, IconServer, IconSettings } from "@tabler/icons-react";
+import { IconGavel, IconServer, IconSettings } from "@tabler/icons-react";
 import { PageTabs } from "@/components/page-tabs";
 
 const tabs = [
-  { value: "reviews", label: "Reviews", icon: IconHistory },
   { value: "rules", label: "Rules", icon: IconGavel },
   { value: "settings", label: "Review settings", icon: IconSettings },
   { value: "agents", label: "Agents", icon: IconServer },

@@ -354,7 +354,9 @@ function RuleSource({ rule, kind }: { rule: RuleView; kind: RuleView["kind"] }) 
   if (kind !== "learned") {
     return <span className="text-sm">{rule.createdBy ?? "Unknown user"}</span>;
   }
-  return rule.sourceFinding ? (
+  if (!rule.sourceFinding) return <Muted>Finding deleted</Muted>;
+  // A finding of a review from before review runs has no page to link to.
+  return rule.sourceFinding.href ? (
     <Link
       href={rule.sourceFinding.href}
       className="text-sm text-text-accent"
@@ -363,7 +365,9 @@ function RuleSource({ rule, kind }: { rule: RuleView; kind: RuleView["kind"] }) 
       {rule.sourceFinding.title}
     </Link>
   ) : (
-    <Muted>Finding deleted</Muted>
+    <span className="text-sm" title={rule.sourceFinding.path}>
+      {rule.sourceFinding.title}
+    </span>
   );
 }
 

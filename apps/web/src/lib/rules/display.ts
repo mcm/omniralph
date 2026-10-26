@@ -2,6 +2,7 @@
  * View props of Repository › Rules (client-safe: no server imports).
  */
 import type { RuleEntry } from "@omniralph/db";
+import { runHref } from "@/lib/runs/hrefs";
 import { userDisplayName } from "@/lib/user-display";
 
 export interface RuleView {
@@ -14,12 +15,20 @@ export interface RuleView {
   /** Who wrote it; null for learned rules (and deleted accounts). */
   createdBy: string | null;
   /** The dismissed finding a learned rule came from, while it exists. */
-  sourceFinding: { href: string; title: string; path: string } | null;
+  sourceFinding: { href: string | null; title: string; path: string } | null;
 }
 
-/** Link to a finding on its review's detail page. */
-export function findingHref(finding: { id: string; reviewId: string }): string {
-  return `/reviews/${finding.reviewId}#finding-${finding.id}`;
+/**
+ * Link to a finding in its review run's Findings tab (the pass is the run's step); null for a
+ * review from before review runs, which has no page.
+ */
+export function findingHref(finding: {
+  id: string;
+  reviewId: string;
+  reviewRunId: string | null;
+}): string | null {
+  if (!finding.reviewRunId) return null;
+  return `${runHref(finding.reviewRunId, { step: finding.reviewId, tab: "findings" })}#finding-${finding.id}`;
 }
 
 export function ruleView(entry: RuleEntry): RuleView {

@@ -4,6 +4,8 @@ import {
   closeDb,
   createDb,
   createReview,
+  createReviewRun,
+  deleteReviewRun,
   feedback,
   findings,
   getJob,
@@ -17,6 +19,7 @@ import {
   type FindingRow,
   type Job,
   organizations,
+  reviews,
 } from "@omniralph/db";
 import {
   QUERY_TASKS_MIN_AGENT_VERSION,
@@ -541,14 +544,35 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
           kind: "learned",
           text: "Do not flag X.",
           createdBy: null,
-          sourceFinding: {
-            href: `/reviews/${reviewId}#finding-${finding.id}`,
-            title: "Missing null check",
-            path: "src/config.ts",
-          },
+          // A review from before review runs has no page to link to.
+          sourceFinding: { href: null, title: "Missing null check", path: "src/config.ts" },
         }),
       ]);
       expect(views[0]!.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+      // A review run's pass links to the finding in the run's Findings tab.
+      const reviewRun = await createReviewRun(db, {
+        organizationId: orgId,
+        repositoryId: repoId,
+        prNumber: 42,
+        headSha: SHA(2),
+        baseSha: SHA(1),
+        trigger: "webhook",
+        mode: "full",
+        depth: "standard",
+      });
+      await db.update(reviews).set({ reviewRunId: reviewRun.id }).where(eq(reviews.id, reviewId));
+      try {
+        const [, learned] = (await listRepositoryRules(db, repoId)).map(ruleView);
+        expect(learned!.sourceFinding).toEqual({
+          href: `/runs/${reviewRun.id}?step=${reviewId}&tab=findings#finding-${finding.id}`,
+          title: "Missing null check",
+          path: "src/config.ts",
+        });
+      } finally {
+        await db.update(reviews).set({ reviewRunId: null }).where(eq(reviews.id, reviewId));
+        await deleteReviewRun(db, reviewRun.id);
+      }
     });
   });
 

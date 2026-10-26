@@ -15,14 +15,11 @@ export const QUERY_AREAS = [
   "diffs",
   "agents",
   "inbox",
-  "jobs",
   "organization",
   "repositories",
-  "reviews",
   "runs",
   "settings",
   "transcripts",
-  "triage",
 ] as const;
 export type QueryArea = (typeof QUERY_AREAS)[number];
 

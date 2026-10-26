@@ -12,16 +12,16 @@ afterEach(() => {
   push.mockClear();
 });
 
-const hrefFor = (page: number) => `/jobs?page=${page}`;
+const hrefFor = (page: number) => `/repositories?page=${page}`;
 
 describe("ListPagination", () => {
   it("navigates to the chosen page in place", async () => {
     render(<ListPagination page={1} pageCount={3} hrefFor={hrefFor} />);
     expect(screen.getByRole("link", { name: "1" }).getAttribute("aria-current")).toBe("page");
     await userEvent.click(screen.getByRole("link", { name: "3" }));
-    expect(push).toHaveBeenCalledWith("/jobs?page=3");
+    expect(push).toHaveBeenCalledWith("/repositories?page=3");
     await userEvent.click(screen.getByRole("link", { name: /next/i }));
-    expect(push).toHaveBeenLastCalledWith("/jobs?page=2");
+    expect(push).toHaveBeenLastCalledWith("/repositories?page=2");
   });
 
   it("switches pages without navigating for client-side lists", async () => {

@@ -10,6 +10,16 @@ describe("Runs screen links", () => {
     );
   });
 
+  it("opens a run on a step, attempt and tab", () => {
+    expect(runHref("r1", { step: "s 1", attempt: "a1", tab: "attempts" })).toBe(
+      "/runs/r1?step=s+1&attempt=a1&tab=attempts",
+    );
+    expect(runHref("r1", { step: "s1", attempt: null, tab: "findings" })).toBe(
+      "/runs/r1?step=s1&tab=findings",
+    );
+    expect(runHref("r1", {})).toBe("/runs/r1");
+  });
+
   it("builds list URLs without empty filters", () => {
     expect(runListHref()).toBe("/runs");
     expect(runListHref({ kind: [], status: [], repositoryId: null })).toBe("/runs");

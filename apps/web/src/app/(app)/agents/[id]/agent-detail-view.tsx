@@ -862,8 +862,9 @@ function useLeaveAgent(agent: AgentRow, action: "revoke" | "delete") {
             organizationId,
           })
         : api.delete(`/api/ui/agents/${agent.id}`, mutationResultSchema, { organizationId }),
-    // The list (and the jobs and repositories it touched); this agent's detail goes with the page.
-    invalidate: (keys) => [keys.agents.lists, keys.jobs.all, keys.repositories.all],
+    // The list (and the runs whose attempts and the repositories it touched); this agent's
+    // detail goes with the page.
+    invalidate: (keys) => [keys.agents.lists, keys.runs.all, keys.repositories.all],
     success: `${action === "revoke" ? "Revoked" : "Deleted"} ${agent.name}`,
     onSuccess: () => router.push("/agents"),
   });

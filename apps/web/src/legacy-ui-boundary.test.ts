@@ -22,9 +22,7 @@ const LIBRARY = /["']@iamthemcmaster\/ui(?:\/[^"']*)?["']/;
  */
 const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/app-header.tsx",
-  "src/components/fact-strip.tsx",
   "src/components/freshness.tsx",
-  "src/components/list-error.tsx",
   "src/components/list-pagination.tsx",
   "src/components/list-table.tsx",
   "src/components/mono-value.tsx",

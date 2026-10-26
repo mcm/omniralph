@@ -4,9 +4,7 @@ import {
   type AgentUpdateReport,
   type SelfUpdateSupport,
 } from "@omniralph/shared";
-import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { triageJobRun } from "@/lib/triage/view";
 import { isAgentOnline, jobTarget, type JobTarget } from "./display";
 import { agentUpdateStatus, type AgentUpdateStatus } from "./update";
 
@@ -45,7 +43,14 @@ export interface AgentRow {
   poolLimits: Record<string, number>;
   /** Effective limits of the `short` and `long` pools, as sent to the agent. */
   effectivePoolLimits: Record<string, number>;
-  runningJobs: { id: string; type: string; taskType: string; target: JobTarget | null }[];
+  runningJobs: {
+    id: string;
+    type: string;
+    taskType: string;
+    target: JobTarget | null;
+    /** The run the job is an attempt of; null for system work. */
+    runId: string | null;
+  }[];
   pinnedRepositories: {
     id: string;
     provider: "github" | "gitlab";
@@ -109,6 +114,7 @@ export function agentRow(
       type: job.type,
       taskType: job.taskType,
       target: jobTarget(job),
+      runId: job.runId,
     })),
     pinnedRepositories: agent.pinnedRepositories.map((repo) => ({
       id: repo.id,
@@ -122,7 +128,7 @@ export function agentRow(
   };
 }
 
-/** Serializable job row for the Jobs page. */
+/** Serializable job row: a job as the chat tools list it. */
 export interface JobRow {
   id: string;
   type: string;
@@ -130,13 +136,11 @@ export interface JobRow {
   status: JobListEntry["status"];
   deliveryCount: number;
   cancelRequested: boolean;
-  /** Whether the Jobs page offers to rerun it (`isRerunnable`). */
-  rerunnable: boolean;
   error: string | null;
   agent: { id: string; name: string } | null;
   target: JobTarget | null;
-  /** The triage run of a `triage.run` job (`label`: its issue), linked to its page. */
-  triageRun: { id: string; label: string } | null;
+  /** The run the job is an attempt of; null for system work. */
+  runId: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
@@ -149,11 +153,10 @@ export function jobRow(job: JobListEntry): JobRow {
     status: job.status,
     deliveryCount: job.deliveryCount,
     cancelRequested: job.cancelRequested,
-    rerunnable: isRerunnable(job),
     error: job.error,
     agent: job.agent,
     target: jobTarget(job),
-    triageRun: triageJobRun(job),
+    runId: job.runId,
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
   };

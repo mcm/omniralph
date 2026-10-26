@@ -14,15 +14,15 @@ afterEach(cleanup);
 describe("Link", () => {
   it("marks the link pending while its page loads", () => {
     status.pending = false;
-    const { rerender } = render(<Link href="/jobs">Jobs</Link>);
-    const link = screen.getByRole("link", { name: "Jobs" });
-    expect(link.getAttribute("href")).toBe("/jobs");
+    const { rerender } = render(<Link href="/runs">Runs</Link>);
+    const link = screen.getByRole("link", { name: "Runs" });
+    expect(link.getAttribute("href")).toBe("/runs");
     expect(link.querySelector(".link-status[data-pending]")).toBeNull();
 
     status.pending = true;
-    rerender(<Link href="/jobs">Jobs</Link>);
+    rerender(<Link href="/runs">Runs</Link>);
     expect(link.querySelector(".link-status[data-pending]")).not.toBeNull();
     // The marker isn't read out: the link's name stays its label.
-    expect(screen.getByRole("link", { name: "Jobs" })).toBe(link);
+    expect(screen.getByRole("link", { name: "Runs" })).toBe(link);
   });
 });

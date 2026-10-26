@@ -76,26 +76,13 @@ function repositoryKeys(keys: QueryKeys, repositoryId: string | undefined): Quer
     : [keys.repositories.all];
 }
 
-/**
- * Every resource's invalidations. A run is shown by Runs (`runs`), today's Reviews and
- * Triage pages, Jobs (its attempts), the Inbox and Analytics.
- */
+/** Every resource's invalidations. A run is shown by Runs (`runs`), the Inbox and Analytics. */
 export const LIVE_INVALIDATIONS = {
   run: (event, keys) =>
     event.runId
-      ? [
-          keys.runs.lists,
-          keys.runs.detail(event.runId),
-          // Today's Reviews pages are keyed by review, not by run.
-          keys.reviews.all,
-          keys.triage.lists,
-          keys.triage.detail(event.runId),
-          keys.jobs.all,
-          keys.inbox.all,
-          keys.analytics.all,
-        ]
-      : // System work (a repository sync, a cleanup): only its attempts show it.
-        [keys.jobs.all, keys.analytics.all],
+      ? [keys.runs.lists, keys.runs.detail(event.runId), keys.inbox.all, keys.analytics.all]
+      : // System work (a repository sync, a cleanup) belongs to no run: Analytics counts it.
+        [keys.analytics.all],
   transcript: (event, keys) =>
     event.runId
       ? [keys.transcripts.detail(event.runId)]

@@ -1,7 +1,7 @@
 /**
  * Client-safe links to the Runs screen: `/runs` (the unified run list) and `/runs/{id}`
- * (one run of any kind). Chat replies, Linear messages and redirects from the old Coding
- * pages (`/ralph`, `/coding`) all point here.
+ * (one run of any kind, optionally on a step, attempt and tab). Chat replies, Linear
+ * messages, rules' source findings and every other link to a run point here.
  */
 import type { RunKind, RunStatus } from "@omniralph/db";
 
@@ -18,9 +18,22 @@ export interface RunListLinkFilter {
   repository?: readonly string[];
 }
 
-/** A run's page on the Runs screen. */
-export function runHref(runId: string): string {
-  return `${RUNS_PATH}/${runId}`;
+/** What a run's page opens on: a step, one of its attempts and a step panel tab. */
+export interface RunLinkState {
+  step?: string | null;
+  attempt?: string | null;
+  tab?: "transcript" | "diff" | "findings" | "attempts" | null;
+}
+
+/** A run's page on the Runs screen: `/runs/{id}?step=&attempt=&tab=` (empty ones omitted). */
+export function runHref(runId: string, state: RunLinkState = {}): string {
+  const search = new URLSearchParams();
+  for (const key of ["step", "attempt", "tab"] as const) {
+    const value = state[key];
+    if (value) search.set(key, value);
+  }
+  const query = search.toString();
+  return `${RUNS_PATH}/${runId}${query ? `?${query}` : ""}`;
 }
 
 /** The Runs screen's list with `filter` as search params (empty filters omitted). */

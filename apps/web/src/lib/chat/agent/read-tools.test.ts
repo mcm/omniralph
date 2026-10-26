@@ -6,6 +6,7 @@ import {
   connectRepository,
   createDb,
   createReview,
+  createReviewRun,
   createRun,
   ensureChatThread,
   findings,
@@ -51,6 +52,7 @@ interface SeededOrg {
   fullPath: string;
   activeRunId: string;
   doneRunId: string;
+  reviewRunId: string;
   reviewId: string;
   jobId: string;
   agentId: string;
@@ -151,7 +153,18 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       prUrl: `https://github.com/${fullPath}/pull/7`,
     });
 
+    const reviewRun = await createReviewRun(db, {
+      organizationId: id,
+      repositoryId: repository.id,
+      prNumber: 7,
+      headSha: "a".repeat(40),
+      baseSha: "b".repeat(40),
+      trigger: "webhook",
+      mode: "full",
+      depth: "standard",
+    });
     const review = await createReview(db, {
+      reviewRunId: reviewRun.id,
       repositoryId: repository.id,
       prNumber: 7,
       prTitle: `${name} PR`,
@@ -178,6 +191,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       type: "review.task",
       taskType: "review",
       repositoryId: repository.id,
+      reviewRunId: reviewRun.id,
       payload: { prNumber: 7 },
     });
     return {
@@ -186,6 +200,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       fullPath,
       activeRunId: activeRun.id,
       doneRunId: doneRun.id,
+      reviewRunId: reviewRun.id,
       reviewId: review.id,
       jobId: job.id,
       agentId: agent!.id,
@@ -323,7 +338,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect(list.reviews).toEqual([
       expect.objectContaining({
         id: acme.reviewId,
-        url: `${APP_URL}/reviews/${acme.reviewId}`,
+        url: `${APP_URL}/runs/${acme.reviewRunId}?step=${acme.reviewId}&tab=findings`,
         repository: "acme/api",
         prNumber: 7,
         prUrl: "https://github.com/acme/api/pull/7",
@@ -341,7 +356,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
 
     expect(await call("get_review", { review: acme.reviewId }, acme.id)).toMatchObject({
       id: acme.reviewId,
-      url: `${APP_URL}/reviews/${acme.reviewId}`,
+      url: `${APP_URL}/runs/${acme.reviewRunId}?step=${acme.reviewId}&tab=findings`,
       prTitle: "Acme PR",
       findingCount: 1,
       findings: [{ path: "src/index.ts", lines: "3-5", severity: "high", title: "Acme finding" }],
@@ -359,7 +374,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect(list.jobs).toEqual([
       expect.objectContaining({
         id: acme.jobId,
-        url: `${APP_URL}/jobs#job-${acme.jobId}`,
+        url: `${APP_URL}/runs/${acme.reviewRunId}`,
         type: "review.task",
         status: "queued",
         target: { label: "acme/api#7", url: "https://github.com/acme/api/pull/7" },
@@ -431,7 +446,10 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     );
     const jobs = await call("list_jobs", { type: "ralph.story" }, crowdedOrgId);
     expect(jobs.jobs).toHaveLength(CHAT_TOOL_RESULT_LIMIT);
-    expect(jobs).toMatchObject({ more: true, note: expect.stringContaining(`${APP_URL}/jobs`) });
+    expect(jobs).toMatchObject({
+      more: true,
+      note: expect.stringMatching(new RegExp(`on ${APP_URL}/runs$`)),
+    });
     expect(jobs).not.toHaveProperty("total");
   });
 

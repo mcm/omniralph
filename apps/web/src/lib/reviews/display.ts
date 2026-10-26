@@ -1,10 +1,10 @@
 /**
- * Client-safe parts of the review history pages: filter values, list URLs,
- * view-prop types and formatting. Server-side mapping lives in `./history`.
+ * Client-safe parts of a review's views (Analytics, the chat tools, a review run's
+ * findings): enum values, view-prop types and formatting. Server-side mapping lives in
+ * `./history`.
  */
 import type { FindingSeverity, ReviewStatus, ReviewTrigger } from "@omniralph/db";
 import type { FeedbackReasonValue, ReviewDepth } from "@omniralph/shared";
-import { parsePage } from "@/lib/pagination";
 
 /** Client-safe copies of the DB enums (the views can't import `@omniralph/db`). */
 export const REVIEW_STATUSES = [
@@ -15,11 +15,6 @@ export const REVIEW_STATUSES = [
   "budget_exhausted",
   "skipped",
 ] as const satisfies readonly ReviewStatus[];
-export const REVIEW_TRIGGERS = [
-  "webhook",
-  "mention",
-  "manual",
-] as const satisfies readonly ReviewTrigger[];
 export const FINDING_SEVERITIES = [
   "critical",
   "high",
@@ -27,42 +22,6 @@ export const FINDING_SEVERITIES = [
   "low",
   "info",
 ] as const satisfies readonly FindingSeverity[];
-
-export interface ReviewListParams {
-  status: ReviewStatus | null;
-  trigger: ReviewTrigger | null;
-  /** 1-based. */
-  page: number;
-}
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function single(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function oneOf<T extends string>(values: readonly T[], value: string | undefined): T | null {
-  return (values as readonly string[]).includes(value ?? "") ? (value as T) : null;
-}
-
-/** The list's filters and page from URL search params; unknown values are ignored. */
-export function parseReviewListParams(params: SearchParams): ReviewListParams {
-  return {
-    status: oneOf(REVIEW_STATUSES, single(params.status)),
-    trigger: oneOf(REVIEW_TRIGGERS, single(params.trigger)),
-    page: parsePage(params.page),
-  };
-}
-
-/** `pathname` with the filters and page as search params (defaults omitted). */
-export function reviewListHref(pathname: string, params: ReviewListParams): string {
-  const search = new URLSearchParams();
-  if (params.status) search.set("status", params.status);
-  if (params.trigger) search.set("trigger", params.trigger);
-  if (params.page > 1) search.set("page", String(params.page));
-  const query = search.toString();
-  return query ? `${pathname}?${query}` : pathname;
-}
 
 export interface ReviewRow {
   id: string;

@@ -21,7 +21,7 @@ import { getDefaultMaxConcurrency } from "./app-settings.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
-import type { Job, JobStatus } from "./jobs.js";
+import { jobRunId, type Job, type JobStatus } from "./jobs.js";
 import { agentAudit, agentRepoPins, agents, jobs, repositories, scmConnections } from "./schema.js";
 
 type AgentRow = typeof agents.$inferSelect;
@@ -42,6 +42,8 @@ export interface AgentJobSummary {
   status: JobStatus;
   payload: Record<string, unknown>;
   repository: RepositoryLink | null;
+  /** The run the job is an attempt of; null for system work. */
+  runId: string | null;
 }
 
 export interface AgentOverview extends AgentRow {
@@ -147,6 +149,10 @@ async function withJobsAndPins(
         taskType: jobs.taskType,
         status: jobs.status,
         payload: jobs.payload,
+        ralphRunId: jobs.ralphRunId,
+        reviewRunId: jobs.reviewRunId,
+        triageRunId: jobs.triageRunId,
+        chatThreadRunId: jobs.chatThreadRunId,
         ...repositoryLinkColumns,
       })
       .from(jobs)
@@ -175,6 +181,7 @@ async function withJobsAndPins(
         status: job.status,
         payload: job.payload,
         repository: repositoryLink(job),
+        runId: jobRunId(job),
       })),
     pinnedRepositories: pins
       .filter((pin) => pin.agentId === agent.id)
@@ -630,6 +637,8 @@ export interface JobListEntry {
   payload: Record<string, unknown>;
   agent: { id: string; name: string } | null;
   repository: RepositoryLink | null;
+  /** The run the job is an attempt of; null for system work. */
+  runId: string | null;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -680,6 +689,10 @@ async function selectJobs(
       createdAt: jobs.createdAt,
       startedAt: jobs.startedAt,
       finishedAt: jobs.finishedAt,
+      ralphRunId: jobs.ralphRunId,
+      reviewRunId: jobs.reviewRunId,
+      triageRunId: jobs.triageRunId,
+      chatThreadRunId: jobs.chatThreadRunId,
       ...repositoryLinkColumns,
     })
     .from(jobs)
@@ -701,6 +714,7 @@ async function selectJobs(
     payload: row.payload,
     agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
     repository: repositoryLink(row),
+    runId: jobRunId(row),
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,

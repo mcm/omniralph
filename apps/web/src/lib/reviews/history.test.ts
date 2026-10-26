@@ -1,60 +1,9 @@
 import type { FindingRow, ReviewDetail, ReviewListEntry } from "@omniralph/db";
 import { describe, expect, it, vi } from "vitest";
-import { formatDuration, formatTokens, parseReviewListParams, reviewListHref } from "./display";
+import { formatDuration, formatTokens } from "./display";
 
 vi.mock("server-only", () => ({}));
 const { groupFindingsByFile, reviewDetailView, reviewRow, stopReason } = await import("./history");
-
-describe("parseReviewListParams", () => {
-  it("reads known filters and the page", () => {
-    expect(parseReviewListParams({ status: "failed", trigger: "mention", page: "3" })).toEqual({
-      status: "failed",
-      trigger: "mention",
-      page: 3,
-    });
-  });
-
-  it("ignores unknown values and invalid pages", () => {
-    for (const page of ["0", "-1", "1.5", "abc", undefined]) {
-      expect(parseReviewListParams({ status: "nope", trigger: "cron", page })).toEqual({
-        status: null,
-        trigger: null,
-        page: 1,
-      });
-    }
-  });
-
-  it("takes the first of repeated params", () => {
-    expect(parseReviewListParams({ status: ["completed", "failed"], page: ["2", "5"] })).toEqual({
-      status: "completed",
-      trigger: null,
-      page: 2,
-    });
-  });
-});
-
-describe("reviewListHref", () => {
-  it("keeps filters and page in search params, omitting defaults", () => {
-    expect(reviewListHref("/reviews", { status: null, trigger: null, page: 1 })).toBe("/reviews");
-    expect(
-      reviewListHref("/repositories/r/reviews", {
-        status: "budget_exhausted",
-        trigger: "webhook",
-        page: 2,
-      }),
-    ).toBe("/repositories/r/reviews?status=budget_exhausted&trigger=webhook&page=2");
-  });
-
-  it("accepts the manual (Re-run) trigger as a filter", () => {
-    expect(parseReviewListParams({ trigger: "manual" }).trigger).toBe("manual");
-  });
-
-  it("round-trips through parseReviewListParams", () => {
-    const params = { status: "skipped", trigger: "mention", page: 4 } as const;
-    const query = new URL(reviewListHref("/reviews", params), "https://x").searchParams;
-    expect(parseReviewListParams(Object.fromEntries(query))).toEqual(params);
-  });
-});
 
 const finding = (over: Partial<FindingRow>): FindingRow => ({
   id: "f",
@@ -103,6 +52,7 @@ describe("view mapping", () => {
   it("maps a list entry to serializable props with the MR link", () => {
     const entry: ReviewListEntry = {
       id: "r1",
+      reviewRunId: null,
       repository,
       prNumber: 7,
       prTitle: "Add things",
