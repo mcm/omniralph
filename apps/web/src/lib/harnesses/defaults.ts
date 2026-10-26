@@ -15,7 +15,7 @@ import {
   withSettingsChanges,
   type Database,
 } from "@omniralph/db";
-import { HARNESS_PACKAGE, HarnessVersion } from "@omniralph/shared";
+import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import type {
@@ -67,7 +67,7 @@ export async function loadHarnessDefaults(
           checkedAt: resolved.latestCheckedAt?.toISOString() ?? null,
         }
       : null,
-    packageName: HARNESS_PACKAGE,
+    packageName: AGENT_PACKAGE,
     defaults: { maxConcurrency },
     builtInDefaults: { maxConcurrency: DEFAULT_MAX_CONCURRENCY },
   };
@@ -92,7 +92,7 @@ export async function setGlobalHarnessVersion(
   if (trimmed.toLowerCase() === TRACK_LATEST_HARNESS_VERSION) {
     return trackLatestHarnessVersion(db, admin);
   }
-  const parsed = trimmed ? HarnessVersion.safeParse(trimmed) : null;
+  const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
   if (parsed && !parsed.success) {
     return { ok: false, error: "Enter a version like 1.4.0 or latest, or leave it blank." };
   }

@@ -955,7 +955,7 @@ export const followUpSources = pgTable(
 
 // ── Harnesses ───────────────────────────────────────────────────────────────
 
-/** A harness's self-update progress (mirrors `HarnessUpdateReport` in @omniralph/shared). */
+/** A harness's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
 export interface HarnessUpdateState {
   state: "idle" | "draining" | "installing" | "confirming";
   version: string | null;

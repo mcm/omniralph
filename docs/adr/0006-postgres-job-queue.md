@@ -116,7 +116,7 @@ an entry is due. Idle attempts read the agent's revocation from Redis instead. D
 claim, lease renewal and every finish update the set after their commit; a flushed Redis is
 rebuilt from the queued and running jobs. See [ADR 0007](0007-redis-hot-state.md).
 
-The agent (`apps/harness/src/daemon.ts`, `claimLoop`) keeps one claim in flight while it has a free
+The agent (`apps/agent/src/daemon.ts`, `claimLoop`) keeps one claim in flight while it has a free
 slot. It starts a claimed job and claims again at once. When nothing is claimable (no free slot, or
 every capability at its limit) it waits until a job ends or the configuration changes. A change to
 the claimable set (heartbeat config, job end, drain, SIGTERM) aborts the in-flight claim and starts

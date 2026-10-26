@@ -145,7 +145,7 @@ over-long values (with `[… truncated]`) before fencing.
 | `coding`  | A session that changes code and ships it         | `long`  | Built in TOOL-304, behind a per-repository switch |
 | `system`  | A system RPC, no session                         | none    | `repo.sync`, `worktree.exec`, `worktree.cleanup`  |
 
-`runQueryTask` (`apps/harness/src/lifecycle/query.ts`) runs every query task with no per-task
+`runQueryTask` (`apps/agent/src/lifecycle/query.ts`) runs every query task with no per-task
 code:
 
 1. **Prepare.** Without a `ref`, an empty temp directory. With one, the repository is synced and a
@@ -165,7 +165,7 @@ code:
 
 ### The review lifecycle
 
-`runReviewTask` (`apps/harness/src/lifecycle/review.ts`) runs every review task the same way, with
+`runReviewTask` (`apps/agent/src/lifecycle/review.ts`) runs every review task the same way, with
 the review inputs (base and head SHAs, change request, review config, previous review) in the
 trigger context (`ReviewTaskContext`):
 
@@ -200,7 +200,7 @@ Review run specs carry `REVIEW_TASKS_MIN_HARNESS_VERSION` (0.10.0): older harnes
 
 ### Coding runs
 
-`runCodingTask` (`apps/harness/src/lifecycle/coding.ts`) runs coding tasks. The trigger context is
+`runCodingTask` (`apps/agent/src/lifecycle/coding.ts`) runs coding tasks. The trigger context is
 the legacy ralph payload the control panel built (`RalphStoryPayload`, `RalphRequestPayload` or
 `RalphPushPayload`, from `apps/web/src/lib/ralph/payload.ts`), so `advanceRun`'s logic is the same
 on both paths ([ADR 0003](0003-ralph-orchestration.md#addendum-coding-runs-and-the-cutover-switch)).
@@ -369,7 +369,7 @@ credential. Legacy jobs keep one token without a kind: `ralph.*` `credentials:re
 ### Harness tools: the `omniralph` MCP server
 
 Sessions reach harness primitives through an in-process MCP server named `omniralph`
-(`apps/harness/src/tools/omniralph-server.ts`), which calls the control panel with the session
+(`apps/agent/src/tools/omniralph-server.ts`), which calls the control panel with the session
 token:
 
 - `ship`, offered only to request runs (not `/ship` ones): the harness commits what the session
@@ -471,7 +471,7 @@ So adding a review task (a security reviewer, say) is a definitions-only change:
 
 ### System RPCs
 
-`repo.sync`, `worktree.exec`, `worktree.cleanup` and `install` are system RPCs (`apps/harness/src/rpc/`,
+`repo.sync`, `worktree.exec`, `worktree.cleanup` and `install` are system RPCs (`apps/agent/src/rpc/`,
 `SYSTEM_RPCS` in `@omniralph/shared`): fixed commands with no Claude session, no run spec and no
 session token, usually targeted at one harness, with a single `lifecycle` token (`credentials:read`). They use the same claim, lease,
 result and fail plumbing as every other job. `worktree.exec` runs a manual story's approved
@@ -557,7 +557,7 @@ installable authors, admins and harness owners is [docs/installables.md](../inst
   (`InstallableManifest` in `packages/tasks/src/installables.ts`: `commands`, stdio `mcpServers`
   and `skills`, every path relative to and inside the package). npm packages rather than Claude
   Code plugins, because later non-Claude runtimes won't share a plugin format.
-- **The `install` system RPC** (`apps/harness/src/rpc/install.ts`), targeted at one harness by an
+- **The `install` system RPC** (`apps/agent/src/rpc/install.ts`), targeted at one harness by an
   admin, installs `<name>@<version>` (exact version or dist-tag; never a path, URL or alias) into a
   harness-managed npm prefix, `<dataDir>/installables`, not `npm -g`. It is remote code execution
   on the host, so the harness checks its local `installables.allow` (default `@omniralph/*`)
@@ -579,7 +579,7 @@ installable authors, admins and harness owners is [docs/installables.md](../inst
   [Organization definitions](#organization-definitions)): a harness claims a run only if its last
   heartbeat reported every installable and it has an effective path for every host tool.
 - **Running them.** Before checkout, the lifecycles resolve the run's executables
-  (`resolveRunExecutables`, `apps/harness/src/lifecycle/executables.ts`): host tools by their
+  (`resolveRunExecutables`, `apps/agent/src/lifecycle/executables.ts`): host tools by their
   effective path, installable commands and MCP servers by absolute path inside the prefix. A setup
   or teardown command whose first word names one runs that path, never what the run's `PATH`
   (which the checkout can influence) finds; agents list installable MCP servers as
@@ -594,7 +594,7 @@ installable authors, admins and harness owners is [docs/installables.md](../inst
   skill list, since a task that needs an installable's tools needs its instructions too. Claude Code
   loads skills only from settings or plugins, and most sessions load no settings, so the harness
   copies each required installable's skills into a plugin it writes itself
-  (`apps/harness/src/installable-skills.ts`: `<dataDir>/skill-plugins/<plugin>-<content hash>/`,
+  (`apps/agent/src/installable-skills.ts`: `<dataDir>/skill-plugins/<plugin>-<content hash>/`,
   skills only) and passes it as a local plugin with MCP discovery off; sessions without settings
   enable exactly those skills. No other settings are loaded.
 - **Not built:** an uninstall RPC, and pruning caches and skill plugins.

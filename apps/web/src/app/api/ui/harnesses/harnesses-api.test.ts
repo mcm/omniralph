@@ -324,7 +324,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const result = await newEnrollment("Build box");
       expect(result.token).toMatch(/^ore_[\w-]{43}$/);
       expect(result.command).toBe(
-        `omniralph-harness enroll --server https://omniralph.example.com --token ${result.token}`,
+        `omniralph-agent enroll --server https://omniralph.example.com --token ${result.token}`,
       );
       const expiresIn = new Date(result.expiresAt).getTime() - Date.now();
       expect(expiresIn).toBeGreaterThan(59 * 60_000);

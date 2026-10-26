@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_TASKS,
-  deriveHarnessRequirements,
+  deriveAgentRequirements,
   deriveTaskRequirements,
   getBuiltinRunSpec,
   getBuiltinTask,
@@ -419,11 +419,11 @@ describe("deriveTaskRequirements", () => {
       installables: ["@omniralph/code-graph", "@omniralph/sast"],
       hostTools: ["git", "opengrep"],
     });
-    expect(deriveHarnessRequirements({}, graphAgent)).toEqual({
+    expect(deriveAgentRequirements({}, graphAgent)).toEqual({
       installables: ["@omniralph/code-graph"],
       hostTools: [],
     });
-    expect(deriveHarnessRequirements({}, null)).toEqual({ installables: [], hostTools: [] });
+    expect(deriveAgentRequirements({}, null)).toEqual({ installables: [], hostTools: [] });
   });
 
   it("needs the release that provides each task-type variable its template uses", () => {

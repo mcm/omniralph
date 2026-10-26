@@ -18,11 +18,11 @@ function shellQuote(value: string): string {
 }
 
 /** Installs the harness on a host (the package is public: no npm auth needed). */
-export const HARNESS_INSTALL_COMMAND = "npm install -g @omniralph/harness";
+export const HARNESS_INSTALL_COMMAND = "npm install -g @omniralph/agent";
 
 /** The command an admin runs on the harness host to redeem an enrollment token. */
 export function enrollCommand(serverUrl: string, token: string): string {
-  return `omniralph-harness enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;
+  return `omniralph-agent enroll --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`;
 }
 
 const PR_NUMBER = z.int().min(1);

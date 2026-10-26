@@ -1,8 +1,8 @@
 import "server-only";
-import { HARNESS_PACKAGE, HarnessVersion } from "@omniralph/shared";
+import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
 
 /** The harness package's registry document (`@` kept, `/` escaped, as npm does). */
-export const HARNESS_REGISTRY_URL = `https://registry.npmjs.org/${HARNESS_PACKAGE.replace("/", "%2f")}`;
+export const HARNESS_REGISTRY_URL = `https://registry.npmjs.org/${AGENT_PACKAGE.replace("/", "%2f")}`;
 
 export class NpmRegistryError extends Error {
   override name = "NpmRegistryError";
@@ -29,13 +29,13 @@ export async function latestHarnessVersion(
     );
   }
   if (response.status === 404) {
-    throw new NpmRegistryError(`the npm registry doesn't know ${HARNESS_PACKAGE} (404)`);
+    throw new NpmRegistryError(`the npm registry doesn't know ${AGENT_PACKAGE} (404)`);
   }
   if (!response.ok) throw new NpmRegistryError(`the npm registry answered ${response.status}`);
   const body = (await response.json().catch(() => null)) as {
     "dist-tags"?: { latest?: unknown };
   } | null;
-  const latest = HarnessVersion.safeParse(body?.["dist-tags"]?.latest);
+  const latest = AgentVersion.safeParse(body?.["dist-tags"]?.latest);
   if (!latest.success) throw new NpmRegistryError("the npm registry didn't list a latest version");
   return latest.data;
 }

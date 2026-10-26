@@ -59,9 +59,9 @@ export const SINK_KINDS = [
 ] as const;
 export type SinkKind = (typeof SINK_KINDS)[number];
 
-/** Harness primitives served to sessions by the in-process `omniralph` MCP server. */
-export const HARNESS_TOOLS = ["post_activity", "ask_permission", "get_attachment", "ship"] as const;
-export type HarnessTool = (typeof HARNESS_TOOLS)[number];
+/** Agent primitives served to sessions by the in-process `omniralph` MCP server. */
+export const AGENT_TOOLS = ["post_activity", "ask_permission", "get_attachment", "ship"] as const;
+export type AgentTool = (typeof AGENT_TOOLS)[number];
 
 /** Read-only Linear tools, served by the control panel through the same MCP server. */
 export const LINEAR_TOOLS = [
@@ -72,11 +72,11 @@ export const LINEAR_TOOLS = [
 ] as const;
 export type LinearTool = (typeof LINEAR_TOOLS)[number];
 
-/** The harness tools each task type allows; `ship` is for coding runs only. */
-export const HARNESS_TOOLS_BY_TASK_TYPE: Record<TaskType, readonly HarnessTool[]> = {
+/** The agent tools each task type allows; `ship` is for coding runs only. */
+export const AGENT_TOOLS_BY_TASK_TYPE: Record<TaskType, readonly AgentTool[]> = {
   query: ["post_activity", "ask_permission", "get_attachment"],
   review: ["post_activity", "ask_permission", "get_attachment"],
-  coding: HARNESS_TOOLS,
+  coding: AGENT_TOOLS,
 };
 
 /**

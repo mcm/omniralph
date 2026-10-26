@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   AcceptedTaskTypes,
   ClaimRequest,
-  HarnessVersion,
+  AgentVersion,
   harnessVersionAtLeast,
   defaultPoolLimit,
   effectivePoolLimits,
   Heartbeat,
   HeartbeatResponse,
-  harnessWakeChannel,
+  agentWakeChannel,
   HostToolName,
   InstallPayload,
   JobFailure,
@@ -208,10 +208,10 @@ describe("protocol", () => {
 describe("self-update protocol", () => {
   it("accepts semver versions only", () => {
     for (const ok of ["1.0.0", "0.1.1", "1.5.0-beta.1", "2.0.0+build.7"]) {
-      expect(HarnessVersion.safeParse(ok).success).toBe(true);
+      expect(AgentVersion.safeParse(ok).success).toBe(true);
     }
     for (const bad of ["latest", "v1.0.0", "1.0", "01.0.0", "1.0.0; rm -rf /", ""]) {
-      expect(HarnessVersion.safeParse(bad).success).toBe(false);
+      expect(AgentVersion.safeParse(bad).success).toBe(false);
     }
   });
 
@@ -303,7 +303,7 @@ describe("self-update protocol", () => {
   });
 
   it("names the Ably wake channels", () => {
-    expect(harnessWakeChannel(ID)).toBe(`harness:${ID}`);
+    expect(agentWakeChannel(ID)).toBe(`harness:${ID}`);
     expect(orgWakeChannel(ID)).toBe(`org:${ID}`);
   });
 

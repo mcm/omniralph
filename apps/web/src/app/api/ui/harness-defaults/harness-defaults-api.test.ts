@@ -152,7 +152,7 @@ async function getDefaults() {
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 
-const REGISTRY = "https://registry.npmjs.org/@omniralph%2fharness";
+const REGISTRY = "https://registry.npmjs.org/@omniralph%2fagent";
 const requests: { authorization: string | null; accept: string | null }[] = [];
 let registry: () => Response = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
 const server = setupServer(
@@ -251,7 +251,7 @@ describe("Settings › Harness defaults API", () => {
     registry = () => HttpResponse.json({ error: "Not found" }, { status: 404 });
     expect(await trackLatestHarnessVersion()).toEqual({
       ok: false,
-      error: expect.stringContaining("doesn't know @omniralph/harness"),
+      error: expect.stringContaining("doesn't know @omniralph/agent"),
     });
     registry = () => HttpResponse.json({ "dist-tags": { latest: "not-a-version" } });
     expect(await trackLatestHarnessVersion()).toEqual({
@@ -282,7 +282,7 @@ describe("Settings › Harness defaults API", () => {
           desiredVersion: "1.4.0",
           updatedAt: "2026-10-01T00:00:00.000Z",
           latest: null,
-          packageName: "@omniralph/harness",
+          packageName: "@omniralph/agent",
           defaults: { maxConcurrency: 5 },
           builtInDefaults: { maxConcurrency: 5 },
         },

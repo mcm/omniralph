@@ -11,7 +11,7 @@ import {
   updateHarnessConfig as updateHarnessConfigRow,
   type Database,
 } from "@omniralph/db";
-import { HarnessVersion, HostToolPath, POOLS } from "@omniralph/shared";
+import { AgentVersion, HostToolPath, POOLS } from "@omniralph/shared";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import type {
@@ -87,7 +87,7 @@ export async function setHarnessDesiredVersion(
   version: string,
 ): Promise<ActionResult> {
   const trimmed = version.trim().replace(/^v(?=\d)/, "");
-  const parsed = trimmed ? HarnessVersion.safeParse(trimmed) : null;
+  const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
   if (parsed && !parsed.success) {
     return { ok: false, error: "Enter a version like 1.4.0, or leave it blank." };
   }

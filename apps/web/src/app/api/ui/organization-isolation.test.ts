@@ -1036,7 +1036,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     const { status, body } = await call(enrollments.POST, { body: { name: "beta-2" } });
     expect(status).toBe(200);
     expect(body.command).toBe(
-      `omniralph-harness enroll --server https://omniralph.example.com --token ${body.token}`,
+      `omniralph-agent enroll --server https://omniralph.example.com --token ${body.token}`,
     );
     const { harnessId } = (await enrollHarness(db, {
       enrollmentToken: body.token as string,

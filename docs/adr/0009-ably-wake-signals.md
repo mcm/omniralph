@@ -87,7 +87,7 @@ No new harness-to-control-panel request: the token rides on the heartbeat.
   when Ably isn't configured; absent otherwise (keep the current token).
 
 The harness keeps the latest token and hands it to the Ably SDK from its `authCallback`
-(`apps/harness/src/wake.ts`), so the SDK's own reauthentication picks up renewed tokens.
+(`apps/agent/src/wake.ts`), so the SDK's own reauthentication picks up renewed tokens.
 
 ### The `claimable` flag
 
@@ -108,13 +108,13 @@ picked up within one heartbeat (≤20s) in all of those cases.
 
 ### Harness modes
 
-The daemon (`apps/harness/src/daemon.ts`, `claimLoop`) runs in one of two modes:
+The daemon (`apps/agent/src/daemon.ts`, `claimLoop`) runs in one of two modes:
 
 - **Long-poll mode** (no Ably token): exactly ADR 0006's long-poll. The harness starts in it and
   stays in it without `ABLY_API_KEY`, against a control panel too old to send `ably`, or when the
   wake subscription can't be opened.
 - **Wake mode** (holding a token from a heartbeat): the harness subscribes to its two channels
-  (`createWakeSubscription`, `apps/harness/src/wake.ts`) and claims with `waitSeconds: 0`, never
+  (`createWakeSubscription`, `apps/agent/src/wake.ts`) and claims with `waitSeconds: 0`, never
   holding a request. Entering wake mode aborts an in-flight long-poll.
 
 In wake mode a claim is triggered by:

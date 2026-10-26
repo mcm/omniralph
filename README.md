@@ -79,8 +79,8 @@ details.
    │                            └───────────────▲────────────────┘        └──────────────┘
    │                                            │ outbound HTTPS only
    │                            ┌───────────────┴────────────────┐
-   └──git clone/fetch ───────── │ Harness hosts (apps/harness)   │
-      (read-only, brokered)     │ omniralph-harness on Coder     │
+   └──git clone/fetch ───────── │ Agent hosts (apps/agent)       │
+      (read-only, brokered)     │ omniralph-agent on Coder       │
                                 │ repo cache, Claude Agent SDK   │
                                 └────────────────────────────────┘
 ```
@@ -226,7 +226,7 @@ details.
 | Path              | Package              | Purpose                                                      |
 | ----------------- | -------------------- | ------------------------------------------------------------ |
 | `apps/web`        | `@omniralph/web`     | Control panel UI, harness API, job claims, webhooks          |
-| `apps/harness`    | `@omniralph/harness` | Harness host daemon (`bin: omniralph-harness`)               |
+| `apps/agent`    | `@omniralph/harness` | Harness host daemon (`bin: omniralph-harness`)               |
 | `packages/engine` | `@omniralph/engine`  | Review core: diff parsing, budgets, prompts, Claude provider |
 | `packages/scm`    | `@omniralph/scm`     | SCM adapter interface + GitHub and GitLab implementations    |
 | `packages/db`     | `@omniralph/db`      | Drizzle schema, migrations, typed queries                    |

@@ -1,6 +1,6 @@
 # Environment variables
 
-Every variable the control panel (`apps/web`) and the harness (`apps/harness`) read, with what it does
+Every variable the control panel (`apps/web`) and the agent (`apps/agent`) read, with what it does
 and its default. [`.env.example`](../.env.example) lists the same variables with copy-paste
 examples. `apps/web/src/env-docs.test.ts` fails if the two lists drift apart, or if the code reads a
 variable that's documented in neither.
@@ -156,17 +156,17 @@ chat assistant uses the AI Gateway through OIDC). Vercel sets them; don't set th
 KMS calls authenticate with the deployment's Vercel OIDC token,
 which needs no variable either.
 
-## Harness host (`omniralph-harness`)
+## Agent host (`omniralph-agent`)
 
-Set these in the harness's environment (the systemd unit, or the shell that starts tmux or pm2), never
-on Vercel. The harness's own settings (server, harness ID, refresh token, `workspaceRoot`) live in its
-config file, and everything else comes from the control panel, including the organization the harness
+Set these in the agent's environment (the systemd unit, or the shell that starts tmux or pm2), never
+on Vercel. The agent's own settings (server, agent ID, refresh token, `workspaceRoot`) live in its
+config file, and everything else comes from the control panel, including the organization the agent
 was enrolled into (sent with each heartbeat; there's no variable for it). See
 [deploy-harness.md](deploy-harness.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `OMNIRALPH_HARNESS_CONFIG` | no | `~/.config/omniralph/harness.json` | Path of the harness config file (written by `enroll`, mode 0600). `--config` overrides it. |
+| `OMNIRALPH_AGENT_CONFIG` | no | `~/.config/omniralph/agent.json` | Path of the agent config file (written by `enroll`, mode 0600). `--config` overrides it. |
 | `OMNIRALPH_LOG_LEVEL` | no | `info` | pino log level: `trace`, `debug`, `info`, `warn`, `error`. |
 | `ANTHROPIC_API_KEY` | no | — (the host's `claude` login) | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no | — (the host's `claude` login) | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk. |

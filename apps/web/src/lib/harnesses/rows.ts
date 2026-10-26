@@ -1,7 +1,7 @@
 import type { HarnessOverview, JobListEntry } from "@omniralph/db";
 import {
   effectivePoolLimits,
-  type HarnessUpdateReport,
+  type AgentUpdateReport,
   type SelfUpdateSupport,
 } from "@omniralph/shared";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
@@ -25,7 +25,7 @@ export interface HarnessRow {
   tracksLatest: boolean;
   /** Null for harnesses that don't report it (older versions). */
   selfUpdate: SelfUpdateSupport | null;
-  update: HarnessUpdateReport | null;
+  update: AgentUpdateReport | null;
   failedVersions: string[];
   /** An admin's "Update now" the harness hasn't acted on yet (`requestedAt` is ISO). */
   updateRequest: { version: string; requestedAt: string } | null;

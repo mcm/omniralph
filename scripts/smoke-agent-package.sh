@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Packs apps/harness, checks the tarball's contents, installs it into a clean
+# Packs apps/agent, checks the tarball's contents, installs it into a clean
 # directory outside the workspace and runs the binary. Run after `pnpm install`.
 # Usage: smoke-agent-package.sh [keep-dir]
 # With keep-dir, the smoke-tested tarball is copied there (for publishing it as is).
@@ -8,7 +8,7 @@ set -euo pipefail
 keep_dir="${1:-}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-agent_dir="$repo_root/apps/harness"
+agent_dir="$repo_root/apps/agent"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -40,7 +40,7 @@ mkdir "$work/install"
   cd "$work/install"
   npm init -y >/dev/null
   npm install --no-audit --no-fund "$tarball"
-  bin="$work/install/node_modules/.bin/omniralph-harness"
+  bin="$work/install/node_modules/.bin/omniralph-agent"
   "$bin" --version
   "$bin" --help >/dev/null
 )
