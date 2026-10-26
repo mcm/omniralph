@@ -241,9 +241,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "harness desired version",
       async ({ harnessId, orgId }) => {
-        await manage.setAgentDesiredVersion(db, orgId, harnessId, "1.9.0");
+        await manage.setAgentDesiredVersion(db, orgId, harnessId, "2.9.0");
       },
-      (response) => expect(response.desiredVersion).toBe("1.9.0"),
+      (response) => expect(response.desiredVersion).toBe("2.9.0"),
     ],
     [
       "pin",
@@ -299,9 +299,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "organization version",
       async ({ orgId }) => {
-        await defaults.setGlobalHarnessVersion(db, admin(orgId), "1.8.0");
+        await defaults.setGlobalHarnessVersion(db, admin(orgId), "2.8.0");
       },
-      (response) => expect(response.desiredVersion).toBe("1.8.0"),
+      (response) => expect(response.desiredVersion).toBe("2.8.0"),
     ],
     [
       "host tool added",

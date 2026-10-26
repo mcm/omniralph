@@ -398,7 +398,7 @@ export function versionInput(draft: VersionDraft): { version: string } | { error
   const version = versionValue(draft);
   if (version === null) return { version: "" };
   if (!AgentVersion.safeParse(version.replace(/^v(?=\d)/, "")).success) {
-    return { error: "Enter a version like 1.4.0, or inherit the organization's." };
+    return { error: "Enter a version like 2.0.0, or inherit the organization's." };
   }
   return { version };
 }
@@ -583,12 +583,12 @@ export function HarnessSettingsSection({
           <Field
             label="Version"
             htmlFor="desired-version"
-            description="Semver, e.g. 1.4.0. The organization's version is set in Settings › Harness defaults."
+            description="Semver, e.g. 2.0.0. The organization's version is set in Settings › Harness defaults."
             error={versionError}
           >
             <Input
               id="desired-version"
-              placeholder="e.g. 1.4.0"
+              placeholder="e.g. 2.0.0"
               disabled={readOnly}
               value={version.version}
               onChange={(e) => {

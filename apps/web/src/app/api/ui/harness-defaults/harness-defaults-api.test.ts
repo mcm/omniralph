@@ -154,7 +154,7 @@ async function getDefaults() {
 
 const REGISTRY = "https://registry.npmjs.org/@omniralph%2fagent";
 const requests: { authorization: string | null; accept: string | null }[] = [];
-let registry: () => Response = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
+let registry: () => Response = () => HttpResponse.json({ "dist-tags": { latest: "2.4.2" } });
 const server = setupServer(
   http.get(REGISTRY, ({ request }) => {
     requests.push({
@@ -187,32 +187,60 @@ describe("Settings › Harness defaults API", () => {
     state.maxConcurrency = null;
     state.hostTools = [];
     requests.length = 0;
-    registry = () => HttpResponse.json({ "dist-tags": { latest: "1.4.2" } });
+    registry = () => HttpResponse.json({ "dist-tags": { latest: "2.4.2" } });
   });
 
   it("sets the organization's version, which must be semver", async () => {
-    expect(await setGlobalHarnessVersion(" 1.4.0 ")).toEqual({ ok: true });
+    expect(await setGlobalHarnessVersion(" 2.4.0 ")).toEqual({ ok: true });
     // The active organization's version.
     expect(state).toMatchObject({
       organizationId: "org-1",
-      version: "1.4.0",
+      version: "2.4.0",
       updatedBy: "admin-1",
     });
-    expect(await setGlobalHarnessVersion("v1.5.0-beta.1")).toEqual({ ok: true });
-    expect(state.version).toBe("1.5.0-beta.1");
+    expect(await setGlobalHarnessVersion("v2.5.0-beta.1")).toEqual({ ok: true });
+    expect(state.version).toBe("2.5.0-beta.1");
 
-    for (const bad of ["1.4", "01.2.3", "1.2.3; rm -rf /", "next"]) {
+    for (const bad of ["1.4", "01.2.3", "2.2.3; rm -rf /", "next"]) {
       expect(await setGlobalHarnessVersion(bad)).toEqual({ ok: false, error: expect.any(String) });
     }
-    expect(state.version).toBe("1.5.0-beta.1");
+    expect(state.version).toBe("2.5.0-beta.1");
 
     expect(await setGlobalHarnessVersion("")).toEqual({ ok: true });
     expect(state.version).toBeNull();
   });
 
+  it("rejects a version below @omniralph/agent 2.0.0 with a field error", async () => {
+    state.version = "2.4.0";
+    const error = "Agents run @omniralph/agent 2.0.0 or later: enter 2.0.0 or a later version.";
+    for (const old of ["1.9.9", "0.8.0", "v1.9.9"]) {
+      expect(await setGlobalHarnessVersion(old)).toEqual({
+        ok: false,
+        error: expect.stringContaining(error),
+        fieldErrors: { version: error },
+      });
+    }
+    expect(state.version).toBe("2.4.0");
+    expect(await setGlobalHarnessVersion("2.0.0")).toEqual({ ok: true });
+    expect(state.version).toBe("2.0.0");
+  });
+
+  it("doesn't track a latest below 2.0.0 on npm", async () => {
+    registry = () => HttpResponse.json({ "dist-tags": { latest: "0.8.0" } });
+    expect(await trackLatestHarnessVersion()).toEqual({
+      ok: false,
+      error: "Couldn't read the latest version: No @omniralph/agent 2.0.0 or later on npm yet.",
+    });
+    expect(state.version).toBeNull();
+    expect(state.latest).toBeNull();
+    registry = () => HttpResponse.json({ "dist-tags": { latest: "2.0.0" } });
+    expect(await trackLatestHarnessVersion()).toEqual({ ok: true });
+    expect(state.latest).toEqual({ version: "2.0.0", error: null });
+  });
+
   it("is admin-only", async () => {
     state.user = user("member");
-    expect(await setGlobalHarnessVersion("1.4.0")).toEqual({
+    expect(await setGlobalHarnessVersion("2.4.0")).toEqual({
       ok: false,
       error: expect.any(String),
     });
@@ -234,17 +262,17 @@ describe("Settings › Harness defaults API", () => {
     }
     // `latest` is stored, and the version read is recorded for heartbeats.
     expect(state.version).toBe("latest");
-    expect(state.latest).toEqual({ version: "1.4.2", error: null });
+    expect(state.latest).toEqual({ version: "2.4.2", error: null });
     expect(requests).toEqual([
       { authorization: null, accept: "application/vnd.npm.install-v1+json" },
     ]);
 
     // Typing it works too.
     state.version = null;
-    registry = () => HttpResponse.json({ "dist-tags": { latest: "1.5.0" } });
+    registry = () => HttpResponse.json({ "dist-tags": { latest: "2.5.0" } });
     expect(await setGlobalHarnessVersion(" Latest ")).toEqual({ ok: true });
     expect(state.version).toBe("latest");
-    expect(state.latest).toEqual({ version: "1.5.0", error: null });
+    expect(state.latest).toEqual({ version: "2.5.0", error: null });
   });
 
   it("reports registry errors and keeps the version", async () => {
@@ -275,11 +303,11 @@ describe("Settings › Harness defaults API", () => {
     });
 
     it("shows the organization's version and built-in defaults", async () => {
-      state.version = "1.4.0";
+      state.version = "2.4.0";
       expect(await getDefaults()).toEqual({
         status: 200,
         body: {
-          desiredVersion: "1.4.0",
+          desiredVersion: "2.4.0",
           updatedAt: "2026-10-01T00:00:00.000Z",
           latest: null,
           packageName: "@omniralph/agent",
@@ -301,39 +329,39 @@ describe("Settings › Harness defaults API", () => {
 
     it("shows the version read from npm when the organization tracks latest", async () => {
       state.version = "latest";
-      state.latestCheck = { version: "1.5.0", error: null, checkedAt: new Date(Date.now() - 1000) };
+      state.latestCheck = { version: "2.5.0", error: null, checkedAt: new Date(Date.now() - 1000) };
       expect((await getDefaults()).body).toMatchObject({
         desiredVersion: "latest",
-        latest: { version: "1.5.0", error: null, checkedAt: expect.any(String) },
+        latest: { version: "2.5.0", error: null, checkedAt: expect.any(String) },
       });
       expect(requests).toEqual([]);
     });
 
     it("saves the defaults, then the version, in one request; a failure names what isn't saved", async () => {
-      expect(await saveDefaults({ defaults: { maxConcurrency: 4 }, version: "1.6.0" })).toEqual({
+      expect(await saveDefaults({ defaults: { maxConcurrency: 4 }, version: "2.6.0" })).toEqual({
         ok: true,
       });
-      expect(state).toMatchObject({ maxConcurrency: 4, version: "1.6.0" });
+      expect(state).toMatchObject({ maxConcurrency: 4, version: "2.6.0" });
 
-      expect(await saveDefaults({ defaults: { maxConcurrency: 99 }, version: "1.7.0" })).toEqual({
+      expect(await saveDefaults({ defaults: { maxConcurrency: 99 }, version: "2.7.0" })).toEqual({
         ok: false,
         error: "Max concurrency must be 1–32. Not saved: max concurrency and the desired version.",
       });
-      expect(state).toMatchObject({ maxConcurrency: 4, version: "1.6.0" });
+      expect(state).toMatchObject({ maxConcurrency: 4, version: "2.6.0" });
 
       // The defaults are saved before a bad version.
       expect(await saveDefaults({ defaults: { maxConcurrency: 3 }, version: "next" })).toEqual({
         ok: false,
         error:
-          "Enter a version like 1.4.0 or latest, or leave it blank. Not saved: the desired version.",
+          "Enter a version like 2.0.0 or latest, or leave it blank. Not saved: the desired version.",
       });
-      expect(state).toMatchObject({ maxConcurrency: 3, version: "1.6.0" });
+      expect(state).toMatchObject({ maxConcurrency: 3, version: "2.6.0" });
     });
 
     it("refuses task types with 400 and saves nothing: each agent decides its own", async () => {
       for (const body of [
         { acceptedTaskTypes: ["review"] },
-        { acceptedTaskTypes: ["review"], version: "1.6.0" },
+        { acceptedTaskTypes: ["review"], version: "2.6.0" },
         { defaults: { acceptedTaskTypes: ["review"], maxConcurrency: 4 } },
         { defaults: { allowedTaskTypes: ["review"], maxConcurrency: 4 } },
       ]) {

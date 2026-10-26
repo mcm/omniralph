@@ -201,7 +201,7 @@ describe("HarnessSettingsSection", () => {
     expect(document.activeElement).toBe(input);
     await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(input.getAttribute("aria-invalid")).toBe("true"));
-    expect(screen.getByText(/Enter a version like 1\.4\.0/)).toBeTruthy();
+    expect(screen.getByText(/Enter a version like 2\.0\.0/)).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await userEvent.type(input, "1.5.0");

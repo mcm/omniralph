@@ -191,7 +191,7 @@ describe("HarnessSettingsView › Defaults", () => {
     mockFetch({
       [`GET ${DEFAULTS}`]: harnessDefaults(),
       [`PUT ${DEFAULTS}`]: () =>
-        jsonResponse({ error: "Enter a version like 1.4.0 or latest, or leave it blank." }, 400),
+        jsonResponse({ error: "Enter a version like 2.0.0 or latest, or leave it blank." }, 400),
     });
     renderView();
     await waitFor(() => expect(version().value).toBe("1.4.0"));
@@ -200,7 +200,7 @@ describe("HarnessSettingsView › Defaults", () => {
     await saveAndConfirm();
     await waitFor(() =>
       expect(toasts.toast).toHaveBeenCalledWith(
-        "Enter a version like 1.4.0 or latest, or leave it blank.",
+        "Enter a version like 2.0.0 or latest, or leave it blank.",
         expect.objectContaining({ variant: "danger" }),
       ),
     );

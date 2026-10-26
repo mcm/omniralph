@@ -568,23 +568,23 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
       expect(await desired(accessToken)).toBeNull();
 
-      await setDesiredAgentVersion(db, orgId, "1.4.0", adminId);
+      await setDesiredAgentVersion(db, orgId, "2.4.0", adminId);
       // Another organization's version doesn't reach this organization's harnesses.
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
       await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
-      expect(await desired(accessToken)).toBe("1.4.0");
-      expect(await setAgentDesiredVersion(harnessId, "v1.5.0")).toEqual({ ok: true });
+      expect(await desired(accessToken)).toBe("2.4.0");
+      expect(await setAgentDesiredVersion(harnessId, "v2.5.0")).toEqual({ ok: true });
       expect(await setAgentDesiredVersion(harnessId, "latest")).toEqual({
         ok: false,
         error: expect.any(String),
       });
-      expect(await desired(accessToken)).toBe("1.5.0");
-      expect(await desired(other.accessToken)).toBe("1.4.0");
+      expect(await desired(accessToken)).toBe("2.5.0");
+      expect(await desired(other.accessToken)).toBe("2.4.0");
 
       // The harness reports where it is; the Harnesses pages show it.
       const update = {
         state: "draining",
-        version: "1.5.0",
+        version: "2.5.0",
         previous: "0.2.0",
         startsSincePending: 0,
         error: null,
@@ -593,31 +593,31 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         ...HEARTBEAT,
         selfUpdate: "supported",
         update,
-        failedVersions: ["1.3.0"],
+        failedVersions: ["2.3.0"],
       });
       const overview = (await getAgentOverview(db, orgId, harnessId))!;
       expect(overview).toMatchObject({
         selfUpdate: "supported",
         updateState: update,
-        failedVersions: ["1.3.0"],
+        failedVersions: ["2.3.0"],
       });
-      expect(harnessRow(overview, new Date(), "1.4.0")).toMatchObject({
+      expect(harnessRow(overview, new Date(), "2.4.0")).toMatchObject({
         version: "0.2.0",
-        desiredVersion: "1.5.0",
-        desiredVersionOverride: "1.5.0",
+        desiredVersion: "2.5.0",
+        desiredVersionOverride: "2.5.0",
         updateStatus: "updating",
-        failedVersions: ["1.3.0"],
+        failedVersions: ["2.3.0"],
       });
 
       // Cleared override: the global version again. Older harnesses report nothing.
       expect(await setAgentDesiredVersion(harnessId, "")).toEqual({ ok: true });
-      expect(await desired(accessToken)).toBe("1.4.0");
+      expect(await desired(accessToken)).toBe("2.4.0");
       const legacy = (await getAgentOverview(db, orgId, harnessId))!;
       expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
-      expect(harnessRow(legacy, new Date(), "1.4.0").updateStatus).toBe("manual");
+      expect(harnessRow(legacy, new Date(), "2.4.0").updateStatus).toBe("manual");
 
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await setAgentDesiredVersion(harnessId, "1.6.0")).toEqual({
+      expect(await setAgentDesiredVersion(harnessId, "2.6.0")).toEqual({
         ok: false,
         error: expect.any(String),
       });
@@ -648,8 +648,8 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       });
 
       // An override still wins.
-      expect(await setAgentDesiredVersion(harnessId, "1.9.0")).toEqual({ ok: true });
-      expect((await respond()).desiredVersion).toBe("1.9.0");
+      expect(await setAgentDesiredVersion(harnessId, "2.9.0")).toEqual({ ok: true });
+      expect((await respond()).desiredVersion).toBe("2.9.0");
 
       state.latest = "2.0.0";
       await setDesiredAgentVersion(db, orgId, null, adminId);
@@ -680,11 +680,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       });
 
       // The desired version, even one that failed on the harness.
-      expect(await setAgentDesiredVersion(harnessId, "1.5.0")).toEqual({ ok: true });
-      await respond({ ...supported, failedVersions: ["1.5.0"] });
-      expect(await requestAgentUpdate(harnessId)).toEqual({ ok: true, version: "1.5.0" });
+      expect(await setAgentDesiredVersion(harnessId, "2.5.0")).toEqual({ ok: true });
+      await respond({ ...supported, failedVersions: ["2.5.0"] });
+      expect(await requestAgentUpdate(harnessId)).toEqual({ ok: true, version: "2.5.0" });
       const second = (await respond(supported)).updateRequest;
-      expect(second).toEqual({ id: expect.any(String), version: "1.5.0" });
+      expect(second).toEqual({ id: expect.any(String), version: "2.5.0" });
       expect(second!.id).not.toBe(updateRequest!.id);
 
       // Handled: the request is cleared (an older one doesn't clear it).
@@ -697,10 +697,10 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(harnessRow((await getAgentOverview(db, orgId, harnessId))!).updateRequest).toBeNull();
 
       // Nothing to do on the desired version; members can't ask.
-      await respond({ ...supported, version: "1.5.0" });
+      await respond({ ...supported, version: "2.5.0" });
       expect(await requestAgentUpdate(harnessId)).toEqual({
         ok: false,
-        error: expect.stringContaining("already runs 1.5.0"),
+        error: expect.stringContaining("already runs 2.5.0"),
       });
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await requestAgentUpdate(harnessId)).toEqual({
@@ -753,7 +753,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       expect(await save({ config, version: "nope" })).toEqual({
         ok: false,
-        error: "Enter a version like 1.4.0, or leave it blank. Not saved: the desired version.",
+        error: "Enter a version like 2.0.0, or leave it blank. Not saved: the desired version.",
       });
       // What came before the failure is saved; what came after isn't.
       let harness = (await getAgentOverview(db, orgId, harnessId))!;
@@ -763,7 +763,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         new Request("http://localhost/api/ui", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "1.4.0" }),
+          body: JSON.stringify({ version: "2.4.0" }),
         }),
         { params: Promise.resolve({ id: harnessId }) },
       );
@@ -773,13 +773,36 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       // The harness has picked it up once a heartbeat is later than `savedAt`.
       expect(Date.parse(body.savedAt)).toBeLessThanOrEqual(Date.now());
       harness = (await getAgentOverview(db, orgId, harnessId))!;
-      expect(harness.desiredVersion).toBe("1.4.0");
+      expect(harness.desiredVersion).toBe("2.4.0");
 
       // A single change keeps its own message.
       expect(await save({ version: "nope" })).toEqual({
         ok: false,
-        error: "Enter a version like 1.4.0, or leave it blank.",
+        error: "Enter a version like 2.0.0, or leave it blank.",
       });
+    });
+
+    it("refuses a desired version below @omniralph/agent 2.0.0 with a field error", async () => {
+      const { harnessId } = await enrolledHarness();
+      const put = (version: string) =>
+        harnessSettings.PUT(
+          new Request("http://localhost/api/ui", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ version }),
+          }),
+          { params: Promise.resolve({ id: harnessId }) },
+        );
+      const error = "Agents run @omniralph/agent 2.0.0 or later: enter 2.0.0 or a later version.";
+
+      const rejected = await put("1.9.9");
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({ error, fieldErrors: { version: error } });
+      expect((await getAgentOverview(db, orgId, harnessId))!.desiredVersion).toBeNull();
+
+      const accepted = await put("2.0.0");
+      expect(accepted.status).toBe(200);
+      expect((await getAgentOverview(db, orgId, harnessId))!.desiredVersion).toBe("2.0.0");
     });
 
     it("refuses pins and unpins: they are edited from the repository's settings", async () => {
@@ -789,7 +812,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         { unpin: [repoA] },
         { pins: [repoA] },
         { unpins: [repoA] },
-        { version: "1.4.0", pin: [repoA] },
+        { version: "2.4.0", pin: [repoA] },
       ]) {
         const response = await harnessSettings.PUT(
           new Request("http://localhost/api/ui", {
