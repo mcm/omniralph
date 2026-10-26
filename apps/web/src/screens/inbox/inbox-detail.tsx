@@ -6,6 +6,7 @@ import { ITEM_HANDLED } from "@/components/runs/decisions";
 import { QuestionForm } from "@/components/runs/question-form";
 import type { InboxItem } from "@/lib/api/inbox";
 import { InboxHeaderBadges } from "./inbox-badges";
+import { InboxItemCards } from "./inbox-item-cards";
 import { inboxItemLabel } from "./labels";
 import { inboxItemUrl, inboxMenuItems } from "./menu";
 
@@ -24,7 +25,8 @@ async function copyLink(item: InboxItem) {
 /**
  * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
  * the pane's heading, why it's here, and the decisions on it (a question's form, with its
- * answers, for a run's open question).
+ * answers, for a run's open question), then the cards that show why it's here (the run's
+ * progress, a PR/MR's AI review, what went wrong) and the run's activity.
  */
 export function InboxDetail({
   item,
@@ -62,6 +64,7 @@ export function InboxDetail({
       ) : (
         <DecisionButtons key={item.key} item={item} />
       )}
+      <InboxItemCards item={item} />
     </article>
   );
 }

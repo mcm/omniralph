@@ -204,6 +204,19 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       .values({ organizationId: state.orgId, name: "build-box", lastHeartbeatAt: ago(30) })
       .returning();
     ids.agent = agent!.id;
+    // An online agent whose update to 1.4.0 failed.
+    await db.insert(agents).values({
+      organizationId: state.orgId,
+      name: "edge-box",
+      lastHeartbeatAt: new Date(),
+      updateState: {
+        state: "idle",
+        version: "1.4.0",
+        previous: "1.3.0",
+        startsSincePending: 0,
+        error: "checksum mismatch",
+      },
+    });
     const [sync] = await db
       .insert(jobs)
       .values({
@@ -226,6 +239,24 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       trigger: "label",
       status: "queued",
     });
+    // A PRD triage wrote, sized M, that nobody started.
+    const [prd] = await db
+      .insert(triageRuns)
+      .values({
+        organizationId: state.orgId,
+        linearIssueId: "triage-prd",
+        linearAgentSessionId: "triage-session-prd",
+        trigger: "label",
+        status: "completed",
+        lastResult: {
+          summary: "s",
+          error: null,
+          outcome: { outcome: "prd", size: "M", openQuestions: [] },
+        },
+        updatedAt: ago(20),
+      })
+      .returning();
+    ids.prd = prd!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -244,7 +275,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
 
   it("lists Needs you with typed references, reasons and actions", async () => {
     const items = await feed();
-    expect(items.map((i) => i.kind).sort()).toEqual(["manual_story", "pr_waiting"]);
+    expect(items.map((i) => i.kind).sort()).toEqual(["manual_story", "pr_waiting", "prd_ready"]);
     expect(byKind(items, "manual_story")).toEqual({
       key: `manual_story:${ids.story}`,
       tab: "needs-you",
@@ -266,8 +297,16 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       question: null,
       reviewState: null,
       review: null,
+      size: null,
+      version: null,
+    });
+    expect(byKind(items, "prd_ready")).toMatchObject({
+      run: { id: ids.prd, kind: "triage", status: "completed" },
+      size: "M",
+      actions: ["done", "snooze"],
     });
     expect(byKind(items, "pr_waiting")).toMatchObject({
+      size: null,
       key: `pr:${ids.lane}:changes_requested`,
       pullRequest: { provider: "github", number: 42, url: "https://github.com/acme/web/pull/42" },
       reason: "A reviewer asked for changes to pull request #42.",
@@ -283,7 +322,16 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
 
   it("lists Problems and Running, without raw job types", async () => {
     const problems = await feed("problems");
-    expect(problems.map((i) => i.kind).sort()).toEqual(["agent_offline", "failed_system"]);
+    expect(problems.map((i) => i.kind).sort()).toEqual([
+      "agent_offline",
+      "agent_update_failed",
+      "failed_system",
+    ]);
+    expect(byKind(problems, "agent_update_failed")).toMatchObject({
+      title: "edge-box",
+      version: "1.4.0",
+      reason: "edge-box couldn't update to 1.4.0. checksum mismatch",
+    });
     expect(byKind(problems, "failed_system")).toMatchObject({
       key: `failed_attempt:${ids.sync}`,
       run: null,
@@ -324,10 +372,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
         snoozedUntil: new Date(Date.now() + 3_600_000),
       },
     ]);
-    expect((await feed(undefined, alice)).map((i) => i.kind)).toEqual(["pr_waiting"]);
+    expect((await feed(undefined, alice)).map((i) => i.kind).sort()).toEqual([
+      "pr_waiting",
+      "prd_ready",
+    ]);
     expect((await feed(undefined, bob)).map((i) => i.kind).sort()).toEqual([
       "manual_story",
       "pr_waiting",
+      "prd_ready",
     ]);
     for (const user of [alice, bob]) {
       state.user = user;
@@ -340,7 +392,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       });
     }
     state.user = alice;
-    expect((await call(counts.GET)).body).toEqual({ needsYou: 1, problems: 1, running: 2 });
+    expect((await call(counts.GET)).body).toEqual({ needsYou: 2, problems: 2, running: 2 });
   });
 
   it("carries each kind of open question with the run detail's question, and offers Answer", async () => {

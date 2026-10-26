@@ -1,6 +1,7 @@
 "use client";
 
-import { useId } from "react";
+import { IconMinus } from "@tabler/icons-react";
+import { useId, type ReactNode } from "react";
 import { useLinkComponent } from "../provider/index.js";
 import { StatusDot, type StatusTone } from "../status/index.js";
 import { Card, type HeadingLevel } from "./card.js";
@@ -18,6 +19,7 @@ const STEP_TONES: Record<StepState, StatusTone> = {
   failed: "fail",
   blocked: "neutral",
   pending: "neutral",
+  canceled: "neutral",
 };
 
 export interface ProgressCardProps {
@@ -25,24 +27,49 @@ export interface ProgressCardProps {
   /** Makes the title a link (e.g. to the run or PRD the steps belong to). */
   titleHref?: string;
   headingLevel?: HeadingLevel;
+  /** Actions aligned to the right of the header (e.g. an "Open run" link). */
+  actions?: ReactNode;
   steps: readonly ProgressStep[];
+  /** Appended to the count line, e.g. the run's total duration ("3h 31m"). */
+  summarySuffix?: string;
+  /** With `onSelectStep`, the steps render as buttons and this one is marked current. */
+  selectedStepId?: string;
+  /** Makes the steps selectable: each renders as a button that calls this with its ID. */
+  onSelectStep?: (stepId: string) => void;
   className?: string;
+}
+
+function StepIcon({ state }: { state: StepState }) {
+  const label = STEP_STATE_LABELS[state];
+  if (state === "canceled") {
+    return (
+      <span className="or-step__icon" role="img" aria-label={label}>
+        <IconMinus size={12} stroke={2} aria-hidden="true" />
+      </span>
+    );
+  }
+  return <StatusDot tone={STEP_TONES[state]} label={label} />;
 }
 
 /**
  * The one progress view (Design rule 10): a bar with one segment per step, a one-line
- * count and the steps as an ordered list.
+ * count and the steps as an ordered list. With `onSelectStep` the steps are buttons and the
+ * selected one is bold with `aria-current`.
  */
 export function ProgressCard({
   title,
   titleHref,
   headingLevel,
+  actions,
   steps,
+  summarySuffix,
+  selectedStepId,
+  onSelectStep,
   className,
 }: ProgressCardProps) {
   const LinkComponent = useLinkComponent();
   const titleId = useId();
-  const summary = progressSummary(steps);
+  const summary = progressSummary(steps, summarySuffix);
   const done = steps.filter((step) => step.state === "done").length;
   const width = steps.length > 0 ? `${100 / steps.length}%` : undefined;
 
@@ -59,6 +86,7 @@ export function ProgressCard({
       }
       titleId={titleId}
       headingLevel={headingLevel}
+      actions={actions}
       className={["or-progress-card", className].filter(Boolean).join(" ")}
     >
       <div
@@ -83,23 +111,51 @@ export function ProgressCard({
       </p>
       {steps.length > 0 ? (
         <ol className="or-steps">
-          {steps.map((step) => (
-            <li key={step.id} className={`or-step or-step--${step.state}`}>
-              <StatusDot tone={STEP_TONES[step.state]} label={STEP_STATE_LABELS[step.state]} />
-              <span className="or-step__label">
-                {step.href !== undefined ? (
-                  <LinkComponent href={step.href} className="or-step__link">
-                    {step.label}
-                  </LinkComponent>
+          {steps.map((step) => {
+            const selected = onSelectStep !== undefined && step.id === selectedStepId;
+            const content = (
+              <>
+                <StepIcon state={step.state} />
+                <span className="or-step__label">
+                  {onSelectStep === undefined && step.href !== undefined ? (
+                    <LinkComponent href={step.href} className="or-step__link">
+                      {step.label}
+                    </LinkComponent>
+                  ) : (
+                    step.label
+                  )}
+                </span>
+                {step.meta !== undefined ? (
+                  <span className="or-step__meta or-mono">{step.meta}</span>
+                ) : null}
+              </>
+            );
+            return (
+              <li
+                key={step.id}
+                className={[
+                  "or-step",
+                  `or-step--${step.state}`,
+                  selected ? "or-step--selected" : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {onSelectStep !== undefined ? (
+                  <button
+                    type="button"
+                    className="or-step__button"
+                    aria-current={selected ? "step" : undefined}
+                    onClick={() => onSelectStep(step.id)}
+                  >
+                    {content}
+                  </button>
                 ) : (
-                  step.label
+                  content
                 )}
-              </span>
-              {step.meta !== undefined ? (
-                <span className="or-step__meta or-mono">{step.meta}</span>
-              ) : null}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
       ) : null}
     </Card>

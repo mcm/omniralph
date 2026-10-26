@@ -202,11 +202,18 @@ describe("reference badges", () => {
 });
 
 describe("SizeBadge", () => {
-  it.each(["S", "M", "L"] as const)("shows %s in mono, named Size %s", (size) => {
+  it.each(["XS", "S", "M", "L", "XL"] as const)("shows %s in mono, named Size %s", (size) => {
     render(<SizeBadge size={size} />);
     const badge = screen.getByRole("img", { name: `Size ${size}` });
     expect(badge.textContent).toBe(size);
     expect(badge.className).toBe("or-size or-mono");
+  });
+
+  it("shows Size XL as a tooltip on hover", async () => {
+    const user = userEvent.setup();
+    render(<SizeBadge size="XL" />);
+    await user.hover(screen.getByRole("img", { name: "Size XL" }));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Size XL");
   });
 
   it("shows Size M as a tooltip on hover", async () => {

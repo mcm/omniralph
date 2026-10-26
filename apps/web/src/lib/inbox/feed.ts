@@ -138,6 +138,8 @@ function itemFields(
   | "question"
   | "reviewState"
   | "review"
+  | "size"
+  | "version"
 > {
   const { facts } = item;
   const base = {
@@ -150,6 +152,8 @@ function itemFields(
     question: null,
     reviewState: null,
     review: null,
+    size: null,
+    version: null,
   };
   const prName = row?.pullRequest
     ? changeRequestName(row.pullRequest.provider, row.pullRequest.number)
@@ -211,6 +215,7 @@ function itemFields(
       const identifier = row?.workItem?.identifier ?? "The work item";
       return {
         ...base,
+        size: facts.size,
         reason:
           facts.outcome === "prd"
             ? `Triage wrote a PRD for ${identifier}. It's ready for a person to start.`
@@ -272,6 +277,7 @@ function itemFields(
         ...base,
         title: facts.agent.name,
         agent: facts.agent,
+        version: facts.version,
         reason: withError(`${facts.agent.name} couldn't update to ${facts.version}.`, facts.error),
       };
     case "run":

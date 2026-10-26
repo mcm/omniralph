@@ -1,0 +1,67 @@
+/*
+ * The run cards shared by the Inbox and the run detail: an attempt's outcome, and the
+ * skeletons shown while a run loads. Only `--or-` tokens.
+ */
+.or-attempt-outcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-attempt-outcome__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-attempt-outcome__error {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 480px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-run-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.or-run-skeleton__line {
+  height: 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-run-skeleton__line--short {
+  width: 40%;
+}
+
+.or-run-skeleton__line--bar {
+  height: 6px;
+}
+
+.or-run-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}

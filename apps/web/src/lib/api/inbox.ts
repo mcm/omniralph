@@ -1,4 +1,5 @@
 import type { InboxItemKind, InboxReviewState } from "@omniralph/db";
+import { TRIAGE_SIZES } from "@omniralph/shared";
 import { z } from "zod";
 import {
   agentRefSchema,
@@ -103,6 +104,10 @@ export const inboxItemSchema = z.object({
       openFindings: findingCountsSchema,
     })
     .nullable(),
+  /** `prd_ready`: the work item's size from its triage's last result; null when it has none. */
+  size: z.enum(TRIAGE_SIZES).nullable(),
+  /** `agent_update_failed`: the version the agent couldn't update to. */
+  version: z.string().nullable(),
 });
 export type InboxItem = z.infer<typeof inboxItemSchema>;
 

@@ -26,4 +26,21 @@ describe("progressSummary", () => {
   it("keeps the done count when nothing is done", () => {
     expect(progressSummary(steps("pending", "pending"))).toBe("0 of 2 done");
   });
+
+  it("counts canceled steps last and appends the suffix", () => {
+    expect(
+      progressSummary(
+        steps("done", "done", "done", "done", "done", "done", "done", "done", "canceled"),
+        "3h 31m",
+      ),
+    ).toBe("8 of 9 done · 1 canceled · 3h 31m");
+    expect(progressSummary(steps("canceled", "failed", "done"))).toBe(
+      "1 of 3 done · 1 failed · 1 canceled",
+    );
+  });
+
+  it("leaves out an empty suffix and keeps No steps yet without steps", () => {
+    expect(progressSummary(steps("done"), "")).toBe("1 of 1 done");
+    expect(progressSummary([], "3m")).toBe("No steps yet");
+  });
 });

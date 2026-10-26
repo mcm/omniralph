@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { userEvent } from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import type { LinkProps } from "../provider/index.js";
 import { UiProvider } from "../provider/index.js";
 import { ProgressCard } from "./progress-card.js";
@@ -74,5 +75,67 @@ describe("ProgressCard", () => {
     expect(bar.getAttribute("aria-valuetext")).toBe("No steps yet");
     expect(screen.getByText("No steps yet")).toBeTruthy();
     expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("draws a canceled step with a dash icon and a border-colored segment", () => {
+    const { container } = render(
+      <ProgressCard
+        title="Stories"
+        steps={[
+          { id: "a", label: "One", state: "done" },
+          { id: "b", label: "Two", state: "canceled" },
+        ]}
+      />,
+    );
+    const items = screen.getAllByRole("listitem");
+    const icon = within(items[1]!).getByRole("img", { name: "Canceled" });
+    expect(icon.className).toBe("or-step__icon");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(items[1]!.className).toBe("or-step or-step--canceled");
+    expect(container.querySelectorAll(".or-progress__seg--canceled")).toHaveLength(1);
+    expect(screen.getByText("1 of 2 done · 1 canceled")).toBeTruthy();
+  });
+
+  it("appends the summary suffix to the count line and the bar's value text", () => {
+    render(<ProgressCard title="Plan" steps={STEPS} summarySuffix="3h 31m" />);
+    const text = "2 of 4 done · 1 waiting on you · 1 blocked · 3h 31m";
+    expect(screen.getByText(text)).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe(text);
+  });
+
+  it("renders the header actions", () => {
+    render(<ProgressCard title="Plan" steps={STEPS} actions={<a href="/runs/1">Open run</a>} />);
+    const card = screen.getByRole("region", { name: "Plan" });
+    expect(within(card).getByRole("link", { name: "Open run" })).toBeTruthy();
+  });
+
+  it("renders no buttons without onSelectStep", () => {
+    render(<ProgressCard title="Plan" steps={STEPS} selectedStepId="a" />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector("[aria-current]")).toBeNull();
+  });
+
+  it("makes the steps buttons when selectable, marking the selected one", async () => {
+    const user = userEvent.setup();
+    const onSelectStep = vi.fn();
+    render(
+      <ProgressCard title="Plan" steps={STEPS} selectedStepId="c" onSelectStep={onSelectStep} />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "Write the PRD4m",
+      "Approve the PRD",
+      "Build the stories",
+      "Review",
+    ]);
+    // A selectable step is a button, never a link.
+    expect(screen.queryByRole("link")).toBeNull();
+    const selected = screen.getByRole("button", { current: "step" });
+    expect(selected.textContent).toBe("Build the stories");
+    expect(selected.closest("li")!.className).toBe("or-step or-step--blocked or-step--selected");
+    expect(buttons.filter((button) => button.hasAttribute("aria-current"))).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: /Approve the PRD/ }));
+    expect(onSelectStep).toHaveBeenCalledWith("b");
   });
 });
