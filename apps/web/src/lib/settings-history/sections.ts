@@ -9,6 +9,7 @@ import {
   getDefaultMaxConcurrency,
   getIntegrationById,
   getRepository,
+  getTrackerLabels,
   getScmConnection,
   listChatChannelPlaybookSettings,
   listConnectionRepositories,
@@ -212,6 +213,22 @@ export function trackedRoutingRules(organizationId: string): TrackedSettings {
     section: "routing_rules",
     fields: ruleFields,
     read: (db) => readRoutingRules(db, organizationId),
+  };
+}
+
+/**
+ * The organization's manual and blocked tracker labels: routing applies them before any
+ * playbook is chosen, so their history is the routing section's (no subject).
+ */
+export function trackedTrackerLabels(organizationId: string): TrackedSettings {
+  return {
+    organizationId,
+    section: "routing_rules",
+    fields: {
+      manualLabels: { label: "Manual labels" },
+      blockedLabels: { label: "Blocked labels" },
+    },
+    read: async (db) => ({ ...(await getTrackerLabels(db, organizationId)) }),
   };
 }
 

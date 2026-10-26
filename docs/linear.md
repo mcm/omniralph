@@ -158,6 +158,14 @@ tracker labels.
 | Organization (`app_settings` `tracker.labels`) | `manualLabels` | `manual` | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one ralph puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
 | Organization (`app_settings` `tracker.labels`) | `blockedLabels` | `under-review`, `blocked` | Linear labels that keep Om off a work item (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear, whichever repository it routes to. A mention handed to a run that is already working is unaffected. |
 
+The organization's tracker labels are read by any member with `GET /api/ui/trackers/labels`
+(`{ "manualLabels": [...], "blockedLabels": [...] }`; nothing saved answers the defaults above).
+Admins save both lists with `PUT` and the same body: labels are trimmed, and a blank label, a value
+that isn't a list of strings, an unknown field or an empty `manualLabels` answers 400 (with field
+errors) and saves nothing. A save is recorded in the routing rules' change history ("Manual
+labels", "Blocked labels") and publishes the organization's `settings` change event
+(`routing_rules` section).
+
 Settings are read whenever a run makes its next decision or enqueues its next job, so changing them
 also changes running epics from their next story on (for example which stories are manual).
 
@@ -291,9 +299,9 @@ as delegated issues. A story that matches no rule or work item match of its own 
 stays in the epic's repository. A story a rule routes to another repository with coding on gets a
 lane there: its own branch (the epic's branch name, based on that repository's default branch) and
 its own PR/MR, and the run's start message says so. Stories are routed before ralph decides which
-are manual: a story is manual when it carries one of the **Manual labels** of the repository it
-routes to (the epic's repository when it stays there), and its preparation is offered only when
-that repository has **Offer to run preparation** on. A story a rule routes to a repository with
+are manual: a story is manual when it carries one of the organization's **Manual labels**, and
+its preparation is offered only when the story playbook of the repository it routes to (the epic's
+repository when it stays there) has `allowPreparation` on. A story a rule routes to a repository with
 coding off is treated like a manual step ("isn't built here"), shown as "(manual: coding off)" in
 the plan: nothing is built for it, and stories that depend on it wait until a person completes it.
 Follow-ups a story files route as their source story (the "follow-up" default), so they join

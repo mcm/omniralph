@@ -107,7 +107,10 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.harnesses.all,
     ]);
     expect(settings("repository.coding")).toEqual([keys.repositories.all]);
-    expect(settings("routing_rules")).toEqual([keys.settings.detail("routing")]);
+    expect(settings("routing_rules")).toEqual([
+      keys.settings.detail("routing"),
+      keys.settings.detail("tracker-labels"),
+    ]);
     expect(settings("connection", ID)).toEqual([keys.connections.all]);
     expect(settings("organization")).toEqual([keys.organization.all]);
     expect(settings("agent_defaults")).toEqual([
