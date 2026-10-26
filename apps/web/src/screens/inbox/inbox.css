@@ -155,3 +155,28 @@
   margin-top: 24px;
   text-align: start;
 }
+
+/*
+ * The selected row's inline decisions (Design board MobileInbox, rule 16): only at phone
+ * width, on a line of their own under the row's title, lined up with it (8 px dot + gap).
+ */
+.or-inbox-row > .or-row__actions,
+.or-inbox-row__decisions {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .or-inbox-row {
+    flex-wrap: wrap;
+  }
+
+  .or-inbox-row > .or-row__actions {
+    display: flex;
+    flex-basis: 100%;
+    padding-left: 18px;
+  }
+
+  .or-inbox-row__decisions {
+    display: block;
+  }
+}

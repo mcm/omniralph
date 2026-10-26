@@ -268,7 +268,10 @@ describe("the empty Inbox", () => {
     const held = deferred();
     decide = () => held.promise;
     renderInbox();
-    const group = await screen.findByRole("group", { name: "Decisions" });
+    const group = await within(await screen.findByRole("region", { name: "Item" })).findByRole(
+      "group",
+      { name: "Decisions" },
+    );
     feeds["needs-you"] = [];
     await userEvent
       .setup({ advanceTimers: () => {} })
