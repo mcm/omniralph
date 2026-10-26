@@ -108,3 +108,50 @@
   color: var(--or-sec);
   font-size: 13px;
 }
+
+/* Nothing needs you (Design board InboxEmpty): the title and tabs over a centered state. */
+.or-inbox--empty {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.or-inbox--empty .or-inbox__list {
+  flex: 1 1 auto;
+}
+
+.or-inbox-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 64px 24px 40px;
+  color: var(--or-sec);
+  font-size: 13px;
+  text-align: center;
+}
+
+.or-inbox-empty__glyph {
+  width: 32px;
+  height: 32px;
+  color: var(--or-ter);
+}
+
+.or-inbox-empty__title {
+  margin: 4px 0 0;
+  color: var(--or-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.or-inbox-empty__running {
+  margin: 0;
+  max-width: 60ch;
+  overflow-wrap: anywhere;
+}
+
+.or-inbox-empty__up-next {
+  align-self: stretch;
+  margin-top: 24px;
+  text-align: start;
+}

@@ -17,6 +17,7 @@ import type { InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/in
 import { useClock } from "../clock";
 import { InboxRowBadges } from "./inbox-badges";
 import { InboxDetail, InboxItemHandled } from "./inbox-detail";
+import { InboxEmptyState, inboxEmptyRunning } from "./inbox-empty-state";
 import { compactAge, inboxItemLabel } from "./labels";
 import { useInboxCounts, useInboxFeed } from "./queries";
 import { inboxHref, parseInboxParams } from "./url";
@@ -37,8 +38,8 @@ const COUNT_OF: Record<InboxTabParam, keyof InboxCountsResponse> = {
   running: "running",
 };
 
-const EMPTY_TAB: Record<InboxTabParam, string> = {
-  "needs-you": "Nothing needs you",
+/** Problems' and Running's empty states (Needs you has `InboxEmptyState`). */
+const EMPTY_TAB: Record<Exclude<InboxTabParam, "needs-you">, string> = {
   problems: "No problems",
   running: "Nothing is running",
 };
@@ -67,8 +68,10 @@ export function nextSelection(
  * and Running tabs with their counts, the tab's items, and the selected item's detail
  * beside them. The tab and the selected item live in the URL (`?tab=&item=`); without an
  * item the tab's first is selected. Every query is live (change events refetch them).
+ * When nothing needs you, `InboxEmptyState` takes the list's and the detail's place, with
+ * `upNext` (the Backlog epic's Up next module) under it.
  */
-export function InboxView() {
+export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { tab, item: itemParam } = parseInboxParams(searchParams);
@@ -113,6 +116,8 @@ export function InboxView() {
     }),
   );
 
+  const nothingNeedsYou = tab === "needs-you" && items?.length === 0;
+
   const list = (
     <div className="or-inbox__list">
       <h1 className="or-inbox__title">Inbox</h1>
@@ -134,7 +139,9 @@ export function InboxView() {
                 </Button>
               }
             />
-          ) : items === undefined ? null : items.length === 0 ? (
+          ) : items === undefined ? null : nothingNeedsYou ? (
+            <NothingNeedsYou upNext={upNext} />
+          ) : items.length === 0 && tab !== "needs-you" ? (
             <EmptyState headingLevel={2} title={EMPTY_TAB[tab]} />
           ) : (
             <RowList aria-label={TAB_LABELS[tab]}>
@@ -160,6 +167,8 @@ export function InboxView() {
     </div>
   );
 
+  if (nothingNeedsYou) return <div className="or-inbox or-inbox--empty">{list}</div>;
+
   const detail = selected ? (
     <InboxDetail item={selected} now={now} showOrganization={showOrganization} />
   ) : handled ? (
@@ -176,6 +185,17 @@ export function InboxView() {
       listLabel="Inbox"
       detailLabel="Item"
       listWidth={INBOX_LIST_WIDTH}
+    />
+  );
+}
+
+/** The empty Needs you tab, with what's running (the Running tab's feed). */
+function NothingNeedsYou({ upNext }: { upNext?: React.ReactNode }) {
+  const running = useInboxFeed("running");
+  return (
+    <InboxEmptyState
+      running={running.data ? inboxEmptyRunning(running.data.items) : null}
+      upNext={upNext}
     />
   );
 }

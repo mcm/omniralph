@@ -80,6 +80,8 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   `md` (36 px) or `sm` (30 px); optional leading Tabler `icon`. A native
   `<button type="button">`, or a link through `UiProvider` when `href` is given. `primary`
   (lavender with the glow) is only for the action that clears a needs-you item.
+- `TextLink`: an inline text link (`or-link`, underlined) rendered through `UiProvider`'s
+  link component, e.g. a run's title inside a sentence.
 - `IconButton`: a required `label` is its accessible name and its tooltip.
 - `Tooltip`: Radix tooltip shown on hover and keyboard focus; carries its own provider.
 - `Toolbar`: `label`, up to two `actions` in one bordered group, and `menu` items behind a

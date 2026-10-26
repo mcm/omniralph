@@ -362,3 +362,21 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Inline text link */
+.or-link {
+  color: var(--or-text);
+  text-decoration: underline;
+  text-decoration-color: var(--or-border);
+  text-underline-offset: 3px;
+}
+
+.or-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.or-link:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+  border-radius: var(--or-radius-sm);
+}
