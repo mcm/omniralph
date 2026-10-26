@@ -752,7 +752,7 @@ export const askAboutCodeTool = defineChatTool({
       case "query_disabled":
         return {
           error: "query_disabled",
-          message: `Query tasks are turned off for ${outcome.repository.fullPath}, so I can't answer questions about its code. Nothing was queued. An admin can turn them on in the repository's settings on ${appUrl}/repositories/${outcome.repository.id}/settings.`,
+          message: `Ask is turned off for ${outcome.repository.fullPath}, so I can't answer questions about its code. Nothing was queued. An admin can turn on the repo's Ask switch on ${appUrl}/repositories/${outcome.repository.id}/settings.`,
         };
       case "no_capable_harness":
         return {

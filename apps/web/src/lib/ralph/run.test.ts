@@ -3593,6 +3593,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(started).toContain("🚀 Omniralph started building");
       expect(failed).toContain("⚠️ Omniralph stopped working on [ENG-141 Doomed]");
       expect(failed).toContain("Coding was turned off for `acme/api`");
+      expect(failed).toContain("**Coding** switch back on under **Repos**");
+      expect(failed).not.toContain("Task types");
       expect(more).toEqual([]);
     });
 

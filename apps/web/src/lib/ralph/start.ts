@@ -115,9 +115,9 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 /** The error for an issue no repository can build: none has coding on. */
 export function unroutableMessage(epic: Pick<Epic, "identifier">): string {
   return [
-    `I can't build **${epic.identifier}**: no repository has coding on.`,
-    "Turn coding on for a repository under **Repository › Settings › Task types** (and add a " +
-      "rule that routes this issue to it under **Settings › Routing**). Then delegate it to me again.",
+    `I can't build **${epic.identifier}**: no repo has Coding on.`,
+    "Give a repo a work item match that fits this work item and turn on its **Coding** switch " +
+      "under **Repos**. Then delegate it to me again.",
   ].join("\n\n");
 }
 
