@@ -32,6 +32,7 @@ import {
   ralphRuns,
   saveChatConnection,
   saveIntegration,
+  scmConnections,
   updateLane,
   updateRun,
   updateStory,
@@ -58,6 +59,7 @@ import type { LinearGateway } from "@/lib/linear/gateway";
 import { runListSchema, type RunList, type RunRow } from "@/lib/api/runs";
 import {
   runDetailSchema,
+  runFilterOptionsSchema,
   runRetryResultSchema,
   transcriptPageSchema,
   type RunDetail,
@@ -108,6 +110,7 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => {
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const runList = await import("@/app/api/ui/runs/route");
+const filterOptions = await import("@/app/api/ui/runs/filter-options/route");
 const runDetail = await import("@/app/api/ui/runs/[id]/route");
 const runStop = await import("@/app/api/ui/runs/[id]/stop/route");
 const runRetry = await import("@/app/api/ui/runs/[id]/retry/route");
@@ -564,6 +567,42 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
   });
 
+  it("offers the organization's repositories as filter options, by full path", async () => {
+    const zeta = (await upsertScmConnection(db, {
+      organizationId: orgId,
+      provider: "github",
+      name: "zeta",
+      baseUrl: "https://api.github.com",
+      externalId: "zeta",
+      credentials: {},
+    }))!;
+    const early = await connectRepository(db, {
+      connectionId: zeta.id,
+      provider: "github",
+      externalId: "zeta-1",
+      fullPath: "aardvark/tools",
+    });
+    try {
+      const expected = {
+        repositories: [
+          { id: early.id, provider: "github", fullPath: "aardvark/tools" },
+          { id: repoA, provider: "github", fullPath: "acme/api" },
+          { id: repoB, provider: "gitlab", fullPath: "acme/web" },
+        ].map((repo) => ({ ...repo, organization: { id: orgId, name: "Acme", role: "admin" } })),
+      };
+      for (const search of [{}, { organization: orgId }] as Record<string, string>[]) {
+        const { status, body } = await call(filterOptions.GET, { search });
+        expect(status).toBe(200);
+        expect(runFilterOptionsSchema.parse(body)).toEqual(expected);
+      }
+      expect((await call(filterOptions.GET, { search: { organization: "acme" } })).status).toBe(
+        400,
+      );
+    } finally {
+      await db.delete(scmConnections).where(eq(scmConnections.id, zeta.id));
+    }
+  });
+
   it("combines filters, and refuses unknown filter values", async () => {
     const { epic, request, reviewRun, triage, ask, chat } = await runOfEachKind();
 
@@ -577,6 +616,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect(ids(await listPage({ kind: "review", status: "running" }))).toEqual([reviewRun.id]);
     expect(ids(await listPage({ kind: "epic", status: "running" }))).toEqual([]);
     expect(ids(await listPage({ repository: repoB }))).toEqual([reviewRun.id]);
+    expect(ids(await listPage({ repository: [repoA, repoB], kind: ["review", "epic"] }))).toEqual([
+      reviewRun.id,
+      epic.id,
+    ]);
     expect(ids(await listPage({ repository: repoA, kind: "request" }))).toEqual([
       chat.id,
       request.id,
@@ -599,6 +642,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       { status: "pending" },
       { origin: "github" },
       { repository: "not-a-uuid" },
+      { repository: [repoA, "not-a-uuid"] },
       { agent: "agent-a" },
       { organization: "acme" },
       { cursor: "not-a-cursor" },

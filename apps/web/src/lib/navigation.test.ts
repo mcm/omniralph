@@ -23,8 +23,14 @@ function appPages(dir = APP_DIR, segments: string[] = []): Map<string, string> {
 
 const pages = appPages();
 
-/** Entries whose 2.0 page doesn't exist yet: Runs (`/runs`) comes with Epic 5. */
-const PAGES_TO_COME = ["/runs"];
+/** Entries whose 2.0 page doesn't exist yet. */
+const PAGES_TO_COME: string[] = [];
+
+/**
+ * Pages no entry lights up: today's Reviews, Triage and Jobs pages, which go with the old
+ * run pages (TOOL-716), and Analytics, which gets its own entry in Epic 10.
+ */
+const UNLISTED_PAGES = ["/reviews", "/triage", "/jobs", "/analytics"];
 
 /** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
 function pageFor(href: string): string | undefined {
@@ -96,11 +102,6 @@ describe("navItems", () => {
     ["/", "inbox"],
     ["/runs", "runs"],
     ["/runs/abc", "runs"],
-    ["/reviews", "runs"],
-    ["/reviews/123", "runs"],
-    ["/triage/abc", "runs"],
-    ["/jobs", "runs"],
-    ["/analytics", "runs"],
     ["/repositories", "repos"],
     ["/repositories/abc/settings", "repos"],
     ["/agents", "agents"],
@@ -114,9 +115,26 @@ describe("navItems", () => {
     ]);
   });
 
+  it.each(["/analytics", "/reviews/123", "/triage", "/jobs", "/runsx"])(
+    "makes no entry active on %s",
+    (pathname) => {
+      expect(navItems.filter((item) => isNavActive(pathname, item))).toEqual([]);
+    },
+  );
+
+  it("points Runs at /runs, lit for /runs alone, as a phone tab", () => {
+    expect(navItems.find((item) => item.id === "runs")).toMatchObject({
+      href: "/runs",
+      activeFor: ["/runs"],
+      phone: "tab",
+    });
+  });
+
   it("makes every page reachable from an entry", () => {
     const orphaned = [...pages.keys()].filter(
-      (route) => !navItems.some((item) => isNavActive(route, item)),
+      (route) =>
+        !UNLISTED_PAGES.some((prefix) => route === prefix || route.startsWith(`${prefix}/`)) &&
+        !navItems.some((item) => isNavActive(route, item)),
     );
     expect(orphaned).toEqual([]);
   });

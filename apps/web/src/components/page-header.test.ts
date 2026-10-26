@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const src = resolve(__dirname, "..");
@@ -35,8 +35,10 @@ function reachableModules(entry: string): string[] {
 describe("page headers", () => {
   const pages = walk(appRoutes)
     .filter((path) => path.endsWith("page.tsx"))
-    // The root page only redirects.
-    .filter((path) => path !== join(appRoutes, "page.tsx"));
+    // The 2.0 screens (the Inbox at the root, Runs) title themselves without today's
+    // PageHeader.
+    .filter((path) => path !== join(appRoutes, "page.tsx"))
+    .filter((path) => !path.startsWith(join(appRoutes, "runs") + sep));
 
   it.each(pages.map((page) => [relative(appRoutes, page), page]))(
     "%s renders the shared PageHeader",

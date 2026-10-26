@@ -81,3 +81,33 @@ export function inboxKeys(keys: QueryKeys) {
     counts: (scope: string) => [...keys.inbox.all, "counts", { organization: scope }] as QueryKey,
   };
 }
+
+/**
+ * Query keys of the Runs screen's lists (`/api/ui/runs`), keyed by organization scope: a
+ * list per filters (all its pages), and the filters' options. Every list sits under
+ * `keys.runs.lists`, which a `run` change event invalidates; a run's detail, Session and
+ * findings sit under `keys.runs.detail(id)`.
+ */
+export function runsKeys(keys: QueryKeys) {
+  return {
+    all: keys.runs.all,
+    lists: keys.runs.lists,
+    list: (
+      filters: {
+        kind: readonly string[];
+        status: readonly string[];
+        repository: readonly string[];
+      },
+      scope: string,
+    ) =>
+      keys.runs.list({
+        kind: filters.kind.join(","),
+        status: filters.status.join(","),
+        repository: filters.repository.join(","),
+        organization: scope,
+      }),
+    filterOptions: (scope: string) =>
+      [...keys.runs.all, "filter-options", { organization: scope }] as QueryKey,
+    filterOptionsAll: [...keys.runs.all, "filter-options"] as QueryKey,
+  };
+}

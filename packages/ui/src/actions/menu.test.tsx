@@ -226,3 +226,36 @@ describe("Menu header", () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+describe("Menu groups and keepOpen", () => {
+  it("labels consecutive items of a group, draws marks and stays open on keepOpen items", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const trigger = renderMenu([
+      { label: "All", onSelect: noop },
+      {
+        label: "acme/api",
+        onSelect,
+        group: "Acme",
+        keepOpen: true,
+        mark: <svg data-testid="mark" />,
+      },
+      { label: "acme/web", onSelect: noop, group: "Acme" },
+      { label: "beta/app", onSelect: noop, group: "Beta" },
+    ]);
+    await user.click(trigger);
+    const acme = await screen.findByRole("group", { name: "Acme" });
+    expect(
+      within(acme)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["acme/api", "acme/web"]);
+    expect(
+      within(screen.getByRole("group", { name: "Beta" })).getByRole("menuitem").textContent,
+    ).toBe("beta/app");
+    expect(screen.getByTestId("mark").closest(".or-menu__mark")).not.toBeNull();
+    await user.click(screen.getByRole("menuitem", { name: "acme/api" }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+});

@@ -90,6 +90,22 @@ export const runListSchema = z.object({
 });
 export type RunList = z.infer<typeof runListSchema>;
 
+/** `GET /api/ui/runs/filter-options`'s query: the organization scope. */
+export const runFilterOptionsQuerySchema = z.object({
+  organization: z
+    .union([z.literal("all"), z.uuid()], { error: "Unknown organization." })
+    .optional(),
+});
+
+/**
+ * `GET /api/ui/runs/filter-options?organization=`: the Repo filter's repositories in scope,
+ * by full path, each with its organization.
+ */
+export const runFilterOptionsSchema = z.object({
+  repositories: z.array(repositoryRefSchema.extend({ organization: organizationRefSchema })),
+});
+export type RunFilterOptions = z.infer<typeof runFilterOptionsSchema>;
+
 // ── Run detail ───────────────────────────────────────────────────────────────
 
 /** `jobs.status`: an attempt's status. */

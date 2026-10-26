@@ -35,12 +35,12 @@ export function decodeRunCursor(value: string): RunCursor | null {
   }
 }
 
-/** `GET /api/ui/runs`'s query: `kind` and `status` repeat, every value must be known. */
+/** `GET /api/ui/runs`'s query: `kind`, `status`, `origin` and `repository` repeat, every value must be known. */
 export const runListQuerySchema = z.object({
   kind: z.array(z.enum(RUN_KINDS, { error: "Unknown run kind." })).default([]),
   status: z.array(z.enum(RUN_STATUSES, { error: "Unknown run status." })).default([]),
   origin: z.array(z.enum(RUN_ORIGINS, { error: "Unknown run origin." })).default([]),
-  repository: z.uuid({ error: "Unknown repository." }).optional(),
+  repository: z.array(z.uuid({ error: "Unknown repository." })).default([]),
   agent: z.uuid({ error: "Unknown agent." }).optional(),
   organization: z
     .union([z.literal("all"), z.uuid()], { error: "Unknown organization." })
@@ -62,7 +62,7 @@ export const runListQuerySchema = z.object({
 });
 export type RunListQuery = z.infer<typeof runListQuerySchema>;
 
-const REPEATED = ["kind", "status", "origin"] as const;
+const REPEATED = ["kind", "status", "origin", "repository"] as const;
 
 /** The search params as `runListQuerySchema` reads them: the repeatable ones as lists. */
 export function runListSearch(params: URLSearchParams): Record<string, unknown> {

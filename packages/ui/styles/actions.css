@@ -174,6 +174,60 @@
   outline-offset: -2px;
 }
 
+/* Filter button (FilterMenu): "Kind: All ▾" above a list */
+.or-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: transparent;
+  color: var(--or-sec);
+  font-family: var(--or-font-sans);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.or-filter:hover,
+.or-filter[data-state="open"] {
+  background: var(--or-hover);
+}
+
+.or-filter:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-filter:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.or-filter__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--or-text);
+}
+
+.or-filter--active .or-filter__value {
+  font-weight: 500;
+}
+
+.or-filter__chevron {
+  flex: none;
+  color: var(--or-ter);
+}
+
 /* Menu */
 .or-menu {
   z-index: 50;
@@ -236,6 +290,27 @@
 .or-menu__icon {
   flex: none;
   color: var(--or-sec);
+}
+
+.or-menu__mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--or-sec);
+}
+
+.or-menu__group + .or-menu__group,
+.or-menu__item + .or-menu__group,
+.or-menu__group + .or-menu__item {
+  margin-top: 4px;
+}
+
+.or-menu__group-label {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--or-ter);
 }
 
 .or-menu__label {

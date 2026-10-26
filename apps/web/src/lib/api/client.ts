@@ -31,8 +31,8 @@ export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   /** Sent as JSON. */
   body?: unknown;
-  /** Query string values; `undefined` and `null` are left out. */
-  params?: Record<string, string | number | boolean | null | undefined>;
+  /** Query string values; `undefined` and `null` are left out, lists repeat their key. */
+  params?: Record<string, string | number | boolean | readonly string[] | null | undefined>;
   /**
    * The organization the caller's cache is for (the first element of its query key): the
    * handler refuses the request when another tab has switched the active one.
@@ -45,7 +45,8 @@ export interface ApiRequestOptions {
 function withParams(path: string, params: ApiRequestOptions["params"]): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params ?? {})) {
-    if (value !== undefined && value !== null) query.set(key, String(value));
+    if (Array.isArray(value)) for (const item of value) query.append(key, item);
+    else if (value !== undefined && value !== null) query.set(key, String(value));
   }
   return query.size > 0 ? `${path}${path.includes("?") ? "&" : "?"}${query}` : path;
 }
