@@ -56,11 +56,11 @@ export interface Sink<Output = unknown, Result = SinkResult<Output>> {
   onStarted?(
     db: Database,
     job: Job,
-    harnessId: string,
+    agentId: string,
   ): Promise<{ skip: false } | { skip: true; reason: JobSkipReason }>;
   /** Applies a completed run's result. Called again for a replayed result, so it must be idempotent. */
   apply(db: Database, job: Job, result: Result): Promise<unknown>;
-  /** The run failed for good; `error` is null when the harness reported none. */
+  /** The run failed for good; `error` is null when the agent reported none. */
   onFailed?(db: Database, job: Job, error: string | null): Promise<unknown>;
   /** A retryable failure: the run waits for a redelivery. */
   onRetry?(db: Database, job: Job, error: string | null): Promise<unknown>;

@@ -30,7 +30,7 @@ import type { ActionResult } from "@/lib/action-result";
 import type { SelectableRepositories } from "@/lib/api/repositories";
 import { gitlabWebhookUrl } from "@/lib/app-url";
 import type { OrgUser } from "@/lib/auth/session";
-import { bumpOrganizationHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
 import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { getGitHubAppAuth } from "@/lib/scm/github-app";
@@ -237,7 +237,7 @@ export async function disconnectRepository(
     trackedConnection(organizationId, repo.connectionId),
     (tx) => disconnectRepositoryRow(tx, organizationId, id),
   );
-  // Its pins are gone from the heartbeats of whichever harnesses had it.
+  // Its pins are gone from the heartbeats of whichever agents had it.
   await bumpOrganizationHeartbeat(organizationId);
   return { ok: true, warning };
 }

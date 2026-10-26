@@ -124,9 +124,9 @@ describe("triageRunRow", () => {
     expect(
       triageRunRow({
         run: run({ status: "failed" }),
-        jobs: [job("job-1", { issue }, { status: "failed", error: "harness crashed" })],
+        jobs: [job("job-1", { issue }, { status: "failed", error: "agent crashed" })],
       }).error,
-    ).toBe("harness crashed");
+    ).toBe("agent crashed");
     expect(triageRunRow({ run: run({ lastResult: failed }), jobs: [] }).error).toBeNull();
   });
 });

@@ -162,7 +162,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
   let orgId: string;
   let repoA: string;
   let repoB: string;
-  let harnessId: string;
+  let agentId: string;
   let linear: FakeLinearGateway;
   let session = 0;
 
@@ -194,7 +194,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       if (fullPath === "acme/api") repoA = repository.id;
       else repoB = repository.id;
     }
-    [{ id: harnessId }] = (await db
+    [{ id: agentId }] = (await db
       .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: agents.id })) as [{ id: string }];
@@ -238,7 +238,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
 
   /**
    * A running job of the run whose session asks to use `tool`, on the run and on the job's
-   * stored request (`run_permission_requests`), as the harness asks.
+   * stored request (`run_permission_requests`), as the agent asks.
    */
   async function askPermission(runId: string, tool = "Bash") {
     const { job } = await insertJob(db, {
@@ -544,7 +544,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     const lane = (await getMainLane(db, run))!;
     const askedAt = new Date().toISOString();
     await updateLane(db, lane.id, {
-      agentId: harnessId,
+      agentId,
       prNumber: 3,
       prUrl: "https://github.com/acme/api/pull/3",
       cleanup: {

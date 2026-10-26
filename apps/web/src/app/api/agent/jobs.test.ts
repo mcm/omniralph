@@ -927,7 +927,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
         status: "completed",
         result: { findings: [] },
       });
-      const audit = await listAgentAudit(db, { agentId: agentId, event: "result_submitted" });
+      const audit = await listAgentAudit(db, { agentId, event: "result_submitted" });
       expect(audit.map((a) => a.detail)).toEqual([{ jobId, status: "completed" }]);
     });
 
@@ -1219,7 +1219,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
     it("returns central config, refreshed job tokens and jobs to cancel", async () => {
       const { agentId, accessToken } = await newAgent({ maxConcurrency: 2 });
       const other = await newAgent();
-      await db.insert(agentRepoPins).values({ agentId: agentId, repositoryId });
+      await db.insert(agentRepoPins).values({ agentId, repositoryId });
 
       const running = await newJob();
       await startAs(running, accessToken);
@@ -1346,7 +1346,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
           kind: "prd",
           repositoryId,
           status: "running",
-          agentId: agentId,
+          agentId,
         })
         .returning();
       const [job] = await db
@@ -1356,7 +1356,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
           type: "ralph.story",
           taskType: "coding",
           status: "running",
-          agentId: agentId,
+          agentId,
           ralphRunId: run!.id,
           deliveryCount: 1,
           startedAt: new Date(),

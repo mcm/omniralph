@@ -318,7 +318,7 @@ describe("describeAttempt", () => {
     }
   });
 
-  it("never says harness or Ralph, and never shows a job type", () => {
+  it("never says agent or Ralph, and never shows a job type", () => {
     const rawTypes = /\b[a-z]+\.[a-z][a-z-]*\b/;
     const types = [...JOB_TYPES, "unknown.type"];
     for (const type of types) {

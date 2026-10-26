@@ -166,7 +166,7 @@ describe.skipIf(!databaseAvailable)("/api/agent/jobs/{id}/permissions", () => {
           taskType: "query",
           taskId: "builtin:chat-ask",
           status: "running",
-          agentId: agentId,
+          agentId,
         })
         .returning();
       const session = await getTokenSigner().signJobToken({
@@ -291,7 +291,7 @@ describe.skipIf(!databaseAvailable)("/api/agent/jobs/{id}/permissions", () => {
           type: "ralph.story",
           taskType: "coding",
           status: "running",
-          agentId: agentId,
+          agentId,
           repositoryId,
           ralphRunId: run.id,
         })

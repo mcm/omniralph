@@ -45,7 +45,7 @@ const SETTINGS_INVALIDATIONS: Record<
   "repository.reviews": (keys, id) => repositoryKeys(keys, id),
   "repository.coding": (keys, id) => repositoryKeys(keys, id),
   // Pins show on the repository and on the agents it's pinned to.
-  "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.harnesses.all],
+  "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.agents.all],
   // The routing rules, and the tracker labels routing applies.
   routing_rules: (keys) => [
     keys.settings.detail("routing"),
@@ -55,9 +55,9 @@ const SETTINGS_INVALIDATIONS: Record<
   organization: (keys) => [keys.organization.all],
   // Agents and repositories show the defaults they inherit.
   agent_defaults: (keys) => [
-    keys.settings.detail("harness-defaults"),
+    keys.settings.detail("agent-defaults"),
     keys.settings.detail("host-tools"),
-    keys.harnesses.all,
+    keys.agents.all,
     keys.repositories.all,
   ],
   // Playbooks list each other (PR description playbooks); repos and chat settings bind them.
@@ -113,8 +113,8 @@ export const LIVE_INVALIDATIONS = {
   ],
   settings: (event, keys) => SETTINGS_INVALIDATIONS[event.section](keys, event.subjectId),
   agent: (event, keys) => [
-    keys.harnesses.lists,
-    ...event.ids.map((agentId) => keys.harnesses.detail(agentId)),
+    keys.agents.lists,
+    ...event.ids.map((agentId) => keys.agents.detail(agentId)),
   ],
   repository: (event, keys) => [
     keys.repositories.lists,

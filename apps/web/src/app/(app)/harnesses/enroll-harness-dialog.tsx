@@ -35,8 +35,8 @@ import {
   ENROLLMENT_NAME_MAX,
   enrollmentStatusSchema,
   type CreatedEnrollment,
-} from "@/lib/api/harnesses";
-import { HARNESS_INSTALL_COMMAND } from "@/lib/harnesses/display";
+} from "@/lib/api/agents";
+import { AGENT_INSTALL_COMMAND } from "@/lib/agents/display";
 
 async function copy(text: string, what: string) {
   try {
@@ -81,21 +81,21 @@ function useEnrollmentStatus(enrollment: CreatedEnrollment | null) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: [...keys.harnesses.all, "enrollment", enrollment?.id],
+    queryKey: [...keys.agents.all, "enrollment", enrollment?.id],
     enabled: enrollment !== null,
     queryFn: async ({ signal }) => {
       const status = await api.get(
-        `/api/ui/harness-enrollments/${enrollment!.id}`,
+        `/api/ui/agent-enrollments/${enrollment!.id}`,
         enrollmentStatusSchema,
         { organizationId: organization.id, signal },
       );
-      if (status.harness) await client.invalidateQueries({ queryKey: keys.harnesses.lists });
+      if (status.agent) await client.invalidateQueries({ queryKey: keys.agents.lists });
       return status;
     },
     refetchInterval: (query) => {
       const status = query.state.data;
       const expired = enrollment !== null && Date.parse(enrollment.expiresAt) <= Date.now();
-      return status?.harness || expired ? false : 3_000;
+      return status?.agent || expired ? false : 3_000;
     },
   });
 }
@@ -123,11 +123,11 @@ export function EnrollHarnessDialog() {
   const [name, setName] = React.useState("");
   const [enrollment, setEnrollment] = React.useState<CreatedEnrollment | null>(null);
   const status = useEnrollmentStatus(open ? enrollment : null);
-  const connected = enrollment && status.data?.harness;
+  const connected = enrollment && status.data?.agent;
 
   const create = useApiMutation({
     mutationFn: (harnessName: string, { organizationId }) =>
-      api.post("/api/ui/harness-enrollments", createdEnrollmentSchema, {
+      api.post("/api/ui/agent-enrollments", createdEnrollmentSchema, {
         body: { name: harnessName },
         organizationId,
       }),
@@ -210,7 +210,7 @@ export function EnrollHarnessDialog() {
                 <SecretRow
                   icon={<IconPackage size={14} className="shrink-0 text-text-secondary" />}
                   label="Install command"
-                  value={HARNESS_INSTALL_COMMAND}
+                  value={AGENT_INSTALL_COMMAND}
                 />
                 <SecretRow
                   icon={<IconTerminal2 size={14} className="shrink-0 text-text-secondary" />}

@@ -29,11 +29,11 @@ afterEach(() => {
 describe("apiRequest", () => {
   it("parses a 2xx response with the schema", async () => {
     const fetchMock = respond(JSON.stringify({ name: "build-01", extra: true }));
-    await expect(apiRequest("/api/ui/harnesses/h1", schema)).resolves.toEqual({
+    await expect(apiRequest("/api/ui/agents/h1", schema)).resolves.toEqual({
       name: "build-01",
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/ui/harnesses/h1",
+      "/api/ui/agents/h1",
       expect.objectContaining({ method: "GET", body: undefined }),
     );
   });

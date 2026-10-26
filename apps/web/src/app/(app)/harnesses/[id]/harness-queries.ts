@@ -4,11 +4,7 @@ import { useQuery, type QueryKey } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
-import {
-  harnessDetailSchema,
-  harnessHostToolsSchema,
-  harnessInstallablesSchema,
-} from "@/lib/api/harnesses";
+import { agentDetailSchema, agentHostToolsSchema, agentInstallablesSchema } from "@/lib/api/agents";
 import type { QueryKeys } from "@/lib/api/keys";
 
 /** The page asking, so a harness of another organization switches to it and comes back here. */
@@ -18,14 +14,14 @@ function currentPage(): string | undefined {
     : `${window.location.pathname}${window.location.search}`;
 }
 
-/** A harness and what all its tabs show, live (`GET /api/ui/harnesses/{id}`). */
-export function useHarnessDetail(harnessId: string) {
+/** A harness and what all its tabs show, live (`GET /api/ui/agents/{id}`). */
+export function useHarnessDetail(agentId: string) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.harnesses.detail(harnessId),
+    queryKey: keys.agents.detail(agentId),
     queryFn: ({ signal }) =>
-      api.get(`/api/ui/harnesses/${harnessId}`, harnessDetailSchema, {
+      api.get(`/api/ui/agents/${agentId}`, agentDetailSchema, {
         params: { next: currentPage() },
         organizationId: organization.id,
         signal,
@@ -34,13 +30,13 @@ export function useHarnessDetail(harnessId: string) {
 }
 
 /** The Installables tab: reported installables and recent install jobs, live. */
-export function useHarnessInstallables(harnessId: string) {
+export function useHarnessInstallables(agentId: string) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.harnesses.part(harnessId, "installables"),
+    queryKey: keys.agents.part(agentId, "installables"),
     queryFn: ({ signal }) =>
-      api.get(`/api/ui/harnesses/${harnessId}/installables`, harnessInstallablesSchema, {
+      api.get(`/api/ui/agents/${agentId}/installables`, agentInstallablesSchema, {
         organizationId: organization.id,
         signal,
       }),
@@ -48,13 +44,13 @@ export function useHarnessInstallables(harnessId: string) {
 }
 
 /** The Host tools tab: the catalog's host tools with this harness's paths and reports, live. */
-export function useHarnessHostTools(harnessId: string) {
+export function useHarnessHostTools(agentId: string) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.harnesses.part(harnessId, "host-tools"),
+    queryKey: keys.agents.part(agentId, "host-tools"),
     queryFn: ({ signal }) =>
-      api.get(`/api/ui/harnesses/${harnessId}/host-tools`, harnessHostToolsSchema, {
+      api.get(`/api/ui/agents/${agentId}/host-tools`, agentHostToolsSchema, {
         organizationId: organization.id,
         signal,
       }),
@@ -66,5 +62,5 @@ export function useHarnessHostTools(harnessId: string) {
  * repositories pages (which show pins and the harnesses serving them).
  */
 export function harnessChanged(keys: QueryKeys): QueryKey[] {
-  return [keys.harnesses.all, keys.repositories.all];
+  return [keys.agents.all, keys.repositories.all];
 }

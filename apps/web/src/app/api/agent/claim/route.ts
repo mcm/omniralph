@@ -15,7 +15,7 @@ import {
 import { badRequest, readJson, unauthorized } from "@/lib/agent-auth/request";
 import { readAgentAuthState } from "@/lib/agent-auth/auth-state";
 import { requireAgent } from "@/lib/agent-auth/verify";
-import { readAgentOrganization } from "@/lib/harnesses/organization";
+import { readAgentOrganization } from "@/lib/agents/organization";
 import { hasDueJob, reconcileDueJobs, syncJobsDue } from "@/lib/dispatch/due";
 import { signJobTokens, type SignedJobTokens } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";

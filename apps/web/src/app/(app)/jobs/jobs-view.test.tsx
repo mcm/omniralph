@@ -12,7 +12,7 @@ import {
 } from "@/components/query-test-utils";
 import type * as OmniralphUi from "@omniralph/ui";
 import type { JobList } from "@/lib/api/jobs";
-import type { JobRow } from "@/lib/harnesses/rows";
+import type { JobRow } from "@/lib/agents/rows";
 import { JobsView } from "./jobs-view";
 
 const nav = vi.hoisted(() => ({

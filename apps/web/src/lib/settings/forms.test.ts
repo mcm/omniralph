@@ -27,9 +27,9 @@ describe("repository change lists", () => {
     customInstructions: "",
     pinnedAgentIds: ["h1"],
   };
-  const context = { harnessIds: ["h1", "h2"] };
+  const context = { agentIds: ["h1", "h2"] };
   const specs = repositorySpecs({
-    harnesses: new Map([
+    agents: new Map([
       ["h1", "build-01"],
       ["h2", "build-02"],
     ]),
@@ -43,13 +43,13 @@ describe("repository change lists", () => {
     );
   };
 
-  it("names harnesses", () => {
+  it("names agents", () => {
     expect(changes("pinning", { pinnedAgentIds: [] })).toEqual([
       {
         key: "pinnedAgentIds",
-        label: "Pinned harnesses",
+        label: "Pinned agents",
         from: "build-01",
-        to: "Not set (any harness)",
+        to: "Not set (any agent)",
       },
     ]);
   });

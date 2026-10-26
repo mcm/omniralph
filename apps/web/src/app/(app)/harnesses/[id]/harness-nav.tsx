@@ -12,7 +12,7 @@ const ICONS = {
 } satisfies Record<HarnessTab, unknown>;
 
 /** Tabs between a harness's pages. */
-export function HarnessNav({ harnessId, current }: { harnessId: string; current: HarnessTab }) {
+export function HarnessNav({ agentId, current }: { agentId: string; current: HarnessTab }) {
   return (
     <PageTabs
       label="Harness pages"
@@ -20,7 +20,7 @@ export function HarnessNav({ harnessId, current }: { harnessId: string; current:
       tabs={HARNESS_TABS.map((tab) => ({
         ...tab,
         icon: ICONS[tab.value],
-        href: harnessTabHref(harnessId, tab.value),
+        href: harnessTabHref(agentId, tab.value),
       }))}
     />
   );

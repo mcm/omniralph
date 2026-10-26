@@ -77,7 +77,7 @@ import {
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
 import { organizationPlaybooks } from "@/lib/playbooks";
-import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
+import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { notifyRunThread } from "./chat-notify";
@@ -428,17 +428,17 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
 }
 
 /**
- * A harness while it may still take a run's jobs (not revoked, accepting
+ * An agent while it may still take a run's jobs (not revoked, accepting
  * `coding` tasks itself or by the organization's default, in the run's
  * organization).
  */
-async function usableHarnessId(
+async function usableAgentId(
   db: Database,
   organizationId: string,
-  harnessId: string | null,
+  agentId: string | null,
 ): Promise<string | undefined> {
-  if (!harnessId) return undefined;
-  const agent = await getAgent(db, harnessId);
+  if (!agentId) return undefined;
+  const agent = await getAgent(db, agentId);
   if (
     !agent ||
     agent.revokedAt ||
@@ -455,28 +455,28 @@ async function usableHarnessId(
  * while it may still take the run's jobs. No pinned fallback: another agent
  * doesn't have the worktree.
  */
-export async function stickyHarnessId(
+export async function stickyAgentId(
   db: Database,
   run: Pick<RalphRun, "organizationId">,
   lane: Pick<RalphLane, "agentId">,
 ): Promise<string | undefined> {
-  return usableHarnessId(db, run.organizationId, lane.agentId);
+  return usableAgentId(db, run.organizationId, lane.agentId);
 }
 
 /**
- * The harness a lane's jobs go to: its sticky harness while usable (see
- * `usableHarnessId`), else one its repository is pinned to, else undefined
- * (any harness of the organization may take them).
+ * The agent a lane's jobs go to: its sticky agent while usable (see
+ * `usableAgentId`), else one its repository is pinned to, else undefined
+ * (any agent of the organization may take them).
  */
-export async function laneHarnessId(
+export async function laneAgentId(
   db: Database,
   run: Pick<RalphRun, "organizationId">,
   lane: Pick<RalphLane, "agentId" | "repositoryId">,
 ): Promise<string | undefined> {
   return (
-    (await usableHarnessId(db, run.organizationId, lane.agentId)) ??
+    (await usableAgentId(db, run.organizationId, lane.agentId)) ??
     (await pinnedAgentFor(db, run.organizationId, lane.repositoryId, {
-      lastHeartbeats: readHarnessLastSeen,
+      lastHeartbeats: readAgentLastSeen,
     })) ??
     undefined
   );
@@ -555,7 +555,7 @@ async function usableRepository(
 /**
  * Enqueues one attempt at `story` in its lane (that repository, branch, base,
  * settings and quality gates): its sub-issue moves to started and a
- * `ralph.story` job goes to the lane's harness (`laneHarnessId`: the agent
+ * `ralph.story` job goes to the lane's agent (`laneAgentId`: the agent
  * that started the lane's last job, else the lane repository's pinned agent,
  * else any ralph agent of its organization). The job is a coding run of the
  * lane repository's story task (trigger `linear.delegated`, the payload as
@@ -600,7 +600,7 @@ async function enqueueStory(
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await laneHarnessId(deps.db, run, found.lane),
+    targetAgentId: await laneAgentId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
   // Linked in `tx`: the story (a follow-up filed in it) may not be committed yet.
@@ -712,7 +712,7 @@ function doneNote(run: RalphRun, input: { epic: Epic; stories: Story[] }): strin
 /**
  * Pushes one lane's branch before it is described, for a story task that
  * pushes only at the end: a `ralph.push` coding run of the lane repository's
- * story task with no session (on the lane's harness), which prepares the
+ * story task with no session (on the lane's agent), which prepares the
  * lane's worktree from the run's hidden ref and pushes the branch with its
  * lifecycle token. Its outcome is applied by `applyPullRequestJob`; then the
  * lane is described. Returns the lane's problem when the story task can't run it.
@@ -755,7 +755,7 @@ async function pushLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await laneHarnessId(deps.db, run, lane),
+    targetAgentId: await laneAgentId(deps.db, run, lane),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "pushing", jobId: job.id } });
@@ -776,7 +776,7 @@ async function pushLane(
 }
 
 /**
- * One lane's describe job (on the lane's harness), with the stories
+ * One lane's describe job (on the lane's agent), with the stories
  * worked in that lane: it writes the lane's PR/MR title and body, as a
  * query run of the story task's `prDescriptionTaskId`
  * (`describePrJobInput`). Returns the
@@ -823,7 +823,7 @@ async function describeLane(
     repositoryId: repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await laneHarnessId(deps.db, run, lane),
+    targetAgentId: await laneAgentId(deps.db, run, lane),
   });
   if (!created) return { action: "busy", run };
   await updateLane(tx, lane.id, { publish: { status: "describing", jobId: job.id } });
@@ -845,7 +845,7 @@ async function describeLane(
 
 /**
  * Runs an approved manual-story preparation: a `worktree.exec` system RPC (the
- * run's one job, in the story's lane, on that lane's agent, `laneHarnessId`)
+ * run's one job, in the story's lane, on that lane's agent, `laneAgentId`)
  * with the story's commands as they are now and the approval they must match. Its outcome is
  * applied by `applyPreparationJob`.
  */
@@ -879,7 +879,7 @@ async function enqueuePreparation(
     repositoryId: found.repository.id,
     ralphRunId: run.id,
     dedupeKey: runDedupeKey(run.id),
-    targetAgentId: await laneHarnessId(deps.db, run, found.lane),
+    targetAgentId: await laneAgentId(deps.db, run, found.lane),
   });
   if (!created) return { action: "busy", run };
   const state = preparationOf(run);
@@ -898,7 +898,7 @@ async function enqueuePreparation(
 
 /**
  * Runs a lane's pending requests (cyralph's `runRequests`): a `ralph.request`
- * job in the lane's branch worktree, on the lane's harness. It resumes
+ * job in the lane's branch worktree, on the lane's agent. It resumes
  * the lane's last request conversation only when it goes to the agent that
  * holds it. Its outcome is applied by `applyRequestJob`. Request jobs don't
  * count towards the iteration cap. The job is a coding run of
@@ -914,7 +914,7 @@ async function enqueueRequest(
   const found = await usableRepository(deps, tx, run, input.lane);
   if ("action" in found) return found;
   const { lane, repository, connection } = found;
-  const targetAgentId = await laneHarnessId(deps.db, run, lane);
+  const targetAgentId = await laneAgentId(deps.db, run, lane);
   const resume =
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId

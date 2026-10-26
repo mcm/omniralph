@@ -35,7 +35,7 @@ export interface JobOutcomeHandler {
   onStarted?(
     db: Database,
     job: Job,
-    harnessId: string,
+    agentId: string,
   ): Promise<{ skip: false } | { skip: true; reason: JobSkipReason }>;
   /** Whether a submitted result is valid; an invalid one is rejected (400) before the job completes. */
   isValidResult?(result: unknown): boolean;
@@ -79,7 +79,7 @@ registerJobOutcomeHandler(RALPH_PREPARE_JOB_TYPE, {
   onCanceled: (db, job) => onRalphJobFinished(db, job),
 });
 
-// A manual story's approved preparation (a system RPC of the run, on its sticky harness).
+// A manual story's approved preparation (a system RPC of the run, on its sticky agent).
 registerJobOutcomeHandler(WORKTREE_EXEC_JOB_TYPE, {
   payload: WorktreeExecPayload,
   onStarted: onRalphJobStarted,

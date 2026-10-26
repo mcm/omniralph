@@ -295,8 +295,8 @@ describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
     const thread = await slackThread();
     const job = await askJob(thread.id, null);
     const { adapter } = slackAdapter();
-    expect(await onChatAnswerFailed(db, job, channel(adapter), "harness lost")).toBe(true);
-    expect(await onChatAnswerFailed(db, job, channel(adapter), "harness lost")).toBe(false);
+    expect(await onChatAnswerFailed(db, job, channel(adapter), "agent lost")).toBe(true);
+    expect(await onChatAnswerFailed(db, job, channel(adapter), "agent lost")).toBe(false);
     await expectNothingPosted(adapter, thread.id);
     expect((await events(thread.id)).map((e) => [e.kind, e.idempotencyKey, e.body])).toEqual([
       [
@@ -304,7 +304,7 @@ describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
         `chat-run-event:job:${job.id}:failure`,
         {
           repository: "acme/app",
-          error: "harness lost",
+          error: "agent lost",
           text: "Sorry, I couldn't answer that question about `acme/app`; the job failed. Try asking again later.",
         },
       ],

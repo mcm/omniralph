@@ -759,7 +759,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
         await (await jobHooks(started.job, BUILTIN_PLAYBOOK_SOURCE))!.onStarted!(
           db,
           started.job,
-          "harness",
+          "agent",
         ),
       ).toEqual({
         skip: false,

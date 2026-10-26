@@ -270,7 +270,7 @@ describe("change events", () => {
       children: (
         <>
           <Probe queryKey={keys.runs.detail(RUN)} fetches={runFetches} />
-          <Probe queryKey={keys.harnesses.list()} fetches={agentFetches} />
+          <Probe queryKey={keys.agents.list()} fetches={agentFetches} />
         </>
       ),
     });

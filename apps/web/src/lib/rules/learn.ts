@@ -32,7 +32,7 @@ export type EnqueueLearnRuleResult =
 /**
  * The `finding.dismissed` trigger context of a rule generation: the finding
  * (raw `path`, lines and the review's base/head commits, from which the
- * harness computes its diff hunk; the JSON-quoted `file` and `location` the
+ * agent computes its diff hunk; the JSON-quoted `file` and `location` the
  * prompt shows), the dismissal note, the repository, and the feedback row the
  * sink re-checks before storing the rule.
  */

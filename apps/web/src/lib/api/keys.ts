@@ -10,7 +10,7 @@ export const QUERY_AREAS = [
   "chatAccounts",
   "connections",
   "deliveries",
-  "harnesses",
+  "agents",
   "inbox",
   "jobs",
   "organization",
@@ -33,9 +33,9 @@ export interface AreaKeys {
   lists: QueryKey;
   /** One list: a filter and page. */
   list: (params?: ListParams) => QueryKey;
-  /** One entity (a harness, a run, …). */
+  /** One entity (an agent, a run, …). */
   detail: (id: string) => QueryKey;
-  /** A sub-resource of one entity (a harness's runs, a repository's rules tab, …). */
+  /** A sub-resource of one entity (an agent's runs, a repository's rules tab, …). */
   part: (id: string, part: string, params?: ListParams) => QueryKey;
 }
 

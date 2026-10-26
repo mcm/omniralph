@@ -37,7 +37,7 @@ import {
   SHIP_REQUEST_TEXT,
   type Epic,
 } from "@omniralph/ralph";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
 import type { LinearWebhookEvent } from "@/lib/linear/webhook";
 import { organizationPlaybooks } from "@/lib/playbooks";
@@ -549,17 +549,17 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
         text && !wantsLoop && !ship
           ? await deliverToRunningJob(tx, run, text, author ?? undefined, "linear.mention")
           : null;
-      if (delivered) return { live: true, harnessId: delivered.harnessId };
+      if (delivered) return { live: true, agentId: delivered.agentId };
       await addInstruction(
         tx,
         run,
         { text, author, wantsLoop, ship, trigger: "linear.mention" },
         applyGuidance,
       );
-      return { live: false, harnessId: null };
+      return { live: false, agentId: null };
     });
     if (handed) {
-      if (handed.live) await bumpHarnessHeartbeat(handed.harnessId);
+      if (handed.live) await bumpAgentHeartbeat(handed.agentId);
       await post(deps, event.sessionId, {
         type: "response",
         body: handed.live

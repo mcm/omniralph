@@ -53,7 +53,7 @@ vi.mock("server-only", () => ({}));
 const { chatTools } = await import("./registry");
 const { createChatAgentHandler } = await import("./handler");
 const { chatAskContext, chatAskDedupeKey } = await import("../ask");
-const { queryClaimableHarnesses } = await import("@/lib/harnesses/claimable");
+const { queryClaimableAgents } = await import("@/lib/agents/claimable");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -64,10 +64,10 @@ const unlinked: ChatActor = { kind: "unlinked" };
 
 type Result = Record<string, unknown>;
 
-describe("queryClaimableHarnesses", () => {
+describe("queryClaimableAgents", () => {
   const now = new Date("2026-10-10T12:00:00Z");
-  type Overview = Parameters<typeof queryClaimableHarnesses>[0][number];
-  const harness = (over: Partial<Overview> = {}) =>
+  type Overview = Parameters<typeof queryClaimableAgents>[0][number];
+  const agent = (over: Partial<Overview> = {}) =>
     ({
       id: over.name ?? "a",
       name: "a",
@@ -81,24 +81,24 @@ describe("queryClaimableHarnesses", () => {
       ...over,
     }) as unknown as Overview;
   const minimum = { minAgentVersion: "0.9.0", installables: [], hostTools: [] };
-  const claimable = (harnesses: Overview[], repositoryId = "r1") =>
-    queryClaimableHarnesses(harnesses, new Map(), repositoryId, minimum, now);
+  const claimable = (agents: Overview[], repositoryId = "r1") =>
+    queryClaimableAgents(agents, new Map(), repositoryId, minimum, now);
 
-  it("counts online harnesses accepting query tasks on the minimum version or later", () => {
-    expect(claimable([harness(), harness({ name: "newer", reportedVersion: "0.10.0" })])).toEqual([
+  it("counts online agents accepting query tasks on the minimum version or later", () => {
+    expect(claimable([agent(), agent({ name: "newer", reportedVersion: "0.10.0" })])).toEqual([
       { name: "a", version: "0.9.0", capable: true },
       { name: "newer", version: "0.10.0", capable: true },
     ]);
     const incapable = [
-      harness({ name: "old", reportedVersion: "0.8.0" }),
-      harness({ name: "unknown", reportedVersion: null }),
-      harness({
+      agent({ name: "old", reportedVersion: "0.8.0" }),
+      agent({ name: "unknown", reportedVersion: null }),
+      agent({
         name: "no-query",
         reportedAcceptedTaskTypes: ["review", "coding"],
         effective: { acceptedTaskTypes: ["review", "coding"], maxConcurrency: 5 },
       }),
       // Reporting no query tasks.
-      harness({
+      agent({
         name: "no-query-reported",
         effective: { acceptedTaskTypes: ["review"], maxConcurrency: 5 },
       }),
@@ -106,13 +106,13 @@ describe("queryClaimableHarnesses", () => {
     expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false, false]);
   });
 
-  it("only counts harnesses with every required installable and host tool", () => {
+  it("only counts agents with every required installable and host tool", () => {
     const graph = { name: "@omniralph/code-graph", version: "1.0.0" };
     const hello = { name: "@omniralph/hello", version: "1.0.0" };
-    const all = harness({ name: "all", reportedInstallables: [graph, hello] });
-    const missingInstallable = harness({ name: "no-hello", reportedInstallables: [graph] });
-    const missingHostTool = harness({ name: "no-semgrep", reportedInstallables: [graph, hello] });
-    // As `listAgentsUsableHostTools`: tools with an effective path, by harness ID.
+    const all = agent({ name: "all", reportedInstallables: [graph, hello] });
+    const missingInstallable = agent({ name: "no-hello", reportedInstallables: [graph] });
+    const missingHostTool = agent({ name: "no-semgrep", reportedInstallables: [graph, hello] });
+    // As `listAgentsUsableHostTools`: tools with an effective path, by agent ID.
     const usable = new Map([
       ["all", ["opengrep", "semgrep"]],
       ["no-hello", ["opengrep", "semgrep"]],
@@ -124,7 +124,7 @@ describe("queryClaimableHarnesses", () => {
       hostTools: ["opengrep", "semgrep"],
     };
     expect(
-      queryClaimableHarnesses(
+      queryClaimableAgents(
         [all, missingInstallable, missingHostTool],
         usable,
         "r1",
@@ -136,30 +136,30 @@ describe("queryClaimableHarnesses", () => {
       { name: "no-hello", version: "0.9.0", capable: false },
       { name: "no-semgrep", version: "0.9.0", capable: false },
     ]);
-    // A harness with no usable host tools at all.
+    // An agent with no usable host tools at all.
     expect(
-      queryClaimableHarnesses([all], new Map(), "r1", requirements, now).map((h) => h.capable),
+      queryClaimableAgents([all], new Map(), "r1", requirements, now).map((h) => h.capable),
     ).toEqual([false]);
     // Without requirements, neither is needed.
     expect(
-      queryClaimableHarnesses([missingInstallable], new Map(), "r1", minimum, now)[0]?.capable,
+      queryClaimableAgents([missingInstallable], new Map(), "r1", minimum, now)[0]?.capable,
     ).toBe(true);
   });
 
-  it("leaves out offline and revoked harnesses, and only counts pinned harnesses of a pinned repository", () => {
+  it("leaves out offline and revoked agents, and only counts pinned agents of a pinned repository", () => {
     const old = new Date(now.getTime() - 60 * 60_000);
     expect(
-      claimable([harness({ lastHeartbeatAt: old }), harness({ revokedAt: now, name: "revoked" })]),
+      claimable([agent({ lastHeartbeatAt: old }), agent({ revokedAt: now, name: "revoked" })]),
     ).toEqual([]);
-    const pinned = harness({
+    const pinned = agent({
       name: "pinned",
       reportedVersion: "0.8.0",
       pinnedRepositories: [{ id: "r1" }] as never,
     });
-    expect(claimable([harness(), pinned])).toEqual([
+    expect(claimable([agent(), pinned])).toEqual([
       { name: "pinned", version: "0.8.0", capable: false },
     ]);
-    expect(claimable([harness(), pinned], "r2")).toHaveLength(2);
+    expect(claimable([agent(), pinned], "r2")).toHaveLength(2);
   });
 });
 
@@ -206,8 +206,8 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   let db: Database;
   let orgId: string;
   let repositoryId: string;
-  let harnessId: string;
-  let otherHarnessId: string;
+  let agentId: string;
+  let otherAgentId: string;
   let connectionId: string;
   let connection: ChatConnection;
   let scm: FakeScmAdapter;
@@ -221,14 +221,14 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     adapterFor: () => scm.asAdapter(),
   });
 
-  interface Harness {
+  interface Agent {
     context: ChatToolContext;
     thread: { post: ReturnType<typeof vi.fn> };
     handedOff: ReturnType<typeof vi.fn>;
     chatThread: ChatThread;
   }
 
-  async function harness(organizationId = orgId, actor: ChatActor = member): Promise<Harness> {
+  async function agent(organizationId = orgId, actor: ChatActor = member): Promise<Agent> {
     seq += 1;
     const chatThread = (await ensureChatThread(db, {
       connectionId,
@@ -255,7 +255,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   }
 
   async function ask(
-    h: Harness,
+    h: Agent,
     input: { repository: string; question: string; attachments?: string[] },
   ) {
     const tool = chatTools.ask_about_code!;
@@ -302,7 +302,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       .insert(agents)
       .values({ organizationId: org!.id, name: `${slug}-agent` })
       .returning();
-    return { id: org!.id, repositoryId: repository.id, harnessId: agent!.id };
+    return { id: org!.id, repositoryId: repository.id, agentId: agent!.id };
   }
 
   const setAgent = (id: string, values: Partial<typeof agents.$inferInsert>) =>
@@ -311,8 +311,8 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   beforeAll(async () => {
     testDb = await createTestDatabase();
     db = createDb(testDb.uri);
-    ({ id: orgId, repositoryId, harnessId } = await seedOrg("Acme", "acme"));
-    ({ harnessId: otherHarnessId } = await seedOrg("Other", "other"));
+    ({ id: orgId, repositoryId, agentId } = await seedOrg("Acme", "acme"));
+    ({ agentId: otherAgentId } = await seedOrg("Other", "other"));
     const saved = await saveChatConnection(
       db,
       {
@@ -342,8 +342,8 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       lastHeartbeatAt: new Date(),
       revokedAt: null,
     };
-    await setAgent(harnessId, capable);
-    await setAgent(otherHarnessId, capable);
+    await setAgent(agentId, capable);
+    await setAgent(otherAgentId, capable);
     await db.delete(agentRepoPins);
     await db.execute("DELETE FROM chat_channel_task_settings");
   });
@@ -353,7 +353,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("enqueues a builtin:ask-about-code run of the default branch and returns its id without posting", async () => {
-    const h = await harness();
+    const h = await agent();
 
     const result = await ask(h, {
       repository: "ACME/api",
@@ -408,7 +408,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("includes attached files in the question's context", async () => {
-    const h = await harness();
+    const h = await agent();
     await appendChatMessage(db, {
       threadId: h.chatThread.id,
       role: "user",
@@ -463,7 +463,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("lets a colleague on the organization's email domain ask", async () => {
-    const h = await harness(orgId, domain);
+    const h = await agent(orgId, domain);
     const tools = toAiTools(chatTools, h.context, vi.fn());
     const result = (await tools.ask_about_code!.execute!(
       { repository: "acme/api", question: "Which ORM do we use?" },
@@ -474,7 +474,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("asks the same question in a thread only once while it runs", async () => {
-    const h = await harness();
+    const h = await agent();
     await ask(h, { repository: "acme/api", question: "Where is the retry logic?" });
     h.thread.post.mockClear();
 
@@ -490,13 +490,13 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     // A different question, or the same one in another thread, is asked.
     await ask(h, { repository: "acme/api", question: "Where is the backoff configured?" });
     expect(await chatAskJobs(h.chatThread.id)).toHaveLength(2);
-    const other = await harness();
+    const other = await agent();
     await ask(other, { repository: "acme/api", question: "Where is the retry logic?" });
     expect(await chatAskJobs(other.chatThread.id)).toHaveLength(1);
   });
 
   it("quotes the thread's previous question and answer in a follow-up's context", async () => {
-    const h = await harness();
+    const h = await agent();
     await ask(h, { repository: "acme/api", question: "Where are sessions stored?" });
     const [first] = await chatAskJobs(h.chatThread.id);
     const result: QueryRunResult = {
@@ -523,7 +523,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("refuses a repository the organization hasn't connected", async () => {
-    const h = await harness();
+    const h = await agent();
     for (const repository of ["acme/web", "other/api"]) {
       const result = await ask(h, { repository, question: "What is this?" });
       expect(result).toMatchObject({ error: "unknown_repository" });
@@ -535,7 +535,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   it("enqueues nothing and says so when the repository's Ask switch is off", async () => {
     const setAsk = (askEnabled: boolean) =>
       db.update(repositories).set({ askEnabled }).where(eq(repositories.id, repositoryId));
-    const h = await harness();
+    const h = await agent();
     try {
       await setAsk(false);
       const off = await ask(h, { repository: "acme/api", question: "How is auth done?" });
@@ -544,45 +544,45 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       expect(off.message).toContain("Ask switch");
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
-      // Ask on answers (on a harness taking queries).
+      // Ask on answers (on an agent taking queries).
       await setAsk(true);
-      await setAgent(harnessId, { reportedAcceptedTaskTypes: ["query"] });
+      await setAgent(agentId, { reportedAcceptedTaskTypes: ["query"] });
       expect(await ask(h, { repository: "acme/api", question: "How is auth done?" })).toMatchObject(
         { status: "started" },
       );
       expect(await chatAskJobs(h.chatThread.id)).toHaveLength(1);
     } finally {
       await setAsk(true);
-      await setAgent(harnessId, { reportedAcceptedTaskTypes: null });
+      await setAgent(agentId, { reportedAcceptedTaskTypes: null });
     }
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 
-  it("enqueues nothing when no online harness can answer code questions", async () => {
-    const h = await harness();
+  it("enqueues nothing when no online agent can answer code questions", async () => {
+    const h = await agent();
 
-    await setAgent(harnessId, { reportedVersion: "0.8.0" });
+    await setAgent(agentId, { reportedVersion: "0.8.0" });
     const old = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(old).toMatchObject({
-      error: "no_capable_harness",
-      harnesses: [{ name: "acme-agent", version: "0.8.0", capable: false }],
+      error: "no_capable_agent",
+      agents: [{ name: "acme-agent", version: "0.8.0", capable: false }],
     });
     expect(old.message).toContain(QUERY_TASKS_MIN_AGENT_VERSION);
 
-    await setAgent(harnessId, {
+    await setAgent(agentId, {
       reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       lastHeartbeatAt: null,
     });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
-    expect(offline).toMatchObject({ error: "no_capable_harness", harnesses: [] });
+    expect(offline).toMatchObject({ error: "no_capable_agent", agents: [] });
     expect(offline.message).toContain("online");
 
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
     expect(h.thread.post).not.toHaveBeenCalled();
   });
 
-  it("only counts the harnesses a pinned repository's jobs go to", async () => {
-    const h = await harness();
+  it("only counts the agents a pinned repository's jobs go to", async () => {
+    const h = await agent();
     const [pinned] = await db
       .insert(agents)
       .values({
@@ -597,14 +597,14 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     const result = await ask(h, { repository: "acme/api", question: "What is this?" });
 
     expect(result).toMatchObject({
-      error: "no_capable_harness",
-      harnesses: [{ name: "pinned-agent", capable: false }],
+      error: "no_capable_agent",
+      agents: [{ name: "pinned-agent", capable: false }],
     });
     await db.delete(agents).where(eq(agents.id, pinned!.id));
   });
 
   it("runs the channel's ask about code playbook and enqueues nothing when it can't run", async () => {
-    const h = await harness();
+    const h = await agent();
     await upsertChatChannelPlaybookSetting(db, {
       organizationId: orgId,
       connectionId,
@@ -623,7 +623,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("runs the organization's own chat-ask playbook a channel picked, by its UUID", async () => {
-    const h = await harness();
+    const h = await agent();
     const {
       id: _id,
       name: _name,
@@ -654,8 +654,8 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     expect(result).toMatchObject({ status: "started", runId: job!.id, task: stored.id });
   });
 
-  it("enqueues nothing until a harness has the task's installables and host tools", async () => {
-    const h = await harness();
+  it("enqueues nothing until an agent has the task's installables and host tools", async () => {
+    const h = await agent();
     const builtin = getBuiltinPlaybook("builtin:ask-about-code")!;
     const {
       id: _id,
@@ -687,35 +687,35 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     try {
       const missingBoth = await ask(h, { repository: "acme/api", question: "What is this?" });
       expect(missingBoth).toMatchObject({
-        error: "no_capable_harness",
-        harnesses: [{ name: "acme-agent", capable: false }],
+        error: "no_capable_agent",
+        agents: [{ name: "acme-agent", capable: false }],
       });
       expect(missingBoth.message).toContain("@omniralph/code-graph");
       expect(missingBoth.message).toContain("opengrep");
 
-      // The installable alone isn't enough: the host tool has no path on the harness.
-      await setAgent(harnessId, {
+      // The installable alone isn't enough: the host tool has no path on the agent.
+      await setAgent(agentId, {
         reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
       });
-      await recordAgentHostTools(db, orgId, harnessId, [
+      await recordAgentHostTools(db, orgId, agentId, [
         { name: "opengrep", configuredPathExists: null, discoveredPath: null },
       ]);
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
-        error: "no_capable_harness",
-        harnesses: [{ name: "acme-agent", capable: false }],
+        error: "no_capable_agent",
+        agents: [{ name: "acme-agent", capable: false }],
       });
 
       // The host tool alone isn't enough either.
-      await setAgent(harnessId, { reportedInstallables: [] });
-      await recordAgentHostTools(db, orgId, harnessId, [
+      await setAgent(agentId, { reportedInstallables: [] });
+      await recordAgentHostTools(db, orgId, agentId, [
         { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
       ]);
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
-        error: "no_capable_harness",
+        error: "no_capable_agent",
       });
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
-      await setAgent(harnessId, {
+      await setAgent(agentId, {
         reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
       });
       const result = await ask(h, { repository: "acme/api", question: "What is this?" });
@@ -726,7 +726,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
         requiredHostTools: ["opengrep"],
       });
     } finally {
-      await setAgent(harnessId, { reportedInstallables: [] });
+      await setAgent(agentId, { reportedInstallables: [] });
       await deleteHostTool(db, orgId, tool.hostTool.id);
     }
   });
@@ -878,7 +878,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   });
 
   it("gives an unlinked user no way to ask", async () => {
-    const h = await harness(orgId, unlinked);
+    const h = await agent(orgId, unlinked);
     expect(toAiTools(chatTools, h.context, vi.fn())).toEqual({});
     expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
   });

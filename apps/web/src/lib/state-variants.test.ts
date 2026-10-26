@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  harnessConnectionState,
+  agentConnectionState,
   integrationState,
   INTEGRATION_STATE_VARIANTS,
-  HARNESS_CONNECTION_VARIANTS,
-  HARNESS_UPDATE_STATUS_VARIANTS,
+  AGENT_CONNECTION_VARIANTS,
+  AGENT_UPDATE_STATUS_VARIANTS,
   JOB_STATUS_VARIANTS,
   RALPH_RUN_STATUS_VARIANTS,
   RALPH_STORY_STATUS_VARIANTS,
@@ -45,8 +45,8 @@ const MAPS = {
   job: JOB_STATUS_VARIANTS,
   review: REVIEW_STATUS_VARIANTS,
   triage: TRIAGE_RUN_STATUS_VARIANTS,
-  harness: HARNESS_CONNECTION_VARIANTS,
-  harnessUpdate: HARNESS_UPDATE_STATUS_VARIANTS,
+  agent: AGENT_CONNECTION_VARIANTS,
+  agentUpdate: AGENT_UPDATE_STATUS_VARIANTS,
 };
 
 describe("state variants", () => {
@@ -95,10 +95,10 @@ describe("state variants", () => {
     expect(INTEGRATION_STATE_VARIANTS.unconfigured).toBe("warning");
   });
 
-  it("treats a revoked harness as revoked even when it is online", () => {
-    expect(harnessConnectionState({ online: true, revoked: true })).toBe("revoked");
-    expect(harnessConnectionState({ online: true, revoked: false })).toBe("online");
-    expect(harnessConnectionState({ online: false, revoked: false })).toBe("offline");
+  it("treats a revoked agent as revoked even when it is online", () => {
+    expect(agentConnectionState({ online: true, revoked: true })).toBe("revoked");
+    expect(agentConnectionState({ online: true, revoked: false })).toBe("online");
+    expect(agentConnectionState({ online: false, revoked: false })).toBe("offline");
   });
 });
 

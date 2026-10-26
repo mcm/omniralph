@@ -2,7 +2,7 @@ import { DEFAULT_TRACKER_STATE_MAPPING, type TrackerStateMapping } from "@omnira
 import { describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { LinearGateway, WorkflowState } from "@/lib/linear/gateway";
-import { describeWorkItemTrackerContract, type WorkItemTrackerHarness } from "./contract";
+import { describeWorkItemTrackerContract, type WorkItemTrackerAgent } from "./contract";
 
 vi.mock("server-only", () => ({}));
 
@@ -29,9 +29,9 @@ const statesFor = (prefix: string): WorkflowState[] =>
   }));
 
 /** A Linear workspace with two teams (their own workflows) and a project, and its tracker. */
-function linearHarness(
+function linearAgent(
   options: { gateway?: (fake: FakeLinearGateway) => LinearGateway } = {},
-): WorkItemTrackerHarness & { fake: FakeLinearGateway; saved: TrackerStateMapping[] } {
+): WorkItemTrackerAgent & { fake: FakeLinearGateway; saved: TrackerStateMapping[] } {
   const fake = new FakeLinearGateway();
   fake.teams = [
     { id: "team-a", key: "ENG", name: "Engineering" },
@@ -109,7 +109,7 @@ function linearHarness(
   };
 }
 
-describeWorkItemTrackerContract(() => linearHarness());
+describeWorkItemTrackerContract(() => linearAgent());
 
 /** A gateway that counts calls by method name. */
 function counting(fake: FakeLinearGateway, calls: string[]): LinearGateway {
@@ -134,7 +134,7 @@ describe("LinearWorkItemTracker", () => {
       done: "completed",
       canceled: "canceled",
     });
-    const h = linearHarness();
+    const h = linearAgent();
     const { id } = await h.seed({ teamId: "team-a", title: "Item", state: "triage" });
     for (const state of WORK_ITEM_STATES) await h.tracker.setState(id, state);
     expect(h.fake.stateChanges).toEqual(
@@ -157,7 +157,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("creates the triage label on the team when it is missing, and reuses it", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     const first = await h.seed({ teamId: "team-a", title: "One", state: "backlog" });
     const second = await h.seed({ teamId: "team-a", title: "Two", state: "backlog" });
     await h.tracker.startTriage(first.identifier);
@@ -174,7 +174,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("doesn't label an issue that already asks for triage under the old name", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     const { id } = await h.seed({
       teamId: "team-a",
       title: "Old",
@@ -187,7 +187,7 @@ describe("LinearWorkItemTracker", () => {
 
   it("delegates to the viewer (the app user), reading it once", async () => {
     const calls: string[] = [];
-    const h = linearHarness({ gateway: (fake) => counting(fake, calls) });
+    const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
     h.fake.viewer = { id: "omniralph-app", name: "Omniralph" };
     const one = await h.seed({ teamId: "team-a", title: "One", state: "todo" });
     const two = await h.seed({ teamId: "team-a", title: "Two", state: "todo" });
@@ -201,7 +201,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("opens an agent session instead of delegating again when Omniralph is already the delegate", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     const item = await h.seed({
       teamId: "team-a",
       title: "Again",
@@ -215,7 +215,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("moves to the override state by ID, not by name", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     const states = statesFor("a");
     // Two states named the same: only the ID tells them apart.
     states.splice(3, 0, { id: "a-selected", name: "Todo", type: "unstarted", position: 2.5 });
@@ -232,7 +232,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("says which readiness a team has no state for", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     await h.tracker.setStateMapping({
       ready: { types: ["triage"] },
       needsRefining: { types: ["backlog"] },
@@ -250,7 +250,7 @@ describe("LinearWorkItemTracker", () => {
 
   it("lists candidates with readiness and blockers in one gateway call per page", async () => {
     const calls: string[] = [];
-    const h = linearHarness({ gateway: (fake) => counting(fake, calls) });
+    const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
     const blocked = await h.seed({ teamId: "team-a", title: "Blocked", state: "todo" });
     for (let i = 0; i < 4; i += 1) {
       const blocker = await h.seed({ teamId: "team-b", title: `Blocker ${i}`, state: "todo" });
@@ -273,7 +273,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("passes the team overrides' states to listIssues", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     await h.tracker.setStateMapping({
       ready: { types: ["unstarted"] },
       needsRefining: { types: ["backlog"] },
@@ -304,7 +304,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("creates issues with labels by name, creating missing ones", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     h.fake.labels = [{ id: "label-backend", name: "backend", teamId: null }];
     await h.tracker.create({
       teamId: "team-a",
@@ -328,7 +328,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("updates through updateIssue, addIssueLabels and removeIssueLabel", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     h.fake.labels = [
       { id: "label-old", name: "old", teamId: null },
       { id: "label-new", name: "new", teamId: null },
@@ -348,7 +348,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("cancels through the canceled state and a comment", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     const { id } = await h.seed({ teamId: "team-a", title: "T", state: "todo" });
     await h.tracker.cancel(id, { comment: "Duplicate of ENG-1." });
     expect(h.fake.stateChanges).toEqual([{ issueId: id, target: { type: "canceled" } }]);
@@ -356,7 +356,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("maps only Linear's invalid input error to WorkItemNotFoundError", async () => {
-    const h = linearHarness();
+    const h = linearAgent();
     await expect(h.tracker.get("ENG-404")).rejects.toThrow(
       new WorkItemNotFoundError("ENG-404").message,
     );
@@ -366,7 +366,7 @@ describe("LinearWorkItemTracker", () => {
 
   it("validates override states against each team's workflow, then saves", async () => {
     const calls: string[] = [];
-    const h = linearHarness({ gateway: (fake) => counting(fake, calls) });
+    const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
     const mapping = {
       ready: { types: ["unstarted", "unstarted"] },
       needsRefining: { types: ["backlog"] },

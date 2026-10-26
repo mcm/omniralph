@@ -388,7 +388,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
     });
     const claim = (agentId: string) =>
       claimJob(db, {
-        agentId: agentId,
+        agentId,
         organizationId: orgId,
         acceptedTaskTypes: ["review"],
         pools: ["short", "long"],

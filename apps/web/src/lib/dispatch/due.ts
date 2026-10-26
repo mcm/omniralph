@@ -197,7 +197,7 @@ export async function reconcileExpiredQueuedJobs(db: Database, createdBefore: Da
 /**
  * Re-checks the organization's due entries against Postgres and corrects them; call when
  * a claim found nothing, so an entry left behind doesn't keep the claim querying
- * Postgres. Due jobs the claim can't take (another pool, a busy harness) stay due.
+ * Postgres. Due jobs the claim can't take (another pool, a busy agent) stay due.
  */
 export async function reconcileDueJobs(
   db: Database,

@@ -83,8 +83,8 @@ export function repositoryDraft(settings: RepositorySettingsValues): RepositoryD
 
 /** What the form compares and saves: lists parsed, IDs that no longer exist dropped. */
 export interface RepositoryFormContext {
-  /** Harnesses that can still be pinned (pins of revoked ones are dropped). */
-  harnessIds: readonly string[];
+  /** Agents that can still be pinned (pins of revoked ones are dropped). */
+  agentIds: readonly string[];
 }
 
 export function repositoryValues(draft: RepositoryDraft, context: RepositoryFormContext) {
@@ -94,8 +94,8 @@ export function repositoryValues(draft: RepositoryDraft, context: RepositoryForm
     drafts: draft.drafts,
     pathExcludes: parsePathExcludes(draft.pathExcludes),
     customInstructions: draft.customInstructions,
-    // In the harnesses' order, so picking them in another order isn't a change.
-    pinnedAgentIds: context.harnessIds.filter((id) => draft.pinnedAgentIds.includes(id)),
+    // In the agents' order, so picking them in another order isn't a change.
+    pinnedAgentIds: context.agentIds.filter((id) => draft.pinnedAgentIds.includes(id)),
   } satisfies Record<string, SettingValue>;
 }
 export type RepositoryValues = ReturnType<typeof repositoryValues>;
@@ -124,12 +124,12 @@ export const REPOSITORY_CARDS = {
 /** The repository settings tabs' sections and the settings each one saves. */
 export const REPOSITORY_SECTIONS = {
   review: [...REPOSITORY_CARDS.triggers, ...REPOSITORY_CARDS.files],
-  harnesses: REPOSITORY_CARDS.pinning,
+  agents: REPOSITORY_CARDS.pinning,
 } as const satisfies Record<string, readonly (keyof RepositoryValues)[]>;
 
-/** The repository settings' labels, showing harnesses by name. */
+/** The repository settings' labels, showing agents by name. */
 export function repositorySpecs(names: {
-  harnesses: ReadonlyMap<string, string>;
+  agents: ReadonlyMap<string, string>;
 }): Record<keyof RepositoryValues, SettingSpec<keyof RepositoryValues>> {
   return {
     onOpen: { key: "onOpen", label: "Review when opened" },
@@ -139,11 +139,11 @@ export function repositorySpecs(names: {
     customInstructions: { key: "customInstructions", label: "Custom instructions" },
     pinnedAgentIds: {
       key: "pinnedAgentIds",
-      label: "Pinned harnesses",
+      label: "Pinned agents",
       format: (value) =>
         Array.isArray(value) && value.length === 0
-          ? "Not set (any harness)"
-          : byName(names.harnesses)(value),
+          ? "Not set (any agent)"
+          : byName(names.agents)(value),
     },
   };
 }

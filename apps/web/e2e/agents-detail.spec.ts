@@ -22,7 +22,7 @@ async function liveAgent(db: Database, request: APIRequestContext, prefix: strin
 /** Opens a harness tab and waits for its first poll, so `next dev` has compiled the route. */
 async function open(page: Page, path: string) {
   const firstPoll = page.waitForResponse(
-    (response) => /\/api\/ui\/harnesses\/[\w-]+(\?|$)/.test(response.url()) && response.ok(),
+    (response) => /\/api\/ui\/agents\/[\w-]+(\?|$)/.test(response.url()) && response.ok(),
   );
   await page.goto(path);
   await firstPoll;

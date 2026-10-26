@@ -36,16 +36,16 @@ import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 export async function onRalphJobStarted(
   db: Database,
   job: Job,
-  harnessId: string,
+  agentId: string,
 ): Promise<{ skip: false } | { skip: true; reason: "skipped" }> {
   if (!job.ralphRunId) return { skip: false };
   const finished = await lockRun(db, job.ralphRunId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return true;
     const repositoryId = job.repositoryId ?? run.repositoryId;
     const lane = repositoryId ? await getLaneByRepository(tx, run.id, repositoryId) : null;
-    if (lane && lane.agentId !== harnessId) await updateLane(tx, lane.id, { agentId: harnessId });
+    if (lane && lane.agentId !== agentId) await updateLane(tx, lane.id, { agentId });
     const main = !repositoryId || repositoryId === run.repositoryId;
-    if (main && run.agentId !== harnessId) await updateRun(tx, run.id, { agentId: harnessId });
+    if (main && run.agentId !== agentId) await updateRun(tx, run.id, { agentId });
     return false;
   });
   if (finished ?? true) {

@@ -50,5 +50,5 @@ export function useRepositoryRules(repositoryId: string) {
  * list, and the harness pages (which show the pins).
  */
 export function repositoryChanged(keys: QueryKeys): QueryKey[] {
-  return [keys.repositories.all, keys.harnesses.all];
+  return [keys.repositories.all, keys.agents.all];
 }

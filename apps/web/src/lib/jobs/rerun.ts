@@ -15,7 +15,7 @@ export const ALREADY_ACTIVE_WARNING = "The same job is already queued or running
  * Reruns a failed, canceled or expired job of `organizationId` (the logic behind
  * `POST /api/ui/jobs/{id}/rerun`; members: the caller checks), as `jobRerunKind` says: a review task's job re-runs its review
  * on the PR's current head (incremental, at the repository's depth), a system RPC is
- * dispatched again to the harness it targeted. The failed job stays as it is; the rerun is a
+ * dispatched again to the agent it targeted. The failed job stays as it is; the rerun is a
  * new job. A job that is still queued or running or completed, or of a kind that can't be
  * rerun, gets an error.
  */
@@ -48,7 +48,7 @@ export async function rerunJob(
     return { ok: false, error: result.error };
   }
 
-  // A system RPC runs on the harness it targeted, which must still be there.
+  // A system RPC runs on the agent it targeted, which must still be there.
   const target = job.targetAgentId ? await getAgent(db, job.targetAgentId) : null;
   if (!target || target.revokedAt || target.organizationId !== organizationId) {
     return { ok: false, error: "The agent this job ran on is gone, so it can't be rerun." };

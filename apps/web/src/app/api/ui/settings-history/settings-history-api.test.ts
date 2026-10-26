@@ -65,7 +65,7 @@ const organization = await import("@/app/api/ui/organization/route");
 const members = await import("@/app/api/ui/organization/members/[userId]/route");
 const invitations = await import("@/app/api/ui/organization/invitations/route");
 const domains = await import("@/app/api/ui/organization/domains/route");
-const harnessDefaults = await import("@/app/api/ui/harness-defaults/route");
+const agentDefaults = await import("@/app/api/ui/agent-defaults/route");
 const discord = await import("@/app/api/ui/integrations/discord/[id]/route");
 const { connectingWithHistory, settingsActor } = await import("@/lib/settings-history/sections");
 
@@ -379,7 +379,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
     it("agent_defaults: concurrency", async () => {
       expect(
         await callAction(
-          harnessDefaults.PUT,
+          agentDefaults.PUT,
           "PUT",
           {},
           {

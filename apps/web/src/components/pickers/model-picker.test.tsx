@@ -13,9 +13,9 @@ import {
 } from "./model-picker";
 
 const MODELS: ModelOption[] = [
-  { value: "opus", displayName: "Opus", harnessIds: ["h1", "h2", "h3"] },
-  { value: "sonnet", displayName: "Sonnet", harnessIds: ["h1", "h2"] },
-  { value: "haiku", displayName: "Haiku", harnessIds: ["h3"] },
+  { value: "opus", displayName: "Opus", agentIds: ["h1", "h2", "h3"] },
+  { value: "sonnet", displayName: "Sonnet", agentIds: ["h1", "h2"] },
+  { value: "haiku", displayName: "Haiku", agentIds: ["h3"] },
 ];
 
 function Harness({

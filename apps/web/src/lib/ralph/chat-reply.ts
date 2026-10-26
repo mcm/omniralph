@@ -23,7 +23,7 @@ import {
 } from "@omniralph/db";
 import { parseShipRequest, SHIP_REQUEST_TEXT } from "@omniralph/ralph";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import { conversationFor } from "./conversation";
 import { applyGuidance, queueLiveReply } from "./messages";
 import { postActivity, quote } from "./notify";
@@ -90,8 +90,8 @@ export async function sendToChatRun(
         "chat.request",
       );
       if (live) {
-        const liveHarnessId = live.kind === "live" ? live.harnessId : null;
-        return { status: "live" as const, run: current, liveHarnessId };
+        const liveAgentId = live.kind === "live" ? live.agentId : null;
+        return { status: "live" as const, run: current, liveAgentId };
       }
     }
     const added = await addInstruction(
@@ -111,8 +111,8 @@ export async function sendToChatRun(
     return { status: "queued" as const, run: added.run };
   });
   if (!handled) return { status: "no_run" };
-  if ("liveHarnessId" in handled) {
-    await bumpHarnessHeartbeat(handled.liveHarnessId);
+  if ("liveAgentId" in handled) {
+    await bumpAgentHeartbeat(handled.liveAgentId);
     return { status: handled.status, run: handled.run };
   }
   if (handled.status === "queued") {

@@ -28,8 +28,8 @@ import { QueryBoundary } from "@/components/query-boundary";
 import { useQueryKeys } from "@/components/query-provider";
 import { useNow } from "@/components/relative-time";
 import { api } from "@/lib/api/client";
-import { harnessListSchema } from "@/lib/api/harnesses";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import { agentListSchema } from "@/lib/api/agents";
+import type { AgentRow } from "@/lib/agents/rows";
 import {
   HarnessStatusBadge,
   AgentVersion,
@@ -42,19 +42,19 @@ import {
 } from "./harness-parts";
 import { EnrollHarnessDialog } from "./enroll-harness-dialog";
 
-/** The organization's harnesses, live (`GET /api/ui/harnesses`). */
+/** The organization's harnesses, live (`GET /api/ui/agents`). */
 export function useHarnessList() {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.harnesses.list(),
+    queryKey: keys.agents.list(),
     queryFn: ({ signal }) =>
-      api.get("/api/ui/harnesses", harnessListSchema, { organizationId: organization.id, signal }),
+      api.get("/api/ui/agents", agentListSchema, { organizationId: organization.id, signal }),
   });
 }
 
 /** The last heartbeat, relative to the browser's ticking clock. */
-function Heartbeat({ harness, now }: { harness: HarnessRow; now: number }) {
+function Heartbeat({ harness, now }: { harness: AgentRow; now: number }) {
   return harness.lastHeartbeatAt ? (
     <Timestamp iso={harness.lastHeartbeatAt} now={now} />
   ) : (
@@ -67,7 +67,7 @@ function HarnessTableRow({
   isAdmin,
   now,
 }: {
-  harness: HarnessRow;
+  harness: AgentRow;
   isAdmin: boolean;
   now: number;
 }) {
@@ -151,7 +151,7 @@ function FleetSkeleton() {
   );
 }
 
-function FleetTable({ harnesses, isAdmin }: { harnesses: HarnessRow[]; isAdmin: boolean }) {
+function FleetTable({ harnesses, isAdmin }: { harnesses: AgentRow[]; isAdmin: boolean }) {
   const now = useNow();
   if (harnesses.length === 0) {
     return (
@@ -222,7 +222,7 @@ export function HarnessesView() {
           </CardHeader>
           <CardContent>
             <QueryBoundary query={harnesses} skeleton={<FleetSkeleton />} what="harnesses">
-              {(data) => <FleetTable harnesses={data.harnesses} isAdmin={isAdmin} />}
+              {(data) => <FleetTable harnesses={data.agents} isAdmin={isAdmin} />}
             </QueryBoundary>
           </CardContent>
         </Card>

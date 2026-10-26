@@ -5,7 +5,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 
-/** The warning a running job's cancel answers with: it stops with its harness's next heartbeat. */
+/** The warning a running job's cancel answers with: it stops with its agent's next heartbeat. */
 export const CANCEL_REQUESTED_WARNING =
   "Cancel requested: the agent stops the job with its next heartbeat.";
 

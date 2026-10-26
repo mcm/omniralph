@@ -202,7 +202,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   let orgId: string;
   let repoA: string;
   let repoB: string;
-  let harnessId: string;
+  let agentId: string;
   let linear: FakeLinearGateway;
   let session = 0;
 
@@ -245,7 +245,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       })
     ).id;
     await setCodingEnabled(db, repoA);
-    [{ id: harnessId }] = (await db
+    [{ id: agentId }] = (await db
       .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
       .returning({ id: agents.id })) as [{ id: string }];
@@ -321,7 +321,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   async function runOfEachKind() {
     // Epic: two stories, one built; its story job used tokens.
     const epic = await newRun();
-    await updateRun(db, epic.id, { status: "completed", agentId: harnessId });
+    await updateRun(db, epic.id, { status: "completed", agentId });
     await updateLane(db, (await getMainLane(db, epic))!.id, {
       prNumber: 7,
       prUrl: "https://github.com/acme/api/pull/7",
@@ -384,7 +384,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       });
       await db
         .update(reviews)
-        .set({ status, agentId: harnessId, tokensIn: 50 + i, tokensOut: 5 })
+        .set({ status, agentId, tokensIn: 50 + i, tokensOut: 5 })
         .where(eq(reviews.id, review.id));
     }
     await createdOn(reviewRuns, reviewRun.id, 3);
@@ -434,7 +434,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       .update(jobs)
       .set({
         status: "canceled",
-        agentId: harnessId,
+        agentId,
         finishedAt: new Date(Date.UTC(2026, 9, 5, 1)),
       })
       .where(eq(jobs.id, askJob.id));
@@ -474,7 +474,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     const organization = { id: orgId, name: "Acme", role: "admin" } as const;
     const github = { id: repoA, provider: "github", fullPath: "acme/api" } as const;
     const gitlab = { id: repoB, provider: "gitlab", fullPath: "acme/web" } as const;
-    const agent = { id: harnessId, name: "agent-a" };
+    const agent = { id: agentId, name: "agent-a" };
 
     expect(byId.get(epic.id)).toEqual({
       id: epic.id,
@@ -586,8 +586,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       reviewRun.id,
       epic.id,
     ]);
-    expect(ids(await listPage({ agent: harnessId }))).toEqual([ask.id, reviewRun.id, epic.id]);
-    expect(ids(await listPage({ agent: harnessId, origin: "chat", status: "stopped" }))).toEqual([
+    expect(ids(await listPage({ agent: agentId }))).toEqual([ask.id, reviewRun.id, epic.id]);
+    expect(ids(await listPage({ agent: agentId, origin: "chat", status: "stopped" }))).toEqual([
       ask.id,
     ]);
     expect(ids(await listPage({ organization: orgId, kind: "triage" }))).toEqual([triage.id]);
@@ -717,14 +717,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     await updateRun(db, run.id, {
       status: "failed",
       error: "A story ran out of attempts.",
-      agentId: harnessId,
+      agentId,
     });
 
     const builtJob = await attempt(
       { type: "ralph.story", ralphRunId: run.id, ralphStoryId: built!.id },
       {
         status: "completed",
-        agentId: harnessId,
+        agentId,
         deliveryCount: 1,
         createdAt: at(9),
         startedAt: at(9),
@@ -737,7 +737,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       {
         status: "failed",
         error: "Tests failed.",
-        agentId: harnessId,
+        agentId,
         deliveryCount: 2,
         createdAt: at(10),
         startedAt: at(10),
@@ -827,7 +827,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       label: "Built ENG-41",
       type: "ralph.story",
       status: "completed",
-      agent: { id: harnessId, name: "agent-a" },
+      agent: { id: agentId, name: "agent-a" },
       deliveries: 1,
       cancelRequested: false,
       createdAt: at(9).toISOString(),
@@ -854,7 +854,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       branch: main.branch,
       baseBranch: "main",
       routedBy: null,
-      agent: { id: harnessId, name: "agent-a" },
+      agent: { id: agentId, name: "agent-a" },
       tokens: { in: 100, out: 10 },
       attemptCount: 5,
       pullRequest: {
@@ -1035,7 +1035,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
             repositoryId: repoB,
             payload: { trigger: { kind: "pr.mention", context: { reviewId: pass.id } } },
           },
-          { status: pass === security ? "completed" : "failed", agentId: harnessId },
+          { status: pass === security ? "completed" : "failed", agentId },
         ),
       );
     }
@@ -1176,7 +1176,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       .where(eq(jobs.id, firstTurn!.id));
     const secondTurn = await attempt(
       { type: "triage.run", taskType: "query", triageRunId: triage.id, repositoryId: repoA },
-      { status: "running", agentId: harnessId, startedAt: at(9), createdAt: at(9) },
+      { status: "running", agentId, startedAt: at(9), createdAt: at(9) },
     );
 
     const triageView = await detailPage(triage.id);
@@ -1346,9 +1346,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
   });
 
-  it("stops a run whose job is running: the job shows its cancel request until its harness confirms", async () => {
+  it("stops a run whose job is running: the job shows its cancel request until its agent confirms", async () => {
     const { run, jobId } = await runningRun();
-    await db.update(jobs).set({ status: "running", agentId: harnessId }).where(eq(jobs.id, jobId));
+    await db.update(jobs).set({ status: "running", agentId }).where(eq(jobs.id, jobId));
     expect(await stopRalphRun(run.id)).toEqual({ ok: true });
 
     const view = await detailPage(run.id);

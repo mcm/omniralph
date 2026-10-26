@@ -1,15 +1,15 @@
 import type { IntentVariant } from "@iamthemcmaster/ui";
 import type { RalphStoryOutcome } from "@/lib/analytics/display";
-import type { AuditEventName } from "@/lib/harnesses/display";
-import type { JobRow } from "@/lib/harnesses/rows";
-import type { HarnessUpdateStatus } from "@/lib/harnesses/update";
+import type { AuditEventName } from "@/lib/agents/display";
+import type { JobRow } from "@/lib/agents/rows";
+import type { AgentUpdateStatus } from "@/lib/agents/update";
 import type { RalphMessageState, RalphRunRow, RalphStoryView } from "@/lib/ralph/display";
 import type { ReviewDetailView, ReviewRow } from "@/lib/reviews/display";
 import type { TriageRunStatus } from "@/lib/triage/display";
 
 /**
  * The State Vocabulary Rule (apps/web/DESIGN.md): every run, story, job, review
- * and harness state maps to one library variant, the same way everywhere.
+ * and agent state maps to one library variant, the same way everywhere.
  * `success` completed or passed; `warning` blocked, waiting or needing a person;
  * `danger` failed or exhausted; `info` running or in progress; `neutral`
  * pending, cancelled or skipped. Nothing else picks a state's variant.
@@ -144,30 +144,30 @@ export const INTEGRATION_STATE_LABELS: Record<IntegrationState, string> = {
   disconnected: "Not connected",
 };
 
-export type HarnessConnectionState = "online" | "offline" | "revoked";
+export type AgentConnectionState = "online" | "offline" | "revoked";
 
-export function harnessConnectionState(harness: {
+export function agentConnectionState(agent: {
   online: boolean;
   revoked: boolean;
-}): HarnessConnectionState {
-  if (harness.revoked) return "revoked";
-  return harness.online ? "online" : "offline";
+}): AgentConnectionState {
+  if (agent.revoked) return "revoked";
+  return agent.online ? "online" : "offline";
 }
 
-export const HARNESS_CONNECTION_VARIANTS: Record<HarnessConnectionState, IntentVariant> = {
+export const AGENT_CONNECTION_VARIANTS: Record<AgentConnectionState, IntentVariant> = {
   online: "success",
   offline: "neutral",
   revoked: "danger",
 };
 
-export const HARNESS_UPDATE_STATUS_VARIANTS: Record<HarnessUpdateStatus, IntentVariant> = {
+export const AGENT_UPDATE_STATUS_VARIANTS: Record<AgentUpdateStatus, IntentVariant> = {
   up_to_date: "success",
   updating: "info",
   failed: "danger",
   manual: "warning",
 };
 
-export const HARNESS_AUDIT_EVENT_VARIANTS: Record<AuditEventName, IntentVariant> = {
+export const AGENT_AUDIT_EVENT_VARIANTS: Record<AuditEventName, IntentVariant> = {
   enroll: "success",
   token_refresh: "neutral",
   refresh_reuse: "danger",

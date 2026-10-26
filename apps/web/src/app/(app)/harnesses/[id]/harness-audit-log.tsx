@@ -14,9 +14,9 @@ import {
   TableRow,
 } from "@iamthemcmaster/ui";
 import { IconAlertTriangle, IconHistory } from "@tabler/icons-react";
-import { AUDIT_EVENT_LABELS, auditDetailSummary, hasRefreshReuse } from "@/lib/harnesses/display";
-import type { AuditRow } from "@/lib/api/harnesses";
-import { HARNESS_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
+import { AUDIT_EVENT_LABELS, auditDetailSummary, hasRefreshReuse } from "@/lib/agents/display";
+import type { AuditRow } from "@/lib/api/agents";
+import { AGENT_AUDIT_EVENT_VARIANTS } from "@/lib/state-variants";
 import { EmptyValue } from "@/components/empty-value";
 import { PhoneMeta, Timestamp, WIDE_COLUMN } from "@/components/list-table";
 
@@ -73,7 +73,7 @@ export function HarnessAuditLog({ audit }: { audit: AuditRow[] }) {
                 <Timestamp iso={entry.createdAt} />
               </TableCell>
               <TableCell>
-                <Badge variant={HARNESS_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>
+                <Badge variant={AGENT_AUDIT_EVENT_VARIANTS[entry.event]}>{label}</Badge>
                 <PhoneMeta>
                   {summary && <span className="text-sm text-text-primary">{summary}</span>}
                   {entry.ip && (

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JobRow } from "@/lib/harnesses/rows";
+import type { JobRow } from "@/lib/agents/rows";
 import { isoDate } from "./schemas";
 
 /** Wire formats of the job endpoints under `/api/ui`. */

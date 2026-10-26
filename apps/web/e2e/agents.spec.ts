@@ -14,7 +14,7 @@ async function generateToken(page: Page, name: string): Promise<string> {
   // The dialog starts polling the enrollment once it shows the token: wait for the first
   // answer, so the route is compiled (`next dev`) before the harness enrolls.
   const firstPoll = page.waitForResponse(
-    (response) => /\/api\/ui\/harness-enrollments\/[\w-]+$/.test(response.url()) && response.ok(),
+    (response) => /\/api\/ui\/agent-enrollments\/[\w-]+$/.test(response.url()) && response.ok(),
   );
   await dialog.getByRole("button", { name: "Generate token" }).click();
   const token = (await dialog.getByLabel("Token").textContent())?.trim() ?? "";

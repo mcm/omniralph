@@ -107,7 +107,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
   let otherUserId: string;
   let connectionId: string;
   let repoId: string;
-  let harnessId: string;
+  let agentId: string;
   let orgChannel: string;
   let issue = 0;
 
@@ -137,11 +137,11 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       fullPath: "acme/app",
     });
     repoId = repo.id;
-    const [harness] = await db
+    const [agent] = await db
       .insert(agents)
       .values({ organizationId: orgId, name: "host", reportedVersion: "1.0.0" })
       .returning();
-    harnessId = harness!.id;
+    agentId = agent!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -265,7 +265,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           ).id;
         }),
       ).toEqual([runEvent(reviewRunId)]);
-      expect(await published(() => markReviewRunning(db, reviewId, harnessId))).toEqual([
+      expect(await published(() => markReviewRunning(db, reviewId, agentId))).toEqual([
         runEvent(reviewRunId),
       ]);
       expect(await published(() => markReviewRunRunning(db, reviewRunId))).toEqual([
@@ -405,7 +405,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         }),
       ).toEqual([runEvent(run.id, [jobId])]);
       const claim = {
-        agentId: harnessId,
+        agentId,
         organizationId: orgId,
         acceptedTaskTypes: ["coding"],
         pools: ["long"],
@@ -414,18 +414,14 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       };
       expect(await published(() => claimJob(db, claim))).toEqual([runEvent(run.id, [jobId])]);
       expect(
-        await published(() =>
-          failJob(db, { jobId, agentId: harnessId, retryable: true, maxDeliveries: 3 }),
-        ),
+        await published(() => failJob(db, { jobId, agentId, retryable: true, maxDeliveries: 3 })),
       ).toEqual([runEvent(run.id, [jobId])]);
       await claimJob(db, claim);
-      expect(
-        await published(() => completeJob(db, { jobId, agentId: harnessId, result: {} })),
-      ).toEqual([runEvent(run.id, [jobId])]);
+      expect(await published(() => completeJob(db, { jobId, agentId, result: {} }))).toEqual([
+        runEvent(run.id, [jobId]),
+      ]);
       // A rejected result (not running any more) publishes nothing.
-      expect(
-        await published(() => completeJob(db, { jobId, agentId: harnessId, result: {} })),
-      ).toEqual([]);
+      expect(await published(() => completeJob(db, { jobId, agentId, result: {} }))).toEqual([]);
       const queued = await queuedJob(run);
       expect(await published(() => requestJobCancel(db, queued.id))).toEqual([
         runEvent(run.id, [queued.id]),
@@ -544,49 +540,49 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
 
     it("a heartbeat publishes a changed update state or install, not a steady report", async () => {
       const report = { version: "1.0.0", installables: [] };
-      await recordAgentHeartbeat(db, harnessId, report);
-      expect(await published(() => recordAgentHeartbeat(db, harnessId, report))).toEqual([]);
+      await recordAgentHeartbeat(db, agentId, report);
+      expect(await published(() => recordAgentHeartbeat(db, agentId, report))).toEqual([]);
       const failing = {
         ...report,
         update: { status: "failed" as const, version: "1.1.0", error: "boom", at: "x" },
       };
-      expect(await published(() => recordAgentHeartbeat(db, harnessId, failing as never))).toEqual([
-        agentEvent(harnessId),
+      expect(await published(() => recordAgentHeartbeat(db, agentId, failing as never))).toEqual([
+        agentEvent(agentId),
       ]);
       expect(
         await published(() =>
-          recordAgentHeartbeat(db, harnessId, {
+          recordAgentHeartbeat(db, agentId, {
             ...(failing as never as typeof report),
             installables: [{ name: "gh", version: "2.0.0" }],
           } as never),
         ),
-      ).toEqual([agentEvent(harnessId)]);
+      ).toEqual([agentEvent(agentId)]);
     });
 
     it("a heartbeat publishes reported task types that differ from the stored ones", async () => {
       const report = { version: "1.0.0", acceptedTaskTypes: ["query", "review", "coding"] };
-      await recordAgentHeartbeat(db, harnessId, report);
-      expect(await published(() => recordAgentHeartbeat(db, harnessId, report))).toEqual([]);
+      await recordAgentHeartbeat(db, agentId, report);
+      expect(await published(() => recordAgentHeartbeat(db, agentId, report))).toEqual([]);
       expect(
         await published(() =>
-          recordAgentHeartbeat(db, harnessId, { ...report, acceptedTaskTypes: ["review"] }),
+          recordAgentHeartbeat(db, agentId, { ...report, acceptedTaskTypes: ["review"] }),
         ),
-      ).toEqual([agentEvent(harnessId)]);
+      ).toEqual([agentEvent(agentId)]);
       // An older agent reports none: the stored ones stay, nothing is published.
       expect(
-        await published(() => recordAgentHeartbeat(db, harnessId, { version: "1.0.0" })),
+        await published(() => recordAgentHeartbeat(db, agentId, { version: "1.0.0" })),
       ).toEqual([]);
     });
 
     it("a desired version or an update request from the control panel publishes the agent", async () => {
-      expect(await published(() => setAgentDesiredVersion(db, orgId, harnessId, "1.2.0"))).toEqual([
-        agentEvent(harnessId),
+      expect(await published(() => setAgentDesiredVersion(db, orgId, agentId, "1.2.0"))).toEqual([
+        agentEvent(agentId),
       ]);
-      expect(await published(() => requestAgentUpdate(db, orgId, harnessId, "1.2.0"))).toEqual([
-        agentEvent(harnessId),
+      expect(await published(() => requestAgentUpdate(db, orgId, agentId, "1.2.0"))).toEqual([
+        agentEvent(agentId),
       ]);
-      expect(await published(() => setAgentDesiredVersion(db, orgId, harnessId, null))).toEqual([
-        agentEvent(harnessId),
+      expect(await published(() => setAgentDesiredVersion(db, orgId, agentId, null))).toEqual([
+        agentEvent(agentId),
       ]);
     });
 
@@ -596,10 +592,10 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           organizationId: orgId,
           type: "install",
           taskType: "system",
-          targetAgentId: harnessId,
+          targetAgentId: agentId,
         }),
       );
-      expect(events).toContainEqual(agentEvent(harnessId));
+      expect(events).toContainEqual(agentEvent(agentId));
     });
   });
 

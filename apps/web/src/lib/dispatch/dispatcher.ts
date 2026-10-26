@@ -13,8 +13,8 @@ import {
 } from "@omniralph/db";
 import { agentWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
-import { bumpHarnessHeartbeat } from "@/lib/harnesses/heartbeat-cache";
-import { readHarnessLastSeen } from "@/lib/harnesses/last-seen";
+import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
+import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { syncJobsDue, syncJobsDueFromPostgres } from "./due";
 
@@ -50,7 +50,7 @@ export interface JobDispatcher {
 
 /**
  * `JobDispatcher` on Postgres: the `jobs` table is the queue and agents claim
- * jobs from it. Dispatching only inserts the job, with `target_harness_id` set to
+ * jobs from it. Dispatching only inserts the job, with `target_agent_id` set to
  * the given target agent, else the repo's pinned agent (both of the job's
  * organization), else null (any agent of the organization). With a wake
  * publisher (Ably), it then wakes the agents that may claim the job; a failed
@@ -79,9 +79,9 @@ export class PostgresDispatcher implements JobDispatcher {
   async cancel(jobId: string): Promise<CancelJobResult> {
     const result = await requestJobCancel(this.db, jobId);
     if (result === "canceled") await syncJobsDueFromPostgres(this.db, [jobId]);
-    // Its harness's next heartbeat tells it to stop the job.
+    // Its agent's next heartbeat tells it to stop the job.
     if (result === "cancel_requested" && hotStateEnabled()) {
-      await bumpHarnessHeartbeat((await getJob(this.db, jobId))?.agentId);
+      await bumpAgentHeartbeat((await getJob(this.db, jobId))?.agentId);
     }
     return result;
   }
@@ -123,7 +123,7 @@ export class PostgresDispatcher implements JobDispatcher {
     }
     return job.repositoryId
       ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId, {
-          lastHeartbeats: readHarnessLastSeen,
+          lastHeartbeats: readAgentLastSeen,
         })
       : null;
   }

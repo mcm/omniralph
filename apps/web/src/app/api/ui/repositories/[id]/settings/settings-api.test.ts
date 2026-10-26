@@ -199,10 +199,10 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
 
   async function pinnedAgentIds(): Promise<string[]> {
     const rows = await db
-      .select({ harnessId: agentRepoPins.agentId })
+      .select({ agentId: agentRepoPins.agentId })
       .from(agentRepoPins)
       .where(eq(agentRepoPins.repositoryId, repoId));
-    return rows.map((r) => r.harnessId).sort();
+    return rows.map((r) => r.agentId).sort();
   }
 
   async function syncJobs() {
@@ -302,12 +302,12 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       .insert(agents)
       .values({ organizationId: otherOrg!.id, name: "coder-foreign" })
       .returning({ id: agents.id });
-    for (const harnessId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
+    for (const agentId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
       expect(
         await updateRepositorySettings(repoId, {
           ...baseSettings,
           depth: "deep",
-          pinnedAgentIds: [agentA, harnessId],
+          pinnedAgentIds: [agentA, agentId],
         }),
       ).toMatchObject({ ok: false, fieldErrors: { pinnedAgentIds: expect.any(String) } });
     }

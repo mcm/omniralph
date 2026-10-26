@@ -5,7 +5,7 @@
  * progress or done, routes it to a repository the way ralph does (none is
  * fine: triage then runs without a checkout), records a `triage_runs` row and
  * enqueues a run of the built-in query task `builtin:triage` (job type
- * `triage.run`) any of the organization's harnesses may claim. Its `triage`
+ * `triage.run`) any of the organization's agents may claim. Its `triage`
  * sink (`lib/sinks/triage.ts`) applies the outcome to Linear when it finishes.
  */
 import {

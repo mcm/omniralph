@@ -35,7 +35,7 @@ import {
   addedHostToolSchema,
   type AddHostToolInput,
   type HostToolCatalogRow,
-} from "@/lib/api/harness-defaults";
+} from "@/lib/api/agent-defaults";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { hostToolsChanged } from "./harness-defaults-queries";
 

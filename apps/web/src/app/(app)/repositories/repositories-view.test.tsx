@@ -35,7 +35,7 @@ function repo(n: number, overrides: Partial<RepositoryRow> = {}): RepositoryRow 
     webUrl: `https://gitlab.example.com/acme/repo-${n}`,
     taskTypes: { reviews: true, coding: false, ask: true },
     depth: "standard",
-    pinnedHarnesses: [],
+    pinnedAgents: [],
     lastReviewAt: null,
     ...overrides,
   };

@@ -20,14 +20,14 @@ describe("queryKeys", () => {
   });
 
   it("nests lists and parts under their area's prefix, so invalidating the area reaches them", () => {
-    const { harnesses } = queryKeys(ORG);
+    const { agents } = queryKeys(ORG);
     const startsWith = (key: readonly unknown[], prefix: readonly unknown[]) =>
       prefix.every((part, i) => key[i] === part);
-    expect(startsWith(harnesses.list({ status: "online" }), harnesses.lists)).toBe(true);
-    expect(startsWith(harnesses.lists, harnesses.all)).toBe(true);
-    expect(startsWith(harnesses.part("h1", "jobs"), harnesses.detail("h1"))).toBe(true);
-    expect(startsWith(harnesses.detail("h1"), harnesses.all)).toBe(true);
-    expect(startsWith(harnesses.detail("h1"), harnesses.lists)).toBe(false);
+    expect(startsWith(agents.list({ status: "online" }), agents.lists)).toBe(true);
+    expect(startsWith(agents.lists, agents.all)).toBe(true);
+    expect(startsWith(agents.part("h1", "jobs"), agents.detail("h1"))).toBe(true);
+    expect(startsWith(agents.detail("h1"), agents.all)).toBe(true);
+    expect(startsWith(agents.detail("h1"), agents.lists)).toBe(false);
   });
 
   it("keeps organizations apart", () => {

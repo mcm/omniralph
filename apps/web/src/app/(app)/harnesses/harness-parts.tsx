@@ -2,34 +2,30 @@
 
 import { Badge, Cluster, Muted } from "@iamthemcmaster/ui";
 import { IconExternalLink } from "@tabler/icons-react";
-import { isHarnessOnline } from "@/lib/harnesses/display";
-import type { HarnessRow } from "@/lib/harnesses/rows";
-import { UPDATE_STATUS_LABELS } from "@/lib/harnesses/update";
+import { isAgentOnline } from "@/lib/agents/display";
+import type { AgentRow } from "@/lib/agents/rows";
+import { UPDATE_STATUS_LABELS } from "@/lib/agents/update";
 import {
-  HARNESS_CONNECTION_VARIANTS,
-  HARNESS_UPDATE_STATUS_VARIANTS,
-  harnessConnectionState,
+  AGENT_CONNECTION_VARIANTS,
+  AGENT_UPDATE_STATUS_VARIANTS,
+  agentConnectionState,
 } from "@/lib/state-variants";
 import { ProviderIcon } from "@/components/provider-icon";
 import { MonoValue } from "@/components/mono-value";
 import { stateLabel } from "@/lib/state-variants";
 
 /** `harness` with `online` computed against the browser's clock `now`, not the server's. */
-export function withClientOnline(harness: HarnessRow, now: number): HarnessRow {
+export function withClientOnline(harness: AgentRow, now: number): AgentRow {
   const heartbeat = harness.lastHeartbeatAt ? new Date(harness.lastHeartbeatAt) : null;
-  return { ...harness, online: !harness.revoked && isHarnessOnline(heartbeat, new Date(now)) };
+  return { ...harness, online: !harness.revoked && isAgentOnline(heartbeat, new Date(now)) };
 }
 
 const HARNESS_CONNECTION_LABELS = { online: "Online", offline: "Offline", revoked: "Revoked" };
 
-export function HarnessStatusBadge({
-  harness,
-}: {
-  harness: Pick<HarnessRow, "online" | "revoked">;
-}) {
-  const state = harnessConnectionState(harness);
+export function HarnessStatusBadge({ harness }: { harness: Pick<AgentRow, "online" | "revoked"> }) {
+  const state = agentConnectionState(harness);
   return (
-    <Badge variant={HARNESS_CONNECTION_VARIANTS[state]} dot live={state === "online"}>
+    <Badge variant={AGENT_CONNECTION_VARIANTS[state]} dot live={state === "online"}>
       {HARNESS_CONNECTION_LABELS[state]}
     </Badge>
   );
@@ -56,7 +52,7 @@ export function formatPoolLimits(limits: Record<string, number>): string {
     .join(", ");
 }
 
-export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] }) {
+export function JobTargetLink({ job }: { job: AgentRow["runningJobs"][number] }) {
   const label = job.target?.label ?? job.id.slice(0, 8);
   const text = (
     <>
@@ -78,7 +74,7 @@ export function JobTargetLink({ job }: { job: HarnessRow["runningJobs"][number] 
 export function RepositoryBadges({
   repositories,
 }: {
-  repositories: HarnessRow["pinnedRepositories"];
+  repositories: AgentRow["pinnedRepositories"];
 }) {
   if (repositories.length === 0) return <Muted>None</Muted>;
   return (
@@ -93,7 +89,7 @@ export function RepositoryBadges({
   );
 }
 
-const UPDATE_STATE_LABELS: Record<NonNullable<HarnessRow["update"]>["state"], string | null> = {
+const UPDATE_STATE_LABELS: Record<NonNullable<AgentRow["update"]>["state"], string | null> = {
   idle: null,
   draining: "waiting for running jobs",
   installing: "installing",
@@ -105,7 +101,7 @@ export function UpdateStatusBadge({
   harness,
 }: {
   harness: Pick<
-    HarnessRow,
+    AgentRow,
     "updateStatus" | "update" | "updateRequest" | "desiredVersion" | "selfUpdate"
   >;
 }) {
@@ -122,7 +118,7 @@ export function UpdateStatusBadge({
         : undefined;
   return (
     <Badge
-      variant={HARNESS_UPDATE_STATUS_VARIANTS[harness.updateStatus]}
+      variant={AGENT_UPDATE_STATUS_VARIANTS[harness.updateStatus]}
       dot
       live={harness.updateStatus === "updating"}
       title={title}
@@ -134,7 +130,7 @@ export function UpdateStatusBadge({
 }
 
 /** The reported version, and the desired one when it differs. */
-export function AgentVersion({ harness }: { harness: HarnessRow }) {
+export function AgentVersion({ harness }: { harness: AgentRow }) {
   const target = harness.updateRequest?.version ?? harness.desiredVersion;
   return harness.version ? (
     <span className="list-text text-numeric list-nowrap">

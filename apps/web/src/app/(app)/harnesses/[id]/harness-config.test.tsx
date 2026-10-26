@@ -11,7 +11,7 @@ import {
   queryWrapper,
   type SeenRequest,
 } from "@/components/query-test-utils";
-import type { HarnessRow } from "@/lib/harnesses/rows";
+import type { AgentRow } from "@/lib/agents/rows";
 import {
   configDraft,
   configInput,
@@ -27,7 +27,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 
 const defaults = { maxConcurrency: 6 };
 
-function harness(overrides: HarnessRow["overrides"]): HarnessRow {
+function harness(overrides: AgentRow["overrides"]): AgentRow {
   const acceptedTaskTypes = ["query", "review"];
   const maxConcurrency = overrides.maxConcurrency ?? defaults.maxConcurrency;
   return {
@@ -48,7 +48,7 @@ function harness(overrides: HarnessRow["overrides"]): HarnessRow {
     update: null,
     failedVersions: [],
     lastHeartbeatAt: "2026-10-16T09:59:50.000Z",
-  } as unknown as HarnessRow;
+  } as unknown as AgentRow;
 }
 
 const inheriting = harness({ maxConcurrency: null });
@@ -65,7 +65,7 @@ function Providers({ children }: { children: React.ReactNode }) {
   return <Wrapper>{children}</Wrapper>;
 }
 
-function render(harness: HarnessRow): string {
+function render(harness: AgentRow): string {
   return renderToStaticMarkup(
     <Providers>
       <HarnessSettingsSection harness={harness} globalDesiredVersion="1.4.0" />
@@ -81,9 +81,9 @@ const SAVED_AT = "2026-10-16T10:00:00.000Z";
 let requests: SeenRequest[];
 
 /** The bodies of the settings saves sent so far. */
-function saves(harnessId: string) {
+function saves(agentId: string) {
   return requests
-    .filter((r) => r.method === "PUT" && r.path === `/api/ui/harnesses/${harnessId}/settings`)
+    .filter((r) => r.method === "PUT" && r.path === `/api/ui/agents/${agentId}/settings`)
     .map((r) => r.body);
 }
 
@@ -91,7 +91,7 @@ describe("HarnessSettingsSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requests = mockFetch({
-      [`PUT /api/ui/harnesses/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
+      [`PUT /api/ui/agents/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
     });
   });
 
@@ -122,7 +122,7 @@ describe("HarnessSettingsSection", () => {
   });
 
   it("shows the harness's own values, editable, when it overrides them", () => {
-    const html = render({ ...overriding, desiredVersionOverride: "1.3.2" } as HarnessRow);
+    const html = render({ ...overriding, desiredVersionOverride: "1.3.2" } as AgentRow);
     expect(html).toContain("Overrides the organization&#x27;s 6.");
     expect(html).toContain("Overrides the organization&#x27;s 1.4.0.");
     for (const name of ["max concurrency", "desired version"]) {
@@ -176,7 +176,7 @@ describe("HarnessSettingsSection", () => {
   it("goes back to inheriting an overridden version, and saves that as no override", async () => {
     renderLive(
       <HarnessSettingsSection
-        harness={{ ...overriding, desiredVersionOverride: "1.3.2" } as HarnessRow}
+        harness={{ ...overriding, desiredVersionOverride: "1.3.2" } as AgentRow}
         globalDesiredVersion="1.4.0"
       />,
     );
@@ -224,7 +224,7 @@ describe("HarnessSettingsSection", () => {
           webUrl: "https://github.com/acme/api",
         },
       ],
-    } as HarnessRow);
+    } as AgentRow);
     expect(html).not.toContain('id="pinned-repositories"');
     expect(html).not.toContain("acme/api");
   });
@@ -234,7 +234,7 @@ describe("HarnessSettingsSection", () => {
       ...overriding,
       revoked: true,
       desiredVersionOverride: "1.3.2",
-    } as HarnessRow);
+    } as AgentRow);
     expect(html).not.toContain('type="submit"');
     expect(html).not.toContain("Update now</button>");
     expect(html).not.toContain("Override</button>");
@@ -255,8 +255,8 @@ async function confirmSave() {
 describe("HarnessSettingsSection, live", () => {
   beforeEach(() => {
     requests = mockFetch({
-      [`PUT /api/ui/harnesses/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
-      [`POST /api/ui/harnesses/${inheriting.id}/update`]: { ok: true, version: "2.0.0" },
+      [`PUT /api/ui/agents/${inheriting.id}/settings`]: { ok: true, savedAt: SAVED_AT },
+      [`POST /api/ui/agents/${inheriting.id}/update`]: { ok: true, version: "2.0.0" },
     });
   });
 
@@ -319,7 +319,7 @@ describe("HarnessSettingsSection, live", () => {
     const requested = {
       ...inheriting,
       updateRequest: { version: "2.0.0", requestedAt: SAVED_AT },
-    } as HarnessRow;
+    } as AgentRow;
     rerender(<HarnessSettingsSection harness={requested} globalDesiredVersion="1.4.0" />);
     expect(
       await screen.findByText(

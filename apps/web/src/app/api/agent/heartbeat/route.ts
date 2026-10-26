@@ -20,7 +20,7 @@ import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireAgent } from "@/lib/agent-auth/verify";
 import { heartbeatClaimable } from "@/lib/agent-api/claimable";
 import { signJobTokens } from "@/lib/agent-api/jobs";
-import { organizationAgentVersion } from "@/lib/harnesses/desired-version";
+import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import {
   cachedHeartbeatResponse,
   heartbeatRequestKey,
@@ -28,10 +28,10 @@ import {
   storeHeartbeatResponse,
   type CachedHeartbeatResponse,
   type HeartbeatChanges,
-} from "@/lib/harnesses/heartbeat-cache";
-import { recordHeartbeat, type HeartbeatReport } from "@/lib/harnesses/last-seen";
-import { noteAgentOnline } from "@/lib/harnesses/liveness";
-import { readAgentOrganization } from "@/lib/harnesses/organization";
+} from "@/lib/agents/heartbeat-cache";
+import { recordHeartbeat, type HeartbeatReport } from "@/lib/agents/last-seen";
+import { noteAgentOnline } from "@/lib/agents/liveness";
+import { readAgentOrganization } from "@/lib/agents/organization";
 import { hasDueJob, renewJobsDue } from "@/lib/dispatch/due";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { getDb } from "@/lib/db";

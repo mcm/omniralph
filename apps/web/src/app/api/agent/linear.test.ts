@@ -168,7 +168,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
         taskType: "query",
         taskId,
         status: "running",
-        agentId: agentId,
+        agentId,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?" } } },
         ...values,
       })

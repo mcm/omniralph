@@ -29,7 +29,7 @@ export function fixtureLinearGateway(): FakeLinearGateway {
   ];
   linear.projects = [
     { id: "fixture-project-1", name: "Control panel" },
-    { id: "fixture-project-2", name: "Harness" },
+    { id: "fixture-project-2", name: "Agent" },
     { id: "fixture-project-3", name: "Platform API" },
   ];
   linear.projectMilestones = [
