@@ -57,7 +57,8 @@ export type UntrackedSettingsSection = (typeof UNTRACKED_SETTINGS_SECTIONS)[numb
 
 /**
  * Sections of the user's own record a `settings` event names, only on the user's own
- * channel and not part of the settings history: `profile` (their theme).
+ * channel and not part of the settings history: `profile` (their theme and
+ * whether they show advanced settings).
  */
 export const USER_SETTINGS_SECTIONS = ["profile"] as const;
 export type UserSettingsSection = (typeof USER_SETTINGS_SECTIONS)[number];
