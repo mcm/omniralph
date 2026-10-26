@@ -3,6 +3,7 @@
 import type { TablerIcon } from "@tabler/icons-react";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { useLinkComponent } from "../provider/index.js";
+import { Tooltip } from "./tooltip.js";
 
 /** A Tabler icon component (e.g. `IconPlus` from `@tabler/icons-react`). */
 export type ButtonIcon = TablerIcon;
@@ -32,6 +33,11 @@ interface ButtonOwnProps {
   /** An optional leading icon. */
   icon?: ButtonIcon;
   disabled?: boolean;
+  /**
+   * Why the button is disabled, shown as its tooltip. With it, a disabled button stays
+   * focusable (`aria-disabled`, clicks ignored) so the reason can show on hover and focus.
+   */
+  disabledReason?: string;
   className?: string;
   children?: ReactNode;
 }
@@ -68,7 +74,7 @@ export function buttonClassName(
  */
 export function Button(props: ButtonProps) {
   const LinkComponent = useLinkComponent();
-  const { variant, size, icon: Icon, className, children, ...rest } = props;
+  const { variant, size, icon: Icon, className, children, disabledReason, ...rest } = props;
   const classes = buttonClassName(variant, size, Icon && "or-btn--with-icon", className);
   const content = (
     <>
@@ -90,7 +96,23 @@ export function Button(props: ButtonProps) {
     href: _href,
     type = "button",
     ...buttonProps
-  } = rest as Omit<NativeButtonProps, "href"> & { href?: string };
+  } = rest as Omit<NativeButtonProps, "href"> & { href?: string; disabled?: boolean };
+  if (buttonProps.disabled && disabledReason) {
+    const { disabled: _disabled, onClick: _onClick, ...enabledProps } = buttonProps;
+    return (
+      <Tooltip content={disabledReason}>
+        <button
+          {...enabledProps}
+          type={type}
+          aria-disabled="true"
+          className={classes}
+          onClick={(event) => event.preventDefault()}
+        >
+          {content}
+        </button>
+      </Tooltip>
+    );
+  }
   return (
     <button {...buttonProps} type={type} className={classes}>
       {content}

@@ -42,18 +42,21 @@ export function splitRepositoryPath(fullPath: string): { name: string; group: st
 
 /**
  * The connected repositories of `organizations` (the user's, with their role), by
- * organization name, then path, with each one's status: a fixed number of queries.
+ * organization name, then path, with each one's status: a fixed number of queries. Only
+ * `repositoryIds` when given (the rows of repos just added).
  */
 export async function loadRepositoryList(
   db: Database,
   organizations: readonly ScopedOrganization[],
   now: Date = new Date(),
+  { repositoryIds }: { repositoryIds?: readonly string[] } = {},
 ): Promise<RepositoryListView> {
   const byId = new Map(organizations.map((o) => [o.id, o]));
   const { repositories, truncated } = await listConnectedRepositories(
     db,
     [...byId.keys()],
     REPOSITORY_LIST_LIMIT,
+    { repositoryIds },
   );
   const statuses = await loadRepositoryStatuses(db, repositories, now);
   return {

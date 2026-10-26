@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConnectionHealthRow } from "@/lib/api/repositories";
 import { formatDate } from "@/lib/format-date";
-import { connectionHealth, problemText } from "./health";
+import { connectionHealth, problemText, withoutWebhookProblems } from "./health";
 
 const NOW = new Date("2026-10-26T12:00:00.000Z");
 
@@ -169,5 +169,33 @@ describe("problemText", () => {
     expect(
       problemText({ code: "rotation_unsupported", message: "Can't rotate." }, health(null)),
     ).toContain("GitLab doesn't report when the bot token expires");
+  });
+});
+
+describe("withoutWebhookProblems", () => {
+  const webhook = (repositoryId: string) => ({
+    code: "webhook_missing",
+    message: `${repositoryId} has no Omniralph webhook.`,
+    repositoryId,
+  });
+
+  it("drops the repo's webhook problems and is healthy when nothing else is wrong", () => {
+    const health = connectionHealth(gitlab([webhook("r1")], "2027-06-01"), NOW);
+    expect(health.state).toBe("needs_attention");
+    expect(withoutWebhookProblems(health, "r1", NOW)).toEqual({
+      state: "healthy",
+      expiresAt: "2027-06-01",
+      problems: [],
+    });
+  });
+
+  it("keeps other repos' problems, and is expiring with only a soon-expiring token left", () => {
+    const both = connectionHealth(gitlab([webhook("r1"), webhook("r2")], "2027-06-01"), NOW);
+    const left = withoutWebhookProblems(both, "r1", NOW);
+    expect(left.state).toBe("needs_attention");
+    expect(left.problems.map((problem) => problem.repositoryId)).toEqual(["r2"]);
+
+    const soon = connectionHealth(gitlab([webhook("r1")], "2026-10-30"), NOW);
+    expect(withoutWebhookProblems(soon, "r1", NOW).state).toBe("expiring");
   });
 });

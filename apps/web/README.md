@@ -144,8 +144,8 @@ record (their theme, their memberships) re-render the shell from the server (`ro
 **External APIs are not polled.** A query that calls Linear, GitHub or GitLab (the repository
 pickers, Linear lookups) is its own query with `refetchInterval: false` and `refetchOnWindowFocus:
 false`, refreshed by an explicit button; polled handlers never call an external API. Example:
-`useSelectableRepositories` in `src/app/(app)/repositories/repo-selection-view.tsx` (its handler
-answers 502 `listing_failed` with the code host's error, which the picker explains).
+`useSelectableRepositories` in `src/screens/repos/queries.ts` (its handler answers 502
+`listing_failed` with the code host's error, which the add-repo sheet's picker shows).
 
 **Mutations** (`src/components/use-api-mutation.ts`). Use `useApiMutation`. `invalidate` is
 required: list every list and detail the mutation can affect, by key prefix. Declare how the view

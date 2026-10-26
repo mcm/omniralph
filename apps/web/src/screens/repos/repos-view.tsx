@@ -20,9 +20,11 @@ import {
   IconPlus,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { createElement, useRef, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import type { RepositoryListItem } from "@/lib/api/repositories";
+import { AddRepoSheet, isGitHubNotice, type AddRepoStart } from "./add-repo-sheet";
 import { useRepositoryList } from "./queries";
 import { RepoDetailView } from "./repo-detail-view";
 import "./repos.css";
@@ -35,11 +37,24 @@ export function repoHref(repositoryId: string): string {
   return `${REPOS_PATH}/${repositoryId}`;
 }
 
+/** The query parameters that open the add-repo sheet: `add` + `connection`, or `github`. */
+const ADD_REPO_PARAMS = ["add", "connection", "github"] as const;
+
 /**
- * Where "Add repo" goes: today's connections and repository pickers, until the add-repo
- * sheet (TOOL-717) replaces them.
+ * Where `/repos?add=<provider>&connection=<id>` (a connection's picker) or
+ * `/repos?github=<status>` (why connecting GitHub didn't finish) opens the sheet; null
+ * without them.
  */
-export const ADD_REPO_HREF = "/repositories";
+export function addRepoStart(search: URLSearchParams): AddRepoStart | null {
+  const add = search.get("add");
+  const connection = search.get("connection");
+  const github = search.get("github");
+  if ((add === "github" || add === "gitlab") && connection) {
+    return { connection: { id: connection, provider: add } };
+  }
+  if (isGitHubNotice(github)) return { githubNotice: github };
+  return null;
+}
 
 /** Whether the user may add repos to an organization of their scope (an admin there). */
 function canAddRepos(user: SessionUser): boolean {
@@ -149,8 +164,27 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
   // Without a repo in the URL, a wide container shows the first repo beside the rail.
   const shownId = repositoryId ?? (wide ? (repositories?.[0]?.id ?? null) : null);
 
+  const router = useRouter();
+  const search = useSearchParams();
+  // Opened from a link (the GitHub App's callback, a connection's "Manage"): admins only.
+  const [start, setStart] = useState(() => (admin ? addRepoStart(search) : null));
+  const [adding, setAdding] = useState(start !== null);
+  useEffect(() => {
+    // The sheet has read them: drop them, so a reload or Back doesn't open it again.
+    const url = new URL(window.location.href);
+    if (!ADD_REPO_PARAMS.some((name) => url.searchParams.has(name))) return;
+    for (const name of ADD_REPO_PARAMS) url.searchParams.delete(name);
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+
   const addRepo = (
-    <IconButton label="Add repo" icon={IconPlus} variant="outline" size="sm" href={ADD_REPO_HREF} />
+    <IconButton
+      label="Add repo"
+      icon={IconPlus}
+      variant="outline"
+      size="sm"
+      onClick={() => setAdding(true)}
+    />
   );
 
   const rail = (
@@ -177,7 +211,7 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
             title="No repos yet"
             action={
               admin ? (
-                <Button variant="outline" href={ADD_REPO_HREF}>
+                <Button variant="outline" onClick={() => setAdding(true)}>
                   Add repo
                 </Button>
               ) : undefined
@@ -205,15 +239,33 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
   );
 
   return (
-    <SplitView
-      ref={splitRef}
-      className="or-repos"
-      list={rail}
-      detail={shownId ? renderDetail(shownId) : null}
-      view={repositoryId ? "detail" : "list"}
-      backLink={{ label: "Repos", href: REPOS_PATH }}
-      listLabel="Repos"
-      detailLabel="Repo"
-    />
+    <>
+      <SplitView
+        ref={splitRef}
+        className="or-repos"
+        list={rail}
+        detail={shownId ? renderDetail(shownId) : null}
+        view={repositoryId ? "detail" : "list"}
+        backLink={{ label: "Repos", href: REPOS_PATH }}
+        listLabel="Repos"
+        detailLabel="Repo"
+      />
+      {admin ? (
+        <AddRepoSheet
+          open={adding}
+          onOpenChange={(open) => {
+            setAdding(open);
+            // Opened again with "Add repo", it starts at the connections.
+            if (!open) setStart(null);
+          }}
+          start={start}
+          onAdded={(id) => {
+            setAdding(false);
+            setStart(null);
+            router.push(repoHref(id));
+          }}
+        />
+      ) : null}
+    </>
   );
 }

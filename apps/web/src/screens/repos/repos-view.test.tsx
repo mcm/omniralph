@@ -289,7 +289,7 @@ describe("the rail", () => {
 
   it("offers Add repo to admins as an outline icon button", async () => {
     renderRepos();
-    const add = screen.getByRole("link", { name: "Add repo" });
+    const add = screen.getByRole("button", { name: "Add repo" });
     expect(add.classList.contains("or-icon-btn--outline")).toBe(true);
   });
 
@@ -297,6 +297,7 @@ describe("the rail", () => {
     renderRepos({ user: member });
     await waitFor(() => expect(railRows()).toHaveLength(2));
     expect(screen.queryByRole("link", { name: "Add repo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add repo" })).toBeNull();
   });
 
   it("offers Add repo under All organizations when the user is an admin of one", async () => {
@@ -310,7 +311,7 @@ describe("the rail", () => {
         ],
       },
     });
-    expect(screen.getByRole("link", { name: "Add repo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add repo" })).toBeTruthy();
   });
 });
 
@@ -320,7 +321,7 @@ describe("no repos", () => {
     renderRepos();
     expect(await screen.findByRole("heading", { name: "No repos yet" })).toBeTruthy();
     const empty = screen.getByRole("heading", { name: "No repos yet" }).closest(".or-empty")!;
-    expect(within(empty as HTMLElement).getByRole("link", { name: "Add repo" })).toBeTruthy();
+    expect(within(empty as HTMLElement).getByRole("button", { name: "Add repo" })).toBeTruthy();
   });
 
   it("says No repos yet without Add repo for members", async () => {

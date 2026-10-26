@@ -134,7 +134,11 @@ describe("GitHub repository picker", () => {
       [`POST ${LISTING_PATH}`]: () => {
         events.push("save");
         saved = true;
-        return jsonResponse({ ok: true, added: [{ id: REPO_ID, fullPath: "acme/web" }] });
+        return jsonResponse({
+          ok: true,
+          added: [{ id: REPO_ID, fullPath: "acme/web" }],
+          repositories: [],
+        });
       },
       "GET /api/ui/repositories/overview": () => {
         events.push("list");

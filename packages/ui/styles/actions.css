@@ -57,6 +57,7 @@
 }
 
 .or-btn:disabled,
+.or-btn[aria-disabled="true"],
 .or-icon-btn:disabled,
 .or-icon-btn[aria-disabled="true"] {
   cursor: not-allowed;
@@ -69,7 +70,7 @@
   color: var(--or-text);
 }
 
-.or-btn--outline:hover:not(:disabled) {
+.or-btn--outline:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--or-hover);
 }
 
@@ -78,7 +79,7 @@
   color: var(--or-solid-ink);
 }
 
-.or-btn--solid:hover:not(:disabled) {
+.or-btn--solid:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--or-solid-hover);
 }
 
@@ -88,7 +89,7 @@
   box-shadow: var(--or-glow);
 }
 
-.or-btn--primary:hover:not(:disabled) {
+.or-btn--primary:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--or-acc-hover);
 }
 
@@ -97,7 +98,7 @@
   color: var(--or-sec);
 }
 
-.or-btn--ghost:hover:not(:disabled) {
+.or-btn--ghost:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--or-hover);
   color: var(--or-text);
 }
@@ -108,7 +109,7 @@
   color: var(--or-fail);
 }
 
-.or-btn--danger:hover:not(:disabled) {
+.or-btn--danger:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--or-fail-tint);
 }
 

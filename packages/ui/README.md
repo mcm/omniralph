@@ -82,6 +82,7 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   (lavender with the glow) is only for the action that clears a needs-you item.
 - `TextLink`: an inline text link (`or-link`, underlined) rendered through `UiProvider`'s
   link component, e.g. a run's title inside a sentence.
+- `Button`: `disabledReason` (with `disabled`) shows why it is disabled as a tooltip, keeping it focusable (`aria-disabled`).
 - `IconButton`: a required `label` is its accessible name and its tooltip. `disabledReason` (with `disabled`) shows why it is disabled as the tooltip instead, keeping it focusable (`aria-disabled`).
 - `Tooltip`: Radix tooltip shown on hover and keyboard focus; carries its own provider.
 - `Toolbar`: `label`, up to two `actions` in one bordered group, and `menu` items behind a

@@ -22,6 +22,26 @@ describe("Button", () => {
     },
   );
 
+  it("shows why it is disabled and stays focusable with disabledReason", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <Button disabled disabledReason="The GitHub App isn't configured" onClick={onClick}>
+        Connect GitHub
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: "Connect GitHub" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await user.tab();
+    expect(document.activeElement).toBe(button);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "The GitHub App isn't configured",
+    );
+    await user.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it("draws the sm size", () => {
     render(<Button size="sm">Go</Button>);
     expect(screen.getByRole("button", { name: "Go" }).classList).toContain("or-btn--sm");

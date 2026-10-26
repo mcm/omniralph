@@ -173,8 +173,6 @@ export const connectGitLabSchema = z.object({
   organizationId: z.string().optional(),
 });
 
-/** `POST /api/ui/gitlab-connections` response: the connection, whose projects are picked next. */
-export const connectedGitLabSchema = mutationResultSchema.extend({ connectionId: z.string() });
 
 /** `GET /api/ui/scm-connections/{id}?provider=`: a connection, for its picker's header. */
 export const scmConnectionSchema = z.object({ id: z.string(), provider, name: z.string() });
@@ -215,6 +213,15 @@ export const scmConnectionListSchema = z.object({
   connections: z.array(scmConnectionListRowSchema),
 });
 export type ScmConnectionList = z.infer<typeof scmConnectionListSchema>;
+
+/**
+ * `POST /api/ui/gitlab-connections` response: the connection, whose projects are picked
+ * next, and its row for the add-repo sheet's list.
+ */
+export const connectedGitLabSchema = mutationResultSchema.extend({
+  connectionId: z.string(),
+  connection: scmConnectionListRowSchema,
+});
 
 /** `GET /api/ui/scm-connections` query. */
 export const scmConnectionListQuerySchema = z.object({ organization: z.string().optional() });
@@ -270,9 +277,13 @@ export const addRepositoriesSchema = z
   .strict();
 export type AddRepositoriesInput = z.infer<typeof addRepositoriesSchema>;
 
-/** `POST /api/ui/scm-connections/{id}/repositories` response: the repos connected. */
+/**
+ * `POST /api/ui/scm-connections/{id}/repositories` response: the repos connected, and their
+ * Repos rail rows (so the sheet adds them to the rail without a refetch).
+ */
 export const addedRepositoriesSchema = mutationResultSchema.extend({
   added: z.array(z.object({ id: z.string(), fullPath: z.string() })),
+  repositories: z.array(repositoryListRowSchema),
 });
 export type AddedRepositories = z.infer<typeof addedRepositoriesSchema>;
 

@@ -123,3 +123,61 @@ export async function applySavedCard(
     );
   }
 }
+
+/** Rail order: organization name, then path (as `GET /api/ui/repositories` sorts). */
+function railOrder(a: RepositoryListItem, b: RepositoryListItem): number {
+  const key = (row: RepositoryListItem) => [
+    row.organization.name,
+    row.organization.id,
+    row.fullPath,
+  ];
+  const [left, right] = [key(a), key(b)];
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index]! < right[index]!) return -1;
+    if (left[index]! > right[index]!) return 1;
+  }
+  return 0;
+}
+
+/**
+ * Adds repos just connected (their rows from the add's response) to the rail of `scope`,
+ * in rail order, so they show without a refetch; their change events then reconcile.
+ */
+export async function addListRows(
+  cache: MutationCache,
+  scope: string,
+  added: readonly RepositoryListItem[],
+) {
+  const inScope = added.filter((row) => scope === "all" || row.organization.id === scope);
+  if (inScope.length === 0) return;
+  const ids = new Set(inScope.map((row) => row.id));
+  await cache.set<RepositoryList>(
+    reposKeys(cache.keys).list(scope),
+    (previous) =>
+      previous
+        ? {
+            ...previous,
+            repositories: [
+              ...previous.repositories.filter((row) => !ids.has(row.id)),
+              ...inScope,
+            ].sort(railOrder),
+          }
+        : previous,
+    { exact: true },
+  );
+}
+
+/** A repo's webhook was recreated: its webhook problem leaves its detail and rail row at once. */
+export async function dropWebhookProblem(cache: MutationCache, repositoryId: string) {
+  const without = (problems: RepositoryProblem[]) =>
+    problems.filter((problem) => problem.code !== "webhook");
+  await applySavedCard(
+    cache,
+    repositoryId,
+    (detail) => ({
+      ...detail,
+      status: { ...detail.status, problems: without(detail.status.problems) },
+    }),
+    (row) => ({ ...row, status: { ...row.status, problems: without(row.status.problems) } }),
+  );
+}

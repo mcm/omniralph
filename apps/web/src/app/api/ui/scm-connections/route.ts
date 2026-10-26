@@ -2,9 +2,8 @@ import { listScmConnections } from "@omniralph/db";
 import { apiHandler } from "@/lib/api/handler";
 import { scmConnectionListQuerySchema, type ScmConnectionList } from "@/lib/api/repositories";
 import { requireOrganizationAccess } from "@/lib/api/scope";
-import { connectionHealth } from "@/lib/connections/health";
+import { scmConnectionListRow } from "@/lib/connections/list-row";
 import { getDb } from "@/lib/db";
-import { connectionWebHost } from "@/lib/repositories/web-url";
 
 /**
  * The add-repo sheet's connections: the GitHub App installations and GitLab connections of
@@ -20,14 +19,6 @@ export const GET = apiHandler(
       { role: "admin" },
     );
     const connections = await listScmConnections(getDb(), organization.id);
-    return {
-      connections: connections.map((connection) => ({
-        id: connection.id,
-        provider: connection.provider,
-        name: connection.name,
-        host: connectionWebHost(connection.provider, connection.baseUrl),
-        health: connectionHealth(connection),
-      })),
-    };
+    return { connections: connections.map(scmConnectionListRow) };
   },
 );
