@@ -69,6 +69,9 @@ import {
   users,
   saveWorkItemMatch,
   workItemMatches,
+  workItemShareLinks as workItemShareLinkRows,
+  createWorkItemShareLink,
+  listActiveWorkItemShareLinks,
   type Database,
 } from "@omniralph/db";
 import {
@@ -269,6 +272,8 @@ const workItemRepository = await import("./work-items/[id]/repository/route");
 const workItemMove = await import("./work-items/[id]/move/route");
 const workItemCancel = await import("./work-items/[id]/cancel/route");
 const workItemCreate = await import("./work-items/route");
+const workItemShareLinks = await import("./work-items/[id]/share-links/route");
+const shareLinkRevoke = await import("./share-links/[linkId]/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
@@ -1316,6 +1321,72 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           for (const attempt of await Promise.all(attempts)) {
             expect(attempt).toMatchObject({ status: 404 });
           }
+
+          // Review links: members create, list and revoke their own items' links only.
+          const ownPath = `/api/ui/work-items/${itemId(own)}/share-links`;
+          const created = await call(workItemShareLinks.POST, {
+            params: { id: itemId(own) },
+            path: ownPath,
+            body: {},
+          });
+          expect(created.status).toBe(201);
+          const ownLinkId = (created.body.link as { id: string }).id;
+          const listed = await call(workItemShareLinks.GET, {
+            params: { id: itemId(own) },
+            path: ownPath,
+          });
+          expect(listed.status).toBe(200);
+          expect((listed.body.links as Array<{ id: string }>).map((l) => l.id)).toContain(
+            ownLinkId,
+          );
+          const theirLink = await createWorkItemShareLink(db, {
+            organizationId: other.orgId,
+            tracker: "linear",
+            externalId: `${other.name}-work-item`,
+            tokenHash: `isolation-${randomUUID()}`,
+            passwordHash: null,
+            expiresAt: new Date(Date.now() + 60_000),
+            actor: { userId: null, name: "Om" },
+            maxActive: 10,
+          });
+          if (theirLink.status !== "created") throw new Error("setup");
+          const shareAttempts = [
+            call(workItemShareLinks.GET, { params: { id }, path: `${path}/share-links` }),
+            call(workItemShareLinks.POST, {
+              params: { id },
+              path: `${path}/share-links`,
+              body: { password: "" },
+            }),
+            call(shareLinkRevoke.DELETE, {
+              params: { linkId: theirLink.link.id },
+              path: `/api/ui/share-links/${theirLink.link.id}`,
+              method: "DELETE",
+            }),
+          ];
+          for (const attempt of await Promise.all(shareAttempts)) {
+            expect(attempt).toMatchObject({ status: 404 });
+          }
+          // Not revoked, and no link of the other organization's item was created.
+          expect(
+            (
+              await listActiveWorkItemShareLinks(db, {
+                organizationId: other.orgId,
+                tracker: "linear",
+                externalId: `${other.name}-work-item`,
+              })
+            ).map((link) => link.id),
+          ).toEqual([theirLink.link.id]);
+          await db
+            .delete(workItemShareLinkRows)
+            .where(eq(workItemShareLinkRows.id, theirLink.link.id));
+          expect(
+            await call(shareLinkRevoke.DELETE, {
+              params: { linkId: ownLinkId },
+              path: `/api/ui/share-links/${ownLinkId}`,
+              method: "DELETE",
+            }),
+          ).toEqual({ status: 200, body: { ok: true } });
+
           // Nothing reached the other organization's tracker.
           const theirs = workspaces.get(other.orgId)!;
           expect(theirs.issueUpdates).toEqual([]);

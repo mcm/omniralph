@@ -27,6 +27,12 @@ describe("classifyPath", () => {
     expect(classifyPath("/privacy-settings")).toBe("page");
   });
 
+  it("lets review links through (no account needed)", () => {
+    expect(classifyPath("/share/abc")).toBe("public");
+    expect(classifyPath("/share/abc/open")).toBe("public");
+    expect(classifyPath("/shared")).toBe("page");
+  });
+
   it("protects other APIs and every UI page", () => {
     expect(classifyPath("/api/other")).toBe("api");
     expect(classifyPath("/api/agentx")).toBe("api");

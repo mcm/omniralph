@@ -1023,6 +1023,31 @@ export const workItemEvents = pgTable(
   ],
 );
 
+/**
+ * A public review link of a work item's PRD ("Share review link", `/share/{token}`). Only the
+ * token's SHA-256 is kept (the token is shown once); an optional password is kept as a
+ * `scrypt$N$r$p$salt$hash` string.
+ */
+export const workItemShareLinks = pgTable(
+  "work_item_share_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    externalId: text("external_id").notNull(),
+    /** SHA-256 of the token, base64url. */
+    tokenHash: text("token_hash").notNull().unique(),
+    passwordHash: text("password_hash"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("work_item_share_links_item_idx").on(t.organizationId, t.tracker, t.externalId)],
+);
+
 // ── Agents ───────────────────────────────────────────────────────────────
 
 /** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */

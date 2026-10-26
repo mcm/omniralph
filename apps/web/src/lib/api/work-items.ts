@@ -189,3 +189,30 @@ export const createWorkItemResultSchema = z.object({
   triageError: z.string().optional(),
 });
 export type CreateWorkItemResponse = z.infer<typeof createWorkItemResultSchema>;
+
+// ── Review links (`/api/ui/work-items/{id}/share-links`, `/api/ui/share-links/{id}`) ───────
+
+/** An active review link of a work item. Its token is never listed (shown once, on create). */
+export const shareLinkSchema = z.object({
+  id: z.string(),
+  /** Whether opening it asks for a password. */
+  protected: z.boolean(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  /** Who created it; null once the user is deleted. */
+  createdBy: z.object({ name: z.string() }).nullable(),
+});
+export type ShareLink = z.infer<typeof shareLinkSchema>;
+
+export const shareLinkListSchema = z.object({ links: z.array(shareLinkSchema) });
+
+/** `POST /api/ui/work-items/{id}/share-links`: an empty password means none. */
+export const createShareLinkBodySchema = z.object({
+  password: z.string().max(200, { error: "The password is too long." }).default(""),
+});
+export const createShareLinkResultSchema = z.object({
+  link: shareLinkSchema,
+  /** The link's URL, with its token: shown once, never stored. */
+  url: z.string(),
+});
+export type CreateShareLinkResponse = z.infer<typeof createShareLinkResultSchema>;

@@ -78,7 +78,27 @@ export function fixtureLinearGateway(): FakeLinearGateway {
       ...extra,
     });
   };
-  issue("FIX-101", "Export runs as CSV", "Todo", { labels: ["backend"], priority: 2 });
+  issue("FIX-101", "Export runs as CSV", "Todo", {
+    labels: ["backend"],
+    priority: 2,
+    description: [
+      "# PRD: Export runs as CSV",
+      "",
+      "## Introduction",
+      "",
+      "Members want the Runs list in a spreadsheet: one row per run, with its repo, status and duration.",
+      "",
+      "## Quality Gates",
+      "",
+      "- `pnpm turbo run typecheck lint test`",
+      "",
+      "## User Stories",
+      "",
+      "### US-001: Export the filtered list",
+      "",
+      "As a member, I want to download the runs I filtered as CSV.",
+    ].join("\n"),
+  });
   issue("FIX-102", "Explain why a review was skipped", "Backlog", { labels: ["frontend"] });
   const blocker = issue("FIX-103", "Add the runs export endpoint", "In Progress", {
     labels: ["api"],

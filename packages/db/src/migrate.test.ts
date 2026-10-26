@@ -20,6 +20,7 @@ import {
   scmConnections,
   workItemEvents,
   workItemOverrides,
+  workItemShareLinks,
 } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
@@ -187,6 +188,39 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       .values({ ...item, actorName: "Om", kind: "created" })
       .returning();
     expect(event).toMatchObject({ actorUserId: null, detail: {} });
+  });
+
+  it("creates work item share links with a unique token hash (0107)", async () => {
+    const { rows: keys } = await db.$client.query<{ conname: string; def: string }>(
+      `select conname, pg_get_constraintdef(oid) as def from pg_constraint
+       where conrelid = 'work_item_share_links'::regclass order by conname`,
+    );
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        { conname: "work_item_share_links_pkey", def: "PRIMARY KEY (id)" },
+        { conname: "work_item_share_links_token_hash_unique", def: "UNIQUE (token_hash)" },
+        {
+          conname: "work_item_share_links_created_by_users_id_fk",
+          def: expect.stringMatching(/REFERENCES users\(id\) ON DELETE SET NULL/),
+        },
+      ]),
+    );
+    const { rows: indexes } = await db.$client.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where indexname = 'work_item_share_links_item_idx'`,
+    );
+    expect(indexes[0]?.indexdef).toMatch(/\(organization_id, tracker, external_id\)/);
+
+    const [org] = await db.insert(organizations).values({ name: "Share links" }).returning();
+    const link = {
+      organizationId: org!.id,
+      tracker: "linear" as const,
+      externalId: "issue-1",
+      tokenHash: "hash",
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const [row] = await db.insert(workItemShareLinks).values(link).returning();
+    expect(row).toMatchObject({ passwordHash: null, createdBy: null, revokedAt: null });
+    await expect(db.insert(workItemShareLinks).values(link)).rejects.toThrow();
   });
 
   it("creates the organization tables (0029)", async () => {

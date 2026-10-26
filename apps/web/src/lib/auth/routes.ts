@@ -12,6 +12,8 @@ export const ACCESS_DENIED_PATH = "/access-denied";
 export const ONBOARDING_PATH = "/onboarding";
 export const TERMS_PATH = "/terms";
 export const PRIVACY_PATH = "/privacy";
+/** Public review links of work items (`/share/{token}`), opened without an account. */
+export const SHARE_PAGES_PATH = "/share";
 
 /**
  * The organization picked on this device (its ID). Not `httpOnly`: open tabs read it to
@@ -33,7 +35,7 @@ export const ENTER_ORGANIZATION_PATH = "/api/organizations/enter";
 
 /** Routes that authenticate themselves (agent tokens, webhook signatures, cron secret) or Auth.js. */
 const SELF_AUTHENTICATED_PREFIXES = ["/api/agent", "/api/webhooks", "/api/cron", "/api/auth"];
-const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH, TERMS_PATH, PRIVACY_PATH];
+const PUBLIC_PAGES = [SIGN_IN_PATH, ACCESS_DENIED_PATH, TERMS_PATH, PRIVACY_PATH, SHARE_PAGES_PATH];
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -41,8 +43,8 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 
 /**
  * How the proxy treats a request path:
- * - `public`: no session needed (sign-in, access-denied, terms and privacy pages,
- *   self-authenticated APIs)
+ * - `public`: no session needed (sign-in, access-denied, terms and privacy pages, review
+ *   links, self-authenticated APIs)
  * - `api`: other API routes; unauthenticated requests get a 401
  * - `page`: UI; unauthenticated requests are redirected to sign-in
  */
