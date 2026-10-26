@@ -41,13 +41,13 @@ import { useApiMutation } from "@/components/use-api-mutation";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api, ApiError } from "@/lib/api/client";
 import {
+  addedRepositoriesSchema,
   LISTING_FAILED,
   scmConnectionSchema,
   selectableRepositoriesSchema,
   type SelectableRepoRow,
   type SelectableRepositories,
 } from "@/lib/api/repositories";
-import { mutationResultSchema } from "@/lib/api/schemas";
 import { pageRange, pageSlice, totalPages } from "@/lib/pagination";
 import { isRetryable, listingFailure, type ListingFailure } from "@/lib/scm/listing-error";
 
@@ -91,7 +91,7 @@ export function useSelectableRepositories(provider: Provider, connectionId: stri
       api.get(
         `/api/ui/scm-connections/${connectionId}/repositories`,
         selectableRepositoriesSchema,
-        { params: { provider }, organizationId: organization.id, signal },
+        { params: { provider, organization: organization.id }, signal },
       ),
     refetchInterval: false,
     refetchOnWindowFocus: false,
@@ -100,10 +100,10 @@ export function useSelectableRepositories(provider: Provider, connectionId: stri
   });
 }
 
-/** The repository IDs reviewed here, sorted (so a refetch in another order isn't an edit). */
-function enabledIds(listing: SelectableRepositories | undefined): number[] {
+/** The repository IDs connected here, sorted (so a refetch in another order isn't an edit). */
+function connectedIds(listing: SelectableRepositories | undefined): number[] {
   return (listing?.repos ?? [])
-    .filter((repo) => repo.enabled)
+    .filter((repo) => repo.connected)
     .map((repo) => repo.id)
     .sort((a, b) => a - b);
 }
@@ -144,8 +144,9 @@ interface RepoSelectionViewProps {
 
 /**
  * Checkbox list of a code-host connection's repositories (the connection is the route's
- * `connectionId`), saved as the reviewed ones. Saving refetches the repositories list
- * before going back to it, so it shows the saved repositories on arrival.
+ * `connectionId`): the ticked ones that aren't connected yet are added (connected ones stay
+ * ticked). Saving refetches the repositories list before going back to it, so it shows the
+ * added repositories on arrival.
  */
 export function RepoSelectionView({
   provider,
@@ -173,8 +174,10 @@ export function RepoSelectionView({
   const repos = React.useMemo(() => listing.data?.repos ?? [], [listing.data]);
   const loading = listing.data === undefined;
   const refreshing = listing.isFetching && !loading;
-  const [draft, setDraft] = useSeededDraft(enabledIds(listing.data));
+  const [draft, setDraft] = useSeededDraft(connectedIds(listing.data));
   const selected = React.useMemo(() => new Set(draft), [draft]);
+  const connected = React.useMemo(() => new Set(connectedIds(listing.data)), [listing.data]);
+  const toAdd = draft.filter((id) => !connected.has(id));
   const allSelected = repos.length > 0 && selected.size === repos.length;
   const [page, setPage] = React.useState(1);
   const pageCount = totalPages(repos.length, PAGE_SIZE);
@@ -186,14 +189,13 @@ export function RepoSelectionView({
     setDraft((current) =>
       checked
         ? [...new Set([...current, id])].sort((a, b) => a - b)
-        : current.filter((value) => value !== id),
+        : current.filter((value) => value !== id || connected.has(value)),
     );
 
   const save = useApiMutation({
-    mutationFn: (selectedIds: number[], { organizationId }) =>
-      api.put(`/api/ui/scm-connections/${connectionId}/repositories`, mutationResultSchema, {
-        body: { provider, selectedIds },
-        organizationId,
+    mutationFn: (ids: number[], { organizationId }) =>
+      api.post(`/api/ui/scm-connections/${connectionId}/repositories`, addedRepositoriesSchema, {
+        body: { provider, ids, organizationId },
       }),
     invalidate: (keys) => [
       // The repositories page (not mounted here) is refetched before going there, so it
@@ -306,7 +308,7 @@ export function RepoSelectionView({
                                 setDraft(
                                   checked === true
                                     ? repos.map((repo) => repo.id).sort((a, b) => a - b)
-                                    : [],
+                                    : [...connected].sort((a, b) => a - b),
                                 )
                               }
                             />
@@ -321,13 +323,14 @@ export function RepoSelectionView({
                               <Checkbox
                                 id={`repo-${repo.id}`}
                                 checked={selected.has(repo.id)}
+                                disabled={repo.connected}
                                 onCheckedChange={(checked) => toggle(repo.id, checked === true)}
                               />
                               <Label htmlFor={`repo-${repo.id}`} className="repo-select-name">
                                 {repo.fullPath}
                               </Label>
                               {repo.private && <Badge variant="neutral">Private</Badge>}
-                              {repo.enabled && <Badge variant="success">Enabled</Badge>}
+                              {repo.connected && <Badge variant="success">Connected</Badge>}
                             </div>
                           ))}
                           <ListPagination
@@ -351,8 +354,10 @@ export function RepoSelectionView({
                   </Button>
                   <Button
                     variant="primary"
-                    onClick={() => save.mutate([...selected])}
-                    disabled={pending || loading || refreshing || !connection.data}
+                    onClick={() => save.mutate(toAdd)}
+                    disabled={
+                      pending || loading || refreshing || !connection.data || toAdd.length === 0
+                    }
                   >
                     <IconDeviceFloppy size={14} />
                     {pending ? "Saving…" : "Save"}

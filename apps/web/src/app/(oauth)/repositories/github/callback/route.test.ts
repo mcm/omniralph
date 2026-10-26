@@ -21,6 +21,8 @@ const state = vi.hoisted(() => ({
   usedNonces: new Set<string>(),
   /** Thrown by getInstallation instead of a lookup (auth/config/network failures). */
   failure: null as unknown,
+  /** The user's role in organizations other than the active one, by ID. */
+  memberships: new Map<string, Role>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/auth/session", () => ({
@@ -59,6 +61,10 @@ vi.mock("@/lib/settings-history/sections", () => ({
   ) => save(db),
 }));
 vi.mock("@omniralph/db", () => ({
+  getMemberOrganization: async (_db: unknown, { organizationId }: { organizationId: string }) => {
+    const role = state.memberships.get(organizationId);
+    return role ? { id: organizationId, name: "Other", role } : null;
+  },
   consumeOAuthState: async (_db: unknown, nonce: string) => {
     if (state.usedNonces.has(nonce)) return false;
     state.usedNonces.add(nonce);
@@ -122,6 +128,7 @@ describe("GET /repositories/github/callback", () => {
     state.upserts = [];
     state.usedNonces = new Set();
     state.failure = null;
+    state.memberships = new Map();
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -131,7 +138,7 @@ describe("GET /repositories/github/callback", () => {
 
   it("stores the installation in the state's organization and opens its repository picker", async () => {
     expect(await callback("installation_id=42&setup_action=install")).toBe(
-      "/repositories/github/conn-42",
+      "/repos?add=github&connection=conn-42",
     );
     expect(state.upserts).toEqual([
       {
@@ -156,46 +163,42 @@ describe("GET /repositories/github/callback", () => {
   });
 
   it("refuses an installation another organization already connected", async () => {
-    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    expect(await callback("installation_id=42")).toBe("/repos?add=github&connection=conn-42");
     state.orgId = "org-b";
-    expect(await callback("installation_id=42")).toBe("/repositories?github=other_organization");
+    expect(await callback("installation_id=42")).toBe("/repos?github=other_organization");
     expect(state.connections.get("42")).toMatchObject({ organizationId: "org-a" });
   });
 
   it("connects an installation to another organization once the first one removed it", async () => {
-    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    expect(await callback("installation_id=42")).toBe("/repos?add=github&connection=conn-42");
     state.orgId = "org-b";
-    expect(await callback("installation_id=42")).toBe("/repositories?github=other_organization");
+    expect(await callback("installation_id=42")).toBe("/repos?github=other_organization");
     // Org A removes the connection (Remove on the Repositories page, or GitHub's uninstall
     // webhook): the row is deleted, see deleteScmConnection.
     state.connections.delete("42");
-    expect(await callback("installation_id=42")).toBe("/repositories/github/conn-42");
+    expect(await callback("installation_id=42")).toBe("/repos?add=github&connection=conn-42");
     expect(state.connections.get("42")).toMatchObject({ organizationId: "org-b" });
   });
 
   it("refuses missing, replayed, foreign and other-organization states", async () => {
     const started = await signed();
-    expect(await callback("installation_id=42", started)).toBe("/repositories/github/conn-42");
+    expect(await callback("installation_id=42", started)).toBe(
+      "/repos?add=github&connection=conn-42",
+    );
     state.connections.clear();
     state.upserts = [];
     // Replayed.
-    expect(await callback("installation_id=42", started)).toBe(
-      "/repositories?github=invalid_state",
-    );
+    expect(await callback("installation_id=42", started)).toBe("/repos?github=invalid_state");
     // None (e.g. installed straight from GitHub).
-    expect(await callback("installation_id=42", null)).toBe("/repositories?github=invalid_state");
+    expect(await callback("installation_id=42", null)).toBe("/repos?github=invalid_state");
     // Without the browser's nonce cookie.
     const other = await signed();
     expect(
       await callback("installation_id=42", { state: other.state, nonce: "someone-else" }),
-    ).toBe("/repositories?github=invalid_state");
+    ).toBe("/repos?github=invalid_state");
     // Started by another admin.
     expect(await callback("installation_id=42", await signed("org-a", "admin-2"))).toBe(
-      "/repositories?github=invalid_state",
-    );
-    // Started in another organization than the one the admin now works in.
-    expect(await callback("installation_id=42", await signed("org-b"))).toBe(
-      "/repositories?github=invalid_state",
+      "/repos?github=invalid_state",
     );
     expect(state.upserts).toEqual([]);
   });
@@ -203,29 +206,56 @@ describe("GET /repositories/github/callback", () => {
   it("opens an installation the organization already has without a state", async () => {
     state.connections.set("42", { id: "conn-42", organizationId: "org-a", externalId: "42" });
     expect(await callback("installation_id=42&setup_action=update", null)).toBe(
-      "/repositories/github/conn-42",
+      "/repos?add=github&connection=conn-42",
     );
     state.orgId = "org-b";
     expect(await callback("installation_id=42&setup_action=update", null)).toBe(
-      "/repositories?github=invalid_state",
+      "/repos?github=invalid_state",
     );
     expect(state.upserts).toEqual([]);
   });
 
-  it("refuses installations that aren't ours and malformed IDs", async () => {
-    expect(await callback("installation_id=7&setup_action=install")).toBe(
-      "/repositories?github=invalid",
+  it("connects to the state's organization when the user is an admin there, without switching", async () => {
+    const other = "00000000-0000-4000-8000-0000000000bb";
+    state.user = user("member");
+    state.memberships.set(other, "admin");
+    expect(await callback("installation_id=42", await signed(other, "member-1"))).toBe(
+      "/repos?add=github&connection=conn-42",
     );
+    expect(state.upserts).toEqual([expect.objectContaining({ organizationId: other })]);
+    // Without a state, it opens there too.
+    expect(await callback("installation_id=42&setup_action=update", null)).toBe(
+      "/repos?add=github&connection=conn-42",
+    );
+    // A member there is refused.
+    state.memberships.set(other, "member");
+    expect(await callback("installation_id=42", await signed(other, "member-1"))).toBe(
+      "/access-denied?reason=forbidden",
+    );
+    expect(await callback("installation_id=42&setup_action=update", null)).toBe(
+      "/repos?github=invalid_state",
+    );
+    // An organization the user isn't a member of.
+    state.memberships.clear();
+    expect(
+      await callback(
+        "installation_id=42",
+        await signed("00000000-0000-4000-8000-0000000000cc", "member-1"),
+      ),
+    ).toBe("/access-denied?reason=forbidden");
+    expect(state.upserts).toHaveLength(1);
+  });
+
+  it("refuses installations that aren't ours and malformed IDs", async () => {
+    expect(await callback("installation_id=7&setup_action=install")).toBe("/repos?github=invalid");
     for (const id of ["", "abc", "-1", "0", "1.5", "99999999999999999999"]) {
-      expect(await callback(`installation_id=${id}`)).toBe("/repositories?github=invalid");
+      expect(await callback(`installation_id=${id}`)).toBe("/repos?github=invalid");
     }
     expect(state.upserts).toEqual([]);
   });
 
   it("logs a 404 with the installation ID and keeps github=invalid", async () => {
-    expect(await callback("installation_id=7&setup_action=install")).toBe(
-      "/repositories?github=invalid",
-    );
+    expect(await callback("installation_id=7&setup_action=install")).toBe("/repos?github=invalid");
     expect(consoleError).toHaveBeenCalledWith("GitHub installation 7 lookup failed", {
       status: 404,
       name: "Error",
@@ -252,9 +282,7 @@ describe("GET /repositories/github/callback", () => {
     for (const [failure, status, message] of failures) {
       state.failure = failure;
       consoleError.mockClear();
-      expect(await callback("installation_id=42&setup_action=install")).toBe(
-        "/repositories?github=error",
-      );
+      expect(await callback("installation_id=42&setup_action=install")).toBe("/repos?github=error");
       expect(consoleError).toHaveBeenCalledTimes(1);
       const [text, details] = consoleError.mock.calls[0]!;
       expect(text).toBe("GitHub installation 42 lookup failed");
@@ -266,13 +294,15 @@ describe("GET /repositories/github/callback", () => {
   });
 
   it("reports a requested (not yet approved) installation", async () => {
-    expect(await callback("setup_action=request")).toBe("/repositories?github=requested");
+    expect(await callback("setup_action=request")).toBe("/repos?github=requested");
     expect(state.upserts).toEqual([]);
   });
 
   it("sends members to access denied and signed-out users to sign in", async () => {
     state.user = user("member");
-    expect(await callback("installation_id=42")).toBe("/access-denied?reason=forbidden");
+    expect(await callback("installation_id=42", await signed("org-a", "member-1"))).toBe(
+      "/access-denied?reason=forbidden",
+    );
     state.user = null;
     expect(await callback("installation_id=42")).toBe("/sign-in");
     expect(state.upserts).toEqual([]);
@@ -283,6 +313,7 @@ describe("GET /repositories/github/install", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.orgId = "org-a";
+    state.memberships = new Map();
   });
 
   const start = () =>
@@ -308,5 +339,34 @@ describe("GET /repositories/github/install", () => {
     state.user = user("member");
     const res = await start();
     expect(new URL(res.headers.get("location")!).pathname).toBe("/access-denied");
+  });
+
+  it("signs the state for the given organization when the user is an admin there", async () => {
+    const other = "00000000-0000-4000-8000-0000000000bb";
+    const startIn = (organization: string) =>
+      install(
+        new NextRequest(
+          `https://omniralph.example.com/repositories/github/install?organization=${organization}`,
+        ),
+      );
+    state.user = user("member");
+    state.memberships.set(other, "admin");
+    const res = await startIn(other);
+    const location = new URL(res.headers.get("location")!);
+    const read = await readSignedState("github-install", location.searchParams.get("state"), {
+      userId: "member-1",
+      nonce: res.cookies.get(COOKIE)?.value,
+    });
+    expect(read).toMatchObject({ organizationId: other });
+
+    state.memberships.set(other, "member");
+    expect(new URL((await startIn(other)).headers.get("location")!).pathname).toBe(
+      "/access-denied",
+    );
+    for (const organization of ["00000000-0000-4000-8000-0000000000cc", "not-a-uuid"]) {
+      expect(new URL((await startIn(organization)).headers.get("location")!).pathname).toBe(
+        "/access-denied",
+      );
+    }
   });
 });

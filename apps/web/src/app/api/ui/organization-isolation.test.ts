@@ -238,6 +238,7 @@ const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
 const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
 const selectable = await import("./scm-connections/[id]/repositories/route");
+const scmConnectionList = await import("./scm-connections/route");
 const runList = await import("./runs/route");
 const runFilterOptions = await import("./runs/filter-options/route");
 const runDetail = await import("./runs/[id]/route");
@@ -1881,15 +1882,39 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await call(repositoryWebhook.POST, { method: "POST", params: { id: b.repoId } }),
     ).toMatchObject({ status: 404 });
     const refused = [
-      await call(repository.DELETE, { method: "DELETE", params: { id: b.repoId } }),
       await call(scmConnection.DELETE, { method: "DELETE", params: { id: b.connectionId } }),
-      await call(selectable.PUT, {
-        method: "PUT",
+      // The other organization's connection, named as one of the admin's own organization's.
+      await call(selectable.POST, {
+        method: "POST",
         params: { id: b.connectionId },
-        body: { provider: "github", selectedIds: [500] },
+        body: { provider: "github", ids: [500], organizationId: a.orgId },
       }),
     ];
     for (const response of refused) expect(response.status).toBe(400);
+    // An organization the admin isn't a member of isn't found.
+    for (const response of [
+      await call(repository.DELETE, { method: "DELETE", params: { id: b.repoId } }),
+      await call(selectable.POST, {
+        method: "POST",
+        params: { id: b.connectionId },
+        body: { provider: "github", ids: [500], organizationId: b.orgId },
+      }),
+      await call(selectable.GET, {
+        params: { id: b.connectionId },
+        path: `/api/ui?${new URLSearchParams({ provider: "github", organization: b.orgId })}`,
+      }),
+      await call(scmConnectionList.GET, {
+        path: `/api/ui?${new URLSearchParams({ organization: b.orgId })}`,
+      }),
+      await call(repositorySetup.GET, {
+        path: `/api/ui?${new URLSearchParams({ organization: b.orgId })}`,
+      }),
+      await call(gitlabConnections.POST, {
+        body: { baseUrl: "https://gitlab.example.com", token: "glpat-x", organizationId: b.orgId },
+      }),
+    ]) {
+      expect(response.status).toBe(404);
+    }
     expect(await getRepository(db, b.repoId)).toMatchObject({
       disconnectedAt: null,
       reviewsEnabled: true,
@@ -1907,11 +1932,19 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await call(repository.DELETE, { method: "DELETE", params: { id: a.repoId } }),
       await call(repositoryWebhook.POST, { method: "POST", params: { id: a.repoId } }),
       await call(scmConnection.DELETE, { method: "DELETE", params: { id: a.connectionId } }),
-      await call(selectable.PUT, {
-        method: "PUT",
+      await call(selectable.POST, {
+        method: "POST",
         params: { id: a.connectionId },
-        body: { provider: "github", selectedIds: [] },
+        body: { provider: "github", ids: [1], organizationId: a.orgId },
       }),
+      await call(selectable.GET, {
+        params: { id: a.connectionId },
+        path: `/api/ui?${new URLSearchParams({ provider: "github", organization: a.orgId })}`,
+      }),
+      await call(scmConnectionList.GET, {
+        path: `/api/ui?${new URLSearchParams({ organization: a.orgId })}`,
+      }),
+      await call(repositorySetup.GET),
       await call(gitlabConnections.POST, {
         body: { baseUrl: "https://gitlab.example.com", token: "glpat-x" },
       }),
@@ -1929,6 +1962,59 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       ((await call(repositoryList.GET)).body.repositories as { id: string }[]).map((r) => r.id),
     ).toEqual([b.repoId]);
+  });
+
+  it("lets an admin of another organization list its connections and remove its repos without switching", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-repos-admin", email: "both-repos@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "admin" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+    try {
+      const listed = await call(scmConnectionList.GET, {
+        path: `/api/ui?${new URLSearchParams({ organization: b.orgId })}`,
+      });
+      expect(listed.status).toBe(200);
+      expect((listed.body.connections as { id: string }[]).map((c) => c.id)).toEqual([
+        b.connectionId,
+      ]);
+      expect(
+        await call(repositorySetup.GET, {
+          path: `/api/ui?${new URLSearchParams({ organization: b.orgId })}`,
+        }),
+      ).toMatchObject({ status: 200 });
+      // A member of the active organization: its connections and setup stay admin-only.
+      expect(await call(scmConnectionList.GET)).toMatchObject({ status: 403 });
+      expect(await call(repositorySetup.GET)).toMatchObject({ status: 403 });
+      expect(
+        await call(repository.DELETE, { method: "DELETE", params: { id: a.repoId } }),
+      ).toMatchObject({ status: 403 });
+
+      const extra = await connectRepository(db, {
+        connectionId: b.connectionId,
+        provider: "github",
+        externalId: "both-admin-removes",
+        fullPath: "beta/removed-by-other-admin",
+      });
+      expect(
+        await call(repository.DELETE, { method: "DELETE", params: { id: extra.id } }),
+      ).toMatchObject({ status: 200, body: { ok: true } });
+      expect(await getRepository(db, extra.id)).toMatchObject({
+        disconnectedAt: expect.any(Date),
+      });
+      // Removed already: not found.
+      expect(
+        await call(repository.DELETE, { method: "DELETE", params: { id: extra.id } }),
+      ).toMatchObject({ status: 404 });
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
+      await db.delete(users).where(eq(users.id, user!.id));
+    }
   });
 
   it("sends a member of both organizations to switch to the connection's organization", async () => {

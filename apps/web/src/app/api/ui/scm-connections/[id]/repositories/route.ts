@@ -1,17 +1,18 @@
 import { getScmConnection } from "@omniralph/db";
-import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import {
+  addRepositoriesSchema,
   LISTING_FAILED,
-  saveSelectionSchema,
+  selectableRepositoriesQuerySchema,
   type SelectableRepositories,
 } from "@/lib/api/repositories";
 import { requireUuid } from "@/lib/api/resource";
+import { requireOrganizationAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import {
+  addGitHubRepositories,
+  addGitLabProjects,
   listSelectableRepositories,
-  saveGitHubRepositories,
-  saveGitLabProjects,
 } from "@/lib/repositories/manage";
 
 type Params = { id: string };
@@ -19,18 +20,27 @@ type Params = { id: string };
 /** Answered when the code host couldn't list them: the message is its error, which the picker explains. */
 const BAD_GATEWAY = 502;
 
-const listQuery = z.object({ provider: z.enum(["github", "gitlab"]) });
-
 /**
  * The repositories (GitHub) or projects (GitLab) the connection can access, from the code
- * host, marked with the ones reviewed here: the picker's list. Calls the code host, so the
- * picker loads it once and refreshes it on request.
+ * host, marked with the ones connected here: the picker's list. The connection belongs to
+ * `organization` (the active one when left out), where the user must be an admin. Calls the
+ * code host, so the picker loads it once and refreshes it on request.
  */
-export const GET = apiHandler<"admin", undefined, typeof listQuery, Params>(
-  { access: "admin", query: listQuery },
+export const GET = apiHandler<
+  "member",
+  undefined,
+  typeof selectableRepositoriesQuerySchema,
+  Params
+>(
+  { query: selectableRepositoriesQuerySchema },
   async ({ user, params, query }): Promise<SelectableRepositories> => {
+    const organization = await requireOrganizationAccess(
+      user,
+      query.organization ?? user.organization.id,
+      { role: "admin" },
+    );
     const db = getDb();
-    const connection = await getScmConnection(db, user.organization.id, requireUuid(params.id));
+    const connection = await getScmConnection(db, organization.id, requireUuid(params.id));
     if (
       !connection ||
       connection.provider !== query.provider ||
@@ -51,16 +61,22 @@ export const GET = apiHandler<"admin", undefined, typeof listQuery, Params>(
 );
 
 /**
- * Saves which of the listed repositories are reviewed: selected ones are connected (GitLab:
- * with a project webhook) or re-enabled, the other listed ones are disabled.
+ * Connects the given repositories of the connection (GitLab: each with a project webhook), or
+ * reconnects disconnected ones, with Reviews and Ask on and Coding off. Add-only: a repository
+ * not in `ids` is never changed. Admins of `organizationId` only. Answers the repos added.
  */
-export const PUT = apiHandler<"admin", typeof saveSelectionSchema, undefined, Params>(
-  { access: "admin", body: saveSelectionSchema },
-  async ({ user, params, body }) =>
-    (body.provider === "github" ? saveGitHubRepositories : saveGitLabProjects)(
+export const POST = apiHandler<"member", typeof addRepositoriesSchema, undefined, Params>(
+  { body: addRepositoriesSchema },
+  async ({ user, params, body }) => {
+    const organization = await requireOrganizationAccess(user, body.organizationId, {
+      role: "admin",
+    });
+    return (body.provider === "github" ? addGitHubRepositories : addGitLabProjects)(
       getDb(),
       user,
+      organization.id,
       requireUuid(params.id),
-      body.selectedIds,
-    ),
+      body.ids,
+    );
+  },
 );

@@ -15,6 +15,11 @@ export function repositoryWebUrl(
   return `${host}/${fullPath}`;
 }
 
+/** The code host's web host of a connection, e.g. `github.com` or `gitlab.example.com`. */
+export function connectionWebHost(provider: "github" | "gitlab", baseUrl: string): string {
+  return new URL(repositoryWebUrl(provider, baseUrl, "")).host;
+}
+
 /** Browser URL of a pull request (GitHub) or merge request (GitLab). */
 export function changeRequestWebUrl(
   provider: "github" | "gitlab",

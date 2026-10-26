@@ -40,5 +40,6 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
 /** Removes the connection with its repositories (and their reviews, rules and pins). */
 export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
   { access: "admin" },
-  async ({ user, params }) => removeScmConnection(getDb(), user, requireUuid(params.id)),
+  async ({ user, params }) =>
+    removeScmConnection(getDb(), user, user.organization.id, requireUuid(params.id)),
 );

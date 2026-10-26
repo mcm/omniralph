@@ -143,22 +143,25 @@ key, generate a new one on the App, import it into a **new** issuer and update t
 
 ## Installing and connecting repositories
 
-As an admin of the Omniralph organization, open **Repositories › Connect GitHub**, install the App
-on the GitHub account or organization and pick the repositories. GitHub returns to the control
-panel, which lists the installation's repositories; select the ones to review and save.
+As an admin of the Omniralph organization, open **Repos › Add repo › Connect GitHub**, install the
+App on the GitHub account or organization and pick the repositories. GitHub returns to the Repos
+page with the installation's picker open; tick the repositories to add and save. Adding only ever
+adds: connected repositories are shown as connected and never changed. **Remove repo…** in a repo's
+⋯ menu turns its Reviews, Coding and Ask off and removes its work item match and agent pins (its
+review history is kept); adding it again starts it with Reviews and Ask on and Coding off.
 
 The App itself (its ID, key and webhook secret) is shared by the whole deployment, but each
 **installation belongs to one Omniralph organization**, the one whose admin connected it. Its
 repositories, reviews and jobs are only visible to that organization's members, and its webhooks
-are handled for that organization. The install link carries a signed state for your active
-organization, so start from **Connect GitHub** (not from GitHub's install page) and finish within
+are handled for that organization. The install link carries a signed state for the organization
+you add repos to (you must be an admin there), so start from **Connect GitHub** (not from GitHub's install page) and finish within
 the link's lifetime, in the same browser:
 
 - An installation already connected to another organization is refused ("Installation belongs to
   another organization"). Disconnecting its repositories keeps the installation with its
   organization; to move it, an admin of that organization removes it first (see below).
 - "GitHub installation not connected" means the callback didn't come from a **Connect GitHub**
-  started in your active organization, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
+  started by you in an organization you're an admin of, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
 repository's review depth (Standard by default).
 
 ### Removing an installation

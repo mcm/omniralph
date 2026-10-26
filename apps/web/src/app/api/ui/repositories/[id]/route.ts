@@ -1,6 +1,5 @@
-import { apiHandler } from "@/lib/api/handler";
+import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { RepositoryDetail } from "@/lib/api/repositories";
-import { requireUuid } from "@/lib/api/resource";
 import { requireRepositoryAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { loadRepositoryDetail } from "@/lib/repositories/detail";
@@ -22,10 +21,15 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
 );
 
 /**
- * Disconnects the repository: reviews stop, its pins and (GitLab) webhook are removed, its
- * review history is kept.
+ * Removes the repository (admins of its organization): Reviews, Coding and Ask stop, its work
+ * item match, pins and (GitLab) webhook are removed, its review history is kept. Publishes the
+ * `repository` change (the repo and its organization's list).
  */
-export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
-  { access: "admin" },
-  async ({ user, params }) => disconnectRepository(getDb(), user, requireUuid(params.id)),
+export const DELETE = apiHandler<"member", undefined, undefined, Params>(
+  {},
+  async ({ user, params }) => {
+    const { repository, organization } = await requireRepositoryAccess(user, params.id, "admin");
+    if (repository.disconnectedAt) throw ApiRouteError.notFound();
+    return disconnectRepository(getDb(), user, organization.id, repository.id);
+  },
 );

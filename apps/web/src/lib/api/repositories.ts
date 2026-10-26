@@ -11,6 +11,7 @@ import { z } from "zod";
 import { organizationRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
 import { settingsHistoryEntrySchema } from "./settings-history";
+import type { ConnectionHealthSummary } from "@/lib/connections/health";
 import type { RepositoryListRow, RepositoryListView } from "@/lib/repositories/list";
 import type {
   RepositoryProblem,
@@ -145,17 +146,31 @@ export const repositoryListSchema = z.object({
 }) satisfies z.ZodType<RepositoryListView>;
 export type RepositoryList = z.infer<typeof repositoryListSchema>;
 
-/** `GET /api/ui/repositories/setup` (admins): what the Connect buttons need. Not polled. */
+/**
+ * `GET /api/ui/repositories/setup?organization=` (admins of that organization): what the
+ * Connect buttons need. Not polled.
+ */
 export const repositorySetupSchema = z.object({
-  /** Our install route (it adds the signed `state`), or null when the GitHub App isn't configured. */
+  /**
+   * Our install route for the organization (it adds the signed `state`), or null when the
+   * GitHub App isn't configured.
+   */
   githubInstallPath: z.string().nullable(),
-  /** The Connect GitLab dialog's default URL. */
+  /** The Connect GitLab form's default URL. */
   defaultGitLabUrl: z.string(),
 });
 export type RepositorySetup = z.infer<typeof repositorySetupSchema>;
 
-/** `POST /api/ui/gitlab-connections` body: the Connect GitLab form. */
-export const connectGitLabSchema = z.object({ baseUrl: z.string(), token: z.string() });
+/** `GET /api/ui/repositories/setup` query: the organization the connection is for. */
+export const repositorySetupQuerySchema = z.object({ organization: z.string().optional() });
+
+/** `POST /api/ui/gitlab-connections` body: the Connect GitLab form and its organization. */
+export const connectGitLabSchema = z.object({
+  baseUrl: z.string(),
+  token: z.string(),
+  /** The organization to connect GitLab to (the active one when left out). */
+  organizationId: z.string().optional(),
+});
 
 /** `POST /api/ui/gitlab-connections` response: the connection, whose projects are picked next. */
 export const connectedGitLabSchema = mutationResultSchema.extend({ connectionId: z.string() });
@@ -164,21 +179,61 @@ export const connectedGitLabSchema = mutationResultSchema.extend({ connectionId:
 export const scmConnectionSchema = z.object({ id: z.string(), provider, name: z.string() });
 export type ScmConnectionSummary = z.infer<typeof scmConnectionSchema>;
 
+/** A connection's health problem in plain words (`connectionHealth`). */
+export const connectionHealthProblemSchema = z.object({
+  code: z.string(),
+  sentence: z.string(),
+  /** The repo the problem is about (webhook problems). */
+  repositoryId: z.string().optional(),
+});
+
+/** A connection's health (`connectionHealth` in `@/lib/connections/health`). */
+export const connectionHealthSummarySchema = z.object({
+  state: z.enum(["healthy", "expiring", "needs_attention", "not_checked", "connected"]),
+  /** ISO date the bot token expires, when GitLab reports it. */
+  expiresAt: z.string().optional(),
+  problems: z.array(connectionHealthProblemSchema),
+}) satisfies z.ZodType<ConnectionHealthSummary>;
+
+/** A GitHub App installation or GitLab connection, as the add-repo sheet lists it. */
+export const scmConnectionListRowSchema = z.object({
+  id: z.string(),
+  provider,
+  name: z.string(),
+  /** The code host's web host, e.g. `github.com` or `gitlab.example.com`. */
+  host: z.string(),
+  health: connectionHealthSummarySchema,
+});
+export type ScmConnectionListRow = z.infer<typeof scmConnectionListRowSchema>;
+
+/**
+ * `GET /api/ui/scm-connections?organization=` (admins of that organization): the
+ * organization's code-host connections with their health, by name.
+ */
+export const scmConnectionListSchema = z.object({
+  connections: z.array(scmConnectionListRowSchema),
+});
+export type ScmConnectionList = z.infer<typeof scmConnectionListSchema>;
+
+/** `GET /api/ui/scm-connections` query. */
+export const scmConnectionListQuerySchema = z.object({ organization: z.string().optional() });
+
 /** A repository (GitHub) or project (GitLab) the connection can access. */
 export const selectableRepoSchema = z.object({
   id: z.number(),
   fullPath: z.string(),
   private: z.boolean(),
   htmlUrl: z.string(),
-  /** Connected and enabled for reviews. */
-  enabled: z.boolean(),
+  /** Already connected here (whatever its switches). */
+  connected: z.boolean(),
 });
 export type SelectableRepoRow = z.infer<typeof selectableRepoSchema>;
 
 /**
- * `GET /api/ui/scm-connections/{id}/repositories`: what the picker lists, from the code host
- * (an external call: loaded once, refreshed on request). A failure answers 502
- * `LISTING_FAILED` with the code host's error as the message.
+ * `GET /api/ui/scm-connections/{id}/repositories?provider=&organization=` (admins of that
+ * organization): what the picker lists, from the code host (an external call: loaded once,
+ * refreshed on request). A failure answers 502 `LISTING_FAILED` with the code host's error
+ * as the message.
  */
 export const selectableRepositoriesSchema = z.object({
   /** The GitHub account, or the GitLab connection's name. */
@@ -191,15 +246,34 @@ export const selectableRepositoriesSchema = z.object({
 });
 export type SelectableRepositories = z.infer<typeof selectableRepositoriesSchema>;
 
+/** `GET /api/ui/scm-connections/{id}/repositories` query. */
+export const selectableRepositoriesQuerySchema = z.object({
+  /** The picker asking: a connection of the other code host is not found. */
+  provider,
+  organization: z.string().optional(),
+});
+
 /** `code` of a picker list the code host couldn't give. */
 export const LISTING_FAILED = "listing_failed";
 
-/** `PUT /api/ui/scm-connections/{id}/repositories` body: the reviewed repositories. */
-export const saveSelectionSchema = z.object({
-  provider,
-  selectedIds: z.array(z.number().int()).max(10_000),
+/**
+ * `POST /api/ui/scm-connections/{id}/repositories` body: the repositories (GitHub) or projects
+ * (GitLab) to connect, by code-host ID. Add-only: repos left out are never changed.
+ */
+export const addRepositoriesSchema = z
+  .object({
+    provider,
+    ids: z.array(z.number().int().positive()).min(1).max(1000),
+    organizationId: z.string(),
+  })
+  .strict();
+export type AddRepositoriesInput = z.infer<typeof addRepositoriesSchema>;
+
+/** `POST /api/ui/scm-connections/{id}/repositories` response: the repos connected. */
+export const addedRepositoriesSchema = mutationResultSchema.extend({
+  added: z.array(z.object({ id: z.string(), fullPath: z.string() })),
 });
-export type SaveSelection = z.infer<typeof saveSelectionSchema>;
+export type AddedRepositories = z.infer<typeof addedRepositoriesSchema>;
 
 /** An agent of the organization, as Repository › Agents shows (and pins) it. */
 export const repositoryAgentSchema = z.object({

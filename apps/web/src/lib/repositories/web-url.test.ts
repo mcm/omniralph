@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeRequestWebUrl, fileWebUrl, repositoryWebUrl } from "./web-url";
+import { changeRequestWebUrl, connectionWebHost, fileWebUrl, repositoryWebUrl } from "./web-url";
 
 describe("repositoryWebUrl", () => {
   it("maps API URLs to browser URLs", () => {
@@ -11,6 +11,16 @@ describe("repositoryWebUrl", () => {
     );
     expect(repositoryWebUrl("gitlab", "https://gitlab.example.com", "g/sub/p")).toBe(
       "https://gitlab.example.com/g/sub/p",
+    );
+  });
+});
+
+describe("connectionWebHost", () => {
+  it("names the code host's web host", () => {
+    expect(connectionWebHost("github", "https://api.github.com")).toBe("github.com");
+    expect(connectionWebHost("github", "https://ghe.example.com/api/v3")).toBe("ghe.example.com");
+    expect(connectionWebHost("gitlab", "https://gitlab.example.com:8443/")).toBe(
+      "gitlab.example.com:8443",
     );
   });
 });

@@ -112,6 +112,7 @@ const history = await import("./route");
 const gitlabConnections = await import("@/app/api/ui/gitlab-connections/route");
 const selection = await import("@/app/api/ui/scm-connections/[id]/repositories/route");
 const repositoryWebhook = await import("@/app/api/ui/repositories/[id]/webhook/route");
+const repository = await import("@/app/api/ui/repositories/[id]/route");
 const chatPlaybooks = await import("@/app/api/ui/integrations/chat-tasks/route");
 const channelPlaybooks =
   await import("@/app/api/ui/integrations/chat-connections/[id]/channels/route");
@@ -222,8 +223,13 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
         { id: 101, fullPath: "acme/api", webUrl: `${GITLAB}/acme/api`, visibility: "private" },
         { id: 102, fullPath: "acme/web", webUrl: `${GITLAB}/acme/web`, visibility: "private" },
       ];
-      const select = (selectedIds: number[]) => () =>
-        callAction(selection.PUT, "PUT", { id: connectionId }, { provider: "gitlab", selectedIds });
+      const select = (ids: number[]) => () =>
+        callAction(
+          selection.POST,
+          "POST",
+          { id: connectionId },
+          { provider: "gitlab", ids, organizationId: orgId },
+        );
       const firstHook = state.nextHookId;
       const selected = await recordsOne(connectionId, select([101]));
       const [api] = (await listConnectionRepositories(db, connectionId)).filter(
@@ -255,7 +261,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       ]);
     });
 
-    it("GitHub repository selection", async () => {
+    it("GitHub repository adds and removals", async () => {
       const connection = (await upsertScmConnection(db, {
         organizationId: orgId,
         provider: "github",
@@ -268,12 +274,12 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
         { id: 1, fullPath: "acme/one" },
         { id: 2, fullPath: "acme/two" },
       ];
-      const select = (selectedIds: number[]) => () =>
+      const select = (ids: number[]) => () =>
         callAction(
-          selection.PUT,
-          "PUT",
+          selection.POST,
+          "POST",
           { id: connection.id },
-          { provider: "github", selectedIds },
+          { provider: "github", ids, organizationId: orgId },
         );
       expect(await recordsOne(connection.id, select([1, 2]))).toEqual([
         {
@@ -283,7 +289,16 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           after: ["acme/one", "acme/two"],
         },
       ]);
-      expect(await recordsOne(connection.id, select([2]))).toEqual([
+      // Adding is add-only: adding one again changes nothing.
+      await recordsNothing(connection.id, select([2]));
+      const [one] = (await listConnectionRepositories(db, connection.id)).filter(
+        (r) => r.fullPath === "acme/one",
+      );
+      expect(
+        await recordsOne(connection.id, () =>
+          callAction(repository.DELETE, "DELETE", { id: one!.id }),
+        ),
+      ).toEqual([
         {
           field: "repositories",
           label: "Reviewed repos",
@@ -291,7 +306,6 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           after: ["acme/two"],
         },
       ]);
-      await recordsNothing(connection.id, select([2]));
     });
 
     it("Slack and Discord settings: the organization's chat playbooks and a channel's", async () => {
