@@ -58,6 +58,7 @@ import {
   organizations,
   ralphRuns,
   reviewRuns,
+  connectionCredentials,
   scmConnections,
   setActiveOrganization,
   settingsChanges,
@@ -280,6 +281,8 @@ const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
 const connectionList = await import("./connections/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
+const gitlabRotate = await import("./connections/gitlab/[id]/rotate/route");
+const gitlabToken = await import("./connections/gitlab/[id]/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
 const deliveryReplay = await import("./deliveries/[id]/replay/route");
 const trackerStateMapping = await import("./trackers/[integrationId]/state-mapping/route");
@@ -961,6 +964,62 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
     } finally {
       await db.delete(chatConnections).where(inArray(chatConnections.id, [...discord.values()]));
+    }
+  });
+
+  it("rotates and replaces only its own organization's GitLab bot tokens, as admins", async () => {
+    const gitlab = new Map<string, string>();
+    try {
+      for (const own of [a, b]) {
+        const saved = (await upsertScmConnection(db, {
+          organizationId: own.orgId,
+          provider: "gitlab",
+          name: `${own.name} bot @ gitlab.example.com`,
+          baseUrl: "https://gitlab.example.com",
+          externalId: `${own.name}-bot-user`,
+          credentials: { token: `${own.name}-glpat`, webhookSecret: "s" },
+        }))!;
+        gitlab.set(own.orgId, saved.id);
+      }
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        // Refused before GitLab is asked anything: no request leaves the test.
+        state.userId = own.adminId;
+        const otherId = gitlab.get(other.orgId)!;
+        expect(
+          await call(gitlabRotate.POST, { method: "POST", params: { id: otherId } }),
+        ).toMatchObject({ status: 404 });
+        expect(
+          await call(gitlabToken.PUT, {
+            method: "PUT",
+            params: { id: otherId },
+            body: { token: "x" },
+          }),
+        ).toMatchObject({ status: 404 });
+        state.userId = own.memberId;
+        const ownId = gitlab.get(own.orgId)!;
+        expect(
+          await call(gitlabRotate.POST, { method: "POST", params: { id: ownId } }),
+        ).toMatchObject({ status: 403 });
+        expect(
+          await call(gitlabToken.PUT, {
+            method: "PUT",
+            params: { id: ownId },
+            body: { token: "x" },
+          }),
+        ).toMatchObject({ status: 403 });
+      }
+      for (const own of [a, b]) {
+        const [row] = await db
+          .select()
+          .from(scmConnections)
+          .where(eq(scmConnections.id, gitlab.get(own.orgId)!));
+        expect(connectionCredentials<{ token: string }>(row!).token).toBe(`${own.name}-glpat`);
+      }
+    } finally {
+      await db.delete(scmConnections).where(inArray(scmConnections.id, [...gitlab.values()]));
     }
   });
 

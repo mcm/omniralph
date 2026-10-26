@@ -7,11 +7,17 @@ import {
   deleteIntegration,
   deleteScmConnection,
   organizationMembers,
+  chatIdentities,
   organizations,
+  recordWebhookEvent,
+  repositories,
   saveChatConnection,
+  setScmConnectionHealth,
   saveIntegration,
   upsertScmConnection,
   users,
+  webhookEvents,
+  workItemMatches,
   type Database,
 } from "@omniralph/db";
 import {
@@ -20,6 +26,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import type { QueryKey } from "@tanstack/react-query";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   connectionListSchema,
@@ -189,6 +196,8 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
       const { status, body } = await getList();
       expect(status).toBe(200);
       expect(connectionListSchema.parse(body)).toEqual(body);
+      const unused = { failedDeliveries: 0, linkedAccounts: null };
+      const connected = { state: "connected", problems: [] };
       expect(body.connections).toEqual([
         {
           provider: "github",
@@ -196,6 +205,10 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           name: "acme-corp",
           host: "github.com",
           account: "acme-corp",
+          health: connected,
+          reposUsing: 0,
+          usedAs: "code_host",
+          ...unused,
         },
         {
           provider: "gitlab",
@@ -203,6 +216,10 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           name: "ann @ gitlab.example.com",
           host: "gitlab.example.com",
           account: "ann-bot",
+          health: { state: "not_checked", problems: [] },
+          reposUsing: 0,
+          usedAs: "code_host",
+          ...unused,
         },
         {
           provider: "gitlab",
@@ -210,6 +227,10 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           name: "zed @ gitlab.example.com",
           host: "gitlab.example.com",
           account: "zed-bot",
+          health: { state: "not_checked", problems: [] },
+          reposUsing: 0,
+          usedAs: "code_host",
+          ...unused,
         },
         {
           provider: "linear",
@@ -217,14 +238,34 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           name: "Acme workspace",
           host: null,
           account: "Acme workspace",
+          health: connected,
+          reposUsing: 0,
+          usedAs: "tracker",
+          ...unused,
         },
-        { provider: "slack", id: ids.slack, name: "Acme Slack", host: null, account: "Acme Slack" },
+        {
+          provider: "slack",
+          id: ids.slack,
+          name: "Acme Slack",
+          host: null,
+          account: "Acme Slack",
+          health: connected,
+          reposUsing: null,
+          usedAs: "chat",
+          failedDeliveries: 0,
+          linkedAccounts: 0,
+        },
         {
           provider: "discord",
           id: ids.discord,
           name: "Acme Discord",
           host: null,
           account: "Acme Discord",
+          health: connected,
+          reposUsing: null,
+          usedAs: "chat",
+          failedDeliveries: 0,
+          linkedAccounts: 0,
         },
       ]);
       const text = JSON.stringify(body);
@@ -278,4 +319,218 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
       expect((await getList()).body.connections).toEqual([]);
     },
   );
+  it("shows each connection's health, the repos using it, unreplayed failed deliveries and linked accounts", async () => {
+    const ids = {
+      github: await connect("github", acme, "acme-corp"),
+      healthy: await connect("gitlab", acme, "healthy"),
+      expiring: await connect("gitlab", acme, "expiring"),
+      attention: await connect("gitlab", acme, "attention"),
+      unchecked: await connect("gitlab", acme, "unchecked"),
+      linear: await connect("linear", acme, "Acme workspace"),
+      slack: await connect("slack", acme, "Acme Slack"),
+      discord: await connect("discord", acme, "Acme Discord"),
+    };
+    const betaGitHub = await connect("github", beta, "beta-corp");
+    const betaSlack = await connect("slack", beta, "Beta Slack");
+    const day = 24 * 60 * 60 * 1000;
+    const checkedAt = new Date().toISOString();
+    const inDays = (days: number) => new Date(Date.now() + days * day).toISOString().slice(0, 10);
+    try {
+      await setScmConnectionHealth(db, ids.healthy, {
+        checkedAt,
+        tokenExpiresAt: inDays(60),
+        problems: [],
+      });
+      await setScmConnectionHealth(db, ids.expiring, {
+        checkedAt,
+        tokenExpiresAt: inDays(5),
+        problems: [],
+      });
+
+      // Repos: two connected and one disconnected on GitHub, one on the healthy GitLab.
+      const repo = (connectionId: string, fullPath: string, disconnected = false) =>
+        db
+          .insert(repositories)
+          .values({
+            organizationId: acme,
+            provider: connectionId === ids.github ? "github" : "gitlab",
+            connectionId,
+            externalId: fullPath,
+            fullPath,
+            disconnectedAt: disconnected ? new Date() : null,
+          })
+          .returning()
+          .then(([row]) => row!.id);
+      const web = await repo(ids.github, "acme/web");
+      await repo(ids.github, "acme/api");
+      const gone = await repo(ids.github, "acme/gone", true);
+      await repo(ids.healthy, "acme/infra");
+      await setScmConnectionHealth(db, ids.attention, {
+        checkedAt,
+        tokenExpiresAt: inDays(60),
+        problems: [{ code: "webhook_missing", message: "The webhook is gone.", repositoryId: web }],
+      });
+      // Linear: a work item match on a connected repo counts; one on a disconnected repo doesn't.
+      await db.insert(workItemMatches).values([
+        { organizationId: acme, repositoryId: web, tracker: "linear", team: "ENG" },
+        { organizationId: acme, repositoryId: gone, tracker: "linear", team: "ENG" },
+      ]);
+
+      // Deliveries: on GitHub a failed one, one replayed successfully, one whose replay failed
+      // again (the replay counts, the original doesn't), an old failure past the retention and
+      // an ignored one; on Linear one failure; on Beta's GitHub one failure.
+      const delivery = (
+        organizationId: string,
+        source: { scmConnectionId: string } | { integrationId: string },
+        outcome: "failed" | "started_run" | "ignored",
+        replayOfId: string | null = null,
+      ) =>
+        recordWebhookEvent(db, {
+          organizationId,
+          provider: "scmConnectionId" in source ? "github" : "linear",
+          source,
+          event: "pull_request.opened",
+          rawBody: "{}",
+          outcome,
+          replayOfId,
+        });
+      const onGitHub = { scmConnectionId: ids.github };
+      await delivery(acme, onGitHub, "failed");
+      await delivery(acme, onGitHub, "started_run", await delivery(acme, onGitHub, "failed"));
+      await delivery(acme, onGitHub, "failed", await delivery(acme, onGitHub, "failed"));
+      await delivery(acme, onGitHub, "ignored");
+      const old = await delivery(acme, onGitHub, "failed");
+      await db
+        .update(webhookEvents)
+        .set({ receivedAt: new Date(Date.now() - 15 * day) })
+        .where(eq(webhookEvents.id, old));
+      await delivery(acme, { integrationId: ids.linear }, "failed");
+      await delivery(beta, { scmConnectionId: betaGitHub }, "failed");
+
+      // Linked chat accounts: two on Slack and one on Discord in Acme, one on Beta's Slack.
+      await db.insert(chatIdentities).values([
+        {
+          organizationId: acme,
+          platform: "slack",
+          externalUserId: "U1",
+          userId: member.id,
+          source: "manual",
+        },
+        {
+          organizationId: acme,
+          platform: "slack",
+          externalUserId: "U2",
+          userId: member.id,
+          source: "email",
+        },
+        {
+          organizationId: acme,
+          platform: "discord",
+          externalUserId: "D1",
+          userId: member.id,
+          source: "manual",
+        },
+        {
+          organizationId: beta,
+          platform: "slack",
+          externalUserId: "U9",
+          userId: member.id,
+          source: "manual",
+        },
+      ]);
+
+      const { body } = await getList();
+      expect(connectionListSchema.parse(body)).toEqual(body);
+      const byId = new Map(body.connections.map((row) => [row.id, row]));
+      const pick = (id: string) => {
+        const row = byId.get(id)!;
+        return {
+          state: row.health.state,
+          reposUsing: row.reposUsing,
+          usedAs: row.usedAs,
+          failedDeliveries: row.failedDeliveries,
+          linkedAccounts: row.linkedAccounts,
+        };
+      };
+      expect(pick(ids.github)).toEqual({
+        state: "connected",
+        reposUsing: 2,
+        usedAs: "code_host",
+        failedDeliveries: 2,
+        linkedAccounts: null,
+      });
+      expect(pick(ids.healthy)).toMatchObject({ state: "healthy", reposUsing: 1 });
+      expect(byId.get(ids.expiring)!.health).toEqual({
+        state: "expiring",
+        expiresAt: inDays(5),
+        problems: [],
+      });
+      expect(byId.get(ids.attention)!.health).toEqual({
+        state: "needs_attention",
+        expiresAt: inDays(60),
+        problems: [
+          { code: "webhook_missing", sentence: "The webhook is gone.", repositoryId: web },
+        ],
+      });
+      expect(pick(ids.unchecked)).toMatchObject({ state: "not_checked", reposUsing: 0 });
+      expect(pick(ids.linear)).toEqual({
+        state: "connected",
+        reposUsing: 1,
+        usedAs: "tracker",
+        failedDeliveries: 1,
+        linkedAccounts: null,
+      });
+      expect(pick(ids.slack)).toEqual({
+        state: "connected",
+        reposUsing: null,
+        usedAs: "chat",
+        failedDeliveries: 0,
+        linkedAccounts: 2,
+      });
+      expect(pick(ids.discord)).toMatchObject({ usedAs: "chat", linkedAccounts: 1 });
+    } finally {
+      await db.delete(chatIdentities);
+      await db.delete(webhookEvents);
+      for (const [provider, id] of [
+        ["github", ids.github],
+        ["gitlab", ids.healthy],
+        ["gitlab", ids.expiring],
+        ["gitlab", ids.attention],
+        ["gitlab", ids.unchecked],
+        ["linear", ids.linear],
+        ["slack", ids.slack],
+        ["discord", ids.discord],
+      ] as const) {
+        await disconnect(provider, acme, id);
+      }
+      await disconnect("github", beta, betaGitHub);
+      await disconnect("slack", beta, betaSlack);
+    }
+  });
+
+  it("refreshes Settings' connections when a delivery is recorded or replayed", async () => {
+    const id = await connect("github", acme, "live-deliveries");
+    try {
+      const settingsList: QueryKey = connectionKeys(queryKeys(acme)).list;
+      const { changes } = await captureChanges(() =>
+        recordWebhookEvent(db, {
+          organizationId: acme,
+          provider: "github",
+          source: { scmConnectionId: id },
+          event: "pull_request.opened",
+          rawBody: "{}",
+          outcome: "failed",
+        }),
+      );
+      const events = changes.map((change) => changeMessage(change).event);
+      expect(events.map((event) => event.resource)).toEqual(["webhook_event"]);
+      expect(liveInvalidations(events[0]!).some((prefix) => isPrefix(prefix, settingsList))).toBe(
+        true,
+      );
+      expect((await getList()).body.connections[0]!.failedDeliveries).toBe(1);
+    } finally {
+      await db.delete(webhookEvents);
+      await disconnect("github", acme, id);
+    }
+  });
 });

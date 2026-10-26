@@ -49,6 +49,11 @@ const gitlab: Connection = {
   name: "om @ gitlab.netbuilder.io",
   host: "gitlab.netbuilder.io",
   account: "om",
+  health: { state: "not_checked", problems: [] },
+  reposUsing: 0,
+  usedAs: "code_host",
+  failedDeliveries: 0,
+  linkedAccounts: null,
 };
 
 beforeEach(() => {
