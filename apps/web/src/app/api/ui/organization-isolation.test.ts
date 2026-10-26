@@ -278,6 +278,7 @@ const shareLinkRevoke = await import("./share-links/[linkId]/route");
 const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
+const connectionList = await import("./connections/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const deliveryDetail = await import("./deliveries/[id]/route");
 const deliveryReplay = await import("./deliveries/[id]/replay/route");
@@ -925,6 +926,41 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           }
         }
       }
+    }
+  });
+
+  it("lists only the active organization's own connections in Settings, to its members", async () => {
+    const discord = new Map<string, string>();
+    try {
+      for (const own of [a, b]) {
+        const saved = await saveChatConnection(db, {
+          organizationId: own.orgId,
+          platform: "discord",
+          externalId: `${own.name}-settings-guild`,
+          name: `${own.name} settings Discord`,
+          credentials: null,
+          installedByUserId: null,
+        });
+        if (saved === "other_organization") throw new Error("setup");
+        discord.set(own.orgId, saved.id);
+      }
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const { status, body } = await call(connectionList.GET);
+          expect(status).toBe(200);
+          const ids = (body.connections as { id: string }[]).map((row) => row.id);
+          expect(ids).toEqual(expect.arrayContaining([own.connectionId, discord.get(own.orgId)]));
+          expect(ids).not.toContain(discord.get(other.orgId));
+          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+          expect(JSON.stringify(body)).not.toContain(`${other.name} settings Discord`);
+        }
+      }
+    } finally {
+      await db.delete(chatConnections).where(inArray(chatConnections.id, [...discord.values()]));
     }
   });
 

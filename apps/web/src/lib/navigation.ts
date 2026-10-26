@@ -19,6 +19,9 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
  * `/repos/**` only. Analytics (its own entry in Epic 10) has no entry and
  * stays reachable by URL; the other Settings pages light up Settings.
  *
+ * Settings points at `/settings` (its section list on phone, General beside the section nav
+ * when wide) and lights up for every `/settings/**` page, today's included.
+ *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
  * started; phone tabs); Ask (bottom, a phone tab) is added by Epic 9 with its page. The
  * live indicators come from `withNavIndicators`.
@@ -70,7 +73,7 @@ export const navItems: readonly NavItem[] = [
   {
     id: "settings",
     label: "Settings",
-    href: "/settings/organization",
+    href: "/settings",
     icon: IconSettings,
     placement: "bottom",
     phone: "drawer",

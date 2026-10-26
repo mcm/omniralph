@@ -1,0 +1,30 @@
+/*
+ * Settings (Design board Settings): the section nav beside the open page. Only `--or-`
+ * tokens.
+ */
+.or-settings {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+  padding: 20px 24px 32px;
+}
+
+.or-settings-page__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+@media (max-width: 768px) {
+  .or-settings-page {
+    padding: 16px;
+  }
+}
