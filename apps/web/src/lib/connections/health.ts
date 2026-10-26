@@ -3,13 +3,15 @@
  * sheet and the connection pages all read it from `connectionHealth`. Safe to import in
  * the browser.
  */
+import type { ConnectionProvider } from "@/lib/api/connections";
 import type { ConnectionHealthRow, ConnectionProblemRow } from "@/lib/api/repositories";
 import { formatDate } from "@/lib/format-date";
 
 /**
  * `healthy`: checked, nothing wrong. `expiring`: the bot token expires soon (and nothing
  * else is wrong). `needs_attention`: a problem needs an admin. `not_checked`: a GitLab
- * connection before its first daily check. `connected`: GitHub, which isn't checked.
+ * connection before its first daily check. `connected`: GitHub, Linear, Slack and Discord,
+ * which aren't checked.
  */
 export type ConnectionHealthState =
   "healthy" | "expiring" | "needs_attention" | "not_checked" | "connected";
@@ -66,13 +68,16 @@ export function problemText(problem: ConnectionProblemRow, health: ConnectionHea
   }
 }
 
-/** The connection's health state and problems, from its last check (`health`). */
+/**
+ * The connection's health state and problems, from its last check (`health`, GitLab only):
+ * every other provider's connection is `connected`.
+ */
 export function connectionHealth(
-  connection: { provider: "github" | "gitlab"; health: ConnectionHealthRow | null },
+  connection: { provider: ConnectionProvider; health?: ConnectionHealthRow | null },
   now: Date = new Date(),
 ): ConnectionHealthSummary {
-  if (connection.provider === "github") return { state: "connected", problems: [] };
-  const { health } = connection;
+  if (connection.provider !== "gitlab") return { state: "connected", problems: [] };
+  const health = connection.health ?? null;
   if (!health) return { state: "not_checked", problems: [] };
   const problems = health.problems.map((problem) => ({
     code: problem.code,

@@ -85,15 +85,17 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([keys.inbox.all]);
   });
 
-  it("webhook_event: deliveries, connection health and the run it started", () => {
+  it("webhook_event: deliveries, connection health, Settings' failed counts and the run it started", () => {
     expect(liveInvalidations(event({ resource: "webhook_event" }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
+      connectionKeys(keys).list,
       ...repositoryViews,
     ]);
     expect(liveInvalidations(event({ resource: "webhook_event", runId: RUN }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
+      connectionKeys(keys).list,
       ...repositoryViews,
       keys.runs.detail(RUN),
     ]);
@@ -115,6 +117,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.backlog.all,
+      connectionKeys(keys).list,
       history.section("repository.coding", ID),
     ]);
     expect(settings("repository.agents", ID)).toEqual([
@@ -133,6 +136,7 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.coding")).toEqual([
       keys.repositories.all,
       keys.backlog.all,
+      connectionKeys(keys).list,
       history.section("repository.coding", undefined),
     ]);
     expect(settings("routing_rules")).toEqual([
@@ -180,6 +184,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.connections.all,
+      connectionKeys(keys).list,
       runsKeys(keys).filterOptionsAll,
       history.subject(ID),
       keys.backlog.all,

@@ -52,8 +52,13 @@ const SETTINGS_INVALIDATIONS: Record<
   (keys: QueryKeys, subjectId: string | undefined) => QueryKey[]
 > = {
   "repository.reviews": (keys, id) => repositoryKeys(keys, id),
-  // Coding on or off, or a changed work item match, changes which items the Backlog lists.
-  "repository.coding": (keys, id) => [...repositoryKeys(keys, id), keys.backlog.all],
+  // Coding on or off, or a changed work item match, changes which items the Backlog lists; a
+  // work item match makes a repo use the Linear tracker (Settings' connections count them).
+  "repository.coding": (keys, id) => [
+    ...repositoryKeys(keys, id),
+    keys.backlog.all,
+    connectionKeys(keys).list,
+  ],
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.agents.all],
   "repository.ask": (keys, id) => repositoryKeys(keys, id),
@@ -135,6 +140,8 @@ export const LIVE_INVALIDATIONS = {
     keys.deliveries.all,
     // Connection health shows the latest deliveries; its problems are repositories' problems.
     keys.connections.all,
+    // Settings' connections count each connection's failed deliveries not yet replayed.
+    connectionKeys(keys).list,
     ...repositoryViews(keys),
     ...(event.runId ? [keys.runs.detail(event.runId)] : []),
   ],
@@ -158,6 +165,8 @@ export const LIVE_INVALIDATIONS = {
     ...event.ids.map((repositoryId) => keys.repositories.detail(repositoryId)),
     // A connection's setup and selectable repositories show which are connected.
     keys.connections.all,
+    // Settings' connections count the repos using each.
+    connectionKeys(keys).list,
     // The Runs screen's Repo filter lists the repositories.
     runsKeys(keys).filterOptionsAll,
     // An open change history of one of the repository's cards.

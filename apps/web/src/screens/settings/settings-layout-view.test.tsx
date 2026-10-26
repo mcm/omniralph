@@ -52,6 +52,11 @@ const github: Connection = {
   name: "acme-corp",
   host: "github.com",
   account: "acme-corp",
+  health: { state: "connected", problems: [] },
+  reposUsing: 0,
+  usedAs: "code_host",
+  failedDeliveries: 0,
+  linkedAccounts: null,
 };
 const gitlab: Connection = {
   provider: "gitlab",
@@ -59,6 +64,11 @@ const gitlab: Connection = {
   name: "om @ gitlab.netbuilder.io",
   host: "gitlab.netbuilder.io",
   account: "om",
+  health: { state: "not_checked", problems: [] },
+  reposUsing: 0,
+  usedAs: "code_host",
+  failedDeliveries: 0,
+  linkedAccounts: null,
 };
 const otherGitLab: Connection = {
   provider: "gitlab",
@@ -66,6 +76,11 @@ const otherGitLab: Connection = {
   name: "om @ gitlab.example.com",
   host: "gitlab.example.com",
   account: "om",
+  health: { state: "not_checked", problems: [] },
+  reposUsing: 0,
+  usedAs: "code_host",
+  failedDeliveries: 0,
+  linkedAccounts: null,
 };
 const linear: Connection = {
   provider: "linear",
@@ -73,6 +88,11 @@ const linear: Connection = {
   name: "Acme",
   host: null,
   account: "Acme",
+  health: { state: "connected", problems: [] },
+  reposUsing: 0,
+  usedAs: "tracker",
+  failedDeliveries: 0,
+  linkedAccounts: null,
 };
 const slack: Connection = {
   provider: "slack",
@@ -80,6 +100,11 @@ const slack: Connection = {
   name: "Acme Slack",
   host: null,
   account: "Acme Slack",
+  health: { state: "connected", problems: [] },
+  reposUsing: null,
+  usedAs: "chat",
+  failedDeliveries: 0,
+  linkedAccounts: 0,
 };
 
 let connections: Connection[];

@@ -417,6 +417,11 @@ export {
   type WebhookEventSummary,
 } from "./webhook-events.js";
 export {
+  countUnreplayedFailedDeliveries,
+  getConnectionUsage,
+  type ConnectionUsage,
+} from "./connection-usage.js";
+export {
   deleteIntegration,
   getIntegration,
   getIntegrationByExternalId,

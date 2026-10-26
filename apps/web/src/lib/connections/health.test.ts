@@ -20,6 +20,14 @@ describe("connectionHealth", () => {
     });
   });
 
+  it.each([
+    ["Linear", "linear"],
+    ["Slack", "slack"],
+    ["Discord", "discord"],
+  ] as const)("says a %s connection is connected: it isn't checked", (_, provider) => {
+    expect(connectionHealth({ provider }, NOW)).toEqual({ state: "connected", problems: [] });
+  });
+
   it("says a GitLab connection before its first check isn't checked yet", () => {
     expect(connectionHealth({ provider: "gitlab", health: null }, NOW)).toEqual({
       state: "not_checked",

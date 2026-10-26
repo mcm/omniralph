@@ -124,6 +124,11 @@ and the token you pasted stops working after the first rotation, so don't use it
 Requests that were using the old token retry once with the new one. A token rotated less than an
 hour ago (by an overlapping or repeated run of the cron) isn't rotated again.
 
+Admins can also rotate a connection's token on demand (`POST /api/ui/connections/gitlab/{id}/rotate`,
+the connection page's "Rotate token"), which runs the same rotation and health check right away,
+or replace it with a new token of the same GitLab user (`PUT /api/ui/connections/gitlab/{id}`);
+a token of another GitLab user is refused, since it belongs on a new connection.
+
 - If the instance has no self-rotation (older than GitLab 16.10), the token isn't rotated: the
   connection shows a warning with the token's expiry. Connect GitLab again with a new token before
   it expires.
