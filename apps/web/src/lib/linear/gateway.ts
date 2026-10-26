@@ -34,6 +34,8 @@ export interface IssueSummary {
   assigneeId?: string;
   /** The (agent) user the issue is delegated to (when Linear returned it). */
   delegateId?: string;
+  /** When the issue last changed (ISO 8601, when Linear returned it). */
+  updatedAt?: string;
   /**
    * Who created the issue; absent when Linear doesn't say (e.g. an integration).
    * `url` is their profile URL, which a comment @mentions them with.
@@ -88,6 +90,10 @@ export interface ListIssuesFilter {
    * one of the states `ids`.
    */
   stateMatch?: { types: string[]; typesExceptTeamIds: string[]; ids: string[] };
+  /** Only issues in no project. */
+  withoutProject?: boolean;
+  /** Each issue also carries its `routing` fields (selected in the same query). */
+  withRoutingFields?: boolean;
   first: number;
   after?: string | null;
 }
@@ -96,6 +102,8 @@ export interface ListIssuesFilter {
 export interface IssueWithBlockers extends IssueSummary {
   /** Issues that block it ("X blocks this"), in any state. */
   blockers: Blocker[];
+  /** Its routing fields and its parent's, when the filter asked `withRoutingFields`. */
+  routing?: RoutingIssue;
 }
 
 /** A page of `listIssues`. */
@@ -363,6 +371,7 @@ const ISSUE_SELECTION = /* GraphQL */ `
     branchName
     priority
     subIssueSortOrder
+    updatedAt
     parent {
       id
     }
@@ -413,6 +422,7 @@ interface IssueNode {
   branchName: string;
   priority?: number | null;
   subIssueSortOrder?: number | null;
+  updatedAt?: string | null;
   parent?: { id: string } | null;
   assignee?: { id: string } | null;
   delegate?: { id: string } | null;
@@ -423,8 +433,8 @@ interface IssueNode {
   project?: { id?: string | null; name: string } | null;
 }
 
-/** The routing fields of an issue (`routingFieldsOf`). */
-const ROUTING_SELECTION = /* GraphQL */ `
+/** The routing fields of an issue (`routingFieldsOf`), with up to `labels` labels. */
+const routingSelection = (labels: number) => /* GraphQL */ `
     id
     identifier
     title
@@ -450,7 +460,7 @@ const ROUTING_SELECTION = /* GraphQL */ `
       name
       type
     }
-    labels(first: 250) {
+    labels(first: ${labels}) {
       nodes {
         name
       }
@@ -545,6 +555,7 @@ function summarize(issue: IssueNode): IssueSummary {
     parentId: issue.parent?.id ?? undefined,
     assigneeId: issue.assignee?.id ?? undefined,
     ...(issue.delegate?.id && { delegateId: issue.delegate.id }),
+    ...(issue.updatedAt && { updatedAt: issue.updatedAt }),
     creator: issue.creator
       ? {
           id: issue.creator.id,
@@ -591,6 +602,7 @@ export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
   const and: Array<Record<string, unknown>> = [];
   if (filter.teamId) and.push({ team: { id: { eq: filter.teamId } } });
   if (filter.projectId) and.push({ project: { id: { eq: filter.projectId } } });
+  if (filter.withoutProject) and.push({ project: { null: true } });
   if (filter.labelIds?.length) and.push({ labels: { some: { id: { in: filter.labelIds } } } });
   if (filter.delegateId) and.push({ delegate: { id: { eq: filter.delegateId } } });
   if (filter.notDelegateId) {
@@ -752,7 +764,7 @@ export class SdkLinearGateway implements LinearGateway {
           }
         }
         fragment RoutingFields on Issue {
-          ${ROUTING_SELECTION}
+          ${routingSelection(250)}
         }
       `,
       { id: idOrIdentifier },
@@ -918,14 +930,34 @@ export class SdkLinearGateway implements LinearGateway {
   }
 
   async listIssues(filter: ListIssuesFilter): Promise<IssuePage> {
+    // The routing fields share `IssueFields`' labels selection (50), so the fragments merge.
+    const routing = filter.withRoutingFields
+      ? {
+          spread: /* GraphQL */ `
+              ...ListRoutingFields
+              parentIssue: parent {
+                ...ListRoutingFields
+              }`,
+          fragment: /* GraphQL */ `
+            fragment ListRoutingFields on Issue {
+              ${routingSelection(50)}
+            }`,
+        }
+      : { spread: "", fragment: "" };
     const data = await this.request<{
-      issues: Connection<IssueNode & { inverseRelations: { nodes: RelationNode[] } }>;
+      issues: Connection<
+        IssueNode &
+          RoutingNode & {
+            inverseRelations: { nodes: RelationNode[] };
+            parentIssue?: RoutingNode | null;
+          }
+      >;
     }>(
       /* GraphQL */ `
         query ListIssues($filter: IssueFilter, $first: Int!, $after: String) {
           issues(filter: $filter, first: $first, after: $after) {
             nodes {
-              ...IssueFields
+              ...IssueFields${routing.spread}
               inverseRelations(first: ${BLOCKERS_PER_ISSUE}) {
                 nodes {
                   type
@@ -947,14 +979,20 @@ export class SdkLinearGateway implements LinearGateway {
             }
           }
         }
-        ${ISSUE_FIELDS}
+        ${ISSUE_FIELDS}${routing.fragment}
       `,
       { filter: issueFilter(filter), first: filter.first, after: filter.after ?? null },
     );
     return {
-      issues: data.issues.nodes.map(({ inverseRelations, ...issue }) => ({
+      issues: data.issues.nodes.map(({ inverseRelations, parentIssue, ...issue }) => ({
         ...summarize(issue),
         blockers: blockersOf(inverseRelations.nodes),
+        ...(filter.withRoutingFields && {
+          routing: {
+            issue: routingFieldsOf(issue),
+            parent: parentIssue ? routingFieldsOf(parentIssue) : null,
+          },
+        }),
       })),
       endCursor: data.issues.pageInfo.hasNextPage ? (data.issues.pageInfo.endCursor ?? null) : null,
     };

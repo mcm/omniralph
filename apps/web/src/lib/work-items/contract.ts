@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   StateMappingError,
   WORK_ITEM_STATES,
+  WorkItemConflictError,
   WorkItemNotFoundError,
   type TrackerWorkflowState,
   type WorkItem,
@@ -22,7 +23,13 @@ export interface SeedWorkItem {
   state: WorkItemStateCategory;
   labels?: string[];
   projectId?: string;
+  /** Markdown. Default: empty. */
+  description?: string;
+  /** Makes it a sub-issue of this item; a later sibling comes after an earlier one. */
+  parentId?: string;
   delegatedToOmniralph?: boolean;
+  /** Delegated to an agent other than Omniralph. */
+  delegatedToOtherAgent?: boolean;
 }
 
 /** An adapter under test and its tracker, empty but for two teams and a project. */
@@ -44,6 +51,12 @@ export interface WorkItemTrackerAgent {
   labelId(teamId: string, name: string): Promise<string>;
   /** The item's comments, oldest first. */
   comments(id: string): Promise<string[]>;
+  /** A comment someone (`author`) left on the item, after its earlier ones. */
+  addComment(id: string, comment: { author: string; body: string }): Promise<void>;
+  /** A change to the item made in the tracker, outside the adapter (a later `updatedAt`). */
+  touch(id: string): Promise<void>;
+  /** A label the tracker's manual labels include (and that isn't `manual`). */
+  manualLabel: string;
   isDelegatedToOmniralph(id: string): Promise<boolean>;
   /** Whether the tracker was asked to start Omniralph's triage of the item. */
   isTriageRequested(id: string): Promise<boolean>;
@@ -114,8 +127,11 @@ export function describeWorkItemTrackerContract(
           readiness: "ready",
           blockedBy: [],
           blocked: false,
+          delegate: null,
         });
+        expect(item).not.toHaveProperty("routingFields");
         expect(item.url).toMatch(/^https:\/\//);
+        expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
         expect(item.team.key).not.toBe("");
         expect(item.team.name).not.toBe("");
         expect(await tracker.get(seeded.identifier)).toEqual(item);
@@ -127,6 +143,41 @@ export function describeWorkItemTrackerContract(
       });
     });
 
+    describe("delegate", () => {
+      it("says who an item is delegated to and whether that's Omniralph", async () => {
+        const none = await h.seed({ teamId: teamA, title: "None", state: "todo" });
+        const om = await h.seed({
+          teamId: teamA,
+          title: "Om",
+          state: "todo",
+          delegatedToOmniralph: true,
+        });
+        const other = await h.seed({
+          teamId: teamA,
+          title: "Other",
+          state: "todo",
+          delegatedToOtherAgent: true,
+        });
+        expect((await tracker.get(none.id)).delegate).toBeNull();
+        const toOm = (await tracker.get(om.id)).delegate;
+        expect(toOm).toEqual({ id: expect.any(String), isOmniralph: true });
+        const toOther = (await tracker.get(other.id)).delegate;
+        expect(toOther).toEqual({ id: expect.any(String), isOmniralph: false });
+        expect(toOther!.id).not.toBe(toOm!.id);
+
+        const { items } = await allPages(tracker, { teamId: teamA, limit: 50 });
+        expect(Object.fromEntries(items.map((item) => [item.title, item.delegate]))).toEqual({
+          None: null,
+          Om: toOm,
+          Other: toOther,
+        });
+        const notOm = await allPages(tracker, { delegatedToOmniralph: false, limit: 50 });
+        expect(Object.fromEntries(notOm.items.map((item) => [item.title, item.delegate]))).toEqual(
+          { None: null, Other: toOther },
+        );
+      });
+    });
+
     describe("changes to an unknown ref", () => {
       it.each([
         ["update", (t: WorkItemTracker, ref: string) => t.update(ref, { title: "x" })],
@@ -134,6 +185,8 @@ export function describeWorkItemTrackerContract(
         ["cancel", (t: WorkItemTracker, ref: string) => t.cancel(ref, { comment: "x" })],
         ["startTriage", (t: WorkItemTracker, ref: string) => t.startTriage(ref)],
         ["delegateToOmniralph", (t: WorkItemTracker, ref: string) => t.delegateToOmniralph(ref)],
+        ["stories", (t: WorkItemTracker, ref: string) => t.stories(ref)],
+        ["comments", (t: WorkItemTracker, ref: string) => t.comments(ref)],
       ])("%s throws WorkItemNotFoundError", async (_name, change) => {
         await expect(change(tracker, h.missingRef)).rejects.toBeInstanceOf(WorkItemNotFoundError);
       });
@@ -205,6 +258,79 @@ export function describeWorkItemTrackerContract(
         expect(await list({ states: ["backlog", "in_progress"], teamId: teamA })).toEqual(
           [inProject, labeled].map((s) => s.identifier).sort(),
         );
+      });
+
+      it("lists only items in no project with withoutProject", async () => {
+        const plain = await h.seed({ teamId: teamA, title: "Plain", state: "todo" });
+        await h.seed({ teamId: teamA, title: "In project", state: "todo", projectId: h.projectId });
+        const other = await h.seed({ teamId: teamB, title: "Other team", state: "backlog" });
+        const list = async (
+          input: Omit<Parameters<WorkItemTracker["listCandidates"]>[0], "limit">,
+        ) => identifiers((await allPages(tracker, { ...input, limit: 50 })).items);
+        expect(await list({ withoutProject: true })).toEqual(
+          [plain, other].map((s) => s.identifier).sort(),
+        );
+        expect(await list({ withoutProject: true, teamId: teamA })).toEqual([plain.identifier]);
+      });
+
+      it("carries each item's routing fields and its parent's only when asked", async () => {
+        const parent = await h.seed({
+          teamId: teamA,
+          title: "Parent",
+          state: "todo",
+          projectId: h.projectId,
+        });
+        const item = await h.seed({
+          teamId: teamA,
+          title: "Routed",
+          state: "todo",
+          labels: ["frontend"],
+          description: "Body",
+        });
+        const child = await h.seed({
+          teamId: teamA,
+          title: "Child",
+          state: "backlog",
+          parentId: parent.id,
+        });
+        const team = (await tracker.get(item.id)).team;
+
+        const { items } = await allPages(tracker, {
+          teamId: teamA,
+          withRoutingFields: true,
+          limit: 2,
+        });
+        const byId = new Map(items.map((i) => [i.id, i]));
+        expect(byId.get(item.id)!.routingFields).toEqual({
+          issue: expect.objectContaining({
+            id: item.id,
+            identifier: item.identifier,
+            title: "Routed",
+            description: "Body",
+            team: team.key,
+            teamId: teamA,
+            project: null,
+            labels: ["frontend"],
+            parent: null,
+            parentId: null,
+            priority: 0,
+          }),
+          parent: null,
+        });
+        expect(byId.get(parent.id)!.routingFields!.issue).toMatchObject({
+          project: expect.any(String),
+        });
+        expect(byId.get(child.id)!.routingFields).toEqual({
+          issue: expect.objectContaining({
+            identifier: child.identifier,
+            parent: parent.identifier,
+            parentId: parent.id,
+          }),
+          parent: expect.objectContaining({ id: parent.id, identifier: parent.identifier }),
+        });
+
+        const plain = await allPages(tracker, { teamId: teamA, limit: 50 });
+        expect(plain.items.some((i) => "routingFields" in i)).toBe(false);
       });
 
       it("filters by each state", async () => {
@@ -383,6 +509,161 @@ export function describeWorkItemTrackerContract(
         const item = await tracker.get(seeded.id);
         expect(item).toMatchObject({ title: "New", description: "Body", priority: 1 });
         expect([...item.labels].sort()).toEqual(["added", "keep"]);
+      });
+    });
+
+    describe("update with ifUpdatedAt", () => {
+      it("writes when the item hasn't changed since, and moves updatedAt on", async () => {
+        const seeded = await h.seed({ teamId: teamA, title: "Item", state: "todo" });
+        const before = await tracker.get(seeded.id);
+        await tracker.update(
+          seeded.identifier,
+          { description: "New PRD" },
+          { ifUpdatedAt: before.updatedAt },
+        );
+        const after = await tracker.get(seeded.id);
+        expect(after.description).toBe("New PRD");
+        expect(after.updatedAt).not.toBe(before.updatedAt);
+      });
+
+      it("throws WorkItemConflictError and writes nothing when the item changed since", async () => {
+        const seeded = await h.seed({ teamId: teamA, title: "Item", state: "todo" });
+        const read = await tracker.get(seeded.id);
+        await h.touch(seeded.id);
+        const changed = await tracker.get(seeded.id);
+        expect(changed.updatedAt).not.toBe(read.updatedAt);
+        const error = await tracker
+          .update(seeded.id, { description: "Stale edit" }, { ifUpdatedAt: read.updatedAt })
+          .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(WorkItemConflictError);
+        expect(error).toMatchObject({ ref: seeded.id, updatedAt: changed.updatedAt });
+        expect(await tracker.get(seeded.id)).toMatchObject({
+          description: changed.description,
+          updatedAt: changed.updatedAt,
+        });
+      });
+
+      it("refuses an edit based on a read before the adapter's own change", async () => {
+        const seeded = await h.seed({ teamId: teamA, title: "Item", state: "todo" });
+        const read = await tracker.get(seeded.id);
+        await tracker.update(seeded.id, { title: "Renamed" });
+        await expect(
+          tracker.update(seeded.id, { description: "x" }, { ifUpdatedAt: read.updatedAt }),
+        ).rejects.toBeInstanceOf(WorkItemConflictError);
+      });
+    });
+
+    describe("stories", () => {
+      it("lists the sub-issues in order, with their state and whether they're manual", async () => {
+        const parent = await h.seed({
+          teamId: teamA,
+          title: "Epic",
+          state: "todo",
+          // Sub-issues come first: a PRD in the description is ignored.
+          description: "## US-001: From the PRD\n\nIgnored.",
+        });
+        const first = await h.seed({
+          teamId: teamA,
+          title: "First",
+          state: "done",
+          parentId: parent.id,
+        });
+        const second = await h.seed({
+          teamId: teamA,
+          title: "Second",
+          state: "todo",
+          parentId: parent.id,
+          labels: [h.manualLabel],
+        });
+        const third = await h.seed({
+          teamId: teamA,
+          title: "Third",
+          state: "backlog",
+          parentId: parent.id,
+          labels: ["manual"],
+        });
+        const stories = await tracker.stories(parent.identifier);
+        expect(stories).toEqual([
+          {
+            ref: first.id,
+            identifier: first.identifier,
+            title: "First",
+            state: { category: "done", name: expect.any(String) },
+            url: expect.stringMatching(/^https:\/\//),
+            manual: false,
+          },
+          {
+            ref: second.id,
+            identifier: second.identifier,
+            title: "Second",
+            state: { category: "todo", name: expect.any(String) },
+            url: expect.stringMatching(/^https:\/\//),
+            manual: true,
+          },
+          // `manual` isn't among the tracker's manual labels.
+          expect.objectContaining({ identifier: third.identifier, manual: false }),
+        ]);
+      });
+
+      it("lists the stories the PRD finds when there are no sub-issues", async () => {
+        const seeded = await h.seed({
+          teamId: teamA,
+          title: "Single issue",
+          state: "todo",
+          description: [
+            "# PRD: Exports",
+            "",
+            "## User Stories",
+            "",
+            "### US-001: Export as CSV",
+            "**Description:** As a user, I want a CSV.",
+            "",
+            "### US-002: Check the export",
+            "**Description:** A person checks it.",
+            "**Labels:** manual",
+          ].join("\n"),
+        });
+        expect(await tracker.stories(seeded.id)).toEqual([
+          {
+            ref: null,
+            identifier: null,
+            title: "Export as CSV",
+            state: null,
+            url: null,
+            manual: false,
+          },
+          {
+            ref: null,
+            identifier: null,
+            title: "Check the export",
+            state: null,
+            url: null,
+            manual: true,
+          },
+        ]);
+      });
+
+      it("answers no stories for an item with neither", async () => {
+        const seeded = await h.seed({ teamId: teamA, title: "Idea", state: "backlog" });
+        expect(await tracker.stories(seeded.identifier)).toEqual([]);
+      });
+    });
+
+    describe("comments", () => {
+      it("lists the comments with author and time, oldest first", async () => {
+        const seeded = await h.seed({ teamId: teamA, title: "Item", state: "todo" });
+        expect(await tracker.comments(seeded.id)).toEqual([]);
+        await h.addComment(seeded.id, { author: "Anna", body: "First thought" });
+        await h.addComment(seeded.id, { author: "Steve", body: "Second thought" });
+        const comments = await tracker.comments(seeded.identifier);
+        expect(comments).toEqual([
+          { author: "Anna", body: "First thought", createdAt: expect.any(String) },
+          { author: "Steve", body: "Second thought", createdAt: expect.any(String) },
+        ]);
+        for (const comment of comments) {
+          expect(new Date(comment.createdAt).toISOString()).toBe(comment.createdAt);
+        }
+        expect(comments[0]!.createdAt <= comments[1]!.createdAt).toBe(true);
       });
     });
 

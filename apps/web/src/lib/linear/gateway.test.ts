@@ -592,6 +592,100 @@ describe("SdkLinearGateway reads", () => {
     });
   });
 
+  it("lists issues in no project with their routing fields and update times, in one request", async () => {
+    resolvers.ListIssues = () => ({
+      issues: {
+        nodes: [
+          {
+            ...issueNode("1", {
+              updatedAt: "2026-10-20T10:00:00.000Z",
+              parent: { id: "epic", identifier: "TOOL-0" },
+              team: { id: "team-1", key: "TOOL", name: "Tooling" },
+              project: null,
+              estimate: 3,
+              dueDate: "2026-11-01",
+              projectMilestone: { id: "m1", name: "Beta" },
+              cycle: { id: "c1" },
+            }),
+            parentIssue: {
+              ...issueNode("epic", { parent: null, project: { id: "p1", name: "Omniralph" } }),
+              identifier: "TOOL-0",
+            },
+            inverseRelations: { nodes: [] },
+          },
+          {
+            ...issueNode("2", { parent: null, project: null }),
+            parentIssue: null,
+            inverseRelations: { nodes: [] },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    });
+    const page = await gateway().listIssues({
+      teamId: "team-1",
+      withoutProject: true,
+      withRoutingFields: true,
+      first: 50,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.query).toContain("...ListRoutingFields");
+    expect(calls[0]!.query).toContain("parentIssue: parent");
+    expect(calls[0]!.query).toContain("updatedAt");
+    // Its labels selection matches IssueFields', so the fragments merge.
+    expect(calls[0]!.query).not.toContain("labels(first: 250)");
+    expect(calls[0]!.variables.filter).toEqual({
+      and: [{ team: { id: { eq: "team-1" } } }, { project: { null: true } }],
+    });
+    const [first, second] = page.issues;
+    expect(first!.updatedAt).toBe("2026-10-20T10:00:00.000Z");
+    expect(first!.routing).toEqual({
+      issue: {
+        id: "1",
+        identifier: "TOOL-1",
+        title: "Issue 1",
+        description: "Body 1",
+        team: "TOOL",
+        project: null,
+        projectMilestone: "Beta",
+        cycle: "c1",
+        state: "Todo",
+        stateType: "unstarted",
+        priority: 2,
+        assignee: "user-1",
+        creator: "user-2",
+        parent: "TOOL-0",
+        parentId: "epic",
+        labels: ["backend"],
+        estimate: 3,
+        dueDate: "2026-11-01",
+        teamId: "team-1",
+        projectId: null,
+        projectMilestoneId: "m1",
+      },
+      parent: expect.objectContaining({
+        id: "epic",
+        identifier: "TOOL-0",
+        project: "Omniralph",
+        projectId: "p1",
+        parent: null,
+      }),
+    });
+    expect(second!.routing).toMatchObject({ issue: { identifier: "TOOL-2" }, parent: null });
+  });
+
+  it("selects no routing fields unless asked", async () => {
+    resolvers.ListIssues = () => ({
+      issues: {
+        nodes: [{ ...issueNode("1"), inverseRelations: { nodes: [] } }],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    });
+    const page = await gateway().listIssues({ first: 10 });
+    expect(calls[0]!.query).not.toContain("ListRoutingFields");
+    expect(page.issues[0]).not.toHaveProperty("routing");
+  });
+
   it("caches workflow states per team, sorted by position", async () => {
     resolvers.TeamWorkflowStates = (v) => ({
       workflowStates: {
