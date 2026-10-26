@@ -19,6 +19,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const SCANNED = [
   "apps/web/src/app",
   "apps/web/src/components",
+  "apps/web/src/screens",
   "apps/web/next.config.ts",
   "apps/web/src/lib/navigation.ts",
   // Linear, GitHub/GitLab and chat messages.
@@ -254,6 +255,7 @@ describe("user-facing wording", () => {
 
   it("scans the pages, components and message builders", () => {
     expect(files).toContain("apps/web/src/app/(app)/runs/page.tsx");
+    expect(files).toContain("apps/web/src/screens/inbox/inbox-view.tsx");
     expect(files).toContain("apps/web/src/lib/linear/webhook.ts");
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });
