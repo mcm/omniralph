@@ -11,7 +11,6 @@ import {
   listConnectionRepositories,
   recordConnectionChange,
   removeScmConnectionProblems,
-  setRepositoryEnabled as setRepositoryEnabledRow,
   setRepositoryWebhookId,
   upsertScmConnection,
   withSettingsChanges,
@@ -44,16 +43,30 @@ import {
 } from "@/lib/settings-history/sections";
 
 /**
- * An admin's changes to the organization's code-host connections and connected repositories
- * (the Repositories page and its GitHub/GitLab pickers): the logic behind the
- * `/api/ui/repositories/…` and `/api/ui/scm-connections/…` handlers, which parse, authorize
- * and serialize. Every function is scoped to the admin's active organization, answers an
- * `ActionResult` worded for the panel's toasts, and records what it changed in the
- * connection's change history.
+ * An admin's changes to an organization's code-host connections and connected repositories
+ * (the Repos page and its add-repo sheet): the logic behind the `/api/ui/repositories/…`,
+ * `/api/ui/scm-connections/…` and `/api/ui/gitlab-connections` handlers, which parse,
+ * authorize (admin of `organizationId`) and serialize. Every function is scoped to the
+ * organization it's given, answers an `ActionResult` worded for the panel's toasts, and
+ * records what it changed in the connection's change history.
  */
 
-/** The admin making the change, in their active organization. */
-type Admin = Pick<OrgUser, "id" | "name" | "email" | "organization">;
+/** The admin making the change. */
+type Admin = Pick<OrgUser, "id" | "name" | "email">;
+
+/** A repository the add-repo picker connected. */
+export interface AddedRepository {
+  id: string;
+  fullPath: string;
+}
+
+/** What adding repositories answers: the ones connected (none when it fails). */
+export type AddRepositoriesResult =
+  { ok: true; warning?: string; added: AddedRepository[] } | { ok: false; error: string };
+
+function addedRepositories(connected: Repository[]): AddedRepository[] {
+  return connected.map((repo) => ({ id: repo.id, fullPath: repo.fullPath }));
+}
 
 const OTHER_ORGANIZATION_ERROR =
   "This GitLab token user is already connected to another organization on that instance. Use a different bot token.";
@@ -114,12 +127,12 @@ async function createGitLabWebhook(
 
 /**
  * Creates the project webhook of every project and connects it to the GitLab connection
- * (or re-enables it). A project that's already connected keeps its webhook; otherwise the
- * new one replaces any old one, so there is exactly one per project. Before a project is
- * connected or re-enabled, its read-only clone credential is fetched through `adapter`
- * (minting a project access token, or reusing a valid cached one), so a project agents
- * couldn't clone is never connected. Returns the connected repositories, and the projects
- * that couldn't be connected with the reason.
+ * (or reconnects a disconnected one); the new webhook replaces any old one, so there is
+ * exactly one per project. Before a project is connected, its read-only clone credential is
+ * fetched through `adapter` (minting a project access token, or reusing a valid cached one),
+ * so a project agents couldn't clone is never connected. Projects that are connected already
+ * are left alone (adding never changes a connected repository). Returns the connected
+ * repositories, and the projects that couldn't be connected with the reason.
  */
 async function connectGitLabProjects(
   db: Database,
@@ -143,11 +156,7 @@ async function connectGitLabProjects(
       fullPath: project.fullPath,
     } as const;
     const previous = known.get(input.externalId);
-    const hooked = Boolean(previous && !previous.disconnectedAt && previous.webhookId);
-    if (hooked && previous?.reviewsEnabled) {
-      connected.push(await connectRepository(db, input));
-      continue;
-    }
+    if (previous && !previous.disconnectedAt) continue;
 
     // The credential cache needs the repository's row, so a new project gets one with reviews
     // off until it's checked; it's disconnected again if it can't be connected.
@@ -159,10 +168,6 @@ async function connectGitLabProjects(
         fullPath: project.fullPath,
         externalId: input.externalId,
       });
-      if (hooked) {
-        connected.push(await connectRepository(db, input));
-        continue;
-      }
       const webhookId = await createGitLabWebhook(gitlab, project.id, webhookSecret);
       connected.push(await connectRepository(db, { ...input, webhookId }));
       if (previous?.webhookId) {
@@ -180,17 +185,17 @@ async function connectGitLabProjects(
 
 /**
  * Connects GitLab: validates the bot token and stores the connection (token and webhook
- * secret encrypted) in the admin's organization. Its projects are then picked from a list
- * (see {@link saveGitLabProjects}). Nothing is stored if the token is bad, or the connection
+ * secret encrypted) in the organization. Its projects are then picked from a list
+ * (see {@link addGitLabProjects}). Nothing is stored if the token is bad, or the connection
  * (same instance and token user) already belongs to another organization. Answers the
  * connection's ID.
  */
 export async function connectGitLab(
   db: Database,
   admin: Admin,
+  organizationId: string,
   form: GitLabConnectForm,
 ): Promise<ActionResult & { connectionId?: string }> {
-  const organizationId = admin.organization.id;
   const parsed = parseGitLabConnectForm(form);
   if (!parsed.ok) return parsed;
   const { baseUrl, token } = parsed.input;
@@ -234,15 +239,16 @@ export async function connectGitLab(
 }
 
 /**
- * Disconnects a repository: disables it, removes its agent pins and, for GitLab, deletes
- * its project webhook. Its review history is kept.
+ * Disconnects a repository of the organization: turns Reviews, Coding and Ask off, deletes its
+ * work item match and agent pins and, for GitLab, its project webhook. Its review history is
+ * kept.
  */
 export async function disconnectRepository(
   db: Database,
   admin: Admin,
+  organizationId: string,
   id: string,
 ): Promise<ActionResult> {
-  const organizationId = admin.organization.id;
   const repo = await getRepository(db, id, organizationId);
   if (!repo || repo.disconnectedAt) return { ok: false, error: "That repository isn't connected." };
 
@@ -329,7 +335,7 @@ export async function recreateGitLabWebhook(
 }
 
 /**
- * Removes a GitHub App installation or GitLab connection from the admin's organization:
+ * Removes a GitHub App installation or GitLab connection from the organization:
  * deletes the project webhooks of its GitLab repositories, then the connection with its
  * repositories (and their reviews, rules and pins). The installation or token user can then
  * be connected again, from this or another organization. A GitHub App stays installed on
@@ -338,9 +344,9 @@ export async function recreateGitLabWebhook(
 export async function removeScmConnection(
   db: Database,
   admin: Admin,
+  organizationId: string,
   connectionId: string,
 ): Promise<ActionResult> {
-  const organizationId = admin.organization.id;
   const connection = await getScmConnection(db, organizationId, connectionId);
   if (!connection) return { ok: false, error: "That connection doesn't exist." };
 
@@ -375,17 +381,18 @@ export async function removeScmConnection(
 }
 
 /**
- * Saves which repositories of a GitHub App installation get reviews: selected ones are
- * connected (or re-enabled), other connected ones are disabled. Only repositories the
- * installation can access are accepted.
+ * Connects the given repositories of a GitHub App installation (or reconnects disconnected
+ * ones) with Reviews and Ask on and Coding off. Add-only: connected repositories, listed or
+ * not, are never changed. Only repositories the installation can access are accepted; the
+ * others are named in the result's warning.
  */
-export async function saveGitHubRepositories(
+export async function addGitHubRepositories(
   db: Database,
   admin: Admin,
+  organizationId: string,
   connectionId: string,
-  selectedRepoIds: number[],
-): Promise<ActionResult> {
-  const organizationId = admin.organization.id;
+  repoIds: number[],
+): Promise<AddRepositoriesResult> {
   const connection = await getScmConnection(db, organizationId, connectionId);
   if (!connection || connection.provider !== "github" || !connection.externalId) {
     return { ok: false, error: "That GitHub installation isn't connected." };
@@ -400,49 +407,54 @@ export async function saveGitHubRepositories(
     };
   }
 
-  const selected = new Set(selectedRepoIds.map(String));
+  const wanted = new Set(repoIds.map(String));
   const connected: Repository[] = [];
   await withSettingsChanges(
     db,
     settingsActor(admin),
     trackedConnection(organizationId, connectionId),
     async (tx) => {
+      const already = await connectedExternalIds(tx, connectionId);
       for (const repo of available) {
-        if (!selected.has(String(repo.id))) continue;
+        const externalId = String(repo.id);
+        if (!wanted.has(externalId) || already.has(externalId)) continue;
         connected.push(
           await connectRepository(tx, {
             connectionId,
             provider: "github",
-            externalId: String(repo.id),
+            externalId,
             fullPath: repo.fullPath,
           }),
         );
       }
-      for (const repo of await listConnectionRepositories(tx, connectionId)) {
-        if (!repo.disconnectedAt && repo.reviewsEnabled && !selected.has(repo.externalId)) {
-          await setRepositoryEnabledRow(tx, organizationId, repo.id, false);
-        }
-      }
     },
   );
   await storeAddedDefaultBranches(db, connection, connected);
-  return { ok: true };
+  const listed = new Set(available.map((repo) => String(repo.id)));
+  const missing = repoIds.filter((id) => !listed.has(String(id)));
+  return {
+    ok: true,
+    added: addedRepositories(connected),
+    ...(missing.length > 0 && {
+      warning: `The installation can't access ${missing.length === 1 ? "one of the repositories" : `${missing.length} of the repositories`}, so ${missing.length === 1 ? "it wasn't" : "they weren't"} connected. Add ${missing.length === 1 ? "it" : "them"} to the installation on GitHub first.`,
+    }),
+  };
 }
 
 /**
- * Saves which projects of a GitLab connection get reviews: selected ones are connected (a
- * project webhook is created for those without one) or re-enabled, other listed connected ones
- * are disabled; connected projects the list doesn't show are left alone. Only projects the bot
- * token's user maintains are accepted, and only once a clone token can be minted for them: the
- * others are named in the result's warning.
+ * Connects the given projects of a GitLab connection (or reconnects disconnected ones) with
+ * Reviews and Ask on and Coding off, each with a project webhook. Add-only: connected
+ * projects, listed or not, are never changed. Only projects the bot token's user maintains
+ * are accepted, and only once a clone token can be minted for them: the others are named in
+ * the result's warning.
  */
-export async function saveGitLabProjects(
+export async function addGitLabProjects(
   db: Database,
   admin: Admin,
+  organizationId: string,
   connectionId: string,
-  selectedProjectIds: number[],
-): Promise<ActionResult> {
-  const organizationId = admin.organization.id;
+  projectIds: number[],
+): Promise<AddRepositoriesResult> {
   const connection = await getScmConnection(db, organizationId, connectionId);
   if (!connection || connection.provider !== "gitlab") {
     return { ok: false, error: "That GitLab connection doesn't exist." };
@@ -456,65 +468,60 @@ export async function saveGitLabProjects(
     return { ok: false, error: `Couldn't list the GitLab projects: ${errorMessage(error)}` };
   }
 
-  const selected = new Set(selectedProjectIds.map(String));
+  const wanted = new Set(projectIds.map(String));
   // One transaction for the history: the adapter's clone credential cache writes on it too
   // (a new project's row exists only there until it commits).
   const { connected, failed } = await withSettingsChanges(
     db,
     settingsActor(admin),
     trackedConnection(organizationId, connectionId),
-    async (tx) => {
-      const result = await connectGitLabProjects(
+    (tx) =>
+      connectGitLabProjects(
         tx,
         gitlab,
         scmAdapterFor(tx, connection),
         organizationId,
         connectionId,
         webhookSecret,
-        available.filter((project) => selected.has(String(project.id))),
-      );
-      // Projects the list doesn't show (archived, past the cap, no longer maintained) can't be
-      // ticked, so only listed ones are disabled when left unticked.
-      const listedIds = new Set(available.map((project) => String(project.id)));
-      for (const repo of await listConnectionRepositories(tx, connectionId)) {
-        if (
-          !repo.disconnectedAt &&
-          repo.reviewsEnabled &&
-          listedIds.has(repo.externalId) &&
-          !selected.has(repo.externalId)
-        ) {
-          await setRepositoryEnabledRow(tx, organizationId, repo.id, false);
-        }
-      }
-      return result;
-    },
+        available.filter((project) => wanted.has(String(project.id))),
+      ),
   );
   await storeAddedDefaultBranches(db, connection, connected);
-  if (failed.length > 0) {
-    return { ok: true, warning: `Some projects weren't connected. ${failed.join(" ")}` };
+  const listed = new Set(available.map((project) => String(project.id)));
+  const missing = projectIds.filter((id) => !listed.has(String(id)));
+  if (missing.length > 0) {
+    failed.push(
+      `${missing.length === 1 ? "One project isn't" : `${missing.length} projects aren't`} among the projects the bot maintains.`,
+    );
   }
-  return { ok: true };
+  return {
+    ok: true,
+    added: addedRepositories(connected),
+    ...(failed.length > 0 && {
+      warning: `Some projects weren't connected. ${failed.join(" ")}`,
+    }),
+  };
 }
 
-/** Whether each listed repository (by its code-host ID) is connected with reviews on. */
-async function reviewedExternalIds(db: Database, connectionId: string): Promise<Set<string>> {
+/** The code-host IDs of the connection's connected repositories. */
+async function connectedExternalIds(db: Database, connectionId: string): Promise<Set<string>> {
   return new Set(
     (await listConnectionRepositories(db, connectionId))
-      .filter((repo) => !repo.disconnectedAt && repo.reviewsEnabled)
+      .filter((repo) => !repo.disconnectedAt)
       .map((repo) => repo.externalId),
   );
 }
 
 /**
  * What a picker lists: the repositories (GitHub) or projects (GitLab) the connection can
- * access, from the code host, each marked with whether it's reviewed here. Calls the code
+ * access, from the code host, each marked with whether it's connected here. Calls the code
  * host's API, so it's never polled. Throws the code host's error (the picker names its cause).
  */
 export async function listSelectableRepositories(
   db: Database,
   connection: ScmConnection,
 ): Promise<SelectableRepositories> {
-  const reviewed = await reviewedExternalIds(db, connection.id);
+  const connected = await connectedExternalIds(db, connection.id);
   if (connection.provider === "github") {
     const auth = getGitHubAppAuth();
     const installationId = Number(connection.externalId);
@@ -531,7 +538,7 @@ export async function listSelectableRepositories(
         fullPath: repo.fullPath,
         private: repo.private,
         htmlUrl: repo.htmlUrl,
-        enabled: reviewed.has(String(repo.id)),
+        connected: connected.has(String(repo.id)),
       })),
     };
   }
@@ -549,7 +556,7 @@ export async function listSelectableRepositories(
       fullPath: project.fullPath,
       private: project.visibility !== "public",
       htmlUrl: project.webUrl,
-      enabled: reviewed.has(String(project.id)),
+      connected: connected.has(String(project.id)),
     })),
   };
 }

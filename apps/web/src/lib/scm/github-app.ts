@@ -57,6 +57,11 @@ export async function getGitHubInstallUrl(): Promise<string | null> {
 export const GITHUB_CALLBACK_PATH = "/repositories/github/callback";
 /** Starts an installation with a signed `state` (see `createSignedState`). */
 export const GITHUB_INSTALL_PATH = "/repositories/github/install";
+
+/** {@link GITHUB_INSTALL_PATH} for an installation into `organizationId`. */
+export function githubInstallPath(organizationId: string): string {
+  return `${GITHUB_INSTALL_PATH}?${new URLSearchParams({ organization: organizationId })}`;
+}
 /** `createSignedState` purpose of the installation flow. */
 export const GITHUB_INSTALL_STATE_PURPOSE = "github-install";
 /** Cookie holding the installation state's nonce, binding the flow to the browser that started it. */

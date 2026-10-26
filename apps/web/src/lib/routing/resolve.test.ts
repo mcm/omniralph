@@ -12,6 +12,7 @@ import {
   recordFollowUpSource,
   repositories,
   replaceRoutingRules,
+  listWorkItemMatches,
   saveWorkItemMatch,
   upsertScmConnection,
   upsertStories,
@@ -284,6 +285,10 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       // Disconnected after its match was saved: only web's match is left.
       await disconnectRepository(db, orgId, gone);
       expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: web } });
+      // Its match was deleted with it.
+      expect(
+        (await listWorkItemMatches(db, orgId)).some((saved) => saved.repositoryId === gone),
+      ).toBe(false);
       // An unsaved override is filtered the same way.
       const route = await resolveRoute(
         {
@@ -302,6 +307,15 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
         issue.id,
       );
       expect(route).toEqual({ ask: true });
+      // Reconnecting it doesn't route work there again: no match, Coding off.
+      await connectRepository(db, {
+        connectionId: (await db.select().from(repositories).where(eq(repositories.id, gone)))[0]!
+          .connectionId,
+        provider: "github",
+        externalId: "gone-match",
+        fullPath: "acme/gone-match",
+      });
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: web } });
     });
 
     it("routes by unsaved matches instead of the saved ones", async () => {

@@ -34,7 +34,7 @@ const keys = queryKeys(TEST_ORGANIZATION_ID);
 const CONNECTION_PATH = `/api/ui/scm-connections/${CONNECTION_ID}`;
 const LISTING_PATH = `${CONNECTION_PATH}/repositories`;
 
-function listing(enabled: number[] = [1]) {
+function listing(connected: number[] = [1]) {
   return {
     account: "acme",
     manageUrl: "https://github.com/settings/installations/42",
@@ -42,7 +42,7 @@ function listing(enabled: number[] = [1]) {
     repos: [
       { id: 1, fullPath: "acme/api", private: true, htmlUrl: "https://github.com/acme/api" },
       { id: 2, fullPath: "acme/web", private: false, htmlUrl: "https://github.com/acme/web" },
-    ].map((repo) => ({ ...repo, enabled: enabled.includes(repo.id) })),
+    ].map((repo) => ({ ...repo, connected: connected.includes(repo.id) })),
   };
 }
 
@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 
 describe("GitHub repository picker", () => {
-  it("loads the installation's repositories once, ticks the reviewed ones and refreshes on request", async () => {
+  it("loads the installation's repositories once, ticks the connected ones and refreshes on request", async () => {
     const seen = mockFetch({
       [`GET ${CONNECTION_PATH}`]: { id: CONNECTION_ID, provider: "github", name: "acme" },
       [`GET ${LISTING_PATH}`]: listing(),
@@ -100,6 +100,9 @@ describe("GitHub repository picker", () => {
     const listings = () => seen.filter((request) => request.path === LISTING_PATH);
     expect(listings()).toHaveLength(1);
     expect(listings()[0]!.query.get("provider")).toBe("github");
+    expect(listings()[0]!.query.get("organization")).toBe(TEST_ORGANIZATION_ID);
+    // A connected repo can't be unticked: adding never removes one.
+    expect((screen.getByLabelText("acme/api") as HTMLButtonElement).disabled).toBe(true);
 
     await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(listings()).toHaveLength(2));
@@ -128,10 +131,10 @@ describe("GitHub repository picker", () => {
     const seen = mockFetch({
       [`GET ${CONNECTION_PATH}`]: { id: CONNECTION_ID, provider: "github", name: "acme" },
       [`GET ${LISTING_PATH}`]: listing(),
-      [`PUT ${LISTING_PATH}`]: () => {
+      [`POST ${LISTING_PATH}`]: () => {
         events.push("save");
         saved = true;
-        return jsonResponse({ ok: true });
+        return jsonResponse({ ok: true, added: [{ id: REPO_ID, fullPath: "acme/web" }] });
       },
       "GET /api/ui/repositories/overview": () => {
         events.push("list");
@@ -156,9 +159,11 @@ describe("GitHub repository picker", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/repositories"));
     expect(events).toEqual(["list", "save", "list", "navigate"]);
-    expect(seen.find((request) => request.method === "PUT")?.body).toEqual({
+    // Only the newly ticked repo is added.
+    expect(seen.find((request) => request.method === "POST")?.body).toEqual({
       provider: "github",
-      selectedIds: [1, 2],
+      ids: [2],
+      organizationId: TEST_ORGANIZATION_ID,
     });
   });
 

@@ -64,7 +64,10 @@ export async function requireOrganizationAccess(
   organizationId: string | null,
   { role = "member", notFoundMessage }: { role?: Role; notFoundMessage?: string } = {},
 ): Promise<ScopedOrganization> {
-  const organization = organizationId && (await membership(user, organizationId));
+  const organization =
+    organizationId &&
+    z.uuid().safeParse(organizationId).success &&
+    (await membership(user, organizationId));
   if (!organization) throw ApiRouteError.notFound(notFoundMessage);
   if (!hasRole(organization, role)) {
     throw new AuthorizationError(`This action requires the ${role} role.`, "forbidden");

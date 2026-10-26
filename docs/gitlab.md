@@ -73,12 +73,12 @@ nothing to configure: `BOT_HANDLE` only applies to GitHub.
 
 ## Connecting projects
 
-1. As an admin of the Omniralph organization, open **Repositories › Connect GitLab**.
+1. As an admin of the Omniralph organization, open **Repos › Add repo › Connect GitLab**.
 2. Enter the base URL (`https://gitlab.com` or your instance, without `/api/v4`) and the bot token.
 3. The control panel checks the token (it works, has the `api` scope and isn't a group or project
    access token), stores the connection and opens its project picker: every unarchived project the
-   bot is a **Maintainer** (or Owner) of, up to 1,000. Tick the projects to review and **Save**.
-4. For each newly ticked project it first mints a clone token, so a project the bot can't mint for
+   bot is a **Maintainer** (or Owner) of, up to 1,000. Tick the projects to add and save.
+4. For each added project it first mints a clone token, so a project the bot can't mint for
    fails here instead of at the first agent clone. It then creates a project webhook at
    `<APP_URL>/api/webhooks/gitlab` for merge request, comment (note) and **Pipeline events**, with
    SSL verification on and a generated secret (checked against `X-Gitlab-Token`). Projects that
@@ -87,11 +87,15 @@ nothing to configure: `BOT_HANDLE` only applies to GitHub.
 Merge request events also tell Omniralph where each merge request that Om opened stands: draft or
 not, waiting for its reviewers, approved (approvals by the bot user don't count), merged or closed.
 
-The picker is the only way to choose projects. To change them later, use **Repositories ›
-Code-host connections › Choose projects**: ticking a project connects it (or re-enables it),
-unticking a connected one disables its reviews (its webhook stays, so re-enabling is instant).
-Saving never disables a connected project the picker doesn't show. A project missing from the
-picker isn't maintained by the bot: make the service account a Maintainer of it on GitLab.
+The picker is the only way to add projects, and it only ever adds: projects already connected are
+shown as connected and never changed. To add more later, open **Repos › Add repo** and choose the
+connection. A project missing from the picker isn't maintained by the bot: make the service account
+a Maintainer of it on GitLab.
+
+**Remove repo…** in a repo's ⋯ menu (or its Danger zone) removes one project: Reviews, Coding and
+Ask stop, its work item match and agent pins are removed and its project webhook is deleted (a
+warning names it if GitLab refuses); its review history is kept. Adding it again creates a new
+webhook and starts it with Reviews and Ask on and Coding off.
 
 Connecting GitLab again with a new token of the same bot user (e.g. after a lost token) updates
 the existing connection's token and keeps its projects and webhooks.

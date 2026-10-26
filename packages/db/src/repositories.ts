@@ -339,8 +339,9 @@ export interface ConnectRepositoryInput {
 /**
  * Connects (or reconnects) a repository: creates it, or re-enables an existing row for the
  * same connection and external ID (clearing `disconnectedAt`) so its history carries over.
- * With `reviewsEnabled: false` it's connected with reviews off, else with reviews on. Its
- * Coding and Ask switches are kept on reconnect (Coding starts off, Ask on).
+ * With `reviewsEnabled: false` it's connected with reviews off, else with reviews on. A new or
+ * reconnected (previously disconnected) repository starts with Ask on and Coding off; one that
+ * is still connected keeps both.
  * The repository belongs to its connection's organization.
  */
 export async function connectRepository(
@@ -362,7 +363,15 @@ export async function connectRepository(
       externalId: input.externalId,
       ...set,
     })
-    .onConflictDoUpdate({ target: [repositories.connectionId, repositories.externalId], set })
+    .onConflictDoUpdate({
+      target: [repositories.connectionId, repositories.externalId],
+      set: {
+        ...set,
+        // `disconnectedAt` here is the existing row's: a reconnected repository starts over.
+        askEnabled: sql`case when ${repositories.disconnectedAt} is null then ${repositories.askEnabled} else true end`,
+        codingEnabled: sql`case when ${repositories.disconnectedAt} is null then ${repositories.codingEnabled} else false end`,
+      },
+    })
     .returning();
   if (!row) throw new Error("Failed to save repository");
   recordRepositoryChange(db, row);
@@ -516,8 +525,9 @@ export async function setRepositoryDefaultBranch(
 }
 
 /**
- * Disconnects a repository of the organization: disables it, removes its agent pins and
- * forgets its webhook. The row (and so its reviews, findings and rules) is kept.
+ * Disconnects a repository of the organization: turns Reviews, Coding and Ask off, deletes its
+ * work item match (so it can't own or conflict with one), removes its agent pins and forgets
+ * its webhook. The row (and so its reviews, findings and rules) is kept.
  */
 export async function disconnectRepository(
   db: Database,
@@ -528,10 +538,24 @@ export async function disconnectRepository(
   return db.transaction(async (tx) => {
     const [row] = await tx
       .update(repositories)
-      .set({ reviewsEnabled: false, disconnectedAt: now, webhookId: null })
+      .set({
+        reviewsEnabled: false,
+        codingEnabled: false,
+        askEnabled: false,
+        disconnectedAt: now,
+        webhookId: null,
+      })
       .where(and(eq(repositories.id, id), eq(repositories.organizationId, organizationId)))
       .returning();
     if (!row) return null;
+    await tx
+      .delete(workItemMatches)
+      .where(
+        and(
+          eq(workItemMatches.organizationId, organizationId),
+          eq(workItemMatches.repositoryId, id),
+        ),
+      );
     const unpinned = await tx
       .delete(agentRepoPins)
       .where(eq(agentRepoPins.repositoryId, id))

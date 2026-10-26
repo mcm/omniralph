@@ -10,6 +10,9 @@ import {
   reviews,
   scmConnections,
   scmCredentialCache,
+  listWorkItemMatches,
+  saveWorkItemMatch,
+  setRepositorySwitches,
   users,
   type Database,
 } from "@omniralph/db";
@@ -43,15 +46,30 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/scm/github-app", () => ({ getGitHubAppAuth: () => state.githubAuth }));
+vi.mock("@/lib/scm/github-app", () => ({
+  getGitHubAppAuth: () => state.githubAuth,
+  // The GitHub App isn't configured here.
+  getGitHubInstallUrl: async () => null,
+  githubInstallPath: (organizationId: string) =>
+    `/repositories/github/install?organization=${organizationId}`,
+}));
 
 const gitlabConnections = await import("@/app/api/ui/gitlab-connections/route");
 const repository = await import("@/app/api/ui/repositories/[id]/route");
 const repositoryWebhook = await import("@/app/api/ui/repositories/[id]/webhook/route");
 const scmConnection = await import("@/app/api/ui/scm-connections/[id]/route");
+const scmConnectionList = await import("@/app/api/ui/scm-connections/route");
 const selection = await import("@/app/api/ui/scm-connections/[id]/repositories/route");
+const setup = await import("@/app/api/ui/repositories/setup/route");
 
-type Result = { ok: true; warning?: string; connectionId?: string } | { ok: false; error: string };
+type Result =
+  | {
+      ok: true;
+      warning?: string;
+      connectionId?: string;
+      added?: { id: string; fullPath: string }[];
+    }
+  | { ok: false; error: string; status: number };
 
 /** Calls an `/api/ui` handler as the Repositories pages do; answers its result as an `ActionResult`. */
 async function call(
@@ -59,9 +77,10 @@ async function call(
   method: string,
   id: string,
   body?: unknown,
+  path = "/api/ui",
 ): Promise<Result> {
   const response = await handler(
-    new Request("http://localhost/api/ui", {
+    new Request(`http://localhost${path}`, {
       method,
       headers: body === undefined ? {} : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -69,19 +88,34 @@ async function call(
     { params: Promise.resolve({ id }) },
   );
   const json = (await response.json()) as Record<string, unknown>;
-  return response.ok ? (json as Result) : { ok: false, error: json.error as string };
+  return response.ok
+    ? (json as Result)
+    : { ok: false, error: json.error as string, status: response.status };
 }
 
-// The Repositories pages' requests, under the names of the server actions they replace.
-const connectGitLab = (form: { baseUrl: string; token: string }) =>
+/** Calls a GET handler with `query`; answers its status and JSON. */
+async function get(
+  handler: (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>,
+  query: Record<string, string>,
+  id = "",
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await handler(
+    new Request(`http://localhost/api/ui?${new URLSearchParams(query)}`),
+    { params: Promise.resolve({ id }) },
+  );
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
+
+// The Repos page's requests.
+const connectGitLab = (form: { baseUrl: string; token: string; organizationId?: string }) =>
   call(gitlabConnections.POST as Parameters<typeof call>[0], "POST", "", form);
 const disconnectRepository = (id: string) => call(repository.DELETE, "DELETE", id);
 const recreateGitLabWebhook = (id: string) => call(repositoryWebhook.POST, "POST", id);
 const removeScmConnection = (id: string) => call(scmConnection.DELETE, "DELETE", id);
-const saveGitHubRepositories = (id: string, selectedIds: number[]) =>
-  call(selection.PUT, "PUT", id, { provider: "github", selectedIds });
-const saveGitLabProjects = (id: string, selectedIds: number[]) =>
-  call(selection.PUT, "PUT", id, { provider: "gitlab", selectedIds });
+const addGitHubRepositories = (id: string, ids: number[], organizationId = state.orgId) =>
+  call(selection.POST, "POST", id, { provider: "github", ids, organizationId });
+const addGitLabProjects = (id: string, ids: number[], organizationId = state.orgId) =>
+  call(selection.POST, "POST", id, { provider: "gitlab", ids, organizationId });
 
 const GITLAB = "https://gitlab.example.com";
 const API = `${GITLAB}/api/v4`;
@@ -210,21 +244,37 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
   const form = { baseUrl: `${GITLAB}/`, token: TOKEN };
   const connected = { ok: true, connectionId: expect.any(String) };
 
-  /** Connects GitLab, then picks the given projects. Returns the connection's ID. */
+  /** Connects GitLab, then adds the given projects. Returns the connection's ID. */
   async function connectGitLabProjects(projectIds: number[] = []): Promise<string> {
     const result = await connectGitLab(form);
     expect(result).toEqual(connected);
     const { connectionId } = result as { connectionId: string };
     if (projectIds.length > 0) {
-      expect(await saveGitLabProjects(connectionId, projectIds)).toEqual({ ok: true });
+      expect(await addGitLabProjects(connectionId, projectIds)).toMatchObject({
+        ok: true,
+        added: expect.any(Array),
+      });
     }
     return connectionId;
+  }
+
+  /** The connection's repositories as `[fullPath, connected, reviews, coding, ask]`, by path. */
+  async function repoStates() {
+    const rows = await state.db.select().from(repositories).orderBy(repositories.fullPath);
+    return rows.map((r) => [
+      r.fullPath,
+      r.disconnectedAt === null,
+      r.reviewsEnabled,
+      r.codingEnabled,
+      r.askEnabled,
+    ]);
   }
 
   it("rejects a token GitLab doesn't accept and stores nothing", async () => {
     const result = await connectGitLab({ ...form, token: "glpat-wrong" });
     expect(result).toEqual({
       ok: false,
+      status: 400,
       error: expect.stringContaining("rejected the access token"),
     });
     expect(await state.db.select().from(scmConnections)).toEqual([]);
@@ -238,7 +288,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       ),
     );
     const result = await connectGitLab(form);
-    expect(result).toEqual({ ok: false, error: expect.stringContaining("api scope") });
+    expect(result).toEqual({ ok: false, status: 400, error: expect.stringContaining("api scope") });
     expect(await state.db.select().from(scmConnections)).toEqual([]);
   });
 
@@ -251,6 +301,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     const result = await connectGitLab(form);
     expect(result).toEqual({
       ok: false,
+      status: 400,
       error: expect.stringContaining("service account's personal access token"),
     });
     expect(await state.db.select().from(scmConnections)).toEqual([]);
@@ -305,11 +356,21 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     expect(connection!.botUsername).toBe("service_account_group_12_omniralph");
   });
 
-  describe("picking GitLab projects from a list", () => {
-    it("connects selected projects the bot maintains, with one webhook each, and disables the others", async () => {
+  describe("adding GitLab projects from a list", () => {
+    it("connects the given projects the bot maintains, with one webhook each, Reviews and Ask on and Coding off", async () => {
       const connectionId = await connectGitLabProjects();
 
-      expect(await saveGitLabProjects(connectionId, [101, 102, 999])).toEqual({ ok: true });
+      const { result, changes } = await captureChanges(() =>
+        addGitLabProjects(connectionId, [101, 102, 999]),
+      );
+      expect(result).toEqual({
+        ok: true,
+        added: [
+          { id: expect.any(String), fullPath: "acme/api" },
+          { id: expect.any(String), fullPath: "acme/sub/web" },
+        ],
+        warning: expect.stringContaining("One project isn't among the projects the bot maintains."),
+      });
       expect(listQueries[0]?.get("min_access_level")).toBe("40");
       expect(hookRequests.map((r) => r.projectId).sort()).toEqual(["101", "102"]);
       // Each project's clone token was minted (and cached) before it was connected.
@@ -328,32 +389,53 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
           token: webhookSecret,
         });
       }
-      let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.webhookId !== null])).toEqual([
-        ["acme/api", true, true],
-        ["acme/sub/web", true, true],
+      expect(await repoStates()).toEqual([
+        ["acme/api", true, true, false, true],
+        ["acme/sub/web", true, true, false, true],
+      ]);
+      const rows = await state.db.select().from(repositories);
+      expect(rows.every((r) => r.webhookId !== null)).toBe(true);
+      // Published after commit: each added repo (and so the organization's list).
+      const repositoryChanges = changes.filter((c) => c.resource === "repository");
+      expect(repositoryChanges.flatMap((c) => c.ids).sort()).toEqual(
+        expect.arrayContaining(rows.map((r) => r.id).sort()),
+      );
+      expect(repositoryChanges.every((c) => c.organizationId === orgId)).toBe(true);
+    });
+
+    it("is add-only: a connected repo not in ids stays connected, and adding it again changes nothing", async () => {
+      const connectionId = await connectGitLabProjects([101]);
+      // An admin turned its reviews off since.
+      await state.db.update(repositories).set({ reviewsEnabled: false });
+
+      expect(await addGitLabProjects(connectionId, [102])).toEqual({
+        ok: true,
+        added: [{ id: expect.any(String), fullPath: "acme/sub/web" }],
+      });
+      expect(await repoStates()).toEqual([
+        ["acme/api", true, false, false, true],
+        ["acme/sub/web", true, true, false, true],
       ]);
 
-      // Deselecting disables; reselecting re-enables without another webhook.
-      expect(await saveGitLabProjects(connectionId, [102])).toEqual({ ok: true });
-      repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-        ["acme/api", false],
-        ["acme/sub/web", true],
-      ]);
-      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({ ok: true });
-      repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => r.reviewsEnabled)).toEqual([true, true]);
+      const { result, changes } = await captureChanges(() =>
+        addGitLabProjects(connectionId, [101, 102]),
+      );
+      expect(result).toEqual({ ok: true, added: [] });
+      expect(changes.filter((c) => c.resource === "repository")).toEqual([]);
+      // Untouched: no new webhook or clone token, and its switches are kept.
       expect(hookRequests).toHaveLength(2);
       expect(deletedHooks).toEqual([]);
-      // acme/api was re-enabled with its still-valid cached clone token.
       expect(mintedTokens).toHaveLength(2);
+      expect(await repoStates()).toEqual([
+        ["acme/api", true, false, false, true],
+        ["acme/sub/web", true, true, false, true],
+      ]);
     });
 
     it("stores each added project's default branch, and adds it without one when GitLab can't say", async () => {
       const connectionId = await connectGitLabProjects();
 
-      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({ ok: true });
+      expect(await addGitLabProjects(connectionId, [101, 102])).toMatchObject({ ok: true });
       const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
       expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.defaultBranch])).toEqual([
         ["acme/api", true, "main"],
@@ -376,9 +458,10 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       );
       const connectionId = await connectGitLabProjects();
 
-      const result = await saveGitLabProjects(connectionId, [101, 102]);
+      const result = await addGitLabProjects(connectionId, [101, 102]);
       expect(result).toEqual({
         ok: true,
+        added: [{ id: expect.any(String), fullPath: "acme/api" }],
         warning: expect.stringContaining(
           "acme/sub/web: The GitLab bot token can't create project access tokens on acme/sub/web.",
         ),
@@ -392,9 +475,10 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       ]);
     });
 
-    it("doesn't re-enable a project that can no longer mint clone tokens", async () => {
+    it("doesn't reconnect a removed project that can no longer mint clone tokens", async () => {
       const connectionId = await connectGitLabProjects([101]);
-      expect(await saveGitLabProjects(connectionId, [])).toEqual({ ok: true });
+      const [repo] = await state.db.select().from(repositories);
+      expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
       // No cached token to reuse, so a new one must be minted, and GitLab refuses.
       await state.db.delete(scmCredentialCache);
       server.use(
@@ -409,46 +493,60 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
         ),
       );
 
-      expect(await saveGitLabProjects(connectionId, [101])).toEqual({
+      expect(await addGitLabProjects(connectionId, [101])).toEqual({
         ok: true,
+        added: [],
         warning: expect.stringContaining(
           "acme/api: The GitLab bot token can't create project access tokens",
         ),
       });
-      const [repo] = await state.db.select().from(repositories);
-      expect(repo).toMatchObject({ reviewsEnabled: false, disconnectedAt: null });
+      expect(await repoStates()).toEqual([["acme/api", false, false, false, false]]);
       expect(hookRequests).toHaveLength(1);
-      expect(deletedHooks).toEqual([]);
     });
 
-    it("leaves connected projects the list doesn't show enabled", async () => {
+    it("leaves connected projects the list doesn't show connected", async () => {
       // acme/sub/web is connected but then drops out of the list (e.g. archived).
-      const connectionId = await connectGitLabProjects([101, 102]);
+      const connectionId = await connectGitLabProjects([102]);
       server.use(
         http.get(`${API}/projects`, () =>
           HttpResponse.json([{ ...projects["acme/api"], visibility: "private" }]),
         ),
       );
 
-      expect(await saveGitLabProjects(connectionId, [])).toEqual({ ok: true });
-      const repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-      expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-        ["acme/api", false],
-        ["acme/sub/web", true],
+      expect(await addGitLabProjects(connectionId, [101])).toMatchObject({ ok: true });
+      expect(await repoStates()).toEqual([
+        ["acme/api", true, true, false, true],
+        ["acme/sub/web", true, true, false, true],
       ]);
     });
 
-    it("creates a new webhook for a disconnected project that's selected again", async () => {
-      const connectionId = await connectGitLabProjects();
-      await saveGitLabProjects(connectionId, [101]);
+    it("reconnects a removed project with a new webhook and Coding off", async () => {
+      const connectionId = await connectGitLabProjects([101]);
       const [repo] = await state.db.select().from(repositories);
+      await saveWorkItemMatch(state.db, {
+        organizationId: orgId,
+        repositoryId: repo!.id,
+        userId: null,
+        match: { tracker: "linear", team: "SOC", project: null, withoutProject: false, labels: [] },
+      });
+      await setRepositorySwitches(state.db, orgId, repo!.id, { coding: true });
       expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
 
-      expect(await saveGitLabProjects(connectionId, [101])).toEqual({ ok: true });
+      expect(await addGitLabProjects(connectionId, [101])).toEqual({
+        ok: true,
+        added: [{ id: repo!.id, fullPath: "acme/api" }],
+      });
       const [reconnected] = await state.db.select().from(repositories);
-      expect(reconnected).toMatchObject({ reviewsEnabled: true, disconnectedAt: null });
+      expect(reconnected).toMatchObject({
+        reviewsEnabled: true,
+        askEnabled: true,
+        codingEnabled: false,
+        disconnectedAt: null,
+      });
       expect(reconnected!.webhookId).not.toBe(repo!.webhookId);
       expect(hookRequests).toHaveLength(2);
+      // The match went with the removal: Coding can't be turned on again without a new one.
+      expect(await listWorkItemMatches(state.db, orgId)).toEqual([]);
     });
 
     it("reports projects whose webhook GitLab refuses", async () => {
@@ -458,8 +556,9 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
         ),
       );
       const connectionId = await connectGitLabProjects();
-      expect(await saveGitLabProjects(connectionId, [101, 102])).toEqual({
+      expect(await addGitLabProjects(connectionId, [101, 102])).toEqual({
         ok: true,
+        added: [{ id: expect.any(String), fullPath: "acme/api" }],
         warning: expect.stringContaining("acme/sub/web"),
       });
       const repos = await state.db
@@ -469,19 +568,245 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(repos.map((r) => r.fullPath)).toEqual(["acme/api"]);
     });
 
-    it("refuses another organization's connection and members", async () => {
+    it("checks admin in the given organization and refuses another organization's connection", async () => {
       const connectionId = await connectGitLabProjects();
+      // An organization the user isn't a member of.
+      expect(await addGitLabProjects(connectionId, [101], otherOrgId)).toMatchObject({
+        ok: false,
+        status: 404,
+      });
+      // Admin of the other organization, naming it: the connection isn't one of its.
       state.orgId = otherOrgId;
-      expect(await saveGitLabProjects(connectionId, [101])).toMatchObject({ ok: false });
+      expect(await addGitLabProjects(connectionId, [101], otherOrgId)).toMatchObject({
+        ok: false,
+        status: 400,
+      });
       state.orgId = orgId;
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await saveGitLabProjects(connectionId, [101])).toMatchObject({ ok: false });
+      expect(await addGitLabProjects(connectionId, [101])).toMatchObject({
+        ok: false,
+        status: 403,
+      });
       expect(hookRequests).toEqual([]);
       expect(await state.db.select().from(repositories)).toEqual([]);
     });
+
+    it("has no PUT that saves a selection (which disabled unselected repos)", () => {
+      expect("PUT" in selection).toBe(false);
+    });
+
+    it("rejects unknown keys and an empty list", async () => {
+      const connectionId = await connectGitLabProjects();
+      expect(
+        await call(selection.POST, "POST", connectionId, {
+          provider: "gitlab",
+          ids: [101],
+          organizationId: orgId,
+          selectedIds: [101],
+        }),
+      ).toMatchObject({ ok: false, status: 400 });
+      expect(await addGitLabProjects(connectionId, [])).toMatchObject({ ok: false, status: 400 });
+      expect(hookRequests).toEqual([]);
+    });
   });
 
-  it("disconnecting disables the repo, removes pins, deletes the webhook and keeps reviews", async () => {
+  describe("listing a connection's repositories for the picker", () => {
+    it("marks the connected ones, in the given organization", async () => {
+      const connectionId = await connectGitLabProjects([101]);
+      const listed = await get(
+        selection.GET,
+        { provider: "gitlab", organization: orgId },
+        connectionId,
+      );
+      expect(listed.status).toBe(200);
+      expect(
+        (listed.body.repos as { fullPath: string; connected: boolean }[]).map((r) => [
+          r.fullPath,
+          r.connected,
+        ]),
+      ).toEqual([
+        ["acme/api", true],
+        ["acme/sub/web", false],
+      ]);
+      // A removed repo isn't connected any more.
+      const [repo] = await state.db.select().from(repositories);
+      await disconnectRepository(repo!.id);
+      const again = await get(selection.GET, { provider: "gitlab" }, connectionId);
+      expect((again.body.repos as { connected: boolean }[]).map((r) => r.connected)).toEqual([
+        false,
+        false,
+      ]);
+    });
+
+    it("checks admin in the given organization", async () => {
+      const connectionId = await connectGitLabProjects();
+      expect(
+        (await get(selection.GET, { provider: "gitlab", organization: otherOrgId }, connectionId))
+          .status,
+      ).toBe(404);
+      expect(
+        (await get(selection.GET, { provider: "gitlab", organization: "not-a-uuid" }, connectionId))
+          .status,
+      ).toBe(404);
+      // The other provider's picker doesn't find it.
+      expect((await get(selection.GET, { provider: "github" }, connectionId)).status).toBe(404);
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect(
+        (await get(selection.GET, { provider: "gitlab", organization: orgId }, connectionId))
+          .status,
+      ).toBe(403);
+      expect(listQueries).toEqual([]);
+    });
+  });
+
+  describe("listing the organization's connections", () => {
+    const at = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    const checkedAt = new Date().toISOString();
+
+    async function insertConnection(
+      name: string,
+      provider: "github" | "gitlab",
+      health: unknown,
+      organizationId = orgId,
+    ) {
+      const [row] = await state.db
+        .insert(scmConnections)
+        .values({
+          organizationId,
+          provider,
+          name,
+          baseUrl: provider === "github" ? "https://api.github.com" : GITLAB,
+          externalId: `${name}-id`,
+          encryptedCredentials: "x",
+          health: health as never,
+        })
+        .returning();
+      return row!.id;
+    }
+
+    it("lists each connection with its host and health, by name", async () => {
+      const github = await insertConnection("a-github", "github", null);
+      const notChecked = await insertConnection("b-not-checked", "gitlab", null);
+      const healthy = await insertConnection("c-healthy", "gitlab", {
+        checkedAt,
+        tokenExpiresAt: at(200),
+        problems: [],
+      });
+      const expiring = await insertConnection("d-expiring", "gitlab", {
+        checkedAt,
+        tokenExpiresAt: at(5),
+        problems: [{ code: "token_expiring", message: "Expires soon." }],
+      });
+      const attention = await insertConnection("e-attention", "gitlab", {
+        checkedAt,
+        tokenExpiresAt: null,
+        problems: [
+          {
+            code: "webhook_missing",
+            message: "The webhook of acme/api is gone.",
+            repositoryId: "r1",
+          },
+          { code: "token_invalid", message: "GitLab refuses the bot token." },
+        ],
+      });
+      await insertConnection("other-org", "gitlab", null, otherOrgId);
+
+      const { status, body } = await get(scmConnectionList.GET, { organization: orgId });
+      expect(status).toBe(200);
+      expect(body.connections).toEqual([
+        {
+          id: github,
+          provider: "github",
+          name: "a-github",
+          host: "github.com",
+          health: { state: "connected", problems: [] },
+        },
+        {
+          id: notChecked,
+          provider: "gitlab",
+          name: "b-not-checked",
+          host: "gitlab.example.com",
+          health: { state: "not_checked", problems: [] },
+        },
+        {
+          id: healthy,
+          provider: "gitlab",
+          name: "c-healthy",
+          host: "gitlab.example.com",
+          health: { state: "healthy", expiresAt: expect.any(String), problems: [] },
+        },
+        {
+          id: expiring,
+          provider: "gitlab",
+          name: "d-expiring",
+          host: "gitlab.example.com",
+          health: expect.objectContaining({ state: "expiring", expiresAt: expect.any(String) }),
+        },
+        {
+          id: attention,
+          provider: "gitlab",
+          name: "e-attention",
+          host: "gitlab.example.com",
+          health: {
+            state: "needs_attention",
+            problems: [
+              {
+                code: "webhook_missing",
+                sentence: "The webhook of acme/api is gone.",
+                repositoryId: "r1",
+              },
+              { code: "token_invalid", sentence: "GitLab refuses the bot token." },
+            ],
+          },
+        },
+      ]);
+      // The active organization without the parameter.
+      expect((await get(scmConnectionList.GET, {})).body.connections).toHaveLength(5);
+    });
+
+    it("is for admins of that organization", async () => {
+      await insertConnection("own", "gitlab", null);
+      expect((await get(scmConnectionList.GET, { organization: otherOrgId })).status).toBe(404);
+      expect((await get(scmConnectionList.GET, { organization: "all" })).status).toBe(404);
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect((await get(scmConnectionList.GET, { organization: orgId })).status).toBe(403);
+    });
+  });
+
+  describe("the Connect buttons' setup", () => {
+    it("is for admins of the given organization", async () => {
+      const own = await get(setup.GET, { organization: orgId });
+      expect(own).toMatchObject({ status: 200, body: { defaultGitLabUrl: expect.any(String) } });
+      expect((await get(setup.GET, { organization: otherOrgId })).status).toBe(404);
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect((await get(setup.GET, {})).status).toBe(403);
+    });
+  });
+
+  it("connects GitLab to the given organization and publishes the connection", async () => {
+    const { result, changes } = await captureChanges(() =>
+      connectGitLab({ ...form, organizationId: orgId }),
+    );
+    expect(result).toEqual(connected);
+    const { connectionId } = result as { connectionId: string };
+    expect(changes).toContainEqual(
+      expect.objectContaining({
+        resource: "connection",
+        ids: [connectionId],
+        organizationId: orgId,
+      }),
+    );
+    // An organization the admin isn't a member of.
+    expect(await connectGitLab({ ...form, organizationId: otherOrgId })).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+    expect((await state.db.select().from(scmConnections)).map((c) => c.organizationId)).toEqual([
+      orgId,
+    ]);
+  });
+
+  it("removing turns off Reviews, Coding and Ask, deletes the match, pins and webhook, and keeps reviews", async () => {
     await connectGitLabProjects([101]);
     const [repo] = await state.db.select().from(repositories);
     const [agent] = await state.db
@@ -497,22 +822,41 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       trigger: "webhook",
       budget: 1,
     });
+    await saveWorkItemMatch(state.db, {
+      organizationId: orgId,
+      repositoryId: repo!.id,
+      userId: null,
+      match: { tracker: "linear", team: "SOC", project: null, withoutProject: false, labels: [] },
+    });
+    await setRepositorySwitches(state.db, orgId, repo!.id, { coding: true });
 
-    expect(await disconnectRepository(repo!.id)).toEqual({ ok: true });
+    const { result, changes } = await captureChanges(() => disconnectRepository(repo!.id));
+    expect(result).toEqual({ ok: true });
     expect(deletedHooks).toEqual([`101/${repo!.webhookId}`]);
     const [after] = await state.db.select().from(repositories).where(eq(repositories.id, repo!.id));
-    expect(after).toMatchObject({ reviewsEnabled: false, webhookId: null });
+    expect(after).toMatchObject({
+      reviewsEnabled: false,
+      codingEnabled: false,
+      askEnabled: false,
+      webhookId: null,
+    });
     expect(after!.disconnectedAt).not.toBeNull();
+    expect(await listWorkItemMatches(state.db, orgId)).toEqual([]);
     expect(await state.db.select().from(agentRepoPins)).toEqual([]);
     expect(
       await state.db.select().from(reviews).where(eq(reviews.repositoryId, repo!.id)),
     ).toHaveLength(1);
+    // The repo (its detail and the organization's list) and the unpinned agent.
+    expect(changes).toContainEqual(
+      expect.objectContaining({ resource: "repository", ids: [repo!.id], organizationId: orgId }),
+    );
+    expect(changes).toContainEqual(expect.objectContaining({ resource: "agent" }));
     // It isn't connected any more.
-    expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false });
+    expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false, status: 404 });
     await state.db.delete(agents);
   });
 
-  it("still disconnects when the webhook can't be deleted, with a warning", async () => {
+  it("still removes the repo when the webhook can't be deleted, with a warning", async () => {
     await connectGitLabProjects([101]);
     const [repo] = await state.db.select().from(repositories);
     server.use(
@@ -523,26 +867,33 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     const result = await disconnectRepository(repo!.id);
     expect(result).toEqual({ ok: true, warning: expect.stringContaining("couldn't be deleted") });
     const [after] = await state.db.select().from(repositories);
+    expect(after).toMatchObject({ reviewsEnabled: false, codingEnabled: false, askEnabled: false });
     expect(after!.disconnectedAt).not.toBeNull();
   });
 
   it("refuses members", async () => {
+    await connectGitLabProjects([101]);
+    const [repo] = await state.db.select().from(repositories);
     state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
     expect(await connectGitLab(form)).toEqual({
       ok: false,
+      status: 403,
       error: expect.stringContaining("admin"),
     });
+    expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false, status: 403 });
+    // An unknown repository is not found, for members too.
     expect(await disconnectRepository("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
+      status: 404,
     });
-    // An unknown repository is not found, for members too.
     expect(await recreateGitLabWebhook("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
     });
-    expect(hookRequests).toEqual([]);
+    expect(deletedHooks).toEqual([]);
+    expect(await repoStates()).toEqual([["acme/api", true, true, false, true]]);
   });
 
-  it("enables only selected repositories the GitHub installation can access", async () => {
+  it("adds only the given repositories the GitHub installation can access", async () => {
     const GITHUB = "https://api.github.com";
     state.githubAuth = new GitHubAppAuth({
       appId: "1",
@@ -555,6 +906,15 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
         HttpResponse.json({
           token: "ghs_x",
           expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        }),
+      ),
+      http.get(`${GITHUB}/app/installations/7`, () =>
+        HttpResponse.json({
+          id: 7,
+          account: { login: "acme", type: "Organization" },
+          target_type: "Organization",
+          repository_selection: "selected",
+          html_url: "https://github.com/settings/installations/7",
         }),
       ),
       http.get(`${GITHUB}/installation/repositories`, () =>
@@ -589,29 +949,49 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       })
       .returning();
 
-    expect(await saveGitHubRepositories(connection!.id, [1, 2, 999])).toEqual({ ok: true });
+    expect(await addGitHubRepositories(connection!.id, [1, 999])).toEqual({
+      ok: true,
+      added: [{ id: expect.any(String), fullPath: "acme/one" }],
+      warning: expect.stringContaining("can't access one of the repositories"),
+    });
     let repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
     // The adapter can't read the default branches here (no GitHub App configured): the
     // repositories are added all the same, without one.
     expect(repos.map((r) => [r.fullPath, r.reviewsEnabled, r.defaultBranch])).toEqual([
       ["acme/one", true, null],
-      ["acme/two", true, null],
     ]);
 
-    expect(await saveGitHubRepositories(connection!.id, [2])).toEqual({ ok: true });
-    repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-      ["acme/one", false],
-      ["acme/two", true],
+    // Add-only: acme/one, with its reviews turned off since, stays as it is.
+    await state.db.update(repositories).set({ reviewsEnabled: false });
+    expect(await addGitHubRepositories(connection!.id, [2])).toEqual({
+      ok: true,
+      added: [{ id: expect.any(String), fullPath: "acme/two" }],
+    });
+    expect(await addGitHubRepositories(connection!.id, [1, 2])).toEqual({ ok: true, added: [] });
+    expect(await repoStates()).toEqual([
+      ["acme/one", true, false, false, true],
+      ["acme/two", true, true, false, true],
     ]);
 
-    // Ticking turns reviews on.
-    expect(await saveGitHubRepositories(connection!.id, [1, 2])).toEqual({ ok: true });
+    // A removed repo comes back with Reviews and Ask on and Coding off.
     repos = await state.db.select().from(repositories).orderBy(repositories.fullPath);
-    expect(repos.map((r) => [r.fullPath, r.reviewsEnabled])).toEqual([
-      ["acme/one", true],
-      ["acme/two", true],
+    expect(await disconnectRepository(repos[0]!.id)).toEqual({ ok: true });
+    expect(await addGitHubRepositories(connection!.id, [1])).toEqual({
+      ok: true,
+      added: [{ id: repos[0]!.id, fullPath: "acme/one" }],
+    });
+    expect(await repoStates()).toEqual([
+      ["acme/one", true, true, false, true],
+      ["acme/two", true, true, false, true],
     ]);
+    const listed = await get(
+      selection.GET,
+      { provider: "github", organization: orgId },
+      connection!.id,
+    );
+    expect(
+      (listed.body.repos as { fullPath: string; connected: boolean }[]).map((r) => r.connected),
+    ).toEqual([true, true]);
   });
 
   it("refuses a GitLab connection that belongs to another organization", async () => {
@@ -620,6 +1000,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     state.orgId = otherOrgId;
     expect(await connectGitLab(form)).toEqual({
       ok: false,
+      status: 400,
       error: expect.stringContaining("another organization"),
     });
     expect(hookRequests).toHaveLength(hooks);
@@ -632,10 +1013,10 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     const [repo] = await state.db.select().from(repositories);
     const [connection] = await state.db.select().from(scmConnections);
     state.orgId = otherOrgId;
-    const notConnected = { ok: false, error: "That repository isn't connected." };
-    expect(await disconnectRepository(repo!.id)).toEqual(notConnected);
-    expect(await saveGitHubRepositories(connection!.id, [1])).toEqual({
+    expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false, status: 404 });
+    expect(await addGitHubRepositories(connection!.id, [1])).toEqual({
       ok: false,
+      status: 400,
       error: "That GitHub installation isn't connected.",
     });
     expect(deletedHooks).toEqual([]);
@@ -742,6 +1123,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       );
       expect(await recreateGitLabWebhook(api.id)).toEqual({
         ok: false,
+        status: 400,
         error: expect.stringContaining("Maintainer"),
       });
       const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));
@@ -765,7 +1147,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       const { connectionId, api } = await withWebhookProblems();
       state.orgId = otherOrgId;
       const { result, changes } = await captureChanges(() => recreateGitLabWebhook(api.id));
-      expect(result).toEqual({ ok: false, error: expect.any(String) });
+      expect(result).toEqual({ ok: false, status: 404, error: expect.any(String) });
       expect(changes).toEqual([]);
       expect(deletedHooks).toEqual([]);
       expect(hookRequests).toEqual([]);
@@ -789,12 +1171,14 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await removeScmConnection(connection!.id)).toEqual({
         ok: false,
+        status: 403,
         error: expect.stringContaining("admin"),
       });
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       state.orgId = otherOrgId;
       expect(await removeScmConnection(connection!.id)).toEqual({
         ok: false,
+        status: 400,
         error: "That connection doesn't exist.",
       });
       expect(deletedHooks).toEqual([]);

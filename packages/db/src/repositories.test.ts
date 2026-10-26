@@ -32,6 +32,7 @@ import {
   repositories,
   reviews,
   scmConnections,
+  workItemMatches,
 } from "./schema.js";
 import { updateRepositorySettings } from "./settings.js";
 
@@ -291,6 +292,63 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       reviewsEnabled: true,
       disconnectedAt: null,
       fullPath: "acme/web-renamed",
+    });
+    await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+  });
+
+  it("turns everything off and deletes the match on disconnect; reconnecting starts with Coding off", async () => {
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: orgId,
+        provider: "gitlab",
+        name: "bot @ gitlab.example.com",
+        baseUrl: "https://gitlab.example.com",
+        externalId: "7001",
+        credentials: {},
+      },
+      key,
+    ))!;
+    const input = {
+      connectionId: connection.id,
+      provider: "gitlab",
+      externalId: "102",
+      fullPath: "managed-services/customer-portal",
+    } as const;
+    const repo = await connectRepository(db, input);
+    expect(repo).toMatchObject({ reviewsEnabled: true, askEnabled: true, codingEnabled: false });
+    await saveWorkItemMatch(db, {
+      organizationId: orgId,
+      repositoryId: repo.id,
+      userId: null,
+      match: { tracker: "linear", team: "SOC", project: null, withoutProject: false, labels: [] },
+    });
+    await setRepositorySwitches(db, orgId, repo.id, { coding: true });
+    // Connecting a repository that's still connected keeps its switches.
+    expect(await connectRepository(db, input)).toMatchObject({
+      askEnabled: true,
+      codingEnabled: true,
+    });
+
+    const { changes } = await captureChanges(() => disconnectRepository(db, orgId, repo.id));
+    expect(changes).toContainEqual(
+      expect.objectContaining({ resource: "repository", ids: [repo.id] }),
+    );
+    expect(await getRepository(db, repo.id)).toMatchObject({
+      reviewsEnabled: false,
+      codingEnabled: false,
+      askEnabled: false,
+    });
+    expect(
+      await db.select().from(workItemMatches).where(eq(workItemMatches.repositoryId, repo.id)),
+    ).toEqual([]);
+
+    expect(await connectRepository(db, input)).toMatchObject({
+      id: repo.id,
+      reviewsEnabled: true,
+      askEnabled: true,
+      codingEnabled: false,
+      disconnectedAt: null,
     });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
   });
