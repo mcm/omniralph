@@ -16,6 +16,12 @@ interface IconButtonOwnProps {
   /** `md` is 36 px square, `sm` 30 px. */
   size?: ButtonSize;
   disabled?: boolean;
+  /**
+   * Why the button is disabled: shown as its tooltip in place of `label`. With it, a
+   * disabled button stays focusable (`aria-disabled`, clicks ignored) so the reason can show
+   * on hover and keyboard focus.
+   */
+  disabledReason?: string;
   /** Which side the tooltip sits on. Defaults to `top`. */
   tooltipSide?: "top" | "right" | "bottom" | "left";
   className?: string;
@@ -46,6 +52,7 @@ export function IconButton(props: IconButtonProps) {
     size = "md",
     tooltipSide,
     className,
+    disabledReason,
     ...rest
   } = props;
   const classes = ["or-icon-btn", `or-icon-btn--${variant}`, `or-icon-btn--${size}`, className]
@@ -70,7 +77,24 @@ export function IconButton(props: IconButtonProps) {
     href: _href,
     type = "button",
     ...buttonProps
-  } = rest as Omit<NativeIconButtonProps, "href"> & { href?: string };
+  } = rest as Omit<NativeIconButtonProps, "href"> & { href?: string; disabled?: boolean };
+  if (buttonProps.disabled && disabledReason) {
+    const { disabled: _disabled, onClick: _onClick, ...enabledProps } = buttonProps;
+    return (
+      <Tooltip content={disabledReason} side={tooltipSide}>
+        <button
+          {...enabledProps}
+          type={type}
+          aria-label={label}
+          aria-disabled="true"
+          className={classes}
+          onClick={(event) => event.preventDefault()}
+        >
+          {icon}
+        </button>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip content={label} side={tooltipSide}>
       <button {...buttonProps} type={type} aria-label={label} className={classes}>
