@@ -146,9 +146,9 @@ export type RalphHistoryRewrite = (typeof RALPH_HISTORY_REWRITE_POLICIES)[number
 export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;
 
 /**
- * A repo's coding policy (`PUT /api/ui/repositories/{id}/coding`): the whole of it, and nothing
- * else (its work item match is saved on its own; models, commands and round limits are its
- * story and request playbooks').
+ * A repo's coding policy, which the Repos page's Coding card saves with its work item match
+ * (`PUT /api/ui/repositories/{id}/coding`): the whole of it, and nothing else (models, commands
+ * and round limits are its story and request playbooks').
  */
 export const RepositoryCodingInput = z.strictObject({
   /**

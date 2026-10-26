@@ -1,22 +1,15 @@
 import "server-only";
 import {
-  deleteWorkItemMatch,
-  getIntegration,
-  getRepositoryWithConnection,
   listOtherWorkItemMatches,
-  saveWorkItemMatch,
   WorkItemMatchRequiredError,
   type Database,
   type WorkItemMatch,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
-import type {
-  SavedWorkItemMatch,
-  WorkItemMatchInput,
-  WorkItemMatchRow,
-  WorkItemMatchWarning,
-} from "@/lib/api/work-item-matches";
-import { describeMatch, matchesConflict } from "@/lib/routing/match";
+import type { CodingMatchWarning } from "@/lib/api/repositories";
+import type { WorkItemMatchRow } from "@/lib/api/work-item-matches";
+import { matchesConflict } from "@/lib/routing/match";
 
 /** Answered (409) when Coding is turned on for a repository without a work item match. */
 export const ADD_WORK_ITEM_MATCH_FIRST = "Add a work item match before turning on Coding.";
@@ -53,49 +46,31 @@ export function workItemMatchRow(match: WorkItemMatch): WorkItemMatchRow {
   };
 }
 
-/** The warning for `fullPath`'s overlapping match. */
-export const conflictMessage = (fullPath: string, match: WorkItemMatch) =>
-  `The work item match of ${fullPath} (${describeMatch(match)}) overlaps this one: a work item both match asks which repo to use.`;
+/** The warning about `fullPath`'s match, which conflicts with this repo's. */
+export const conflictMessage = (fullPath: string) =>
+  `${fullPath} matches the same work items, so Om will ask which repo to use.`;
 
 /**
- * Saves (or, with `match` null, clears) the organization's connected repository's work item
- * match. Clearing needs its Coding off (409 otherwise). Saving needs its tracker connected; the answer warns about every other repository
- * whose match overlaps it (`matchesConflict`).
+ * The organization's other connected repositories whose matches conflict with `match` for
+ * `repositoryId` (`matchesConflict`): a work item both match asks which repo to use.
  */
-export async function saveRepositoryWorkItemMatch(
+export async function matchConflicts(
   db: Database,
-  input: {
-    organizationId: string;
-    repositoryId: string;
-    userId: string;
-    match: WorkItemMatchInput | null;
-  },
-): Promise<SavedWorkItemMatch> {
-  const { organizationId, repositoryId, userId, match } = input;
-  const found = await getRepositoryWithConnection(db, repositoryId, organizationId);
-  if (!found || found.repository.disconnectedAt) throw ApiRouteError.notFound();
-
-  if (match === null) {
-    await refusingCodingWithoutMatch(() => deleteWorkItemMatch(db, organizationId, repositoryId));
-    return { ok: true, workItemMatch: null, warnings: [] };
-  }
-
-  if (!(await getIntegration(db, organizationId, match.tracker))) {
-    throw new ApiRouteError(409, TRACKER_NOT_CONNECTED, "tracker_not_connected");
-  }
-  const saved = await saveWorkItemMatch(db, { organizationId, repositoryId, userId, match });
-  if (!saved) throw ApiRouteError.notFound();
+  organizationId: string,
+  repositoryId: string,
+  match: WorkItemMatchFields,
+): Promise<CodingMatchWarning[]> {
   const others = await listOtherWorkItemMatches(db, organizationId, repositoryId);
-  const warnings = others.flatMap((other): WorkItemMatchWarning[] =>
-    matchesConflict(saved, other)
+  return others.flatMap((other): CodingMatchWarning[] =>
+    matchesConflict(match, other)
       ? [
           {
-            repositoryId: other.repositoryId,
+            id: other.repositoryId,
             fullPath: other.fullPath,
-            message: conflictMessage(other.fullPath, other),
+            provider: other.provider,
+            message: conflictMessage(other.fullPath),
           },
         ]
       : [],
   );
-  return { ok: true, workItemMatch: workItemMatchRow(saved), warnings };
 }

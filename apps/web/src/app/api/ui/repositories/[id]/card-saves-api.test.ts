@@ -1,5 +1,5 @@
-// The Repos page's card saves: `PUT /api/ui/repositories/{id}/reviews`, `/ask`, `/agents` and
-// `/playbooks` (and the coding policy's `PUT …/coding`). Each saves its whole card in one
+// The Repos page's card saves: `PUT /api/ui/repositories/{id}/reviews`, `/coding` (with
+// `POST …/coding/match-check`), `/ask`, `/agents` and `/playbooks`. Each saves its whole card in one
 // transaction, records one change-history entry, publishes the repo's change after commit and
 // answers the saved card in the detail's shape; a save that changes nothing does none of it.
 import { randomBytes, randomUUID } from "node:crypto";
@@ -11,13 +11,18 @@ import {
   createDb,
   getRepository,
   insertPlaybook,
+  integrations,
   jobs,
   organizations,
   repositories,
+  saveIntegration,
+  saveWorkItemMatch,
   settingsChanges,
   upsertScmConnection,
   users,
+  workItemMatches,
   type Database,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
 import { captureChanges, type RecordedChange } from "@omniralph/db/changes";
 import {
@@ -26,11 +31,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import {
-  reviewTriggerContext,
-  type RepositoryCodingInput,
-  type ReviewTriggerContext,
-} from "@omniralph/shared";
+import { reviewTriggerContext, type ReviewTriggerContext } from "@omniralph/shared";
 import { getBuiltinPlaybook } from "@omniralph/tasks";
 import type * as Tasks from "@omniralph/tasks";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -39,12 +40,17 @@ import {
   agentsCardSchema,
   askCardSchema,
   cardSaveResultSchema,
+  codingCardSaveResultSchema,
   playbooksCardSchema,
   reviewsCardSchema,
+  type CodingCardInput,
   type PlaybooksCardInput,
   type ReviewsCardInput,
 } from "@/lib/api/repositories";
+import type { WorkItemMatchRow } from "@/lib/api/work-item-matches";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import { TRACKER_NOT_CONNECTED } from "@/lib/repositories/work-item-match";
+import { labelsInclude, setRoutingRules, teamIs } from "@/lib/routing/testing";
 
 vi.mock("server-only", () => ({}));
 // A second built-in review playbook, beside `builtin:review-pr`.
@@ -100,6 +106,7 @@ const askRoute = await import("@/app/api/ui/repositories/[id]/ask/route");
 const agentsRoute = await import("@/app/api/ui/repositories/[id]/agents/route");
 const playbooksRoute = await import("@/app/api/ui/repositories/[id]/playbooks/route");
 const codingRoute = await import("@/app/api/ui/repositories/[id]/coding/route");
+const matchCheckRoute = await import("@/app/api/ui/repositories/[id]/coding/match-check/route");
 const detailRoute = await import("@/app/api/ui/repositories/[id]/route");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
@@ -151,8 +158,9 @@ const baseBindings: PlaybooksCardInput["bindings"] = {
   request: "builtin:handle-request",
 };
 
-const baseCoding: RepositoryCodingInput = {
+const baseCoding: CodingCardInput = {
   codingEnabled: true,
+  workItemMatch: null,
   codingInstructions: null,
   openPullRequestEarly: false,
   historyRewrite: "when-asked",
@@ -737,6 +745,8 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         [askRoute.PUT, { askEnabled: false }],
         [agentsRoute.PUT, { pinnedAgentIds: [agentA] }],
         [playbooksRoute.PUT, { bindings: { ...baseBindings, review: [SECURITY_TASK_ID] } }],
+        [codingRoute.PUT, { ...baseCoding, codingEnabled: false, historyRewrite: "always" }],
+        [matchCheckRoute.POST, { workItemMatch: { tracker: "linear", team: "ENG" } }],
       ] as const;
 
     it("answers 400 for unknown keys", async () => {
@@ -775,6 +785,8 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       expect(await getRepository(db, repoId)).toMatchObject({
         reviewDepth: "standard",
         askEnabled: true,
+        codingEnabled: true,
+        historyRewrite: "when-asked",
         reviewPlaybookIds: ["builtin:review-pr"],
       });
       expect(await getRepository(db, otherRepoId)).toMatchObject({
@@ -786,90 +798,400 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
     });
   });
 
-  describe("coding policy (PUT …/coding)", () => {
-    const getCoding = async (id = repoId) => {
-      const response = await codingRoute.GET(new Request("http://localhost/api/ui"), {
+  describe("PUT …/coding", () => {
+    let codingRepo: string;
+    let docsRepo: string;
+    let portalRepo: string;
+    let gitlabRepo: string;
+
+    const coding = (body: unknown, id = codingRepo) => put(codingRoute.PUT, id, body);
+    const matchCheck = (body: unknown, id = codingRepo) => put(matchCheckRoute.POST, id, body);
+    const soc = { tracker: "linear", team: "SOC", labels: ["product:portal"] } as const;
+    /** The match as the card shows it. */
+    const shown = (match: Partial<WorkItemMatchRow>) => ({
+      tracker: "linear",
+      project: null,
+      withoutProject: false,
+      labels: [],
+      ...match,
+      updatedAt: expect.any(String),
+    });
+    /** Sets `id`'s match directly (Coding stays as it is). */
+    const setMatch = (id: string, match: Partial<WorkItemMatchFields> & { team: string }) =>
+      saveWorkItemMatch(db, {
+        organizationId: orgId,
+        repositoryId: id,
+        userId: null,
+        match: { tracker: "linear", project: null, withoutProject: false, labels: [], ...match },
+      });
+    const detailCoding = async (id = codingRepo) => {
+      const response = await detailRoute.GET(new Request("http://localhost/api/ui"), {
         params: Promise.resolve({ id }),
       });
-      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+      return ((await response.json()) as { coding: unknown }).coding;
     };
-    const updateCoding = (body: unknown, id = repoId) => put(codingRoute.PUT, id, body);
+    const repositoryChange = (changes: RecordedChange[]) =>
+      changes.find((c) => c.resource === "repository");
 
-    beforeEach(() => setCodingEnabled(db, repoId));
+    beforeAll(async () => {
+      codingRepo = await connect(orgId, "github", "acme/coding");
+      docsRepo = await connect(orgId, "github", "acme/docs");
+      portalRepo = await connect(orgId, "github", "acme/portal");
+      gitlabRepo = await connect(orgId, "gitlab", "acme/gitlab-coding");
+    });
 
-    it("answers exactly the six-field policy and the story playbook's round limits", async () => {
-      expect(await getCoding()).toEqual({
-        status: 200,
-        body: {
-          codingEnabled: true,
+    beforeEach(async () => {
+      await db.delete(workItemMatches);
+      await db.delete(integrations);
+      await setRoutingRules(db, orgId);
+      await db
+        .update(repositories)
+        .set({
+          codingEnabled: false,
           codingInstructions: null,
           openPullRequestEarly: false,
           historyRewrite: "when-asked",
           respondToReviewsAndCi: true,
-          roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
-        },
+        })
+        .where(eq(repositories.organizationId, orgId));
+      await setCodingEnabled(db, repoId);
+      await saveIntegration(db, {
+        organizationId: orgId,
+        provider: "linear",
+        externalId: "linear-org",
+        name: "Acme",
+        credentials: { accessToken: "t" },
+        installedByUserId: null,
       });
     });
 
-    it("saves the policy, answers it and publishes the repo's coding change", async () => {
-      const policy: RepositoryCodingInput = {
-        codingEnabled: false,
-        codingInstructions: "  NEVER use `git merge` in this repo, ALWAYS rebase.  ",
+    it("turns Coding on with a new match in one save: one entry, the repo's change, the card", async () => {
+      const { status, body, changes } = await coding({
+        ...baseCoding,
+        workItemMatch: { ...soc, team: " SOC ", labels: ["product:portal", "Product:Portal"] },
+        codingInstructions: "  Always rebase.  ",
         openPullRequestEarly: true,
         historyRewrite: "always",
         respondToReviewsAndCi: false,
-      };
-      const { status, body, changes } = await updateCoding(policy);
-      const saved = {
-        ...policy,
-        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
-        roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
-      };
+      });
       expect(status).toBe(200);
-      expect(body).toEqual(saved);
-      expect(kinds(changes)).toEqual(["settings:repository.coding"]);
-      expect((await getCoding()).body).toEqual(saved);
-      // Saving the Reviews card leaves the coding policy alone.
-      expect((await reviews({ ...baseReviews, depth: "deep" })).status).toBe(200);
-      expect((await getCoding()).body).toEqual(saved);
-      await reviews(baseReviews);
+      const card = {
+        enabled: true,
+        workItemMatch: shown({ team: "SOC", labels: ["product:portal"] }),
+        codingInstructions: "Always rebase.",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
+        roundLimits: { review: 3, fix: 3 },
+        routingRules: [],
+      };
+      expect(codingCardSaveResultSchema.parse(body)).toEqual({ ok: true, card, warnings: [] });
+      expect(await getRepository(db, codingRepo)).toMatchObject({
+        codingEnabled: true,
+        codingInstructions: "Always rebase.",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
+      });
+      const [row] = await db
+        .select()
+        .from(workItemMatches)
+        .where(eq(workItemMatches.repositoryId, codingRepo));
+      expect(row).toMatchObject({ createdBy: ADMIN.id, updatedBy: ADMIN.id });
+      // The detail shows the same card.
+      expect(await detailCoding()).toEqual(body.card);
 
-      // Switched off, Coding can't come back on without a work item match.
-      const refused = await updateCoding({ ...baseCoding, codingInstructions: "" });
-      expect(refused).toMatchObject({
-        status: 409,
-        body: { error: "Add a work item match before turning on Coding." },
+      // One entry, labeled as the card, with the match as its sentence.
+      const [entry, ...rest] = await history("repository.coding", codingRepo);
+      expect(rest).toEqual([]);
+      expect(entry).toMatchObject({ actorUserId: ADMIN.id, actorName: "Ada Admin" });
+      expect(entry!.changes).toEqual([
+        { field: "coding", label: "Coding", before: "Off", after: "On" },
+        {
+          field: "workItemMatch",
+          label: "Work item match",
+          before: null,
+          after: "Linear team SOC, label product:portal",
+        },
+        {
+          field: "codingInstructions",
+          label: "Extra instructions",
+          before: null,
+          after: "Always rebase.",
+        },
+        {
+          field: "openPullRequestEarly",
+          label: "Open a draft pull request after the first story",
+          before: "Off",
+          after: "On",
+        },
+        {
+          field: "respondToReviewsAndCi",
+          label: "Fix review comments and CI failures",
+          before: "On",
+          after: "Off",
+        },
+        {
+          field: "historyRewrite",
+          label: "Rewrite history",
+          before: "When asked",
+          after: "Always",
+        },
+      ]);
+      // The repo's change (rail row and detail) and the history's, after commit.
+      expect(kinds(changes)).toEqual(["repository", "settings:repository.coding"]);
+      expect(repositoryChange(changes)).toMatchObject({ ids: [codingRepo], organizationId: orgId });
+
+      // The same card again writes, records and publishes nothing.
+      const again = await coding({
+        ...baseCoding,
+        workItemMatch: soc,
+        codingInstructions: "Always rebase.",
+        openPullRequestEarly: true,
+        historyRewrite: "always",
+        respondToReviewsAndCi: false,
+      });
+      expect(again).toMatchObject({
+        status: 200,
+        body: { ok: true, card, warnings: [] },
         changes: [],
       });
-      expect(await getRepository(db, repoId)).toMatchObject({
+      expect(await history("repository.coding", codingRepo)).toHaveLength(1);
+    });
+
+    it("turns Coding off and clears the match in one save", async () => {
+      expect((await coding({ ...baseCoding, workItemMatch: soc })).status).toBe(200);
+      const { status, body, changes } = await coding({
+        ...baseCoding,
         codingEnabled: false,
-        codingInstructions: "NEVER use `git merge` in this repo, ALWAYS rebase.",
+        workItemMatch: null,
+      });
+      expect(status).toBe(200);
+      expect(body).toMatchObject({
+        ok: true,
+        card: { enabled: false, workItemMatch: null },
+        warnings: [],
+      });
+      expect(await getRepository(db, codingRepo)).toMatchObject({ codingEnabled: false });
+      expect(await db.select().from(workItemMatches)).toEqual([]);
+      expect(kinds(changes)).toEqual(["repository", "settings:repository.coding"]);
+      expect((await history("repository.coding", codingRepo))[0]!.changes).toEqual([
+        { field: "coding", label: "Coding", before: "On", after: "Off" },
+        {
+          field: "workItemMatch",
+          label: "Work item match",
+          before: "Linear team SOC, label product:portal",
+          after: null,
+        },
+      ]);
+    });
+
+    it("answers 409 for Coding on without a match, and for clearing the match with Coding on", async () => {
+      const noMatch = await coding({ ...baseCoding, codingInstructions: "x" });
+      expect(noMatch).toEqual({
+        status: 409,
+        body: {
+          error: "Add a work item match before turning on Coding.",
+          code: "work_item_match_required",
+        },
+        changes: [],
+      });
+      expect(await getRepository(db, codingRepo)).toMatchObject({
+        codingEnabled: false,
+        codingInstructions: null,
       });
 
-      // Empty instructions are none.
-      await setCodingEnabled(db, repoId);
-      expect((await updateCoding({ ...baseCoding, codingInstructions: "" })).body).toEqual({
-        ...baseCoding,
-        roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 },
+      await coding({ ...baseCoding, workItemMatch: soc });
+      const cleared = await coding({ ...baseCoding, workItemMatch: null, historyRewrite: "never" });
+      expect(cleared).toEqual({
+        status: 409,
+        body: {
+          error: "Turn off Coding before removing the work item match.",
+          code: "coding_enabled",
+        },
+        changes: [],
       });
-      expect(await getRepository(db, repoId)).toMatchObject({
+      expect(await getRepository(db, codingRepo)).toMatchObject({
         codingEnabled: true,
-        codingInstructions: null,
+        historyRewrite: "when-asked",
+      });
+      expect(await db.select().from(workItemMatches)).toHaveLength(1);
+      expect(await history("repository.coding", codingRepo)).toHaveLength(1);
+
+      // A repo that had Coding on before work item matches keeps it without one.
+      expect(await coding({ ...baseCoding, codingInstructions: "Kept on." }, repoId)).toMatchObject(
+        { status: 200, body: { card: { enabled: true, workItemMatch: null } } },
+      );
+    });
+
+    it("changes the match and the policy with Coding staying on", async () => {
+      await coding({ ...baseCoding, workItemMatch: soc });
+      const { body, changes } = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "MOD", withoutProject: true },
+      });
+      expect(body).toMatchObject({
+        card: { enabled: true, workItemMatch: shown({ team: "MOD", withoutProject: true }) },
+      });
+      expect(kinds(changes)).toEqual(["repository", "settings:repository.coding"]);
+      expect((await history("repository.coding", codingRepo))[0]!.changes).toEqual([
+        {
+          field: "workItemMatch",
+          label: "Work item match",
+          before: "Linear team SOC, label product:portal",
+          after: "Linear team MOD, no project",
+        },
+      ]);
+    });
+
+    it("labels Open a draft merge request on GitLab", async () => {
+      await coding({ ...baseCoding, codingEnabled: false, openPullRequestEarly: true }, gitlabRepo);
+      expect((await history("repository.coding", gitlabRepo))[0]!.changes).toEqual([
+        {
+          field: "openPullRequestEarly",
+          label: "Open a draft merge request after the first story",
+          before: "Off",
+          after: "On",
+        },
+      ]);
+    });
+
+    it("warns about conflicting matches on save and publishes those repos' changes", async () => {
+      await setMatch(docsRepo, { team: "SOC", labels: ["portal", "app"] });
+      await setMatch(portalRepo, { team: "SOC", labels: ["docs"] });
+      const { body, changes } = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "soc", labels: ["App"] },
+      });
+      const docsWarning = {
+        id: docsRepo,
+        fullPath: "acme/docs",
+        provider: "github",
+        message: "acme/docs matches the same work items, so Om will ask which repo to use.",
+      };
+      expect(body.warnings).toEqual([docsWarning]);
+      expect(repositoryChange(changes)!.ids.sort()).toEqual([codingRepo, docsRepo].sort());
+
+      // Moving to a match that conflicts with the portal repo changes the docs repo's too.
+      const moved = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "SOC", labels: ["docs"] },
+      });
+      expect(moved.body.warnings).toEqual([
+        expect.objectContaining({ id: portalRepo, fullPath: "acme/portal" }),
+      ]);
+      expect(repositoryChange(moved.changes)!.ids.sort()).toEqual(
+        [codingRepo, docsRepo, portalRepo].sort(),
+      );
+
+      // A save that leaves the match alone still answers its conflicts, but publishes only its own.
+      const policy = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "SOC", labels: ["docs"] },
+        historyRewrite: "never",
+      });
+      expect(policy.body.warnings).toEqual([expect.objectContaining({ id: portalRepo })]);
+      expect(repositoryChange(policy.changes)!.ids).toEqual([codingRepo]);
+    });
+
+    it("checks an unsaved match's conflicts without writing or publishing", async () => {
+      await setMatch(docsRepo, { team: "MOD" });
+      await setMatch(portalRepo, { team: "MOD", project: "Portal" });
+      const check = await matchCheck({ workItemMatch: { tracker: "linear", team: "mod" } });
+      expect(check).toEqual({
+        status: 200,
+        body: {
+          warnings: [
+            {
+              id: docsRepo,
+              fullPath: "acme/docs",
+              provider: "github",
+              message: "acme/docs matches the same work items, so Om will ask which repo to use.",
+            },
+          ],
+        },
+        changes: [],
+      });
+      // The same check the save answers.
+      const saved = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "mod" },
+      });
+      expect(saved.body.warnings).toEqual(check.body.warnings);
+      await coding({ ...baseCoding, codingEnabled: false, workItemMatch: null });
+      const writes = await db.select().from(settingsChanges);
+      expect(
+        (await matchCheck({ workItemMatch: { tracker: "linear", team: "ENG" } })).changes,
+      ).toEqual([]);
+      expect(await db.select().from(settingsChanges)).toEqual(writes);
+      expect(
+        await db.select().from(workItemMatches).where(eq(workItemMatches.repositoryId, codingRepo)),
+      ).toEqual([]);
+      expect(await matchCheck({ workItemMatch: { tracker: "linear", team: " " } })).toMatchObject({
+        status: 400,
+        body: { fieldErrors: { "workItemMatch.team": "Enter the team's key, e.g. ENG." } },
       });
     });
 
+    it("validates the match, and needs its tracker connected to change it", async () => {
+      const team = await coding({ ...baseCoding, workItemMatch: { tracker: "linear", team: " " } });
+      expect(team).toMatchObject({
+        status: 400,
+        body: { fieldErrors: { "workItemMatch.team": "Enter the team's key, e.g. ENG." } },
+        changes: [],
+      });
+      expect(
+        await coding({
+          ...baseCoding,
+          workItemMatch: {
+            tracker: "linear",
+            team: "ENG",
+            project: "Portal",
+            withoutProject: true,
+          },
+        }),
+      ).toMatchObject({
+        status: 400,
+        body: {
+          fieldErrors: { "workItemMatch.project": 'Choose a project or "no project", not both.' },
+        },
+      });
+      expect(
+        (await coding({ ...baseCoding, workItemMatch: { tracker: "jira", team: "ENG" } })).status,
+      ).toBe(400);
+
+      await coding({ ...baseCoding, workItemMatch: soc });
+      await db.delete(integrations);
+      const refused = await coding({
+        ...baseCoding,
+        workItemMatch: { tracker: "linear", team: "ENG" },
+      });
+      expect(refused).toEqual({
+        status: 409,
+        body: { error: TRACKER_NOT_CONNECTED, code: "tracker_not_connected" },
+        changes: [],
+      });
+      // The saved match isn't a change: the rest of the card still saves, and it can be cleared.
+      expect(
+        (await coding({ ...baseCoding, workItemMatch: soc, historyRewrite: "never" })).status,
+      ).toBe(200);
+      expect(
+        (await coding({ ...baseCoding, codingEnabled: false, workItemMatch: null })).status,
+      ).toBe(200);
+      expect(await db.select().from(workItemMatches)).toEqual([]);
+    });
+
     it("rejects unknown keys and invalid values with 400, saving and publishing nothing", async () => {
-      const before = await getRepository(db, repoId);
+      const before = await getRepository(db, codingRepo);
       for (const key of [
         "model",
         "verifyCommands",
-        "setupCommand",
         "maxReviewRounds",
-        "manualLabels",
         "storyPlaybookId",
         "roundLimits",
+        "match",
       ]) {
-        const { status, body, changes } = await updateCoding({
+        const { status, body, changes } = await coding({
           ...baseCoding,
           codingEnabled: false,
           [key]: "x",
@@ -879,7 +1201,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         expect(changes).toEqual([]);
       }
       expect(
-        await updateCoding({
+        await coding({
           ...baseCoding,
           codingEnabled: "yes",
           historyRewrite: "sometimes",
@@ -895,24 +1217,27 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
           },
         },
       });
-      const { codingEnabled: _missing, ...partial } = baseCoding;
-      expect(await updateCoding(partial)).toMatchObject({
-        status: 400,
-        body: { fieldErrors: { codingEnabled: "Choose on or off." } },
-      });
-      expect(await getRepository(db, repoId)).toEqual(before);
+      const { workItemMatch: _missing, ...partial } = baseCoding;
+      expect((await coding(partial)).status).toBe(400);
+      expect(await getRepository(db, codingRepo)).toEqual(before);
     });
 
-    it("rejects coding saves for unknown repositories and from non-admins", async () => {
-      const before = await getRepository(db, repoId);
-      expect(await updateCoding(baseCoding, randomUUID())).toMatchObject({
-        status: 400,
-        body: { error: "That repository isn't connected." },
+    it("names the routing rules that target the repo", async () => {
+      await setRoutingRules(
+        db,
+        orgId,
+        [codingRepo, teamIs("ENG")],
+        [docsRepo, labelsInclude("ui")],
+        [codingRepo, labelsInclude("backend")],
+      );
+      const { body } = await coding({ ...baseCoding, workItemMatch: soc });
+      expect((body.card as { routingRules: unknown }).routingRules).toEqual([
+        { position: 1, description: "Team is ENG" },
+        { position: 3, description: "Labels contains any of backend" },
+      ]);
+      expect(await detailCoding(docsRepo)).toMatchObject({
+        routingRules: [{ position: 2, description: "Labels contains any of ui" }],
       });
-      state.user = MEMBER;
-      expect((await updateCoding({ ...baseCoding, codingEnabled: false })).status).toBe(403);
-      expect((await getCoding()).status).toBe(403);
-      expect(await getRepository(db, repoId)).toEqual(before);
     });
   });
 });

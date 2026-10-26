@@ -50,6 +50,20 @@ export function describeMatch(match: WorkItemMatchFields): string {
   return parts.join(", ");
 }
 
+const TRACKER_NAMES: Record<WorkItemMatchFields["tracker"], string> = { linear: "Linear" };
+
+/**
+ * A match as the Coding card's sentence reads it: `Linear team SOC, label product:portal`,
+ * `Linear team MOD, no project`, `Linear team ENG, project Portal, label ui or web`.
+ */
+export function matchSentence(match: WorkItemMatchFields): string {
+  const parts = [`${TRACKER_NAMES[match.tracker]} team ${match.team}`];
+  if (match.withoutProject) parts.push("no project");
+  else if (match.project !== null) parts.push(`project ${match.project}`);
+  if (match.labels.length > 0) parts.push(`label ${match.labels.join(" or ")}`);
+  return parts.join(", ");
+}
+
 /** `routed_by` of a route by a work item match: `work item match (Team is SOC, label product:portal)`. */
 export function describeMatchRoute(match: WorkItemMatchFields): string {
   return `work item match (${describeMatch(match)})`;

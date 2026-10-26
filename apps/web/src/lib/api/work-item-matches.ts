@@ -2,9 +2,9 @@ import { z } from "zod";
 import { isoDate } from "./schemas";
 
 /**
- * A repository's work item match (`/api/ui/repositories/{id}/work-item-match`): the work items
- * it builds. Tracker and team are required; a project or "no project" and labels (any of them)
- * are optional. Team, project and labels compare ignoring case.
+ * A repository's work item match (saved with its Coding card, `PUT
+ * /api/ui/repositories/{id}/coding`): the work items it builds. Tracker and team are required;
+ * a project or "no project" and labels (any of them) are optional. Team, project and labels compare ignoring case.
  */
 
 export const WORK_ITEM_TRACKERS = ["linear"] as const;
@@ -60,29 +60,3 @@ export const workItemMatchSchema = z.object({
   updatedAt: isoDate,
 });
 export type WorkItemMatchRow = z.infer<typeof workItemMatchSchema>;
-
-/** `PUT /api/ui/repositories/{id}/work-item-match`'s body: the match, or null to clear it. */
-export const saveWorkItemMatchRequestSchema = z.strictObject({
-  match: workItemMatchInputSchema.nullable(),
-});
-
-/** Another repository whose match overlaps the saved one. */
-export const workItemMatchWarningSchema = z.object({
-  repositoryId: z.string(),
-  fullPath: z.string(),
-  message: z.string(),
-});
-export type WorkItemMatchWarning = z.infer<typeof workItemMatchWarningSchema>;
-
-/** The answer to `PUT /api/ui/repositories/{id}/work-item-match`. */
-export const savedWorkItemMatchSchema = z.object({
-  ok: z.literal(true),
-  /** The saved match; null when it was cleared. */
-  workItemMatch: workItemMatchSchema.nullable(),
-  /**
-   * Each other repository whose match has the same tracker, team and project condition and
-   * whose labels intersect (or are both empty): a work item both match asks.
-   */
-  warnings: z.array(workItemMatchWarningSchema),
-});
-export type SavedWorkItemMatch = z.infer<typeof savedWorkItemMatchSchema>;

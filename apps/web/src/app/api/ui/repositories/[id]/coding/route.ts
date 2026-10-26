@@ -1,11 +1,16 @@
-import { RepositoryCodingInput } from "@omniralph/shared";
 import { z } from "zod";
-import type { ActionResult } from "@/lib/action-result";
 import { apiHandler } from "@/lib/api/handler";
-import type { RepositoryCoding } from "@/lib/api/repositories";
-import { requireResourceInActiveOrganization, requireUuid } from "@/lib/api/resource";
+import {
+  codingCardInputSchema,
+  type CodingCardSaveResult,
+  type RepositoryCoding,
+} from "@/lib/api/repositories";
+import { requireResourceInActiveOrganization } from "@/lib/api/resource";
+import { requireRepositoryAccess } from "@/lib/api/scope";
+import { getDb } from "@/lib/db";
+import { saveCodingCard } from "@/lib/repositories/cards";
 import { loadRepositoryCoding } from "@/lib/repositories/detail";
-import { updateRepositoryCodingSettings } from "@/lib/repositories/save";
+import { settingsActor } from "@/lib/settings-history/sections";
 
 type Params = { id: string };
 
@@ -24,11 +29,15 @@ export const GET = apiHandler<"admin", undefined, typeof codingQuery, Params>(
 );
 
 /**
- * Saves the repository's coding policy: exactly `RepositoryCodingInput` (any other key answers
- * 400). Answers the saved policy.
+ * Saves the Coding card (admins of the repo's organization, whichever of theirs is active):
+ * exactly `codingCardInputSchema` – the switch, work item match and policy – in one
+ * transaction with one change-history entry. Answers `{ ok, card, warnings }` with the saved
+ * card and the other repos whose matches conflict with its match.
  */
-export const PUT = apiHandler<"admin", typeof RepositoryCodingInput, undefined, Params>(
-  { access: "admin", body: RepositoryCodingInput },
-  async ({ user, params, body }): Promise<RepositoryCoding | ActionResult> =>
-    updateRepositoryCodingSettings(user, requireUuid(params.id), body),
+export const PUT = apiHandler<"member", typeof codingCardInputSchema, undefined, Params>(
+  { body: codingCardInputSchema },
+  async ({ user, params, body }): Promise<CodingCardSaveResult> => {
+    const { repository } = await requireRepositoryAccess(user, params.id, "admin");
+    return saveCodingCard(getDb(), settingsActor(user), repository, body);
+  },
 );

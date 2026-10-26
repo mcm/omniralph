@@ -26,10 +26,9 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import type { RepositoryCodingInput } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReviewsCardInput } from "@/lib/api/repositories";
+import type { CodingCardInput, ReviewsCardInput } from "@/lib/api/repositories";
 import { settingsHistorySchema, type SettingsHistory } from "@/lib/api/settings-history";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -92,8 +91,9 @@ const baseReviews: ReviewsCardInput = {
   reviewerInstructions: "",
 };
 
-const baseCoding: RepositoryCodingInput = {
+const baseCoding: CodingCardInput = {
   codingEnabled: true,
+  workItemMatch: null,
   codingInstructions: null,
   openPullRequestEarly: false,
   historyRewrite: "when-asked",
@@ -255,19 +255,22 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
             respondToReviewsAndCi: false,
           },
         ),
-      ).toMatchObject({ historyRewrite: "always", respondToReviewsAndCi: false });
+      ).toMatchObject({
+        ok: true,
+        card: { historyRewrite: "always", respondToReviewsAndCi: false },
+      });
       expect((await entries("repository.coding", repoId))[0]!.changes).toEqual([
-        {
-          field: "historyRewrite",
-          label: "Rewrite history",
-          before: "When asked",
-          after: "Always",
-        },
         {
           field: "respondToReviewsAndCi",
           label: "Fix review comments and CI failures",
           before: "On",
           after: "Off",
+        },
+        {
+          field: "historyRewrite",
+          label: "Rewrite history",
+          before: "When asked",
+          after: "Always",
         },
       ]);
     });
