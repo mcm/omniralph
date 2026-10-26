@@ -32,6 +32,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { captureChanges } from "@omniralph/db/changes";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -485,6 +486,33 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         ok: false,
         error: "That rule doesn't exist.",
       });
+    });
+
+    it("publishes the repository's change for every rule write, and none for a refused one", async () => {
+      const repositoryChange = [
+        expect.objectContaining({ resource: "repository", ids: [repoId], organizationId: orgId }),
+      ];
+      const added = await captureChanges(() => addCustomRule(repoId, { text: "Flag TODOs." }));
+      expect(added.result).toEqual({ ok: true });
+      expect(added.changes).toEqual(repositoryChange);
+      const [rule] = await db.select().from(rules);
+      for (const write of [
+        () => editRule(repoId, rule!.id, { text: "Flag every TODO." }),
+        () => setRuleEnabled(repoId, rule!.id, false),
+        () => deleteRule(repoId, rule!.id),
+      ]) {
+        const { result, changes } = await captureChanges(write);
+        expect(result).toEqual({ ok: true });
+        expect(changes).toEqual(repositoryChange);
+      }
+      const refused = await captureChanges(() => addCustomRule(repoId, { text: "  " }));
+      expect(refused.result).toMatchObject({ ok: false });
+      expect(refused.changes).toEqual([]);
+      state.user = member;
+      const forbidden = await captureChanges(() => addCustomRule(repoId, { text: "Flag TODOs." }));
+      expect(forbidden.result).toMatchObject({ ok: false });
+      expect(forbidden.changes).toEqual([]);
+      state.user = admin;
     });
 
     it("edits, disables and deletes learned rules", async () => {

@@ -70,7 +70,9 @@ async function call(handler: Handler, method: "GET" | "PUT", id: string, body?: 
 }
 
 const put = (id: string, body: unknown) => call(workItemMatch.PUT, "PUT", id, body);
-const detail = async (id: string) => (await call(repositoryDetail.GET, "GET", id)).body;
+/** The repo detail's Coding card, which shows the match and the routing rules. */
+const detail = async (id: string) =>
+  (await call(repositoryDetail.GET, "GET", id)).body.coding as Record<string, unknown>;
 
 /** The repository's `repository.coding` change, as a save or clear of its match records it. */
 const codingChange = (repositoryId: string) => ({

@@ -40,6 +40,8 @@ export const SETTINGS_SECTIONS = [
   "repository.reviews",
   "repository.coding",
   "repository.agents",
+  "repository.ask",
+  "repository.playbooks",
   "routing_rules",
   "connection",
   "organization",

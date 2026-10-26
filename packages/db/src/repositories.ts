@@ -467,7 +467,8 @@ export async function setRepositorySwitches(
 
 /**
  * Sets the stored webhook ID of a connected repository of the organization (null when it
- * has none). Returns false if it has no such repository or it's disconnected.
+ * has none) and records a live `repository` change. Returns false if it has no such
+ * repository or it's disconnected.
  */
 export async function setRepositoryWebhookId(
   db: Database,
@@ -486,6 +487,7 @@ export async function setRepositoryWebhookId(
       ),
     )
     .returning({ id: repositories.id });
+  if (rows.length > 0) recordRepositoryChange(db, { id, organizationId });
   return rows.length > 0;
 }
 

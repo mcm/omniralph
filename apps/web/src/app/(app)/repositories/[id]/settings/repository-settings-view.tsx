@@ -24,7 +24,7 @@ import { SettingsSection, SettingsSubsection } from "@/components/settings-secti
 import { useApiAction } from "@/components/use-api-action";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
-import type { RepositoryDetail } from "@/lib/api/repositories";
+import type { LegacyRepositoryDetail } from "@/lib/api/repositories";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { isAgentOnline } from "@/lib/agents/display";
 import {
@@ -60,7 +60,7 @@ const TAB_LABELS: Record<RepositorySettingsTab, string> = {
 
 interface RepositorySettingsContentProps {
   tab: RepositorySettingsTab;
-  repository: RepositoryDetail["repository"];
+  repository: LegacyRepositoryDetail["repository"];
   settings: {
     depth: ReviewDepth;
     triggers: { onOpen: boolean; onPush: boolean; drafts: boolean };
@@ -71,7 +71,7 @@ interface RepositorySettingsContentProps {
   /** The organization's agents; revoked ones can't be pinned but show in the pinned list. */
   agents: RepositoryAgent[];
   /** Its Reviews, Coding and Ask switches. */
-  taskTypes: RepositoryDetail["taskTypes"];
+  taskTypes: LegacyRepositoryDetail["taskTypes"];
 }
 
 /** An agent of the organization, as the Agents tab shows it. */
@@ -444,7 +444,7 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
   const repository = detail.data?.repository;
   const skeleton = <SettingsSkeleton />;
 
-  const content = (data: RepositoryDetail) => (
+  const content = (data: LegacyRepositoryDetail) => (
     <RepositorySettingsContent
       tab={tab}
       repository={data.repository}
@@ -500,7 +500,10 @@ export function RepositorySettingsView({ tab }: { tab: RepositorySettingsTab }) 
 }
 
 /** `agent` with `online` computed against the browser's clock `now`, not the server's. */
-function withClientOnline(agent: RepositoryDetail["agents"][number], now: number): RepositoryAgent {
+function withClientOnline(
+  agent: LegacyRepositoryDetail["agents"][number],
+  now: number,
+): RepositoryAgent {
   const heartbeat = agent.lastHeartbeatAt ? new Date(agent.lastHeartbeatAt) : null;
   return {
     id: agent.id,

@@ -13,6 +13,7 @@ import {
   users,
   type Database,
 } from "@omniralph/db";
+import { captureChanges } from "@omniralph/db/changes";
 import { GitHubAppAuth } from "@omniralph/scm";
 import {
   createTestDatabase,
@@ -534,9 +535,9 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     expect(await disconnectRepository("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
     });
+    // An unknown repository is not found, for members too.
     expect(await recreateGitLabWebhook("00000000-0000-0000-0000-000000000000")).toMatchObject({
       ok: false,
-      error: expect.stringContaining("admin"),
     });
     expect(hookRequests).toEqual([]);
   });
@@ -676,7 +677,23 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     it("deletes the stored webhook, creates a new one like the picker and clears the problem", async () => {
       const { connectionId, api, web } = await withWebhookProblems();
 
-      expect(await recreateGitLabWebhook(api.id)).toEqual({ ok: true });
+      const { result, changes } = await captureChanges(() => recreateGitLabWebhook(api.id));
+      expect(result).toEqual({ ok: true });
+      // The repo (its webhook) and the connection (its health) changed.
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            resource: "repository",
+            ids: [api.id],
+            organizationId: state.orgId,
+          }),
+          expect.objectContaining({
+            resource: "connection",
+            ids: [connectionId],
+            organizationId: state.orgId,
+          }),
+        ]),
+      );
 
       expect(deletedHooks).toEqual([`101/${api.webhookId}`]);
       expect(hookRequests).toHaveLength(1);
@@ -735,7 +752,10 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     it("refuses members and doesn't touch GitLab", async () => {
       const { connectionId, api } = await withWebhookProblems();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await recreateGitLabWebhook(api.id)).toMatchObject({ ok: false });
+      expect(await recreateGitLabWebhook(api.id)).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("admin"),
+      });
       expect(deletedHooks).toEqual([]);
       expect(hookRequests).toEqual([]);
       expect((await health(connectionId))!.problems).toHaveLength(3);
@@ -744,10 +764,9 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     it("refuses another organization's project", async () => {
       const { connectionId, api } = await withWebhookProblems();
       state.orgId = otherOrgId;
-      expect(await recreateGitLabWebhook(api.id)).toEqual({
-        ok: false,
-        error: "That GitLab project isn't connected.",
-      });
+      const { result, changes } = await captureChanges(() => recreateGitLabWebhook(api.id));
+      expect(result).toEqual({ ok: false, error: expect.any(String) });
+      expect(changes).toEqual([]);
       expect(deletedHooks).toEqual([]);
       expect(hookRequests).toEqual([]);
       const [after] = await state.db.select().from(repositories).where(eq(repositories.id, api.id));

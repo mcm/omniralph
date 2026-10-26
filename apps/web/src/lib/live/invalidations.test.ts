@@ -100,6 +100,12 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.repositories.detail(ID),
       keys.agents.all,
     ]);
+    for (const section of ["repository.ask", "repository.playbooks"] as const) {
+      expect(settings(section, ID)).toEqual([
+        keys.repositories.lists,
+        keys.repositories.detail(ID),
+      ]);
+    }
     expect(settings("repository.coding")).toEqual([keys.repositories.all]);
     expect(settings("routing_rules")).toEqual([
       keys.settings.detail("routing"),

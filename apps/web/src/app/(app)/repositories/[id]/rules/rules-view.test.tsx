@@ -104,7 +104,8 @@ describe("RulesView", () => {
     const seen = mockFetch({ [`GET ${RULES_PATH}`]: () => jsonResponse(rulesOf(rules)) });
     const { client } = renderView();
     await waitFor(() => expect(screen.getByText("Rule number 1")).toBeTruthy());
-    expect(seen[0]!.query.get("next")).toBe("/");
+    // Rules serve a repo of any of the user's organizations: no page to come back to.
+    expect(seen[0]!.query.get("next")).toBeNull();
     rules = [rule(1), rule(2, { kind: "learned", createdBy: null })];
     await client.invalidateQueries();
     await waitFor(() => expect(screen.getByText("Rule number 2")).toBeTruthy());

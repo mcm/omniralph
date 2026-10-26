@@ -175,7 +175,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/repositories/{id}/task-types", () =
       body: { reviews: true, coding: false, ask: true },
     });
     expect((await call(repositoryDetail.GET, "GET", repo)).body).toMatchObject({
-      taskTypes: { reviews: true, coding: false, ask: true },
+      reviews: { enabled: true },
+      coding: { enabled: false },
+      ask: { enabled: true },
     });
   });
 
