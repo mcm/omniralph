@@ -262,7 +262,10 @@ export interface RunIndexFilter {
   kinds?: readonly RunKind[];
   statuses?: readonly RunStatus[];
   origins?: readonly RunOrigin[];
+  /** One repository (kept for callers filtering by one); combines with `repositoryIds`. */
   repositoryId?: string;
+  /** Runs of any of these repositories. */
+  repositoryIds?: readonly string[];
   agentId?: string;
   cursor?: RunCursor | null;
   /** Default 50. */
@@ -290,6 +293,9 @@ export async function listRunIndex(db: Queryable, filter: RunIndexFilter): Promi
   if (filter.statuses?.length) conditions.push(sql`runs.status in (${list(filter.statuses)})`);
   if (filter.origins?.length) conditions.push(sql`runs.origin in (${list(filter.origins)})`);
   if (filter.repositoryId) conditions.push(sql`runs.repository_id = ${filter.repositoryId}`);
+  if (filter.repositoryIds?.length) {
+    conditions.push(sql`runs.repository_id in (${list(filter.repositoryIds)})`);
+  }
   if (filter.agentId) conditions.push(sql`runs.agent_id = ${filter.agentId}`);
   if (filter.cursor) {
     conditions.push(
@@ -657,4 +663,38 @@ export async function loadRunListEntries(
       finishedAt: finished ? entry.updatedAt : null,
     };
   });
+}
+
+/** A repository the Runs screen's Repo filter offers. */
+export interface RunFilterRepository {
+  id: string;
+  organizationId: string;
+  provider: "github" | "gitlab";
+  fullPath: string;
+}
+
+/**
+ * The repositories of the given organizations for the Runs screen's Repo filter, by full
+ * path (then ID): disconnected ones too, since their runs stay in the list.
+ */
+export async function listRunFilterRepositories(
+  db: Queryable,
+  organizationIds: readonly string[],
+): Promise<RunFilterRepository[]> {
+  if (organizationIds.length === 0) return [];
+  const result = await db.execute<{
+    id: string;
+    organization_id: string;
+    provider: "github" | "gitlab";
+    full_path: string;
+  }>(sql`
+    select id, organization_id, provider, full_path from repositories
+    where organization_id in (${list(organizationIds)})
+    order by full_path, id`);
+  return result.rows.map((row) => ({
+    id: row.id,
+    organizationId: row.organization_id,
+    provider: row.provider,
+    fullPath: row.full_path,
+  }));
 }

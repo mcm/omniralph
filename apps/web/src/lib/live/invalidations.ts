@@ -9,7 +9,7 @@
  * typecheck. Safe to import in the browser.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { queryKeys, type QueryArea, type QueryKeys } from "@/lib/api/keys";
+import { queryKeys, runsKeys, type QueryArea, type QueryKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import type {
   ChangeEvent,
@@ -123,8 +123,14 @@ export const LIVE_INVALIDATIONS = {
     ...event.ids.map((repositoryId) => keys.repositories.detail(repositoryId)),
     // A connection's setup and selectable repositories show which are connected.
     keys.connections.all,
+    // The Runs screen's Repo filter lists the repositories.
+    runsKeys(keys).filterOptionsAll,
   ],
-  connection: (_event, keys) => [keys.connections.all, keys.repositories.lists],
+  connection: (_event, keys) => [
+    keys.connections.all,
+    keys.repositories.lists,
+    runsKeys(keys).filterOptionsAll,
+  ],
   organization: (_event, keys) => [keys.organization.all],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;

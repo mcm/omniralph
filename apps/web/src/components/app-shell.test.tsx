@@ -97,10 +97,8 @@ describe("AppShell", () => {
 
   it.each([
     ["/", "Inbox"],
+    ["/runs", "Runs"],
     ["/runs/123", "Runs"],
-    ["/reviews/123", "Runs"],
-    ["/triage", "Runs"],
-    ["/analytics", "Runs"],
     ["/repositories/abc/rules", "Repos"],
     ["/agents/abc", "Agents"],
     ["/settings/routing", "Settings"],
@@ -110,8 +108,14 @@ describe("AppShell", () => {
   });
 
   it("marks Runs current in the tab bar too", () => {
-    renderShell("/reviews/123");
+    renderShell("/runs/123");
     expect(current(tabBar())).toEqual(["Runs"]);
+  });
+
+  it("marks no entry current on /analytics (its own entry comes later)", () => {
+    renderShell("/analytics");
+    expect(current(sidebar())).toEqual([]);
+    expect(current(tabBar())).toEqual([]);
   });
 
   it("puts Inbox and Runs in the tab bar and Repos, Agents and Settings in the drawer", async () => {
@@ -237,6 +241,9 @@ describe("AppShell nav indicators", () => {
     // Runs shows a mint dot while runs run.
     const runs = within(sidebar()).getByRole("link", { name: "Runs, 2 running" });
     expect(runs.querySelector(".or-nav__pip")!.classList.contains("or-dot--run")).toBe(true);
+    expect(runs.getAttribute("href")).toBe("/runs");
+    const runsTab = within(tabBar()).getByRole("link", { name: "Runs, 2 running" });
+    expect(runsTab.querySelector(".or-nav__pip")!.classList.contains("or-dot--run")).toBe(true);
     const counts = seen.filter((request) => request.path === "/api/ui/inbox/counts");
     expect(counts.map((request) => request.query.get("organization"))).toEqual([
       TEST_ORGANIZATION_ID,
@@ -260,5 +267,8 @@ describe("AppShell nav indicators", () => {
     );
     expect(document.querySelector(".or-nav__count")).toBeNull();
     expect(within(tabBar()).getByRole("link", { name: "Inbox" })).toBeTruthy();
+    // No Runs dot while nothing runs.
+    expect(within(sidebar()).getByRole("link", { name: "Runs" })).toBeTruthy();
+    expect(document.querySelector(".or-nav__pip")).toBeNull();
   });
 });

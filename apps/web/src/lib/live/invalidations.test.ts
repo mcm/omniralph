@@ -1,7 +1,7 @@
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
-import { inboxKeys, queryKeys } from "@/lib/api/keys";
+import { inboxKeys, queryKeys, runsKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
@@ -138,18 +138,20 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("repository: the list, each repository and the connections showing them", () => {
+  it("repository: the list, each repository, the connections and the Runs Repo filter showing them", () => {
     expect(liveInvalidations(event({ resource: "repository" }))).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.connections.all,
+      runsKeys(keys).filterOptionsAll,
     ]);
   });
 
-  it("connection: connections and the repositories list", () => {
+  it("connection: connections, the repositories list and the Runs Repo filter", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
       keys.repositories.lists,
+      runsKeys(keys).filterOptionsAll,
     ]);
   });
 

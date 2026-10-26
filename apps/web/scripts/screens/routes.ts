@@ -56,6 +56,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
 
   // The app.
   { name: "home", path: "/", page: "(app)/page.tsx", auth: "signed-in" },
+  { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in" },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "jobs", path: "/jobs", page: "(app)/jobs/page.tsx", auth: "signed-in" },
   {

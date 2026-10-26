@@ -10,11 +10,12 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
 
 /**
  * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at its 2.0 URL,
- * never an old one kept for compatibility: Runs points at `/runs`, which Epic 5 builds, and
- * the other entries at today's pages until their epics replace them (TOOL-575,
+ * never an old one kept for compatibility: Runs points at `/runs` (every run of every
+ * kind), the other entries at today's pages until their epics replace them (TOOL-575,
  * "Coexistence with today's pages"); every entry is visible to members and admins.
- * Reviews, Triage, Jobs, Analytics and the other Settings pages have no entry of their
- * own: they light up Runs or Settings and stay reachable by URL and their in-page tabs.
+ * Runs lights up for `/runs/**` only. Today's Reviews, Triage and Jobs pages (deleted with
+ * the old run pages) and Analytics (its own entry in Epic 10) have no entry and stay
+ * reachable by URL; the other Settings pages light up Settings.
  *
  * Inbox comes first (a phone tab); Backlog (after Runs, a phone tab) and Ask (bottom, a
  * phone tab) are added by Epics 8 and 9 with their pages. The live indicators come from
@@ -36,7 +37,7 @@ export const navItems: readonly NavItem[] = [
     icon: IconPlayerPlay,
     placement: "main",
     phone: "tab",
-    activeFor: ["/reviews", "/triage", "/jobs", "/analytics"],
+    activeFor: ["/runs"],
   },
   {
     id: "repos",

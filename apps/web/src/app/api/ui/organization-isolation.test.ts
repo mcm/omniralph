@@ -208,6 +208,7 @@ const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
 const selectable = await import("./scm-connections/[id]/repositories/route");
 const runList = await import("./runs/route");
+const runFilterOptions = await import("./runs/filter-options/route");
 const runDetail = await import("./runs/[id]/route");
 const runStop = await import("./runs/[id]/stop/route");
 const runRetry = await import("./runs/[id]/retry/route");
@@ -616,6 +617,63 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = null;
     expect((await call(inboxFeed.GET)).status).toBe(401);
     expect((await call(inboxCounts.GET)).status).toBe(401);
+  });
+
+  it("offers only the scope's repositories as Runs filter options, and 404s on the other's", async () => {
+    type Options = { repositories: { id: string; organization: { id: string } }[] };
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        for (const organization of [undefined, "all", own.orgId]) {
+          const query = organization ? `?organization=${organization}` : "";
+          const response = await call(runFilterOptions.GET, { path: `/api/ui${query}` });
+          expect(response).toMatchObject({
+            status: 200,
+            body: {
+              repositories: [
+                { id: own.repoId, fullPath: own.repoPath, organization: { id: own.orgId } },
+              ],
+            },
+          });
+          for (const marker of markers(other)) {
+            expect(JSON.stringify(response.body)).not.toContain(marker);
+          }
+        }
+        expect(
+          await call(runFilterOptions.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
+      }
+    }
+    // A member of both gets both organizations' repositories under organization=all.
+    const [both] = await db
+      .insert(users)
+      .values({ id: "filter-options-both", email: "filter-both@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: both!.id, role: "member" },
+      { organizationId: b.orgId, userId: both!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: both!.id, organizationId: a.orgId });
+    try {
+      state.userId = both!.id;
+      const all = await call(runFilterOptions.GET, { path: "/api/ui?organization=all" });
+      expect(all.status).toBe(200);
+      const listed = (all.body as Options).repositories;
+      expect(new Map(listed.map((r) => [r.id, r.organization.id]))).toEqual(
+        new Map([
+          [a.repoId, a.orgId],
+          [b.repoId, b.orgId],
+        ]),
+      );
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, both!.id));
+      await db.delete(users).where(eq(users.id, both!.id));
+    }
+    state.userId = null;
+    expect((await call(runFilterOptions.GET)).status).toBe(401);
   });
 
   it("spans only the user's memberships with organization=all in the Inbox", async () => {

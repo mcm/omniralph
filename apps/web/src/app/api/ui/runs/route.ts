@@ -30,7 +30,7 @@ export const GET = apiHandler({}, async ({ user, request }): Promise<RunList> =>
     kinds: query.kind,
     statuses: query.status,
     origins: query.origin,
-    repositoryId: query.repository,
+    repositoryIds: query.repository,
     agentId: query.agent,
     cursor: query.cursor,
     limit: query.limit,

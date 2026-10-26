@@ -1,0 +1,30 @@
+"use client";
+
+import { ChangeBadge, IssueBadge, OrgBadge, RepoBadge } from "@omniralph/ui";
+import type { RunRow } from "@/lib/api/runs";
+
+/**
+ * A run row's badges, in order (Design rules 1, 8 and 13): the organization (only under
+ * "All organizations"), the work item, the repo and the PR/MR. Plain badges: the row link
+ * covers the row.
+ */
+export function RunRowBadges({
+  run,
+  showOrganization,
+}: {
+  run: RunRow;
+  showOrganization: boolean;
+}) {
+  return (
+    <>
+      {showOrganization ? <OrgBadge name={run.organization.name} /> : null}
+      {run.workItem ? <IssueBadge tracker="linear" id={run.workItem.identifier} /> : null}
+      {run.repository ? (
+        <RepoBadge host={run.repository.provider} name={run.repository.fullPath} />
+      ) : null}
+      {run.pullRequest ? (
+        <ChangeBadge host={run.pullRequest.provider} number={run.pullRequest.number} />
+      ) : null}
+    </>
+  );
+}

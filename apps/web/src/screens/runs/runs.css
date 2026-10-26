@@ -1,0 +1,50 @@
+/*
+ * The Runs screen (Design board Runs): a rail with the title, the Kind, Status and Repo
+ * filters and the runs, beside the open run's detail. Only `--or-` tokens.
+ */
+.or-runs {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-runs__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-runs__title {
+  margin: 0;
+  padding: 20px 20px 12px;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-runs__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 12px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-runs__list {
+  min-height: 0;
+  padding: 8px 0;
+}
+
+.or-runs__list .or-empty {
+  padding: 40px 20px;
+}
+
+.or-runs--stale {
+  opacity: 0.6;
+}
+
+.or-runs__more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 20px;
+}

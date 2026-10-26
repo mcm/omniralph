@@ -93,6 +93,13 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   the current organization). `header` renders content above the items (e.g. who is
   signed in and a `ThemeControl`, styled with `.or-menu__heading`, `-title` and `-detail`);
   its controls keep their own keys, and Tab / Shift+Tab move between them and the items.
+  Consecutive items with the same `group` form a labeled `role="group"`; `mark` (a node,
+  e.g. a `BrandMark`) replaces the icon; `keepOpen` items don't close the menu.
+- `FilterMenu`: `label`, `options` (`{ value, label, icon?, group? }`; `icon` is a Tabler
+  icon or a mark element), `selected`, `onChange` and `multiple?`. The `.or-filter` button
+  is named "{label}: All" or "{label}: " and the chosen labels (more than two shorten to
+  "A, B +n" on screen); its `Menu` has "All", a checkable item per option (grouped by
+  `group`), and with `multiple` toggles that keep the menu open plus a "Clear" item.
 - `ConfirmDialog`: controlled (`open`, `onOpenChange`) `role="alertdialog"` with `title`,
   `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
   disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.
