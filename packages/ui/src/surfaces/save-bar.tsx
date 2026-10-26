@@ -25,6 +25,8 @@ export interface SaveBarProps {
   saving?: boolean;
   /** Why the last save failed, shown in an alert. */
   error?: ReactNode;
+  /** The Save button's label, e.g. "Save 2 changes". Defaults to "Save". */
+  saveLabel?: string;
   className?: string;
 }
 
@@ -38,6 +40,7 @@ export function SaveBar({
   onDiscard,
   saving = false,
   error,
+  saveLabel = "Save",
   className,
 }: SaveBarProps) {
   if (changes.length === 0) return null;
@@ -93,7 +96,7 @@ export function SaveBar({
           Discard
         </Button>
         <Button variant="solid" onClick={onSave} disabled={saving} aria-busy={saving || undefined}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : saveLabel}
         </Button>
       </div>
     </div>

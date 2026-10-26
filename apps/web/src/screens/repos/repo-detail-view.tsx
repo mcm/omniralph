@@ -23,6 +23,7 @@ import { runListHref } from "@/lib/runs/hrefs";
 import { useProblemAction } from "./mutations";
 import { useRepositoryDetail } from "./queries";
 import { RemoveRepoDialog } from "./remove-repo-dialog";
+import { ReviewsCard } from "./reviews-card";
 import "./repo-detail.css";
 
 /** Shown for a repo that doesn't exist, was removed, or is outside the user's organizations. */
@@ -178,11 +179,16 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
           key={section.id}
           id={section.id}
           className="or-repo-section"
-          aria-labelledby={`or-repo-section-${section.id}`}
+          // A card section is the card's own region (named by its title): not a second one.
+          aria-labelledby={section.id === "reviews" ? undefined : `or-repo-section-${section.id}`}
         >
-          <h2 id={`or-repo-section-${section.id}`} className="or-repo-section__title">
-            {section.label}
-          </h2>
+          {section.id === "reviews" ? (
+            <ReviewsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+          ) : (
+            <h2 id={`or-repo-section-${section.id}`} className="or-repo-section__title">
+              {section.label}
+            </h2>
+          )}
         </section>
       ))}
       {detail.canEdit ? (

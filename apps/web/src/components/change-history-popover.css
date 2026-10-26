@@ -1,0 +1,47 @@
+/* A settings card's change history (ⓘ): the latest change, then every change, newest first. */
+.or-change-history {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+
+.or-change-history__latest {
+  margin: 0;
+  color: var(--or-text);
+}
+
+.or-change-history__error,
+.or-change-history__loading {
+  margin: 0;
+}
+
+.or-change-history__error {
+  color: var(--or-fail);
+}
+
+.or-change-history__entries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--or-line);
+  list-style: none;
+}
+
+.or-change-history__meta {
+  margin: 0 0 4px;
+  color: var(--or-text);
+  font-size: 12px;
+}
+
+.or-change-history__changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}

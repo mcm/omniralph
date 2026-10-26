@@ -95,3 +95,24 @@ export function useProblemAction(repositoryId: string) {
     success: (_result, problem) => PROBLEM_ACTION_DONE[problem.code] ?? "Done",
   });
 }
+
+/**
+ * A card save's `applyResult`: writes the saved card into the repo's detail (`patchDetail`)
+ * and, when the card has rail fields, the repo's row in every cached rail (`patchRow`), so
+ * the view shows the saved state without a refetch.
+ */
+export async function applySavedCard(
+  cache: MutationCache,
+  repositoryId: string,
+  patchDetail: (detail: RepositoryDetail) => RepositoryDetail,
+  patchRow?: (row: RepositoryListItem) => RepositoryListItem,
+) {
+  await cache.set<RepositoryDetail>(reposKeys(cache.keys).detail(repositoryId), (previous) =>
+    previous ? patchDetail(previous) : previous,
+  );
+  if (patchRow) {
+    await updateListRows(cache, (rows) =>
+      rows.map((row) => (row.id === repositoryId ? patchRow(row) : row)),
+    );
+  }
+}

@@ -1,7 +1,7 @@
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
-import { inboxKeys, queryKeys, runsKeys } from "@/lib/api/keys";
+import { inboxKeys, queryKeys, runsKeys, settingsHistoryKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
@@ -19,6 +19,7 @@ const OTHER_RUN = "55555555-5555-4555-8555-555555555555";
 const ID = "33333333-3333-4333-8333-333333333333";
 const keys = queryKeys(ORG);
 const playbooks = playbookKeys(keys);
+const history = settingsHistoryKeys(keys);
 
 /** Every repository's list and detail (their status follows runs, agents and connections). */
 const repositoryViews = [keys.repositories.lists, [...keys.repositories.all, "detail"]];
@@ -89,7 +90,7 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("settings: by section and subject", () => {
+  it("settings: by section and subject, with the section's open change history", () => {
     const settings = (section: string, subjectId?: string) =>
       liveInvalidations(
         event({ resource: "settings", section, subjectId } as Partial<ChangeEvent> & {
@@ -99,34 +100,49 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.reviews", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
+      history.section("repository.reviews", ID),
     ]);
     expect(settings("repository.coding", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
+      history.section("repository.coding", ID),
     ]);
     expect(settings("repository.agents", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.agents.all,
+      history.section("repository.agents", ID),
     ]);
     for (const section of ["repository.ask", "repository.playbooks"] as const) {
       expect(settings(section, ID)).toEqual([
         keys.repositories.lists,
         keys.repositories.detail(ID),
+        history.section(section, ID),
       ]);
     }
-    expect(settings("repository.coding")).toEqual([keys.repositories.all]);
+    expect(settings("repository.coding")).toEqual([
+      keys.repositories.all,
+      history.section("repository.coding", undefined),
+    ]);
     expect(settings("routing_rules")).toEqual([
       keys.settings.detail("routing"),
       keys.settings.detail("tracker-labels"),
+      history.section("routing_rules", undefined),
     ]);
-    expect(settings("connection", ID)).toEqual([keys.connections.all]);
-    expect(settings("organization")).toEqual([keys.organization.all]);
+    expect(settings("connection", ID)).toEqual([
+      keys.connections.all,
+      history.section("connection", ID),
+    ]);
+    expect(settings("organization")).toEqual([
+      keys.organization.all,
+      history.section("organization", undefined),
+    ]);
     expect(settings("agent_defaults")).toEqual([
       keys.settings.detail("agent-defaults"),
       keys.settings.detail("host-tools"),
       keys.agents.all,
       keys.repositories.all,
+      history.section("agent_defaults", undefined),
     ]);
     expect(settings("profile")).toEqual([]);
   });
@@ -153,6 +169,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.repositories.detail(ID),
       keys.connections.all,
       runsKeys(keys).filterOptionsAll,
+      history.subject(ID),
     ]);
   });
 

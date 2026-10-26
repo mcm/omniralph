@@ -1,6 +1,10 @@
 // Repos for the Repos screen's tests, as `GET /api/ui/repositories` and `/{id}` answer them.
 import { TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
-import type { RepositoryDetail, RepositoryListItem } from "@/lib/api/repositories";
+import type {
+  RepositoryDetail,
+  RepositoryListItem,
+  ReviewDepthOption,
+} from "@/lib/api/repositories";
 
 export const BETA_ID = "22222222-2222-4222-8222-222222222222";
 export const REPO_PORTAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
@@ -62,6 +66,46 @@ export function betaRow(overrides: Partial<RepositoryListItem> = {}): Repository
   });
 }
 
+/** Every review depth, as the detail lists them (`REVIEW_DEPTHS`). */
+export const DEPTHS: ReviewDepthOption[] = [
+  {
+    id: "quick",
+    label: "Quick",
+    summary: "Reads only the change and flags clear problems. Fastest and cheapest.",
+    details: {
+      model: "Haiku 5.5",
+      tokenCap: "60k per review",
+      reads: "The diff only",
+      comments: "Inline findings plus a summary",
+      typicalTime: "Shortest",
+    },
+  },
+  {
+    id: "standard",
+    label: "Standard",
+    summary: "Reads the change and the code around it. The default.",
+    details: {
+      model: "Sonnet 5.5",
+      tokenCap: "200k per review",
+      reads: "The diff and nearby files",
+      comments: "Inline findings plus a summary",
+      typicalTime: "Baseline",
+    },
+  },
+  {
+    id: "deep",
+    label: "Deep",
+    summary: "Explores the repo to check the change against the code it touches.",
+    details: {
+      model: "Opus 5.5",
+      tokenCap: "500k per review",
+      reads: "The diff and the whole repo",
+      comments: "Inline findings plus a summary",
+      typicalTime: "About 2× Standard",
+    },
+  },
+];
+
 /** The detail of `row` (the portal by default), as an admin of its organization sees it. */
 export function repoDetail(
   row: RepositoryListItem = portalRow(),
@@ -90,7 +134,7 @@ export function repoDetail(
       pathExcludes: [],
       reviewerInstructions: "",
     },
-    depths: [],
+    depths: DEPTHS,
     coding: {
       enabled: row.codingEnabled,
       workItemMatch: null,

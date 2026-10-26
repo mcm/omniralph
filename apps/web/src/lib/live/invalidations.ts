@@ -9,15 +9,22 @@
  * typecheck. Safe to import in the browser.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { queryKeys, runsKeys, type QueryArea, type QueryKeys } from "@/lib/api/keys";
+import {
+  queryKeys,
+  runsKeys,
+  settingsHistoryKeys,
+  type QueryArea,
+  type QueryKeys,
+} from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
-import type {
-  ChangeEvent,
-  ChangeEventOf,
-  ChangeEventResource,
-  SettingsSection,
-  UntrackedSettingsSection,
-  UserSettingsSection,
+import {
+  SETTINGS_SECTIONS,
+  type ChangeEvent,
+  type ChangeEventOf,
+  type ChangeEventResource,
+  type SettingsSection,
+  type UntrackedSettingsSection,
+  type UserSettingsSection,
 } from "./events";
 
 declare module "@tanstack/react-query" {
@@ -72,6 +79,12 @@ const SETTINGS_INVALIDATIONS: Record<
   profile: () => [],
 };
 
+function isTrackedSection(
+  section: SettingsSection | UntrackedSettingsSection | UserSettingsSection,
+): section is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(section);
+}
+
 function repositoryKeys(keys: QueryKeys, repositoryId: string | undefined): QueryKey[] {
   return repositoryId
     ? [keys.repositories.lists, keys.repositories.detail(repositoryId)]
@@ -119,7 +132,13 @@ export const LIVE_INVALIDATIONS = {
     ...repositoryViews(keys),
     ...(event.runId ? [keys.runs.detail(event.runId)] : []),
   ],
-  settings: (event, keys) => SETTINGS_INVALIDATIONS[event.section](keys, event.subjectId),
+  settings: (event, keys) => [
+    ...SETTINGS_INVALIDATIONS[event.section](keys, event.subjectId),
+    // An open change history (the info button) of the section.
+    ...(isTrackedSection(event.section)
+      ? [settingsHistoryKeys(keys).section(event.section, event.subjectId)]
+      : []),
+  ],
   agent: (event, keys) => [
     keys.agents.lists,
     ...event.ids.map((agentId) => keys.agents.detail(agentId)),
@@ -135,6 +154,8 @@ export const LIVE_INVALIDATIONS = {
     keys.connections.all,
     // The Runs screen's Repo filter lists the repositories.
     runsKeys(keys).filterOptionsAll,
+    // An open change history of one of the repository's cards.
+    ...event.ids.map((repositoryId) => settingsHistoryKeys(keys).subject(repositoryId)),
   ],
   connection: (_event, keys) => [
     keys.connections.all,
@@ -167,6 +188,7 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "runs",
   "transcripts",
   "repositories",
+  "settingsHistory",
 ];
 
 /**

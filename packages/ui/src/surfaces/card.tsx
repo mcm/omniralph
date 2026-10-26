@@ -15,6 +15,11 @@ export interface CardProps {
   info?: ReactNode;
   /** The ⓘ button's label. Defaults to "About this card". */
   infoLabel?: string;
+  /**
+   * Drawn right after the title instead of `info`'s popover: a popover of its own, e.g. the
+   * app's change history ⓘ.
+   */
+  titleAddon?: ReactNode;
   /** Actions aligned to the right of the header (e.g. a `Toolbar`). */
   actions?: ReactNode;
   /** The title's id; generated when omitted. */
@@ -29,6 +34,7 @@ export function Card({
   headingLevel = 2,
   info,
   infoLabel,
+  titleAddon,
   actions,
   titleId,
   className,
@@ -45,6 +51,7 @@ export function Card({
             {title}
           </Heading>
           {info !== undefined ? <InfoPopover label={infoLabel}>{info}</InfoPopover> : null}
+          {titleAddon}
         </div>
         {actions !== undefined ? <div className="or-card__actions">{actions}</div> : null}
       </div>

@@ -50,6 +50,13 @@ describe("Card", () => {
     );
   });
 
+  it("draws titleAddon right after the title, outside the heading", () => {
+    render(<Card title="Reviews" titleAddon={<button type="button">Change history</button>} />);
+    const heading = screen.getByRole("heading", { level: 2, name: "Reviews" });
+    const addon = screen.getByRole("button", { name: "Change history" });
+    expect(heading.nextElementSibling).toBe(addon);
+  });
+
   it("names the info button with infoLabel", () => {
     render(<Card title="Usage" info="From transcripts." infoLabel="About usage" />);
     expect(screen.getByRole("button", { name: "About usage" })).toBeTruthy();

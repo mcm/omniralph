@@ -19,6 +19,7 @@ export const QUERY_AREAS = [
   "repositories",
   "runs",
   "settings",
+  "settingsHistory",
   "transcripts",
 ] as const;
 export type QueryArea = (typeof QUERY_AREAS)[number];
@@ -112,5 +113,38 @@ export function runsKeys(keys: QueryKeys) {
     filterOptionsAll: [...keys.runs.all, "filter-options"] as QueryKey,
     diff: (runId: string, stepId: string, commit: string) =>
       keys.diffs.part(runId, "story", { step: stepId, commit }),
+  };
+}
+
+/**
+ * Query keys of a settings section's change history (`GET /api/ui/settings-history`),
+ * subject first (a repository or connection ID, `none` for organization-wide sections), so
+ * a `repository` event reaches its repository's histories and a `settings` event its
+ * section's. Scope-wide: a repository of another organization keeps its history under the
+ * active organization's keys.
+ */
+export function settingsHistoryKeys(keys: QueryKeys) {
+  const subjectKey = (subject: string | undefined) => subject ?? "none";
+  return {
+    all: keys.settingsHistory.all,
+    subject: (subject: string | undefined): QueryKey => [
+      ...keys.settingsHistory.all,
+      subjectKey(subject),
+    ],
+    section: (section: string, subject: string | undefined): QueryKey => [
+      ...keys.settingsHistory.all,
+      subjectKey(subject),
+      section,
+    ],
+    history: (
+      section: string,
+      subject: string | undefined,
+      organization: string | undefined,
+    ): QueryKey => [
+      ...keys.settingsHistory.all,
+      subjectKey(subject),
+      section,
+      { organization: organization ?? null },
+    ],
   };
 }

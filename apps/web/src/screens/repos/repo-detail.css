@@ -96,6 +96,59 @@
   line-height: 1.3;
 }
 
+/* A settings card (Reviews, Coding, Ask…): help line, fields, then its save bar. */
+.or-repo-card {
+  container-type: inline-size;
+}
+
+.or-repo-card__help {
+  margin: 0 0 16px;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-repo-card__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-repo-card .or-savebar {
+  margin-top: 16px;
+}
+
+/* Narrow cards (the Ask panel open, phone) put each label above its control. */
+@container (max-width: 560px) {
+  .or-repo-card .or-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .or-repo-card .or-field__head {
+    padding-top: 0;
+  }
+}
+
+.or-repo-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-top: 8px;
+}
+
+.or-repo-depth {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.or-repo-depth__summary {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .or-repo-error {
   display: flex;
   align-items: center;

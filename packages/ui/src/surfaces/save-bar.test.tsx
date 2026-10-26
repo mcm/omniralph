@@ -66,6 +66,11 @@ describe("SaveBar", () => {
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });
 
+  it("names Save with saveLabel", () => {
+    setup({ saveLabel: "Save 2 changes" });
+    expect(screen.getByRole("button", { name: "Save 2 changes" })).toBeTruthy();
+  });
+
   it("disables Save while saving", async () => {
     const user = userEvent.setup();
     const { onSave } = setup({ saving: true });
