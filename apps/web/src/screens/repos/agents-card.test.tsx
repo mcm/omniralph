@@ -374,6 +374,22 @@ describe("the Agents card", () => {
     expect(saveBar(card)).toBeNull();
   });
 
+  it("has nothing to save, and doesn't ask before leaving, after unpinning and re-pinning one of two", async () => {
+    renderRepos();
+    const card = await agentsCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Unpin build-1" }));
+    expect(pendingItems(card)).toHaveLength(1);
+    await pinFromMenu(card, "build-1");
+    expect(saveBar(card)).toBeNull();
+    const web = within(screen.getByRole("region", { name: "Repos" }))
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === `/repos/${REPO_WEB}`)!;
+    await user.click(web);
+    expect(screen.queryByRole("alertdialog", { name: "Leave without saving?" })).toBeNull();
+    expect(nav.router.push).toHaveBeenCalledWith(`/repos/${REPO_WEB}`);
+  });
+
   it("updates a row's state from an agent change event", async () => {
     const live = fakeAbly();
     renderRepos({ live });

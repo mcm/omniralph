@@ -88,12 +88,18 @@ const playbooksCard = (): PlaybooksCard => ({
       { id: "pb-security", name: "Security review", builtin: false },
       { id: "builtin:review", name: "Review a pull request", builtin: true },
     ],
-    correlation: [{ id: "builtin:correlate", name: "Combine findings", builtin: true }],
+    correlation: [
+      { id: "builtin:correlate", name: "Combine findings", builtin: true },
+      { id: "pb-strict", name: "Strict combine", builtin: false },
+    ],
     story: [
       { id: "builtin:implement-story", name: "Implement a story", builtin: true },
       { id: "pb-careful", name: "Careful", builtin: false },
     ],
-    request: [{ id: "builtin:handle-request", name: "Handle a request", builtin: true }],
+    request: [
+      { id: "builtin:handle-request", name: "Handle a request", builtin: true },
+      { id: "pb-triage", name: "Triage first", builtin: false },
+    ],
   },
 });
 
@@ -259,6 +265,44 @@ describe("the Ask card", () => {
     expect(reads()).toHaveLength(readsBefore);
   });
 
+  it("stages Ask on with its effect and saves it", async () => {
+    rows = [{ ...portalRow(), askEnabled: false }, webRow()];
+    details[REPO_PORTAL] = repoDetail(rows[0]!, {
+      playbooks: playbooksCard(),
+      ask: { enabled: false },
+    });
+    renderRepos();
+    const card = await askCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("switch", { name: "Ask" }));
+    expect(pendingItems(card)).toEqual([
+      {
+        label: "Ask",
+        from: "Off",
+        to: "On",
+        effect: "Om answers questions about this repo's code.",
+      },
+    ]);
+    await user.click(within(card).getByRole("button", { name: "Save 1 change" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toEqual({ askEnabled: true });
+    await waitFor(() => expect(askIcon().getAttribute("aria-label")).toBe("Ask on"));
+  });
+
+  it("discards a staged Ask change", async () => {
+    renderRepos();
+    const card = await askCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("switch", { name: "Ask" }));
+    await user.click(within(saveBar(card)!).getByRole("button", { name: "Discard" }));
+    expect(saveBar(card)).toBeNull();
+    expect(within(card).getByRole("switch", { name: "Ask" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(saves()).toHaveLength(0);
+  });
+
   it("is read-only for members: switch disabled, no save bar", async () => {
     rows = [portalRow({ organization: { ...portalRow().organization, role: "member" } })];
     details[REPO_PORTAL] = repoDetail(rows[0]!, { playbooks: playbooksCard() });
@@ -335,6 +379,51 @@ describe("the Advanced section", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(reads()).toHaveLength(readsBefore);
+  });
+
+  it("stages and saves the Combine review findings and Requests bindings; Discard restores them", async () => {
+    renderRepos({ showAdvanced: true });
+    await askCard();
+    const card = playbooks()!;
+    const user = userEvent.setup();
+    const combine = within(card).getByRole<HTMLSelectElement>("combobox", {
+      name: "Combine review findings",
+    });
+    const requests = within(card).getByRole<HTMLSelectElement>("combobox", { name: "Requests" });
+    await user.selectOptions(combine, "pb-strict");
+    await user.selectOptions(requests, "pb-triage");
+    expect(pendingItems(card)).toEqual([
+      {
+        label: "Combine review findings playbook",
+        from: "Combine findings",
+        to: "Strict combine",
+        effect: "New correlation runs use Strict combine.",
+      },
+      {
+        label: "Requests playbook",
+        from: "Handle a request",
+        to: "Triage first",
+        effect: "New request runs use Triage first.",
+      },
+    ]);
+    await user.click(within(saveBar(card)!).getByRole("button", { name: "Discard" }));
+    expect(saveBar(card)).toBeNull();
+    expect(combine.value).toBe("builtin:correlate");
+    expect(requests.value).toBe("builtin:handle-request");
+
+    await user.selectOptions(combine, "pb-strict");
+    await user.selectOptions(requests, "pb-triage");
+    await user.click(within(card).getByRole("button", { name: "Save 2 changes" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toEqual({
+      bindings: {
+        review: ["builtin:review"],
+        correlation: "pb-strict",
+        story: "builtin:implement-story",
+        request: "pb-triage",
+      },
+    });
   });
 
   it("saves a review choice as the binding's first entry", async () => {

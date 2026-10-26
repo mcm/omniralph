@@ -118,8 +118,28 @@ export function codingInput(draft: CodingDraft): CodingCardInput {
   };
 }
 
+/** Labels are "or"-joined: the same labels in another order are the same match. */
+const matchKey = (match: WorkItemMatchConditions | null) =>
+  JSON.stringify(match && { ...match, labels: [...match.labels].sort() });
+
 const sameMatch = (a: WorkItemMatchConditions | null, b: WorkItemMatchConditions | null) =>
-  JSON.stringify(a) === JSON.stringify(b);
+  matchKey(a) === matchKey(b);
+
+/**
+ * The warning a save answers when the saved match conflicts with other repos' matches
+ * ("Saved. acme/web matches the same work items, so Om will ask which repo to use."), or
+ * none.
+ */
+export function savedConflictsWarning(
+  warnings: readonly Pick<CodingMatchWarning, "fullPath">[],
+): string | undefined {
+  if (warnings.length === 0) return undefined;
+  const paths = warnings.map((warning) => warning.fullPath);
+  const names =
+    paths.length === 1 ? paths[0] : `${paths.slice(0, -1).join(", ")} and ${paths.at(-1)}`;
+  const verb = paths.length === 1 ? "matches" : "match";
+  return `Saved. ${names} ${verb} the same work items, so Om will ask which repo to use.`;
+}
 
 /** The round limit "up to N rounds each" names: the story playbook's larger one. */
 export function roundLimit(card: CodingCardData): number {
@@ -469,19 +489,25 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
       codingChanges(provider, rounds, conflictPaths, from, to),
     [provider, rounds, conflictPaths],
   );
-  const card = useStagedCard<CodingDraft, z.infer<typeof codingCardSaveResultSchema>>({
+  const card = useStagedCard<
+    CodingDraft,
+    z.infer<typeof codingCardSaveResultSchema> & { warning?: string }
+  >({
     label: "Coding",
     anchorId: "coding",
     saved,
     toChanges,
     needsConfirm: codingNeedsConfirm,
     save: {
-      request: (draft, { organizationId }) =>
-        api.put(
+      request: async (draft, { organizationId }) => {
+        const result = await api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/coding`,
           codingCardSaveResultSchema,
           { body: codingInput(draft), organizationId },
-        ),
+        );
+        // The saved match's conflicts replace the "Saved" toast, as a warning toast.
+        return { ...result, warning: savedConflictsWarning(result.warnings) };
+      },
       applyResult: (result, cache) =>
         applySavedCard(
           cache,

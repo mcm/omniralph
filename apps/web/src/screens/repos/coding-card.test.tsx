@@ -27,7 +27,7 @@ import type {
   RepositoryDetail,
   RepositoryListItem,
 } from "@/lib/api/repositories";
-import { CONNECT_TRACKER_HREF } from "./coding-card";
+import { CONNECT_TRACKER_HREF, savedConflictsWarning } from "./coding-card";
 import { ReposView } from "./repos-view";
 import { portalRow, REPO_PORTAL, REPO_WEB, repoDetail, webRow } from "./test-fixtures";
 
@@ -169,13 +169,18 @@ afterEach(() => {
 });
 
 function renderRepos(
-  options: { repositoryId?: string; user?: SessionUser; live?: ReturnType<typeof fakeAbly> } = {},
+  options: {
+    repositoryId?: string;
+    user?: SessionUser;
+    live?: ReturnType<typeof fakeAbly>;
+    showAdvanced?: boolean;
+  } = {},
 ) {
   const client = createTestQueryClient();
   const view = <ReposView repositoryId={options.repositoryId ?? REPO_PORTAL} />;
   render(
     <CurrentUserProvider user={options.user ?? testUser}>
-      <ShowAdvancedProvider initial={false}>
+      <ShowAdvancedProvider initial={options.showAdvanced ?? false}>
         <QueryClientProvider client={client}>
           <UiProvider linkComponent={TestLink}>
             <UnsavedChangesProvider>
@@ -221,6 +226,24 @@ const railRow = (name: string) =>
     .find((row) => row.textContent!.includes(name))!;
 const badgeTexts = (element: Element) =>
   [...element.querySelectorAll(".or-ref__text")].map((badge) => badge.textContent);
+
+describe("savedConflictsWarning", () => {
+  it("names every conflicting repo, or says nothing without conflicts", () => {
+    expect(savedConflictsWarning([])).toBeUndefined();
+    expect(savedConflictsWarning([{ fullPath: "acme/web" }])).toBe(
+      "Saved. acme/web matches the same work items, so Om will ask which repo to use.",
+    );
+    expect(
+      savedConflictsWarning([
+        { fullPath: "acme/web" },
+        { fullPath: "acme/api" },
+        { fullPath: "acme/docs" },
+      ]),
+    ).toBe(
+      "Saved. acme/web, acme/api and acme/docs match the same work items, so Om will ask which repo to use.",
+    );
+  });
+});
 
 describe("the Coding card", () => {
   it("shows the switch, help line, the match as badges, routing rules and pull request fields (GitLab)", async () => {
@@ -399,7 +422,12 @@ describe("the Coding card", () => {
       historyRewrite: "when-asked",
       respondToReviewsAndCi: true,
     });
-    expect(ui.toast).toHaveBeenCalledWith("Saved");
+    // The save's own conflict warnings name the conflicting repo once the staged list is gone.
+    expect(ui.toast).toHaveBeenCalledWith(
+      "Saved. acme/web matches the same work items, so Om will ask which repo to use.",
+      { variant: "warning" },
+    );
+    expect(ui.toast).not.toHaveBeenCalledWith("Saved");
     expect(within(card).getByRole("switch", { name: "Coding" }).getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -571,6 +599,8 @@ describe("the Coding card", () => {
       "Add a work item match before turning on Coding.",
     );
     expect(card.querySelector(".or-repo-match .or-field-error")).toBeNull();
+    // The refused change stays staged.
+    expect(pendingItems(card).map((item) => item.label)).toEqual(["Coding"]);
   });
 
   it("shows “Turn off Coding…” under the match", async () => {
@@ -596,6 +626,84 @@ describe("the Coding card", () => {
     expect(card.querySelector(".or-repo-match .or-field-error")?.textContent).toBe(
       "Turn off Coding before removing the work item match.",
     );
+    expect(pendingItems(card).map((item) => item.label)).toEqual(["Work item match removed"]);
+  });
+
+  it("lists the routing rules with “Show advanced settings” on too", async () => {
+    details[REPO_PORTAL] = portal(
+      { routingRules: [{ position: 2, description: "Label is security" }] },
+      { trackers: [LINEAR] },
+    );
+    renderRepos({ showAdvanced: true });
+    const card = await codingCard();
+    expect(
+      within(card).getByText("Routing rules also send work here (they run before matches):"),
+    ).toBeTruthy();
+    expect(
+      [...card.querySelectorAll(".or-repo-match__rule")].map((rule) => rule.textContent),
+    ).toEqual(["Rule 2Label is security"]);
+  });
+
+  it("saves a changed match after confirming; labels put back in another order stage nothing", async () => {
+    details[REPO_PORTAL] = portal(
+      { enabled: true, workItemMatch: SOC_MATCH },
+      { trackers: [LINEAR] },
+    );
+    renderRepos();
+    const card = await codingCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Edit" }));
+    await user.click(within(editor(card)).getByRole("button", { name: "Remove bug" }));
+    await user.type(within(editor(card)).getByRole("combobox", { name: "Labels" }), "bug{Enter}");
+    await user.click(within(editor(card)).getByRole("button", { name: "Done" }));
+    expect(saveBar(card)).toBeNull();
+
+    await user.click(within(card).getByRole("button", { name: "Edit" }));
+    const team = within(editor(card)).getByRole<HTMLSelectElement>("combobox", { name: "Team" });
+    await waitFor(() =>
+      expect(within(team).getByRole("option", { name: "OPS · Operations" })).toBeTruthy(),
+    );
+    await user.selectOptions(team, "OPS");
+    await user.click(within(editor(card)).getByRole("button", { name: "Done" }));
+    await user.click(within(card).getByRole("button", { name: "Save 1 change" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Save Coding changes?" });
+    expect(dialog.textContent).toContain(
+      "Work item match changed Work items matching Linear team OPS in project Portal and label ui or bug route here instead of Linear team SOC in project Portal and label bug or ui.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toMatchObject({
+      codingEnabled: true,
+      workItemMatch: { tracker: "linear", team: "OPS", project: "Portal" },
+    });
+    expect(card.querySelector(".or-repo-match__sentence")?.getAttribute("aria-label")).toBe(
+      "Linear team OPS in project Portal and label ui or bug",
+    );
+  });
+
+  it("discards every staged field, closing the match editor", async () => {
+    details[REPO_PORTAL] = portal(
+      { enabled: true, workItemMatch: SOC_MATCH },
+      { trackers: [LINEAR] },
+    );
+    renderRepos();
+    const card = await codingCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("switch", { name: "Coding" }));
+    await user.type(instructions(card), "Use pnpm.");
+    await user.click(rewriteOption(card, "Never"));
+    await user.click(within(card).getByRole("button", { name: "Edit" }));
+    expect(pendingItems(card)).toHaveLength(3);
+    await user.click(within(saveBar(card)!).getByRole("button", { name: "Discard" }));
+    expect(saveBar(card)).toBeNull();
+    expect(within(card).queryByRole("group", { name: "Work item match" })).toBeNull();
+    expect(within(card).getByRole("switch", { name: "Coding" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(instructions(card).value).toBe("");
+    expect(rewriteOption(card, "When asked").getAttribute("aria-checked")).toBe("true");
+    expect(saves()).toHaveLength(0);
   });
 
   it("follows another admin's change from a repository event, keeping the edits", async () => {

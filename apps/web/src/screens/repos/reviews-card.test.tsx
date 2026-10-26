@@ -323,6 +323,55 @@ describe("the Reviews card", () => {
       ["Drafts too", "Draft merge requests are reviewed too."],
       ["Skip path added", "Reviews skip files matching vendor/**."],
     ]);
+    await user.click(within(card).getByRole("button", { name: "Save 4 changes" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toEqual({
+      reviewsEnabled: true,
+      triggers: { onOpen: false, onPush: false, drafts: true },
+      depth: "standard",
+      pathExcludes: ["vendor/**"],
+      reviewerInstructions: "",
+    });
+    expect(
+      within(card).getByRole<HTMLInputElement>("checkbox", { name: "Drafts too" }).checked,
+    ).toBe(true);
+  });
+
+  it("stages a removed skip path with its effect and saves without it", async () => {
+    const saved = repoDetail(portalRow());
+    details[REPO_PORTAL] = { ...saved, reviews: { ...saved.reviews, pathExcludes: ["dist/**"] } };
+    renderRepos();
+    const card = await reviewsCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Remove dist/**" }));
+    expect(pendingItems(card)).toEqual([
+      {
+        label: "Skip path removed",
+        from: "dist/**",
+        to: undefined,
+        effect: "Reviews read files matching dist/** again.",
+      },
+    ]);
+    await user.click(within(card).getByRole("button", { name: "Save 1 change" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toMatchObject({ pathExcludes: [] });
+  });
+
+  it("stages nothing for a skip path removed and added back", async () => {
+    const saved = repoDetail(portalRow());
+    details[REPO_PORTAL] = {
+      ...saved,
+      reviews: { ...saved.reviews, pathExcludes: ["dist/**", "vendor/**"] },
+    };
+    renderRepos();
+    const card = await reviewsCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Remove dist/**" }));
+    expect(pendingItems(card)).toHaveLength(1);
+    await user.type(within(card).getByRole("textbox", { name: "Skip paths" }), "dist/**{Enter}");
+    expect(saveBar(card)).toBeNull();
   });
 
   it("refuses a skip path the shared schema rejects", async () => {

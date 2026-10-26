@@ -57,7 +57,7 @@ export interface StagedCard<T> {
   set: <K extends keyof T>(field: K, value: T[K]) => void;
   /** The pending changes, for the `SaveBar`. */
   changes: StagedChange[];
-  /** Whether any field differs from its saved value. */
+  /** Whether the draft has any pending change (`changes` isn't empty). */
   dirty: boolean;
   /** Drops every edit: the draft is the saved values again. */
   discard: () => void;
@@ -105,13 +105,16 @@ export function useStagedCard<T extends object, R>({
   const [confirming, setConfirming] = React.useState<StagedChange[] | null>(null);
 
   const draft = React.useMemo(() => ({ ...saved, ...edits }) as T, [saved, edits]);
-  const dirty = (Object.keys(edits) as (keyof T)[]).some(
+  const edited = (Object.keys(edits) as (keyof T)[]).some(
     (field) => !same(edits[field], saved[field]),
   );
   const changes = React.useMemo(
-    () => (dirty ? toChanges(saved, draft) : []),
-    [dirty, toChanges, saved, draft],
+    () => (edited ? toChanges(saved, draft) : []),
+    [edited, toChanges, saved, draft],
   );
+  // Dirty means something to save: an edit that `toChanges` sees as no change (a list put
+  // back in another order, say) neither shows a save bar nor asks before leaving.
+  const dirty = changes.length > 0;
 
   useUnsavedChanges(label, anchorId, dirty);
 
