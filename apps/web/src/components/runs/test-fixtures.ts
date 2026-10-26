@@ -96,6 +96,7 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     startedAt: at(-60),
     finishedAt: null,
     updatedAt: at(-30),
+    reason: null,
     steps: [],
     attempts: [],
     details: {

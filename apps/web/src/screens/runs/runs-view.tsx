@@ -8,10 +8,11 @@ import {
   ListRow,
   RowList,
   SplitView,
+  useSplitWide,
   type FilterOption,
 } from "@omniralph/ui";
 import { useRouter, useSearchParams } from "next/navigation";
-import type * as React from "react";
+import { useRef, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { RUN_STATUS_LABELS } from "@/components/runs/run-status";
 import { RUN_KINDS, RUN_STATUSES, type RunRow } from "@/lib/api/runs";
@@ -27,6 +28,7 @@ import {
 } from "./filters";
 import { runRowLabel } from "./labels";
 import { useRunFilterOptions, useRunList } from "./queries";
+import { RunDetailView } from "./run-detail-view";
 import { RunRowBadges } from "./run-badges";
 import "./runs.css";
 
@@ -46,18 +48,20 @@ const STATUS_OPTIONS: FilterOption<RunStatus>[] = RUN_STATUSES.map((value) => ({
 export interface RunsViewProps {
   /** The open run (`/runs/{id}`), whose row is selected; none on `/runs`. */
   runId?: string | null;
-  /** The open run's detail, beside the rail. */
-  detail?: React.ReactNode;
+  /** The detail of the run beside the rail; `RunDetailView` by default. */
+  renderDetail?: (runId: string) => ReactNode;
 }
+
+const defaultDetail = (runId: string) => <RunDetailView key={runId} runId={runId} />;
 
 /**
  * The Runs screen (Design board Runs): a rail with the title, the Kind, Status and Repo
  * filters and every run of every kind in the user's scope, newest first, beside the open
- * run's detail. The filters live in the URL (`?kind=&status=&repository=`, each
+ * run's detail (on `/runs`, the first listed run's, when both panes fit). The filters live in the URL (`?kind=&status=&repository=`, each
  * repeatable) and stay there when a run opens. The list is a live query; the rail has no
  * stats line and no notice of its own (the shell's `LiveNotice` covers stopped updates).
  */
-export function RunsView({ runId = null, detail = null }: RunsViewProps) {
+export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filters = parseRunFilters(searchParams);
@@ -68,6 +72,10 @@ export function RunsView({ runId = null, detail = null }: RunsViewProps) {
   const list = useRunList(filters);
   const options = useRunFilterOptions();
   const runs = list.data?.pages.flatMap((page) => page.runs);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const wide = useSplitWide(splitRef);
+  // Without a run in the URL, a wide container shows the first listed run beside the rail.
+  const shownRunId = runId ?? (wide ? (runs?.[0]?.id ?? null) : null);
 
   const hrefWith = (next: RunFilters) =>
     runId ? runInListHref(runId, next) : runFiltersHref(next);
@@ -155,7 +163,7 @@ export function RunsView({ runId = null, detail = null }: RunsViewProps) {
                     tone={tone}
                     time={<time dateTime={run.createdAt}>{compactAge(run.createdAt, now)}</time>}
                     meta={<RunRowBadges run={run} showOrganization={showOrganization} />}
-                    selected={run.id === runId}
+                    selected={run.id === shownRunId}
                   />
                 );
               })}
@@ -180,9 +188,10 @@ export function RunsView({ runId = null, detail = null }: RunsViewProps) {
 
   return (
     <SplitView
+      ref={splitRef}
       className="or-runs"
       list={rail}
-      detail={detail}
+      detail={shownRunId ? renderDetail(shownRunId) : null}
       view={runId ? "detail" : "list"}
       backLink={{ label: "Runs", href: runFiltersHref(filters) }}
       listLabel="Runs"

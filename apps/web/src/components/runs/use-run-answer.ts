@@ -16,8 +16,8 @@ function isRunDetail(data: unknown): data is RunDetail {
   return typeof data === "object" && data !== null && "details" in data && "steps" in data;
 }
 
-/** Writes `update` into the run's cached detail, when there is one. */
-function updateRunDetail(
+/** Writes `update` into the run's cached detail (not its parts under the same key), when there is one. */
+export function updateRunDetail(
   cache: MutationCache,
   key: QueryKey,
   update: (detail: RunDetail) => RunDetail,

@@ -57,6 +57,18 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   // The app.
   { name: "home", path: "/", page: "(app)/page.tsx", auth: "signed-in" },
   { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in" },
+  {
+    name: "run-epic-running",
+    path: `/runs/${ids.ralphRuns.running}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "run-epic-failed",
+    path: `/runs/${ids.ralphRuns.failed}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+  },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "jobs", path: "/jobs", page: "(app)/jobs/page.tsx", auth: "signed-in" },
   {

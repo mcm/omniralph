@@ -21,12 +21,12 @@ import type { RunRow } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { AGENT_ONLINE_WINDOW_MS } from "@/lib/agents/display";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
-import { truncate } from "@/lib/ralph/display";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
 import { storyIssueUrl } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
 import { questionView } from "@/lib/runs/question";
+import { changeRequestName, runReason, withError } from "@/lib/runs/reason";
 
 const TAB_OF_PARAM: Record<InboxTabParam, InboxTab> = {
   "needs-you": "needs_you",
@@ -38,9 +38,6 @@ const PARAM_OF_TAB: Record<InboxTab, InboxTabParam> = {
   problems: "problems",
   running: "running",
 };
-
-/** Longest error a reason quotes. */
-const REASON_ERROR_MAX_LENGTH = 300;
 
 const ACTIONS: Record<InboxCandidate["facts"]["kind"], InboxAction[]> = {
   manual_story: ["done", "skip", "snooze"],
@@ -63,18 +60,7 @@ export function inboxItemActions(item: InboxCandidate): InboxAction[] {
   return ACTIONS[facts.kind];
 }
 
-/** "pull request #42" on GitHub, "merge request !7" on GitLab. */
-function changeRequestName(provider: "github" | "gitlab" | undefined, number: number): string {
-  return provider === "gitlab" ? `merge request !${number}` : `pull request #${number}`;
-}
-
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-
-/** A sentence ending in the error, when there is one. */
-function withError(sentence: string, error: string | null): string {
-  const message = error?.trim().replace(/\s+/g, " ");
-  return message ? `${sentence} ${truncate(message, REASON_ERROR_MAX_LENGTH)}` : sentence;
-}
 
 function pullRequestRef(
   repository: RunRepository,
@@ -104,15 +90,6 @@ interface Context {
   entry: RunListEntry | null;
   references: InboxReferences;
 }
-
-const QUESTION_REASONS = {
-  repository: () => "Om needs to know which repo to work in.",
-  preparation: (story: string | null) =>
-    `Om asks whether to run the preparation of ${story ?? "a manual story"}.`,
-  cleanup: (pr: string) => `Om asks what to do with what's left of the merged ${pr}.`,
-  permission: (tool: string | null) =>
-    tool ? `Om asks to use ${tool}.` : "Om asks to use a tool.",
-} as const;
 
 const REVIEW_STATE_REASONS = {
   none: (pr: string) => `${capitalize(pr)} is waiting for a review.`,
@@ -169,34 +146,32 @@ function itemFields(
           identifier: story.identifier,
           url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),
         },
-        reason: facts.elsewhere
-          ? `${story.identifier} routes to a repo with coding off, so a person has to do it.`
-          : `${story.identifier} is a manual story: a person has to do it before the epic goes on.`,
+        reason: runReason({
+          kind: "manual_story",
+          identifier: story.identifier,
+          elsewhere: !!facts.elsewhere,
+        }),
       };
     }
-    case "blocked_epic": {
-      const names = facts.blockers.map((b) => b.identifier).join(", ");
+    case "blocked_epic":
       return {
         ...base,
-        reason:
-          facts.blockers.length === 1
-            ? `Waiting on ${names}, which is outside the epic.`
-            : `Waiting on ${names}, which are outside the epic.`,
+        reason: runReason({
+          kind: "blocked_epic",
+          blockers: facts.blockers.map((b) => b.identifier),
+        }),
       };
-    }
     case "question": {
       const { question } = facts;
-      const reason =
-        question.kind === "repository"
-          ? QUESTION_REASONS.repository()
-          : question.kind === "preparation"
-            ? QUESTION_REASONS.preparation(question.story)
-            : question.kind === "cleanup"
-              ? QUESTION_REASONS.cleanup(prName)
-              : QUESTION_REASONS.permission(question.tool);
       return {
         ...base,
-        reason,
+        reason: runReason({
+          kind: "question",
+          question: question.kind,
+          story: question.story,
+          tool: question.tool,
+          pullRequest: prName,
+        }),
         question: questionView(
           { ...item, facts },
           { workItem: row?.workItem?.identifier ?? null, repositories: references.repositories },
@@ -206,10 +181,11 @@ function itemFields(
     case "stopped_epic":
       return {
         ...base,
-        reason: withError(
-          item.run?.kind === "epic" ? "The epic was stopped." : "The request was stopped.",
-          facts.error,
-        ),
+        reason: runReason({
+          kind: "stopped",
+          runKind: item.run?.kind === "epic" ? "epic" : "request",
+          error: facts.error,
+        }),
       };
     case "prd_ready": {
       const identifier = row?.workItem?.identifier ?? "The work item";
@@ -241,7 +217,7 @@ function itemFields(
       };
     }
     case "failed_run":
-      return { ...base, reason: withError("The run failed.", facts.error) };
+      return { ...base, reason: runReason({ kind: "failed", error: facts.error }) };
     case "failed_system": {
       const { job } = facts;
       const repository = job.repositoryId

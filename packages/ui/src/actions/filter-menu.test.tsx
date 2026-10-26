@@ -12,7 +12,7 @@ const KINDS: FilterOption<Kind>[] = [
   { value: "review", label: "Review" },
 ];
 
-function Harness({
+function ControlledFilterMenu({
   multiple = true,
   initial = [],
   onChange,
@@ -54,7 +54,7 @@ describe("filterMenuValue", () => {
 describe("FilterMenu", () => {
   it("names the button {label}: All, opens with Enter and focuses All", async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<ControlledFilterMenu />);
     const button = screen.getByRole("button", { name: "Kind: All" });
     expect(button.className).toContain("or-filter");
     expect(button.getAttribute("aria-haspopup")).toBe("menu");
@@ -76,7 +76,7 @@ describe("FilterMenu", () => {
   it("moves with the arrow keys and toggles several values, staying open", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness onChange={onChange} />);
+    render(<ControlledFilterMenu onChange={onChange} />);
     screen.getByRole("button", { name: "Kind: All" }).focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menu");
@@ -103,7 +103,7 @@ describe("FilterMenu", () => {
   it("clears the choice with Clear or All, closing the menu", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness initial={["epic", "request"]} onChange={onChange} />);
+    render(<ControlledFilterMenu initial={["epic", "request"]} onChange={onChange} />);
     const button = screen.getByRole("button", { name: "Kind: Epic, Request" });
     await user.click(button);
     const clear = await screen.findByRole("menuitem", { name: "Clear" });
@@ -120,7 +120,7 @@ describe("FilterMenu", () => {
   });
 
   it("shortens many chosen values on the button but names them all", async () => {
-    render(<Harness initial={["epic", "request", "review"]} />);
+    render(<ControlledFilterMenu initial={["epic", "request", "review"]} />);
     const button = screen.getByRole("button", { name: "Kind: Epic, Request, Review" });
     expect(button.textContent).toBe("Kind:Epic, Request +1");
   });
@@ -128,7 +128,7 @@ describe("FilterMenu", () => {
   it("picks one value and closes without multiple, with no Clear item", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<Harness multiple={false} initial={["epic"]} onChange={onChange} />);
+    render(<ControlledFilterMenu multiple={false} initial={["epic"]} onChange={onChange} />);
     await user.click(screen.getByRole("button", { name: "Kind: Epic" }));
     await screen.findByRole("menu");
     expect(screen.queryByRole("menuitem", { name: "Clear" })).toBeNull();
@@ -140,7 +140,7 @@ describe("FilterMenu", () => {
   it("groups options that carry a group and draws mark elements", async () => {
     const user = userEvent.setup();
     render(
-      <Harness
+      <ControlledFilterMenu
         options={[
           { value: "epic", label: "acme/api", group: "Acme", icon: <svg data-testid="gh" /> },
           { value: "request", label: "acme/web", group: "Acme" },

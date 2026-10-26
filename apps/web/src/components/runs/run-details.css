@@ -1,0 +1,52 @@
+/* The run detail's Details section: label/value rows. Only `--or-` tokens. */
+.or-run-details__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.or-run-details__row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.or-run-details__row dt {
+  color: var(--or-ter);
+}
+
+.or-run-details__row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--or-text);
+  overflow-wrap: anywhere;
+}
+
+.or-run-details__lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-run-details__lane {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .or-run-details__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}

@@ -288,7 +288,8 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   detail), `listLabel` (names the list `region`), `detailLabel?` (default "Details"),
   `listWidth?` (`{ wide, narrow }` px, default 340/300; `wide` applies from a 1200 px
   viewport) and `fixedPane?` (`"list"`, default, or `"detail"`, which gives the width to the
-  detail and lets the list fill the rest). The panes sit in a size container
+  detail and lets the list fill the rest), and `ref?` (the root, the size container, e.g. for
+  `useSplitWide`). The panes sit in a size container
   (`container: or-split / inline-size`): from a container width of 880 px both show; below
   it only the pane `view` names does, the detail with its back link. That one rule covers
   phone width and a content area narrowed by a side panel. No Next.js imports, no hints.
