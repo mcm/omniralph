@@ -158,6 +158,15 @@ export async function getScmConnection(
   return row ?? null;
 }
 
+/** The connection with this ID, whatever its organization: callers check access there. */
+export async function getScmConnectionById(
+  db: Database,
+  id: string,
+): Promise<ScmConnection | null> {
+  const [row] = await db.select().from(scmConnections).where(eq(scmConnections.id, id)).limit(1);
+  return row ?? null;
+}
+
 export async function findScmConnection(
   db: Database,
   provider: ScmProvider,

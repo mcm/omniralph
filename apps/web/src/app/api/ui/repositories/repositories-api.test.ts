@@ -1228,7 +1228,7 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(await disconnectRepository(repos[1]!.id)).toMatchObject({ ok: true });
       deletedHooks.length = 0;
 
-      // Members and other organizations can't remove it.
+      // Members can't remove it, and other organizations don't find it.
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await removeScmConnection(connection!.id)).toEqual({
         ok: false,
@@ -1237,10 +1237,9 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       });
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       state.orgId = otherOrgId;
-      expect(await removeScmConnection(connection!.id)).toEqual({
+      expect(await removeScmConnection(connection!.id)).toMatchObject({
         ok: false,
-        status: 400,
-        error: "That connection doesn't exist.",
+        status: 404,
       });
       expect(deletedHooks).toEqual([]);
       expect(await state.db.select().from(scmConnections)).toHaveLength(1);
