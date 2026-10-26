@@ -172,9 +172,10 @@ export function describeWorkItemTrackerContract(
           Other: toOther,
         });
         const notOm = await allPages(tracker, { delegatedToOmniralph: false, limit: 50 });
-        expect(Object.fromEntries(notOm.items.map((item) => [item.title, item.delegate]))).toEqual(
-          { None: null, Other: toOther },
-        );
+        expect(Object.fromEntries(notOm.items.map((item) => [item.title, item.delegate]))).toEqual({
+          None: null,
+          Other: toOther,
+        });
       });
     });
 
@@ -333,6 +334,40 @@ export function describeWorkItemTrackerContract(
         expect(plain.items.some((i) => "routingFields" in i)).toBe(false);
       });
 
+      it("filters by team key, project name and label names, ignoring case", async () => {
+        const plain = await h.seed({ teamId: teamA, title: "Plain", state: "todo" });
+        const inProject = await h.seed({
+          teamId: teamA,
+          title: "In project",
+          state: "backlog",
+          projectId: h.projectId,
+        });
+        const labeled = await h.seed({
+          teamId: teamA,
+          title: "Labeled",
+          state: "todo",
+          labels: ["Frontend"],
+        });
+        const other = await h.seed({ teamId: teamB, title: "Other", state: "todo" });
+        const teamKey = (await tracker.get(plain.id)).team.key;
+        const projectName = (await tracker.get(inProject.id)).project!.name;
+        const list = async (
+          input: Omit<Parameters<WorkItemTracker["listCandidates"]>[0], "limit">,
+        ) => identifiers((await allPages(tracker, { ...input, limit: 50 })).items);
+
+        expect(await list({ teamKey: teamKey.toLowerCase() })).toEqual(
+          [plain, inProject, labeled].map((s) => s.identifier).sort(),
+        );
+        expect(await list({ projectName: projectName.toUpperCase() })).toEqual([
+          inProject.identifier,
+        ]);
+        expect(await list({ labelNames: ["frontend", "backend"] })).toEqual([labeled.identifier]);
+        expect(await list({ teamKey, labelNames: ["missing"] })).toEqual([]);
+        expect(await list({ teamKey: (await tracker.get(other.id)).team.key })).toEqual([
+          other.identifier,
+        ]);
+      });
+
       it("filters by each state", async () => {
         const byState = new Map<string, string>();
         for (const state of WORK_ITEM_STATES) {
@@ -343,6 +378,34 @@ export function describeWorkItemTrackerContract(
           expect(page.items.map((item) => item.identifier)).toEqual([byState.get(state)]);
           expect(page.items[0]!.state.category).toBe(state);
         }
+      });
+    });
+
+    describe("routingFields", () => {
+      it("reads an item's routing fields and its parent's, as listCandidates carries them", async () => {
+        const parent = await h.seed({ teamId: teamA, title: "Parent", state: "todo" });
+        const child = await h.seed({
+          teamId: teamA,
+          title: "Child",
+          state: "backlog",
+          parentId: parent.id,
+          labels: ["frontend"],
+        });
+        const { items } = await allPages(tracker, {
+          teamId: teamA,
+          withRoutingFields: true,
+          limit: 50,
+        });
+        const listed = items.find((i) => i.id === child.id)!.routingFields;
+        expect(await tracker.routingFields(child.id)).toEqual(listed);
+        expect(await tracker.routingFields(child.identifier)).toEqual(listed);
+        expect((await tracker.routingFields(parent.id)).parent).toBeNull();
+      });
+
+      it("throws WorkItemNotFoundError for an unknown ref", async () => {
+        await expect(tracker.routingFields(h.missingRef)).rejects.toBeInstanceOf(
+          WorkItemNotFoundError,
+        );
       });
     });
 

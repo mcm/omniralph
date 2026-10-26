@@ -30,6 +30,7 @@ function sample(resource: (typeof CHANGE_RESOURCES)[number]): ChangeEvent {
   const base = { v: 1 as const, ids: [ID], organizationId: ORG, at: "2026-10-25T12:00:00.000Z" };
   if (resource === "settings") return { ...base, resource, section: "routing_rules" };
   if (resource === "inbox_state") return { ...base, resource, ids: [`manual_story:${ID}`] };
+  if (resource === "work_item") return { ...base, resource, ids: [`linear-${ID}`] };
   return { ...base, resource } as unknown as ChangeEvent;
 }
 

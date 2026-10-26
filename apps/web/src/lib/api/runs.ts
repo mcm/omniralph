@@ -38,6 +38,8 @@ export const RUN_LIST_DEFAULT_LIMIT = 50;
 export const RUN_LIST_MAX_LIMIT = 100;
 
 const provider = z.enum(["github", "gitlab"]);
+/** A code host. */
+export const scmProviderSchema = provider;
 
 /** The organization a row belongs to, and the user's role there. */
 export const organizationRefSchema = z.object({

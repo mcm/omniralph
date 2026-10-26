@@ -10,6 +10,7 @@
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import {
+  backlogKeys,
   queryKeys,
   runsKeys,
   settingsHistoryKeys,
@@ -50,15 +51,17 @@ const SETTINGS_INVALIDATIONS: Record<
   (keys: QueryKeys, subjectId: string | undefined) => QueryKey[]
 > = {
   "repository.reviews": (keys, id) => repositoryKeys(keys, id),
-  "repository.coding": (keys, id) => repositoryKeys(keys, id),
+  // Coding on or off, or a changed work item match, changes which items the Backlog lists.
+  "repository.coding": (keys, id) => [...repositoryKeys(keys, id), keys.backlog.all],
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.agents.all],
   "repository.ask": (keys, id) => repositoryKeys(keys, id),
   "repository.playbooks": (keys, id) => repositoryKeys(keys, id),
-  // The routing rules, and the tracker labels routing applies.
+  // The routing rules, and the tracker labels routing applies; the Backlog routes by them.
   routing_rules: (keys) => [
     keys.settings.detail("routing"),
     keys.settings.detail("tracker-labels"),
+    keys.backlog.all,
   ],
   connection: (keys) => [keys.connections.all],
   organization: (keys) => [keys.organization.all],
@@ -112,6 +115,8 @@ export const LIVE_INVALIDATIONS = {
           keys.inbox.all,
           keys.analytics.all,
           ...repositoryViews(keys),
+          // A work item's detail shows its run (whether its PRD can be edited).
+          backlogKeys(keys).details,
         ]
       : // System work (a repository sync, a cleanup) belongs to no run: Analytics counts it,
         // and a failed repository sync is a problem of its repository.
@@ -156,14 +161,23 @@ export const LIVE_INVALIDATIONS = {
     runsKeys(keys).filterOptionsAll,
     // An open change history of one of the repository's cards.
     ...event.ids.map((repositoryId) => settingsHistoryKeys(keys).subject(repositoryId)),
+    // The Backlog lists work items that route to connected repos with Coding on.
+    keys.backlog.all,
   ],
   connection: (_event, keys) => [
     keys.connections.all,
     // Connection health problems are repositories' problems.
     ...repositoryViews(keys),
     runsKeys(keys).filterOptionsAll,
+    // A tracker connection's state mapping decides the Backlog's groups.
+    keys.backlog.all,
   ],
   organization: (_event, keys) => [keys.organization.all],
+  // The Backlog's list, counts and Up next, and the named items' details and share links.
+  work_item: (event, keys) => [
+    keys.backlog.all,
+    ...event.ids.map((id) => backlogKeys(keys).detail(id)),
+  ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
 };
@@ -191,6 +205,9 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "settingsHistory",
   // The add-repo sheet lists the connections of any organization the user is an admin of.
   "connections",
+  // The Backlog lists every organization's work items, and opens any of them.
+  "backlog",
+  "workItems",
 ];
 
 /**

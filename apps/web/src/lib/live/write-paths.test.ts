@@ -61,6 +61,9 @@ import {
   setAgentHostToolPath,
   setRepositorySwitches,
   setTriageRunStatus,
+  setWorkItemRepository,
+  clearWorkItemRepository,
+  recordWorkItemEvent,
   updateAgentConfig,
   updateLane,
   updateMemberRole,
@@ -175,14 +178,24 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     runId,
   });
 
+  /** A `work_item` event of Linear issues. */
+  const workItemEvent = (...issueIds: string[]) => ({
+    channel: orgChannel,
+    v: 1,
+    resource: "work_item",
+    ids: issueIds.map((id) => `linear-${id}`),
+    organizationId: orgId,
+  });
+
   describe("runs", () => {
     it("createRun, updateRun, updateStory and upsertStories publish the run", async () => {
       let runId = "";
+      // A new run also changes its work item (it leaves the Backlog).
       expect(
         await published(async () => {
           runId = (await epicRun()).id;
         }),
-      ).toEqual([runEvent(runId)]);
+      ).toEqual([runEvent(runId), workItemEvent(`issue-${issue}`)]);
       expect(await published(() => updateRun(db, runId, { status: "running" }))).toEqual([
         runEvent(runId),
       ]);
@@ -344,9 +357,10 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
             })
           ).run.id;
         }),
-      ).toEqual([runEvent(runId)]);
+      ).toEqual([runEvent(runId), workItemEvent("triage-issue")]);
       expect(await published(() => setTriageRunStatus(db, runId, "failed"))).toEqual([
         runEvent(runId),
+        workItemEvent("triage-issue"),
       ]);
     });
 
@@ -870,6 +884,32 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(
         await published(() => removeOrganizationDomain(db, orgId, "removed.example.com")),
       ).toEqual([orgEvent]);
+    });
+  });
+
+  describe("work items", () => {
+    it("a repo choice saved or cleared and an Omniralph action publish the work item", async () => {
+      const key = { organizationId: orgId, tracker: "linear" as const, externalId: "item-1" };
+      expect(
+        await published(() =>
+          setWorkItemRepository(db, { ...key, repositoryId: repoId, userId: null }),
+        ),
+      ).toEqual([workItemEvent("item-1")]);
+      expect(await published(() => clearWorkItemRepository(db, key))).toEqual([
+        workItemEvent("item-1"),
+      ]);
+      // Nothing to clear: nothing changed.
+      expect(await published(() => clearWorkItemRepository(db, key))).toEqual([]);
+      expect(
+        await published(() =>
+          recordWorkItemEvent(db, {
+            ...key,
+            kind: "moved_to_needs_refining",
+            actorUserId: null,
+            actorName: "Ada",
+          }),
+        ),
+      ).toEqual([workItemEvent("item-1")]);
     });
   });
 

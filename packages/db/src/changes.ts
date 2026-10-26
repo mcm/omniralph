@@ -24,6 +24,7 @@ export const CHANGE_RESOURCES = [
   "repository",
   "connection",
   "organization",
+  "work_item",
 ] as const;
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
 
@@ -71,6 +72,7 @@ export class ChangeCollector {
   private listener: (() => void) | undefined;
 
   add(change: RecordedChange): void {
+    notifyCommitted(change);
     const key = changeKey(change);
     const existing = this.pending.get(key);
     if (existing) {
@@ -97,6 +99,31 @@ export class ChangeCollector {
   /** Calls `listener` on every change added from now on (e.g. a late write after the flush). */
   onAdd(listener: (() => void) | undefined): void {
     this.listener = listener;
+  }
+}
+
+type CommittedChangeListener = (change: RecordedChange) => void;
+
+const committedListeners = new Set<CommittedChangeListener>();
+
+/**
+ * Calls `listener` with every change that reaches a collector, i.e. once its write is
+ * committed (a rolled-back transaction's changes never do), e.g. to drop a cache the change
+ * makes stale. A listener that throws is logged and doesn't stop the others. Returns a
+ * function that removes it.
+ */
+export function onCommittedChange(listener: CommittedChangeListener): () => void {
+  committedListeners.add(listener);
+  return () => void committedListeners.delete(listener);
+}
+
+function notifyCommitted(change: RecordedChange): void {
+  for (const listener of committedListeners) {
+    try {
+      listener(change);
+    } catch (error) {
+      console.warn("A committed-change listener failed", error);
+    }
   }
 }
 

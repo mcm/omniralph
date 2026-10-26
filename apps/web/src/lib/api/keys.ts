@@ -9,6 +9,7 @@ import type { QueryKey } from "@tanstack/react-query";
  */
 export const QUERY_AREAS = [
   "analytics",
+  "backlog",
   "chatAccounts",
   "connections",
   "deliveries",
@@ -21,6 +22,7 @@ export const QUERY_AREAS = [
   "settings",
   "settingsHistory",
   "transcripts",
+  "workItems",
 ] as const;
 export type QueryArea = (typeof QUERY_AREAS)[number];
 
@@ -146,5 +148,30 @@ export function settingsHistoryKeys(keys: QueryKeys) {
       section,
       { organization: organization ?? null },
     ],
+  };
+}
+
+/**
+ * Query keys of the Backlog (`/api/ui/backlog/**`), keyed by organization scope: a list per
+ * filters, the counts (the nav count) and Up next, all under `keys.backlog.all`, which a
+ * `work_item` change event invalidates. A work item's detail and its parts (share links) sit
+ * under `keys.workItems.detail(id)` (`id` = the work item URL ID, `linear-<issue id>`).
+ */
+export function backlogKeys(keys: QueryKeys) {
+  return {
+    all: keys.backlog.all,
+    lists: keys.backlog.lists,
+    list: (filters: { source?: string | null; repo?: string | null }, scope: string) =>
+      keys.backlog.list({
+        source: filters.source ?? "",
+        repo: filters.repo ?? "",
+        organization: scope,
+      }),
+    counts: (scope: string) => [...keys.backlog.all, "counts", { organization: scope }] as QueryKey,
+    upNext: (scope: string) =>
+      [...keys.backlog.all, "up-next", { organization: scope }] as QueryKey,
+    detail: (id: string) => keys.workItems.detail(id),
+    /** Every work item's detail. */
+    details: [...keys.workItems.all, "detail"] as QueryKey,
   };
 }

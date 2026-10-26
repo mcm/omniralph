@@ -568,6 +568,32 @@ describe("SdkLinearGateway reads", () => {
     expect(page.issues[1]!.blockers).toEqual([]);
   });
 
+  it("filters issues by team key, project name and label names, ignoring case", async () => {
+    resolvers.ListIssues = () => ({
+      issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+    });
+    await gateway().listIssues({
+      teamKey: "eng",
+      projectName: "Portal",
+      labelNames: ["ui", "Web"],
+      first: 50,
+    });
+    expect(calls[0]!.variables).toMatchObject({
+      filter: {
+        and: [
+          { team: { key: { eqIgnoreCase: "eng" } } },
+          { project: { name: { eqIgnoreCase: "Portal" } } },
+          {
+            or: [
+              { labels: { some: { name: { eqIgnoreCase: "ui" } } } },
+              { labels: { some: { name: { eqIgnoreCase: "Web" } } } },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
   it("lists issues not delegated to a user, and answers no cursor on the last page", async () => {
     resolvers.ListIssues = () => ({
       issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: "end" } },

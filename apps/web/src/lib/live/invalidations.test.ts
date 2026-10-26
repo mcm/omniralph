@@ -1,7 +1,7 @@
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
-import { inboxKeys, queryKeys, runsKeys, settingsHistoryKeys } from "@/lib/api/keys";
+import { backlogKeys, inboxKeys, queryKeys, runsKeys, settingsHistoryKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
@@ -20,6 +20,7 @@ const ID = "33333333-3333-4333-8333-333333333333";
 const keys = queryKeys(ORG);
 const playbooks = playbookKeys(keys);
 const history = settingsHistoryKeys(keys);
+const backlog = backlogKeys(keys);
 
 /** Every repository's list and detail (their status follows runs, agents and connections). */
 const repositoryViews = [keys.repositories.lists, [...keys.repositories.all, "detail"]];
@@ -32,13 +33,14 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(Object.keys(LIVE_INVALIDATIONS).sort()).toEqual([...CHANGE_RESOURCES].sort());
   });
 
-  it("run: the run's detail, every list that shows runs and the repositories' status", () => {
+  it("run: the run's detail, every list that shows runs, the repositories' status and work item details", () => {
     expect(liveInvalidations(event({ resource: "run", runId: RUN }))).toEqual([
       keys.runs.lists,
       keys.runs.detail(RUN),
       keys.inbox.all,
       keys.analytics.all,
       ...repositoryViews,
+      backlog.details,
     ]);
   });
 
@@ -105,6 +107,7 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("repository.coding", ID)).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
+      keys.backlog.all,
       history.section("repository.coding", ID),
     ]);
     expect(settings("repository.agents", ID)).toEqual([
@@ -122,11 +125,13 @@ describe("LIVE_INVALIDATIONS", () => {
     }
     expect(settings("repository.coding")).toEqual([
       keys.repositories.all,
+      keys.backlog.all,
       history.section("repository.coding", undefined),
     ]);
     expect(settings("routing_rules")).toEqual([
       keys.settings.detail("routing"),
       keys.settings.detail("tracker-labels"),
+      keys.backlog.all,
       history.section("routing_rules", undefined),
     ]);
     expect(settings("connection", ID)).toEqual([
@@ -163,22 +168,42 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("repository: the list, each repository, the connections and the Runs Repo filter showing them", () => {
+  it("repository: the list, each repository, the connections, the Runs Repo filter and the Backlog showing them", () => {
     expect(liveInvalidations(event({ resource: "repository" }))).toEqual([
       keys.repositories.lists,
       keys.repositories.detail(ID),
       keys.connections.all,
       runsKeys(keys).filterOptionsAll,
       history.subject(ID),
+      keys.backlog.all,
     ]);
   });
 
-  it("connection: connections, the repositories' list and details and the Runs Repo filter", () => {
+  it("connection: connections, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
       ...repositoryViews,
       runsKeys(keys).filterOptionsAll,
+      keys.backlog.all,
     ]);
+  });
+
+  it("work_item: the Backlog's list, counts and Up next, and each named item's detail", () => {
+    const ids = [`linear-${ID}`, `linear-${RUN}`];
+    const prefixes = liveInvalidations(event({ resource: "work_item", ids }));
+    expect(prefixes).toEqual([keys.backlog.all, backlog.detail(ids[0]!), backlog.detail(ids[1]!)]);
+    const under = (key: QueryKey) =>
+      prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
+    for (const key of [
+      backlog.list({ source: "linear:project:p1", repo: ID }, "all"),
+      backlog.counts(ORG),
+      backlog.upNext("all"),
+      keys.workItems.part(ids[0]!, "share-links"),
+    ]) {
+      expect(under(key)).toBe(true);
+    }
+    expect(under(backlog.detail(`linear-${OTHER_RUN}`))).toBe(false);
+    expect(under(keys.runs.lists)).toBe(false);
   });
 
   it("organization: the organization's queries", () => {

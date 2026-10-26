@@ -326,9 +326,17 @@ export class FakeLinearGateway implements LinearGateway {
     this.fail("listIssues");
     this.issueLists.push(structuredClone(filter));
     const labelNames = filter.labelIds?.map((id) => this.labelName(id).toLowerCase());
+    const same = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
     const matches = [...this.issues.values()].filter((issue) => {
       if (filter.teamId && issue.teamId !== filter.teamId) return false;
+      if (filter.teamKey && !same(issue.teamKey, filter.teamKey)) return false;
       if (filter.projectId && this.projectIdOf(issue) !== filter.projectId) return false;
+      if (filter.projectName && !same(issue.projectName, filter.projectName)) return false;
+      if (filter.labelNames?.length) {
+        if (!issue.labels.some((l) => filter.labelNames!.some((name) => same(l, name)))) {
+          return false;
+        }
+      }
       if (filter.withoutProject && (this.projectIdOf(issue) || issue.projectName)) return false;
       if (labelNames && labelNames.length > 0) {
         if (!issue.labels.some((l) => labelNames.includes(l.toLowerCase()))) return false;

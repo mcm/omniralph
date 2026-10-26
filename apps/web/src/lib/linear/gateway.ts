@@ -76,9 +76,15 @@ export interface Blocker {
  */
 export interface ListIssuesFilter {
   teamId?: string;
+  /** The team by its key (`ENG`), ignoring case. */
+  teamKey?: string;
   projectId?: string;
+  /** The project by its name, ignoring case. */
+  projectName?: string;
   /** Issues carrying any of these labels. */
   labelIds?: string[];
+  /** Issues carrying a label of any of these names, ignoring case. */
+  labelNames?: string[];
   /** Issues delegated to this (agent) user. */
   delegateId?: string;
   /** Issues not delegated to this user (undelegated ones included). */
@@ -601,9 +607,16 @@ const BLOCKERS_PER_ISSUE = 25;
 export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
   const and: Array<Record<string, unknown>> = [];
   if (filter.teamId) and.push({ team: { id: { eq: filter.teamId } } });
+  if (filter.teamKey) and.push({ team: { key: { eqIgnoreCase: filter.teamKey } } });
   if (filter.projectId) and.push({ project: { id: { eq: filter.projectId } } });
+  if (filter.projectName) and.push({ project: { name: { eqIgnoreCase: filter.projectName } } });
   if (filter.withoutProject) and.push({ project: { null: true } });
   if (filter.labelIds?.length) and.push({ labels: { some: { id: { in: filter.labelIds } } } });
+  if (filter.labelNames?.length) {
+    and.push({
+      or: filter.labelNames.map((name) => ({ labels: { some: { name: { eqIgnoreCase: name } } } })),
+    });
+  }
   if (filter.delegateId) and.push({ delegate: { id: { eq: filter.delegateId } } });
   if (filter.notDelegateId) {
     and.push({

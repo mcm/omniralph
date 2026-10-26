@@ -32,6 +32,7 @@ export const CHANGE_RESOURCES = [
   "repository",
   "connection",
   "organization",
+  "work_item",
 ] as const satisfies readonly ChangeResource[];
 export type ChangeEventResource = (typeof CHANGE_RESOURCES)[number];
 
@@ -67,6 +68,9 @@ export type UserSettingsSection = (typeof USER_SETTINGS_SECTIONS)[number];
 
 const id = z.guid();
 
+/** A work item's URL ID: its tracker and its ID there (`linear-<issue id>`). */
+export const WORK_ITEM_ID_PATTERN = /^linear-[0-9A-Za-z-]{1,100}$/;
+
 /** Fields every event has; `ids` are the changed rows' IDs. */
 const base = {
   v: z.literal(CHANGE_EVENT_VERSION),
@@ -97,6 +101,9 @@ const base = {
  * - `connection`: a code host, tracker or chat connection changed (`ids` = connection IDs).
  * - `organization`: the organization, its members, invitations or domains changed; on the
  *   user's own channel, their membership of it did (their organizations changed).
+ * - `work_item`: work items of a tracker changed there or in Omniralph (an action, a run or
+ *   triage of them, a repo choice), so the Backlog, its counts, Up next and their details may
+ *   have (`ids` = work item URL IDs, `linear-<issue id>`).
  */
 export const changeEventSchemas = {
   run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
@@ -135,6 +142,12 @@ export const changeEventSchemas = {
   repository: z.strictObject({ ...base, resource: z.literal("repository") }),
   connection: z.strictObject({ ...base, resource: z.literal("connection") }),
   organization: z.strictObject({ ...base, resource: z.literal("organization") }),
+  work_item: z.strictObject({
+    ...base,
+    resource: z.literal("work_item"),
+    // Work item URL IDs: the tracker and its ID there, never text.
+    ids: z.array(z.string().regex(WORK_ITEM_ID_PATTERN)).min(1),
+  }),
 } satisfies { [R in ChangeEventResource]: z.ZodType<{ resource: R }> };
 
 export const changeEventSchema = z.discriminatedUnion("resource", [
@@ -148,6 +161,7 @@ export const changeEventSchema = z.discriminatedUnion("resource", [
   changeEventSchemas.repository,
   changeEventSchemas.connection,
   changeEventSchemas.organization,
+  changeEventSchemas.work_item,
 ]);
 
 export type ChangeEvent = z.infer<typeof changeEventSchema>;

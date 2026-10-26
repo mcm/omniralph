@@ -206,7 +206,10 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       input.delegatedToOmniralph === undefined ? undefined : (await this.appUser()).id;
     const page = await this.gateway.listIssues({
       ...(input.teamId && { teamId: input.teamId }),
+      ...(input.teamKey && { teamKey: input.teamKey }),
       ...(input.projectId && { projectId: input.projectId }),
+      ...(input.projectName && { projectName: input.projectName }),
+      ...(input.labelNames?.length && { labelNames: input.labelNames }),
       ...(input.withoutProject && { withoutProject: true }),
       ...(input.withRoutingFields && { withRoutingFields: true }),
       ...(input.labelIds?.length && { labelIds: input.labelIds }),
@@ -370,6 +373,15 @@ export class LinearWorkItemTracker implements WorkItemTracker {
         createdAt: comment.createdAt ?? "",
       }))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async routingFields(ref: WorkItemRef): Promise<WorkItemRouting> {
+    try {
+      return await this.gateway.getRoutingFields(ref);
+    } catch (error) {
+      if (error instanceof InvalidInputLinearError) throw new WorkItemNotFoundError(ref);
+      throw error;
+    }
   }
 
   async listTeams(): Promise<TrackerTeam[]> {

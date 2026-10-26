@@ -3,7 +3,8 @@
  * ("Change repo…", which routing tries first, `apps/web/src/lib/routing/resolve.ts`) and the
  * actions taken on the item in Omniralph (its Activity).
  */
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { repositories, workItemEvents, workItemOverrides } from "./schema.js";
 import type { WorkItemTracker } from "./work-item-matches.js";
@@ -17,6 +18,29 @@ export interface WorkItemKey {
   organizationId: string;
   tracker: WorkItemTracker;
   externalId: string;
+}
+
+/**
+ * The work item's ID in URLs and `work_item` change events: its tracker and its ID there,
+ * `linear-<issue id>`.
+ */
+export function workItemUrlId(tracker: WorkItemTracker, externalId: string): string {
+  return `${tracker}-${externalId}`;
+}
+
+/**
+ * Records a live `work_item` change of the organization's items (by tracker ID), kept once
+ * `db`'s transaction commits: the Backlog, its counts, Up next and the items' details change.
+ */
+export function recordWorkItemChange(
+  db: unknown,
+  input: { organizationId: string; tracker: WorkItemTracker; externalIds: readonly string[] },
+): void {
+  recordChange(db, {
+    resource: "work_item",
+    ids: [...new Set(input.externalIds)].map((id) => workItemUrlId(input.tracker, id)),
+    organizationId: input.organizationId,
+  });
 }
 
 const ofItem = (key: WorkItemKey) =>
@@ -33,6 +57,33 @@ export async function getWorkItemOverride(
 ): Promise<WorkItemOverride | null> {
   const [row] = await db.select().from(workItemOverrides).where(ofItem(key));
   return row ?? null;
+}
+
+/**
+ * The saved choices of the organization's `externalIds` in one query: the chosen repository
+ * ID (null when it was deleted) of each item that has a choice.
+ */
+export async function listWorkItemOverrides(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  tracker: WorkItemTracker,
+  externalIds: readonly string[],
+): Promise<Map<string, string | null>> {
+  if (externalIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      externalId: workItemOverrides.externalId,
+      repositoryId: workItemOverrides.repositoryId,
+    })
+    .from(workItemOverrides)
+    .where(
+      and(
+        eq(workItemOverrides.organizationId, organizationId),
+        eq(workItemOverrides.tracker, tracker),
+        inArray(workItemOverrides.externalId, [...new Set(externalIds)]),
+      ),
+    );
+  return new Map(rows.map((row) => [row.externalId, row.repositoryId]));
 }
 
 export interface SetWorkItemRepositoryInput extends WorkItemKey {
@@ -75,6 +126,7 @@ export async function setWorkItemRepository(
       set: { repositoryId, chosenBy: userId, chosenAt: now, updatedAt: now },
     })
     .returning();
+  recordWorkItemChange(db, { organizationId, tracker, externalIds: [externalId] });
   return saved!;
 }
 
@@ -87,6 +139,13 @@ export async function clearWorkItemRepository(
     .delete(workItemOverrides)
     .where(ofItem(key))
     .returning({ externalId: workItemOverrides.externalId });
+  if (deleted.length > 0) {
+    recordWorkItemChange(db, {
+      organizationId: key.organizationId,
+      tracker: key.tracker,
+      externalIds: [key.externalId],
+    });
+  }
   return deleted.length > 0;
 }
 
@@ -100,7 +159,7 @@ export interface RecordWorkItemEventInput extends WorkItemKey {
   detail?: Record<string, unknown>;
 }
 
-/** Records an action taken on a work item in Omniralph. */
+/** Records an action taken on a work item in Omniralph (its Activity changes: a live change). */
 export async function recordWorkItemEvent(
   db: Pick<Database, "insert">,
   input: RecordWorkItemEventInput,
@@ -110,6 +169,11 @@ export async function recordWorkItemEvent(
     .insert(workItemEvents)
     .values({ ...values, detail })
     .returning();
+  recordWorkItemChange(db, {
+    organizationId: input.organizationId,
+    tracker: input.tracker,
+    externalIds: [input.externalId],
+  });
   return row!;
 }
 

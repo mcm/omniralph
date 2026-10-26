@@ -41,11 +41,13 @@ import {
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { captureChanges } from "@omniralph/db/changes";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { handleLinearWebhook } from "@/lib/linear/ingest";
 import { signBody, type LinearWebhookEvent } from "@/lib/linear/webhook";
+import { cachedBacklog, hasCachedBacklog } from "@/lib/work-items/backlog-cache";
 import { handleReply } from "./reply";
 import { advanceRun, updateStoryAndPlan } from "./run";
 import {
@@ -212,6 +214,22 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await setRules([otherRepoId, labels("frontend")], [repoId, team("ENG")]);
     linear = new FakeLinearGateway();
     defaultBranchCalls = [];
+  });
+
+  it("records a work_item change and drops the Backlog cache when it creates a run", async () => {
+    const issue = linear.add({ identifier: "ENG-1", title: "Single", stateType: "unstarted" });
+    await cachedBacklog(orgId, async () => ({ entries: [], truncated: false }));
+    expect(hasCachedBacklog(orgId)).toBe(true);
+    const { result, changes } = await captureChanges(() => startRun(created(issue.id), deps()));
+    expect(result).toMatchObject({ status: "started", created: true });
+    expect(changes).toContainEqual(
+      expect.objectContaining({
+        resource: "work_item",
+        organizationId: orgId,
+        ids: [`linear-${issue.id}`],
+      }),
+    );
+    expect(hasCachedBacklog(orgId)).toBe(false);
   });
 
   it("starts a children epic: run, stories, started state, description and plan", async () => {

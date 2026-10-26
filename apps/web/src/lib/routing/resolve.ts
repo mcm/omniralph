@@ -92,6 +92,12 @@ export interface RouteDeps {
   rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
   /** Work item matches to route by instead of the saved ones (an unsaved match applied). */
   matches?: readonly RouteWorkItemMatch[];
+  /**
+   * Saved repo choices ("Change repo…") read beforehand for a page of issues: Linear issue ID
+   * to the chosen repository ID, null for an issue without one. An issue not in it is looked
+   * up.
+   */
+  choices?: ReadonlyMap<string, string | null>;
 }
 
 /** A repository's work item match, as routing reads it. */
@@ -217,12 +223,16 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
 
   /** The route a member chose for `issueId` ("Change repo…"), or null without a usable choice. */
   const chosenRoute = async (issueId: string): Promise<RoutedOutcome | null> => {
-    const override = await getWorkItemOverride(deps.db, {
-      organizationId: deps.organizationId,
-      tracker: "linear",
-      externalId: issueId,
-    });
-    const repository = override?.repositoryId ? byId.get(override.repositoryId) : undefined;
+    const repositoryId = deps.choices?.has(issueId)
+      ? deps.choices.get(issueId)
+      : (
+          await getWorkItemOverride(deps.db, {
+            organizationId: deps.organizationId,
+            tracker: "linear",
+            externalId: issueId,
+          })
+        )?.repositoryId;
+    const repository = repositoryId ? byId.get(repositoryId) : undefined;
     if (!repository) return null;
     return { ...outcome(repository, chosenBy(repository.fullPath)), chosen: true };
   };
