@@ -95,6 +95,7 @@ export {
   getRepository,
   getRepositoryWithConnection,
   getScmConnection,
+  getScmConnectionById,
   listConnectionRepositories,
   listRepositoryOverview,
   listRepositoryOverviewPage,

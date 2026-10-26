@@ -3,7 +3,7 @@
 // resource of another of their own organizations switches to it (`/api/organizations/enter`).
 // Pages read no data (only the signed-in layout lists the user's organizations, tested here
 // too), so this is where every page's organization isolation is checked.
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   addMember,
   addOrganizationDomain,
@@ -1801,18 +1801,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(
       await call(repositoryWebhook.POST, { method: "POST", params: { id: b.repoId } }),
     ).toMatchObject({ status: 404 });
-    const refused = [
-      await call(scmConnection.DELETE, { method: "DELETE", params: { id: b.connectionId } }),
-      // The other organization's connection, named as one of the admin's own organization's.
+    // The other organization's connection, named as one of the admin's own organization's.
+    expect(
       await call(selectable.POST, {
         method: "POST",
         params: { id: b.connectionId },
         body: { provider: "github", ids: [500], organizationId: a.orgId },
       }),
-    ];
-    for (const response of refused) expect(response.status).toBe(400);
+    ).toMatchObject({ status: 400 });
     // An organization the admin isn't a member of isn't found.
     for (const response of [
+      await call(scmConnection.DELETE, { method: "DELETE", params: { id: b.connectionId } }),
       await call(repository.DELETE, { method: "DELETE", params: { id: b.repoId } }),
       await call(selectable.POST, {
         method: "POST",
@@ -1844,6 +1843,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ).toHaveLength(1);
     expect(
       await call(repository.DELETE, { method: "DELETE", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+    expect(
+      await call(scmConnection.DELETE, { method: "DELETE", params: { id: "not-a-uuid" } }),
+    ).toMatchObject({ status: 404 });
+    expect(
+      await call(scmConnection.DELETE, { method: "DELETE", params: { id: randomUUID() } }),
     ).toMatchObject({ status: 404 });
 
     // Members change nothing, in their own organization either.
@@ -1884,7 +1889,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ).toEqual([b.repoId]);
   });
 
-  it("lets an admin of another organization list its connections and remove its repos without switching", async () => {
+  it("lets an admin of another organization list its connections and remove its repos and connections without switching", async () => {
     const [user] = await db
       .insert(users)
       .values({ id: "both-repos-admin", email: "both-repos@alpha.io" })
@@ -1970,6 +1975,43 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       // Removed already: not found.
       expect(
         await call(repository.DELETE, { method: "DELETE", params: { id: extra.id } }),
+      ).toMatchObject({ status: 404 });
+
+      // Removing a connection of the other organization, as its admin, without switching.
+      const removable = (await upsertScmConnection(db, {
+        organizationId: b.orgId,
+        provider: "github",
+        name: "beta-removable",
+        baseUrl: "https://api.github.com",
+        externalId: "beta-removable-installation",
+        credentials: {},
+      }))!;
+      const removableRepo = await connectRepository(db, {
+        connectionId: removable.id,
+        provider: "github",
+        externalId: "beta-removable-1",
+        fullPath: "beta-removable/app",
+      });
+      // The active organization's connection stays admin-only.
+      expect(
+        await call(scmConnection.DELETE, { method: "DELETE", params: { id: a.connectionId } }),
+      ).toMatchObject({ status: 403 });
+      expect(
+        await call(scmConnection.DELETE, { method: "DELETE", params: { id: removable.id } }),
+      ).toMatchObject({ status: 200, body: { ok: true } });
+      expect(
+        await db.select().from(scmConnections).where(eq(scmConnections.id, removable.id)),
+      ).toHaveLength(0);
+      expect(await getRepository(db, removableRepo.id)).toBeNull();
+      expect(
+        await db.select().from(scmConnections).where(eq(scmConnections.id, b.connectionId)),
+      ).toHaveLength(1);
+      expect(
+        await db.select().from(scmConnections).where(eq(scmConnections.id, a.connectionId)),
+      ).toHaveLength(1);
+      // Removed already: not found.
+      expect(
+        await call(scmConnection.DELETE, { method: "DELETE", params: { id: removable.id } }),
       ).toMatchObject({ status: 404 });
     } finally {
       await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
