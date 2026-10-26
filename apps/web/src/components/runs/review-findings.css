@@ -1,0 +1,175 @@
+/*
+ * A review pass's Findings tab: findings grouped by file, read-only, and the files the pass
+ * skipped. Severity is text, not color (lavender, mint and coral keep their meanings). Only
+ * `--or-` tokens.
+ */
+.or-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.or-findings__path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 8px;
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-findings__path-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--or-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-findings__count {
+  flex: none;
+  color: var(--or-ter);
+  font-weight: 400;
+}
+
+.or-findings__list,
+.or-findings__skipped-list,
+.or-finding__feedback {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-findings__list {
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+}
+
+.or-finding {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  scroll-margin-top: 16px;
+}
+
+.or-finding + .or-finding {
+  border-top: 1px solid var(--or-line);
+}
+
+.or-finding:target {
+  background: var(--or-sel);
+}
+
+.or-finding__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.or-finding[data-inactive] .or-finding__title {
+  color: var(--or-sec);
+}
+
+.or-finding__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-finding__severity,
+.or-finding__status {
+  color: var(--or-sec);
+  font-weight: 600;
+}
+
+.or-finding__body {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-finding__suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.or-finding__label,
+.or-findings__heading {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-finding__code {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-finding__superseded {
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-finding__feedback {
+  gap: 4px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-finding__feedback li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-finding__note {
+  color: var(--or-sec);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-findings__skipped-list {
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.or-findings__skipped-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.or-findings__reason {
+  color: var(--or-ter);
+}

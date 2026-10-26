@@ -261,3 +261,21 @@ export async function getReviewDetail(
     newerReview: newer ?? null,
   };
 }
+
+/**
+ * The review run of each of the given reviews (passes), by review ID; reviews from before
+ * review runs, or not found, are left out.
+ */
+export async function reviewRunIdsOf(
+  db: Database,
+  reviewIds: readonly string[],
+): Promise<Record<string, string>> {
+  if (reviewIds.length === 0) return {};
+  const rows = await db
+    .select({ id: reviews.id, reviewRunId: reviews.reviewRunId })
+    .from(reviews)
+    .where(inArray(reviews.id, [...new Set(reviewIds)]));
+  return Object.fromEntries(
+    rows.flatMap((r) => (r.reviewRunId ? [[r.id, r.reviewRunId] as const] : [])),
+  );
+}

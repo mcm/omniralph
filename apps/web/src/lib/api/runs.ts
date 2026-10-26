@@ -1,4 +1,5 @@
 import type { InboxQuestionKind, RunKind, RunOrigin, RunStatus } from "@omniralph/db";
+import { FEEDBACK_REASONS } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
 
@@ -500,3 +501,66 @@ export const runSessionSchema = z.object({
 });
 export type RunSession = z.infer<typeof runSessionSchema>;
 export type RunSessionMessageView = z.infer<typeof runSessionMessageSchema>;
+
+/** A finding's severity, most severe first (`findingSeverity` in `@omniralph/db`). */
+export const FINDING_SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
+/** Where a finding is (`findingStatus` in `@omniralph/db`). */
+export const FINDING_STATUSES = ["open", "dismissed", "resolved", "superseded", "merged"] as const;
+
+/** A dismissal of a finding (`@bot dismiss` in its thread, older ones from the control panel). */
+export const findingFeedbackSchema = z.object({
+  id: z.string(),
+  /** `scm`: `@bot dismiss` on the PR/MR; `ui`: the control panel (history only). */
+  source: z.enum(["ui", "scm"]),
+  reason: z.enum(FEEDBACK_REASONS),
+  note: z.string().nullable(),
+  /** A control panel user, or a code-host login (`@name`). */
+  actor: z.string(),
+  createdAt: isoDate,
+  restoredAt: isoDate.nullable(),
+  restoredBy: z.string().nullable(),
+});
+
+export const reviewFindingSchema = z.object({
+  id: z.string(),
+  startLine: z.number(),
+  endLine: z.number(),
+  severity: z.enum(FINDING_SEVERITIES),
+  category: z.string(),
+  title: z.string(),
+  body: z.string(),
+  suggestion: z.string().nullable(),
+  /** 0–1. */
+  confidence: z.number(),
+  status: z.enum(FINDING_STATUSES),
+  /** The finding of a later pass that superseded this one: its run, pass (step) and ID. */
+  supersededBy: z
+    .object({ runId: z.string(), stepId: z.string(), findingId: z.string() })
+    .nullable(),
+  /** Oldest first. */
+  feedback: z.array(findingFeedbackSchema),
+});
+export type ReviewFindingView = z.infer<typeof reviewFindingSchema>;
+
+/** A pass's findings in one file, by start line. */
+export const reviewFindingFileSchema = z.object({
+  path: z.string(),
+  findings: z.array(reviewFindingSchema),
+});
+export type ReviewFindingFile = z.infer<typeof reviewFindingFileSchema>;
+
+/** One pass (a `review_pass` step, same ID) with its findings, grouped by file. */
+export const reviewPassFindingsSchema = z.object({
+  id: z.string(),
+  status: z.enum(REVIEW_PASS_STATUSES),
+  /** Files in the order of their first finding. */
+  files: z.array(reviewFindingFileSchema),
+  findingCount: z.number(),
+  /** Files the pass didn't review, and why (e.g. "too_large"). */
+  skippedFiles: z.array(z.object({ path: z.string(), reason: z.string() })),
+});
+export type ReviewPassFindings = z.infer<typeof reviewPassFindingsSchema>;
+
+/** `GET /api/ui/runs/{id}/findings`: a review run's findings, per pass in step order. */
+export const runFindingsSchema = z.object({ passes: z.array(reviewPassFindingsSchema) });
+export type RunFindings = z.infer<typeof runFindingsSchema>;
