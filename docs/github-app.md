@@ -10,7 +10,7 @@ credential.
 For `ralph` runs ([linear.md](linear.md)) the control panel also opens, updates and marks ready the
 run's pull request through the App (Pull requests: write), and the run's branch is pushed by the
 agent with the brokered write token. The App also lets the control panel look after those PRs:
-Omniralph's own review findings and `@omniralph fix` requests become ralph requests, failed
+Omniralph's own review findings and `@omniralph fix` requests become Om requests, failed
 workflow runs are read (Actions: read) and handed to the run, and a merge starts the cleanup of the
 branch worktree. The repository must be connected here and have its Coding switch on (it needs a
 work item match). cyralph's separate `/github-webhook` webhook and its `gh` login aren't needed
@@ -23,19 +23,19 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 
 | Permission | Access | Used for |
 | -- | -- | -- |
-| Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready ralph runs' PRs |
+| Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready coding runs' PRs |
 | Contents | Read and write | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour); push tokens brokered to running `ralph` jobs only (`contents: write`, one repository, ≤ 1 hour) |
 | Issues | Read & write | The `issue_comment` event (PR conversation comments are issue comments) and replies to `@bot` commands in the PR conversation |
-| Actions | Read | Ralph's CI-fix loop: the workflow runs and failed jobs of a ralph PR's head commit, and the failed jobs' logs |
+| Actions | Read | Om's CI-fix loop: the workflow runs and failed jobs of an Om PR's head commit, and the failed jobs' logs |
 | Metadata | Read | Mandatory for every App |
 
 | Event | Triggers |
 | -- | -- |
-| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); ralph cleans up after a ralph PR is merged (closed + merged); a ralph PR's draft and review-request state (opened, reopened, ready for review, converted to draft, review requested and review request removed) |
-| `pull_request_review` | A ralph PR's review state: approved, changes requested or commented (submitted), and dismissed reviews. The App's own reviews don't count |
-| `issue_comment` | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to ralph on ralph PRs |
+| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); Om cleans up after an Om PR is merged (closed + merged); an Om PR's draft and review-request state (opened, reopened, ready for review, converted to draft, review requested and review request removed) |
+| `pull_request_review` | An Om PR's review state: approved, changes requested or commented (submitted), and dismissed reviews. The App's own reviews don't count |
+| `issue_comment` | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to Om on Om PRs |
 | `pull_request_review_comment` | `@bot dismiss`, `@bot fix` and questions in a finding's thread |
-| `workflow_run` | Ralph's CI-fix loop: a finished workflow run on a ralph PR's head commit (the reconcile cron is the fallback) |
+| `workflow_run` | Om's CI-fix loop: a finished workflow run on an Om PR's head commit (the reconcile cron is the fallback) |
 
 ## Manifest
 
@@ -72,17 +72,17 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 }
 ```
 
-- **Upgrading an existing App** (created before ralph, with `Contents: Read`): change
+- **Upgrading an existing App** (created before Om, with `Contents: Read`): change
   **Contents** to **Read and write** under the App's **Permissions & events**, then accept the new
-  permissions on each installation (**Settings › Applications › Configure**). Until then, ralph
+  permissions on each installation (**Settings › Applications › Configure**). Until then, Om
   jobs get no git credential at all (GitHub refuses the `contents: write` token): the credential
   broker answers `403 scm_permission_missing` and the agent's git credential helper prints which
   installation and permission to fix. Reviews keep working. Apps created before reviews posted replies may also have
-  **Pull requests: Read** only; ralph needs **Read and write** to open its PRs.
-- **Upgrading an existing App** (created before ralph's CI-fix loop): add **Actions: Read** under
+  **Pull requests: Read** only; Om needs **Read and write** to open its PRs.
+- **Upgrading an existing App** (created before Om's CI-fix loop): add **Actions: Read** under
   **Permissions & events**, subscribe to the **Workflow run** event, and accept the new permissions
-  on each installation. Until then, ralph can't see why a PR's CI failed and doesn't try to fix it;
-  reviews and the rest of ralph keep working.
+  on each installation. Until then, Om can't see why a PR's CI failed and doesn't try to fix it;
+  reviews and the rest of Om keep working.
 - **Upgrading an existing App** (created before Omniralph tracked review state): subscribe to the
   **Pull request review** event under **Permissions & events** (no new permission is needed).
   Until then, a PR that Om opened shows only whether it's a draft, waiting for review, merged or
@@ -165,7 +165,7 @@ repository's review depth (Standard by default).
 
 **Repositories › Code-host connections › Remove** (admins) deletes the installation's connection
 from the organization together with its repositories and their reviews, rules, agent pins and
-ralph runs (jobs are kept, without their repository). The App stays installed on GitHub; connect
+coding runs (jobs are kept, without their repository). The App stays installed on GitHub; connect
 it again with **Connect GitHub**, from the same or another organization.
 
 Uninstalling the App on GitHub (**Settings › Applications › Configure › Uninstall**) does the

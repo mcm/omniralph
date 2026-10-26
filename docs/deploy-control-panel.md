@@ -1,8 +1,8 @@
 # Deploying the control panel
 
 The control panel (`apps/web`) is a Next.js 16 app on Vercel. It's the single integration point:
-code hosts send webhooks to it, it owns job state in Postgres, where harnesses claim their jobs, signs
-harness tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
+code hosts send webhooks to it, it owns job state in Postgres, where agents claim their jobs, signs
+agent tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
 
 Prerequisites: a Vercel team with KMS available (beta), the Vercel CLI
 (`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, a Neon API key, and
@@ -85,7 +85,7 @@ It prefers `DATABASE_URL_UNPOOLED` when that's set.
 
 ### Redis (Upstash)
 
-Optional, but without it Neon never suspends while harnesses are online: idle heartbeats, claims,
+Optional, but without it Neon never suspends while agents are online: idle heartbeats, claims,
 revocation checks, rate limits and the `expire-jobs`, `ralph-reconcile` and `chat-run-events`
 crons all query Postgres. With `REDIS_URL` set they use Redis instead, and Postgres is only queried when there's
 work ([ADR 0007](adr/0007-redis-hot-state.md)). Redis only holds state that can be rebuilt from
@@ -94,7 +94,7 @@ Postgres or safely lost, so it needs no backups.
 1. **Storage › Upstash › Create** (Vercel Marketplace, *Upstash for Redis*), or create a database
    in the [Upstash console](https://console.upstash.com). Pick the region closest to the function
    region (e.g. `us-east-1` for `iad1`). The free plan is enough to start; watch its daily command
-   limit, which grows with the number of harnesses (several commands per heartbeat and claim).
+   limit, which grows with the number of agents (several commands per heartbeat and claim).
    Turn eviction on (the hot state is rebuilt when a key is missing).
 2. Use a separate database per environment, as with KMS issuers, so a preview can't change
    production's hot state. Previews can also go without one.
@@ -111,15 +111,15 @@ suspend between token refreshes. Removing `REDIS_URL` (or Redis being unreachabl
 Postgres for everything on the next request; Redis errors are logged as `hot-state: …`. Flushing
 the database is safe at any time.
 
-## 4. KMS issuer for harness tokens (`KMS_AGENT_ISSUER_ID`)
+## 4. KMS issuer for agent tokens (`KMS_AGENT_ISSUER_ID`)
 
-Harness access tokens and job tokens are RS256 JWTs signed by Vercel KMS, so no signing key sits in an
+Agent access tokens and job tokens are RS256 JWTs signed by Vercel KMS, so no signing key sits in an
 env var. Create **one issuer per environment**: a preview deployment must not be able to mint tokens
 that production accepts.
 
 ```sh
 for env in production preview development; do
-  vercel kms create "omniralph-harness-$env" --algorithm RS256
+  vercel kms create "omniralph-agent-$env" --algorithm RS256
 done
 vercel kms list                                    # note each issuer ID
 vercel kms add-grant <productionIssuerId>  --project omniralph --environment production
@@ -152,13 +152,13 @@ PEM file. Do the same per environment if previews use their own GitHub App.
 ## 6. Job dispatch
 
 There's nothing to provision: the `jobs` table in Postgres is the job queue
-([ADR 0006](adr/0006-postgres-job-queue.md)). Harnesses claim jobs with `POST /api/harness/claim`, which
+([ADR 0006](adr/0006-postgres-job-queue.md)). Agents claim jobs with `POST /api/agent/claim`, which
 holds the request for up to 50s while there's nothing to claim (its `maxDuration` is 60s), and
 renew the leases of their running jobs with each heartbeat.
 
 Held claims are billed as Fluid compute memory for the whole hold. To avoid them, set
 `ABLY_API_KEY` ([env.md](env.md)) to an API key of an Ably app (the free plan is enough) with the
-publish and subscribe capabilities: each dispatch then publishes a wake message, and harnesses on a
+publish and subscribe capabilities: each dispatch then publishes a wake message, and agents on a
 current version claim once on it instead of long-polling. Follow the
 [cutover](adr/0009-ably-wake-signals.md#cutover) of ADR 0009; removing the key goes back to the
 long-poll within one heartbeat.
@@ -174,11 +174,11 @@ running jobs aren't lost.
 | Path | Schedule | Does |
 | -- | -- | -- |
 | `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured. With `REDIS_URL` set, it returns without querying Postgres or initialising the chat bot until a run event is recorded (the `chat-run-events:pending` marker) |
-| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no harness claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old |
+| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no agent claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old |
 | `/api/cron/prune-inbox-states` | daily 03:25 UTC | Deletes users' Done and Snooze states of Inbox items not updated for 60 days |
-| `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old harness API rate-limit windows |
+| `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
 | `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week, and the webhook delivery log (`webhook_events`, every verified GitHub, GitLab and Linear delivery with its outcome) older than 14 days, in batches of 1,000 |
-| `/api/cron/ralph-reconcile` | every 10 minutes | Ralph's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open ralph PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)). With `REDIS_URL` set, it returns without querying Postgres until a run is created or advanced (the `ralph:active` marker), and does a full run at least once a day |
+| `/api/cron/ralph-reconcile` | every 10 minutes | The coding loop's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open Om PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)). With `REDIS_URL` set, it returns without querying Postgres until a run is created or advanced (the `ralph:active` marker), and does a full run at least once a day |
 
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`). Vercel sends it as `Authorization: Bearer …`;
 the routes reject everything else. Cron jobs only run for the production deployment.
@@ -197,7 +197,7 @@ Set these per environment (production values shown; see [env.md](env.md) for eve
 | `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). The only instance-wide access setting: there are no instance admins. |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
 | `BOT_HANDLE` | Optional, default `omniralph`. GitHub only: GitLab uses each connection's bot username |
-| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For ralph: from [linear.md](linear.md) |
+| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For Om: from [linear.md](linear.md) |
 
 Configure at least one sign-in provider. Redeploy after changing variables: run the **Deploy web**
 workflow on `main` (**Actions › Deploy web › Run workflow**) or push again to the pull request.
@@ -206,7 +206,7 @@ workflow on `main` (**Actions › Deploy web › Run workflow**) or push again t
 
 The GitHub App, the sign-in OAuth apps and the Linear app configured above are shared by the whole
 deployment. Everything else is per **organization**: code-host connections, repositories,
-the Linear workspace, harnesses, jobs and ralph runs belong to one organization, and only
+the Linear workspace, agents, jobs and coding runs belong to one organization, and only
 its members see them. Roles (`admin`, `member`) are per organization; nobody is an admin of the
 whole instance. See [ADR 0004](adr/0004-organizations.md).
 
@@ -220,7 +220,7 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
 3. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)), as an admin of the organization. Each GitHub installation and GitLab
    connection belongs to the organization that connected it.
-4. **Harnesses › Enroll harness** and follow [deploy-harness.md](deploy-harness.md). Harnesses run only their
+4. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
    organization's jobs.
 5. Optionally tune each repository's **Settings** (triggers, path excludes, instructions, pinning)
    and **Rules**. Reviews run at the repository's review depth (Standard by default).
@@ -251,13 +251,13 @@ gone (404). Each user can replay 10 deliveries a minute.
   `""` as host `base`), e.g. a sensitive variable read from `vercel pull`.
 - **Vercel also builds every push:** `apps/web/vercel.json`'s `git.deploymentEnabled: false` was
   removed, or the project's root directory isn't `apps/web`.
-- **Harnesses get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no
+- **Agents get 401 right after enrolling:** `KMS_AGENT_ISSUER_ID` is missing, or the issuer has no
   grant for this project and environment.
 - **GitHub installation callback fails with KMS but works with the PEM:** the issuer is RS512.
   `vercel kms inspect` shows it; re-import with `--algorithm RS256` into a new issuer.
-- **Jobs stay queued:** no harness of the repository's organization is online that accepts the
-  job's task type at the job's minimum version (**Harnesses**; harnesses of other organizations never take its jobs), the repository is
-  pinned to an offline harness.
+- **Jobs stay queued:** no agent of the repository's organization is online that accepts the
+  job's task type at the job's minimum version (**Agents**; agents of other organizations never take its jobs), the repository is
+  pinned to an offline agent.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be
   connected to one organization. Disconnect a Linear workspace there first; remove a GitHub

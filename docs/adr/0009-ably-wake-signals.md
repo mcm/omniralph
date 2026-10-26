@@ -163,7 +163,7 @@ A person does this after the merge:
 3. Raise `desiredVersion` (Settings › Harnesses) so harnesses update themselves. Each enters wake
    mode on its first heartbeat after the update (its log says `claiming on Ably wake signals`).
 4. Make sure each harness host allows outbound WebSocket connections to Ably
-   ([deploy-harness.md](../deploy-harness.md)); a harness that can't connect still picks jobs up
+   ([deploy-agent.md](../deploy-agent.md)); a harness that can't connect still picks jobs up
    through the heartbeat flag, within 20s.
 
 To roll back, remove `ABLY_API_KEY` and redeploy: the next heartbeat answers `ably: null` and every

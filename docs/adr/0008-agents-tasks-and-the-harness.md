@@ -669,4 +669,4 @@ TOOL-307 installables and host tools. Not built yet:
 - A Claude session of a run-spec job never holds a push credential.
 - The rename needed a one-time reinstall of every host (`@omniralph/harness`, the new config
   path), since hosts on 0.8.0 can't self-update across it; see
-  [deploy-harness.md](../deploy-harness.md#reinstalling-a-host-after-the-rename).
+  [deploy-agent.md](../deploy-agent.md#moving-from-omniralphharness).

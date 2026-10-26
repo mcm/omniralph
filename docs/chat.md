@@ -2,16 +2,16 @@
 
 The chat front door lets people ask Omniralph about their organization from Slack or Discord.
 Mention the bot in a channel of a connected workspace or server and it answers in a thread; reply
-in that thread to continue the conversation. The answers come from the **control-panel agent**, an
+in that thread to continue the conversation. The answers come from **Om**, Omniralph's AI, an
 LLM that runs in the control panel through the [Vercel AI SDK](https://ai-sdk.dev) and the
-[Vercel AI Gateway](https://vercel.com/docs/ai-gateway) and reads the organization's ralph runs,
+[Vercel AI Gateway](https://vercel.com/docs/ai-gateway) and reads the organization's coding runs,
 reviews, jobs, agents and repositories through tools. See
 [ADR 0005](adr/0005-chat-front-door.md) for the design.
 
 The control panel does all of it: it holds the Slack and Discord credentials, receives their
 events, keeps each thread's history in Postgres and calls the model. Agent hosts are only involved
 when the bot starts a run: [code questions](#code-questions) run the channel's "ask about code"
-playbook and [work requests](#ralph-from-chat) its "start work" playbook
+playbook and [work requests](#om-from-chat) its "start work" playbook
 ([chat playbooks](#chat-playbooks)); the control panel never reads code itself. The bot stays in the
 conversation while they run: their answers, questions and approval requests come back to it, and
 it posts them in the thread.
@@ -95,7 +95,7 @@ receives what Discord posts to the Interactions Endpoint URL (`/api/webhooks/dis
 
 ## 3. Set up the AI Gateway
 
-The control-panel agent calls a model through the Vercel AI Gateway. On Vercel, the gateway
+Om calls a model through the Vercel AI Gateway. On Vercel, the gateway
 authenticates with the deployment's OIDC token: enable the AI Gateway for the team (Vercel
 dashboard › **AI Gateway**) and nothing else is needed. Elsewhere (for example `pnpm dev`), create
 a key under **AI Gateway › API keys** and set `AI_GATEWAY_API_KEY`.
@@ -154,7 +154,7 @@ admin chooses others, it runs the built-ins:
 
 - **Ask about code** (`ask`): the `chat-ask` playbook a [code question](#code-questions) runs.
   Default: `builtin:ask-about-code`.
-- **Start work** (`startWork`): the `request` playbook a [work request](#ralph-from-chat) runs.
+- **Start work** (`startWork`): the `request` playbook a [work request](#om-from-chat) runs.
   Default: `builtin:handle-request`.
 
 An admin can choose other playbooks of the same role, built-in or the organization's own
@@ -185,17 +185,17 @@ needs to choose another one and starts nothing.
 Invite the bot to a channel (`/invite @Omniralph` in Slack; in Discord, give it access to the
 channel) and mention it:
 
-> @Omniralph what ralph runs are active?
+> @Omniralph what coding runs are active?
 
 The bot answers in a thread (in Discord it creates one), and everything it posts stays in that
 thread. Replies in the thread continue the same conversation without mentioning the bot again; the
 last 50 messages are kept as context. Direct messages to the bot are ignored.
 
-It can answer questions about the organization's ralph runs (status, stories, PRs/MRs, progress),
+It can answer questions about the organization's coding runs (status, stories, PRs/MRs, progress),
 reviews and their findings, jobs, agents and repositories, with links to the control panel's
 pages. It can [answer questions about a repository's code](#code-questions) by handing them to an
-agent. Linked members can also [hand work to ralph](#ralph-from-chat), steer runs, and
-[file Linear issues](#linear-issues-from-chat) (and delegate them to ralph).
+agent. Linked members can also [hand work to Om](#om-from-chat), steer runs, and
+[file Linear issues](#linear-issues-from-chat) (and delegate them to Om).
 
 You can attach screenshots and text files (e.g. a log) to your messages: the bot sees them
 ([Attachments](#attachments)).
@@ -203,9 +203,9 @@ You can attach screenshots and text files (e.g. a log) to your messages: the bot
 Turns are rate-limited to 10 per minute per chat user and 60 per 10 minutes per organization; the
 bot says so once when a limit is reached.
 
-## Ralph from chat
+## Om from chat
 
-Linked members can ask the bot to change code: it starts a ralph run of the channel's **Start
+Linked members can ask the bot to change code: it starts a coding run of the channel's **Start
 work** [chat playbook](#chat-playbooks) in a repository, and stays the thread's voice while it works. The
 run is a request-mode run, like an [@mention in Linear](linear.md#mentions-request-mode), but it
 belongs to the chat thread instead of a Linear issue; it shows up under **Coding tasks** with the
@@ -215,13 +215,13 @@ platform and channel it came from. The organization doesn't need Linear for it.
 
 > @Omniralph fix the typo in the README of acme/website
 
-The control-panel agent works out the repository from the conversation (asking first when it's
+Om works out the repository from the conversation (asking first when it's
 ambiguous) and starts the run with its `start_work` tool:
 
 - The repository must be one of the organization's repositories with coding on (see
   [linear.md › Configure routing](linear.md#4-configure-routing); Linear routing itself isn't
-  used); otherwise the bot lists the ones it can use. The session runs on a harness that accepts
-  the `coding` task type ([deploy-harness.md](deploy-harness.md#ralph)) and waits in the queue until
+  used); otherwise the bot lists the ones it can use. The session runs on an agent that accepts
+  the `coding` task type ([deploy-agent.md](deploy-agent.md#coding-work)) and waits in the queue until
   one is online.
 - The tool returns the run's ID at once and posts nothing: the bot's reply says the run started,
   with a summary of the request and a link to the run's page. The session gets the agent's
@@ -247,7 +247,7 @@ when that fails). The bot then posts it in its own words, as one message per wak
 | A cleanup question (a stash or a kept branch after the merge)                          | The question and the answers it offers                                          |
 | Completion or failure                                                                  | That the run finished, or failed and why                                        |
 
-Ralph's thoughts, actions and plan changes aren't posted; ask the bot instead
+Om's thoughts, actions and plan changes aren't posted; ask the bot instead
 ([below](#checking-on-and-steering-runs)). Nothing in an event is an instruction to the bot: run
 output is passed to it as data. When an event repeats what the thread was already told, the bot
 posts nothing. Wake-ups don't use up the [turn limits](#6-ask-a-question) of the person who
@@ -280,7 +280,7 @@ the same repository starts the next request on the same branch.
 the run: its status, task, current job, what it waits on (an approval, pending requests) and its
 latest activity (`post_activity` entries). It reports on the thread's latest run, or on any run
 of the organization by run ID, job ID or Linear identifier ("how is ENG-42 doing?");
-`get_ralph_run` gives a ralph run's stories and pending guidance. A linked member can send any
+`get_ralph_run` gives a coding run's stories and pending guidance. A linked member can send any
 run guidance ("tell ENG-42 to skip the migration"): `send_ralph_guidance` adds it as guidance and
 a pending request, exactly like a reply in the run's own session, authored as `<name> (from
 chat)`; a Linear run's session shows a "Guidance from <name> (from chat)" note. A finished run
@@ -290,7 +290,7 @@ stays in Linear.
 ### PR/MR follow-ups
 
 A chat run's PRs/MRs are looked after like
-[those of Linear runs](linear.md#reviews-and-bot-requests-on-ralph-prsmrs): Omniralph's review
+[those of Linear runs](linear.md#reviews-and-bot-requests-on-om-prsmrs): Omniralph's review
 findings, `@omniralph fix` requests and failed CI become requests on the run (within the same
 capped rounds), and the worktree is cleaned up after the merge. Their news ("CI failed on the pull
 request… Working on a fix.", round limits, the cleanup report) reaches the thread as run events,
@@ -315,7 +315,7 @@ started the run: with their linked account's tools, else `read` tools only.
 
 ## Linear issues from chat
 
-Linked members can turn a conversation into a Linear issue, and have ralph build it. The
+Linked members can turn a conversation into a Linear issue, and have Om build it. The
 organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--integrations));
 without one the bot says an admin can connect it under **Settings › Integrations**.
 
@@ -323,7 +323,7 @@ without one the bot says an admin can connect it under **Settings › Integratio
 
 > @Omniralph file an issue in ENG for the login timeout we just discussed
 
-The control-panel agent drafts the issue from the thread with its `draft_linear_issue` tool: a
+Om drafts the issue from the thread with its `draft_linear_issue` tool: a
 title, a self-contained Markdown description (Linear readers don't see the thread), the team and,
 if asked, a project, labels and a priority. The team is matched by key, name or id; if it's
 unknown (or the workspace has several and you didn't say), the bot asks which one.
@@ -334,7 +334,7 @@ labels, priority, title and a preview of the description) and three buttons:
 | Button                  | Does                                                                                          |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | **Create**              | Creates the issue in Linear. The card then shows its identifier and an **Open ENG-123** link. |
-| **Create and delegate** | Creates the issue and [delegates it to ralph](#delegating-to-ralph).                          |
+| **Create and delegate** | Creates the issue and [delegates it to Om](#delegating-to-om).                          |
 | **Cancel**              | Discards the draft; the card says so.                                                         |
 
 - Only the member who asked can click them; anyone else gets a private note to mention the bot
@@ -350,23 +350,23 @@ labels, priority, title and a preview of the description) and three buttons:
   description (`## Screenshots`). One that can't be fetched anymore is left out, and the card says
   so.
 
-### Delegating to ralph
+### Delegating to Om
 
-> @Omniralph file an issue for X and have ralph build it
+> @Omniralph file an issue for X and have Om build it
 
 For a new issue, click **Create and delegate** on the card. For an existing one, ask the bot to
-delegate it by identifier ("have ralph build ENG-42"): its `delegate_linear_issue` tool sets the
+delegate it by identifier ("have Om build ENG-42"): its `delegate_linear_issue` tool sets the
 issue's delegate to the Omniralph app. Either way it's the same as delegating in Linear: Linear
-starts an agent session and ralph builds the issue as described in
+starts an agent session and Om builds the issue as described in
 [linear.md › Delegate an issue](linear.md#5-delegate-an-issue) (the issue's team must be routed to
 a repository with coding on).
 
 The run stays a Linear run: its progress, questions and replies are in the Linear issue's agent
 session, not in chat. The thread gets the issue's link, and one message each when:
 
-- the run starts (`🚀 Ralph started building ENG-42…`);
+- the run starts (`🚀 Omniralph started building ENG-42…`);
 - it opens its pull/merge request (with the link);
-- it finishes, or fails (`⚠️ Ralph stopped working on ENG-42: …`).
+- it finishes, or fails (`⚠️ Omniralph stopped working on ENG-42: …`).
 
 These updates are tied to the thread when the delegation comes from chat and the run starts within
 an hour. If Linear refuses the delegation after creating the issue, the issue is kept and the bot
@@ -379,10 +379,10 @@ checkout of it:
 
 > @Omniralph in acme/api, where do we validate webhook signatures?
 
-- The control-panel agent can't read code itself (and never answers from memory). It hands the
+- Om can't read code itself in chat (and never answers from memory). It hands the
   question, made self-contained, to its `ask_about_code` tool, which starts a run of the
   channel's **Ask about code** [chat playbook](#chat-playbooks) and returns its ID at once. The repository
-  must be one of the organization's connected repositories (ralph doesn't need to be enabled); if
+  must be one of the organization's connected repositories (Om doesn't need to be enabled); if
   it's ambiguous the bot asks which one first.
 - The bot replies that it's looking into it. When the run answers, the bot is
   [woken](#what-the-thread-sees-while-a-run-works) and posts the answer as a new message, with
@@ -405,8 +405,8 @@ A code question is a run of the channel's query task, by default the built-in
 `chat-thread` sink records the answer (or the failure) as a run event, which the bot relays. The
 built-in runs in a read-only sandbox:
 
-- A fresh worktree of the default branch's head, on a harness host
-  ([deploy-harness.md](deploy-harness.md)), run through the fixed query lifecycle
+- A fresh worktree of the default branch's head, on an agent host
+  ([deploy-agent.md](deploy-agent.md)), run through the fixed query lifecycle
   ([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)): the prompt, tools and model come from
   the task and agent definitions, sent with the job. The control panel never reads code.
 - The Claude session gets only **Read, Grep and Glob**, limited to the worktree: it can't write
@@ -414,20 +414,20 @@ built-in runs in a read-only sandbox:
   as quoted data, as in reviews.
 - Up to 30 turns and a token budget of 25% of the token cap of the repository's review depth
   (Quick, Standard or Deep), with the depth's model.
-- If the repository pins jobs to specific harnesses, only those harnesses take it.
+- If the repository pins jobs to specific agents, only those agents take it.
 - When the default branch doesn't exist (e.g. an empty repository), the run finishes without a
   session and the bot says there's no branch to read.
 
-### Harness version
+### Agent version
 
-A code question needs a harness that accepts **query** tasks on **version 0.9.0 or later** (the
-first release with the query task lifecycle); the job carries that in `jobs.min_harness_version`,
-so older harnesses leave it queued (the claim only gives a job to a harness whose reported version
+A code question needs an agent that accepts **query** tasks on **version 0.9.0 or later** (the
+first release with the query task lifecycle); the job carries that in `jobs.min_agent_version`,
+so older agents leave it queued (the claim only gives a job to an agent whose reported version
 is at least the job's minimum). Before queueing, the control panel checks the organization's
-online harnesses (the version and task types they report in heartbeats); when none that would take
-the job can run it, nothing is queued and the bot says so: "no harness … is online", or that the
-online ones need to accept query tasks on 0.9.0 or later. Update or start a harness
-([deploy-harness.md](deploy-harness.md)) and ask again.
+online agents (the version and task types they report in heartbeats); when none that would take
+the job can run it, nothing is queued and the bot says so: "no agent … is online", or that the
+online ones need to accept query tasks on 0.9.0 or later. Update or start an agent
+([deploy-agent.md](deploy-agent.md)) and ask again.
 
 ## Attachments
 
@@ -460,7 +460,7 @@ Images and text files attached to messages in the thread reach the model:
 Who may ask what depends on whether Omniralph knows who's asking. Each tool the agent uses has a
 tier: `read` (questions about the organization and its runs, including
 [code questions](#code-questions)) or `action` (changing something: starting, steering and
-answering [ralph runs](#ralph-from-chat), and
+answering [coding runs](#om-from-chat), and
 [filing and delegating Linear issues](#linear-issues-from-chat)); see
 [What needs a linked account](#what-needs-a-linked-account) for each tool's tier.
 
@@ -518,12 +518,12 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)).                   |
 | "Om isn't set up in chat"                                | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                              |
 | The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand. |
-| A reply didn't reach the ralph session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                              |
+| A reply didn't reach the coding session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                              |
 | A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.         |
 | The bot says the channel's playbook can't run            | An admin chooses another **Ask about code** or **Start work** playbook for the organization (or removes the channel's override): see [Chat playbooks](#chat-playbooks).                |
-| The bot won't start a ralph request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                               |
+| The bot won't start an Om request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                               |
 | The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                       |
 | "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                               |
-| A code question says no harness can take it              | A harness that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to harnesses, it's one of them).                                            |
+| A code question says no agent can take it              | An agent that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to agents, it's one of them).                                            |
 | The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                   |
-| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and a harness that accepts `coding` is online; the run must start within an hour of the delegation.                          |
+| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and an agent that accepts `coding` is online; the run must start within an hour of the delegation.                          |
