@@ -261,6 +261,14 @@ export const Playbook = z.preprocess(
           message: "Review playbooks can't set a model; the repo's review depth sets it.",
         });
       }
+      if (playbook.fallbackModel !== null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["fallbackModel"],
+          message:
+            "Review playbooks can't set a fallback model; the repo's review depth sets the model.",
+        });
+      }
       if (playbook.tokenBudget !== null) {
         ctx.addIssue({
           code: "custom",

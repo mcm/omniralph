@@ -220,11 +220,15 @@ describe("Playbook", () => {
     });
   });
 
-  it("refuses a model or token budget on a review playbook", () => {
+  it("refuses a model, fallback model or token budget on a review playbook", () => {
     const review = { ...chat, role: "review", promptTemplate: "{{pr.title}}" };
     expect(messages(review)).toEqual({});
-    expect(messages({ ...review, model: "opus", tokenBudget: { tokens: 10 } })).toEqual({
+    expect(
+      messages({ ...review, model: "opus", fallbackModel: "sonnet", tokenBudget: { tokens: 10 } }),
+    ).toEqual({
       model: "Review playbooks can't set a model; the repo's review depth sets it.",
+      fallbackModel:
+        "Review playbooks can't set a fallback model; the repo's review depth sets the model.",
       tokenBudget: "Review playbooks can't set a token budget; the repo's review depth sets it.",
     });
     expect(messages({ ...review, role: "review-summary", model: "opus" })).toEqual({

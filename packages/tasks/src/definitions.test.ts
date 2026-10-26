@@ -130,14 +130,14 @@ describe("TaskDefinition", () => {
     ).toEqual(["requires.installables.1", "requires.hostTools.0"]);
   });
 
-  it("accepts a fixed token budget or null (No limit), not a profile fraction", () => {
+  it("accepts a fixed token budget or null (No limit), nothing else", () => {
     for (const tokenBudget of [{ tokens: 1 }, null]) {
       expect(TaskDefinition.safeParse({ ...task, tokenBudget }).success).toBe(true);
     }
     for (const tokenBudget of [
       { tokens: 0 },
-      { profileFraction: 0.25 },
-      { tokens: 10, profileFraction: 0.5 },
+      { fraction: 0.25 },
+      { tokens: 10, fraction: 0.5 },
       {},
     ]) {
       expect(issues(TaskDefinition.safeParse({ ...task, tokenBudget }))[0]).toMatch(/^tokenBudget/);

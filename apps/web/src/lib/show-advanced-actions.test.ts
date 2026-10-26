@@ -1,4 +1,5 @@
 import { closeDb, createDb, createUser, getUserById, type Database } from "@omniralph/db";
+import { captureChanges } from "@omniralph/db/changes";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -11,7 +12,7 @@ vi.mock("server-only", () => ({}));
 
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
-  user: null as { id: string } | null,
+  user: null as { id: string; organization?: { id: string; name: string } } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -56,6 +57,27 @@ describe.skipIf(!databaseAvailable)("preference actions", () => {
     await expect(saveShowAdvancedPreference(true)).resolves.toEqual({ ok: true });
     expect(await showAdvanced(me)).toBe(true);
     expect(await showAdvanced(other)).toBe(false);
+  });
+
+  it("publishes a profile settings change on the user's own channel", async () => {
+    const organization = { id: "11111111-1111-4111-8111-111111111111", name: "Acme" };
+    state.user = { id: me, organization };
+    const saved = await captureChanges(() => saveShowAdvancedPreference(true));
+    expect(saved.result).toEqual({ ok: true });
+    expect(saved.changes).toEqual([
+      expect.objectContaining({
+        resource: "settings",
+        section: "profile",
+        ids: [me],
+        organizationId: organization.id,
+        userId: me,
+      }),
+    ]);
+    // A refused value publishes nothing.
+    const refused = await captureChanges(() =>
+      saveShowAdvancedPreference("yes" as unknown as boolean),
+    );
+    expect(refused.changes).toEqual([]);
   });
 
   it("saves hiding advanced settings", async () => {

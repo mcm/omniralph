@@ -24,6 +24,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { captureChanges } from "@omniralph/db/changes";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -737,7 +738,9 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
 
     it("enqueues a manual fresh review of the PR's current head", async () => {
       const { number, review } = await reviewedPr();
-      const res = await rerunReview(review.id, { mode: "fresh", depth: "deep" });
+      const { result: res, changes } = await captureChanges(() =>
+        rerunReview(review.id, { mode: "fresh", depth: "deep" }),
+      );
       expect(res.ok).toBe(true);
       if (!res.ok) return;
 
@@ -747,6 +750,14 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(payload.reviewConfig.profile.id).toBe("deep");
       const [created] = await db.select().from(reviews).where(eq(reviews.id, res.reviewId));
       expect(created).toMatchObject({ trigger: "manual", headSha: HEAD, depth: "deep" });
+      // The new review run is published to the organization.
+      expect(changes).toContainEqual(
+        expect.objectContaining({
+          resource: "run",
+          organizationId: orgId,
+          runId: created!.reviewRunId,
+        }),
+      );
     });
 
     it("runs Incremental as a full review that keeps the repository's depth", async () => {

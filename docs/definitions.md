@@ -19,7 +19,7 @@ A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 | `systemAppend`                                | Role-specific system text (e.g. an output contract), appended after the system prompt.                                                                                                                               |
 | `promptTemplate`                              | The user prompt, rendered for each run ([templates](#templates)).                                                                                                                                                    |
 | `referenceDocs`                               | Named Markdown documents the run can read. A review renders `rubric/universal.md` and `rubric/languages/<language>.md` (for the diff's languages) as `{{rubric}}`, so a reviewer's rubric is its reference docs.     |
-| `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets no model: its review depth does.                                                   |
+| `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets neither: its review depth sets the model.                                          |
 | `tools`                                       | `builtin` (Claude Code tool names), `harness` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only). |
 | `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `linearRead` (the Linear tools), `network` (beyond the control panel).                                                                                                           |
 | `requires`                                    | Installables and host tools its runs need ([derived requirements](#derived-requirements)).                                                                                                                           |
@@ -87,12 +87,12 @@ A run's model and token cap come from one place, by kind of run (`resolveRunSpec
 
 | Run       | Model                                                                | Fallback model | Token budget                                          |
 | --------- | -------------------------------------------------------------------- | -------------- | ----------------------------------------------------- |
-| A review  | The review depth's (Quick, Standard or Deep)                         | The playbook's | The review depth's cap; max files and exploration too |
+| A review  | The review depth's (Quick, Standard or Deep)                         | None           | The review depth's cap; max files and exploration too |
 | Any other | The playbook's `model`, or the Claude Code default when it sets none | The playbook's | The playbook's fixed `tokens`, or **No limit**        |
 
 A review's depth is the repository's, or the one a `@bot review <depth>` mention or a re-run asked
-for. A review playbook can't set a model or budget ("Review playbooks can't set a model; the repo's
-review depth sets it."). No other run depends on a review setting: a repository's depth never
+for. A review playbook can't set a model, fallback model or budget ("Review playbooks can't set a
+model; the repo's review depth sets it."). No other run depends on a review setting: a repository's depth never
 changes a chat answer, a reply or a coding run.
 
 ### How a playbook runs
@@ -259,7 +259,7 @@ appears on and an example message:
 | Harness tools are allowed for the role's task type                                                     | `tools.harness`                  | review runs can't use the harness tool ship.                                                                                                     |
 | Setup command names are unique                                                                         | `setupCommands.<i>.name`         | Setup command name semgrep is used twice                                                                                                         |
 | Only query roles have an output schema; only story and request playbooks have coding settings          | `outputSchema`, `coding`         | A review playbook can't declare an output schema.                                                                                                |
-| A review playbook sets no model or token budget                                                        | `model`, `tokenBudget`           | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
+| A review playbook sets no model, fallback model or token budget                                        | `model`, `fallbackModel`, `tokenBudget` | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
 | The template parses                                                                                    | `promptTemplate`                 | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
 | Every variable exists for the role's task type and every one of its triggers                           | `promptTemplate`                 | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |
 | A request playbook only uses `epic.prd` and `story.*` inside an optional section                       | `promptTemplate`                 | A request (chat.request) may have no epic or story: put `{{epic.prd}}` in an optional section (e.g. `{{#epic.prd}}…{{/epic.prd}}`).              |

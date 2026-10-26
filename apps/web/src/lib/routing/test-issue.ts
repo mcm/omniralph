@@ -2,6 +2,7 @@ import "server-only";
 import { InvalidInputLinearError } from "@linear/sdk";
 import {
   listLatestIssueRuns,
+  listRoutingRules,
   listWorkItemMatches,
   type Database,
   type RoutingRule,
@@ -143,16 +144,21 @@ export async function routeIssues(
 
 /**
  * Settings › Routing's "Test an issue": where `identifier` routes under `rules` (the unsaved
- * list, already validated) and the work item matches, with `unsaved` applied when given, by
- * `routeIssues`. An issue Linear doesn't know answers 404.
+ * list, already validated; undefined: the saved rules) and the work item matches, with
+ * `unsaved` applied when given, by `routeIssues`. An issue Linear doesn't know answers 404.
  */
 export async function testRoutingRules(
   deps: Omit<RouteDeps, "rules" | "matches">,
   identifier: string,
-  rules: Rules,
+  rules: Rules | undefined,
   unsaved?: UnsavedWorkItemMatch,
 ): Promise<RoutingTestResult> {
-  const [result] = await routeIssues(deps, [identifier], rules, unsaved);
+  const [result] = await routeIssues(
+    deps,
+    [identifier],
+    rules ?? (await listRoutingRules(deps.db, deps.organizationId)),
+    unsaved,
+  );
   if (!result || result.outcome === "not_found") {
     throw new ApiRouteError(404, unknownIssueMessage(identifier), "not_found");
   }

@@ -1412,6 +1412,26 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       }
     });
 
+    it("refuses to drop a custom agent and names it", async () => {
+      const { uri, client, org, cleanup } = await beforePlaybooks("playbooks_custom_agent");
+      try {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into agent_definitions (organization_id, name, definition) values ($1, 'Security reviewer', '{}') returning id`,
+          [org],
+        );
+
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Custom agent and task definitions would be lost: organization ${org} agent definition ${rows[0]!.id}`,
+          },
+        });
+        const { rows: agents } = await client.query(`select 1 from agent_definitions`);
+        expect(agents).toHaveLength(1);
+      } finally {
+        await cleanup();
+      }
+    });
+
     it("refuses to drop when a repo, chat setting or channel override names a custom ID", async () => {
       const { uri, client, org, cleanup } = await beforePlaybooks("playbooks_custom_bindings");
       try {
@@ -2180,6 +2200,14 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           },
         ],
         Empty: [{ repo: "e/web", query: and() }],
+        TeamTwice: [{ repo: "tt/web", query: and(team("MOD"), team("MOD")) }],
+        TwoLabelTests: [{ repo: "tl/web", query: and(team("MOD"), labels("a"), labels("b")) }],
+        ProjectContains: [
+          {
+            repo: "pc/web",
+            query: and(team("MOD"), { field: "project", operator: "contains", value: "Port" }),
+          },
+        ],
       });
       try {
         await runMigrations(uri);
@@ -2193,6 +2221,26 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
             ]),
           ),
         );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it("keeps an organization's rules when a rule's repo already has a work item match", async () => {
+      const { uri, client, orgIds, repoIds, cleanup } = await beforeConversion(
+        "routing_conversion_existing_match",
+        { Acme: [{ repo: "acme/web", query: and(team("MOD")) }] },
+      );
+      try {
+        await client.query(
+          `insert into work_item_matches (repository_id, organization_id, tracker, team)
+           values ($1, $2, 'linear', 'WEB')`,
+          [repoIds["acme/web"], orgIds.Acme],
+        );
+        await runMigrations(uri);
+        const { matches, rules } = await matchesAndRules(client);
+        expect(matches.map((m) => [m.full_path, m.team])).toEqual([["acme/web", "WEB"]]);
+        expect(rules).toEqual([{ organization_id: orgIds.Acme, count: 1 }]);
       } finally {
         await cleanup();
       }
