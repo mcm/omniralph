@@ -5,7 +5,7 @@
  * After changing this file run `pnpm --filter db generate` to emit a migration
  * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
  */
-import type { RoutingQuery } from "@omniralph/shared";
+import type { AgentHostReport, RoutingQuery } from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -1111,6 +1111,11 @@ export const agents = pgTable(
       .$type<{ value: string; displayName: string }[]>()
       .notNull()
       .default([]),
+    /**
+     * The machine the agent runs on (host name, Coder workspace), as its last heartbeat that
+     * carried one reported it; null until then (older agents send none).
+     */
+    reportedHost: jsonb("reported_host").$type<AgentHostReport>(),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The agent's self-update progress, as last reported. */

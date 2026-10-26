@@ -68,6 +68,9 @@ const NOT_CONFIGURED = new Set([
   "GIT_TERMINAL_PROMPT",
   // pm2's own home, where `import` looks for a running pm2 daemon.
   "PM2_HOME",
+  // Set by Coder on a workspace: the agent reports them as its host.
+  "CODER_WORKSPACE_OWNER_NAME",
+  "CODER_WORKSPACE_NAME",
 ]);
 
 const sorted = (set: Set<string>) => [...set].sort();

@@ -43,7 +43,7 @@ import { liveRoute } from "@/lib/live/request";
 const NPM_TIMEOUT_MS = 5_000;
 
 /**
- * Agent heartbeat (every 20s). Records the reported version, accepted task types and
+ * Agent heartbeat (every 20s). Records the reported version, accepted task types, host and
  * self-update state (last-seen in Redis; the agent row only when the report
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the agent keeps,
  * applies the acknowledged job messages and returns the central configuration,
@@ -81,6 +81,7 @@ async function post(req: Request): Promise<Response> {
     installables: body.data.installables,
     models: body.data.models,
     acceptedTaskTypes: body.data.acceptedTaskTypes,
+    host: body.data.host,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =

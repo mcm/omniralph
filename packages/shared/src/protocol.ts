@@ -233,6 +233,25 @@ export const ReportedModel = z.object({
 });
 export type ReportedModel = z.infer<typeof ReportedModel>;
 
+/** Longest host name, owner or workspace name a heartbeat's `host` carries. */
+export const AGENT_HOST_NAME_MAX = 255;
+
+/**
+ * The machine an agent runs on: its host name (`os.hostname()`) and, on a Coder
+ * workspace (`CODER_WORKSPACE_OWNER_NAME` and `CODER_WORKSPACE_NAME` both set), the
+ * workspace's owner and name, else null.
+ */
+export const AgentHostReport = z.object({
+  hostname: z.string().max(AGENT_HOST_NAME_MAX),
+  coder: z
+    .object({
+      owner: z.string().min(1).max(AGENT_HOST_NAME_MAX),
+      workspace: z.string().min(1).max(AGENT_HOST_NAME_MAX),
+    })
+    .nullable(),
+});
+export type AgentHostReport = z.infer<typeof AgentHostReport>;
+
 /** A host tool's name (`HostToolName` of `@omniralph/tasks`, which task definitions require by). */
 export { HOST_TOOL_NAME_PATTERN, HostToolName };
 
@@ -303,6 +322,8 @@ export const Heartbeat = z.object({
    * older agents, which take the response's `acceptedTaskTypes` instead.
    */
   acceptedTaskTypes: AcceptedTaskTypes.optional(),
+  /** The machine the agent runs on. Absent from older agents: the last report is kept. */
+  host: AgentHostReport.optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 

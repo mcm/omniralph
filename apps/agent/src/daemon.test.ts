@@ -280,6 +280,7 @@ function setup(options: {
   localConfig?: DaemonOptions["localConfig"];
   hostToolSearchPath?: string;
   models?: DaemonOptions["models"];
+  host?: DaemonOptions["host"];
   /** Opens fake wake subscriptions (into `wakes`); without it the daemon has no wake transport. */
   wake?: boolean;
 }) {
@@ -318,6 +319,7 @@ function setup(options: {
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
     models: options.models,
+    host: options.host ?? (() => ({ hostname: "agent-host", coder: null })),
     wakeSubscription,
   });
   return { api, state, claims, tokens, daemon, wakes };
@@ -380,6 +382,13 @@ describe("AgentDaemon", () => {
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
+  });
+
+  it("reports its host in every heartbeat", async () => {
+    const host = { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "omniralph" } };
+    const { api, daemon } = setup({ host: () => host });
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
   });
 
   it("negotiates host tool paths in the heartbeat and exposes the effective ones", async () => {
@@ -511,6 +520,7 @@ describe("AgentDaemon", () => {
       models: [],
       // Its local accepted task types: all by default.
       acceptedTaskTypes: ["query", "review", "coding"],
+      host: { hostname: "agent-host", coder: null },
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);

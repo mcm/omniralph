@@ -424,6 +424,58 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(bad.status).toBe(400);
     });
 
+    it("stores the host the agent reports, keeping it when omitted, publishing only when it changes", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const agentChanges = (changes: RecordedChange[]) =>
+        changes.filter((c) => c.resource === "agent" && c.ids.includes(agentId));
+      const reportedHost = async () => {
+        const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+        return row!.reportedHost;
+      };
+      // The first heartbeat announces the agent online: get that out of the way.
+      await sendHeartbeat(accessToken);
+      expect(await reportedHost()).toBeNull();
+
+      const coder = { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "omniralph" } };
+      const first = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, host: coder }),
+      );
+      expect(first.result.status).toBe(200);
+      expect(await reportedHost()).toEqual(coder);
+      expect(agentChanges(first.changes)).toEqual([
+        expect.objectContaining({ resource: "agent", ids: [agentId], organizationId: orgId }),
+      ]);
+
+      // The same host again stores nothing new and publishes nothing.
+      const same = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, host: coder }),
+      );
+      expect(agentChanges(same.changes)).toEqual([]);
+      expect(await reportedHost()).toEqual(coder);
+
+      // A heartbeat without a host (an older agent) leaves it unchanged and publishes nothing.
+      const omitted = await captureChanges(() => sendHeartbeat(accessToken));
+      expect(omitted.result.status).toBe(200);
+      expect(agentChanges(omitted.changes)).toEqual([]);
+      expect(await reportedHost()).toEqual(coder);
+
+      // A different host replaces it and publishes once.
+      const plain = { hostname: "build-01", coder: null };
+      const moved = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, host: plain }),
+      );
+      expect(await reportedHost()).toEqual(plain);
+      expect(agentChanges(moved.changes)).toHaveLength(1);
+
+      // A bad report is refused and the last report stays.
+      const bad = await sendHeartbeat(accessToken, {
+        ...HEARTBEAT,
+        host: { hostname: "x".repeat(256), coder: null },
+      });
+      expect(bad.status).toBe(400);
+      expect(await reportedHost()).toEqual(plain);
+    });
+
     it("refuses task types in the Settings tab's save: the agent decides them", async () => {
       const { agentId } = await enrolledAgent();
       for (const body of [

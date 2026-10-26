@@ -2091,9 +2091,10 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         renamed ? s.replaceAll("harnesses", "agents").replaceAll("harness", "agent") : s;
       const read = async (query: string) =>
         (await client.query(n(query))).rows as Record<string, unknown>[];
-      // The columns 0103 resets, compared on their own.
+      // The columns 0103 resets, compared on their own, and the ones later migrations add
+      // (`reported_host`, 0108).
       const reset = `'failed_versions' - 'update_state' - 'update_request_id'
-        - 'update_request_version' - 'update_requested_at'`;
+        - 'update_request_version' - 'update_requested_at' - 'reported_host'`;
       return {
         organizations: await read(`select id, name from organizations order by id`),
         repositories: await read(`select id, organization_id from repositories order by id`),
@@ -3761,6 +3762,67 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           default_branch: null,
         },
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("adds a nullable reported host to agents, keeping existing ones (0108)", async () => {
+    await db.execute(sql.raw(`create database reported_host_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/reported_host_before");
+    await migrateBefore(uri, "0108_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = rows[0]!.id;
+      // Production: 7 live agents reporting versions, installables, models and task types,
+      // and 2 revoked and soft-deleted ones.
+      const live = Array.from({ length: 7 }, (_, i) => `coder-agent-${i + 1}`);
+      for (const [i, name] of live.entries()) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, self_update,
+             reported_installables, reported_models, reported_accepted_task_types,
+             failed_versions, max_concurrency, last_heartbeat_at, live_online)
+           values ($1, $2, '2.0.3', 'supported',
+             '[{"name":"@omniralph/hello","version":"1.0.0"}]',
+             '[{"value":"opus","displayName":"Opus"}]', $3, '{"2.0.1"}', $4, now(), true)`,
+          [org, name, i % 2 === 0 ? null : ["review", "query"], i === 0 ? 3 : null],
+        );
+      }
+      for (const name of ["old-laptop", "retired-runner"]) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, revoked_at, deleted_at)
+           values ($1, $2, '1.9.0', now() - interval '30 days', now() - interval '29 days')`,
+          [org, name],
+        );
+      }
+
+      await runMigrations(uri);
+
+      const { rows: after } = await client.query<{
+        name: string;
+        reported_version: string;
+        revoked: boolean;
+        deleted: boolean;
+        reported_host: unknown;
+      }>(
+        `select name, reported_version, revoked_at is not null as revoked,
+           deleted_at is not null as deleted, reported_host
+         from agents order by name`,
+      );
+      expect(after).toHaveLength(9);
+      expect(after.every((row) => row.reported_host === null)).toBe(true);
+      expect(after.filter((row) => row.revoked && row.deleted).map((row) => row.name)).toEqual([
+        "old-laptop",
+        "retired-runner",
+      ]);
+      expect(after.filter((row) => !row.revoked && !row.deleted).map((row) => row.name)).toEqual(
+        live,
+      );
+      expect(after.find((row) => row.name === "coder-agent-1")?.reported_version).toBe("2.0.3");
     } finally {
       await client.end();
     }

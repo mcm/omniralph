@@ -184,5 +184,9 @@ Coding runs need no extra agent variables: no `GH_TOKEN`, `GITLAB_TOKEN` or Line
 [deploy-agent.md](deploy-agent.md#coding-work)). Self-update under pm2 needs none either: it detects pm2 by
 the `pm_id` variable pm2 sets, and installs the public package without npm auth.
 
+On a [Coder](https://coder.com) workspace the agent reports the workspace's owner and name, from
+the `CODER_WORKSPACE_OWNER_NAME` and `CODER_WORKSPACE_NAME` variables Coder sets, with its host name
+in each heartbeat, so Fleet shows which workspace it runs on. It reads no other Coder variable.
+
 cyralph's variables (`LINEAR_ACCESS_TOKEN`, `CYRALPH_*`, …) and their equivalents are listed in
 [cutover-from-cyralph.md](cutover-from-cyralph.md#environment-variables).
