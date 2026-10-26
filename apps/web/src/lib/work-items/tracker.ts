@@ -63,6 +63,80 @@ export interface WorkItem {
   blockedBy: WorkItemBlocker[];
   /** True when `blockedBy` isn't empty. */
   blocked: boolean;
+  /** When the item last changed in the tracker (ISO 8601): `update`'s `ifUpdatedAt`. */
+  updatedAt: string;
+  /** The agent the item is delegated to, if any, and whether that's Omniralph. */
+  delegate: { id: string; isOmniralph: boolean } | null;
+  /**
+   * The item's routing field values and its parent's, present only on `listCandidates`
+   * items asked `withRoutingFields` (read in the same request).
+   */
+  routingFields?: WorkItemRouting;
+}
+
+/**
+ * A work item's values of the routing fields, as the router reads them (the same shape as
+ * the Linear gateway's `RoutingIssueFields`): the team by key, the cycle and people by ID,
+ * the parent by identifier, the rest by name. Null where the item has none.
+ */
+export interface WorkItemRoutingFields {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string;
+  team: string | null;
+  project: string | null;
+  projectMilestone: string | null;
+  cycle: string | null;
+  state: string | null;
+  stateType: string | null;
+  /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+  priority: number;
+  assignee: string | null;
+  creator: string | null;
+  /** The parent's identifier. */
+  parent: string | null;
+  /** The parent's ID. */
+  parentId: string | null;
+  labels: string[];
+  estimate: number | null;
+  /** `YYYY-MM-DD`. */
+  dueDate: string | null;
+  teamId: string | null;
+  projectId: string | null;
+  projectMilestoneId: string | null;
+}
+
+/** A work item's routing fields and its parent's (null for a top-level item). */
+export interface WorkItemRouting {
+  issue: WorkItemRoutingFields;
+  parent: WorkItemRoutingFields | null;
+}
+
+/**
+ * One of a work item's stories: a sub-issue (with its identifier, `ref` and state) or, for
+ * an item without sub-issues, a story its PRD lists (`identifier`, `ref` and `state` null).
+ */
+export interface WorkItemStory {
+  /** The sub-issue's ID, a `ref` for the tracker's methods; null for a PRD story. */
+  ref: string | null;
+  identifier: string | null;
+  title: string;
+  /** The sub-issue's state; null for a PRD story. */
+  state: { category: WorkItemStateCategory; name: string } | null;
+  url: string | null;
+  /** A step for a person: the sub-issue carries a manual label, or the PRD story says so. */
+  manual: boolean;
+}
+
+/** A comment on a work item. */
+export interface WorkItemComment {
+  /** The author's name; null when the tracker doesn't say (e.g. an integration). */
+  author: string | null;
+  /** Markdown. */
+  body: string;
+  /** ISO 8601. */
+  createdAt: string;
 }
 
 /** An ID or an identifier such as `SOC-1719`. */
@@ -83,6 +157,10 @@ export interface ListCandidatesInput {
   readiness?: Array<(typeof WORK_ITEM_READINESS)[number]>;
   /** The previous page's `nextCursor`. */
   cursor?: string;
+  /** Only items in no project. */
+  withoutProject?: boolean;
+  /** Each item also carries its `routingFields` (read in the same request). */
+  withRoutingFields?: boolean;
   /** Items per page, 1 to `LIST_CANDIDATES_MAX_LIMIT`. */
   limit: number;
 }
@@ -114,6 +192,14 @@ export interface UpdateWorkItemInput {
   removeLabels?: string[];
 }
 
+export interface UpdateWorkItemOptions {
+  /**
+   * The `updatedAt` the change is based on: when the item has changed since, `update`
+   * throws `WorkItemConflictError` and writes nothing.
+   */
+  ifUpdatedAt?: string;
+}
+
 /** A team of the tracker. */
 export interface TrackerTeam {
   id: string;
@@ -139,7 +225,12 @@ export interface WorkItemTracker {
   /** A page of work items matching every given condition. */
   listCandidates(input: ListCandidatesInput): Promise<WorkItemPage>;
   create(input: CreateWorkItemInput): Promise<WorkItem>;
-  update(ref: WorkItemRef, input: UpdateWorkItemInput): Promise<void>;
+  /** Throws `WorkItemConflictError`, writing nothing, when `ifUpdatedAt` is stale. */
+  update(
+    ref: WorkItemRef,
+    input: UpdateWorkItemInput,
+    options?: UpdateWorkItemOptions,
+  ): Promise<void>;
   /**
    * Moves the item to its team's first workflow state of that kind or, for a readiness, to
    * the mapping's first state of that readiness (an item that already has that readiness
@@ -156,6 +247,13 @@ export interface WorkItemTracker {
    * handled again.
    */
   delegateToOmniralph(ref: WorkItemRef): Promise<void>;
+  /**
+   * The item's sub-issues in their order, else the stories its PRD (description) lists,
+   * else none.
+   */
+  stories(ref: WorkItemRef): Promise<WorkItemStory[]>;
+  /** The item's comments, oldest first. */
+  comments(ref: WorkItemRef): Promise<WorkItemComment[]>;
   /** Every team of the tracker. */
   listTeams(): Promise<TrackerTeam[]>;
   /** A team's workflow states, in order. */
@@ -170,6 +268,18 @@ export class WorkItemNotFoundError extends Error {
   constructor(readonly ref: string) {
     super(`This work item doesn't exist or isn't visible to Omniralph: ${ref}.`);
     this.name = "WorkItemNotFoundError";
+  }
+}
+
+/** An `update` refused because the item changed since `ifUpdatedAt`. */
+export class WorkItemConflictError extends Error {
+  constructor(
+    readonly ref: string,
+    /** The item's current `updatedAt`. */
+    readonly updatedAt: string,
+  ) {
+    super(`This work item changed since it was read: ${ref}.`);
+    this.name = "WorkItemConflictError";
   }
 }
 

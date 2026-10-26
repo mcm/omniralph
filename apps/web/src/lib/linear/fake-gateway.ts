@@ -41,6 +41,11 @@ export interface FakeActivity {
 
 export class FakeLinearGateway implements LinearGateway {
   private seq = 0;
+  /**
+   * The fake's clock for issues' `updatedAt`: each change moves it on a second, so every
+   * change gives the issue a later `updatedAt`.
+   */
+  private clock = Date.parse("2026-01-01T00:00:00.000Z");
   issues = new Map<string, IssueSummary>();
   /** Blocked issue ID -> blocker issue IDs. */
   blocks = new Map<string, string[]>();
@@ -140,10 +145,22 @@ export class FakeLinearGateway implements LinearGateway {
       stateName: "Todo",
       labels: [],
       priority: 0,
+      updatedAt: this.tick(),
       ...partial,
     };
     this.issues.set(id, issue);
     return issue;
+  }
+
+  /** The next `updatedAt`. */
+  private tick(): string {
+    this.clock += 1000;
+    return new Date(this.clock).toISOString();
+  }
+
+  /** Marks the issue changed (a later `updatedAt`), as a change in Linear does. */
+  touch(idOrIdentifier: string): void {
+    this.find(idOrIdentifier).updatedAt = this.tick();
   }
 
   private teamKeyOf(teamId: string): { teamKey?: string } {
@@ -312,6 +329,7 @@ export class FakeLinearGateway implements LinearGateway {
     const matches = [...this.issues.values()].filter((issue) => {
       if (filter.teamId && issue.teamId !== filter.teamId) return false;
       if (filter.projectId && this.projectIdOf(issue) !== filter.projectId) return false;
+      if (filter.withoutProject && (this.projectIdOf(issue) || issue.projectName)) return false;
       if (labelNames && labelNames.length > 0) {
         if (!issue.labels.some((l) => labelNames.includes(l.toLowerCase()))) return false;
       }
@@ -332,10 +350,19 @@ export class FakeLinearGateway implements LinearGateway {
     const page = matches.slice(offset, offset + filter.first);
     const next = offset + page.length;
     return {
-      issues: page.map((issue): IssueWithBlockers => ({
-        ...this.summaryOf(issue),
-        blockers: this.blockersOf(issue.id),
-      })),
+      issues: page.map((issue): IssueWithBlockers => {
+        const parent = issue.parentId ? this.issues.get(issue.parentId) : undefined;
+        return {
+          ...this.summaryOf(issue),
+          blockers: this.blockersOf(issue.id),
+          ...(filter.withRoutingFields && {
+            routing: {
+              issue: this.routingFieldsOf(issue),
+              parent: parent ? this.routingFieldsOf(parent) : null,
+            },
+          }),
+        };
+      }),
       endCursor: next < matches.length ? String(next) : null,
     };
   }
@@ -438,6 +465,7 @@ export class FakeLinearGateway implements LinearGateway {
       (name && states.find((s) => s.name.toLowerCase() === name)) ||
       (target.type && states.find((s) => s.type === target.type));
     if (!state) return;
+    issue.updatedAt = this.tick();
     issue.stateType = state.type;
     issue.stateName = state.name;
     if (issue.stateId !== undefined || target.id) issue.stateId = state.id;
@@ -446,6 +474,7 @@ export class FakeLinearGateway implements LinearGateway {
     this.fail("updateIssue");
     this.issueUpdates.push({ issueId, input: { ...input } });
     const issue = this.find(issueId);
+    if (Object.values(input).some((value) => value !== undefined)) issue.updatedAt = this.tick();
     if (input.title !== undefined) issue.title = input.title;
     if (input.description !== undefined) issue.description = input.description;
     if (input.priority !== undefined) issue.priority = input.priority;
@@ -460,7 +489,10 @@ export class FakeLinearGateway implements LinearGateway {
     const issue = this.find(issueId);
     const have = new Set(issue.labels.map((l) => l.toLowerCase()));
     for (const name of labelIds.map((id) => this.labelName(id))) {
-      if (!have.has(name.toLowerCase())) issue.labels = [...issue.labels, name];
+      if (!have.has(name.toLowerCase())) {
+        issue.labels = [...issue.labels, name];
+        issue.updatedAt = this.tick();
+      }
       have.add(name.toLowerCase());
     }
   }
@@ -469,11 +501,15 @@ export class FakeLinearGateway implements LinearGateway {
     this.labelChanges.push({ issueId, removed: [labelId] });
     const issue = this.find(issueId);
     const name = this.labelName(labelId).toLowerCase();
-    issue.labels = issue.labels.filter((l) => l.toLowerCase() !== name);
+    const labels = issue.labels.filter((l) => l.toLowerCase() !== name);
+    if (labels.length !== issue.labels.length) issue.updatedAt = this.tick();
+    issue.labels = labels;
   }
   async delegateIssue(issueId: string, delegateId: string) {
     this.fail("delegateIssue");
-    this.delegations.push({ issueId: this.find(issueId).id, delegateId });
+    const issue = this.find(issueId);
+    issue.updatedAt = this.tick();
+    this.delegations.push({ issueId: issue.id, delegateId });
   }
   async createAgentSessionOnIssue(issueId: string) {
     this.fail("createAgentSessionOnIssue");

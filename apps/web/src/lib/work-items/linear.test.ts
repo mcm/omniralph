@@ -50,8 +50,10 @@ function linearAgent(
       saved.push(mapping);
     },
     hasActiveRun: async (issueId) => activeRuns.has(issueId),
+    manualLabels: async () => ["needs-human"],
   });
   let seq = 0;
+  let commentClock = Date.parse("2026-03-01T00:00:00.000Z");
   return {
     fake,
     saved,
@@ -72,6 +74,8 @@ function linearAgent(
         stateType: state.type,
         stateName: state.name,
         labels: input.labels ?? [],
+        description: input.description ?? "",
+        ...(input.parentId && { parentId: input.parentId, subIssueSortOrder: seq }),
         ...(input.projectId && {
           projectId: input.projectId,
           projectName: fake.projects.find((p) => p.id === input.projectId)!.name,
@@ -82,6 +86,9 @@ function linearAgent(
       }
       if (input.delegatedToOmniralph) {
         fake.delegations.push({ issueId: issue.id, delegateId: fake.viewer.id });
+      }
+      if (input.delegatedToOtherAgent) {
+        fake.delegations.push({ issueId: issue.id, delegateId: "other-agent" });
       }
       return { id: issue.id, identifier: issue.identifier };
     },
@@ -94,6 +101,17 @@ function linearAgent(
     async comments(id) {
       return fake.comments.filter((c) => c.issueId === id).map((c) => c.body);
     },
+    async addComment(id, { author, body }) {
+      commentClock += 60_000;
+      fake.commentsByIssue.set(id, [
+        ...(fake.commentsByIssue.get(id) ?? []),
+        { author, body, createdAt: new Date(commentClock).toISOString() },
+      ]);
+    },
+    async touch(id) {
+      fake.touch(id);
+    },
+    manualLabel: "needs-human",
     async isDelegatedToOmniralph(id) {
       return fake.delegateOf(id) === fake.viewer.id;
     },
@@ -301,6 +319,72 @@ describe("LinearWorkItemTracker", () => {
       first: 50,
       after: "2",
     });
+  });
+
+  it("lists a page of candidates with their routing fields in one gateway call", async () => {
+    const calls: string[] = [];
+    const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
+    for (let i = 0; i < 3; i += 1) {
+      await h.seed({ teamId: "team-a", title: `Item ${i}`, state: "todo" });
+    }
+    await h.seed({ teamId: "team-a", title: "In project", state: "todo", projectId: "project-1" });
+    calls.length = 0;
+    const page = await h.tracker.listCandidates({
+      teamId: "team-a",
+      withoutProject: true,
+      withRoutingFields: true,
+      readiness: ["ready", "needs_refining"],
+      limit: 50,
+    });
+    expect(page.items.map((i) => i.title)).toEqual(["Item 0", "Item 1", "Item 2"]);
+    expect(page.items.every((i) => i.routingFields?.issue.id === i.id)).toBe(true);
+    // Nothing delegated: the app user isn't read.
+    expect(calls).toEqual(["listIssues"]);
+    expect(h.fake.issueLists.at(-1)).toMatchObject({ withoutProject: true, withRoutingFields: true });
+  });
+
+  it("reads the app user once to tell Omniralph's delegations from another agent's", async () => {
+    const calls: string[] = [];
+    const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
+    const om = await h.seed({ teamId: "team-a", title: "Om", state: "todo", delegatedToOmniralph: true });
+    await h.seed({ teamId: "team-a", title: "Other", state: "todo", delegatedToOtherAgent: true });
+    calls.length = 0;
+    await h.tracker.listCandidates({ teamId: "team-a", limit: 50 });
+    await h.tracker.get(om.id);
+    expect(calls.filter((c) => c === "getViewer")).toHaveLength(1);
+  });
+
+  it("refuses a stale edit without writing to Linear", async () => {
+    const h = linearAgent();
+    const { id } = await h.seed({ teamId: "team-a", title: "T", state: "todo" });
+    const read = await h.tracker.get(id);
+    h.fake.touch(id);
+    await expect(
+      h.tracker.update(id, { description: "x", addLabels: ["new"] }, { ifUpdatedAt: read.updatedAt }),
+    ).rejects.toThrow(/changed since it was read/);
+    expect(h.fake.issueUpdates).toEqual([]);
+    expect(h.fake.labelChanges).toEqual([]);
+  });
+
+  it("orders sub-issues by their sort order and marks manual ones by the default label", async () => {
+    const fake = new FakeLinearGateway();
+    const tracker = new LinearWorkItemTracker({
+      gateway: fake,
+      integrationId: "integration-1",
+      stateMapping: structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
+      saveStateMapping: async () => undefined,
+    });
+    const parent = fake.add({ title: "Epic" });
+    fake.add({ title: "Later", parentId: parent.id, subIssueSortOrder: 5 });
+    fake.add({ title: "Unordered", parentId: parent.id });
+    fake.add({ title: "Earlier", parentId: parent.id, subIssueSortOrder: -2, labels: ["Manual"] });
+    expect(
+      (await tracker.stories(parent.identifier)).map(({ title, manual }) => ({ title, manual })),
+    ).toEqual([
+      { title: "Earlier", manual: true },
+      { title: "Later", manual: false },
+      { title: "Unordered", manual: false },
+    ]);
   });
 
   it("creates issues with labels by name, creating missing ones", async () => {

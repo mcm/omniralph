@@ -7,6 +7,7 @@ import {
   integrations,
   organizations,
   saveIntegration,
+  setTrackerLabels,
   type Database,
 } from "@omniralph/db";
 import {
@@ -126,6 +127,33 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
       createGateway: () => fake,
     });
     expect(await reloaded.getStateMapping()).toEqual(mapping);
+  });
+
+  it("marks stories manual by the organization's manual labels", async () => {
+    await connect();
+    await setTrackerLabels(
+      db,
+      organizationId,
+      { manualLabels: ["needs-human"], blockedLabels: [] },
+      null,
+    );
+    const fake = new FakeLinearGateway();
+    const parent = fake.add({ title: "Epic" });
+    fake.add({ title: "Human", parentId: parent.id, labels: ["Needs-Human"] });
+    fake.add({ title: "Default label", parentId: parent.id, labels: ["manual"] });
+    const tracker = await getWorkItemTracker({
+      db,
+      organizationId,
+      key,
+      createGateway: () => fake,
+    });
+    expect(
+      (await tracker.stories(parent.id)).map(({ title, manual }) => ({ title, manual })),
+    ).toEqual([
+      { title: "Human", manual: true },
+      { title: "Default label", manual: false },
+    ]);
+    await setTrackerLabels(db, organizationId, null, null);
   });
 
   it("throws TrackerNotConnectedError when the connection was removed since", async () => {

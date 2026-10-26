@@ -1,11 +1,14 @@
 import "server-only";
 import { InvalidInputLinearError } from "@linear/sdk";
 import type { TrackerStateMapping } from "@omniralph/db";
+import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
 import type {
   Blocker,
   IssueLabel,
   IssueSummary,
+  IssueWithBlockers,
   LinearGateway,
+  RoutingIssue,
   Viewer,
 } from "@/lib/linear/gateway";
 import { isTriageLabel, TRIAGE_LABEL } from "@/lib/linear/webhook";
@@ -18,6 +21,7 @@ import {
 import {
   LIST_CANDIDATES_MAX_LIMIT,
   StateMappingError,
+  WorkItemConflictError,
   WorkItemNotFoundError,
   type CreateWorkItemInput,
   type ListCandidatesInput,
@@ -25,8 +29,12 @@ import {
   type TrackerTeam,
   type TrackerWorkflowState,
   type UpdateWorkItemInput,
+  type UpdateWorkItemOptions,
   type WorkItem,
   type WorkItemBlocker,
+  type WorkItemComment,
+  type WorkItemRouting,
+  type WorkItemStory,
   type WorkItemPage,
   type WorkItemRef,
   type WorkItemState,
@@ -59,6 +67,11 @@ export function stateCategoryOf(type: string): WorkItemStateCategory {
 
 const CLOSED_TYPES = new Set(["completed", "canceled"]);
 
+// The tracker's routing fields are the gateway's, so the router reads either.
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const routingFieldsMatch: Same<WorkItemRouting, RoutingIssue> = true;
+void routingFieldsMatch;
+
 export interface LinearWorkItemTrackerOptions {
   gateway: LinearGateway;
   /** The Linear integration's ID. */
@@ -72,6 +85,8 @@ export interface LinearWorkItemTrackerOptions {
    * over): `delegateToOmniralph` then opens no new session. Default: never.
    */
   hasActiveRun?: (issueId: string) => Promise<boolean>;
+  /** The labels marking a sub-issue as a manual story. Default: `manual`. */
+  manualLabels?: () => Promise<string[]>;
 }
 
 const READINESS_LABELS = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
@@ -84,6 +99,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   private mapping: TrackerStateMapping;
   private readonly saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
   private readonly hasActiveRun: (issueId: string) => Promise<boolean>;
+  private readonly manualLabels: () => Promise<string[]>;
   private viewer: Promise<Viewer> | undefined;
 
   constructor(options: LinearWorkItemTrackerOptions) {
@@ -92,6 +108,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     this.mapping = options.stateMapping;
     this.saveStateMapping = options.saveStateMapping;
     this.hasActiveRun = options.hasActiveRun ?? (async () => false);
+    this.manualLabels = options.manualLabels ?? (async () => [...DEFAULT_MANUAL_LABELS]);
   }
 
   /** The issue of a ref; an unknown one is `WorkItemNotFoundError`. */
@@ -114,7 +131,20 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     return this.viewer;
   }
 
-  private workItem(issue: IssueSummary, blockers: Blocker[]): WorkItem {
+  /**
+   * The app user's ID when one of the issues is delegated (to tell Omniralph from another
+   * agent), else null without asking Linear.
+   */
+  private async appUserIdFor(issues: IssueSummary[]): Promise<string | null> {
+    return issues.some((issue) => issue.delegateId) ? (await this.appUser()).id : null;
+  }
+
+  private workItem(
+    issue: IssueSummary,
+    blockers: Blocker[],
+    appUserId: string | null,
+    routing?: RoutingIssue,
+  ): WorkItem {
     const blockedBy = blockers
       .filter((blocker) => !CLOSED_TYPES.has(blocker.stateType))
       .map((blocker): WorkItemBlocker => ({
@@ -146,6 +176,11 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       }),
       blockedBy,
       blocked: blockedBy.length > 0,
+      updatedAt: issue.updatedAt ?? "",
+      delegate: issue.delegateId
+        ? { id: issue.delegateId, isOmniralph: issue.delegateId === appUserId }
+        : null,
+      ...(routing && { routingFields: routing }),
     };
   }
 
@@ -158,7 +193,11 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   async get(ref: WorkItemRef): Promise<WorkItem> {
     const issue = await this.issue(ref);
-    return this.workItem(issue, await this.gateway.getBlockers(issue.id));
+    const [blockers, appUserId] = await Promise.all([
+      this.gateway.getBlockers(issue.id),
+      this.appUserIdFor([issue]),
+    ]);
+    return this.workItem(issue, blockers, appUserId);
   }
 
   async listCandidates(input: ListCandidatesInput): Promise<WorkItemPage> {
@@ -168,6 +207,8 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     const page = await this.gateway.listIssues({
       ...(input.teamId && { teamId: input.teamId }),
       ...(input.projectId && { projectId: input.projectId }),
+      ...(input.withoutProject && { withoutProject: true }),
+      ...(input.withRoutingFields && { withRoutingFields: true }),
       ...(input.labelIds?.length && { labelIds: input.labelIds }),
       ...(delegate &&
         (input.delegatedToOmniralph ? { delegateId: delegate } : { notDelegateId: delegate })),
@@ -180,8 +221,11 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       first: limit,
       ...(input.cursor && { after: input.cursor }),
     });
+    const appUserId = delegate ?? (await this.appUserIdFor(page.issues));
     return {
-      items: page.issues.map(({ blockers, ...issue }) => this.workItem(issue, blockers)),
+      items: page.issues.map(({ blockers, routing, ...issue }: IssueWithBlockers) =>
+        this.workItem(issue, blockers, appUserId, routing),
+      ),
       nextCursor: page.endCursor,
     };
   }
@@ -196,12 +240,19 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       ...(input.labels?.length && { labels: input.labels }),
       ...(input.priority !== undefined && { priority: input.priority }),
     });
-    // A new issue has no relations yet.
-    return this.workItem(issue, []);
+    // A new issue has no relations yet, and isn't delegated.
+    return this.workItem(issue, [], null);
   }
 
-  async update(ref: WorkItemRef, input: UpdateWorkItemInput): Promise<void> {
+  async update(
+    ref: WorkItemRef,
+    input: UpdateWorkItemInput,
+    options: UpdateWorkItemOptions = {},
+  ): Promise<void> {
     const issue = await this.issue(ref);
+    if (options.ifUpdatedAt !== undefined && issue.updatedAt !== options.ifUpdatedAt) {
+      throw new WorkItemConflictError(ref, issue.updatedAt ?? "");
+    }
     await this.gateway.updateIssue(issue.id, {
       ...(input.title !== undefined && { title: input.title }),
       ...(input.description !== undefined && { description: input.description }),
@@ -274,6 +325,51 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     // Delegating it again changes nothing in Linear, so no session would start: open one.
     if (!(await this.hasActiveRun(issue.id)))
       await this.gateway.createAgentSessionOnIssue(issue.id);
+  }
+
+  async stories(ref: WorkItemRef): Promise<WorkItemStory[]> {
+    const issue = await this.issue(ref);
+    const children = await this.gateway.getChildren(issue.id);
+    if (children.length === 0) {
+      return (parsePrd(issue.description)?.stories ?? []).map((story) => ({
+        ref: null,
+        identifier: null,
+        title: story.title,
+        state: null,
+        url: null,
+        manual: story.manual === true,
+      }));
+    }
+    const manualLabels = await this.manualLabels();
+    return children
+      .map((child, index) => ({ child, index }))
+      .sort(
+        (a, b) =>
+          (a.child.subIssueSortOrder ?? Number.POSITIVE_INFINITY) -
+            (b.child.subIssueSortOrder ?? Number.POSITIVE_INFINITY) || a.index - b.index,
+      )
+      .map(({ child }) => ({
+        ref: child.id,
+        identifier: child.identifier,
+        title: child.title,
+        state: {
+          category: stateCategoryOf(child.stateType),
+          name: child.stateName || child.stateType,
+        },
+        url: child.url,
+        manual: isManualIssue(child, manualLabels.length ? manualLabels : DEFAULT_MANUAL_LABELS),
+      }));
+  }
+
+  async comments(ref: WorkItemRef): Promise<WorkItemComment[]> {
+    const issue = await this.issue(ref);
+    return (await this.gateway.getComments(issue.id))
+      .map((comment) => ({
+        author: comment.author ?? null,
+        body: comment.body,
+        createdAt: comment.createdAt ?? "",
+      }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async listTeams(): Promise<TrackerTeam[]> {

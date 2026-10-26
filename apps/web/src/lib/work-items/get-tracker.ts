@@ -4,6 +4,7 @@ import {
   getActiveTriageRun,
   getIntegration,
   getRunByIssue,
+  getTrackerLabels,
   setIntegrationStateMapping,
   type Database,
 } from "@omniralph/db";
@@ -28,6 +29,10 @@ const activeRunCheck =
   async (issueId: string): Promise<boolean> =>
     !!(await getRunByIssue(db, organizationId, issueId, { activeOnly: true })) ||
     !!(await getActiveTriageRun(db, organizationId, issueId));
+
+/** The organization's manual labels (its `tracker.labels`); the adapter's default when none. */
+const manualLabels = (db: Database, organizationId: string) => async (): Promise<string[]> =>
+  (await getTrackerLabels(db, organizationId)).manualLabels;
 
 /**
  * The organization's work item tracker: its Linear connection. Throws
@@ -59,6 +64,7 @@ export async function getWorkItemTracker(
       }
     },
     hasActiveRun: activeRunCheck(db, organizationId),
+    manualLabels: manualLabels(db, organizationId),
   });
 }
 
@@ -85,5 +91,6 @@ export async function workItemTrackerFor(options: {
       }
     },
     hasActiveRun: activeRunCheck(db, organizationId),
+    manualLabels: manualLabels(db, organizationId),
   });
 }
