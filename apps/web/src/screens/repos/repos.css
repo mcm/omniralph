@@ -1,0 +1,104 @@
+/*
+ * The Repos screen (Design board Repos): a rail with the title, "Add repo" and one row per
+ * repo (badges, the Reviews, Coding and Ask icons, a dot only for running work or a
+ * problem), beside the open repo's detail. Only `--or-` tokens.
+ */
+.or-repos {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-repos__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-repos__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 12px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-repos__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-repos__list {
+  min-height: 0;
+}
+
+.or-repos__list .or-empty {
+  padding: 40px 20px;
+}
+
+.or-repos__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-repo-row {
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-repo-row__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 20px;
+  color: var(--or-text);
+  text-decoration: none;
+}
+
+.or-repo-row__link:hover {
+  background: var(--or-hover);
+}
+
+.or-repo-row__link[aria-current="page"] {
+  background: var(--or-sel);
+}
+
+.or-repo-row__link:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
+}
+
+.or-repo-row__badges {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-repo-row__switches {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--or-sec);
+}
+
+.or-repo-row__switch--off {
+  opacity: 0.35;
+}
+
+.or-repo-row__dot {
+  flex: none;
+}
+
+.or-repos__truncated {
+  margin: 0;
+  padding: 12px 20px;
+  color: var(--or-sec);
+  font-size: 13px;
+}

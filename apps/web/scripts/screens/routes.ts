@@ -107,6 +107,19 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/runs/[id]/page.tsx",
     auth: "signed-in",
   },
+  { name: "repos", path: "/repos", page: "(app)/repos/page.tsx", auth: "signed-in" },
+  {
+    name: "repo",
+    path: `/repos/${ids.repositories.controlPanel}`,
+    page: "(app)/repos/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "repo-coding",
+    path: `/repos/${ids.repositories.controlPanel}?section=coding`,
+    page: "(app)/repos/[id]/page.tsx",
+    auth: "signed-in",
+  },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "agents", path: "/agents", page: "(app)/agents/page.tsx", auth: "signed-in" },
   {

@@ -11,9 +11,10 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
 /**
  * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at its 2.0 URL,
  * never an old one kept for compatibility: Runs points at `/runs` (every run of every
- * kind), the other entries at today's pages until their epics replace them (TOOL-575,
- * "Coexistence with today's pages"); every entry is visible to members and admins.
- * Runs lights up for `/runs/**` only. Analytics (its own entry in Epic 10) has no entry and
+ * kind), Repos at `/repos` (every repo's settings), the other entries at today's pages
+ * until their epics replace them (TOOL-575, "Coexistence with today's pages"); every entry
+ * is visible to members and admins. Runs lights up for `/runs/**` only, Repos for
+ * `/repos/**` only. Analytics (its own entry in Epic 10) has no entry and
  * stays reachable by URL; the other Settings pages light up Settings.
  *
  * Inbox comes first (a phone tab); Backlog (after Runs, a phone tab) and Ask (bottom, a
@@ -41,10 +42,11 @@ export const navItems: readonly NavItem[] = [
   {
     id: "repos",
     label: "Repos",
-    href: "/repositories",
+    href: "/repos",
     icon: IconGitFork,
     placement: "main",
     phone: "drawer",
+    activeFor: ["/repos"],
   },
   {
     id: "agents",

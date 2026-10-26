@@ -1,0 +1,136 @@
+/*
+ * A repo's detail on the Repos screen (Design board Repos): header badges and ⋯ menu, the
+ * problems notice, the section index and the sections. On phone the organization and branch
+ * badges leave the header for a collapsed "Details" (Design rule 16). Only `--or-` tokens.
+ */
+.or-repo-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 28px 32px;
+}
+
+.or-repo-detail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-repo-detail__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-repo-detail__context {
+  display: inline-flex;
+}
+
+.or-repo-detail__details {
+  display: none;
+}
+
+.or-repo-detail__index {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 4px;
+  background: var(--or-page);
+}
+
+.or-repo-detail__empty {
+  padding: 64px 28px;
+}
+
+.or-repo-problems {
+  border: 1px solid var(--or-fail);
+  border-radius: var(--or-radius);
+  background: var(--or-fail-tint);
+}
+
+.or-repo-problems__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-repo-problems__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  color: var(--or-text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.or-repo-problems__item + .or-repo-problems__item {
+  border-top: 1px solid var(--or-line);
+}
+
+.or-repo-problems__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.or-repo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  scroll-margin-top: 48px;
+}
+
+.or-repo-section__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.or-repo-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 14px;
+}
+
+.or-repo-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-repo-skeleton__line {
+  height: 14px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-repo-skeleton__line--short {
+  width: 40%;
+}
+
+@media (max-width: 768px) {
+  .or-repo-detail {
+    padding: 16px 16px 24px;
+  }
+
+  .or-repo-detail__context {
+    display: none;
+  }
+
+  .or-repo-detail__details {
+    display: block;
+  }
+}

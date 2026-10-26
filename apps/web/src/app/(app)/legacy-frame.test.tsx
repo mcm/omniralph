@@ -104,7 +104,7 @@ describe("today's pages inside the 2.0 shell", () => {
     const dialog = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
     expect(nav.router.push).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Discard and leave" }));
-    expect(nav.router.push).toHaveBeenCalledWith("/repositories");
+    expect(nav.router.push).toHaveBeenCalledWith("/repos");
   });
 
   it("ask before a phone drawer link leaves unsaved changes", async () => {
