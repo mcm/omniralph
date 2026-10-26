@@ -23,7 +23,9 @@ import {
   epicRunDetail,
   NOW_AT,
   QUESTIONS,
+  reviewRunDetail,
   runDetail,
+  runSession,
   storyStep,
 } from "@/components/runs/test-fixtures";
 import type { RunDetail, RunList, RunRetryResult } from "@/lib/api/runs";
@@ -130,6 +132,7 @@ function serve() {
     "GET /api/ui/runs": () => jsonResponse(list),
     "GET /api/ui/runs/filter-options": FILTER_OPTIONS,
     [`GET /api/ui/runs/${RUN_ID}`]: () => detailAnswer?.() ?? jsonResponse(detail),
+    [`GET /api/ui/runs/${RUN_ID}/session`]: () => jsonResponse(runSession()),
     [`POST /api/ui/runs/${RUN_ID}/stop`]: () => stopAnswer(),
     [`POST /api/ui/runs/${RUN_ID}/retry`]: () => retryAnswer(),
   });
@@ -307,6 +310,33 @@ describe("the run detail", () => {
     expect(section.open).toBe(false);
     expect(section.querySelector("summary")!.textContent).toBe("Details");
     expect(within(section).getByText("45.2M in · 225k out")).toBeTruthy();
+  });
+
+  it("keeps an epic's Session collapsed between Details and Activity", async () => {
+    renderRun();
+    await loaded();
+    const session = await waitFor(
+      () => pane().querySelector("details.or-run-session") as HTMLDetailsElement,
+    );
+    expect(session.open).toBe(false);
+    expect(session.querySelector("summary")!.textContent).toBe("Session");
+    const details = pane().querySelector("details.or-run-details")!;
+    const activity = within(pane()).getByRole("list", { name: "Run activity" });
+    expect(
+      details.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      session.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows no Session for a review run", async () => {
+    detail = reviewRunDetail({ id: RUN_ID });
+    renderRun();
+    await loaded();
+    expect(pane().querySelector("details.or-run-details")).not.toBeNull();
+    expect(pane().querySelector("details.or-run-session")).toBeNull();
+    expect(seen.some((r) => r.path.endsWith("/session"))).toBe(false);
   });
 
   it("shows the run's activity", async () => {

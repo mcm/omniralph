@@ -1,0 +1,76 @@
+/* The run detail's Session section: subsections of dated entries and the progress log. Only `--or-` tokens. */
+.or-run-session__section + .or-run-session__section {
+  margin-top: 16px;
+}
+
+.or-run-session__heading {
+  margin: 0 0 8px;
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-run-session__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-run-session__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-run-session__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-run-session__title {
+  font-weight: 600;
+}
+
+.or-run-session__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-run-session__state {
+  color: var(--or-sec);
+}
+
+.or-run-session__more {
+  margin-top: 8px;
+}
+
+.or-run-session__log {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 480px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

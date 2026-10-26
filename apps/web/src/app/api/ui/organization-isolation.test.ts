@@ -214,6 +214,7 @@ const runStop = await import("./runs/[id]/stop/route");
 const runRetry = await import("./runs/[id]/retry/route");
 const runAnswer = await import("./runs/[id]/answer/route");
 const runTranscript = await import("./runs/[id]/attempts/[attemptId]/transcript/route");
+const runSession = await import("./runs/[id]/session/route");
 const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
 const reviewList = await import("./reviews/route");
@@ -1671,12 +1672,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           params: { id: own.runId, attemptId: ownAttempt },
         });
         expect(transcript).toMatchObject({ status: 200, body: { events: [{ body: own.name }] } });
-        for (const { body } of [list, detail, triageDetail, transcript]) {
+        const session = await call(runSession.GET, { params: { id: own.runId } });
+        expect(session).toMatchObject({ status: 200, body: { messages: [] } });
+        for (const { body } of [list, detail, triageDetail, transcript, session]) {
           for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         }
 
         for (const id of [other.runId, other.triageRunId, "not-a-uuid"]) {
           expect(await call(runDetail.GET, { params: { id } })).toMatchObject({ status: 404 });
+          expect(await call(runSession.GET, { params: { id } })).toMatchObject({ status: 404 });
         }
         // The other's attempt, through their run or through one's own.
         for (const [id, attemptId] of [

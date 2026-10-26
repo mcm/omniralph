@@ -316,6 +316,16 @@ function detailReason(
   }
 }
 
+/** What every attempt label of the run `row` may mention: its work item, repo and PR/MR. */
+export function attemptLabelBase(row: RunRow): AttemptLabelContext {
+  return {
+    workItem: row.workItem?.identifier ?? null,
+    repository: row.repository?.fullPath ?? null,
+    provider: row.repository?.provider ?? null,
+    pullRequestNumber: row.pullRequest?.number ?? null,
+  };
+}
+
 /** The run's detail for a user who is `organization.role` in its organization. */
 export async function loadRunDetail(
   db: Database,
@@ -329,12 +339,7 @@ export async function loadRunDetail(
   if (!entry) return null;
   const row = runRow(entry, organization);
   const open = await loadRunQuestion(db, run, row.workItem?.identifier ?? null);
-  const base: AttemptLabelContext = {
-    workItem: row.workItem?.identifier ?? null,
-    repository: row.repository?.fullPath ?? null,
-    provider: row.repository?.provider ?? null,
-    pullRequestNumber: row.pullRequest?.number ?? null,
-  };
+  const base = attemptLabelBase(row);
 
   let facts: KindFacts;
   switch (run.kind) {

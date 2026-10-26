@@ -1558,7 +1558,21 @@ export async function insertMessage(
       trigger: input.trigger ?? null,
     })
     .returning();
+  await recordMessageChanges(db, [row!.runId]);
   return row!;
+}
+
+/**
+ * Records a live `run` change for each run whose messages changed (its Session shows
+ * them). Reads the runs' organizations only while changes are collected.
+ */
+async function recordMessageChanges(db: Executor, runIds: readonly string[]): Promise<void> {
+  if (runIds.length === 0 || !currentChangeCollector()) return;
+  const runs = await db
+    .select({ id: ralphRuns.id, organizationId: ralphRuns.organizationId })
+    .from(ralphRuns)
+    .where(inArray(ralphRuns.id, [...new Set(runIds)]));
+  for (const run of runs) recordRunChange(db, run);
 }
 
 /** Message columns the orchestrator changes. */
@@ -1576,6 +1590,7 @@ export async function updateMessage(
     .set(update)
     .where(eq(ralphMessages.id, id))
     .returning();
+  if (row) await recordMessageChanges(db, [row.runId]);
   return row ?? null;
 }
 
@@ -1683,8 +1698,13 @@ export async function consumeMessages(
   now = new Date(),
 ): Promise<void> {
   if (ids.length === 0) return;
-  await db
+  const consumed = await db
     .update(ralphMessages)
     .set({ consumedAt: now })
-    .where(and(inArray(ralphMessages.id, [...ids]), isNull(ralphMessages.consumedAt)));
+    .where(and(inArray(ralphMessages.id, [...ids]), isNull(ralphMessages.consumedAt)))
+    .returning({ runId: ralphMessages.runId });
+  await recordMessageChanges(
+    db,
+    consumed.map((m) => m.runId),
+  );
 }
