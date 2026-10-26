@@ -1,12 +1,14 @@
-// Tests scripts/harness-release.ts, the helpers .github/workflows/publish-agent.yml uses to
+// Tests scripts/agent-release.ts, the helpers .github/workflows/publish-agent.yml uses to
 // decide whether to publish and to build the GitHub Release notes.
 import { describe, expect, it } from "vitest";
 import {
   changelogSection,
   isPublished,
+  type NpmViewResult,
   pendingReleaseChangesets,
+  releaseStatus,
   releaseTag,
-} from "../../../../scripts/harness-release.js";
+} from "../../../../scripts/agent-release.js";
 
 const CHANGELOG = `# @omniralph/agent
 
@@ -30,6 +32,7 @@ const CHANGELOG = `# @omniralph/agent
 describe("releaseTag", () => {
   it("keeps the agent-v<version> convention", () => {
     expect(releaseTag("0.14.0")).toBe("agent-v0.14.0");
+    expect(releaseTag("2.0.0")).toBe("agent-v2.0.0");
   });
 });
 
@@ -98,5 +101,65 @@ describe("pendingReleaseChangesets", () => {
         { path: ".changeset/c.md", content: "no front matter\n" },
       ]),
     ).toEqual([".changeset/a.md"]);
+  });
+});
+
+describe("releaseStatus", () => {
+  const notOnNpm: NpmViewResult = { status: 0, stdout: "", stderr: "" };
+  const onNpm = (version: string): NpmViewResult => ({
+    status: 0,
+    stdout: JSON.stringify(version),
+    stderr: "",
+  });
+  const unexpected = (): NpmViewResult => {
+    throw new Error("npm view should not run");
+  };
+  const major = { path: ".changeset/a.md", content: '---\n"@omniralph/agent": major\n---\n\nA\n' };
+
+  it("holds the release back while changesets are pending, even at 1.0.0", () => {
+    expect(releaseStatus({ version: "1.0.0", changesets: [major], npmView: unexpected })).toEqual({
+      version: "1.0.0",
+      tag: "agent-v1.0.0",
+      publish: false,
+      message:
+        "Changesets are pending (.changeset/a.md): the Version Packages pull request releases them.",
+    });
+  });
+
+  it("refuses to publish 1.0.0 or anything else below 2.0.0", () => {
+    for (const version of ["1.0.0", "0.8.0", "0.13.2", "1.99.99"]) {
+      expect(() => releaseStatus({ version, changesets: [], npmView: () => notOnNpm })).toThrow(
+        `@omniralph/agent@${version} is below 2.0.0`,
+      );
+    }
+  });
+
+  it("publishes 2.0.0 when it isn't on npm yet", () => {
+    const specs: string[] = [];
+    const status = releaseStatus({
+      version: "2.0.0",
+      changesets: [{ path: ".changeset/b.md", content: "---\n---\n" }],
+      npmView: (spec) => {
+        specs.push(spec);
+        return notOnNpm;
+      },
+    });
+    expect(specs).toEqual(["@omniralph/agent@2.0.0"]);
+    expect(status).toEqual({
+      version: "2.0.0",
+      tag: "agent-v2.0.0",
+      publish: true,
+      message: "@omniralph/agent@2.0.0 isn't on npm yet: releasing it as agent-v2.0.0.",
+    });
+  });
+
+  it("does nothing for a version already on npm", () => {
+    const status = releaseStatus({
+      version: "2.1.0",
+      changesets: [],
+      npmView: () => onNpm("2.1.0"),
+    });
+    expect(status.publish).toBe(false);
+    expect(status.message).toBe("@omniralph/agent@2.1.0 is already on npm: nothing to release.");
   });
 });

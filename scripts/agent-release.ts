@@ -1,21 +1,23 @@
 // Release helpers for .github/workflows/publish-agent.yml.
 //
 // Usage (run after `pnpm install`):
-//   tsx scripts/harness-release.ts status
+//   tsx scripts/agent-release.ts status
 //     Prints whether apps/agent/package.json's version should be published now, and writes
 //     `version`, `tag` and `publish` (true|false) to $GITHUB_OUTPUT when it is set. It should
 //     when no changeset that releases a package is pending (they belong in the Version Packages
-//     pull request first) and that version isn't on npm yet.
-//   tsx scripts/harness-release.ts notes <version> <out-file>
+//     pull request first) and that version isn't on npm yet. Fails when that version is below
+//     AGENT_MIN_VERSION: @omniralph/agent's 0.x releases predate the 2.0.0 line.
+//   tsx scripts/agent-release.ts notes <version> <out-file>
 //     Writes that version's section of apps/agent/CHANGELOG.md to out-file (the GitHub
 //     Release notes). Fails when the changelog has no section for the version.
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { changesetReleases } from "./check-harness-changeset.js";
+import { AGENT_MIN_VERSION, harnessVersionAtLeast } from "../packages/shared/src/agent-version.js";
+import { AGENT, changesetReleases } from "./check-agent-changeset.js";
 
-export const AGENT = "@omniralph/agent";
+export { AGENT };
 
 export function releaseTag(version: string): string {
   return `agent-v${version}`;
@@ -96,33 +98,80 @@ function writeOutputs(outputs: Record<string, string | boolean>): void {
   appendFileSync(outputFile, lines.join(""));
 }
 
-function status(): void {
-  const version = agentVersion();
+export interface ReleaseStatus {
+  version: string;
+  tag: string;
+  publish: boolean;
+  message: string;
+}
+
+export interface ReleaseStatusInput {
+  /** apps/agent/package.json's version. */
+  version: string;
+  /** The pending `.changeset/*.md` files. */
+  changesets: { path: string; content: string }[];
+  /** Runs `npm view <package>@<version> version --json`. */
+  npmView: (spec: string) => NpmViewResult;
+}
+
+/**
+ * Whether to publish `version` now: not while changesets that release a package are pending,
+ * nor when it's already on npm. Throws for a version below AGENT_MIN_VERSION (only once the
+ * changesets are consumed: until the Version Packages pull request bumps it, the version on
+ * main is the never-published 1.0.0).
+ */
+export function releaseStatus({ version, changesets, npmView }: ReleaseStatusInput): ReleaseStatus {
   const tag = releaseTag(version);
-  const pending = pendingReleaseChangesets(readPendingChangesets());
+  const pending = pendingReleaseChangesets(changesets);
   if (pending.length > 0) {
-    console.log(
-      `Changesets are pending (${pending.join(", ")}): the Version Packages pull request releases them.`,
-    );
-    writeOutputs({ version, tag, publish: false });
-    return;
+    return {
+      version,
+      tag,
+      publish: false,
+      message: `Changesets are pending (${pending.join(", ")}): the Version Packages pull request releases them.`,
+    };
   }
-  const result = spawnSync("npm", ["view", `${AGENT}@${version}`, "version", "--json"], {
-    encoding: "utf8",
-  });
-  if (result.error) throw result.error;
-  const publish = !isPublished(result, version);
-  console.log(
-    publish
+  if (!harnessVersionAtLeast(version, AGENT_MIN_VERSION)) {
+    throw new Error(
+      `${AGENT}@${version} is below ${AGENT_MIN_VERSION}, the first version of ${AGENT} to publish.`,
+    );
+  }
+  const publish = !isPublished(npmView(`${AGENT}@${version}`), version);
+  return {
+    version,
+    tag,
+    publish,
+    message: publish
       ? `${AGENT}@${version} isn't on npm yet: releasing it as ${tag}.`
       : `${AGENT}@${version} is already on npm: nothing to release.`,
-  );
-  writeOutputs({ version, tag, publish });
+  };
+}
+
+function npmView(spec: string): NpmViewResult {
+  const result = spawnSync("npm", ["view", spec, "version", "--json"], { encoding: "utf8" });
+  if (result.error) throw result.error;
+  return result;
+}
+
+function status(): void {
+  let result: ReleaseStatus;
+  try {
+    result = releaseStatus({
+      version: agentVersion(),
+      changesets: readPendingChangesets(),
+      npmView,
+    });
+  } catch (error) {
+    console.error(`::error::${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+  console.log(result.message);
+  writeOutputs({ version: result.version, tag: result.tag, publish: result.publish });
 }
 
 function notes(version: string | undefined, outFile: string | undefined): void {
   if (!version || !outFile) {
-    console.error("Usage: harness-release.ts notes <version> <out-file>");
+    console.error("Usage: agent-release.ts notes <version> <out-file>");
     process.exit(2);
   }
   const changelog = readFileSync(path.join(agentDir, "CHANGELOG.md"), "utf8");
@@ -143,7 +192,7 @@ function main(): void {
     case "notes":
       return notes(args[0], args[1]);
     default:
-      console.error("Usage: harness-release.ts status | notes <version> <out-file>");
+      console.error("Usage: agent-release.ts status | notes <version> <out-file>");
       process.exit(2);
   }
 }

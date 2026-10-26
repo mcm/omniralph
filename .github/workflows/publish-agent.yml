@@ -50,10 +50,13 @@ jobs:
       # requests read/write) makes the commits and the pull request, so ci.yml runs on them;
       # GitHub runs no workflows for ones made with the default token, which is the fallback.
       # The action also hands this token to the version script, for @changesets/changelog-github.
+      # The version script first renames @omniralph/harness changesets, which other 2.0 epics still
+      # write, to @omniralph/agent: `changeset version` rejects a package that isn't in the
+      # workspace. The action runs the script without a shell, hence `sh -c` for the `&&`.
       - name: Version Packages pull request
         uses: changesets/action@v2
         with:
-          version-script: pnpm changeset version
+          version-script: sh -c "pnpm exec tsx scripts/rewrite-legacy-changesets.ts && pnpm changeset version"
           github-token: ${{ secrets.CHANGESETS_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
 
       # publish=true when no changeset is pending (empty ones aside) and this version isn't on
@@ -64,7 +67,7 @@ jobs:
         id: release
         run: |
           git checkout --force "$GITHUB_SHA"
-          pnpm exec tsx scripts/harness-release.ts status
+          pnpm exec tsx scripts/agent-release.ts status
 
       - name: Typecheck, lint and test
         if: steps.release.outputs.publish == 'true'
@@ -75,7 +78,7 @@ jobs:
         if: steps.release.outputs.publish == 'true'
         env:
           VERSION: ${{ steps.release.outputs.version }}
-        run: pnpm exec tsx scripts/harness-release.ts notes "$VERSION" "$RUNNER_TEMP/release-notes.md"
+        run: pnpm exec tsx scripts/agent-release.ts notes "$VERSION" "$RUNNER_TEMP/release-notes.md"
 
       # Builds (tsup, bundling the workspace packages from source), packs and smoke-tests the
       # package, keeping the tested tarball for the publish step.

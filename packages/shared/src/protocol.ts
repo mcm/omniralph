@@ -11,10 +11,17 @@ import {
   TASK_TYPES,
 } from "@omniralph/tasks";
 import { z } from "zod";
+import { SEMVER_PATTERN } from "./agent-version.js";
 import { JobRepository, JobToken } from "./job-basics.js";
 import { POOLS } from "./pools.js";
 import { RunSpec } from "./run-spec.js";
 
+export {
+  AGENT_MIN_VERSION,
+  AGENT_PACKAGE,
+  harnessVersionAtLeast,
+  SEMVER_PATTERN,
+} from "./agent-version.js";
 export { JobRepository, JobToken } from "./job-basics.js";
 
 /** Jobs (and the dedupe window) live for 24h; still-queued jobs then expire. */
@@ -169,35 +176,9 @@ export function effectivePoolLimits(
   );
 }
 
-/** The npm package agents run and update themselves to. */
-export const AGENT_PACKAGE = "@omniralph/agent";
-
-/** A semantic version (semver 2.0, no leading `v`), e.g. `1.4.0` or `1.5.0-beta.1`. */
-export const SEMVER_PATTERN =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
-
 /** An agent version: valid semver, at most 64 characters. */
 export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
 export type AgentVersion = z.infer<typeof AgentVersion>;
-
-/**
- * Whether agent `version` is at least `minimum`, comparing major.minor.patch
- * only (a prerelease of `minimum` counts: it's built from the same code).
- * False for a version that isn't semver.
- */
-export function harnessVersionAtLeast(version: string, minimum: string): boolean {
-  const core = (v: string) => {
-    const match = SEMVER_PATTERN.exec(v.trim());
-    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-  };
-  const have = core(version);
-  const want = core(minimum);
-  if (!have || !want) return false;
-  for (let i = 0; i < 3; i++) {
-    if (have[i]! !== want[i]!) return have[i]! > want[i]!;
-  }
-  return true;
-}
 
 /**
  * Whether the agent can update itself: only under pm2 (which restarts it into

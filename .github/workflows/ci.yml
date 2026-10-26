@@ -41,7 +41,7 @@ jobs:
       # request, which consumes the changesets. See apps/agent/README.md › Releasing.
       - name: Check for an agent changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
-        run: pnpm exec tsx scripts/check-harness-changeset.ts "origin/$BASE_REF"
+        run: pnpm exec tsx scripts/check-agent-changeset.ts "origin/$BASE_REF"
         env:
           BASE_REF: ${{ github.base_ref }}
 

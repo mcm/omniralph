@@ -1,13 +1,20 @@
-// Tests scripts/check-harness-changeset.ts, the CI check that agent changes come with a
+// Tests scripts/check-agent-changeset.ts (and its old path, scripts/check-harness-changeset.ts), the CI check that agent changes come with a
 // changeset. It lives at the repo root (CI runs it with tsx); it's tested here so
 // `pnpm turbo run test` covers it.
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   changesetReleases,
   checkAgentChangeset,
   isChangesetPath,
+  main,
   touchedPackageDirs,
-} from "../../../../scripts/check-harness-changeset.js";
+} from "../../../../scripts/check-agent-changeset.js";
+import { main as wrapperMain } from "../../../../scripts/check-harness-changeset.js";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 const PACKAGE_DIRS = [
   "apps/agent",
@@ -20,6 +27,10 @@ const PACKAGE_DIRS = [
 const agentPatch = {
   path: ".changeset/brave-dogs-run.md",
   content: '---\n"@omniralph/agent": patch\n---\n\nFix the thing.\n',
+};
+const legacyMinor = {
+  path: ".changeset/calm-owls-sing.md",
+  content: '---\n"@omniralph/harness": minor\n---\n\nAdd the thing.\n',
 };
 const empty = { path: ".changeset/open-meals-thank.md", content: "---\n---\n" };
 
@@ -91,6 +102,7 @@ describe("checkAgentChangeset", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.message).toContain("apps/agent");
+    expect(result.message).toContain("pick @omniralph/agent");
     expect(result.message).toContain("pnpm changeset --empty");
   });
 
@@ -116,6 +128,18 @@ describe("checkAgentChangeset", () => {
     });
   });
 
+  it("passes with a changeset that names the package's old name", () => {
+    const result = checkAgentChangeset({
+      changedFiles: ["apps/agent/src/cli.ts", legacyMinor.path],
+      packageDirs: PACKAGE_DIRS,
+      changesets: [legacyMinor],
+    });
+    expect(result).toEqual({
+      ok: true,
+      message: ".changeset/calm-owls-sing.md adds a changeset for @omniralph/harness.",
+    });
+  });
+
   it("accepts an empty changeset as a deliberate opt-out", () => {
     const result = checkAgentChangeset({
       changedFiles: ["apps/agent/src/cli.test.ts", empty.path],
@@ -125,13 +149,14 @@ describe("checkAgentChangeset", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("fails when the only changeset names another package", () => {
+  it("fails when the only changeset names neither the agent nor its old name", () => {
     const result = checkAgentChangeset({
       changedFiles: ["apps/agent/src/cli.ts"],
       packageDirs: PACKAGE_DIRS,
       changesets: [{ path: ".changeset/x.md", content: '---\n"other-pkg": patch\n---\n\nX\n' }],
     });
     expect(result.ok).toBe(false);
+    expect(result.message).toContain("pick @omniralph/agent");
   });
 
   it("ignores files without front matter", () => {
@@ -142,4 +167,36 @@ describe("checkAgentChangeset", () => {
     });
     expect(result.ok).toBe(false);
   });
+});
+
+describe("main", () => {
+  it("returns 2 with a usage message when the base ref is missing", () => {
+    expect(main([])).toBe(2);
+  });
+
+  it("returns 0 when nothing changed since the base ref", () => {
+    expect(main(["HEAD"])).toBe(0);
+  });
+});
+
+describe("scripts/check-harness-changeset.ts", () => {
+  it("is the new check's main", () => {
+    expect(wrapperMain).toBe(main);
+  });
+
+  it("runs the new check with the same arguments and exit code", () => {
+    const run = (args: string[]) =>
+      spawnSync("pnpm", ["exec", "tsx", "scripts/check-harness-changeset.ts", ...args], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+      });
+
+    const usage = run([]);
+    expect(usage.status).toBe(2);
+    expect(usage.stderr).toContain("Usage: check-agent-changeset.ts <base-ref>");
+
+    const clean = run(["HEAD"]);
+    expect(clean.status).toBe(0);
+    expect(clean.stdout).toContain("check-agent-changeset: No changes to @omniralph/agent");
+  }, 60_000);
 });
