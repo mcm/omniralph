@@ -180,6 +180,11 @@ export interface WorkItemPage {
 export interface CreateWorkItemInput {
   teamId: string;
   projectId?: string;
+  /**
+   * The project by its name, ignoring case (`projectId` wins when both are given). Throws
+   * `WorkItemProjectNotFoundError`, creating nothing, when the tracker has no such project.
+   */
+  projectName?: string;
   parentId?: string;
   title: string;
   description: string;
@@ -292,6 +297,14 @@ export class WorkItemConflictError extends Error {
   ) {
     super(`This work item changed since it was read: ${ref}.`);
     this.name = "WorkItemConflictError";
+  }
+}
+
+/** A `create` refused because the tracker has no project of that name. */
+export class WorkItemProjectNotFoundError extends Error {
+  constructor(readonly projectName: string) {
+    super(`The tracker has no project named ${projectName}.`);
+    this.name = "WorkItemProjectNotFoundError";
   }
 }
 

@@ -23,6 +23,7 @@ import {
   StateMappingError,
   WorkItemConflictError,
   WorkItemNotFoundError,
+  WorkItemProjectNotFoundError,
   type CreateWorkItemInput,
   type ListCandidatesInput,
   type ReadinessStateTarget,
@@ -191,6 +192,16 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     );
   }
 
+  /** The ID of the workspace's project of this name, ignoring case. */
+  private async projectId(name: string): Promise<string> {
+    const wanted = name.toLowerCase();
+    const project = (await this.gateway.listProjects()).find(
+      (candidate) => candidate.name.toLowerCase() === wanted,
+    );
+    if (!project) throw new WorkItemProjectNotFoundError(name);
+    return project.id;
+  }
+
   async get(ref: WorkItemRef): Promise<WorkItem> {
     const issue = await this.issue(ref);
     const [blockers, appUserId] = await Promise.all([
@@ -234,11 +245,13 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   }
 
   async create(input: CreateWorkItemInput): Promise<WorkItem> {
+    const projectId =
+      input.projectId ?? (input.projectName && (await this.projectId(input.projectName)));
     const issue = await this.gateway.createIssue({
       teamId: input.teamId,
       title: input.title,
       description: input.description,
-      ...(input.projectId && { projectId: input.projectId }),
+      ...(projectId && { projectId }),
       ...(input.parentId && { parentId: input.parentId }),
       ...(input.labels?.length && { labels: input.labels }),
       ...(input.priority !== undefined && { priority: input.priority }),
