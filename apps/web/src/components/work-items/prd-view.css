@@ -1,0 +1,55 @@
+/*
+ * A work item's PRD (PrdView): the Markdown in a 68ch column, or the full-width mono editor
+ * with Save and Cancel. Only `--or-` tokens.
+ */
+.or-prd {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.or-prd__body {
+  max-width: 68ch;
+}
+
+.or-prd__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.or-prd__editor {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+}
+
+.or-prd__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-fail-tint);
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-prd__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 68ch;
+}
+
+.or-prd__skeleton-line {
+  height: 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-prd__skeleton-line--short {
+  width: 40%;
+}
