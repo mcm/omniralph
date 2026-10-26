@@ -306,8 +306,7 @@ const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
 const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
 const { default: AppLayout } = await import("../../(app)/layout");
-const { readEnterOrganizationToken, createEnterOrganizationPath } =
-  await import("@/lib/organizations/enter");
+const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
 
 /** Calls `handler` as the signed-in user; resolves to the status and JSON body. */
 async function call<P extends Record<string, string>>(
@@ -1445,6 +1444,22 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         // Its own agents (an earlier test enrolled more), none of the other's (the markers).
         expect((body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+        // Fleet's scopes: its own organization by ID or all of the user's, never the other's.
+        for (const organization of ["all", own.orgId]) {
+          const scoped = await call(agentList.GET, {
+            path: `/api/ui?organization=${organization}`,
+          });
+          expect(scoped.status).toBe(200);
+          const rows = scoped.body.agents as { id: string; organization: { id: string } }[];
+          expect(rows.map((h) => h.id)).toContain(own.agentId);
+          for (const row of rows) expect(row.organization.id).toBe(own.orgId);
+          for (const marker of markers(other)) {
+            expect(JSON.stringify(scoped.body)).not.toContain(marker);
+          }
+        }
+        expect(
+          await call(agentList.GET, { path: `/api/ui?organization=${other.orgId}` }),
+        ).toMatchObject({ status: 404 });
       }
     }
   });
@@ -1525,9 +1540,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           status: 404,
         });
       }
-      // Agent pages are admin-only.
+      // Fleet's agent detail is for every member; the old tabs' parts stay admin-only.
       state.userId = own.memberId;
-      for (const handler of [agentDetail.GET, agentInstallables.GET, agentHostTools.GET]) {
+      expect(await call(agentDetail.GET, { params: ownParams })).toMatchObject({
+        status: 200,
+        body: { agent: { id: own.agentId, organization: { id: own.orgId, role: "member" } } },
+      });
+      expect(await call(agentDetail.GET, { params: otherParams })).toMatchObject({ status: 404 });
+      for (const handler of [agentInstallables.GET, agentHostTools.GET]) {
         expect(await call(handler, { params: ownParams })).toMatchObject({ status: 403 });
       }
     }
@@ -1601,43 +1621,31 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     );
   });
 
-  it("sends a member of both organizations to switch to the agent's organization", async () => {
+  it("shows a member of both organizations either organization's agents without switching", async () => {
     const [user] = await db
       .insert(users)
       .values({ id: "both-admin", email: "both@alpha.io" })
       .returning();
     await db.insert(organizationMembers).values([
       { organizationId: a.orgId, userId: user!.id, role: "admin" },
-      { organizationId: b.orgId, userId: user!.id, role: "admin" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
     ]);
     await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
     state.userId = user!.id;
 
-    const open = (next: string) =>
-      call(agentDetail.GET, {
-        params: { id: b.agentId },
-        path: `/api/ui?${new URLSearchParams({ next })}`,
-      });
-    const settings = `/agents/${b.agentId}/settings`;
-    const { status, body } = await open(settings);
-    expect(status).toBe(409);
-    expect(body).toMatchObject({ code: "enter_organization" });
-    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-      organizationId: b.orgId,
-      next: settings,
+    const { status, body } = await call(agentDetail.GET, { params: { id: b.agentId } });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      agent: { id: b.agentId, organization: { id: b.orgId, role: "member" } },
     });
-    expect(JSON.stringify(body)).not.toContain(b.name);
-
-    // Only back to the agent's own pages.
-    const elsewhere = await open("/settings/members");
-    const elsewhereToken = new URL(
-      elsewhere.body.enterPath as string,
-      "http://localhost",
-    ).searchParams.get("token");
-    expect(await readEnterOrganizationToken(elsewhereToken, user!.id)).toMatchObject({
-      next: `/agents/${b.agentId}`,
-    });
+    const all = await call(agentList.GET, { path: "/api/ui?organization=all" });
+    const rows = all.body.agents as { id: string; organization: { id: string; role: string } }[];
+    expect(rows.find((h) => h.id === a.agentId)?.organization).toMatchObject({ role: "admin" });
+    expect(rows.find((h) => h.id === b.agentId)?.organization).toMatchObject({ role: "member" });
+    // Working in Alpha, the active organization's list stays Alpha's.
+    const active = await call(agentList.GET);
+    expect((active.body.agents as { id: string }[]).map((h) => h.id)).not.toContain(b.agentId);
+    expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
   });
   it("lists each organization's own repositories on the Repos rail, and 404s on the other's", async () => {
     for (const [own, other] of [
@@ -3041,26 +3049,20 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = user!.id;
     state.cookies.clear();
 
-    // The agent's page asks the API, which answers 409 with the signed path that switches to
-    // the agent's organization and comes back to the page, which then gets the agent.
+    // A page of the other organization's resource gets the signed path that switches to
+    // its organization and comes back to the page.
     const page = `/agents/${b.agentId}`;
-    const open = () =>
-      call(agentDetail.GET, {
-        params: { id: b.agentId },
-        path: `/api/ui?${new URLSearchParams({ next: page })}`,
-      });
-    const refused = await open();
-    expect(refused.status).toBe(409);
-    const enterPath = refused.body.enterPath as string;
+    const enterPath = await createEnterOrganizationPath({
+      userId: user!.id,
+      organizationId: b.orgId,
+      next: page,
+    });
     expect(enterPath).toMatch(new RegExp(`^${ENTER_ORGANIZATION_PATH}\\?token=`));
     expect((await getActiveOrganization(db, user!.id))?.id).toBe(a.orgId);
     const response = await enterOrganization(new NextRequest(`http://localhost${enterPath}`));
     expect(response.headers.get("location")).toBe(`http://localhost${page}`);
     expect(state.cookies.get(ORGANIZATION_COOKIE)).toBe(b.orgId);
     expect((await getActiveOrganization(db, user!.id))?.id).toBe(b.orgId);
-    const opened = await open();
-    expect(opened.status).toBe(200);
-    expect(JSON.stringify(opened.body)).toContain(b.agentId);
     state.cookies.clear();
   });
 

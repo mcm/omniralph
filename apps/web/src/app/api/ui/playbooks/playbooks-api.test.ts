@@ -470,6 +470,7 @@ describe("/api/ui/agents", () => {
     expect(readdirSync(join(__dirname, "../agents")).sort()).toEqual([
       "[id]",
       "agents-api.test.ts",
+      "fleet-api.test.ts",
       "organization-isolation.test.ts",
       "route.ts",
     ]);

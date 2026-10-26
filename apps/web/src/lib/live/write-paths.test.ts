@@ -426,13 +426,25 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         agentVersion: "1.0.0",
         maxDeliveries: 3,
       };
-      expect(await published(() => claimJob(db, claim))).toEqual([runEvent(run.id, [jobId])]);
+      // An attempt's start and finish also publish its agent (Fleet's running count).
+      const agentEvent = {
+        channel: orgChannel,
+        v: 1,
+        resource: "agent",
+        ids: [agentId],
+        organizationId: orgId,
+      };
+      expect(await published(() => claimJob(db, claim))).toEqual([
+        runEvent(run.id, [jobId]),
+        agentEvent,
+      ]);
       expect(
         await published(() => failJob(db, { jobId, agentId, retryable: true, maxDeliveries: 3 })),
-      ).toEqual([runEvent(run.id, [jobId])]);
+      ).toEqual([runEvent(run.id, [jobId]), agentEvent]);
       await claimJob(db, claim);
       expect(await published(() => completeJob(db, { jobId, agentId, result: {} }))).toEqual([
         runEvent(run.id, [jobId]),
+        agentEvent,
       ]);
       // A rejected result (not running any more) publishes nothing.
       expect(await published(() => completeJob(db, { jobId, agentId, result: {} }))).toEqual([]);

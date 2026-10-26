@@ -1,19 +1,28 @@
 import type { AgentOverview, JobListEntry } from "@omniralph/db";
 import {
   effectivePoolLimits,
+  type AgentHostReport,
   type AgentUpdateReport,
   type SelfUpdateSupport,
 } from "@omniralph/shared";
+import { agentStatus, type AgentStatus } from "@/lib/fleet/status";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
-import { isAgentOnline, jobTarget, type JobTarget } from "./display";
+import { jobTarget, type JobTarget } from "./display";
 import { agentUpdateStatus, type AgentUpdateStatus } from "./update";
 
 /** Serializable agent row for the Agents pages. */
 export interface AgentRow {
   id: string;
   name: string;
+  /** The server's `live_online` flag (the liveness cron clears it); never from a clock. */
   online: boolean;
   revoked: boolean;
+  /** Fleet's status (`agentStatus`), offline taken from `online`. */
+  status: AgentStatus;
+  /** Attempts running on it. */
+  runningCount: number;
+  /** The machine it last reported running on; null until it reports one. */
+  host: AgentHostReport | null;
   version: string | null;
   /** The version the agent should run: its override, else the global setting. */
   desiredVersion: string | null;
@@ -82,11 +91,28 @@ export function agentRow(
           requestedAt: agent.updateRequestedAt.toISOString(),
         }
       : null;
+  const updateStatus = agentUpdateStatus({
+    version: agent.reportedVersion,
+    desiredVersion,
+    selfUpdate: agent.selfUpdate,
+    update,
+    failedVersions: agent.failedVersions,
+    updateRequested: updateRequest !== null,
+  });
+  const revoked = agent.revokedAt !== null;
+  const online = !revoked && agent.liveOnline;
+  const runningCount = agent.runningJobs.length;
   return {
     id: agent.id,
     name: agent.name,
-    online: !agent.revokedAt && isAgentOnline(agent.lastHeartbeatAt, now),
-    revoked: agent.revokedAt !== null,
+    online,
+    revoked,
+    status: agentStatus(
+      { revoked, online, lastHeartbeatAt: agent.lastHeartbeatAt, updateStatus, runningCount },
+      now,
+    ),
+    runningCount,
+    host: agent.reportedHost ?? null,
     version: agent.reportedVersion,
     desiredVersion,
     desiredVersionOverride: agent.desiredVersion,
@@ -95,14 +121,7 @@ export function agentRow(
     update,
     failedVersions: agent.failedVersions,
     updateRequest,
-    updateStatus: agentUpdateStatus({
-      version: agent.reportedVersion,
-      desiredVersion,
-      selfUpdate: agent.selfUpdate,
-      update,
-      failedVersions: agent.failedVersions,
-      updateRequested: updateRequest !== null,
-    }),
+    updateStatus,
     acceptedTaskTypes: agent.effective.acceptedTaskTypes,
     maxConcurrency: agent.effective.maxConcurrency,
     overrides: { maxConcurrency: agent.maxConcurrency },

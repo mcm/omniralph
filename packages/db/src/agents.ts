@@ -22,7 +22,15 @@ import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
 import { jobRunId, type Job, type JobStatus } from "./jobs.js";
-import { agentAudit, agentRepoPins, agents, jobs, repositories, scmConnections } from "./schema.js";
+import {
+  agentAudit,
+  agentRepoPins,
+  agents,
+  jobs,
+  ralphStories,
+  repositories,
+  scmConnections,
+} from "./schema.js";
 
 type AgentRow = typeof agents.$inferSelect;
 
@@ -838,4 +846,150 @@ export async function markAgentsLiveOffline(
     .returning({ id: agents.id, organizationId: agents.organizationId });
   for (const row of rows) recordAgentChange(db, row);
   return rows.map((row) => row.id);
+}
+
+/** An attempt (job) an agent claimed, for Fleet's Running now and Recent work. */
+export interface AgentAttempt {
+  id: string;
+  type: string;
+  status: JobStatus;
+  payload: Record<string, unknown>;
+  repository: RepositoryLink | null;
+  /** The run the attempt belongs to; null for system work. */
+  runId: string | null;
+  /** The story a `ralph.story` attempt builds: its identifier, 1-based place and the run's count. */
+  story: { identifier: string; number: number; total: number } | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+
+/** Statuses of attempts that are over. */
+const FINISHED_STATUSES: JobStatus[] = ["completed", "failed", "canceled", "expired", "skipped"];
+
+/**
+ * The attempts running on an agent (oldest first) and the last `recentLimit` it finished
+ * (newest first), system attempts included. An attempt retried elsewhere counts for the agent
+ * that last claimed it.
+ */
+export async function listAgentAttempts(
+  db: Database,
+  agentId: string,
+  recentLimit = 10,
+): Promise<{ running: AgentAttempt[]; recent: AgentAttempt[] }> {
+  const columns = {
+    id: jobs.id,
+    type: jobs.type,
+    status: jobs.status,
+    payload: jobs.payload,
+    ralphRunId: jobs.ralphRunId,
+    ralphStoryId: jobs.ralphStoryId,
+    reviewRunId: jobs.reviewRunId,
+    triageRunId: jobs.triageRunId,
+    chatThreadRunId: jobs.chatThreadRunId,
+    startedAt: jobs.startedAt,
+    finishedAt: jobs.finishedAt,
+    ...repositoryLinkColumns,
+  };
+  const select = () =>
+    db
+      .select(columns)
+      .from(jobs)
+      .leftJoin(repositories, eq(repositories.id, jobs.repositoryId))
+      .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId));
+  const [running, recent] = await Promise.all([
+    select()
+      .where(and(eq(jobs.agentId, agentId), eq(jobs.status, "running")))
+      .orderBy(asc(jobs.startedAt), asc(jobs.id)),
+    select()
+      .where(
+        and(
+          eq(jobs.agentId, agentId),
+          inArray(jobs.status, FINISHED_STATUSES),
+          isNotNull(jobs.finishedAt),
+        ),
+      )
+      .orderBy(desc(jobs.finishedAt), desc(jobs.id))
+      .limit(recentLimit),
+  ]);
+  const storyIds = [...new Set([...running, ...recent].flatMap((row) => row.ralphStoryId ?? []))];
+  const stories = new Map<string, NonNullable<AgentAttempt["story"]>>();
+  if (storyIds.length > 0) {
+    // Each story's place among its run's stories, in the epic's order.
+    const placed = db.$with("placed").as(
+      db
+        .select({
+          id: ralphStories.id,
+          identifier: ralphStories.identifier,
+          number:
+            sql<number>`row_number() over (partition by ${ralphStories.runId} order by ${ralphStories.position}, ${ralphStories.createdAt}, ${ralphStories.id})`
+              .mapWith(Number)
+              .as("number"),
+          total: sql<number>`count(*) over (partition by ${ralphStories.runId})`
+            .mapWith(Number)
+            .as("total"),
+        })
+        .from(ralphStories)
+        .where(
+          inArray(
+            ralphStories.runId,
+            db
+              .select({ runId: ralphStories.runId })
+              .from(ralphStories)
+              .where(inArray(ralphStories.id, storyIds)),
+          ),
+        ),
+    );
+    const rows = await db.with(placed).select().from(placed).where(inArray(placed.id, storyIds));
+    for (const row of rows) {
+      stories.set(row.id, { identifier: row.identifier, number: row.number, total: row.total });
+    }
+  }
+  const attempt = (row: (typeof running)[number]): AgentAttempt => ({
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    payload: row.payload,
+    repository: repositoryLink(row),
+    runId: jobRunId(row),
+    story: (row.ralphStoryId && stories.get(row.ralphStoryId)) || null,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+  });
+  return { running: running.map(attempt), recent: recent.map(attempt) };
+}
+
+/** An agent's token health: its last refresh, and refresh-token reuse and auth failures since `since`. */
+export interface AgentSecuritySummary {
+  lastTokenRefreshAt: Date | null;
+  reuseAlerts: number;
+  authFailures: number;
+}
+
+export async function getAgentSecuritySummary(
+  db: Database,
+  agentId: string,
+  since: Date,
+): Promise<AgentSecuritySummary> {
+  const [row] = await db
+    .select({
+      lastTokenRefreshAt:
+        sql<Date | null>`max(${agentAudit.createdAt}) filter (where ${agentAudit.event} = 'token_refresh')`.mapWith(
+          (value: string | Date | null) => (value === null ? null : new Date(value)),
+        ),
+      reuseAlerts:
+        sql<number>`count(*) filter (where ${agentAudit.event} = 'refresh_reuse' and ${agentAudit.createdAt} >= ${since})`.mapWith(
+          Number,
+        ),
+      authFailures:
+        sql<number>`count(*) filter (where ${agentAudit.event} = 'auth_failed' and ${agentAudit.createdAt} >= ${since})`.mapWith(
+          Number,
+        ),
+    })
+    .from(agentAudit)
+    .where(eq(agentAudit.agentId, agentId));
+  return {
+    lastTokenRefreshAt: row?.lastTokenRefreshAt ?? null,
+    reuseAlerts: row?.reuseAlerts ?? 0,
+    authFailures: row?.authFailures ?? 0,
+  };
 }

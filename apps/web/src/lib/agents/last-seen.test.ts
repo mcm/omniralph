@@ -228,7 +228,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       ).json()) as { agents: { id: string; online: boolean; lastHeartbeatAt: string }[] };
       const listed = list.agents.find((h) => h.id === agentId)!;
       expect(listed.lastHeartbeatAt).toBe(fresh.toISOString());
-      expect(listed.online).toBe(true);
+      // Online is the server's `live_online` flag (the heartbeat route sets it), not a fresh time.
+      expect(listed.online).toBe(false);
     });
 
     it("breaks pinnedAgentFor's tie on the Redis last-seen", async () => {

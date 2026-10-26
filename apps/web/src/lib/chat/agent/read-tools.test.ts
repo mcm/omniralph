@@ -122,6 +122,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
         name: `${slug}-agent`,
         reportedVersion: "1.2.3",
         lastHeartbeatAt: new Date(),
+        liveOnline: true,
       })
       .returning();
 

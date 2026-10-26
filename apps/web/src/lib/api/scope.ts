@@ -2,6 +2,7 @@ import "server-only";
 import {
   getMemberOrganization,
   getRepository,
+  getResourceOrganizationId,
   getRunIndexEntry,
   listOrganizationsForUser,
   type Repository,
@@ -116,4 +117,25 @@ export async function requireRepositoryAccess(
     throw new AuthorizationError(`This action requires the ${access} role.`, "forbidden");
   }
   return { repository, organization };
+}
+
+/**
+ * For an agent's detail and actions: the organization of the agent (by `agentId`, which must
+ * be a UUID) among the user's memberships, with the user's role there, which must be at least
+ * `access`. A missing or deleted agent, or one of an organization the user isn't a member of,
+ * is not found (404); a member asking for `admin` is forbidden (403).
+ */
+export async function requireAgentAccess(
+  user: OrgUser,
+  agentId: string,
+  access: Role = "member",
+): Promise<ScopedOrganization> {
+  if (!z.uuid().safeParse(agentId).success) throw ApiRouteError.notFound();
+  const organizationId = await getResourceOrganizationId(getDb(), "agent", agentId);
+  const organization = organizationId && (await membership(user, organizationId));
+  if (!organization) throw ApiRouteError.notFound();
+  if (!hasRole(organization, access)) {
+    throw new AuthorizationError(`This action requires the ${access} role.`, "forbidden");
+  }
+  return organization;
 }

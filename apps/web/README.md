@@ -199,11 +199,11 @@ handler stops at the first failure and names the changes it didn't save. Changes
 with its next heartbeat answer a `savedAt` and show "Saved — waiting for <agent> to pick it up",
 then "Applied" once the agent's `lastHeartbeatAt` is later (`SettingsSection`'s `savedStatus`).
 
-**Resources of another organization.** A detail handler calls
-`requireResourceInActiveOrganization(user, resource, id, { pathPrefix, next })`
-(`src/lib/api/resource.ts`): a resource of another of the user's organizations answers 409
-`enter_organization` with a signed `enterPath`, and `QueryBoundary` opens it, which switches
-organizations and comes back to `next` (the page, sent by the query as `?next=`). **List filters and pagination** live in the URL search params
+**Resources of another organization.** A detail handler reads a resource of any of the user's
+organizations without switching: `requireRunAccess`, `requireRepositoryAccess` and
+`requireAgentAccess` (`src/lib/api/scope.ts`) answer the user's membership and role there, and 404
+for an organization the user isn't a member of. A 409 `enter_organization` with a signed
+`enterPath` still makes `QueryBoundary` switch organizations and come back. **List filters and pagination** live in the URL search params
 (`useSearchParams`) and use `placeholderData: keepPreviousData`.
 
 **Navigation and render errors.** Links show a pending state while their page loads (`Link` in
