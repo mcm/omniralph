@@ -238,7 +238,9 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   With `onSelectStep(id)` the steps are buttons (step `href`s are ignored) and the
   `selectedStepId` one is bold with `aria-current="step"`; `stepPanel` (a node, e.g. the
   step's transcript and attempts) renders inside the selected step, on a line under it
-  (`.or-step__panel`).
+  (`.or-step__panel`). `stepHref(id)` (with `onSelectStep`) adds a chevron link beside each
+  step's button to the step's own view (`.or-step__open`, named "Open {label}"): the
+  chevrons show only at 768 px and narrower, where the inline `stepPanel` is hidden.
 - `progressSummary(steps, suffix?)`: the count line, e.g. "8 of 9 done · 1 canceled · 3h
   31m": the done count, then waiting, running, failed, blocked and canceled when non-zero,
   then the suffix, or "No steps yet".

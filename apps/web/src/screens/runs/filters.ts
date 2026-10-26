@@ -70,3 +70,19 @@ export function runInListHref(
   const text = search.toString();
   return `/runs/${runId}${text ? `?${text}` : ""}`;
 }
+
+/**
+ * A step's own view (the phone step page), keeping the rail's filters, with the attempt and
+ * tab it shows: `/runs/{id}/steps/{stepId}?{filters}&attempt=&tab=`.
+ */
+export function runStepHref(
+  runId: string,
+  stepId: string,
+  filters: RunFilters,
+  state: Omit<RunDetailState, "step"> = {},
+): string {
+  const href = runInListHref(runId, filters, { attempt: state.attempt, tab: state.tab });
+  const query = href.indexOf("?");
+  const search = query === -1 ? "" : href.slice(query);
+  return `/runs/${runId}/steps/${encodeURIComponent(stepId)}${search}`;
+}

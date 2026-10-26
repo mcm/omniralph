@@ -1,4 +1,9 @@
-import type { ProgressStep, StepState } from "@omniralph/ui";
+import {
+  STEP_STATE_LABELS,
+  type ProgressStep,
+  type StatusTone,
+  type StepState,
+} from "@omniralph/ui";
 import type { RunDetail, RunStep } from "@/lib/api/runs";
 
 const SECOND = 1000;
@@ -44,7 +49,8 @@ export function stepState(status: RunStep["status"] | "waiting"): StepState {
   }
 }
 
-function stepLabel(step: RunStep): string {
+/** A step's name, as its progress card row reads (a story's title, a pass's task). */
+export function stepLabel(step: RunStep): string {
   switch (step.kind) {
     case "story":
       return step.title;
@@ -93,4 +99,27 @@ const PROGRESS_TITLES: Record<RunDetail["kind"], string> = {
 /** The progress card's title: "Epic progress" for an epic in the Inbox, else by kind. */
 export function progressTitle(kind: RunDetail["kind"], mode: "link" | "select"): string {
   return mode === "link" && kind === "epic" ? "Epic progress" : PROGRESS_TITLES[kind];
+}
+
+const STEP_TONES: Record<StepState, StatusTone> = {
+  done: "neutral",
+  waiting: "need",
+  running: "run",
+  failed: "fail",
+  blocked: "neutral",
+  pending: "neutral",
+  canceled: "neutral",
+};
+
+/**
+ * A step's status line on its own view (the phone step page): its name and state, e.g.
+ * "Build the API · Running", toned like its progress card dot.
+ */
+export function stepStatusLine(step: RunStep): { tone: StatusTone; text: string; state: string } {
+  const state = stepState(step.status);
+  return {
+    tone: STEP_TONES[state],
+    text: `${stepLabel(step)} · ${STEP_STATE_LABELS[state]}`,
+    state: STEP_STATE_LABELS[state],
+  };
 }

@@ -53,7 +53,7 @@ import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
 import { RUN_KIND_LABELS } from "../inbox/labels";
-import { NO_RUN_FILTERS, parseRunFilters, runInListHref } from "./filters";
+import { NO_RUN_FILTERS, parseRunFilters, runInListHref, runStepHref } from "./filters";
 import { runRowLabel } from "./labels";
 import "@/components/runs/run-cards.css";
 import "./run-detail.css";
@@ -202,6 +202,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
                 { scroll: false },
               )
             }
+            stepHref={(stepId) => runStepHref(run.id, stepId, filters)}
             stepPanel={
               step ? (
                 <StepPanel

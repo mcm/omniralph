@@ -22,6 +22,8 @@ export type RunProgressProps = {
       onSelectStep: (stepId: string) => void;
       /** Shown inside the card under the selected step (its `StepPanel`). */
       stepPanel?: ReactNode;
+      /** Each step's own view (the phone step page), linked by a chevron at phone width. */
+      stepHref?: (stepId: string) => string;
     }
 );
 
@@ -29,7 +31,8 @@ export type RunProgressProps = {
  * A run's progress card (Design rule 10) from its detail: its steps' states and durations,
  * titled by kind ("Stories", "Review passes", "Turns"; an epic in the Inbox is "Epic
  * progress"). In `link` mode it carries an "Open run" link; in `select` mode the steps are
- * selectable, with `stepPanel` under the selected one.
+ * selectable, with `stepPanel` under the selected one (and, with `stepHref`, a chevron link
+ * to each step's own view, shown instead of the panel at phone width).
  */
 export function RunProgress(props: RunProgressProps) {
   const { run, headingLevel, className } = props;
@@ -51,6 +54,7 @@ export function RunProgress(props: RunProgressProps) {
       selectedStepId={props.mode === "select" ? props.selectedStepId : undefined}
       onSelectStep={props.mode === "select" ? props.onSelectStep : undefined}
       stepPanel={props.mode === "select" ? props.stepPanel : undefined}
+      stepHref={props.mode === "select" ? props.stepHref : undefined}
     />
   );
 }
