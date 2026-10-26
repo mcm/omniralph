@@ -486,7 +486,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       origin: "linear",
       organization,
       title: epic.linearTitle!,
-      workItem: { tracker: "linear", identifier: epic.linearIdentifier, url: epic.linearUrl },
+      workItem: {
+        id: `linear-${epic.linearIssueId}`,
+        tracker: "linear",
+        identifier: epic.linearIdentifier,
+        url: epic.linearUrl,
+      },
       repository: github,
       branch: (await getMainLane(db, epic))!.branch,
       pullRequest: { provider: "github", number: 7, url: "https://github.com/acme/api/pull/7" },
@@ -503,7 +508,11 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       status: "waiting",
       origin: "linear_mention",
       title: request.linearTitle,
-      workItem: { tracker: "linear", identifier: request.linearIdentifier },
+      workItem: {
+        id: `linear-${request.linearIssueId}`,
+        tracker: "linear",
+        identifier: request.linearIdentifier,
+      },
       repository: github,
       pullRequest: null,
       agent: null,
@@ -538,6 +547,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       origin: "triage_label",
       title: "Shape the import",
       workItem: {
+        id: "linear-issue-triage",
         tracker: "linear",
         identifier: "ENG-90",
         url: "https://linear.app/acme/issue/ENG-90/shape-the-import",
@@ -565,6 +575,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       workItem: null,
       branch: "omniralph/readme-typo",
     });
+    // The detail carries the same reference: the work item's URL ID, or null without one.
+    expect((await detailPage(epic.id)).workItem).toMatchObject({
+      id: `linear-${epic.linearIssueId}`,
+    });
+    expect((await detailPage(triage.id)).workItem).toMatchObject({ id: "linear-issue-triage" });
+    expect((await detailPage(chat.id)).workItem).toBeNull();
   });
 
   it("offers the organization's repositories as filter options, by full path", async () => {
@@ -814,6 +830,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       id: run.id,
       kind: "epic",
       status: "failed",
+      // The work item's URL ID, for the run ⋯ menu's View PRD.
+      workItem: {
+        id: `linear-${run.linearIssueId}`,
+        tracker: "linear",
+        identifier: run.linearIdentifier,
+      },
       organization: { id: orgId, name: "Acme", role: "admin" },
       progress: { done: 1, total: 4 },
     });

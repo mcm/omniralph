@@ -20,6 +20,7 @@ export function runRow(overrides: Partial<RunRow> = {}): RunRow {
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     title: "Customer portal billing export",
     workItem: {
+      id: "linear-issue-tool-42",
       tracker: "linear",
       identifier: "TOOL-42",
       url: "https://linear.app/acme/issue/TOOL-42",

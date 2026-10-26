@@ -1,6 +1,7 @@
 import { TRIAGE_SIZES } from "@omniralph/shared";
 import { z } from "zod";
-import { organizationRefSchema, repositoryRefSchema } from "./runs";
+import { RUN_STATUSES, organizationRefSchema, repositoryRefSchema } from "./runs";
+import { isoDate } from "./schemas";
 
 /** Wire formats of work items (`/api/ui/work-items`, and the Backlog's rows). */
 
@@ -45,3 +46,125 @@ export type WorkItemRow = z.infer<typeof workItemRowSchema>;
 export function workItemSourceValue(row: Pick<WorkItemRow, "tracker" | "source">): string {
   return `${row.tracker}:${row.source.kind}:${row.source.id}`;
 }
+
+// ── The work item detail and its actions (`/api/ui/work-items/{id}`) ────────────────────────
+
+/** A work item's state in its tracker. */
+const workItemStateSchema = z.object({
+  category: z.enum(["triage", "backlog", "todo", "in_progress", "done", "canceled"]),
+  name: z.string(),
+});
+
+/** An open work item that blocks this one. */
+export const workItemBlockerSchema = z.object({
+  identifier: z.string(),
+  /** In the tracker; null when it can't be told. */
+  url: z.string().nullable(),
+  /** Its URL ID when the Backlog lists it (links to `/backlog/{id}`), else null. */
+  backlogId: z.string().nullable(),
+});
+
+/** How the work item routes: "Routes to <repo> via <project, team, label…>". */
+export const workItemRouteSchema = z.object({
+  /** `repository`: builds there; `manual`: its repo has Coding off; `ask`: routing ties. */
+  outcome: z.enum(["repository", "manual", "ask"]),
+  /** The repo it routes to (Coding on or off); null when routing asks. */
+  repository: repositoryRefSchema.nullable(),
+  /** What decided it; null when routing asks. */
+  via: z
+    .object({
+      kind: z.enum(["project", "team", "label", "parent", "follow_up", "rule", "choice"]),
+      /** `Omniralph project`, `SOC team`, `label product:portal`, `parent SOC-400`, `rule 2`, `your choice`. */
+      label: z.string(),
+    })
+    .nullable(),
+  /** The route in full, as a run's `routed_by` reads it; null when nothing routes it. */
+  by: z.string().nullable(),
+});
+export type WorkItemRoute = z.infer<typeof workItemRouteSchema>;
+
+/** One of its stories: a sub-issue, or a story its PRD lists (no identifier, state or URL). */
+export const workItemStorySchema = z.object({
+  identifier: z.string().nullable(),
+  title: z.string(),
+  state: workItemStateSchema.nullable(),
+  url: z.string().nullable(),
+  /** A step for a person (the manual label). */
+  manual: z.boolean(),
+});
+
+/** What happened to it, in a plain sentence, newest first. */
+export const workItemActivitySchema = z.object({
+  id: z.string(),
+  /** Where it comes from: an action in Omniralph, a triage run, or a tracker comment. */
+  source: z.enum(["event", "triage", "comment"]),
+  /** "Om triaged it (size M)", "Steve changed the repo to customer-portal". */
+  text: z.string(),
+  at: isoDate,
+});
+
+/** What the user can do with the item now (any member may; these follow its state). */
+export const workItemActionsSchema = z.object({
+  /** Start epic: Ready to start, with no run. */
+  start: z.boolean(),
+  /** Triage now: no triage queued or running, and no run. */
+  triage: z.boolean(),
+  /** Edit PRD: no run queued, running or waiting. */
+  editPrd: z.boolean(),
+  /** Change repo…: no run. */
+  changeRepo: z.boolean(),
+  /** Move to Needs refining: Ready to start, with no run. */
+  move: z.boolean(),
+  /** Remove from backlog…: no run queued, running or waiting. */
+  cancel: z.boolean(),
+});
+export type WorkItemActions = z.infer<typeof workItemActionsSchema>;
+
+/** `GET /api/ui/work-items/{id}`: the row, plus its PRD, route, stories, activity and run. */
+export const workItemDetailSchema = workItemRowSchema.extend({
+  /** Its Backlog group; null when its state is neither Ready to start nor Needs refining. */
+  group: z.enum(WORK_ITEM_GROUPS).nullable(),
+  state: workItemStateSchema,
+  /** Markdown: the PRD. */
+  description: z.string(),
+  /** When it last changed in the tracker: the PRD save's `baseUpdatedAt`. */
+  updatedAt: z.string(),
+  blockedBy: z.array(workItemBlockerSchema),
+  route: workItemRouteSchema,
+  stories: z.array(workItemStorySchema),
+  activity: z.array(workItemActivitySchema),
+  /** Om is triaging it (a triage queued or running). */
+  triageRunning: z.boolean(),
+  /** Its latest run, if one exists. */
+  run: z.object({ id: z.string(), status: z.enum(RUN_STATUSES) }).nullable(),
+  actions: workItemActionsSchema,
+});
+export type WorkItemDetail = z.infer<typeof workItemDetailSchema>;
+
+/**
+ * The item endpoints' query: the item's organization when the caller knows it (else each of
+ * the user's organizations is looked in, the active one first).
+ */
+export const workItemQuerySchema = z.object({
+  organization: z.uuid({ error: "Unknown organization." }).optional(),
+});
+
+/** `PUT /api/ui/work-items/{id}/prd`. */
+export const workItemPrdBodySchema = z.object({
+  markdown: z.string().max(200_000, { error: "The PRD is too long." }),
+  /** The `updatedAt` the edit started from: a newer edit in the tracker is a conflict. */
+  baseUpdatedAt: z.string().min(1),
+});
+export const workItemPrdResultSchema = z.object({ updatedAt: z.string() });
+
+/** `PUT /api/ui/work-items/{id}/repository`: a repo with Coding on, or null for the rules. */
+export const workItemRepositoryBodySchema = z.object({
+  repositoryId: z.uuid({ error: "Choose a repo." }).nullable(),
+});
+export const workItemRepositoryResultSchema = z.object({
+  /** The chosen repo; null when the routing rules route it again. */
+  repository: repositoryRefSchema.nullable(),
+});
+
+/** `POST /api/ui/work-items/{id}/move`. */
+export const workItemMoveBodySchema = z.object({ to: z.literal("needs_refining") });
