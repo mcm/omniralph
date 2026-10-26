@@ -139,6 +139,20 @@ describe.skipIf(!databaseAvailable)("organization settings API", () => {
     expect(await renameOrganization("x".repeat(101))).toEqual(failure);
     expect(await renameOrganization(" Renamed ")).toEqual({ ok: true });
     expect(await getOrganization(db, org.id)).toMatchObject({ name: "Renamed" });
+
+    // The rename is the General card's latest change (its ⓘ), shown to every member.
+    const response = await organization.GET(new Request("http://localhost/api/ui"), {
+      params: Promise.resolve({}),
+    });
+    const body = await response.json();
+    expect(body.organization).toMatchObject({ name: "Renamed" });
+    expect(body.history).toMatchObject({
+      section: "organization",
+      subjectId: null,
+      actor: { id: admin.id },
+      changes: [{ field: "name", label: "Name", before: "Team", after: "Renamed" }],
+      runsSince: 0,
+    });
   });
 
   it("shows every member the organization, its members and domains; only admins its invitations", async () => {
@@ -165,6 +179,8 @@ describe.skipIf(!databaseAvailable)("organization settings API", () => {
           expect.objectContaining({ id: member.id, role: "member" }),
         ]),
         invitations: [expect.objectContaining({ email: "new@view.io", role: "member" })],
+        // Adding the domain is the organization's latest change.
+        history: expect.objectContaining({ section: "organization" }),
       },
     });
 

@@ -24,6 +24,7 @@ import PlaybooksSettingsPage from "@/app/(app)/settings/advanced/playbooks/page"
 import RoutingRulesSettingsPage from "@/app/(app)/settings/advanced/routing/page";
 import GeneralSettingsPage from "@/app/(app)/settings/general/page";
 import { SettingsLayoutView } from "./settings-layout-view";
+import { organizationSettings } from "./test-fixtures";
 
 const nav = vi.hoisted(() => ({ pathname: "/settings", push: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -89,7 +90,10 @@ beforeEach(() => {
   preference.save.mockReset();
   preference.save.mockResolvedValue({ ok: true });
   connections = [github, gitlab, linear];
-  seen = mockFetch({ "GET /api/ui/connections": () => jsonResponse({ connections }) });
+  seen = mockFetch({
+    "GET /api/ui/connections": () => jsonResponse({ connections }),
+    "GET /api/ui/organization": () => jsonResponse(organizationSettings()),
+  });
 });
 
 afterEach(() => {

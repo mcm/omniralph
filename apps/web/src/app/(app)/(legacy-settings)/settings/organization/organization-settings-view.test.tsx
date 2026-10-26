@@ -46,6 +46,7 @@ function settings(overrides: Partial<OrganizationSettings> = {}): OrganizationSe
       },
     ],
     invitations: [],
+    history: null,
     ...overrides,
   };
 }
@@ -56,7 +57,6 @@ function renderView(role: "admin" | "member" = "admin") {
   return client;
 }
 
-const nameField = () => screen.getByLabelText(/^Name/) as HTMLInputElement;
 const domainJoin = () => screen.getByRole("switch");
 
 beforeEach(() => {
@@ -71,8 +71,7 @@ describe("OrganizationSettingsView", () => {
     mockFetch({ [`GET ${PATH}`]: settings() });
     renderView();
     expect(screen.getByLabelText("Loading the organization")).toBeTruthy();
-    await waitFor(() => expect(nameField().value).toBe("Acme"));
-    expect(screen.getByText("acme.io")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("acme.io")).toBeTruthy());
     expect(screen.getByText("No pending invitations.")).toBeTruthy();
   });
 
@@ -86,52 +85,7 @@ describe("OrganizationSettingsView", () => {
     await waitFor(() => expect(screen.getByText("Couldn't load the organization")).toBeTruthy());
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
-    await waitFor(() => expect(nameField().value).toBe("Acme"));
-  });
-
-  it("re-seeds the name from fresh data unless it's being edited", async () => {
-    let name = "Acme";
-    mockFetch({
-      [`GET ${PATH}`]: () =>
-        jsonResponse(settings({ organization: { id: "o", name, allowDomainJoin: false } })),
-    });
-    const client = renderView();
-    await waitFor(() => expect(nameField().value).toBe("Acme"));
-
-    // Renamed elsewhere: the untouched field follows.
-    name = "Acme Corp";
-    await client.invalidateQueries();
-    await waitFor(() => expect(nameField().value).toBe("Acme Corp"));
-
-    // Being edited: a refetch leaves the draft alone.
-    await userEvent.clear(nameField());
-    await userEvent.type(nameField(), "Mine");
-    name = "Acme Inc";
-    await client.invalidateQueries();
-    await waitFor(() => expect(screen.getByText(/Settings for Acme Inc/)).toBeTruthy());
-    expect(nameField().value).toBe("Mine");
-  });
-
-  it("renames, refetches and refreshes the shell for the sidebar", async () => {
-    let name = "Acme";
-    const seen = mockFetch({
-      [`GET ${PATH}`]: () =>
-        jsonResponse(settings({ organization: { id: "o", name, allowDomainJoin: false } })),
-      [`PATCH ${PATH}`]: (request) => {
-        name = (request.body as { name: string }).name;
-        return jsonResponse({ ok: true });
-      },
-    });
-    renderView();
-    await waitFor(() => expect(nameField().value).toBe("Acme"));
-    await userEvent.clear(nameField());
-    await userEvent.type(nameField(), "Acme Corp");
-    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
-    await waitFor(() => expect(router.refresh).toHaveBeenCalled());
-    expect(seen.find((r) => r.method === "PATCH")!.body).toEqual({ name: "Acme Corp" });
-    expect(toasts.toast).toHaveBeenCalledWith("Renamed to Acme Corp");
-    expect(screen.getByText(/Settings for Acme Corp/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Rename" }).hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(screen.getByText("acme.io")).toBeTruthy());
   });
 
   it("moves the domain-join switch at once and keeps it once saved", async () => {
@@ -254,9 +208,7 @@ describe("OrganizationSettingsView", () => {
   it("shows members the settings read-only", async () => {
     mockFetch({ [`GET ${PATH}`]: settings({ isAdmin: false }) });
     renderView("member");
-    await waitFor(() => expect(nameField().value).toBe("Acme"));
-    expect(nameField().disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+    await waitFor(() => expect(screen.getByText("acme.io")).toBeTruthy());
     expect(screen.queryByText("Invitations")).toBeNull();
     expect(domainJoin().hasAttribute("disabled")).toBe(true);
   });

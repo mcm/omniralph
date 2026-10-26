@@ -22,6 +22,7 @@ import type { OrganizationChange, OrganizationSettings } from "@/lib/api/organiz
 import { isValidEmail } from "@/lib/auth/allowlist";
 import { checkUserChange, hasRole, isRole, type Role } from "@/lib/auth/roles";
 import type { OrgUser } from "@/lib/auth/session";
+import { loadSettingsHistory } from "@/lib/settings-history/history";
 import { settingsActor, trackedOrganization } from "@/lib/settings-history/sections";
 import { activateOrganization } from "./active";
 import { checkOrganizationName } from "./name";
@@ -61,11 +62,16 @@ export async function loadOrganizationSettings(
 ): Promise<OrganizationSettings> {
   const isAdmin = hasRole(user, "admin");
   const organizationId = user.organization.id;
-  const [organization, members, domains, invitations] = await Promise.all([
+  const [organization, members, domains, invitations, history] = await Promise.all([
     getOrganization(db, organizationId),
     listMembers(db, organizationId),
     listOrganizationDomains(db, organizationId),
     isAdmin ? listPendingInvitationsForOrganization(db, organizationId) : [],
+    loadSettingsHistory(
+      db,
+      [{ id: organizationId, name: user.organization.name, role: user.role }],
+      { section: "organization", limit: 1 },
+    ),
   ]);
   if (!organization) throw ApiRouteError.notFound();
   return {
@@ -92,6 +98,7 @@ export async function loadOrganizationSettings(
       createdAt: i.createdAt.toISOString(),
       expiresAt: i.expiresAt.toISOString(),
     })),
+    history: history.latest,
   };
 }
 

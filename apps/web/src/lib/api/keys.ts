@@ -189,3 +189,14 @@ export function connectionKeys(keys: QueryKeys) {
     list: keys.settings.detail("connections"),
   };
 }
+
+/**
+ * Query keys of the active organization's settings (`GET /api/ui/organization`): its name,
+ * members, invitations and domains. An `organization` event of the organization refetches
+ * them; the shell's organization name follows their cached answer (`LiveCurrentUser`).
+ */
+export function organizationKeys(keys: QueryKeys) {
+  return {
+    settings: keys.organization.detail("settings"),
+  };
+}
