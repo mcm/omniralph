@@ -13,6 +13,8 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { DecisionButtons } from "@/components/runs/decision-buttons";
+import { inboxDecisions } from "@/components/runs/decisions";
 import type { InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
 import { useClock } from "../clock";
 import { InboxRowBadges } from "./inbox-badges";
@@ -147,16 +149,25 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
             <RowList aria-label={TAB_LABELS[tab]}>
               {items.map((item) => {
                 const label = inboxItemLabel(item, now);
+                const isSelected = item.key === selected?.key;
                 return (
                   <ListRow
                     key={item.key}
+                    className="or-inbox-row"
                     href={inboxHref(tab, item.key)}
                     title={item.title}
                     kindLabel={label.rowLabel}
                     tone={label.tone}
                     time={<time dateTime={item.since}>{compactAge(item.since, now)}</time>}
                     meta={<InboxRowBadges item={item} showOrganization={showOrganization} />}
-                    selected={item.key === selected?.key}
+                    selected={isSelected}
+                    actions={
+                      isSelected && hasInlineDecisions(item) ? (
+                        <div className="or-inbox-row__decisions">
+                          <DecisionButtons item={item} />
+                        </div>
+                      ) : undefined
+                    }
                   />
                 );
               })}
@@ -187,6 +198,16 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
       listWidth={INBOX_LIST_WIDTH}
     />
   );
+}
+
+/**
+ * Whether the selected row shows its decisions inline on a phone (Design board
+ * MobileInbox, rule 16): the same `DecisionButtons` as the detail's, in the row's actions
+ * slot beside the row link, shown only at phone width (`inbox.css`). A question's answer
+ * form needs the detail, so its row has none: tapping it opens the detail.
+ */
+export function hasInlineDecisions(item: InboxItem): boolean {
+  return item.kind !== "question" && inboxDecisions(item).length > 0;
 }
 
 /** The empty Needs you tab, with what's running (the Running tab's feed). */
