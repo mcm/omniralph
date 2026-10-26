@@ -8,7 +8,7 @@ import {
   createRunPermissionRequest,
   getRun,
   getRunPermissionRequest,
-  harnesses,
+  agents,
   jobs,
   organizations,
   updateRun,
@@ -137,7 +137,7 @@ describe.skipIf(!databaseAvailable)("/api/harness/jobs/{id}/permissions", () => 
       })
     ).id;
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: orgId,
         name: "coder-1",
@@ -166,7 +166,7 @@ describe.skipIf(!databaseAvailable)("/api/harness/jobs/{id}/permissions", () => 
           taskType: "query",
           taskId: "builtin:chat-ask",
           status: "running",
-          harnessId,
+          agentId: harnessId,
         })
         .returning();
       const session = await getTokenSigner().signJobToken({
@@ -291,7 +291,7 @@ describe.skipIf(!databaseAvailable)("/api/harness/jobs/{id}/permissions", () => 
           type: "ralph.story",
           taskType: "coding",
           status: "running",
-          harnessId,
+          agentId: harnessId,
           repositoryId,
           ralphRunId: run.id,
         })

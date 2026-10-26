@@ -1,9 +1,9 @@
 import "server-only";
 import {
-  filterActiveHarnessIds,
+  filterActiveAgentIds,
   getRepository,
-  listRepositoryPinnedHarnessIds,
-  unpinRepositoryFromHarness,
+  listRepositoryPinnedAgentIds,
+  unpinRepositoryFromAgent,
   updateRepositorySettings,
   type Database,
 } from "@omniralph/db";
@@ -118,9 +118,9 @@ export async function saveRepositorySettings(
   }
 
   const wanted = [...new Set(input.pinnedHarnessIds)];
-  const current = await listRepositoryPinnedHarnessIds(db, repositoryId);
+  const current = await listRepositoryPinnedAgentIds(db, repositoryId);
   const added = wanted.filter((id) => !current.includes(id));
-  const active = await filterActiveHarnessIds(db, organizationId, added);
+  const active = await filterActiveAgentIds(db, organizationId, added);
   const unknown = added.filter((id) => !active.has(id));
   if (unknown.length > 0) return { status: "unknown_agents", harnessIds: unknown };
 
@@ -145,7 +145,7 @@ export async function saveRepositorySettings(
   }
   const removed = current.filter((id) => !wanted.includes(id));
   for (const harnessId of removed) {
-    if (await unpinRepositoryFromHarness(db, { harnessId, repositoryId })) {
+    if (await unpinRepositoryFromAgent(db, { agentId: harnessId, repositoryId })) {
       await bumpHarnessHeartbeat(harnessId);
     }
   }

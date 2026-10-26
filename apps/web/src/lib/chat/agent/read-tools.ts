@@ -1,14 +1,14 @@
 import "server-only";
 import {
   ACTIVE_RALPH_RUN_STATUSES,
-  getDesiredHarnessVersion,
-  getHarness,
+  getDesiredAgentVersion,
+  getAgent,
   getJob,
   getReviewDetail,
   getRunDetail,
   jobStatus,
   latestThreadRun,
-  listHarnessOverview,
+  listAgentOverview,
   listOpenRunPermissionRequests,
   listRecentRunActivities,
   listRecentJobs,
@@ -347,7 +347,7 @@ async function queryRunState(db: Database, organizationId: string, job: Job, app
   const context = payload.success ? QueryRunContext.safeParse(payload.data.trigger.context) : null;
   const result = QueryRunResult.safeParse(job.result);
   const [harness, permissionRequests, activity] = await Promise.all([
-    job.harnessId ? getHarness(db, job.harnessId) : null,
+    job.agentId ? getAgent(db, job.agentId) : null,
     openPermissionRequests(db, [job.id]),
     recentActivity(db, organizationId, [job.id]),
   ]);
@@ -599,8 +599,8 @@ export const listHarnessesTool = defineChatTool({
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
     const [harnesses, desiredVersion] = await Promise.all([
-      listHarnessOverview(db, organizationId).then(withLastSeen),
-      getDesiredHarnessVersion(db, organizationId),
+      listAgentOverview(db, organizationId).then(withLastSeen),
+      getDesiredAgentVersion(db, organizationId),
     ]);
     const shown = harnesses.slice(0, CHAT_TOOL_RESULT_LIMIT);
     return {
@@ -655,7 +655,7 @@ export const listRepositoriesTool = defineChatTool({
         codingEnabled: repo.codingEnabled,
         askEnabled: repo.askEnabled,
         reviewDepth: repo.reviewDepth,
-        pinnedHarnesses: repo.pinnedHarnesses.map((a) => a.name),
+        pinnedHarnesses: repo.pinnedAgents.map((a) => a.name),
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       })),
       ...listInfo(

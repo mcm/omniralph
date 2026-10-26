@@ -2,8 +2,8 @@ import "server-only";
 import {
   getRepositoryWithConnection,
   getWorkItemMatch,
-  listHarnessOverview,
-  listRepositoryPinnedHarnessIds,
+  listAgentOverview,
+  listRepositoryPinnedAgentIds,
   listRoutingRules,
   repositorySwitches,
   type Database,
@@ -45,9 +45,9 @@ export async function loadRepositoryDetail(
   const { repository, connection } = await connectedRepository(organizationId, id);
   const [harnesses, organizationVersion, pinnedHarnessIds, workItemMatch, rules] =
     await Promise.all([
-      listHarnessOverview(db, organizationId).then(withLastSeen),
+      listAgentOverview(db, organizationId).then(withLastSeen),
       organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-      listRepositoryPinnedHarnessIds(db, id),
+      listRepositoryPinnedAgentIds(db, id),
       getWorkItemMatch(db, organizationId, id),
       listRoutingRules(db, organizationId),
     ]);

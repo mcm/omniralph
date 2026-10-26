@@ -1,5 +1,5 @@
 import "server-only";
-import { getHarnessAuthState, type Database } from "@omniralph/db";
+import { getAgentAuthState, type Database } from "@omniralph/db";
 import { readHotState, registerHotStateRebuilder, writeHotState } from "@/lib/hot-state";
 import "@/lib/hot-state/rebuilders";
 
@@ -9,7 +9,7 @@ import "@/lib/hot-state/rebuilders";
  * `revoked` after its Postgres commit, so it still takes effect on the next request.
  */
 
-export type HarnessAuthState = Awaited<ReturnType<typeof getHarnessAuthState>>;
+export type HarnessAuthState = Awaited<ReturnType<typeof getAgentAuthState>>;
 
 const KEY_PREFIX = "harness-auth:";
 /** How long a state read from Postgres stays cached. */
@@ -37,12 +37,12 @@ export async function readHarnessAuthState(
       const key = harnessAuthKey(harnessId);
       const cached = await redis.get(key);
       if (isCachedState(cached)) return cached;
-      const state = await getHarnessAuthState(db, harnessId);
+      const state = await getAgentAuthState(db, harnessId);
       // NX: a revocation committed after our read may already have written `revoked`.
       if (state !== "unknown") await redis.set(key, state, "EX", HARNESS_AUTH_TTL_SECONDS, "NX");
       return state;
     },
-    () => getHarnessAuthState(db, harnessId),
+    () => getAgentAuthState(db, harnessId),
   );
 }
 

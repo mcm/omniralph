@@ -1,9 +1,9 @@
 import "server-only";
 import {
-  getHarness,
+  getAgent,
   getJob,
   insertJob,
-  pinnedHarnessFor,
+  pinnedAgentFor,
   requestJobCancel,
   setQueuedJobTarget,
   type CancelJobResult,
@@ -68,7 +68,7 @@ export class PostgresDispatcher implements JobDispatcher {
   async createAndPublish(input: DispatchJobInput): Promise<DispatchedJob> {
     const { targetHarnessId, ...jobInput } = input;
     const target = await this.targetFor(jobInput, targetHarnessId);
-    const dispatched = await insertJob(this.db, { ...jobInput, targetHarnessId: target });
+    const dispatched = await insertJob(this.db, { ...jobInput, targetAgentId: target });
     // Before the wake, so the woken claim finds the job due.
     if (dispatched.created) await syncJobsDue([dispatched.job]);
     // Also for a deduplicated job: a wake costs at most one empty claim.
@@ -81,7 +81,7 @@ export class PostgresDispatcher implements JobDispatcher {
     if (result === "canceled") await syncJobsDueFromPostgres(this.db, [jobId]);
     // Its harness's next heartbeat tells it to stop the job.
     if (result === "cancel_requested" && hotStateEnabled()) {
-      await bumpHarnessHeartbeat((await getJob(this.db, jobId))?.harnessId);
+      await bumpHarnessHeartbeat((await getJob(this.db, jobId))?.agentId);
     }
     return result;
   }
@@ -91,15 +91,15 @@ export class PostgresDispatcher implements JobDispatcher {
     if (!job || job.status !== "queued") return false;
     const target = await this.targetFor(job, undefined);
     if (!(await setQueuedJobTarget(this.db, job.id, target))) return false;
-    await this.wake({ organizationId: job.organizationId, targetHarnessId: target });
+    await this.wake({ organizationId: job.organizationId, targetAgentId: target });
     return true;
   }
 
   /** Wakes the job's target agent, else its organization's agents. Never throws. */
-  private async wake(job: Pick<Job, "organizationId" | "targetHarnessId">): Promise<void> {
+  private async wake(job: Pick<Job, "organizationId" | "targetAgentId">): Promise<void> {
     if (!this.wakePublisher) return;
-    const channel = job.targetHarnessId
-      ? agentWakeChannel(job.targetHarnessId)
+    const channel = job.targetAgentId
+      ? agentWakeChannel(job.targetAgentId)
       : orgWakeChannel(job.organizationId);
     try {
       await this.wakePublisher.wake(channel);
@@ -113,7 +113,7 @@ export class PostgresDispatcher implements JobDispatcher {
     targetHarnessId: string | undefined,
   ): Promise<string | null> {
     if (targetHarnessId) {
-      const target = await getHarness(this.db, targetHarnessId);
+      const target = await getAgent(this.db, targetHarnessId);
       if (target?.organizationId !== job.organizationId) {
         throw new Error(
           `Agent ${targetHarnessId} isn't in organization ${job.organizationId} of the job`,
@@ -122,7 +122,7 @@ export class PostgresDispatcher implements JobDispatcher {
       return targetHarnessId;
     }
     return job.repositoryId
-      ? pinnedHarnessFor(this.db, job.organizationId, job.repositoryId, {
+      ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId, {
           lastHeartbeats: readHarnessLastSeen,
         })
       : null;

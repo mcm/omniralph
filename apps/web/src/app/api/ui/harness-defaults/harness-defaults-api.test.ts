@@ -44,8 +44,8 @@ vi.mock("@omniralph/db", async () => {
       _tracked: unknown,
       save: (tx: unknown) => Promise<unknown>,
     ) => save(db),
-    TRACK_LATEST_HARNESS_VERSION: "latest",
-    DESIRED_HARNESS_VERSION_KEY: "harness.desiredVersion",
+    TRACK_LATEST_AGENT_VERSION: "latest",
+    DESIRED_AGENT_VERSION_KEY: "harness.desiredVersion",
     DEFAULT_MAX_CONCURRENCY: 5,
     // Nothing saved: the built-in defaults, as the real getters return them.
     getDefaultMaxConcurrency: async () => state.maxConcurrency ?? 5,
@@ -108,16 +108,16 @@ vi.mock("@omniralph/db", async () => {
       );
       return state.hostTools.length < before;
     },
-    getDesiredHarnessVersion: async () => state.version,
-    getLatestHarnessVersionCheck: async () => state.latestCheck,
-    setLatestHarnessVersionCheck: async (
+    getDesiredAgentVersion: async () => state.version,
+    getLatestAgentVersionCheck: async () => state.latestCheck,
+    setLatestAgentVersionCheck: async (
       _db: unknown,
       _organizationId: string,
       check: { version: string | null; error: string | null },
     ) => {
       state.latest = check;
     },
-    setDesiredHarnessVersion: async (
+    setDesiredAgentVersion: async (
       _db: unknown,
       organizationId: string,
       version: string | null,

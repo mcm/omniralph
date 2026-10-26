@@ -1,4 +1,4 @@
-import { failJob, getJob, getJobForHarness } from "@omniralph/db";
+import { failJob, getJob, getJobForAgent } from "@omniralph/db";
 import { JobFailure, MAX_JOB_DELIVERIES, type JobOutcomeResponse } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
@@ -35,11 +35,11 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   if (!body.success) return badRequest();
 
   const db = getDb();
-  if (!(await getJobForHarness(db, jobId, principal.harnessId))) return notFound();
+  if (!(await getJobForAgent(db, jobId, principal.harnessId))) return notFound();
   const retryAfterSeconds = body.data.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
   const outcome = await failJob(db, {
     jobId,
-    harnessId: principal.harnessId,
+    agentId: principal.harnessId,
     retryable: body.data.retryable,
     error: body.data.error ?? null,
     maxDeliveries: MAX_JOB_DELIVERIES,

@@ -3,15 +3,15 @@ import {
   createHostTool,
   DEFAULT_MAX_CONCURRENCY,
   deleteHostTool,
-  DESIRED_HARNESS_VERSION_KEY,
+  DESIRED_AGENT_VERSION_KEY,
   getAppSetting,
   getDefaultMaxConcurrency,
   listHostTools,
   MAX_MAX_CONCURRENCY,
   MIN_MAX_CONCURRENCY,
   setDefaultMaxConcurrency,
-  setDesiredHarnessVersion,
-  TRACK_LATEST_HARNESS_VERSION,
+  setDesiredAgentVersion,
+  TRACK_LATEST_AGENT_VERSION,
   withSettingsChanges,
   type Database,
 } from "@omniralph/db";
@@ -20,7 +20,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import type {
   AddHostToolInput,
-  HarnessDefaults,
+  AgentDefaults,
   HarnessDefaultsSave,
   HostToolCatalogRow,
 } from "@/lib/api/harness-defaults";
@@ -51,9 +51,9 @@ const NPM_TIMEOUT_MS = 2_000;
 export async function loadHarnessDefaults(
   db: Database,
   organizationId: string,
-): Promise<HarnessDefaults> {
+): Promise<AgentDefaults> {
   const [setting, resolved, maxConcurrency] = await Promise.all([
-    getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY),
+    getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY),
     organizationHarnessVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     getDefaultMaxConcurrency(db, organizationId),
   ]);
@@ -89,14 +89,14 @@ export async function setGlobalHarnessVersion(
   version: string,
 ): Promise<HarnessVersionResult> {
   const trimmed = version.trim().replace(/^v(?=\d)/, "");
-  if (trimmed.toLowerCase() === TRACK_LATEST_HARNESS_VERSION) {
+  if (trimmed.toLowerCase() === TRACK_LATEST_AGENT_VERSION) {
     return trackLatestHarnessVersion(db, admin);
   }
   const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
   if (parsed && !parsed.success) {
     return { ok: false, error: "Enter a version like 1.4.0 or latest, or leave it blank." };
   }
-  await setDesiredHarnessVersion(db, admin.organization.id, parsed?.data ?? null, admin.id);
+  await setDesiredAgentVersion(db, admin.organization.id, parsed?.data ?? null, admin.id);
   await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };
 }
@@ -119,7 +119,7 @@ export async function trackLatestHarnessVersion(
     throw error;
   }
   await recordLatestHarnessVersion(db, admin.organization.id, version);
-  await setDesiredHarnessVersion(db, admin.organization.id, TRACK_LATEST_HARNESS_VERSION, admin.id);
+  await setDesiredAgentVersion(db, admin.organization.id, TRACK_LATEST_AGENT_VERSION, admin.id);
   await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true, version };
 }

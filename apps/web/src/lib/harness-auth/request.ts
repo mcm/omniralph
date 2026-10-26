@@ -1,4 +1,4 @@
-import { writeHarnessAudit, type Database } from "@omniralph/db";
+import { writeAgentAudit, type Database } from "@omniralph/db";
 import { hitRateLimit, recordAuthFailure } from "@/lib/rate-limit";
 
 /**
@@ -45,8 +45,8 @@ async function auditAuthFailure(
     now,
   );
   if (count !== 1) return;
-  await writeHarnessAudit(db, {
-    harnessId: input.harnessId,
+  await writeAgentAudit(db, {
+    agentId: input.harnessId,
     event: "auth_failed",
     ip: input.ip,
     detail: { reason: input.reason, path: input.path },

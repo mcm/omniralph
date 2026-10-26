@@ -13,7 +13,7 @@ import {
   createInvitation,
   getActiveOrganization,
   getDefaultMaxConcurrency,
-  getDesiredHarnessVersion,
+  getDesiredAgentVersion,
   listHostTools,
   getIntegration,
   getMembership,
@@ -28,7 +28,7 @@ import {
   listPendingInvitationsForOrganization,
   connectRepository,
   createDb,
-  createHarnessEnrollment,
+  createAgentEnrollment,
   createCustomRule,
   createHostTool,
   listRepositoryRules,
@@ -38,18 +38,18 @@ import {
   createRun,
   createTriageRun,
   insertJob,
-  enrollHarness,
+  enrollAgent,
   ensureChatThread,
   findings,
-  getHarnessOverview,
+  getAgentOverview,
   getRepository,
   getJob,
   getRun,
-  harnesses,
+  agents,
   integrations as integrationRows,
   jobs,
   runActivities,
-  listHarnessHostTools,
+  listAgentHostTools,
   mapThreadRun,
   recordWebhookEvent,
   organizationMembers,
@@ -193,7 +193,7 @@ const harnessUpdate = await import("./harnesses/[id]/update/route");
 const harnessRevoke = await import("./harnesses/[id]/revoke/route");
 const harnessInstallables = await import("./harnesses/[id]/installables/route");
 const harnessInstalls = await import("./harnesses/[id]/installs/route");
-const harnessHostTools = await import("./harnesses/[id]/host-tools/route");
+const agentHostTools = await import("./harnesses/[id]/host-tools/route");
 const repositoryList = await import("./repositories/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
@@ -323,11 +323,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await addMember(db, { organizationId: org.id, userId: member!.id, role: "member" }),
     ).toBe("added");
     await setActiveOrganization(db, { userId: member!.id, organizationId: org.id });
-    const created = await createHarnessEnrollment(db, {
+    const created = await createAgentEnrollment(db, {
       organizationId: org.id,
       name: `${name}-harness`,
     });
-    const { harnessId } = (await enrollHarness(db, {
+    const { agentId } = (await enrollAgent(db, {
       enrollmentToken: created.token,
       name: "host",
       version: "1.0.0",
@@ -402,7 +402,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         type: "review.run",
         taskType: "review",
         status: "running",
-        harnessId,
+        agentId,
       })
       .returning();
     const { run: triageRun } = await createTriageRun(db, {
@@ -416,7 +416,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       adminId: admin!.id,
       memberId: member!.id,
       orgId: org.id,
-      harnessId,
+      harnessId: agentId,
       enrollmentId: created.id,
       connectionId: connection.id,
       repoId: repo.id,
@@ -465,7 +465,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             analytics: {
               totals: { reviews: 1 },
               findingsBySeverity: { high: 1 },
-              jobsByHarness: [{ agent: { id: own.harnessId }, total: 1 }],
+              jobsByAgent: [{ agent: { id: own.harnessId }, total: 1 }],
             },
             ralph: { totals: { runs: 1 } },
             params: { days: 30, repositoryId: null },
@@ -1038,19 +1038,19 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     expect(body.command).toBe(
       `omniralph-agent enroll --server https://omniralph.example.com --token ${body.token}`,
     );
-    const { harnessId } = (await enrollHarness(db, {
+    const { agentId } = (await enrollAgent(db, {
       enrollmentToken: body.token as string,
       name: "host",
       version: "1.0.0",
     }))!;
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+    const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
     expect(row).toMatchObject({ organizationId: b.orgId, name: "beta-2" });
 
     // Only its own organization sees the enrollment and its harness.
     const params = { id: body.id as string };
     expect(await call(enrollment.GET, { params })).toMatchObject({
       status: 200,
-      body: { id: body.id, harness: { id: harnessId, name: "beta-2" } },
+      body: { id: body.id, harness: { id: agentId, name: "beta-2" } },
     });
     state.userId = a.adminId;
     expect(await call(enrollment.GET, { params })).toMatchObject({ status: 404 });
@@ -1086,7 +1086,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(detail).toMatchObject({ status: 200, body: { harness: { id: own.harnessId } } });
       const installables = await call(harnessInstallables.GET, { params: ownParams });
       expect(installables).toMatchObject({ status: 200, body: { installJobs: [] } });
-      const hostTools = await call(harnessHostTools.GET, { params: ownParams });
+      const hostTools = await call(agentHostTools.GET, { params: ownParams });
       expect(hostTools).toMatchObject({
         status: 200,
         body: { hostTools: [{ hostToolId: own.hostToolId }] },
@@ -1096,7 +1096,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
 
       const otherParams = { id: other.harnessId };
-      for (const handler of [harnessDetail.GET, harnessInstallables.GET, harnessHostTools.GET]) {
+      for (const handler of [harnessDetail.GET, harnessInstallables.GET, agentHostTools.GET]) {
         expect(await call(handler, { params: otherParams })).toMatchObject({ status: 404 });
         expect(await call(handler, { params: { id: "not-a-uuid" } })).toMatchObject({
           status: 404,
@@ -1104,7 +1104,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
       // Harness pages are admin-only.
       state.userId = own.memberId;
-      for (const handler of [harnessDetail.GET, harnessInstallables.GET, harnessHostTools.GET]) {
+      for (const handler of [harnessDetail.GET, harnessInstallables.GET, agentHostTools.GET]) {
         expect(await call(handler, { params: ownParams })).toMatchObject({ status: 403 });
       }
     }
@@ -1130,7 +1130,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           [a.harnessId, b.hostToolId],
           [b.harnessId, b.hostToolId],
         ].map(([id, hostToolId]) =>
-          call(harnessHostTools.PUT, {
+          call(agentHostTools.PUT, {
             method: "PUT",
             params: { id: id! },
             body: { paths: [{ hostToolId, path: "/opt/x" }] },
@@ -1142,7 +1142,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ];
     for (const response of refused) expect(response.status).toBe(400);
 
-    const other = (await getHarnessOverview(db, b.orgId, b.harnessId))!;
+    const other = (await getAgentOverview(db, b.orgId, b.harnessId))!;
     expect(other).toMatchObject({
       maxConcurrency: null,
       desiredVersion: null,
@@ -1152,7 +1152,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     expect(other.pinnedRepositories).toEqual([]);
     expect(
-      (await listHarnessHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
+      (await listAgentHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
     ).toEqual([null]);
     expect(
       (await db.select().from(jobs).where(eq(jobs.organizationId, b.orgId))).map((j) => j.id),
@@ -1167,14 +1167,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }),
     ).toMatchObject({ status: 200, body: { ok: true, savedAt: expect.any(String) } });
     expect(
-      await call(harnessHostTools.PUT, {
+      await call(agentHostTools.PUT, {
         method: "PUT",
         params: { id: a.harnessId },
         body: { paths: [{ hostToolId: a.hostToolId, path: "/opt/x" }] },
       }),
     ).toMatchObject({ status: 200 });
     expect(
-      (await listHarnessHostTools(db, a.orgId, a.harnessId)).map((t) => t.configuredPath),
+      (await listAgentHostTools(db, a.orgId, a.harnessId)).map((t) => t.configuredPath),
     ).toEqual(["/opt/x"]);
   });
 
@@ -2916,7 +2916,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ).toEqual({ status: 400, body: { error: "That host tool doesn't exist." } });
       expect((await listHostTools(db, b.orgId)).map((t) => t.id)).toContain(b.hostToolId);
       expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toContain(a.hostToolId);
-      expect(await getDesiredHarnessVersion(db, a.orgId)).not.toBe("1.4.0");
+      expect(await getDesiredAgentVersion(db, a.orgId)).not.toBe("1.4.0");
     });
 
     it("changes only the active organization's harness defaults and host tools", async () => {
@@ -2937,8 +2937,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         }),
       ).toEqual({ status: 200, body: { ok: true } });
 
-      expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
-      expect(await getDesiredHarnessVersion(db, b.orgId)).not.toBe("1.4.0");
+      expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
+      expect(await getDesiredAgentVersion(db, b.orgId)).not.toBe("1.4.0");
       expect(await getDefaultMaxConcurrency(db, a.orgId)).toBe(3);
       expect(await getDefaultMaxConcurrency(db, b.orgId)).toBe(5);
 

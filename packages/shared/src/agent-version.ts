@@ -19,7 +19,7 @@ export const AGENT_MIN_VERSION = "2.0.0";
  * only (a prerelease of `minimum` counts: it's built from the same code).
  * False for a version that isn't semver.
  */
-export function harnessVersionAtLeast(version: string, minimum: string): boolean {
+export function agentVersionAtLeast(version: string, minimum: string): boolean {
   const core = (v: string) => {
     const match = SEMVER_PATTERN.exec(v.trim());
     return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;

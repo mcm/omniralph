@@ -1,4 +1,4 @@
-import { getHarnessOverview, listHarnessHostTools } from "@omniralph/db";
+import { getAgentOverview, listAgentHostTools } from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import { hostToolPathsSaveSchema, type HarnessHostTools } from "@/lib/api/harnesses";
@@ -15,8 +15,8 @@ export const GET = apiHandler<"admin", undefined, undefined, Params>(
     const db = getDb();
     const orgId = user.organization.id;
     const [harness, hostTools] = await Promise.all([
-      getHarnessOverview(db, orgId, params.id),
-      listHarnessHostTools(db, orgId, params.id),
+      getAgentOverview(db, orgId, params.id),
+      listAgentHostTools(db, orgId, params.id),
     ]);
     if (!harness) throw ApiRouteError.notFound();
     return {

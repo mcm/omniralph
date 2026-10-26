@@ -2,7 +2,7 @@ import {
   captureChanges,
   closeDb,
   createDb,
-  harnesses,
+  agents,
   organizations,
   type Database,
 } from "@omniralph/db";
@@ -52,16 +52,16 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
   });
 
   async function newAgent(lastHeartbeatAt: Date | null = new Date()): Promise<string> {
-    await db.update(harnesses).set({ liveOnline: false });
+    await db.update(agents).set({ liveOnline: false });
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "host", lastHeartbeatAt })
       .returning();
     return harness!.id;
   }
 
   const liveOnline = async (id: string) =>
-    (await db.select().from(harnesses).where(eq(harnesses.id, id)))[0]!.liveOnline;
+    (await db.select().from(agents).where(eq(agents.id, id)))[0]!.liveOnline;
 
   const agentEvents = (changes: { resource: string; ids: string[] }[]) =>
     changes.filter((c) => c.resource === "agent").flatMap((c) => c.ids);
@@ -124,7 +124,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
 
       it("never announces a revoked agent online", async () => {
         const id = await newAgent();
-        await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, id));
+        await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, id));
         expect((await captureChanges(() => noteAgentOnline(db, id))).changes).toEqual([]);
         expect(await liveOnline(id)).toBe(false);
       });
@@ -133,7 +133,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
 
   async function newAgentKeepingOthers(lastHeartbeatAt: Date): Promise<string> {
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "other", lastHeartbeatAt })
       .returning();
     return harness!.id;

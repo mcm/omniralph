@@ -5,15 +5,15 @@
 import {
   closeDb,
   connectRepository,
-  createHarnessEnrollment,
+  createAgentEnrollment,
   createDb,
   createHostTool,
   createOrganization,
-  enrollHarness,
-  getDesiredHarnessVersion,
-  listHarnessHostTools,
+  enrollAgent,
+  getDesiredAgentVersion,
+  listAgentHostTools,
   listHostTools,
-  setDesiredHarnessVersion,
+  setDesiredAgentVersion,
   upsertScmConnection,
   users,
   type Database,
@@ -126,11 +126,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
       .values({ id: `${name}-admin`, email: `admin@${name}.io` })
       .returning();
     const org = await createOrganization(db, { name, createdBy: user!.id });
-    const enrollment = await createHarnessEnrollment(db, {
+    const enrollment = await createAgentEnrollment(db, {
       organizationId: org.id,
       name: `${name}-harness`,
     });
-    const { harnessId } = (await enrollHarness(db, {
+    const { agentId } = (await enrollAgent(db, {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
@@ -149,7 +149,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
       externalId: "500",
       fullPath: "shared/app",
     });
-    return { userId: user!.id, orgId: org.id, harnessId, repoId: repo.id };
+    return { userId: user!.id, orgId: org.id, harnessId: agentId, repoId: repo.id };
   }
 
   beforeAll(async () => {
@@ -168,14 +168,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
   it("keeps the desired harness version per organization", async () => {
     state.userId = a.userId;
     expect(await setGlobalHarnessVersion("1.4.0")).toEqual({ ok: true });
-    expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
-    expect(await getDesiredHarnessVersion(db, b.orgId)).toBeNull();
+    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
+    expect(await getDesiredAgentVersion(db, b.orgId)).toBeNull();
     expect((await harnessDefaults()).desiredVersion).toBe("1.4.0");
 
     state.userId = b.userId;
     expect((await harnessDefaults()).desiredVersion).toBeNull();
-    await setDesiredHarnessVersion(db, b.orgId, "2.0.0", b.userId);
-    expect(await getDesiredHarnessVersion(db, a.orgId)).toBe("1.4.0");
+    await setDesiredAgentVersion(db, b.orgId, "2.0.0", b.userId);
+    expect(await getDesiredAgentVersion(db, a.orgId)).toBe("1.4.0");
   });
 
   it("keeps concurrency defaults per organization", async () => {
@@ -202,7 +202,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of harnesses", () =>
     expect(await removeHostTool(theirs.hostTool.id)).toMatchObject({ ok: false });
     expect(await listHostTools(db, b.orgId)).toHaveLength(1);
     expect(
-      (await listHarnessHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
+      (await listAgentHostTools(db, b.orgId, b.harnessId)).map((t) => t.configuredPath),
     ).toEqual([null]);
 
     // Its own tool still works.

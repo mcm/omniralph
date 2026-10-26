@@ -1,4 +1,4 @@
-import { getHarnessOverview, listHarnessPinSyncJobs, listRecentHarnessAudit } from "@omniralph/db";
+import { getAgentOverview, listAgentPinSyncJobs, listRecentAgentAudit } from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { HarnessDetail } from "@/lib/api/harnesses";
@@ -29,7 +29,7 @@ const detailQuery = z.object({ next: z.string().max(2000).optional() });
 export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
   { access: "admin", query: detailQuery },
   async ({ user, params, query }): Promise<HarnessDetail> => {
-    await requireResourceInActiveOrganization(user, "harness", params.id, {
+    await requireResourceInActiveOrganization(user, "agent", params.id, {
       pathPrefix: `/harnesses/${params.id}`,
       next: query.next,
     });
@@ -37,10 +37,10 @@ export const GET = apiHandler<"admin", undefined, typeof detailQuery, Params>(
     const orgId = user.organization.id;
     const now = new Date();
     const [harness, audit, version, pinSyncJobs] = await Promise.all([
-      getHarnessOverview(db, orgId, params.id).then(withHarnessLastSeen),
-      listRecentHarnessAudit(db, params.id, AUDIT_LIMIT),
+      getAgentOverview(db, orgId, params.id).then(withHarnessLastSeen),
+      listRecentAgentAudit(db, params.id, AUDIT_LIMIT),
       organizationHarnessVersion(db, orgId, { timeoutMs: NPM_TIMEOUT_MS }),
-      listHarnessPinSyncJobs(db, orgId, params.id, new Date(now.getTime() - PIN_SYNC_WINDOW_MS)),
+      listAgentPinSyncJobs(db, orgId, params.id, new Date(now.getTime() - PIN_SYNC_WINDOW_MS)),
     ]);
     if (!harness) throw ApiRouteError.notFound();
     return {

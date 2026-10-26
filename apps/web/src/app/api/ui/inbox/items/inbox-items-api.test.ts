@@ -5,7 +5,7 @@ import {
   createDb,
   createRun,
   getRun,
-  harnesses,
+  agents,
   inboxItemStates,
   insertJob,
   jobs,
@@ -167,9 +167,9 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     ).id;
     await setCodingEnabled(db, repoId);
     [{ id: agentId }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -548,7 +548,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       taskType: "system",
       payload: { repositoryId: repoId },
       repositoryId: repoId,
-      targetHarnessId: agentId,
+      targetAgentId: agentId,
     });
     await db
       .update(jobs)
@@ -561,7 +561,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       .select()
       .from(jobs)
       .where(and(eq(jobs.type, REPO_SYNC_JOB_TYPE), eq(jobs.status, "queued")));
-    expect(rerun).toEqual([expect.objectContaining({ targetHarnessId: agentId })]);
+    expect(rerun).toEqual([expect.objectContaining({ targetAgentId: agentId })]);
   });
 
   it("answers 404 for a key that derives no item", async () => {

@@ -6,62 +6,62 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { ReviewDepth } from "@omniralph/shared";
 import type { Database } from "./client.js";
 import { recordRepositorySettingsChange, type Repository } from "./repositories.js";
-import { harnessRepoPins, harnesses, repositories, type RepositoryTriggers } from "./schema.js";
+import { agentRepoPins, agents, repositories, type RepositoryTriggers } from "./schema.js";
 
 /** The organization's agents that can be pinned (not revoked), by name. */
-export async function listPinnableHarnesses(
+export async function listPinnableAgents(
   db: Database,
   organizationId: string,
 ): Promise<{ id: string; name: string; lastHeartbeatAt: Date | null }[]> {
   return db
-    .select({ id: harnesses.id, name: harnesses.name, lastHeartbeatAt: harnesses.lastHeartbeatAt })
-    .from(harnesses)
-    .where(and(eq(harnesses.organizationId, organizationId), isNull(harnesses.revokedAt)))
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+    .select({ id: agents.id, name: agents.name, lastHeartbeatAt: agents.lastHeartbeatAt })
+    .from(agents)
+    .where(and(eq(agents.organizationId, organizationId), isNull(agents.revokedAt)))
+    .orderBy(asc(agents.name), asc(agents.createdAt));
 }
 
 /** IDs of the agents a repository is pinned to. */
-export async function listRepositoryPinnedHarnessIds(
+export async function listRepositoryPinnedAgentIds(
   db: Database,
   repositoryId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ harnessId: harnessRepoPins.harnessId })
-    .from(harnessRepoPins)
-    .where(eq(harnessRepoPins.repositoryId, repositoryId))
-    .orderBy(asc(harnessRepoPins.createdAt));
-  return rows.map((r) => r.harnessId);
+    .select({ agentId: agentRepoPins.agentId })
+    .from(agentRepoPins)
+    .where(eq(agentRepoPins.repositoryId, repositoryId))
+    .orderBy(asc(agentRepoPins.createdAt));
+  return rows.map((r) => r.agentId);
 }
 
 /** Names of the agents a repository is pinned to, by name (its change history's display value). */
-export async function listRepositoryPinnedHarnessNames(
+export async function listRepositoryPinnedAgentNames(
   db: Database,
   repositoryId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ name: harnesses.name })
-    .from(harnessRepoPins)
-    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
-    .where(eq(harnessRepoPins.repositoryId, repositoryId))
-    .orderBy(asc(harnesses.name), asc(harnesses.id));
+    .select({ name: agents.name })
+    .from(agentRepoPins)
+    .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+    .where(eq(agentRepoPins.repositoryId, repositoryId))
+    .orderBy(asc(agents.name), asc(agents.id));
   return rows.map((r) => r.name);
 }
 
-/** Which of `harnessIds` are existing, non-revoked agents of the organization. */
-export async function filterActiveHarnessIds(
+/** Which of `agentIds` are existing, non-revoked agents of the organization. */
+export async function filterActiveAgentIds(
   db: Database,
   organizationId: string,
-  harnessIds: string[],
+  agentIds: string[],
 ): Promise<Set<string>> {
-  if (harnessIds.length === 0) return new Set();
+  if (agentIds.length === 0) return new Set();
   const rows = await db
-    .select({ id: harnesses.id })
-    .from(harnesses)
+    .select({ id: agents.id })
+    .from(agents)
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        inArray(harnesses.id, harnessIds),
-        isNull(harnesses.revokedAt),
+        eq(agents.organizationId, organizationId),
+        inArray(agents.id, agentIds),
+        isNull(agents.revokedAt),
       ),
     );
   return new Set(rows.map((r) => r.id));

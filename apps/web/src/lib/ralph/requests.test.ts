@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  harnesses,
+  agents,
   completeJob,
   connectRepository,
   closeDb,
@@ -42,7 +42,7 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeHarness } from "@/lib/harness-auth/revoke";
+import { revokeAgent } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -138,9 +138,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(harnesses);
+    await db.delete(agents);
     [{ id: agentA }, { id: agentB }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([
         {
           organizationId: orgId,
@@ -153,7 +153,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
           reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
-      .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
+      .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     await setCodingEnabled(db, repoId);
     await updateRepositoryCoding(db, repoId, { historyRewrite: "when-asked" });
     linear = new FakeLinearGateway();
@@ -205,10 +205,10 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -224,15 +224,17 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        harnessId,
+        agentId: harnessId,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      expect(await completeJob(db, { jobId: job.id, harnessId, result: outcome })).toEqual({
-        status: "completed",
-      });
+      expect(await completeJob(db, { jobId: job.id, agentId: harnessId, result: outcome })).toEqual(
+        {
+          status: "completed",
+        },
+      );
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
   }
@@ -498,7 +500,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect((await request(run!.id)).resumeSessionId).toBeNull();
       expect(await getMainLane(db, run!)).toMatchObject({
         requestClaudeSessionId: "claude-req-1",
-        requestHarnessId: agentA,
+        requestAgentId: agentA,
       });
 
       expect((await reply(run!, "Shorter please"))?.kind).toBe("request");
@@ -508,10 +510,10 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(await getMainLane(db, run!)).toMatchObject({ requestClaudeSessionId: "claude-req-2" });
 
       // Another agent doesn't have the session's files: it starts fresh.
-      await revokeHarness(agentA, { db, dispatcher });
+      await revokeAgent(agentA, { db, dispatcher });
       await reply(run!, "And in French");
       expect((await request(run!.id, {}, agentB)).resumeSessionId).toBeNull();
-      expect(await getMainLane(db, run!)).toMatchObject({ requestHarnessId: agentB });
+      expect(await getMainLane(db, run!)).toMatchObject({ requestAgentId: agentB });
       expect(
         (await db.select().from(jobs).where(eq(jobs.ralphRunId, run!.id))).every(
           (j) => j.type === "ralph.request",
@@ -794,15 +796,15 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(cleanup.type).toBe("worktree.cleanup");
       await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       await completeJob(db, {
         jobId: cleanup.id,
-        harnessId: agentA,
+        agentId: agentA,
         result: { removedWorktree: true, hadBranch: true, durationMs: 1 },
       });
       await onRalphCleanupJobFinished(db, (await getJob(db, cleanup.id))!, deps());

@@ -41,7 +41,7 @@ export const GET = apiHandler(
         webUrl: repositoryWebUrl(repo.provider, repo.baseUrl, repo.fullPath),
         taskTypes: repositorySwitches(repo),
         depth: repo.reviewDepth,
-        pinnedHarnesses: repo.pinnedHarnesses,
+        pinnedHarnesses: repo.pinnedAgents,
         lastReviewAt: repo.lastReviewAt?.toISOString() ?? null,
       })),
       connections: connections.map((connection) => ({

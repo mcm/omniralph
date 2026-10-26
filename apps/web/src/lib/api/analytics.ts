@@ -62,7 +62,7 @@ export const analyticsDataSchema = z.object({
       dismissalRate: z.number(),
     }),
   ),
-  jobsByHarness: z.array(
+  jobsByAgent: z.array(
     z.object({
       agent: z.object({ id: z.string(), name: z.string() }),
       total: z.number(),

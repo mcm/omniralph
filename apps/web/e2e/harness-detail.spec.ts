@@ -1,21 +1,21 @@
 import { eq } from "drizzle-orm";
-import { harnesses, type Database } from "@omniralph/db";
-import { createEnrollmentToken, enrollHarness, expect, test } from "./fixtures";
+import { agents, type Database } from "@omniralph/db";
+import { createEnrollmentToken, enrollAgent, expect, test } from "./fixtures";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 /** A harness of the fixture organization under pm2, as if it heartbeat just now. */
 async function liveHarness(db: Database, request: APIRequestContext, prefix: string) {
   const name = `${prefix}-${Date.now()}`;
-  const { harnessId } = await enrollHarness(request, await createEnrollmentToken(db), name);
+  const { harnessId } = await enrollAgent(request, await createEnrollmentToken(db), name);
   await db
-    .update(harnesses)
+    .update(agents)
     .set({
       selfUpdate: "supported",
       reportedVersion: "1.0.0",
       desiredVersion: "1.1.0",
       lastHeartbeatAt: new Date(),
     })
-    .where(eq(harnesses.id, harnessId));
+    .where(eq(agents.id, harnessId));
   return { harnessId, name };
 }
 
@@ -46,7 +46,7 @@ test.describe("harness detail", () => {
 
     // The harness's heartbeat: it handled the request and runs the new version.
     await db
-      .update(harnesses)
+      .update(agents)
       .set({
         updateRequestId: null,
         updateRequestVersion: null,
@@ -61,7 +61,7 @@ test.describe("harness detail", () => {
         },
         lastHeartbeatAt: new Date(),
       })
-      .where(eq(harnesses.id, harnessId));
+      .where(eq(agents.id, harnessId));
     await expect(page.getByText(`${name} updated to 1.1.0.`)).toBeVisible({ timeout: 5_000 });
 
     // The Overview tab shows it too: the update invalidated the harness everywhere.
@@ -84,13 +84,13 @@ test.describe("harness detail", () => {
     await page.getByRole("button", { name: "Save settings" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: /^Save/ }).click();
     await expect(page.getByText(`Saved — waiting for ${name} to pick it up`)).toBeVisible();
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+    const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
     expect(row!.maxConcurrency).toBe(3);
 
     await db
-      .update(harnesses)
+      .update(agents)
       .set({ lastHeartbeatAt: new Date(Date.now() + 1_000) })
-      .where(eq(harnesses.id, harnessId));
+      .where(eq(agents.id, harnessId));
     await expect(page.getByText("Applied", { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 

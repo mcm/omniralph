@@ -1,10 +1,10 @@
 import {
-  classifyHarnessRunningJobs,
-  listHarnessHostTools,
-  listHarnessPinnedRepositoryIds,
-  recordHarnessHostTools,
+  classifyAgentRunningJobs,
+  listAgentHostTools,
+  listAgentPinnedRepositoryIds,
+  recordAgentHostTools,
   renewJobLeases,
-  resolveHarnessConfig,
+  resolveAgentConfig,
   type Database,
 } from "@omniralph/db";
 import {
@@ -112,16 +112,16 @@ async function post(req: Request): Promise<Response> {
   const agent = await recordHeartbeat(db, harnessId, report);
   if (!agent) return badRequest("unknown_agent");
   await announceOnline(db, harnessId);
-  await recordHarnessHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
+  await recordAgentHostTools(db, agent.organizationId, harnessId, body.data.hostTools);
   const [pinnedRepoIds, running, organizationVersion, hostTools, config] = await Promise.all([
-    listHarnessPinnedRepositoryIds(db, harnessId),
-    classifyHarnessRunningJobs(db, harnessId, body.data.runningJobIds),
+    listAgentPinnedRepositoryIds(db, harnessId),
+    classifyAgentRunningJobs(db, harnessId, body.data.runningJobIds),
     agent.desiredVersion
       ? null
       : organizationHarnessVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    listHarnessHostTools(db, agent.organizationId, harnessId),
+    listAgentHostTools(db, agent.organizationId, harnessId),
     // Its own max concurrency, else the organization's default, and its reported task types.
-    resolveHarnessConfig(db, agent),
+    resolveAgentConfig(db, agent),
   ]);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live harness is never taken over.

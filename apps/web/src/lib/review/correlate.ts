@@ -4,7 +4,7 @@ import {
   failCorrelation,
   getRepository,
   insertJob,
-  pinnedHarnessFor,
+  pinnedAgentFor,
   type CorrelationInput,
   type Database,
   type Job,
@@ -124,7 +124,7 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
     })),
     reviewRunId: run.id,
     dedupeKey: correlationJobKey(run.id),
-    targetHarnessId: await pinnedHarnessFor(tx, run.organizationId, run.repositoryId, {
+    targetAgentId: await pinnedAgentFor(tx, run.organizationId, run.repositoryId, {
       lastHeartbeats: readHarnessLastSeen,
     }),
   });

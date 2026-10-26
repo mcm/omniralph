@@ -18,7 +18,7 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock("@omniralph/db", () => ({
   getJob: async (_db: unknown, id: string) => db.jobs.get(id) ?? null,
-  getHarness: async (_db: unknown, id: string) => db.harnesses.get(id) ?? null,
+  getAgent: async (_db: unknown, id: string) => db.harnesses.get(id) ?? null,
 }));
 const reviews = vi.hoisted(() => ({ rerunOrganizationReview: vi.fn() }));
 vi.mock("@/lib/reviews/manage", () => reviews);
@@ -42,14 +42,14 @@ function job(overrides: Partial<Job>): Job {
     type: INSTALL_JOB_TYPE,
     taskType: "system",
     taskId: null,
-    minHarnessVersion: null,
+    minAgentVersion: null,
     requiredInstallables: [],
     requiredHostTools: [],
     payload: { name: "@acme/tool" },
     status: "failed",
     repositoryId: null,
-    harnessId: HARNESS_ID,
-    targetHarnessId: HARNESS_ID,
+    agentId: HARNESS_ID,
+    targetAgentId: HARNESS_ID,
     dedupeKey: `install:${HARNESS_ID}:@acme/tool@latest`,
     error: "npm failed",
     ...overrides,
@@ -144,7 +144,7 @@ describe("rerunJob", () => {
 
   it("refuses a system RPC whose harness is gone or revoked", async () => {
     const { dispatcher: d, createAndPublish } = dispatcher();
-    const untargeted = job({ targetHarnessId: null });
+    const untargeted = job({ targetAgentId: null });
     expect(await rerunJob({} as never, d, ORG, untargeted.id)).toMatchObject({ ok: false });
     db.harnesses.set(HARNESS_ID, { id: HARNESS_ID, organizationId: ORG, revokedAt: new Date() });
     const revoked = job({ id: "66666666-6666-4666-8666-666666666666" });

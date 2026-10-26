@@ -1,4 +1,4 @@
-import { answerRunPermissionRequest, getJobForHarness } from "@omniralph/db";
+import { answerRunPermissionRequest, getJobForAgent } from "@omniralph/db";
 import { requireJob } from "@/lib/harness-auth/verify";
 import { jobIdParam, notFound } from "@/lib/harness-api/jobs";
 import { getDb } from "@/lib/db";
@@ -24,7 +24,7 @@ async function resolve(req: Request, ctx: PermissionRouteContext) {
     return Response.json({ error: "job_mismatch" }, { status: 403 });
   }
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   return { db, job, requestId: requestId.toLowerCase() };
 }

@@ -12,7 +12,7 @@ import { and, asc, eq, gte, inArray, isNotNull, lt, sql, type SQL } from "drizzl
 import type { Database } from "../client.js";
 import type { Review } from "../reviews.js";
 import {
-  harnesses,
+  agents,
   feedback,
   findings,
   findingSeverity,
@@ -97,7 +97,7 @@ export interface Analytics {
   /** Repositories with findings in the window, highest dismissal rate first. */
   dismissalsByRepository: RepositoryDismissals[];
   /** Agents that were assigned jobs in the window, most jobs first. */
-  jobsByHarness: AgentJobs[];
+  jobsByAgent: AgentJobs[];
 }
 
 /** UTC midnight that starts the day of `date`. */
@@ -132,7 +132,7 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
     eq(jobs.organizationId, filter.organizationId),
     gte(jobs.createdAt, from),
     lt(jobs.createdAt, to),
-    isNotNull(jobs.harnessId),
+    isNotNull(jobs.agentId),
     filter.repositoryId ? eq(jobs.repositoryId, filter.repositoryId) : undefined,
   )!;
 
@@ -194,16 +194,16 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
         .groupBy(repositories.id, repositories.provider, repositories.fullPath),
       db
         .select({
-          id: harnesses.id,
-          name: harnesses.name,
+          id: agents.id,
+          name: agents.name,
           total: sql<string>`count(*)`,
           completed: sql<string>`count(*) filter (where ${jobs.status} = 'completed')`,
           failed: sql<string>`count(*) filter (where ${jobs.status} = 'failed')`,
         })
         .from(jobs)
-        .innerJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+        .innerJoin(agents, eq(agents.id, jobs.agentId))
         .where(jobWhere)
-        .groupBy(harnesses.id, harnesses.name),
+        .groupBy(agents.id, agents.name),
     ]);
 
   const byDay = new Map(dailyRows.map((row) => [row.day, row]));
@@ -265,7 +265,7 @@ export async function getAnalytics(db: Database, filter: AnalyticsFilter): Promi
           b.findings - a.findings ||
           a.repository.fullPath.localeCompare(b.repository.fullPath),
       ),
-    jobsByHarness: agentRows
+    jobsByAgent: agentRows
       .map((row) => ({
         agent: { id: row.id, name: row.name },
         total: num(row.total),

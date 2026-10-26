@@ -6,8 +6,8 @@
  * idempotent (calling it again with nothing new changes nothing).
  */
 import {
-  getHarness,
-  resolveHarnessConfig,
+  getAgent,
+  resolveAgentConfig,
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
@@ -15,7 +15,7 @@ import {
   listMessages,
   listStories,
   lockRun,
-  pinnedHarnessFor,
+  pinnedAgentFor,
   updateLane,
   updateRun,
   setJobRalphStory,
@@ -438,12 +438,12 @@ async function usableHarnessId(
   harnessId: string | null,
 ): Promise<string | undefined> {
   if (!harnessId) return undefined;
-  const agent = await getHarness(db, harnessId);
+  const agent = await getAgent(db, harnessId);
   if (
     !agent ||
     agent.revokedAt ||
     agent.organizationId !== organizationId ||
-    !(await resolveHarnessConfig(db, agent)).acceptedTaskTypes.includes("coding")
+    !(await resolveAgentConfig(db, agent)).acceptedTaskTypes.includes("coding")
   ) {
     return undefined;
   }
@@ -458,9 +458,9 @@ async function usableHarnessId(
 export async function stickyHarnessId(
   db: Database,
   run: Pick<RalphRun, "organizationId">,
-  lane: Pick<RalphLane, "harnessId">,
+  lane: Pick<RalphLane, "agentId">,
 ): Promise<string | undefined> {
-  return usableHarnessId(db, run.organizationId, lane.harnessId);
+  return usableHarnessId(db, run.organizationId, lane.agentId);
 }
 
 /**
@@ -471,11 +471,11 @@ export async function stickyHarnessId(
 export async function laneHarnessId(
   db: Database,
   run: Pick<RalphRun, "organizationId">,
-  lane: Pick<RalphLane, "harnessId" | "repositoryId">,
+  lane: Pick<RalphLane, "agentId" | "repositoryId">,
 ): Promise<string | undefined> {
   return (
-    (await usableHarnessId(db, run.organizationId, lane.harnessId)) ??
-    (await pinnedHarnessFor(db, run.organizationId, lane.repositoryId, {
+    (await usableHarnessId(db, run.organizationId, lane.agentId)) ??
+    (await pinnedAgentFor(db, run.organizationId, lane.repositoryId, {
       lastHeartbeats: readHarnessLastSeen,
     })) ??
     undefined
@@ -916,7 +916,7 @@ async function enqueueRequest(
   const { lane, repository, connection } = found;
   const targetHarnessId = await laneHarnessId(deps.db, run, lane);
   const resume =
-    lane.requestClaudeSessionId && targetHarnessId && lane.requestHarnessId === targetHarnessId
+    lane.requestClaudeSessionId && targetHarnessId && lane.requestAgentId === targetHarnessId
       ? lane.requestClaudeSessionId
       : null;
   // Attachments are Linear's; a chat run has none.

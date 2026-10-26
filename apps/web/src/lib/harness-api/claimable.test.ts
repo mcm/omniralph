@@ -24,11 +24,11 @@ describe("heartbeatClaimable", () => {
     const check = vi.fn().mockResolvedValue(true);
     expect(await heartbeatClaimable(db, harness, ["short"], check)).toBe(true);
     expect(check).toHaveBeenCalledWith(db, {
-      harnessId: "harness-1",
+      agentId: "harness-1",
       organizationId: "org-1",
       acceptedTaskTypes: ["review", "coding"],
       pools: ["short"],
-      harnessVersion: "1.2.3",
+      agentVersion: "1.2.3",
     });
     check.mockResolvedValue(false);
     expect(await heartbeatClaimable(db, harness, [], check)).toBe(false);

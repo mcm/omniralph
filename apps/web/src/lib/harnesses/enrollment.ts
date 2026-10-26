@@ -1,5 +1,5 @@
 import "server-only";
-import { createHarnessEnrollment, getHarnessEnrollmentStatus, type Database } from "@omniralph/db";
+import { createAgentEnrollment, getAgentEnrollmentStatus, type Database } from "@omniralph/db";
 import { getAppUrl } from "@/lib/app-url";
 import type { CreatedEnrollment, EnrollmentStatus } from "@/lib/api/harnesses";
 import { enrollCommand } from "./display";
@@ -25,7 +25,7 @@ export async function createEnrollment(
   db: Database,
   input: { organizationId: string; createdBy: string; name: string; serverUrl: string },
 ): Promise<CreatedEnrollment> {
-  const enrollment = await createHarnessEnrollment(db, {
+  const enrollment = await createAgentEnrollment(db, {
     organizationId: input.organizationId,
     name: input.name || null,
     createdBy: input.createdBy,
@@ -45,6 +45,8 @@ export async function enrollmentStatus(
   organizationId: string,
   enrollmentId: string,
 ): Promise<EnrollmentStatus | null> {
-  const status = await getHarnessEnrollmentStatus(db, organizationId, enrollmentId);
-  return status && { ...status, expiresAt: status.expiresAt.toISOString() };
+  const status = await getAgentEnrollmentStatus(db, organizationId, enrollmentId);
+  return (
+    status && { id: status.id, expiresAt: status.expiresAt.toISOString(), harness: status.agent }
+  );
 }

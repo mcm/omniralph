@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { closeDb, createDb, harnesses, organizations, type Database } from "@omniralph/db";
+import { closeDb, createDb, agents, organizations, type Database } from "@omniralph/db";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -23,7 +23,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
 const { HARNESS_AUTH_TTL_SECONDS, harnessAuthKey, readHarnessAuthState } =
   await import("./auth-state");
 const { requireHarness } = await import("./verify");
-const { revokeHarness } = await import("./revoke");
+const { revokeAgent } = await import("./revoke");
 const { getTokenSigner } = await import("./signer");
 const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 
@@ -62,7 +62,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
 
   async function newHarness(): Promise<string> {
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning();
     return harness!.id;
@@ -124,7 +124,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
       expect(await requireHarness(await requestAs(harnessId))).toEqual({ harnessId });
       expect(await getRedis().get(harnessAuthKey(harnessId))).toBe("active");
 
-      expect(await revokeHarness(harnessId, { db, dispatcher })).toBe(true);
+      expect(await revokeAgent(harnessId, { db, dispatcher })).toBe(true);
 
       expect(await getRedis().get(harnessAuthKey(harnessId))).toBe("revoked");
       expect(await readHarnessAuthState(noPostgres, harnessId)).toBe("revoked");
@@ -135,7 +135,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
     it("keeps a revoked harness refused after Redis is flushed", async () => {
       const harnessId = await newHarness();
       expect(await requireHarness(await requestAs(harnessId))).toEqual({ harnessId });
-      expect(await revokeHarness(harnessId, { db, dispatcher })).toBe(true);
+      expect(await revokeAgent(harnessId, { db, dispatcher })).toBe(true);
 
       await getRedis().flushall();
       const res = await requireHarness(await requestAs(harnessId));
@@ -147,7 +147,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
       const harnessId = await newHarness();
       await readHarnessAuthState(db, harnessId);
       // A stale entry, as left by a revocation whose Redis write failed (which deletes the epoch).
-      await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, harnessId));
+      await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, harnessId));
       await getRedis().del(EPOCH_KEY);
       expect(await readHarnessAuthState(db, harnessId)).toBe("revoked");
     });
@@ -166,7 +166,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness auth state", () 
       expect(await readHarnessAuthState(db, harnessId)).toBe("active");
       await expect(readHarnessAuthState(noPostgres, harnessId)).rejects.toThrow(/Postgres used/);
 
-      expect(await revokeHarness(harnessId, { db, dispatcher })).toBe(true);
+      expect(await revokeAgent(harnessId, { db, dispatcher })).toBe(true);
       expect(await readHarnessAuthState(db, harnessId)).toBe("revoked");
       const res = await requireHarness(await requestAs(harnessId));
       expect((res as Response).status).toBe(401);

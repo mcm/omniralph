@@ -21,18 +21,18 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
-import { harnessVersionAtLeast, isJobTaskType, poolForTaskType } from "@omniralph/shared";
+import { agentVersionAtLeast, isJobTaskType, poolForTaskType } from "@omniralph/shared";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveHostToolPath } from "./host-tools.js";
 import {
   chatThreadRuns,
-  harnessHostTools,
-  harnessRepoPins,
-  harnesses,
+  agentHostTools,
+  agentRepoPins,
+  agents,
   hostTools,
   jobs,
-  type HarnessUpdateState,
+  type AgentUpdateState,
   type JobTaskType,
 } from "./schema.js";
 
@@ -87,15 +87,15 @@ export interface NewJobInput {
   /** Only this organization's agents receive the job (its repository's / run's organization). */
   organizationId: string;
   type: string;
-  /** How the harness runs the job (`legacyJobRouting(type)` for legacy job types). */
+  /** How the agent runs the job (`legacyJobRouting(type)` for legacy job types). */
   taskType: JobTaskType;
   /** The task definition the job runs; null for legacy jobs. */
   taskId?: string | null;
-  /** Only harnesses reporting at least this version claim the job. */
-  minHarnessVersion?: string | null;
-  /** Only harnesses reporting every one of these installables claim the job. */
+  /** Only agents reporting at least this version claim the job. */
+  minAgentVersion?: string | null;
+  /** Only agents reporting every one of these installables claim the job. */
   requiredInstallables?: readonly string[];
-  /** Only harnesses with an effective path for every one of these host tools claim the job. */
+  /** Only agents with an effective path for every one of these host tools claim the job. */
   requiredHostTools?: readonly string[];
   payload?: Record<string, unknown>;
   repositoryId?: string | null;
@@ -112,7 +112,7 @@ export interface NewJobInput {
   /** The chat thread's query run a `chat.ask` job answers. */
   chatThreadRunId?: string | null;
   /** Only this agent may claim the job; null: any agent of the organization. */
-  targetHarnessId?: string | null;
+  targetAgentId?: string | null;
 }
 
 /**
@@ -132,7 +132,7 @@ export async function insertJob(
         type: input.type,
         taskType: input.taskType,
         taskId: input.taskId ?? null,
-        minHarnessVersion: input.minHarnessVersion ?? null,
+        minAgentVersion: input.minAgentVersion ?? null,
         requiredInstallables: [...(input.requiredInstallables ?? [])],
         requiredHostTools: [...(input.requiredHostTools ?? [])],
         payload: input.payload ?? {},
@@ -143,7 +143,7 @@ export async function insertJob(
         reviewRunId: input.reviewRunId ?? null,
         triageRunId: input.triageRunId ?? null,
         chatThreadRunId: input.chatThreadRunId ?? null,
-        targetHarnessId: input.targetHarnessId ?? null,
+        targetAgentId: input.targetAgentId ?? null,
       })
       .onConflictDoNothing({
         target: jobs.dedupeKey,
@@ -153,10 +153,10 @@ export async function insertJob(
     if (row) {
       recordJobChanges(db, [row]);
       // A job only one agent may claim (an install, a pin sync) shows on that agent.
-      if (row.targetHarnessId) {
+      if (row.targetAgentId) {
         recordChange(db, {
           resource: "agent",
-          ids: [row.targetHarnessId],
+          ids: [row.targetAgentId],
           organizationId: row.organizationId,
         });
       }
@@ -180,11 +180,11 @@ export async function insertJob(
 export async function setQueuedJobTarget(
   db: Database,
   jobId: string,
-  targetHarnessId: string | null,
+  targetAgentId: string | null,
 ): Promise<boolean> {
   const rows = await db
     .update(jobs)
-    .set({ targetHarnessId })
+    .set({ targetAgentId })
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
     .returning(jobChangeColumns);
   recordJobChanges(db, rows);
@@ -200,16 +200,16 @@ export async function getJob(db: Database, jobId: string): Promise<Job | null> {
  * A job as seen by an agent: null when it doesn't exist or belongs to another
  * organization than the agent's (agents never act on other organizations' jobs).
  */
-export async function getJobForHarness(
+export async function getJobForAgent(
   db: Database,
   jobId: string,
-  harnessId: string,
+  agentId: string,
 ): Promise<Job | null> {
   const [row] = await db
     .select({ job: jobs })
     .from(jobs)
-    .innerJoin(harnesses, eq(harnesses.organizationId, jobs.organizationId))
-    .where(and(eq(jobs.id, jobId), eq(harnesses.id, harnessId)))
+    .innerJoin(agents, eq(agents.organizationId, jobs.organizationId))
+    .where(and(eq(jobs.id, jobId), eq(agents.id, agentId)))
     .limit(1);
   return row?.job ?? null;
 }
@@ -222,48 +222,48 @@ export async function getJobForHarness(
  * supplies heartbeats more recent than `last_heartbeat_at` (the control
  * panel's Redis), used where later than the row's.
  */
-export async function pinnedHarnessFor(
+export async function pinnedAgentFor(
   db: Database,
   organizationId: string,
   repositoryId: string,
   options: {
-    lastHeartbeats?: (harnessIds: string[]) => Promise<ReadonlyMap<string, Date>>;
+    lastHeartbeats?: (agentIds: string[]) => Promise<ReadonlyMap<string, Date>>;
   } = {},
 ): Promise<string | null> {
   const active = db
-    .select({ harnessId: jobs.harnessId, n: count().as("n") })
+    .select({ agentId: jobs.agentId, n: count().as("n") })
     .from(jobs)
     .where(inArray(jobs.status, ["queued", "running"]))
-    .groupBy(jobs.harnessId)
+    .groupBy(jobs.agentId)
     .as("active");
   const rows = await db
     .select({
-      harnessId: harnesses.id,
+      agentId: agents.id,
       activeJobs: sql<number>`coalesce(${active.n}, 0)`.mapWith(Number),
-      lastHeartbeatAt: harnesses.lastHeartbeatAt,
+      lastHeartbeatAt: agents.lastHeartbeatAt,
     })
-    .from(harnessRepoPins)
-    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
-    .leftJoin(active, eq(active.harnessId, harnesses.id))
+    .from(agentRepoPins)
+    .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+    .leftJoin(active, eq(active.agentId, agents.id))
     .where(
       and(
-        eq(harnessRepoPins.repositoryId, repositoryId),
-        eq(harnesses.organizationId, organizationId),
-        isNull(harnesses.revokedAt),
+        eq(agentRepoPins.repositoryId, repositoryId),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.revokedAt),
       ),
     )
     .orderBy(
       asc(sql`coalesce(${active.n}, 0)`),
-      sql`${harnesses.lastHeartbeatAt} desc nulls last`,
-      asc(harnesses.id),
+      sql`${agents.lastHeartbeatAt} desc nulls last`,
+      asc(agents.id),
     );
-  if (!options.lastHeartbeats || rows.length < 2) return rows[0]?.harnessId ?? null;
-  const live = await options.lastHeartbeats(rows.map((r) => r.harnessId));
+  if (!options.lastHeartbeats || rows.length < 2) return rows[0]?.agentId ?? null;
+  const live = await options.lastHeartbeats(rows.map((r) => r.agentId));
   const seen = (row: (typeof rows)[number]) =>
-    Math.max(row.lastHeartbeatAt?.getTime() ?? 0, live.get(row.harnessId)?.getTime() ?? 0);
+    Math.max(row.lastHeartbeatAt?.getTime() ?? 0, live.get(row.agentId)?.getTime() ?? 0);
   // Stable: equal heartbeats keep the query's ID order.
   const [best] = [...rows].sort((a, b) => a.activeJobs - b.activeJobs || seen(b) - seen(a));
-  return best!.harnessId;
+  return best!.agentId;
 }
 
 export type CancelJobResult = "canceled" | "cancel_requested" | "not_cancelable" | "not_found";
@@ -313,19 +313,19 @@ export interface ClaimJobResult {
 }
 
 /**
- * Claims the next job for a harness from the `jobs` table, in one transaction.
- * Eligible: the harness's organization's jobs whose task type is in
+ * Claims the next job for an agent from the `jobs` table, in one transaction.
+ * Eligible: the agent's organization's jobs whose task type is in
  * `acceptedTaskTypes` and whose pool (`poolForTaskType`) is in `pools` (the
  * pools it has a free slot in), plus `system` jobs (always accepted, no pool); whose
- * `min_harness_version` is null or at most `harnessVersion`
- * (`harnessVersionAtLeast`; none when the harness reported no version);
- * whose `required_installables` are all in the harness's
+ * `min_agent_version` is null or at most `agentVersion`
+ * (`agentVersionAtLeast`; none when the agent reported no version);
+ * whose `required_installables` are all in the agent's
  * `reported_installables` and whose `required_host_tools` all have an
- * `effectiveHostToolPath` on it (`harness_host_tools`);
- * targeted at this harness or at none; that are `queued` with
+ * `effectiveHostToolPath` on it (`agent_host_tools`);
+ * targeted at this agent or at none; that are `queued` with
  * `available_at <= now` or `running` with a lapsed lease (the previous
- * harness's results are then rejected). Jobs targeted at this harness come
- * first, then the oldest. The claim sets `running`, the harness, `started_at`
+ * agent's results are then rejected). Jobs targeted at this agent come
+ * first, then the oldest. The claim sets `running`, the agent, `started_at`
  * and the lease and increments `delivery_count`. A cancel-requested candidate
  * is canceled and one at `maxDeliveries` is failed; both are returned in
  * `settled` and the claim moves on to the next candidate. `beforeClaim` runs
@@ -337,12 +337,12 @@ export interface ClaimJobResult {
 export async function claimJob(
   db: Database,
   input: {
-    harnessId: string;
+    agentId: string;
     organizationId: string;
     acceptedTaskTypes: readonly string[];
     pools: readonly string[];
-    /** The harness's reported version; null when it reported none. */
-    harnessVersion: string | null;
+    /** The agent's reported version; null when it reported none. */
+    agentVersion: string | null;
     maxDeliveries: number;
     leaseSeconds?: number;
     now?: Date;
@@ -358,8 +358,8 @@ export async function claimJob(
         .select()
         .from(jobs)
         .where(eligible)
-        // Targeted jobs (`target_harness_id is null` false) first.
-        .orderBy(sql`${jobs.targetHarnessId} is null`, asc(jobs.createdAt), asc(jobs.id))
+        // Targeted jobs (`target_agent_id is null` false) first.
+        .orderBy(sql`${jobs.targetAgentId} is null`, asc(jobs.createdAt), asc(jobs.id))
         .limit(1)
         .for("update", { skipLocked: true });
       if (!job) {
@@ -407,7 +407,7 @@ export async function claimJob(
         .update(jobs)
         .set({
           status: "running",
-          harnessId: input.harnessId,
+          agentId: input.agentId,
           deliveryCount: sql`${jobs.deliveryCount} + 1`,
           startedAt: now,
           leaseExpiresAt: secondsAfter(now, input.leaseSeconds ?? JOB_LEASE_SECONDS),
@@ -422,12 +422,12 @@ export async function claimJob(
 
 /** Who is claiming: the inputs `claimJob` and `hasClaimableJob` select candidates by. */
 export interface ClaimCandidatesInput {
-  harnessId: string;
+  agentId: string;
   organizationId: string;
   acceptedTaskTypes: readonly string[];
   pools: readonly string[];
-  /** The harness's reported version; null when it reported none. */
-  harnessVersion: string | null;
+  /** The agent's reported version; null when it reported none. */
+  agentVersion: string | null;
 }
 
 /**
@@ -450,34 +450,34 @@ async function claimCandidates(
       eq(jobs.taskType, "system"),
       pooledTaskTypes.length > 0 ? inArray(jobs.taskType, pooledTaskTypes) : sql`false`,
     ),
-    or(isNull(jobs.targetHarnessId), eq(jobs.targetHarnessId, input.harnessId)),
+    or(isNull(jobs.targetAgentId), eq(jobs.targetAgentId, input.agentId)),
     or(
       and(eq(jobs.status, "queued"), lte(jobs.availableAt, now)),
       and(eq(jobs.status, "running"), lt(jobs.leaseExpiresAt, now)),
     ),
   );
-  // The minimum versions among the candidates this harness meets (semver isn't SQL-comparable).
+  // The minimum versions among the candidates this agent meets (semver isn't SQL-comparable).
   const minimums = await db
-    .selectDistinct({ version: jobs.minHarnessVersion })
+    .selectDistinct({ version: jobs.minAgentVersion })
     .from(jobs)
-    .where(and(claimable, sql`${jobs.minHarnessVersion} is not null`));
-  const harnessVersion = input.harnessVersion;
+    .where(and(claimable, sql`${jobs.minAgentVersion} is not null`));
+  const agentVersion = input.agentVersion;
   const metMinimums = minimums
     .map((m) => m.version!)
-    .filter((minimum) => harnessVersion !== null && harnessVersionAtLeast(harnessVersion, minimum));
-  const { installables, hostTools: tools } = await harnessCapabilities(db, input);
+    .filter((minimum) => agentVersion !== null && agentVersionAtLeast(agentVersion, minimum));
+  const { installables, hostTools: tools } = await agentCapabilities(db, input);
   return and(
     claimable,
     metMinimums.length > 0
-      ? or(isNull(jobs.minHarnessVersion), inArray(jobs.minHarnessVersion, metMinimums))
-      : isNull(jobs.minHarnessVersion),
+      ? or(isNull(jobs.minAgentVersion), inArray(jobs.minAgentVersion, metMinimums))
+      : isNull(jobs.minAgentVersion),
     sql`${jobs.requiredInstallables} <@ ${textArray(installables)}`,
     sql`${jobs.requiredHostTools} <@ ${textArray(tools)}`,
   );
 }
 
 /**
- * Whether `claimJob` would find a candidate for the harness right now (the
+ * Whether `claimJob` would find a candidate for the agent right now (the
  * heartbeat's `claimable`): same conditions, no lock, no claim. A candidate it
  * would settle (cancel-requested, out of deliveries) counts too: the claim
  * that follows settles it.
@@ -492,38 +492,36 @@ export async function hasClaimableJob(
 }
 
 /**
- * The installables a harness reported and the host tools it has an effective
+ * The installables an agent reported and the host tools it has an effective
  * path for, by name: what jobs' `required_installables` and
  * `required_host_tools` are checked against.
  */
-async function harnessCapabilities(
+async function agentCapabilities(
   db: Database,
-  input: { harnessId: string; organizationId: string },
+  input: { agentId: string; organizationId: string },
 ): Promise<{ installables: string[]; hostTools: string[] }> {
-  const [harness] = await db
-    .select({ installables: harnesses.reportedInstallables })
-    .from(harnesses)
-    .where(
-      and(eq(harnesses.id, input.harnessId), eq(harnesses.organizationId, input.organizationId)),
-    )
+  const [agent] = await db
+    .select({ installables: agents.reportedInstallables })
+    .from(agents)
+    .where(and(eq(agents.id, input.agentId), eq(agents.organizationId, input.organizationId)))
     .limit(1);
   const tools = await db
     .select({
       name: hostTools.name,
-      configuredPath: harnessHostTools.configuredPath,
-      configuredPathExists: harnessHostTools.configuredPathExists,
-      discoveredPath: harnessHostTools.discoveredPath,
+      configuredPath: agentHostTools.configuredPath,
+      configuredPathExists: agentHostTools.configuredPathExists,
+      discoveredPath: agentHostTools.discoveredPath,
     })
-    .from(harnessHostTools)
-    .innerJoin(hostTools, eq(hostTools.id, harnessHostTools.hostToolId))
+    .from(agentHostTools)
+    .innerJoin(hostTools, eq(hostTools.id, agentHostTools.hostToolId))
     .where(
       and(
-        eq(harnessHostTools.harnessId, input.harnessId),
+        eq(agentHostTools.agentId, input.agentId),
         eq(hostTools.organizationId, input.organizationId),
       ),
     );
   return {
-    installables: (harness?.installables ?? []).map((installable) => installable.name),
+    installables: (agent?.installables ?? []).map((installable) => installable.name),
     hostTools: tools
       .filter((tool) => effectiveHostToolPath(tool) !== null)
       .map((tool) => tool.name),
@@ -569,12 +567,12 @@ export async function listJobDueStates(
 }
 
 /**
- * Extends the lease of the given jobs that are `running` on `harnessId` (others
+ * Extends the lease of the given jobs that are `running` on `agentId` (others
  * are left alone). Returns the IDs whose lease was renewed.
  */
 export async function renewJobLeases(
   db: Database,
-  harnessId: string,
+  agentId: string,
   jobIds: readonly string[],
   now: Date = new Date(),
   leaseSeconds: number = JOB_LEASE_SECONDS,
@@ -584,7 +582,7 @@ export async function renewJobLeases(
     .update(jobs)
     .set({ leaseExpiresAt: secondsAfter(now, leaseSeconds) })
     .where(
-      and(inArray(jobs.id, [...jobIds]), eq(jobs.status, "running"), eq(jobs.harnessId, harnessId)),
+      and(inArray(jobs.id, [...jobIds]), eq(jobs.status, "running"), eq(jobs.agentId, agentId)),
     )
     .returning({ id: jobs.id });
   return rows.map((r) => r.id);
@@ -597,15 +595,15 @@ export type FinishJobResult =
   | { status: "conflict" }
   | { status: "not_found" };
 
-/** Locks a job that must be `running` on `harnessId`; returns why not otherwise. */
+/** Locks a job that must be `running` on `agentId`; returns why not otherwise. */
 async function lockRunningJob(
   tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
   jobId: string,
-  harnessId: string,
+  agentId: string,
 ): Promise<{ job: Job } | { rejected: FinishJobResult }> {
   const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");
   if (!job) return { rejected: { status: "not_found" } };
-  if (job.status !== "running" || job.harnessId !== harnessId) {
+  if (job.status !== "running" || job.agentId !== agentId) {
     return { rejected: { status: "conflict" } };
   }
   return { job };
@@ -617,11 +615,11 @@ async function lockRunningJob(
  */
 export async function completeJob(
   db: Database,
-  input: { jobId: string; harnessId: string; result: Record<string, unknown>; now?: Date },
+  input: { jobId: string; agentId: string; result: Record<string, unknown>; now?: Date },
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx): Promise<FinishJobResult> => {
-    const locked = await lockRunningJob(tx, input.jobId, input.harnessId);
+    const locked = await lockRunningJob(tx, input.jobId, input.agentId);
     if ("rejected" in locked) return locked.rejected;
     const status = locked.job.cancelRequested ? "canceled" : "completed";
     await tx
@@ -643,7 +641,7 @@ export async function failJob(
   db: Database,
   input: {
     jobId: string;
-    harnessId: string;
+    agentId: string;
     retryable: boolean;
     error?: string | null;
     maxDeliveries: number;
@@ -654,7 +652,7 @@ export async function failJob(
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx): Promise<FinishJobResult> => {
-    const locked = await lockRunningJob(tx, input.jobId, input.harnessId);
+    const locked = await lockRunningJob(tx, input.jobId, input.agentId);
     if ("rejected" in locked) return locked.rejected;
     const { job } = locked;
     const error = input.error ?? null;
@@ -677,7 +675,7 @@ export async function failJob(
       .update(jobs)
       .set({
         status: "queued",
-        harnessId: null,
+        agentId: null,
         error,
         availableAt: secondsAfter(now, input.retryAfterSeconds ?? 0),
         leaseExpiresAt: null,
@@ -781,20 +779,20 @@ export async function expireQueuedJobs(
 }
 
 /** Records a heartbeat and returns the agent's (central) configuration row. */
-export async function recordHarnessHeartbeat(
+export async function recordAgentHeartbeat(
   db: Database,
-  harnessId: string,
+  agentId: string,
   input: {
     version: string;
     /** Self-update reporting; older agents send none, which clears it. */
     selfUpdate?: "supported" | "unsupported";
-    update?: HarnessUpdateState;
+    update?: AgentUpdateState;
     failedVersions?: string[];
     /** The update request the agent acted on: cleared when it's still the pending one. */
     handledUpdateRequestId?: string | null;
-    /** The installables installed on the harness; replaces the last report (none clears it). */
+    /** The installables installed on the agent; replaces the last report (none clears it). */
     installables?: { name: string; version: string }[];
-    /** The Claude models the harness can run; replaces the last report (none clears it). */
+    /** The Claude models the agent can run; replaces the last report (none clears it). */
     models?: { value: string; displayName: string }[];
     /**
      * The task types the agent runs (its local `acceptedTaskTypes`); replaces the last report.
@@ -803,14 +801,14 @@ export async function recordHarnessHeartbeat(
     acceptedTaskTypes?: readonly string[];
     now?: Date;
   },
-): Promise<typeof harnesses.$inferSelect | null> {
+): Promise<typeof agents.$inferSelect | null> {
   const handled = input.handledUpdateRequestId ?? null;
   const clearIfHandled = (column: AnyPgColumn) =>
-    sql`case when ${harnesses.updateRequestId} = ${handled}::uuid then null else ${column} end`;
+    sql`case when ${agents.updateRequestId} = ${handled}::uuid then null else ${column} end`;
   // `previous` is the row before this update (a self-join sees the old snapshot).
-  const previous = alias(harnesses, "previous");
+  const previous = alias(agents, "previous");
   const [updated] = await db
-    .update(harnesses)
+    .update(agents)
     .set({
       reportedVersion: input.version,
       selfUpdate: input.selfUpdate ?? null,
@@ -820,16 +818,16 @@ export async function recordHarnessHeartbeat(
       reportedModels: input.models ?? [],
       ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
       ...(handled !== null && {
-        updateRequestId: clearIfHandled(harnesses.updateRequestId),
-        updateRequestVersion: clearIfHandled(harnesses.updateRequestVersion),
-        updateRequestedAt: clearIfHandled(harnesses.updateRequestedAt),
+        updateRequestId: clearIfHandled(agents.updateRequestId),
+        updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
+        updateRequestedAt: clearIfHandled(agents.updateRequestedAt),
       }),
       lastHeartbeatAt: input.now ?? new Date(),
     })
     .from(previous)
-    .where(and(eq(harnesses.id, harnessId), eq(previous.id, harnesses.id)))
+    .where(and(eq(agents.id, agentId), eq(previous.id, agents.id)))
     .returning({
-      row: getTableColumns(harnesses),
+      row: getTableColumns(agents),
       before: {
         reportedVersion: previous.reportedVersion,
         selfUpdate: previous.selfUpdate,
@@ -861,23 +859,23 @@ export async function recordHarnessHeartbeat(
   return row;
 }
 
-export async function getHarness(
+export async function getAgent(
   db: Database,
-  harnessId: string,
-): Promise<typeof harnesses.$inferSelect | null> {
-  const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId)).limit(1);
+  agentId: string,
+): Promise<typeof agents.$inferSelect | null> {
+  const [row] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
   return row ?? null;
 }
 
-export async function listHarnessPinnedRepositoryIds(
+export async function listAgentPinnedRepositoryIds(
   db: Database,
-  harnessId: string,
+  agentId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ repositoryId: harnessRepoPins.repositoryId })
-    .from(harnessRepoPins)
-    .where(eq(harnessRepoPins.harnessId, harnessId))
-    .orderBy(asc(harnessRepoPins.createdAt));
+    .select({ repositoryId: agentRepoPins.repositoryId })
+    .from(agentRepoPins)
+    .where(eq(agentRepoPins.agentId, agentId))
+    .orderBy(asc(agentRepoPins.createdAt));
   return rows.map((r) => r.repositoryId);
 }
 
@@ -886,9 +884,9 @@ export async function listHarnessPinnedRepositoryIds(
  * running (`running` on this agent, no cancel requested) and those it must
  * stop (canceled, finished, unknown or taken over by another agent).
  */
-export async function classifyHarnessRunningJobs(
+export async function classifyAgentRunningJobs(
   db: Database,
-  harnessId: string,
+  agentId: string,
   jobIds: readonly string[],
 ): Promise<{ keep: Pick<Job, "id" | "type" | "taskType" | "taskId">[]; cancel: string[] }> {
   if (jobIds.length === 0) return { keep: [], cancel: [] };
@@ -899,7 +897,7 @@ export async function classifyHarnessRunningJobs(
       taskType: jobs.taskType,
       taskId: jobs.taskId,
       status: jobs.status,
-      harnessId: jobs.harnessId,
+      agentId: jobs.agentId,
       cancelRequested: jobs.cancelRequested,
     })
     .from(jobs)
@@ -910,7 +908,7 @@ export async function classifyHarnessRunningJobs(
   const cancel: string[] = [];
   for (const id of new Set(jobIds)) {
     const row = byId.get(id);
-    if (row && row.status === "running" && row.harnessId === harnessId && !row.cancelRequested) {
+    if (row && row.status === "running" && row.agentId === agentId && !row.cancelRequested) {
       keep.push({ id, type: row.type, taskType: row.taskType, taskId: row.taskId });
     } else {
       cancel.push(id);

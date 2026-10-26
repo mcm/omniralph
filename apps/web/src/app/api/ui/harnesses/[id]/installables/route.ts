@@ -1,4 +1,4 @@
-import { getHarnessOverview, listHarnessInstallJobs } from "@omniralph/db";
+import { getAgentOverview, listAgentInstallJobs } from "@omniralph/db";
 import { z } from "zod";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { HarnessInstallables } from "@/lib/api/harnesses";
@@ -16,8 +16,8 @@ export const GET = apiHandler<"admin", undefined, undefined, { id: string }>(
     const orgId = user.organization.id;
     const since = new Date(Date.now() - INSTALL_JOBS_WINDOW_MS);
     const [harness, installJobs] = await Promise.all([
-      getHarnessOverview(db, orgId, params.id),
-      listHarnessInstallJobs(db, orgId, params.id, since),
+      getAgentOverview(db, orgId, params.id),
+      listAgentInstallJobs(db, orgId, params.id, since),
     ]);
     if (!harness) throw ApiRouteError.notFound();
     return {

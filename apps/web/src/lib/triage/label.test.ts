@@ -195,7 +195,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
       type: "triage.run",
       taskType: "query",
     });
-    expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
+    expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     expect(linear.bodies("session-1", "thought")[0]).toContain(`Triaging **${issue.identifier}**`);
     // The label stays while triage runs.
     expect(linear.labelChanges).toEqual([]);

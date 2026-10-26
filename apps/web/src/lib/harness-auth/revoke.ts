@@ -1,10 +1,10 @@
 import "server-only";
 import {
-  getHarnessOverview,
-  listQueuedJobsTargetingHarness,
-  markHarnessDeleted,
-  revokeHarness as revokeHarnessRow,
-  writeHarnessAudit,
+  getAgentOverview,
+  listQueuedJobsTargetingAgent,
+  markAgentDeleted,
+  revokeAgent as revokeHarnessRow,
+  writeAgentAudit,
   type Database,
   type Job,
 } from "@omniralph/db";
@@ -30,7 +30,7 @@ const REVOKED = "Harness revoked";
  * are skipped, the rest go wherever the repo's remaining pins send them. Returns false for
  * unknown harnesses (with `organizationId`, also for another organization's).
  */
-export async function revokeHarness(
+export async function revokeAgent(
   harnessId: string,
   options: {
     revokedBy?: string | null;
@@ -50,8 +50,8 @@ export async function revokeHarness(
   await cacheHarnessRevoked(harnessId);
   // Requeued jobs are due again at once; failed and canceled ones leave the due set.
   await syncJobsDue([...revoked.requeuedJobs, ...revoked.failedJobs, ...revoked.canceledJobs]);
-  await writeHarnessAudit(db, {
-    harnessId,
+  await writeAgentAudit(db, {
+    agentId: harnessId,
     event: "revoke",
     ip: options.ip ?? null,
     detail: {
@@ -68,7 +68,7 @@ export async function revokeHarness(
   await forEachJob(db, revoked.failedJobs, (h, job) => h.onFailed?.(db, job, REVOKED));
 
   const dispatcher = options.dispatcher ?? getDispatcher();
-  for (const job of await listQueuedJobsTargetingHarness(db, harnessId)) {
+  for (const job of await listQueuedJobsTargetingAgent(db, harnessId)) {
     try {
       if (job.taskType === "system") {
         await skipJobAndClearDue(db, job, { reason: REVOKED });
@@ -84,7 +84,7 @@ export async function revokeHarness(
 
 /**
  * Deletes a harness of the organization (Harnesses page): revokes it first unless
- * it already is (see `revokeHarness`), then soft-deletes it so it's hidden from
+ * it already is (see `revokeAgent`), then soft-deletes it so it's hidden from
  * the Harnesses pages, and writes a `delete` audit row. Returns false for unknown,
  * already deleted and other organizations' harnesses.
  */
@@ -99,11 +99,11 @@ export async function deleteHarness(
   },
 ): Promise<boolean> {
   const db = options.db ?? getDb();
-  const agent = await getHarnessOverview(db, options.organizationId, harnessId);
+  const agent = await getAgentOverview(db, options.organizationId, harnessId);
   if (!agent) return false;
   if (
     !agent.revokedAt &&
-    !(await revokeHarness(harnessId, {
+    !(await revokeAgent(harnessId, {
       revokedBy: options.deletedBy,
       ip: options.ip,
       organizationId: options.organizationId,
@@ -113,9 +113,9 @@ export async function deleteHarness(
   ) {
     return false;
   }
-  if (!(await markHarnessDeleted(db, options.organizationId, harnessId))) return false;
-  await writeHarnessAudit(db, {
-    harnessId,
+  if (!(await markAgentDeleted(db, options.organizationId, harnessId))) return false;
+  await writeAgentAudit(db, {
+    agentId: harnessId,
     event: "delete",
     ip: options.ip ?? null,
     detail: { deletedBy: options.deletedBy ?? null },

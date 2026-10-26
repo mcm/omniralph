@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
-  LATEST_HARNESS_VERSION_KEY,
+  LATEST_AGENT_VERSION_KEY,
   appSettings,
   chatConnections,
   chatThreadRuns,
@@ -8,7 +8,7 @@ import {
   closeDb,
   connectRepository,
   createDb,
-  harnesses,
+  agents,
   jobs,
   organizations,
   ralphRuns,
@@ -109,7 +109,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
   async function newHarness(): Promise<{ harnessId: string; orgId: string }> {
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: org!.id, name: "coder-1" })
       .returning();
     return { harnessId: harness!.id, orgId: org!.id };
@@ -179,7 +179,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         type: "test.job",
         taskType: "review",
         status: "running",
-        harnessId,
+        agentId: harnessId,
         startedAt: new Date(),
         leaseExpiresAt: new Date(Date.now() + 30_000),
         ...extra,
@@ -214,7 +214,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     const { harnessId } = await newHarness();
     await warm(harnessId);
     expect((await send(harnessId, { version: "1.5.0" })).calls).toBeGreaterThan(0);
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+    const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
     expect(row!.reportedVersion).toBe("1.5.0");
     expect((await send(harnessId, { version: "1.5.0" })).calls).toBe(0);
     // A new host tools report is stored too.
@@ -230,7 +230,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       "harness config",
       async ({ harnessId, orgId }) => {
         expect(
-          await manage.updateHarnessConfig(db, orgId, harnessId, {
+          await manage.updateAgentConfig(db, orgId, harnessId, {
             maxConcurrency: 3,
             poolLimits: {},
           }),
@@ -241,7 +241,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "harness desired version",
       async ({ harnessId, orgId }) => {
-        await manage.setHarnessDesiredVersion(db, orgId, harnessId, "1.9.0");
+        await manage.setAgentDesiredVersion(db, orgId, harnessId, "1.9.0");
       },
       (response) => expect(response.desiredVersion).toBe("1.9.0"),
     ],
@@ -283,7 +283,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     [
       "update request",
       async ({ harnessId, orgId }) => {
-        expect(await manage.requestHarnessUpdate(db, orgId, harnessId)).toMatchObject({
+        expect(await manage.requestAgentUpdate(db, orgId, harnessId)).toMatchObject({
           ok: true,
         });
       },
@@ -427,7 +427,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       .update(appSettings)
       .set({ updatedAt: new Date(Date.now() - 10 * 60_000) })
       .where(
-        and(eq(appSettings.organizationId, orgId), eq(appSettings.key, LATEST_HARNESS_VERSION_KEY)),
+        and(eq(appSettings.organizationId, orgId), eq(appSettings.key, LATEST_AGENT_VERSION_KEY)),
       );
     const after = await send(harnessId);
     expect(after.calls).toBeGreaterThan(0);

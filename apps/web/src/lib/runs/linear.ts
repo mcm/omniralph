@@ -5,7 +5,7 @@
  */
 import "server-only";
 import { InvalidInputLinearError } from "@linear/sdk";
-import { getJobForHarness, type Job } from "@omniralph/db";
+import { getJobForAgent, type Job } from "@omniralph/db";
 import type { RunLinearComment, RunLinearDocument, RunLinearIssue } from "@omniralph/shared";
 import type { LinearTool } from "@omniralph/tasks";
 import { requireJob } from "@/lib/harness-auth/verify";
@@ -97,7 +97,7 @@ export async function serveRunLinearTool(
   if (!jobId) return notFound();
   if (jobId !== principal.jobId) return Response.json({ error: "job_mismatch" }, { status: 403 });
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   const tools = await runLinearTools(job, organizationPlaybooks(db, job.organizationId));
   if (!tools.includes(tool)) {

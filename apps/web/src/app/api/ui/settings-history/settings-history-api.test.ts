@@ -8,7 +8,7 @@ import {
   connectRepository,
   createDb,
   getIntegration,
-  harnesses,
+  agents,
   listSettingsChanges,
   organizationMembers,
   organizations,
@@ -160,12 +160,12 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
     otherRepoId = (await repo("acme/api")).id;
     [agentA, agentB] = (
       await db
-        .insert(harnesses)
+        .insert(agents)
         .values([
           { organizationId: orgId, name: "coder-a" },
           { organizationId: orgId, name: "coder-b" },
         ])
-        .returning({ id: harnesses.id })
+        .returning({ id: agents.id })
     ).map((a) => a.id) as [string, string];
   }, 180_000);
 

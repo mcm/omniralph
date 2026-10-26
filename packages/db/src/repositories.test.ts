@@ -23,8 +23,8 @@ import {
 } from "./repositories.js";
 import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
 import {
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   jobs,
   organizations,
   repositories,
@@ -184,10 +184,10 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       fullPath: "acme/web",
     });
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning();
-    await db.insert(harnessRepoPins).values({ harnessId: agent!.id, repositoryId: repo.id });
+    await db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo.id });
     const reviewedAt = new Date("2026-10-01T12:00:00Z");
     await db.insert(reviews).values([
       {
@@ -217,7 +217,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       reviewsEnabled: true,
       connectionName: "acme",
       reviewDepth: "standard",
-      pinnedHarnesses: [{ id: agent!.id, name: "coder-1" }],
+      pinnedAgents: [{ id: agent!.id, name: "coder-1" }],
       lastReviewAt: reviewedAt,
     });
 
@@ -231,7 +231,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(disconnected?.disconnectedAt).toBeInstanceOf(Date);
     expect((await listRepositoryOverview(db, orgId)).some((r) => r.id === repo.id)).toBe(false);
     expect(
-      await db.select().from(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, repo.id)),
+      await db.select().from(agentRepoPins).where(eq(agentRepoPins.repositoryId, repo.id)),
     ).toEqual([]);
     expect(await db.select().from(reviews).where(eq(reviews.repositoryId, repo.id))).toHaveLength(
       2,
@@ -389,10 +389,10 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       fullPath: "acme/removed",
     });
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "removal-agent" })
       .returning();
-    await db.insert(harnessRepoPins).values({ harnessId: agent!.id, repositoryId: repo.id });
+    await db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo.id });
     await db.insert(reviews).values({
       repositoryId: repo.id,
       prNumber: 1,
@@ -423,7 +423,7 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
     expect(await db.select().from(repositories).where(eq(repositories.id, repo.id))).toEqual([]);
     expect(await db.select().from(reviews).where(eq(reviews.repositoryId, repo.id))).toEqual([]);
     expect(
-      await db.select().from(harnessRepoPins).where(eq(harnessRepoPins.harnessId, agent!.id)),
+      await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agent!.id)),
     ).toEqual([]);
     // Jobs are kept (as history), without their repository.
     const [kept] = await db.select().from(jobs).where(eq(jobs.id, job!.id));

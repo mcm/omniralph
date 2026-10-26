@@ -20,7 +20,7 @@ import { connectRepository, upsertScmConnection } from "./repositories.js";
 import {
   appSettings,
   findings,
-  harnesses,
+  agents,
   inboxItemStates,
   jobs,
   organizations,
@@ -438,9 +438,9 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       finishedAt: ago(16 * DAY),
     });
     await job("storyFailed", { type: "ralph.story", status: "failed", ralphRunId: ids.cleanup });
-    const agent = async (name: string, values: Partial<typeof harnesses.$inferInsert>) => {
+    const agent = async (name: string, values: Partial<typeof agents.$inferInsert>) => {
       const [row] = await db
-        .insert(harnesses)
+        .insert(agents)
         .values({ organizationId: acme, name, ...values })
         .returning();
       ids[name] = row!.id;
@@ -463,11 +463,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     await agent("desiredOk", { lastHeartbeatAt: now, failedVersions: ["1.0.0"] });
     await db
       .insert(appSettings)
-      .values({ organizationId: acme, key: "harness.desiredVersion", value: "2.0.0" });
-    await db
-      .update(harnesses)
-      .set({ desiredVersion: "2.1.0" })
-      .where(eq(harnesses.id, ids.desiredOk!));
+      .values({ organizationId: acme, key: "agent.desiredVersion", value: "2.0.0" });
+    await db.update(agents).set({ desiredVersion: "2.1.0" }).where(eq(agents.id, ids.desiredOk!));
 
     // ── Running ──
     const [runningTriage] = await db

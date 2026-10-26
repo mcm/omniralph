@@ -21,10 +21,10 @@ export async function heartbeatClaimable(
 ): Promise<boolean | undefined> {
   if (claimablePools === undefined) return undefined;
   return check(db, {
-    harnessId: harness.id,
+    agentId: harness.id,
     organizationId: harness.organizationId,
     acceptedTaskTypes: harness.acceptedTaskTypes,
     pools: claimablePools,
-    harnessVersion: harness.reportedVersion,
+    agentVersion: harness.reportedVersion,
   });
 }

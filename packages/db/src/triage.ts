@@ -6,10 +6,10 @@
 import { and, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { repositoryLink, repositoryLinkColumns, type RepositoryLink } from "./harnesses.js";
+import { repositoryLink, repositoryLinkColumns, type RepositoryLink } from "./agents.js";
 import type { JobStatus } from "./jobs.js";
 import {
-  harnesses,
+  agents,
   jobs,
   repositories,
   scmConnections,
@@ -433,15 +433,15 @@ async function listTriageRunJobs(
       cancelRequested: jobs.cancelRequested,
       error: jobs.error,
       payload: jobs.payload,
-      harnessId: harnesses.id,
-      harnessName: harnesses.name,
+      agentId: agents.id,
+      agentName: agents.name,
       createdAt: jobs.createdAt,
       startedAt: jobs.startedAt,
       finishedAt: jobs.finishedAt,
       ...repositoryLinkColumns,
     })
     .from(jobs)
-    .leftJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+    .leftJoin(agents, eq(agents.id, jobs.agentId))
     .leftJoin(repositories, eq(repositories.id, jobs.repositoryId))
     .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
     .where(
@@ -460,10 +460,7 @@ async function listTriageRunJobs(
     cancelRequested: row.cancelRequested,
     error: row.error,
     payload: row.payload,
-    agent:
-      row.harnessId && row.harnessName !== null
-        ? { id: row.harnessId, name: row.harnessName }
-        : null,
+    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
     repository: repositoryLink(row),
     createdAt: row.createdAt,
     startedAt: row.startedAt,

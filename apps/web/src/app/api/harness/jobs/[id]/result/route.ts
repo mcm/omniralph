@@ -1,4 +1,4 @@
-import { completeJob, getJob, getJobForHarness, writeHarnessAudit } from "@omniralph/db";
+import { completeJob, getJob, getJobForAgent, writeAgentAudit } from "@omniralph/db";
 import { JobResult, type JobOutcomeResponse } from "@omniralph/shared";
 import { badRequest, clientIp, readJson } from "@/lib/harness-auth/request";
 import { requireHarness } from "@/lib/harness-auth/verify";
@@ -36,14 +36,14 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   if (!body.success) return badRequest();
 
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
   const outcome = await completeJob(db, {
     jobId,
-    harnessId: principal.harnessId,
+    agentId: principal.harnessId,
     result: body.data.result,
   });
   if (outcome.status === "completed" || outcome.status === "canceled") await removeJobsDue([job]);
@@ -52,7 +52,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
       return notFound();
     case "conflict": {
       const current = handler ? await getJob(db, jobId) : null;
-      if (current?.status === "completed" && current.harnessId === principal.harnessId) {
+      if (current?.status === "completed" && current.agentId === principal.harnessId) {
         await handler?.onCompleted?.(db, current);
         return Response.json({ status: "completed" } satisfies JobOutcomeResponse);
       }
@@ -60,8 +60,8 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
     }
     case "completed":
     case "canceled": {
-      await writeHarnessAudit(db, {
-        harnessId: principal.harnessId,
+      await writeAgentAudit(db, {
+        agentId: principal.harnessId,
         event: "result_submitted",
         ip: clientIp(req),
         detail: { jobId, status: outcome.status },

@@ -1,5 +1,5 @@
 import "server-only";
-import { getHarness, getJob, type Database } from "@omniralph/db";
+import { getAgent, getJob, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { reviewIdOfJob } from "@/lib/review/job-review";
@@ -49,7 +49,7 @@ export async function rerunJob(
   }
 
   // A system RPC runs on the harness it targeted, which must still be there.
-  const target = job.targetHarnessId ? await getHarness(db, job.targetHarnessId) : null;
+  const target = job.targetAgentId ? await getAgent(db, job.targetAgentId) : null;
   if (!target || target.revokedAt || target.organizationId !== organizationId) {
     return { ok: false, error: "The agent this job ran on is gone, so it can't be rerun." };
   }
@@ -58,7 +58,7 @@ export async function rerunJob(
     type: job.type,
     taskType: job.taskType,
     taskId: job.taskId,
-    minHarnessVersion: job.minHarnessVersion,
+    minAgentVersion: job.minAgentVersion,
     requiredInstallables: job.requiredInstallables,
     requiredHostTools: job.requiredHostTools,
     payload: job.payload,

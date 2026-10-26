@@ -11,7 +11,7 @@ const KINDS = {
   integration: 0x0f4,
   harness: 0x0f5,
   hostTool: 0x0f6,
-  harnessAudit: 0x0f7,
+  agentAudit: 0x0f7,
   invitation: 0x0f8,
   ralphRun: 0x0f9,
   ralphLane: 0x0fa,

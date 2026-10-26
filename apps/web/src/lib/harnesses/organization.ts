@@ -1,5 +1,5 @@
 import "server-only";
-import { getHarness, type Database } from "@omniralph/db";
+import { getAgent, type Database } from "@omniralph/db";
 import { readHotState } from "@/lib/hot-state";
 
 /**
@@ -16,7 +16,7 @@ export async function readHarnessOrganization(
   db: Database,
   harnessId: string,
 ): Promise<string | null> {
-  const fromPostgres = async () => (await getHarness(db, harnessId))?.organizationId ?? null;
+  const fromPostgres = async () => (await getAgent(db, harnessId))?.organizationId ?? null;
   return readHotState(
     db,
     async (redis) => {

@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   chatThreadRuns,
-  harnesses,
+  agents,
   ralphRuns,
   repositories,
   reviewRuns,
@@ -14,7 +14,7 @@ import {
 /** Resources with their own URL in the control panel. */
 export type OrganizationResource =
   | "ask_run"
-  | "harness"
+  | "agent"
   | "ralph_run"
   | "repository"
   | "review"
@@ -39,11 +39,11 @@ export async function getResourceOrganizationId(
           .select({ organizationId: chatThreadRuns.organizationId })
           .from(chatThreadRuns)
           .where(and(eq(chatThreadRuns.id, id), eq(chatThreadRuns.kind, "query")));
-      case "harness":
+      case "agent":
         return db
-          .select({ organizationId: harnesses.organizationId })
-          .from(harnesses)
-          .where(and(eq(harnesses.id, id), isNull(harnesses.deletedAt)));
+          .select({ organizationId: agents.organizationId })
+          .from(agents)
+          .where(and(eq(agents.id, id), isNull(agents.deletedAt)));
       case "ralph_run":
         return db
           .select({ organizationId: ralphRuns.organizationId })

@@ -35,7 +35,7 @@ import {
   type ScmProvider,
 } from "./repositories.js";
 import {
-  harnesses,
+  agents,
   chatThreadRuns,
   chatThreads,
   jobs,
@@ -606,13 +606,13 @@ export async function listRuns(
           provider: repositories.provider,
           fullPath: repositories.fullPath,
         },
-        harnessId: harnesses.id,
-        harnessName: harnesses.name,
+        agentId: agents.id,
+        agentName: agents.name,
         chatThread: chatThreadColumns,
       })
       .from(ralphRuns)
       .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
-      .leftJoin(harnesses, eq(harnesses.id, ralphRuns.harnessId))
+      .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
       .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
       .leftJoin(ralphLanes, mainLaneOf(ralphRuns))
       .where(where)
@@ -642,9 +642,9 @@ export async function listRuns(
   }
 
   return {
-    runs: rows.map(({ harnessId, harnessName, ...row }) => ({
+    runs: rows.map(({ agentId, agentName, ...row }) => ({
       ...row,
-      agent: harnessId && harnessName !== null ? { id: harnessId, name: harnessName } : null,
+      agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
       stories: storyCounts.get(row.id) ?? { total: 0, completed: 0 },
     })),
     total: totalRow?.total ?? 0,
@@ -722,13 +722,13 @@ export async function getRunDetail(
         provider: repositories.provider,
         fullPath: repositories.fullPath,
       },
-      harnessId: harnesses.id,
-      harnessName: harnesses.name,
+      agentId: agents.id,
+      agentName: agents.name,
       chatThread: chatThreadColumns,
     })
     .from(ralphRuns)
     .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
-    .leftJoin(harnesses, eq(harnesses.id, ralphRuns.harnessId))
+    .leftJoin(agents, eq(agents.id, ralphRuns.agentId))
     .leftJoin(chatThreads, eq(chatThreads.id, ralphRuns.chatThreadId))
     .where(and(eq(ralphRuns.id, runId), eq(ralphRuns.organizationId, organizationId)))
     .limit(1);
@@ -764,11 +764,11 @@ export async function getRunDetail(
         createdAt: jobs.createdAt,
         startedAt: jobs.startedAt,
         finishedAt: jobs.finishedAt,
-        harnessId: harnesses.id,
-        harnessName: harnesses.name,
+        agentId: agents.id,
+        agentName: agents.name,
       })
       .from(jobs)
-      .leftJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+      .leftJoin(agents, eq(agents.id, jobs.agentId))
       .where(eq(jobs.ralphRunId, runId))
       .orderBy(desc(jobs.createdAt), desc(jobs.id)),
     listPendingRequests(db, runId),
@@ -786,18 +786,15 @@ export async function getRunDetail(
   return {
     run: row.run,
     repository: row.repository,
-    agent:
-      row.harnessId && row.harnessName !== null
-        ? { id: row.harnessId, name: row.harnessName }
-        : null,
+    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
     chatThread: row.chatThread,
     lanes: lanes
       .map((l) => ({ ...l, main: l.lane.repositoryId === row.run.repositoryId }))
       .sort((a, b) => Number(b.main) - Number(a.main)),
     stories,
-    jobs: jobRows.map(({ harnessId, harnessName, ...job }) => ({
+    jobs: jobRows.map(({ agentId, agentName, ...job }) => ({
       ...job,
-      agent: harnessId && harnessName !== null ? { id: harnessId, name: harnessName } : null,
+      agent: agentId && agentName !== null ? { id: agentId, name: agentName } : null,
     })),
     pendingRequests,
     messages: messageRows.map(({ message, job }) => ({ ...message, job })),
@@ -953,8 +950,8 @@ export interface NewRalphLaneInput {
   repositoryId: string;
   branch: string;
   baseBranch: string;
-  /** Its sticky harness (none until one of its jobs starts). */
-  harnessId?: string | null;
+  /** Its sticky agent (none until one of its jobs starts). */
+  agentId?: string | null;
 }
 
 /** The run's lane in `repositoryId`, created with `input`'s branches if it has none yet. */
@@ -1331,7 +1328,7 @@ export async function copyLanes(
         publish: null,
         // Its requests start a new Claude conversation (cyralph keeps it per session).
         requestClaudeSessionId: null,
-        requestHarnessId: null,
+        requestAgentId: null,
       })),
     )
     .onConflictDoNothing()
@@ -1355,8 +1352,8 @@ export async function moveToRepository(
   const run = await getRun(db, runId);
   if (!run) return null;
   if (run.repositoryId === repositoryId) {
-    // A main lane created late sticks to the harness the run's jobs already started on.
-    const lane = await ensureLane(db, { runId, repositoryId, ...fresh, harnessId: run.harnessId });
+    // A main lane created late sticks to the agent the run's jobs already started on.
+    const lane = await ensureLane(db, { runId, repositoryId, ...fresh, agentId: run.agentId });
     return { lane, left: null };
   }
   const old = await getMainLane(db, run);
@@ -1611,12 +1608,12 @@ export async function listUndeliveredJobMessages(
 }
 
 /**
- * The messages among `ids` still waiting for delivery to a job `harnessId` runs
+ * The messages among `ids` still waiting for delivery to a job `agentId` runs
  * (or ran): what an agent may acknowledge. Others' are ignored.
  */
-export async function listHarnessUndeliveredMessages(
+export async function listAgentUndeliveredMessages(
   db: Executor,
-  harnessId: string,
+  agentId: string,
   ids: readonly string[],
 ): Promise<RalphMessage[]> {
   if (ids.length === 0) return [];
@@ -1627,7 +1624,7 @@ export async function listHarnessUndeliveredMessages(
     .where(
       and(
         inArray(ralphMessages.id, [...ids]),
-        eq(jobs.harnessId, harnessId),
+        eq(jobs.agentId, agentId),
         isNull(ralphMessages.deliveredAt),
         isNull(ralphMessages.consumedAt),
       ),

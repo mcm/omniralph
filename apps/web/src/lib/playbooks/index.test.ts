@@ -2,8 +2,8 @@ import {
   claimJob,
   closeDb,
   createDb,
-  harnessHostTools,
-  harnesses,
+  agentHostTools,
+  agents,
   hostTools,
   insertPlaybook,
   jobs,
@@ -247,7 +247,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       const input = await taskJobInput(playbooks, (await getPlaybookTask(playbooks, row.id))!, {
         trigger: { kind: "pr.updated", context: {} },
       });
-      expect(input).toMatchObject({ taskId: row.id, minHarnessVersion: STORED_MIN_VERSION });
+      expect(input).toMatchObject({ taskId: row.id, minAgentVersion: STORED_MIN_VERSION });
 
       // A stored minimum below the task type's never lowers it.
       const low = await customPlaybook(
@@ -259,7 +259,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       const lowInput = await taskJobInput(playbooks, (await getPlaybookTask(playbooks, low.id))!, {
         trigger: { kind: "pr.updated", context: {} },
       });
-      expect(lowInput.minHarnessVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
+      expect(lowInput.minAgentVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
     });
   });
 
@@ -303,7 +303,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
     const rows = await Promise.all(
       result.runs.map(async ({ jobId }) => {
         const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId));
-        return { taskId: row!.taskId, minHarnessVersion: row!.minHarnessVersion };
+        return { taskId: row!.taskId, minHarnessVersion: row!.minAgentVersion };
       }),
     );
     expect(rows).toEqual([
@@ -369,7 +369,7 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       .values({ organizationId: orgId, name: "opengrep" })
       .returning();
     const [bare, graphOnly, capable] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values(
         ["bare", "graph-only", "capable"].map((name) => ({
           organizationId: orgId,
@@ -381,18 +381,18 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         })),
       )
       .returning();
-    await db.insert(harnessHostTools).values({
-      harnessId: capable!.id,
+    await db.insert(agentHostTools).values({
+      agentId: capable!.id,
       hostToolId: tool!.id,
       discoveredPath: "/usr/bin/opengrep",
     });
     const claim = (harnessId: string) =>
       claimJob(db, {
-        harnessId,
+        agentId: harnessId,
         organizationId: orgId,
         acceptedTaskTypes: ["review"],
         pools: ["short", "long"],
-        harnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: 3,
       });
     // Drain what the other harnesses can claim: never this run.

@@ -1,14 +1,14 @@
 import "server-only";
 import {
   getDefaultMaxConcurrency,
-  getDesiredHarnessVersion,
-  getHarnessOverview,
-  listHarnessHostTools,
-  requestHarnessUpdate as requestHarnessUpdateRow,
-  setHarnessDesiredVersion as setHarnessDesiredVersionRow,
-  setHarnessHostToolPath,
-  TRACK_LATEST_HARNESS_VERSION,
-  updateHarnessConfig as updateHarnessConfigRow,
+  getDesiredAgentVersion,
+  getAgentOverview,
+  listAgentHostTools,
+  requestAgentUpdate as requestHarnessUpdateRow,
+  setAgentDesiredVersion as setHarnessDesiredVersionRow,
+  setAgentHostToolPath,
+  TRACK_LATEST_AGENT_VERSION,
+  updateAgentConfig as updateHarnessConfigRow,
   type Database,
 } from "@omniralph/db";
 import { AgentVersion, HostToolPath, POOLS } from "@omniralph/shared";
@@ -22,7 +22,7 @@ import type {
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
   deleteHarness as deleteHarnessWithRevoke,
-  revokeHarness as revokeHarnessWithJobs,
+  revokeAgent as revokeHarnessWithJobs,
 } from "@/lib/harness-auth/revoke";
 import { recordLatestHarnessVersion } from "./desired-version";
 import { bumpHarnessHeartbeat } from "./heartbeat-cache";
@@ -49,7 +49,7 @@ const HarnessConfig = z.object({
 });
 
 /** Updates a harness's central config; the harness gets it with its next heartbeat. */
-export async function updateHarnessConfig(
+export async function updateAgentConfig(
   db: Database,
   organizationId: string,
   harnessId: string,
@@ -80,7 +80,7 @@ export async function updateHarnessConfig(
  * Sets the version this harness should run, overriding Settings › Harness defaults; blank
  * clears the override. Harnesses under pm2 update themselves to it.
  */
-export async function setHarnessDesiredVersion(
+export async function setAgentDesiredVersion(
   db: Database,
   organizationId: string,
   harnessId: string,
@@ -144,7 +144,7 @@ export async function saveHarnessSettings(
       ? [
           {
             label: "concurrency",
-            run: () => updateHarnessConfig(db, organizationId, harnessId, save.config!),
+            run: () => updateAgentConfig(db, organizationId, harnessId, save.config!),
           },
         ]
       : []),
@@ -152,7 +152,7 @@ export async function saveHarnessSettings(
       ? [
           {
             label: "the desired version",
-            run: () => setHarnessDesiredVersion(db, organizationId, harnessId, save.version!),
+            run: () => setAgentDesiredVersion(db, organizationId, harnessId, save.version!),
           },
         ]
       : []),
@@ -167,12 +167,12 @@ export type HarnessUpdateResult = ActionResult & { version?: string };
  * none is chosen or the organization tracks it. Unlike the automatic update it also retries a version that
  * failed on the harness. Only harnesses under pm2 can update themselves.
  */
-export async function requestHarnessUpdate(
+export async function requestAgentUpdate(
   db: Database,
   organizationId: string,
   harnessId: string,
 ): Promise<HarnessUpdateResult> {
-  const harness = await getHarnessOverview(db, organizationId, harnessId);
+  const harness = await getAgentOverview(db, organizationId, harnessId);
   if (!harness || harness.revokedAt) return UNKNOWN_HARNESS;
   if (harness.selfUpdate !== "supported") {
     return {
@@ -181,8 +181,8 @@ export async function requestHarnessUpdate(
         "This harness can't update itself (it isn't running under pm2). Update it on the host.",
     };
   }
-  const desired = harness.desiredVersion ?? (await getDesiredHarnessVersion(db, organizationId));
-  let target = desired === TRACK_LATEST_HARNESS_VERSION ? null : desired;
+  const desired = harness.desiredVersion ?? (await getDesiredAgentVersion(db, organizationId));
+  let target = desired === TRACK_LATEST_AGENT_VERSION ? null : desired;
   if (!target) {
     try {
       target = await latestHarnessVersion();
@@ -193,7 +193,7 @@ export async function requestHarnessUpdate(
       throw error;
     }
     // Heartbeats then hand out this version too, so the harness isn't sent back to an older one.
-    if (desired === TRACK_LATEST_HARNESS_VERSION) {
+    if (desired === TRACK_LATEST_AGENT_VERSION) {
       await recordLatestHarnessVersion(db, organizationId, target);
     }
   }
@@ -218,7 +218,7 @@ export interface HarnessActor {
  * Revokes a harness: its tokens stop working at once, its running jobs are
  * redelivered to other harnesses and its pins are removed.
  */
-export async function revokeHarness(harnessId: string, actor: HarnessActor): Promise<ActionResult> {
+export async function revokeAgent(harnessId: string, actor: HarnessActor): Promise<ActionResult> {
   if (
     !(await revokeHarnessWithJobs(harnessId, {
       revokedBy: actor.userId,
@@ -232,7 +232,7 @@ export async function revokeHarness(harnessId: string, actor: HarnessActor): Pro
 }
 
 /**
- * Deletes a harness: revokes it if it isn't already (see `revokeHarness`), then
+ * Deletes a harness: revokes it if it isn't already (see `revokeAgent`), then
  * removes it from the Harnesses pages for good.
  */
 export async function deleteHarness(harnessId: string, actor: HarnessActor): Promise<ActionResult> {
@@ -299,13 +299,7 @@ export async function setHostToolPath(
   const ids = z.uuid();
   const result =
     ids.safeParse(harnessId).success && ids.safeParse(hostToolId).success
-      ? await setHarnessHostToolPath(
-          db,
-          organizationId,
-          harnessId,
-          hostToolId,
-          parsed?.data ?? null,
-        )
+      ? await setAgentHostToolPath(db, organizationId, harnessId, hostToolId, parsed?.data ?? null)
       : ({ ok: false, error: "not_found" } as const);
   if (!result.ok) {
     return {
@@ -332,7 +326,7 @@ export async function saveHostToolPaths(
 ): Promise<ActionResult> {
   const names = new Map(
     z.uuid().safeParse(harnessId).success
-      ? (await listHarnessHostTools(db, organizationId, harnessId)).map((tool) => [
+      ? (await listAgentHostTools(db, organizationId, harnessId)).map((tool) => [
           tool.hostToolId,
           tool.name,
         ])

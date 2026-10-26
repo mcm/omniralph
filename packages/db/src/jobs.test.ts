@@ -4,20 +4,20 @@ import type { ReportedHostTool } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { listQueuedJobsTargetingHarness } from "./harnesses.js";
+import { listQueuedJobsTargetingAgent } from "./agents.js";
 import {
   claimJob,
   failJob,
   hasClaimableJob,
   getJob,
   insertJob,
-  recordHarnessHeartbeat,
+  recordAgentHeartbeat,
   renewJobLeases,
   setQueuedJobTarget,
   type NewJobInput,
 } from "./jobs.js";
-import { createHostTool, recordHarnessHostTools, setHarnessHostToolPath } from "./host-tools.js";
-import { harnessHostTools, harnesses, hostTools, jobs, organizations } from "./schema.js";
+import { createHostTool, recordAgentHostTools, setAgentHostToolPath } from "./host-tools.js";
+import { agentHostTools, agents, hostTools, jobs, organizations } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -50,36 +50,36 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
   };
 
   const claim = (
-    harnessId: string,
+    agentId: string,
     now: Date,
     options: {
       organizationId?: string;
       acceptedTaskTypes?: string[];
       pools?: string[];
-      harnessVersion?: string | null;
+      agentVersion?: string | null;
     } = {},
   ) =>
     claimJob(db, {
-      harnessId,
+      agentId,
       organizationId: options.organizationId ?? orgA,
       acceptedTaskTypes: options.acceptedTaskTypes ?? ["query", "review", "coding"],
       pools: options.pools ?? ["short", "long"],
-      harnessVersion: options.harnessVersion === undefined ? "1.0.0" : options.harnessVersion,
+      agentVersion: options.agentVersion === undefined ? "1.0.0" : options.agentVersion,
       maxDeliveries: 3,
       now,
     });
 
   const claimable = (
-    harnessId: string,
+    agentId: string,
     now: Date,
-    options: { organizationId?: string; pools?: string[]; harnessVersion?: string | null } = {},
+    options: { organizationId?: string; pools?: string[]; agentVersion?: string | null } = {},
   ) =>
     hasClaimableJob(db, {
-      harnessId,
+      agentId,
       organizationId: options.organizationId ?? orgA,
       acceptedTaskTypes: ["query", "review", "coding"],
       pools: options.pools ?? ["short", "long"],
-      harnessVersion: options.harnessVersion === undefined ? "1.0.0" : options.harnessVersion,
+      agentVersion: options.agentVersion === undefined ? "1.0.0" : options.agentVersion,
       now,
     });
 
@@ -91,7 +91,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     orgA = a!.id;
     orgB = b!.id;
     const created = await db
-      .insert(harnesses)
+      .insert(agents)
       .values([
         { organizationId: orgA, name: "a-1" },
         { organizationId: orgA, name: "a-2" },
@@ -138,10 +138,10 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       expect(await claimable(agentA, at(1), { pools: ["long"] })).toBe(true);
     });
 
-    it("counts jobs targeted at this harness, not at another one", async () => {
-      await enqueue({ targetHarnessId: agentA2 });
+    it("counts jobs targeted at this agent, not at another one", async () => {
+      await enqueue({ targetAgentId: agentA2 });
       expect(await claimable(agentA, at(1))).toBe(false);
-      await enqueue({ targetHarnessId: agentA });
+      await enqueue({ targetAgentId: agentA });
       expect(await claimable(agentA, at(1))).toBe(true);
     });
 
@@ -151,11 +151,11 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       expect(await claimable(agentB, at(1), { organizationId: orgB })).toBe(true);
     });
 
-    it("applies the minimum harness version like claimJob", async () => {
-      await enqueue({ minHarnessVersion: "2.0.0" });
+    it("applies the minimum agent version like claimJob", async () => {
+      await enqueue({ minAgentVersion: "2.0.0" });
       expect(await claimable(agentA, at(1))).toBe(false);
-      expect(await claimable(agentA, at(1), { harnessVersion: null })).toBe(false);
-      expect(await claimable(agentA, at(1), { harnessVersion: "2.0.0" })).toBe(true);
+      expect(await claimable(agentA, at(1), { agentVersion: null })).toBe(false);
+      expect(await claimable(agentA, at(1), { agentVersion: "2.0.0" })).toBe(true);
     });
 
     it("agrees with claimJob and claims nothing itself", async () => {
@@ -177,7 +177,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       job: {
         id: older,
         status: "running",
-        harnessId: agentA,
+        agentId: agentA,
         deliveryCount: 1,
         startedAt: at(1),
         leaseExpiresAt: at(121),
@@ -189,8 +189,8 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
 
   it("claims jobs targeted at the agent first, and never another agent's", async () => {
     const shared = await enqueue({ createdAt: at(-30) });
-    const mine = await enqueue({ createdAt: at(-10), targetHarnessId: agentA });
-    const theirs = await enqueue({ createdAt: at(-40), targetHarnessId: agentA2 });
+    const mine = await enqueue({ createdAt: at(-10), targetAgentId: agentA });
+    const theirs = await enqueue({ createdAt: at(-40), targetAgentId: agentA2 });
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(mine);
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(shared);
     expect((await claim(agentA, at(1))).claim).toBeNull();
@@ -205,7 +205,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     expect((await claim(agentA, at(1))).claim?.job.id).toBe(a);
   });
 
-  it("only claims task types the harness accepts", async () => {
+  it("only claims task types the agent accepts", async () => {
     const coding = await enqueue({
       type: "ralph.story",
       taskType: "coding",
@@ -238,24 +238,24 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     );
   });
 
-  it("only claims jobs whose minimum harness version the harness meets", async () => {
-    const newer = await enqueue({ minHarnessVersion: "1.10.0", createdAt: at(-30) });
-    const older = await enqueue({ minHarnessVersion: "1.2.0", createdAt: at(-20) });
+  it("only claims jobs whose minimum agent version the agent meets", async () => {
+    const newer = await enqueue({ minAgentVersion: "1.10.0", createdAt: at(-30) });
+    const older = await enqueue({ minAgentVersion: "1.2.0", createdAt: at(-20) });
     const any = await enqueue({ createdAt: at(-10) });
-    expect((await claim(agentA, at(1), { harnessVersion: null })).claim?.job.id).toBe(any);
-    expect((await claim(agentA, at(1), { harnessVersion: "1.9.0" })).claim?.job.id).toBe(older);
-    expect((await claim(agentA, at(1), { harnessVersion: "1.9.0" })).claim).toBeNull();
+    expect((await claim(agentA, at(1), { agentVersion: null })).claim?.job.id).toBe(any);
+    expect((await claim(agentA, at(1), { agentVersion: "1.9.0" })).claim?.job.id).toBe(older);
+    expect((await claim(agentA, at(1), { agentVersion: "1.9.0" })).claim).toBeNull();
     // Semver, not string order; a prerelease of the minimum counts.
-    expect((await claim(agentA, at(1), { harnessVersion: "1.10.0-beta.1" })).claim?.job.id).toBe(
+    expect((await claim(agentA, at(1), { agentVersion: "1.10.0-beta.1" })).claim?.job.id).toBe(
       newer,
     );
   });
 
-  it("only claims jobs whose installables the harness reported", async () => {
+  it("only claims jobs whose installables the agent reported", async () => {
     await db
-      .update(harnesses)
+      .update(agents)
       .set({ reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }] })
-      .where(eq(harnesses.id, agentA));
+      .where(eq(agents.id, agentA));
     try {
       const both = await enqueue({
         requiredInstallables: ["@omniralph/code-graph", "@omniralph/sast"],
@@ -266,18 +266,18 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
         createdAt: at(-20),
       });
       const any = await enqueue({ createdAt: at(-10) });
-      // The other harness has none: it only gets the job that needs none.
+      // The other agent has none: it only gets the job that needs none.
       expect((await claim(agentA2, at(1))).claim?.job.id).toBe(any);
       expect((await claim(agentA2, at(1))).claim).toBeNull();
       expect((await claim(agentA, at(1))).claim?.job.id).toBe(graph);
       expect((await claim(agentA, at(1))).claim).toBeNull();
       expect((await getJob(db, both))?.status).toBe("queued");
     } finally {
-      await db.update(harnesses).set({ reportedInstallables: [] }).where(eq(harnesses.id, agentA));
+      await db.update(agents).set({ reportedInstallables: [] }).where(eq(agents.id, agentA));
     }
   });
 
-  it("only claims jobs whose host tools have an effective path on the harness", async () => {
+  it("only claims jobs whose host tools have an effective path on the agent", async () => {
     const tools = await db
       .insert(hostTools)
       .values([
@@ -288,26 +288,26 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       ])
       .returning();
     const [opengrep, semgrep, missing, otherOrg] = tools.map((tool) => tool.id) as string[];
-    await db.insert(harnessHostTools).values([
+    await db.insert(agentHostTools).values([
       // Discovered on PATH, nothing configured: usable.
-      { harnessId: agentA, hostToolId: opengrep!, discoveredPath: "/usr/bin/opengrep" },
+      { agentId: agentA, hostToolId: opengrep!, discoveredPath: "/usr/bin/opengrep" },
       // Configured and found: usable.
       {
-        harnessId: agentA,
+        agentId: agentA,
         hostToolId: semgrep!,
         configuredPath: "/opt/semgrep",
         configuredPathExists: true,
       },
       // Configured but missing: the discovered path is no fallback.
       {
-        harnessId: agentA,
+        agentId: agentA,
         hostToolId: missing!,
         configuredPath: "/opt/missing",
         configuredPathExists: false,
         discoveredPath: "/usr/bin/missing",
       },
-      { harnessId: agentA2, hostToolId: opengrep! },
-      { harnessId: agentB, hostToolId: otherOrg!, discoveredPath: "/usr/bin/other-org" },
+      { agentId: agentA2, hostToolId: opengrep! },
+      { agentId: agentB, hostToolId: otherOrg!, discoveredPath: "/usr/bin/other-org" },
     ]);
     try {
       const needsMissing = await enqueue({ requiredHostTools: ["missing"], createdAt: at(-40) });
@@ -316,7 +316,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
         createdAt: at(-30),
       });
       const needsOther = await enqueue({ requiredHostTools: ["other-org"], createdAt: at(-20) });
-      // The second harness hasn't found opengrep.
+      // The second agent hasn't found opengrep.
       expect((await claim(agentA2, at(1))).claim).toBeNull();
       expect((await claim(agentA, at(1))).claim?.job.id).toBe(needsBoth);
       expect((await claim(agentA, at(1))).claim).toBeNull();
@@ -333,12 +333,12 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const fixture = { name: "@omniralph/fixture", version: "1.0.0" };
     const found = { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/og" };
     const heartbeat = async (
-      harnessId: string,
+      agentId: string,
       installables: { name: string; version: string }[],
       tools: ReportedHostTool[],
     ) => {
-      await recordHarnessHeartbeat(db, harnessId, { version: "1.0.0", installables });
-      await recordHarnessHostTools(db, orgA, harnessId, tools);
+      await recordAgentHeartbeat(db, agentId, { version: "1.0.0", installables });
+      await recordAgentHostTools(db, orgA, agentId, tools);
     };
     const requiringBoth = (seconds: number) =>
       enqueue({
@@ -370,9 +370,9 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       await heartbeat(agentA, [fixture], [found]);
       expect((await claim(agentA, at(1))).claim?.job.id).toBe(next);
 
-      // A configured path the harness doesn't find: the discovered one is no fallback.
+      // A configured path the agent doesn't find: the discovered one is no fallback.
       const last = await requiringBoth(-1);
-      await setHarnessHostToolPath(db, orgA, agentA, opengrep.hostTool.id, "/opt/missing");
+      await setAgentHostToolPath(db, orgA, agentA, opengrep.hostTool.id, "/opt/missing");
       await heartbeat(
         agentA,
         [fixture],
@@ -382,7 +382,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       expect((await claim(agentA2, at(1))).claim).toBeNull();
       expect((await getJob(db, last))?.status).toBe("queued");
     } finally {
-      await db.update(harnesses).set({ reportedInstallables: [] }).where(eq(harnesses.id, agentA));
+      await db.update(agents).set({ reportedInstallables: [] }).where(eq(agents.id, agentA));
       await db.delete(hostTools);
     }
   });
@@ -410,13 +410,13 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     expect((await claim(agentA2, at(120))).claim).toBeNull();
     expect((await claim(agentA2, at(121))).claim?.job).toMatchObject({
       id,
-      harnessId: agentA2,
+      agentId: agentA2,
       deliveryCount: 2,
       leaseExpiresAt: at(241),
     });
     // The first agent's late result is rejected.
     expect(
-      await failJob(db, { jobId: id, harnessId: agentA, retryable: true, maxDeliveries: 3 }),
+      await failJob(db, { jobId: id, agentId: agentA, retryable: true, maxDeliveries: 3 }),
     ).toEqual({ status: "conflict" });
   });
 
@@ -426,7 +426,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     expect(
       await failJob(db, {
         jobId: id,
-        harnessId: agentA,
+        agentId: agentA,
         retryable: true,
         error: "busy",
         maxDeliveries: 3,
@@ -436,7 +436,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     ).toEqual({ status: "retry" });
     expect(await getJob(db, id)).toMatchObject({
       status: "queued",
-      harnessId: null,
+      agentId: null,
       availableAt: at(70),
       leaseExpiresAt: null,
     });
@@ -453,7 +453,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const crashed = await enqueue({ createdAt: at(-15) });
     await db
       .update(jobs)
-      .set({ status: "running", harnessId: agentA2, deliveryCount: 3, leaseExpiresAt: at(-1) })
+      .set({ status: "running", agentId: agentA2, deliveryCount: 3, leaseExpiresAt: at(-1) })
       .where(eq(jobs.id, crashed));
     const next = await enqueue({ createdAt: at(-10) });
 
@@ -479,11 +479,11 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const next = await enqueue({ createdAt: at(-10) });
     const seen: string[] = [];
     const result = await claimJob(db, {
-      harnessId: agentA,
+      agentId: agentA,
       organizationId: orgA,
       acceptedTaskTypes: ["review"],
       pools: ["short"],
-      harnessVersion: "1.0.0",
+      agentVersion: "1.0.0",
       maxDeliveries: 3,
       now: at(1),
       beforeClaim: async (job) => {
@@ -510,11 +510,11 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     const id = await enqueue({ createdAt: at(-10) });
     await expect(
       claimJob(db, {
-        harnessId: agentA,
+        agentId: agentA,
         organizationId: orgA,
         acceptedTaskTypes: ["review"],
         pools: ["short"],
-        harnessVersion: "1.0.0",
+        agentVersion: "1.0.0",
         maxDeliveries: 3,
         now: at(1),
         beforeClaim: () => Promise.reject(new Error("KMS down")),
@@ -544,14 +544,14 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
   });
 
   it("retargets only queued jobs and lists the queued jobs targeting an agent", async () => {
-    const queued = await enqueue({ createdAt: at(-10), targetHarnessId: agentA });
-    const running = await enqueue({ createdAt: at(-20), targetHarnessId: agentA });
+    const queued = await enqueue({ createdAt: at(-10), targetAgentId: agentA });
+    const running = await enqueue({ createdAt: at(-20), targetAgentId: agentA });
     await claim(agentA, at(0));
-    const later = await enqueue({ createdAt: at(10), targetHarnessId: agentA });
-    await enqueue({ targetHarnessId: agentA2 });
+    const later = await enqueue({ createdAt: at(10), targetAgentId: agentA });
+    await enqueue({ targetAgentId: agentA2 });
     await enqueue();
 
-    expect((await listQueuedJobsTargetingHarness(db, agentA)).map((j) => j.id)).toEqual([
+    expect((await listQueuedJobsTargetingAgent(db, agentA)).map((j) => j.id)).toEqual([
       queued,
       later,
     ]);
@@ -559,9 +559,9 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     expect(await setQueuedJobTarget(db, queued, agentA2)).toBe(true);
     expect(await setQueuedJobTarget(db, later, null)).toBe(true);
     expect(await setQueuedJobTarget(db, running, null)).toBe(false);
-    expect((await getJob(db, queued))?.targetHarnessId).toBe(agentA2);
-    expect((await getJob(db, later))?.targetHarnessId).toBeNull();
-    expect((await getJob(db, running))?.targetHarnessId).toBe(agentA);
-    expect(await listQueuedJobsTargetingHarness(db, agentA)).toEqual([]);
+    expect((await getJob(db, queued))?.targetAgentId).toBe(agentA2);
+    expect((await getJob(db, later))?.targetAgentId).toBeNull();
+    expect((await getJob(db, running))?.targetAgentId).toBe(agentA);
+    expect(await listQueuedJobsTargetingAgent(db, agentA)).toEqual([]);
   });
 });

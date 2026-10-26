@@ -3,7 +3,7 @@ import {
   AcceptedTaskTypes,
   ClaimRequest,
   AgentVersion,
-  harnessVersionAtLeast,
+  agentVersionAtLeast,
   defaultPoolLimit,
   effectivePoolLimits,
   Heartbeat,
@@ -308,12 +308,12 @@ describe("self-update protocol", () => {
   });
 
   it("compares agent versions by major, minor and patch", () => {
-    expect(harnessVersionAtLeast("0.7.0", "0.7.0")).toBe(true);
-    expect(harnessVersionAtLeast("0.10.0", "0.7.0")).toBe(true);
-    expect(harnessVersionAtLeast("1.0.0", "0.7.3")).toBe(true);
-    expect(harnessVersionAtLeast("0.7.0-beta.1", "0.7.0")).toBe(true);
-    expect(harnessVersionAtLeast("0.6.9", "0.7.0")).toBe(false);
-    expect(harnessVersionAtLeast("0.7.0", "0.7.1")).toBe(false);
-    expect(harnessVersionAtLeast("dev", "0.7.0")).toBe(false);
+    expect(agentVersionAtLeast("0.7.0", "0.7.0")).toBe(true);
+    expect(agentVersionAtLeast("0.10.0", "0.7.0")).toBe(true);
+    expect(agentVersionAtLeast("1.0.0", "0.7.3")).toBe(true);
+    expect(agentVersionAtLeast("0.7.0-beta.1", "0.7.0")).toBe(true);
+    expect(agentVersionAtLeast("0.6.9", "0.7.0")).toBe(false);
+    expect(agentVersionAtLeast("0.7.0", "0.7.1")).toBe(false);
+    expect(agentVersionAtLeast("dev", "0.7.0")).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import {
   testUser,
   TEST_ORGANIZATION_ID,
 } from "@/components/query-test-utils";
-import type { HarnessDefaults, HostToolCatalogRow } from "@/lib/api/harness-defaults";
+import type { AgentDefaults, HostToolCatalogRow } from "@/lib/api/harness-defaults";
 import { HarnessSettingsView } from "./harness-settings-view";
 
 const navigation = vi.hoisted(() => ({
@@ -36,7 +36,7 @@ const DEFAULTS = "/api/ui/harness-defaults";
 const HOST_TOOLS = "/api/ui/host-tools";
 const builtIn = { maxConcurrency: 5 };
 
-function harnessDefaults(overrides: Partial<HarnessDefaults> = {}): HarnessDefaults {
+function harnessDefaults(overrides: Partial<AgentDefaults> = {}): AgentDefaults {
   return {
     desiredVersion: "1.4.0",
     updatedAt: null,
@@ -158,7 +158,7 @@ describe("HarnessSettingsView › Defaults", () => {
       [`GET ${DEFAULTS}`]: () => jsonResponse(saved),
       [`PUT ${DEFAULTS}`]: (request) => {
         const body = request.body as {
-          defaults: HarnessDefaults["defaults"];
+          defaults: AgentDefaults["defaults"];
           version: string;
         };
         saved = harnessDefaults({ defaults: body.defaults, desiredVersion: body.version });

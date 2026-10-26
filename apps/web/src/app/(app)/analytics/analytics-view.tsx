@@ -680,7 +680,7 @@ export function AnalyticsContent({
           <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
         </CardHeader>
         <CardContent>
-          {analytics.jobsByHarness.length === 0 ? (
+          {analytics.jobsByAgent.length === 0 ? (
             <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
           ) : (
             <Table className="list-table">
@@ -693,7 +693,7 @@ export function AnalyticsContent({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {analytics.jobsByHarness.map((a) => (
+                {analytics.jobsByAgent.map((a) => (
                   <TableRow key={a.agent.id}>
                     <TableCell className="analytics-cell-text">
                       {isAdmin ? (

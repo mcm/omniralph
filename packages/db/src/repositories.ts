@@ -8,8 +8,8 @@ import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import {
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   repositories,
   reviews,
   scmConnections,
@@ -507,12 +507,12 @@ export async function disconnectRepository(
       .returning();
     if (!row) return null;
     const unpinned = await tx
-      .delete(harnessRepoPins)
-      .where(eq(harnessRepoPins.repositoryId, id))
-      .returning({ harnessId: harnessRepoPins.harnessId });
+      .delete(agentRepoPins)
+      .where(eq(agentRepoPins.repositoryId, id))
+      .returning({ agentId: agentRepoPins.agentId });
     recordRepositoryChange(tx, row);
-    for (const { harnessId } of unpinned) {
-      recordPinChange(tx, { harnessId, repositoryId: id, organizationId });
+    for (const { agentId } of unpinned) {
+      recordPinChange(tx, { agentId, repositoryId: id, organizationId });
     }
     return row;
   });
@@ -534,7 +534,7 @@ export interface RepositoryOverview {
   baseUrl: string;
   /** The depth its reviews run at. */
   reviewDepth: Repository["reviewDepth"];
-  pinnedHarnesses: { id: string; name: string }[];
+  pinnedAgents: { id: string; name: string }[];
   lastReviewAt: Date | null;
 }
 
@@ -582,7 +582,7 @@ function overviewQuery(db: Database, organizationId: string, search?: string) {
     .$dynamic();
 }
 
-type OverviewRow = Omit<RepositoryOverview, "pinnedHarnesses" | "lastReviewAt">;
+type OverviewRow = Omit<RepositoryOverview, "pinnedAgents" | "lastReviewAt">;
 
 async function withPinsAndLastReview(
   db: Database,
@@ -594,14 +594,14 @@ async function withPinsAndLastReview(
   const [pins, lastReviews] = await Promise.all([
     db
       .select({
-        repositoryId: harnessRepoPins.repositoryId,
-        id: harnesses.id,
-        name: harnesses.name,
+        repositoryId: agentRepoPins.repositoryId,
+        id: agents.id,
+        name: agents.name,
       })
-      .from(harnessRepoPins)
-      .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
-      .where(inArray(harnessRepoPins.repositoryId, ids))
-      .orderBy(asc(harnesses.name)),
+      .from(agentRepoPins)
+      .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+      .where(inArray(agentRepoPins.repositoryId, ids))
+      .orderBy(asc(agents.name)),
     db
       .select({ repositoryId: reviews.repositoryId, at: max(reviews.createdAt) })
       .from(reviews)
@@ -618,7 +618,7 @@ async function withPinsAndLastReview(
   const lastReviewByRepo = new Map(lastReviews.map((r) => [r.repositoryId, r.at]));
   return rows.map((row) => ({
     ...row,
-    pinnedHarnesses: pinsByRepo.get(row.id) ?? [],
+    pinnedAgents: pinsByRepo.get(row.id) ?? [],
     lastReviewAt: lastReviewByRepo.get(row.id) ?? null,
   }));
 }
@@ -665,12 +665,12 @@ export type PinRepositoryResult =
 
 /**
  * Pins a connected repository to an agent: its jobs are then targeted at that
- * agent (see `pinnedHarnessFor`). Revoked agents, disconnected repositories and
+ * agent (see `pinnedAgentFor`). Revoked agents, disconnected repositories and
  * agents of another organization than the repository's can't be pinned.
  */
-export async function pinRepositoryToHarness(
+export async function pinRepositoryToAgent(
   db: Database,
-  input: { harnessId: string; repositoryId: string },
+  input: { agentId: string; repositoryId: string },
 ): Promise<PinRepositoryResult> {
   return db.transaction(async (tx) => {
     const [repo] = await tx
@@ -680,46 +680,46 @@ export async function pinRepositoryToHarness(
       .limit(1);
     if (!repo) return "unknown_repository";
     const [agent] = await tx
-      .select({ id: harnesses.id })
-      .from(harnesses)
+      .select({ id: agents.id })
+      .from(agents)
       .where(
         and(
-          eq(harnesses.id, input.harnessId),
-          eq(harnesses.organizationId, repo.organizationId),
-          isNull(harnesses.revokedAt),
+          eq(agents.id, input.agentId),
+          eq(agents.organizationId, repo.organizationId),
+          isNull(agents.revokedAt),
         ),
       )
       .limit(1);
     if (!agent) return "unknown_agent";
     const inserted = await tx
-      .insert(harnessRepoPins)
-      .values({ harnessId: input.harnessId, repositoryId: input.repositoryId })
+      .insert(agentRepoPins)
+      .values({ agentId: input.agentId, repositoryId: input.repositoryId })
       .onConflictDoNothing()
-      .returning({ id: harnessRepoPins.id });
+      .returning({ id: agentRepoPins.id });
     if (inserted.length > 0) recordPinChange(tx, { ...input, ...repo });
     return inserted.length > 0 ? "pinned" : "already_pinned";
   });
 }
 
 /** Removes a pin. Returns false if there was none. */
-export async function unpinRepositoryFromHarness(
+export async function unpinRepositoryFromAgent(
   db: Database,
-  input: { harnessId: string; repositoryId: string },
+  input: { agentId: string; repositoryId: string },
 ): Promise<boolean> {
   const rows = await db
-    .delete(harnessRepoPins)
+    .delete(agentRepoPins)
     .where(
       and(
-        eq(harnessRepoPins.harnessId, input.harnessId),
-        eq(harnessRepoPins.repositoryId, input.repositoryId),
+        eq(agentRepoPins.agentId, input.agentId),
+        eq(agentRepoPins.repositoryId, input.repositoryId),
       ),
     )
-    .returning({ id: harnessRepoPins.id });
+    .returning({ id: agentRepoPins.id });
   if (rows.length === 0) return false;
   const [agent] = await db
-    .select({ organizationId: harnesses.organizationId })
-    .from(harnesses)
-    .where(eq(harnesses.id, input.harnessId));
+    .select({ organizationId: agents.organizationId })
+    .from(agents)
+    .where(eq(agents.id, input.agentId));
   if (agent) recordPinChange(db, { ...input, organizationId: agent.organizationId });
   return true;
 }
@@ -742,9 +742,9 @@ export function recordRepositorySettingsChange(
 /** Records a pin's live changes: the agent's and the repository's agents section. */
 function recordPinChange(
   db: unknown,
-  pin: { harnessId: string; repositoryId: string; organizationId: string },
+  pin: { agentId: string; repositoryId: string; organizationId: string },
 ): void {
-  recordChange(db, { resource: "agent", ids: [pin.harnessId], organizationId: pin.organizationId });
+  recordChange(db, { resource: "agent", ids: [pin.agentId], organizationId: pin.organizationId });
   recordRepositorySettingsChange(
     db,
     { id: pin.repositoryId, organizationId: pin.organizationId },

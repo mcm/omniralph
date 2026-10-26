@@ -23,7 +23,7 @@ import {
   type RunKind,
   type RunStatus,
 } from "./run-index.js";
-import { DESIRED_HARNESS_VERSION_KEY } from "./app-settings.js";
+import { DESIRED_AGENT_VERSION_KEY } from "./app-settings.js";
 import { inboxItemStates, type RalphIssueRef } from "./schema.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -126,7 +126,7 @@ export type InboxFacts =
         payload: Record<string, unknown>;
         error: string | null;
         repositoryId: string | null;
-        harnessId: string | null;
+        agentId: string | null;
       };
     }
   | { kind: "agent_offline"; agent: { id: string; name: string }; lastHeartbeatAt: string }
@@ -664,13 +664,13 @@ async function failedSystemAttempts(db: Queryable, scope: Scope): Promise<InboxC
     payload: Record<string, unknown>;
     error: string | null;
     repository_id: string | null;
-    harness_id: string | null;
+    agent_id: string | null;
     run_id: string | null;
     mode: string | null;
     since: string;
   }>(sql`
     select j.id, j.type, j.organization_id, j.payload, j.error, j.repository_id,
-      coalesce(j.harness_id, j.target_harness_id) as harness_id, r.id as run_id, r.mode,
+      coalesce(j.agent_id, j.target_agent_id) as agent_id, r.id as run_id, r.mode,
       ${iso("coalesce(j.finished_at, j.created_at)")} as since
     from jobs j left join ralph_runs r on r.id = j.ralph_run_id
     where j.organization_id in (${scope.orgs}) and j.status = 'failed'
@@ -691,7 +691,7 @@ async function failedSystemAttempts(db: Queryable, scope: Scope): Promise<InboxC
         payload: row.payload ?? {},
         error: row.error,
         repositoryId: row.repository_id,
-        harnessId: row.harness_id,
+        agentId: row.agent_id,
       },
     },
   }));
@@ -720,12 +720,12 @@ async function agentProblems(
       h.update_state ->> 'error' as update_error, h.update_state ->> 'version' as update_version,
       (case when d.version = any(h.failed_versions) then d.version end) as desired_failed,
       ${iso("h.updated_at")} as updated_at
-    from harnesses h
+    from agents h
     left join lateral (
       select coalesce(h.desired_version,
         (select s.value #>> '{}' from app_settings s
           where s.organization_id = h.organization_id
-            and s.key = ${DESIRED_HARNESS_VERSION_KEY} and jsonb_typeof(s.value) = 'string'))
+            and s.key = ${DESIRED_AGENT_VERSION_KEY} and jsonb_typeof(s.value) = 'string'))
         as version
     ) d on true
     where h.organization_id in (${scope.orgs}) and h.revoked_at is null and h.deleted_at is null
@@ -1013,7 +1013,7 @@ export async function loadInboxReferences(
   items: readonly InboxCandidate[],
 ): Promise<InboxReferences> {
   const repositoryIds = new Set<string>();
-  const harnessIds = new Set<string>();
+  const agentIds = new Set<string>();
   for (const { facts } of items) {
     if (facts.kind === "pr_waiting") repositoryIds.add(facts.lane.repositoryId);
     if (facts.kind === "question" && facts.question.subject.kind === "repository") {
@@ -1021,7 +1021,7 @@ export async function loadInboxReferences(
     }
     if (facts.kind === "failed_system") {
       if (facts.job.repositoryId) repositoryIds.add(facts.job.repositoryId);
-      if (facts.job.harnessId) harnessIds.add(facts.job.harnessId);
+      if (facts.job.agentId) agentIds.add(facts.job.agentId);
     }
   }
   const [repos, agents] = await Promise.all([
@@ -1036,10 +1036,10 @@ export async function loadInboxReferences(
             join scm_connections c on c.id = r.connection_id where r.id in (${list([...repositoryIds])})`,
         )
       : null,
-    harnessIds.size
+    agentIds.size
       ? db.execute<{ id: string; name: string }>(
-          sql`select h.id, h.name from harnesses h
-            where h.id in (${list([...harnessIds])}) and h.deleted_at is null`,
+          sql`select h.id, h.name from agents h
+            where h.id in (${list([...agentIds])}) and h.deleted_at is null`,
         )
       : null,
   ]);

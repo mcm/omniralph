@@ -1,4 +1,4 @@
-import { findRefreshTokenHarness, rotateRefreshToken, writeHarnessAudit } from "@omniralph/db";
+import { findRefreshTokenAgent, rotateRefreshToken, writeAgentAudit } from "@omniralph/db";
 import { HARNESS_TOKEN_TTL_SECONDS, TokenRequest, type TokenResponse } from "@omniralph/shared";
 import {
   authFailure,
@@ -36,7 +36,7 @@ async function post(req: Request): Promise<Response> {
   if (!body.success) return badRequest();
   const { refreshToken } = body.data;
 
-  const owner = await findRefreshTokenHarness(db, refreshToken);
+  const owner = await findRefreshTokenAgent(db, refreshToken);
   if (!owner) return authFailure(db, req, { reason: "refresh_unknown" }, now);
   const agentLimit = await hitRateLimit(db, HARNESS_RATE_LIMITS.tokenPerHarness(owner), now);
   if (agentLimit.limited) return tooManyRequests(agentLimit.retryAfterSeconds);
@@ -50,22 +50,22 @@ async function post(req: Request): Promise<Response> {
       return authFailure(
         db,
         req,
-        { harnessId: rotation.harnessId, reason: `refresh_${rotation.reason}` },
+        { harnessId: rotation.agentId, reason: `refresh_${rotation.reason}` },
         now,
       );
     case "reused":
-      await cacheHarnessRevoked(rotation.harnessId);
-      await writeHarnessAudit(db, {
-        harnessId: rotation.harnessId,
+      await cacheHarnessRevoked(rotation.agentId);
+      await writeAgentAudit(db, {
+        agentId: rotation.agentId,
         event: "refresh_reuse",
         ip,
         detail: { familyId: rotation.familyId },
       });
-      await authFailure(db, req, { harnessId: rotation.harnessId, reason: "refresh_reuse" }, now);
+      await authFailure(db, req, { harnessId: rotation.agentId, reason: "refresh_reuse" }, now);
       return unauthorized("refresh_token_reused");
     case "rotated": {
-      await writeHarnessAudit(db, {
-        harnessId: rotation.harnessId,
+      await writeAgentAudit(db, {
+        agentId: rotation.agentId,
         event: "token_refresh",
         ip,
         detail: { familyId: rotation.familyId },

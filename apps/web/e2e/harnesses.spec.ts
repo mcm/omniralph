@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { harnesses } from "@omniralph/db";
-import { createEnrollmentToken, enrollHarness, expect, test } from "./fixtures";
+import { agents } from "@omniralph/db";
+import { createEnrollmentToken, enrollAgent, expect, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 /** The fleet table's row of the harness named `name` (behind the dialog too). */
@@ -36,7 +36,7 @@ test.describe("harnesses", () => {
     const token = await generateToken(page, name);
     await expect(page.getByText("Waiting for the harness to enroll…")).toBeVisible();
 
-    const { harnessId } = await enrollHarness(request, token, "host");
+    const { harnessId } = await enrollAgent(request, token, "host");
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: `${name} connected` })).toBeVisible({
@@ -62,7 +62,7 @@ test.describe("harnesses", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
-    await enrollHarness(request, token, "host");
+    await enrollAgent(request, token, "host");
     await expect(fleetRow(page, name)).toHaveCount(1, { timeout: 5_000 });
   });
 
@@ -73,21 +73,18 @@ test.describe("harnesses", () => {
     signIn,
   }) => {
     const name = `e2e-heartbeat-${Date.now()}`;
-    const { harnessId } = await enrollHarness(request, await createEnrollmentToken(db), name);
+    const { harnessId } = await enrollAgent(request, await createEnrollmentToken(db), name);
     await db
-      .update(harnesses)
+      .update(agents)
       .set({ lastHeartbeatAt: new Date(Date.now() - 10 * 60_000) })
-      .where(eq(harnesses.id, harnessId));
+      .where(eq(agents.id, harnessId));
 
     await signIn("member");
     await page.goto("/harnesses");
     const row = fleetRow(page, name);
     await expect(row).toContainText("Offline");
 
-    await db
-      .update(harnesses)
-      .set({ lastHeartbeatAt: new Date() })
-      .where(eq(harnesses.id, harnessId));
+    await db.update(agents).set({ lastHeartbeatAt: new Date() }).where(eq(agents.id, harnessId));
     await expect(row).toContainText("Online", { timeout: 5_000 });
     await expect(row).not.toContainText("Offline");
   });

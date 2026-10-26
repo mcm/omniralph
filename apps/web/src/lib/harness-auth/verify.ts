@@ -1,5 +1,5 @@
 import "server-only";
-import { isJobRunningOnHarness, type Database } from "@omniralph/db";
+import { isJobRunningOnAgent, type Database } from "@omniralph/db";
 import {
   HARNESS_TOKEN_AUDIENCE,
   JobTokenScope,
@@ -167,7 +167,7 @@ export async function requireJob(
     const kind = jobTokenKind(payload.kind);
     await checkHarness(db, harnessId);
     if (!scopes.includes(scope)) throw new AuthError("scope_mismatch", harnessId);
-    if (!(await isJobRunningOnHarness(db, jobId, harnessId))) {
+    if (!(await isJobRunningOnAgent(db, jobId, harnessId))) {
       throw new AuthError("job_not_running", harnessId);
     }
     return { jobId, harnessId, scopes, kind };

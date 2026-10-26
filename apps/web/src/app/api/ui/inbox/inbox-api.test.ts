@@ -4,7 +4,7 @@ import {
   connectRepository,
   createDb,
   findings,
-  harnesses,
+  agents,
   inboxItemStates,
   jobs,
   organizations,
@@ -200,7 +200,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       confidence: 0.9,
     });
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: state.orgId, name: "build-box", lastHeartbeatAt: ago(30) })
       .returning();
     ids.agent = agent!.id;
@@ -213,7 +213,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
         status: "failed",
         error: "git fetch failed",
         repositoryId: repoId,
-        harnessId: agent!.id,
+        agentId: agent!.id,
         finishedAt: ago(5),
       })
       .returning();

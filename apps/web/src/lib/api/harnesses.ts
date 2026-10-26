@@ -173,7 +173,7 @@ export const harnessInstallablesSchema = z.object({
 export type HarnessInstallables = z.infer<typeof harnessInstallablesSchema>;
 export type InstallableRow = HarnessInstallables["installables"][number];
 
-/** A catalog host tool on the harness (`HarnessHostTool` of `@omniralph/db`). */
+/** A catalog host tool on the harness (`AgentHostTool` of `@omniralph/db`). */
 export const hostToolRowSchema = z.object({
   hostToolId: z.string(),
   name: z.string(),

@@ -1,4 +1,4 @@
-import type { HarnessOverview, JobListEntry } from "@omniralph/db";
+import type { AgentOverview, JobListEntry } from "@omniralph/db";
 import {
   effectivePoolLimits,
   type AgentUpdateReport,
@@ -63,7 +63,7 @@ export interface HarnessRow {
  * without their own override (`globalTracksLatest`: it's the latest on npm).
  */
 export function harnessRow(
-  agent: HarnessOverview,
+  agent: AgentOverview,
   now: Date = new Date(),
   globalDesiredVersion: string | null = null,
   globalTracksLatest = false,

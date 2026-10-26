@@ -29,7 +29,7 @@ export const harnessDefaultsSchema = z.object({
   /** The defaults when the organization hasn't saved any. */
   builtInDefaults: organizationDefaultsSchema,
 });
-export type HarnessDefaults = z.infer<typeof harnessDefaultsSchema>;
+export type AgentDefaults = z.infer<typeof harnessDefaultsSchema>;
 
 /**
  * `PUT /api/ui/harness-defaults`: the Defaults tab's save, in one request. `defaults`

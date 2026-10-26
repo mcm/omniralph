@@ -63,8 +63,8 @@ export async function listRunAttempts(
     id: string;
     type: string;
     status: RunAttemptEntry["status"];
-    harness_id: string | null;
-    harness_name: string | null;
+    agent_id: string | null;
+    agent_name: string | null;
     delivery_count: number;
     cancel_requested: boolean;
     created_at: string;
@@ -77,7 +77,7 @@ export async function listRunAttempts(
     review_id: string | null;
     activities: string;
   }>(sql`
-    select j.id, j.type, j.status, j.harness_id, h.name as harness_name, j.delivery_count,
+    select j.id, j.type, j.status, j.agent_id, h.name as agent_name, j.delivery_count,
       j.cancel_requested, ${iso("j.created_at")} as created_at, ${iso("j.started_at")} as started_at,
       ${iso("j.finished_at")} as finished_at,
       coalesce((j.result -> 'usage' ->> 'inputTokens')::bigint, 0)::text as tokens_in,
@@ -89,15 +89,14 @@ export async function listRunAttempts(
         end) as review_id,
       (select count(*) from run_activities a where a.job_id = j.id)::text as activities
     from jobs j
-    left join harnesses h on h.id = j.harness_id
+    left join agents h on h.id = j.agent_id
     where ${attemptsOf(run)}
     order by j.created_at desc, j.id desc`);
   return result.rows.map((row) => ({
     id: row.id,
     type: row.type,
     status: row.status,
-    agent:
-      row.harness_id && row.harness_name ? { id: row.harness_id, name: row.harness_name } : null,
+    agent: row.agent_id && row.agent_name ? { id: row.agent_id, name: row.agent_name } : null,
     deliveries: Number(row.delivery_count),
     cancelRequested: row.cancel_requested,
     createdAt: new Date(row.created_at),
