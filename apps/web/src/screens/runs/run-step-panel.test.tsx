@@ -440,6 +440,23 @@ describe("StepPanel in the run detail", () => {
     expect(within(list()).getByRole("button", { name: "Cancel attempt" })).toBeTruthy();
   });
 
+  it("drops Cancel requested once the agent confirms the cancel", async () => {
+    const run = epic();
+    detail = {
+      ...run,
+      attempts: run.attempts.map((a) =>
+        a.id === "a3" ? { ...a, status: "canceled", cancelRequested: true, finishedAt: START } : a,
+      ),
+    };
+    renderRun({ search: "step=2&tab=attempts" });
+    await loaded();
+    const list = within(panel()).getByRole("list", { name: "Attempts" });
+    const [canceledRow] = within(list).getAllByRole("listitem");
+    expect(within(canceledRow!).getByRole("img", { name: "Canceled" })).toBeTruthy();
+    expect(text(list)).not.toContain("Cancel requested");
+    expect(within(list).queryByRole("button", { name: "Cancel attempt" })).toBeNull();
+  });
+
   it("retries a failed story (Retry story) and shows it at once", async () => {
     const run = epic();
     detail = withActions(
