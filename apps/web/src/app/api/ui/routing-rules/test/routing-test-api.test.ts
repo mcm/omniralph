@@ -174,6 +174,19 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     expect(linear.routingLoads).toHaveLength(1);
   });
 
+  it("routes by the saved rules when the body leaves them out", async () => {
+    await setRoutingRules(state.db, state.orgId, [api, labelsInclude("frontend")]);
+    linear.add({ identifier: "ENG-1", title: "UI", labels: ["Frontend"] });
+    const { status, body } = await post({ identifier: "ENG-1" });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      outcome: "repository",
+      repository: { id: api },
+      matched: "rule",
+      rule: { kind: "custom", number: 1, summary: "Labels contains any of frontend" },
+    });
+  });
+
   it("answers the default rules, manual and ask, with the chain", async () => {
     const epic = linear.add({ identifier: "ENG-10", title: "Epic", labels: ["docs"] });
     linear.add({ identifier: "ENG-11", title: "Story", parentId: epic.id });
@@ -266,6 +279,26 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       expect(await state.db.select().from(workItemMatches)).toEqual([
         expect.objectContaining({ repositoryId: api, team: "ENG", labels: [] }),
       ]);
+    });
+
+    it("applies an unsaved match after the saved rules when the body leaves them out", async () => {
+      await setRoutingRules(state.db, state.orgId, [api, labelsInclude("backend")]);
+      linear.add({ identifier: "ENG-1", title: "API", labels: ["backend"] });
+      linear.add({ identifier: "ENG-2", title: "UI", labels: ["frontend"] });
+      const unsaved = {
+        repositoryId: web,
+        match: { tracker: "linear", team: "ENG", labels: ["frontend", "backend"] },
+      };
+      // The saved rule comes first.
+      expect((await post({ identifier: "ENG-1", workItemMatch: unsaved })).body).toMatchObject({
+        matched: "rule",
+        repository: { id: api },
+      });
+      expect((await post({ identifier: "ENG-2", workItemMatch: unsaved })).body).toMatchObject({
+        matched: "match",
+        repository: { id: web },
+        by: "work item match (Team is ENG, any label of frontend, backend)",
+      });
     });
 
     it("asks on a tie, naming the tied repos", async () => {

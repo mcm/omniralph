@@ -319,12 +319,19 @@ describe("resolveRunSpec for builtin:review-pr", () => {
   });
 
   it("takes the model and budget only from the depth, never the playbook's", async () => {
-    // Validation refuses a review playbook with a model or budget; one that has them never applies.
+    // Validation refuses a review playbook with a model, fallback or budget; one that has them
+    // never applies.
     const builtin = getBuiltinPlaybook("builtin:review-pr")!;
-    const reviewer: Playbook = { ...builtin, model: "sonnet", tokenBudget: { tokens: 50_000 } };
+    const reviewer: Playbook = {
+      ...builtin,
+      model: "sonnet",
+      fallbackModel: "haiku",
+      tokenBudget: { tokens: 50_000 },
+    };
     const review = { getPlaybook: (id: string) => (id === reviewer.id ? reviewer : null) };
     expect(await resolveRunSpec(db, reviewJob(PROFILES.deep), tokens, review)).toMatchObject({
       model: "claude-opus-5-5",
+      fallbackModel: null,
       tokenBudget: 600_000,
       maxFiles: 100,
     });
@@ -336,7 +343,7 @@ describe("resolveRunSpec for builtin:review-pr", () => {
     });
   });
 
-  it("narrowByReviewDepth ignores the run's model and budget", async () => {
+  it("narrowByReviewDepth ignores the run's model, fallback and budget", async () => {
     const spec = await resolveRunSpec(
       db,
       reviewJob(PROFILES.quick),
@@ -344,11 +351,12 @@ describe("resolveRunSpec for builtin:review-pr", () => {
       BUILTIN_PLAYBOOK_SOURCE,
     );
     const narrowed = narrowByReviewDepth(
-      { ...spec, model: "sonnet", tokenBudget: 1 },
+      { ...spec, model: "sonnet", fallbackModel: "haiku", tokenBudget: 1 },
       PROFILES.deep,
     );
     expect(narrowed).toMatchObject({
       model: "claude-opus-5-5",
+      fallbackModel: null,
       tokenBudget: 600_000,
       maxFiles: 100,
     });

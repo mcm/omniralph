@@ -436,7 +436,7 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
   ].join("\n");
 }
 
-/** Whether a request may rewrite the branch's history (`ralph_settings.historyRewrite`). */
+/** Whether a request may rewrite the branch's history (the repo's `history_rewrite`). */
 export type HistoryRewritePolicy = "when-asked" | "always" | "never";
 
 /** Where a request session's requests come from: a Linear agent session or a chat thread. */

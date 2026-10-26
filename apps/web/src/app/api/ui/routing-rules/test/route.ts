@@ -11,6 +11,8 @@ import {
 } from "@/lib/routing/test-issue";
 
 const bodySchema = linearRoutingRulesSchema.extend({
+  /** The unsaved rules to route by; left out, the saved ones. */
+  rules: linearRoutingRulesSchema.shape.rules.optional(),
   identifier: z
     .string()
     .trim()
@@ -24,8 +26,9 @@ const bodySchema = linearRoutingRulesSchema.extend({
 
 /**
  * Settings › Routing's "Test an issue" (every member): where `{ identifier }` routes under
- * `{ rules }`, the unsaved list (validated as on save), and the work item matches with
- * `{ workItemMatch }` (one repository's unsaved match) applied, without saving anything.
+ * `{ rules }`, the unsaved list (validated as on save; left out, the saved rules), and the
+ * work item matches with `{ workItemMatch }` (one repository's unsaved match) applied,
+ * without saving anything.
  * Answers the outcome, what the issue matched (`matched`, and `rule`) and the route's chain;
  * 404 for an issue Linear doesn't know, 409 without a Linear workspace, 429 past
  * `ROUTING_TEST_LIMIT` a minute per user (shared with the routing preview).

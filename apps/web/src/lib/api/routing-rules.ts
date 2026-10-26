@@ -75,12 +75,15 @@ export const savedRoutingRulesSchema = z.object({
 export type SavedRoutingRules = z.infer<typeof savedRoutingRulesSchema>;
 
 /**
- * `POST /api/ui/routing-rules/test`'s body: an issue, the rules to route it by (unsaved) and,
- * optionally, a repository's unsaved work item match (null: cleared) applied to the saved ones.
+ * `POST /api/ui/routing-rules/test`'s body: an issue, the rules to route it by (unsaved; left
+ * out, the saved ones) and, optionally, a repository's unsaved work item match (null: cleared)
+ * applied to the saved ones.
  */
 export const routingTestRequestSchema = z.object({
   identifier: z.string(),
-  rules: z.array(z.object({ repositoryId: z.string(), query: z.custom<RoutingQuery>() })),
+  rules: z
+    .array(z.object({ repositoryId: z.string(), query: z.custom<RoutingQuery>() }))
+    .optional(),
   workItemMatch: z
     .object({ repositoryId: z.string(), match: z.custom<WorkItemMatchInput>().nullable() })
     .optional(),

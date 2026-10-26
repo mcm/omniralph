@@ -133,8 +133,9 @@ const EXPLORATION_TOOLS: readonly string[] = ["Read", "Grep", "Glob"];
  * A review run as its depth's preset (`reviewConfig.profile`) sets it: the
  * preset's `model` (null for the Claude Code default), `maxTokensPerReview` as
  * the budget and `maxFiles`, and without `allowRepoExploration`, no
- * exploration tools (the review sees only the diff). The playbook's model
- * never applies; review playbooks can't set a model or budget.
+ * exploration tools (the review sees only the diff). The playbook's model and
+ * fallback never apply (no fallback: the depth names one model); review
+ * playbooks can't set a model, fallback or budget.
  */
 export function narrowByReviewDepth(
   spec: RunSpec,
@@ -156,6 +157,7 @@ export function narrowByReviewDepth(
       },
     },
     model: profile.model,
+    fallbackModel: null,
     tokenBudget: profile.maxTokensPerReview,
     maxFiles: profile.maxFiles,
   };

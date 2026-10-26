@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 import {
   closeDb,
   connectRepository,
@@ -24,6 +24,7 @@ import { BUILTIN_PLAYBOOKS, getBuiltinPlaybook } from "@omniralph/tasks";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import { servedByRouteHandler } from "@/lib/testing/app-routes";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -452,37 +453,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
 describe("/api/ui/agents", () => {
   const APP = join(__dirname, "../../..");
 
-  /** The URL pattern of every App Router route handler (route groups dropped). */
-  function routePatterns(dir = APP): string[] {
-    return readdirSync(dir).flatMap((name) => {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) return routePatterns(path);
-      if (name !== "route.ts") return [];
-      const segments = relative(APP, dir)
-        .split(sep)
-        .filter((segment) => segment && !/^\(.*\)$/.test(segment));
-      return [`/${segments.join("/")}`];
-    });
-  }
-
-  /** Whether a route handler serves `path` (dynamic `[x]` and catch-all `[...x]` segments match). */
-  function served(path: string): boolean {
-    const wanted = path.split("/").filter(Boolean);
-    const matches = (segments: string[]) => {
-      for (const [i, segment] of segments.entries()) {
-        if (segment.startsWith("[[...")) return true;
-        if (segment.startsWith("[...")) return wanted.length > i;
-        if (i >= wanted.length) return false;
-        if (!segment.startsWith("[") && segment !== wanted[i]) return false;
-      }
-      return segments.length === wanted.length;
-    };
-    return routePatterns().some((pattern) => matches(pattern.split("/").filter(Boolean)));
-  }
-
   it("has no handler (404), so Epic 4 can use it for agents", () => {
-    expect(served("/api/ui/playbooks")).toBe(true);
-    expect(served("/api/ui/playbooks/builtin%3Areview-pr/clone")).toBe(true);
+    expect(servedByRouteHandler("/api/ui/playbooks")).toBe(true);
+    expect(servedByRouteHandler("/api/ui/playbooks/builtin%3Areview-pr/clone")).toBe(true);
     for (const path of [
       "/api/ui/agents",
       "/api/ui/agents/builtin%3Areview-pr",
@@ -491,7 +464,7 @@ describe("/api/ui/agents", () => {
       "/api/ui/tasks",
       "/api/ui/tasks/form-options",
     ]) {
-      expect(served(path), path).toBe(false);
+      expect(servedByRouteHandler(path), path).toBe(false);
     }
   });
 
