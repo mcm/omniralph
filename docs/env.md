@@ -66,7 +66,7 @@ installations is connected to one organization.
 | `GITHUB_API_URL` | no | `https://api.github.com` | GitHub Enterprise Server REST base URL, e.g. `https://ghe.example.com/api/v3`. |
 
 GitLab has no env vars: the base URL, bot token and webhook secret are entered per organization
-under **Repositories › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
+under **Repos › Add repo › Connect GitLab** and stored encrypted. See [gitlab.md](gitlab.md).
 
 ### Linear app (Om)
 

@@ -537,7 +537,7 @@ function notACodingTask(
 ): string {
   return (
     `\`${repository.fullPath}\` runs its ${what} with \`${taskId}\`, which isn't a coding task ` +
-    "that takes them, so I stopped. Choose another task under **Repository › Settings › Coding**."
+    "that takes them, so I stopped. Choose another playbook under **Repos › Advanced › Playbooks**."
   );
 }
 

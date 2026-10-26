@@ -174,7 +174,7 @@ const rename = useApiMutation({
 Without either (older code), the keys are invalidated and their refetch awaited before
 `onSuccess` runs, so a `router.push` from `onSuccess` never lands on cached-stale data. Only mounted
 queries refetch: when `onSuccess` navigates to a page whose list isn't mounted (a picker's Save
-going back to `/repositories`), pass `{ queryKey: keys.repositories.lists, refetchType: "all" }` so
+going back to a list page), pass `{ queryKey: keys.repositories.lists, refetchType: "all" }` so
 its cached copy is refetched too and the page shows the change on arrival. The hook shows the
 success toast (or the result's `warning` as a warning toast), the server's message as a danger
 toast on failure (`onError` gets the `ApiError`, with `fieldErrors` for inline errors), and refuses
@@ -207,7 +207,7 @@ organizations and comes back to `next` (the page, sent by the query as `?next=`)
 (`useSearchParams`) and use `placeholderData: keepPreviousData`.
 
 **Navigation and render errors.** Links show a pending state while their page loads (`Link` in
-`src/components/link.tsx`, and `ListPagination`'s page links, which navigate in a transition);
+`src/components/link.tsx`);
 the new page's skeleton then shows within a frame, since pages render on the client.
 `src/app/(app)/error.tsx` catches any unexpected render error of a page and shows it in place,
 with Retry, inside the shell.

@@ -19,8 +19,6 @@ import {
   CardHeader,
   CardTitle,
   cn,
-  Field,
-  Switch,
 } from "@iamthemcmaster/ui";
 import { IconArrowBackUp, IconCheck, IconDeviceFloppy } from "@tabler/icons-react";
 import type { ActionResult } from "@/lib/action-result";
@@ -304,28 +302,5 @@ export function SettingsCard({
         />
       )}
     </Card>
-  );
-}
-
-/** A switch setting: label, what it does and its default. */
-export function SwitchField({
-  id,
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <Field orientation="horizontal" label={label} htmlFor={id} description={description}>
-      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
-    </Field>
   );
 }

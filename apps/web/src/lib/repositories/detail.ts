@@ -6,7 +6,6 @@ import {
   listAgentOverview,
   listRepositoryPinnedAgentIds,
   listRoutingRules,
-  repositorySwitches,
   type AgentOverview,
   type Database,
   type Repository,
@@ -17,10 +16,8 @@ import type {
   AgentsCard,
   AskCard,
   CodingCard,
-  LegacyRepositoryDetail,
   PlaybooksCard,
   RepositoryAgentState,
-  RepositoryCoding,
   RepositoryDetail,
   RepositoryTracker,
   ReviewDepthOption,
@@ -30,7 +27,6 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 import { hasRole } from "@/lib/auth/roles";
-import { getDb } from "@/lib/db";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow } from "@/lib/agents/rows";
@@ -53,71 +49,6 @@ import { workItemMatchRow } from "./work-item-match";
 
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
 const NPM_TIMEOUT_MS = 2_000;
-
-/** The organization's connected repository `id`; a disconnected or missing one is not found. */
-async function connectedRepository(organizationId: string, id: string) {
-  const found = await getRepositoryWithConnection(getDb(), id, organizationId);
-  if (!found || found.repository.disconnectedAt) throw ApiRouteError.notFound();
-  return found;
-}
-
-/**
- * A repository with what the old Review settings and Agents tabs show
- * (`legacyRepositoryDetailSchema`), until those pages are removed.
- */
-export async function loadLegacyRepositoryDetail(
-  organizationId: string,
-  id: string,
-): Promise<LegacyRepositoryDetail> {
-  const db = getDb();
-  const { repository, connection } = await connectedRepository(organizationId, id);
-  const [agents, organizationVersion, pinnedAgentIds, workItemMatch, rules] = await Promise.all([
-    listAgentOverview(db, organizationId).then(withLastSeen),
-    organizationAgentVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    listRepositoryPinnedAgentIds(db, id),
-    getWorkItemMatch(db, organizationId, id),
-    listRoutingRules(db, organizationId),
-  ]);
-  const now = new Date();
-  return {
-    repository: {
-      id: repository.id,
-      provider: repository.provider,
-      fullPath: repository.fullPath,
-      webUrl: repositoryWebUrl(repository.provider, connection.baseUrl, repository.fullPath),
-    },
-    settings: {
-      depth: repository.reviewDepth,
-      triggers: repository.triggers,
-      pathExcludes: repository.pathExcludes,
-      customInstructions: repository.customInstructions ?? "",
-      pinnedAgentIds,
-      reviewPlaybookIds: repository.reviewPlaybookIds,
-      correlationPlaybookId: repository.correlationPlaybookId,
-      storyPlaybookId: repository.storyPlaybookId,
-      requestPlaybookId: repository.requestPlaybookId,
-    },
-    agents: agents.map((agent) => {
-      const row = agentRow(agent, now, organizationVersion.version);
-      return {
-        id: row.id,
-        name: row.name,
-        lastHeartbeatAt: row.lastHeartbeatAt,
-        online: row.online,
-        revoked: row.revoked,
-        updating: row.updateStatus === "updating",
-        acceptedTaskTypes: row.acceptedTaskTypes,
-      };
-    }),
-    taskTypes: repositorySwitches(repository),
-    workItemMatch: workItemMatch ? workItemMatchRow(workItemMatch) : null,
-    routingRules: rules.flatMap((rule, index) =>
-      rule.repositoryId === id
-        ? [{ position: index + 1, description: describeQuery(rule.query, LINEAR_ROUTING_FIELDS) }]
-        : [],
-    ),
-  };
-}
 
 // ── The Repos page's repo detail ────────────────────────────────────────────────────────────
 
@@ -364,32 +295,4 @@ export async function loadRepositoryDetail(
     playbooks,
     history,
   };
-}
-
-/** A repository's coding policy on the wire, with its story playbook's round limits. */
-export async function repositoryCoding(
-  db: Database,
-  repository: Repository,
-): Promise<RepositoryCoding> {
-  const settings = await storyCodingSettings(
-    repository,
-    organizationPlaybooks(db, repository.organizationId),
-  );
-  return {
-    codingEnabled: repository.codingEnabled,
-    codingInstructions: repository.codingInstructions,
-    openPullRequestEarly: repository.openPullRequestEarly,
-    historyRewrite: repository.historyRewrite,
-    respondToReviewsAndCi: repository.respondToReviewsAndCi,
-    roundLimits: { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds },
-  };
-}
-
-/** The organization's connected repository's coding policy (`repositoryCodingSchema`). */
-export async function loadRepositoryCoding(
-  organizationId: string,
-  id: string,
-): Promise<RepositoryCoding> {
-  const { repository } = await connectedRepository(organizationId, id);
-  return repositoryCoding(getDb(), repository);
 }

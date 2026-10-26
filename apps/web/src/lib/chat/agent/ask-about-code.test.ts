@@ -541,7 +541,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       const off = await ask(h, { repository: "acme/api", question: "How is auth done?" });
       expect(off).toMatchObject({ error: "query_disabled" });
       expect(off.message).toContain("Ask is turned off for acme/api");
-      expect(off.message).toContain("Ask switch");
+      expect(off.message).toContain(`Ask switch on ${APP_URL}/repos/${repositoryId}?section=ask.`);
       expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
 
       // Ask on answers (on an agent taking queries).

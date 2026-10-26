@@ -77,18 +77,6 @@ export function settingChanges<K extends string>(
   });
 }
 
-/** `errors` without those of `keys` (a list field's errors are keyed `field.n`). */
-export function withoutFieldErrors(
-  errors: Readonly<Record<string, string>>,
-  keys: readonly string[],
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(errors).filter(
-      ([key]) => !keys.some((field) => key === field || key.startsWith(`${field}.`)),
-    ),
-  );
-}
-
 /** A setting's description followed by its default: "… Default: 3." (`NOT_SET` when omitted). */
 export function withDefault(description: string, defaultValue: string = NOT_SET): string {
   return `${description} Default: ${defaultValue}.`;

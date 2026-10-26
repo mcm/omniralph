@@ -211,11 +211,9 @@ const agentInstallables = await import("./agents/[id]/installables/route");
 const agentInstalls = await import("./agents/[id]/installs/route");
 const agentHostTools = await import("./agents/[id]/host-tools/route");
 const repositoryList = await import("./repositories/route");
-const repositoryOverview = await import("./repositories/overview/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
 const repositoryDetail = repository;
-const legacyRepositoryDetail = await import("./repositories/[id]/overview/route");
 const repositoryWebhook = await import("./repositories/[id]/webhook/route");
 const repositoryReviews = await import("./repositories/[id]/reviews/route");
 const repositoryAsk = await import("./repositories/[id]/ask/route");
@@ -1326,17 +1324,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         expect(
           await call(repositoryList.GET, { path: `/api/ui?organization=${other.orgId}` }),
         ).toMatchObject({ status: 404 });
-        // The old Repositories page's list shows the connections to admins only.
-        const legacy = await call(repositoryOverview.GET);
-        expect((legacy.body.repositories as { id: string }[]).map((r) => r.id)).toEqual([
-          own.repoId,
-        ]);
-        expect((legacy.body.connections as { id: string }[]).map((c) => c.id)).toEqual(
-          userId === own.adminId ? [own.connectionId] : [],
-        );
-        for (const marker of markers(other)) {
-          expect(JSON.stringify(legacy.body)).not.toContain(marker);
-        }
       }
       // The Connect buttons' setup is for admins.
       state.userId = own.memberId;
@@ -1373,22 +1360,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
-  it("shows each organization's own connections to its admins, and 404s on the other's", async () => {
+  it("lists only its own organization's connections' repos to admins, and 404s on the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
     ] as const) {
       state.userId = own.adminId;
-      const open = (id: string, provider = "github") =>
-        call(scmConnection.GET, { params: { id }, path: `/api/ui?provider=${provider}` });
-      expect(await open(own.connectionId)).toMatchObject({
-        status: 200,
-        body: { id: own.connectionId, provider: "github", name: own.name },
-      });
-      // The other code host's picker doesn't find it.
-      expect(await open(own.connectionId, "gitlab")).toMatchObject({ status: 404 });
-      expect(await open(other.connectionId)).toMatchObject({ status: 404 });
-      expect(await open("not-a-uuid")).toMatchObject({ status: 404 });
       // The picker's list never asks the code host for another organization's connection.
       expect(
         await call(selectable.GET, {
@@ -1398,7 +1375,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ).toMatchObject({ status: 404 });
 
       state.userId = own.memberId;
-      expect(await open(own.connectionId)).toMatchObject({ status: 403 });
       expect(
         await call(selectable.GET, {
           params: { id: own.connectionId },
@@ -1408,7 +1384,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
-  it("shows each organization's own repository settings tabs, Coding to admins only, and 404s on the other's", async () => {
+  it("shows each organization's own repository detail, and 404s on the other's", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
@@ -1433,38 +1409,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         expect(await call(repositoryDetail.GET, { params: { id: other.repoId } })).toMatchObject({
           status: 404,
         });
-        // The old settings pages' detail, until they're removed.
-        const legacy = await call(legacyRepositoryDetail.GET, { params: { id: own.repoId } });
-        expect(legacy).toMatchObject({ status: 200, body: { repository: { id: own.repoId } } });
-        expect((legacy.body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
-        for (const marker of markers(other)) {
-          expect(JSON.stringify(legacy.body)).not.toContain(marker);
-        }
-        expect(
-          await call(legacyRepositoryDetail.GET, { params: { id: other.repoId } }),
-        ).toMatchObject({ status: 404 });
       }
-      for (const handler of [repositoryDetail.GET, legacyRepositoryDetail.GET]) {
-        expect(await call(handler, { params: { id: "not-a-uuid" } })).toMatchObject({
-          status: 404,
-        });
-      }
-
-      state.userId = own.adminId;
-      const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
-      expect(coding).toMatchObject({
-        status: 200,
-        body: { codingEnabled: false, roundLimits: { maxReviewRounds: 3, maxFixRounds: 3 } },
-      });
-      for (const marker of markers(other))
-        expect(JSON.stringify(coding.body)).not.toContain(marker);
-      expect(await call(repositoryCoding.GET, { params: { id: other.repoId } })).toMatchObject({
+      expect(await call(repositoryDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
         status: 404,
-      });
-      // Members see Review settings and Agents read-only; the coding policy is for admins.
-      state.userId = own.memberId;
-      expect(await call(repositoryCoding.GET, { params: { id: own.repoId } })).toMatchObject({
-        status: 403,
       });
     }
   });
@@ -1748,39 +1695,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ]);
   });
 
-  it("sends a member of both organizations to switch to the repository's organization", async () => {
-    const [user] = await db
-      .insert(users)
-      .values({ id: "both-repositories-admin", email: "both-repositories@alpha.io" })
-      .returning();
-    await db.insert(organizationMembers).values([
-      { organizationId: a.orgId, userId: user!.id, role: "admin" },
-      { organizationId: b.orgId, userId: user!.id, role: "admin" },
-    ]);
-    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
-    state.userId = user!.id;
-
-    for (const [tab, handler] of [
-      ["settings", legacyRepositoryDetail.GET],
-      ["agents", legacyRepositoryDetail.GET],
-      ["coding", repositoryCoding.GET],
-    ] as const) {
-      const page = `/repositories/${b.repoId}/${tab}`;
-      const { status, body } = await call(handler, {
-        params: { id: b.repoId },
-        path: `/api/ui?${new URLSearchParams({ next: page })}`,
-      });
-      expect(status, page).toBe(409);
-      expect(body).toMatchObject({ code: "enter_organization" });
-      expect(JSON.stringify(body)).not.toContain(b.repoPath);
-      const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-      expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-        organizationId: b.orgId,
-        next: page,
-      });
-    }
-  });
-
   it("serves a member of both organizations the other's repo page, rules and webhook without switching", async () => {
     const [user] = await db
       .insert(users)
@@ -2021,32 +1935,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
       await db.delete(users).where(eq(users.id, user!.id));
     }
-  });
-
-  it("sends a member of both organizations to switch to the connection's organization", async () => {
-    const [user] = await db
-      .insert(users)
-      .values({ id: "both-connections-admin", email: "both-connections@alpha.io" })
-      .returning();
-    await db.insert(organizationMembers).values([
-      { organizationId: a.orgId, userId: user!.id, role: "admin" },
-      { organizationId: b.orgId, userId: user!.id, role: "admin" },
-    ]);
-    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
-    state.userId = user!.id;
-
-    const picker = `/repositories/github/${b.connectionId}`;
-    const { status, body } = await call(scmConnection.GET, {
-      params: { id: b.connectionId },
-      path: `/api/ui?${new URLSearchParams({ provider: "github", next: picker })}`,
-    });
-    expect(status).toBe(409);
-    expect(body).toMatchObject({ code: "enter_organization" });
-    const token = new URL(body.enterPath as string, "http://localhost").searchParams.get("token");
-    expect(await readEnterOrganizationToken(token, user!.id)).toEqual({
-      organizationId: b.orgId,
-      next: picker,
-    });
   });
 
   it("lists and shows each organization's own runs to its members, and 404s on the other's", async () => {

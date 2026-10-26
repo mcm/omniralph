@@ -16,12 +16,12 @@ function hold() {
   };
 }
 
-/** Opens the repositories page and waits for its first poll (so the shell is hydrated). */
-async function openRepositories(page: Page) {
+/** Opens the Repos page and waits for its repo list (so the shell is hydrated). */
+async function openRepos(page: Page) {
   const firstPoll = page.waitForResponse(
     (response) => /\/api\/ui\/repositories(\?|$)/.test(response.url()) && response.ok(),
   );
-  await page.goto("/repositories");
+  await page.goto("/repos");
   await firstPoll;
 }
 
@@ -31,7 +31,7 @@ test.describe("navigation feedback", () => {
     signIn,
   }) => {
     await signIn("member");
-    await openRepositories(page);
+    await openRepos(page);
 
     // The Agents page itself (its server payload) and its data both take a while.
     const pageLoad = hold();
@@ -62,7 +62,7 @@ test.describe("navigation feedback", () => {
     signIn,
   }) => {
     await signIn("member");
-    await openRepositories(page);
+    await openRepos(page);
     // A 4xx isn't retried in the background, so the error shows at once.
     await page.route(AGENTS_API, (route) =>
       route.fulfill({ status: 400, json: { error: "The agents couldn't be read." } }),

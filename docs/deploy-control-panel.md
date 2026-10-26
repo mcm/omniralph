@@ -217,7 +217,7 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
 2. Under **Settings › Organization**, invite members by email (as `admin` or `member`; invitations
    expire after 14 days, no email is sent: invitees accept after signing in) and optionally set
    email domains and **Allow anyone with a matching email to join**.
-3. **Repositories › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
+3. **Repos › Add repo › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)), as an admin of the organization. Each GitHub installation and GitLab
    connection belongs to the organization that connected it.
 4. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
@@ -261,5 +261,5 @@ gone (404). Each user can replay 10 deliveries a minute.
 - **"Installation belongs to another organization" / "already connected to another
   organization":** a GitHub installation, GitLab token user or Linear workspace can only be
   connected to one organization. Disconnect a Linear workspace there first; remove a GitHub
-  installation or GitLab connection there under **Repositories › Code-host connections** (or
+  installation or GitLab connection there (`DELETE /api/ui/scm-connections/{id}`, or
   uninstall the GitHub App), or use another GitLab bot token.

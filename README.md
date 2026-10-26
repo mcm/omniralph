@@ -51,8 +51,8 @@ of it; nobody outside it sees any of it, and its jobs only ever reach its own ag
   invitation, or join one that allows their email domain.
 - A GitHub App installation, a GitLab bot user on an instance and a Linear workspace each belong
   to one organization. To move one, disconnect or remove it in the first organization
-  (**Repositories › Code-host connections › Remove** deletes the connection with its repositories;
-  uninstalling the GitHub App does the same), then connect it from the other.
+  (removing a code-host connection, `DELETE /api/ui/scm-connections/{id}`, deletes it with its
+  repositories; uninstalling the GitHub App does the same), then connect it from the other.
 
 See [ADR 0004: organizations](docs/adr/0004-organizations.md).
 
@@ -156,8 +156,8 @@ details.
    can sign in and create an organization, becoming its admin. Invite teammates and set email
    domains under **Settings › Organization**; everything below is set up per organization.
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
-   **Repositories › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
-   projects with a bot token under **Repositories › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
+   **Repos › Add repo › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
+   projects with a bot token under **Repos › Add repo › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
 4. **Run an agent** on a Coder workspace as the workspace user, logged in with `claude`, enrolled
    from **Agents › Enroll agent** and run under pm2, tmux or systemd
    → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
@@ -189,8 +189,8 @@ details.
    under **Settings › Integrations** and mention the bot: `@Omniralph what ralph runs are active?`
    Link your chat account when it asks (Slack users whose email matches their sign-in are linked
    automatically) → [docs/chat.md](docs/chat.md).
-8. **Tune** per-repo settings (triggers, review tasks,
-   path excludes, custom instructions, agent pinning) and rules (**Repository › Rules**). **Analytics**
+8. **Tune** per-repo settings (Reviews, Coding and Ask, triggers, review depth, skip paths,
+   instructions, agent pinning, playbooks) and rules on **Repos**. **Analytics**
    shows tokens per review by review depth, dismissal rates per repo and jobs per agent over 7/30/90 days,
    plus coding tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
    Agents**, and trigger an update with **Update now** on an agent's page or `omniralph-agent update`

@@ -9,7 +9,7 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { organizationRefSchema } from "./runs";
-import { isoDate, mutationResultSchema } from "./schemas";
+import { mutationResultSchema } from "./schemas";
 import { settingsHistoryEntrySchema } from "./settings-history";
 import type { ConnectionHealthSummary } from "@/lib/connections/health";
 import type { RepositoryListRow, RepositoryListView } from "@/lib/repositories/list";
@@ -27,29 +27,6 @@ import {
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
 const provider = z.enum(["github", "gitlab"]);
-
-/** A repository's switches on the old Repositories pages: Reviews, Coding and Ask. */
-export const repositoryTaskTypesSchema = z.object({
-  reviews: z.boolean(),
-  coding: z.boolean(),
-  ask: z.boolean(),
-});
-export type RepositoryTaskTypes = z.infer<typeof repositoryTaskTypesSchema>;
-
-/** A connected repository on the old Repositories page (`GET /api/ui/repositories/overview`). */
-export const legacyRepositoryRowSchema = z.object({
-  id: z.string(),
-  provider,
-  fullPath: z.string(),
-  webUrl: z.string(),
-  /** Its Reviews, Coding and Ask switches. */
-  taskTypes: repositoryTaskTypesSchema,
-  /** The depth its reviews run at. */
-  depth: ReviewDepthSchema,
-  pinnedAgents: z.array(z.object({ id: z.string(), name: z.string() })),
-  lastReviewAt: isoDate.nullable(),
-});
-export type LegacyRepositoryRow = z.infer<typeof legacyRepositoryRowSchema>;
 
 /** A problem found by the daily GitLab check (`scm_connections.health`). */
 export const connectionProblemSchema = z.object({
@@ -69,32 +46,6 @@ export const connectionHealthSchema = z.object({
   problems: z.array(connectionProblemSchema),
 });
 export type ConnectionHealthRow = z.infer<typeof connectionHealthSchema>;
-
-/** A GitHub App installation or GitLab connection of the organization. */
-export const connectionRowSchema = z.object({
-  id: z.string(),
-  provider,
-  name: z.string(),
-  /** GitLab: the last daily check, or null before the first one. */
-  health: connectionHealthSchema.nullable(),
-});
-export type ConnectionRow = z.infer<typeof connectionRowSchema>;
-
-/**
- * `GET /api/ui/repositories/overview?page=`: a page of the active organization's connected
- * repositories, and (admins) its connections: the old Repositories page, until it's removed.
- */
-export const legacyRepositoryListSchema = z.object({
-  repositories: z.array(legacyRepositoryRowSchema),
-  /** 1-based. */
-  page: z.number(),
-  pageSize: z.number(),
-  /** Connected repositories across all pages. */
-  total: z.number(),
-  /** Admins only (empty for members): the organization's code-host connections. */
-  connections: z.array(connectionRowSchema),
-});
-export type LegacyRepositoryList = z.infer<typeof legacyRepositoryListSchema>;
 
 /** What a repo problem's button does: a `POST` to `path`, or a link to `href`. */
 export const repositoryProblemActionSchema = z.discriminatedUnion("type", [
@@ -172,11 +123,6 @@ export const connectGitLabSchema = z.object({
   /** The organization to connect GitLab to (the active one when left out). */
   organizationId: z.string().optional(),
 });
-
-
-/** `GET /api/ui/scm-connections/{id}?provider=`: a connection, for its picker's header. */
-export const scmConnectionSchema = z.object({ id: z.string(), provider, name: z.string() });
-export type ScmConnectionSummary = z.infer<typeof scmConnectionSchema>;
 
 /** A connection's health problem in plain words (`connectionHealth`). */
 export const connectionHealthProblemSchema = z.object({
@@ -286,58 +232,6 @@ export const addedRepositoriesSchema = mutationResultSchema.extend({
   repositories: z.array(repositoryListRowSchema),
 });
 export type AddedRepositories = z.infer<typeof addedRepositoriesSchema>;
-
-/** An agent of the organization, as Repository › Agents shows (and pins) it. */
-export const repositoryAgentSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  /** The page computes `online` from it against the browser's clock. */
-  lastHeartbeatAt: isoDate.nullable(),
-  online: z.boolean(),
-  revoked: z.boolean(),
-  /** It is updating itself to its desired version. */
-  updating: z.boolean(),
-  /** Task types it claims jobs of, as it reports them (all until it reports any). */
-  acceptedTaskTypes: z.array(z.string()),
-});
-
-/**
- * `GET /api/ui/repositories/{id}/overview?next=`: a connected repository with what the old
- * Review settings and Agents tabs show (and the Coding tab's task types), until those pages
- * are removed. A repository of another of the user's organizations answers 409
- * `enter_organization`.
- */
-export const legacyRepositoryDetailSchema = z.object({
-  repository: z.object({ id: z.string(), provider, fullPath: z.string(), webUrl: z.string() }),
-  settings: z.object({
-    /** The depth its reviews run at (`REVIEW_DEPTHS` in `@omniralph/shared` has the presets). */
-    depth: ReviewDepthSchema,
-    triggers: z.object({ onOpen: z.boolean(), onPush: z.boolean(), drafts: z.boolean() }),
-    pathExcludes: z.array(z.string()),
-    customInstructions: z.string(),
-    pinnedAgentIds: z.array(z.string()),
-    /** The review and review-summary playbooks its review runs fan out to, in order. */
-    reviewPlaybookIds: z.array(z.string()),
-    /** The playbook that correlates its review runs' findings. */
-    correlationPlaybookId: z.string(),
-    /** The story playbook its story runs use. */
-    storyPlaybookId: z.string(),
-    /** The request playbook its request runs use. */
-    requestPlaybookId: z.string(),
-  }),
-  /** The organization's agents; revoked ones can't be pinned but show in the pinned list. */
-  agents: z.array(repositoryAgentSchema),
-  /** Its Reviews, Coding and Ask switches. */
-  taskTypes: repositoryTaskTypesSchema,
-  /** The work items it builds; null when it has no match. */
-  workItemMatch: workItemMatchSchema.nullable(),
-  /**
-   * The organization's routing rules that target it, which apply before any work item match:
-   * position (1-based, in order, as `rule N` in `routed_by`) and condition in words.
-   */
-  routingRules: z.array(z.object({ position: z.number(), description: z.string() })),
-});
-export type LegacyRepositoryDetail = z.infer<typeof legacyRepositoryDetailSchema>;
 
 // ── The Repos page's repo detail (`GET /api/ui/repositories/{id}`) ──────────────────────────
 // Each card's shape is its own schema: the card save endpoints answer with the same one.
@@ -628,23 +522,3 @@ export const codingCardSaveResultSchema = z.object({
   warnings: z.array(codingMatchWarningSchema),
 });
 export type CodingCardSaveResult = z.infer<typeof codingCardSaveResultSchema>;
-
-/**
- * `GET /api/ui/repositories/{id}/coding` (admins, the old Coding tab): the repo's coding policy
- * (`RepositoryCodingInput`), and the review and CI fix rounds its story playbook gives a PR
- * (read-only: they're the playbook's).
- */
-export const repositoryCodingSchema = z.object({
-  /** Whether work items routed to it are built. */
-  codingEnabled: z.boolean(),
-  /** Appended to every story and request prompt; null for none. */
-  codingInstructions: z.string().nullable(),
-  /** Open a draft PR after the first pushed story. */
-  openPullRequestEarly: z.boolean(),
-  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
-  /** Fix review comments and CI failures on its runs' PRs. */
-  respondToReviewsAndCi: z.boolean(),
-  /** Read-only: the story playbook's rounds ("up to 3 rounds each"). */
-  roundLimits: z.object({ maxReviewRounds: z.number(), maxFixRounds: z.number() }),
-});
-export type RepositoryCoding = z.infer<typeof repositoryCodingSchema>;

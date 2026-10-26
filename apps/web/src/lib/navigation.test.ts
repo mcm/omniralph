@@ -26,11 +26,8 @@ const pages = appPages();
 /** Entries whose 2.0 page doesn't exist yet. */
 const PAGES_TO_COME: string[] = [];
 
-/**
- * Pages no entry lights up: Analytics, which gets its own entry in Epic 10, and the old
- * repository pages Repos (`/repos`) replaces, until TOOL-720 deletes them.
- */
-const UNLISTED_PAGES = ["/analytics", "/repositories"];
+/** Pages no entry lights up: Analytics, which gets its own entry in Epic 10. */
+const UNLISTED_PAGES = ["/analytics"];
 
 /** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
 function pageFor(href: string): string | undefined {
@@ -51,10 +48,12 @@ function pageFor(href: string): string | undefined {
 
 describe("navItems", () => {
   it("finds today's pages (sanity check)", () => {
-    expect(pages.get("/repositories")).toBeDefined();
+    // Repos replaced the old repository pages.
+    expect(pageFor("/repositories")).toBeUndefined();
+    expect(pages.get("/repos")).toBeDefined();
     expect(pages.get("/settings/routing")).toBeDefined();
-    expect(pages.get("/repositories/[id]/rules")).toBeDefined();
-    expect(pageFor("/repositories/abc/rules")).toBe(pages.get("/repositories/[id]/rules"));
+    expect(pages.get("/repos/[id]")).toBeDefined();
+    expect(pageFor("/repos/abc")).toBe(pages.get("/repos/[id]"));
     expect(pageFor("/nowhere")).toBeUndefined();
   });
 

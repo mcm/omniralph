@@ -48,7 +48,7 @@ always behaves like cyralph's default and has no setting for it.
 | `stateDir` | Not needed | Run state is in Postgres. Agents keep repositories and branch worktrees under their `workspaceRoot` ([deploy-agent.md](deploy-agent.md#workspaceroot-and-disk-usage)). |
 | `model`, `fallbackModel` | **Model** / **Fallback model** per repository | Same names and defaults (`opus` / none), set per repository instead of globally. |
 | `maxConcurrentSessions` | **Max concurrency** and **Concurrency per pool** on **Agents › <agent>** | Per agent. The `long` pool (coding) limit defaults to max concurrency − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
-| `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repositories › Connect GitLab**), so the code host is known per repository. |
+| `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repos › Add repo › Connect GitLab**), so the code host is known per repository. |
 | `blockerPollMinutes` | Fixed | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes. |
 | `permissionMode` | Fixed | Coding sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**. |
 
@@ -105,8 +105,8 @@ always behaves like cyralph's default and has no setting for it.
 
 ### `repositories[]`
 
-Each cyralph repository becomes a connected repository (**Repositories › Connect GitHub** or
-**Connect GitLab**) with coding on. A repository's own coding policy is its on/off switch, work item
+Each cyralph repository becomes a connected repository (**Repos › Add repo › Connect GitHub**
+or **Connect GitLab**) with coding on. A repository's own coding policy is its on/off switch, work item
 match, extra instructions, open PR early, history rewrite and responding to reviews and CI
 (`/api/ui/repositories/{id}/coding`); the rest is its story and request playbooks' (see
 [definitions](definitions.md#coding-settings)).
@@ -133,7 +133,7 @@ match, extra instructions, open PR early, history rewrite and responding to revi
 | `respondToCiFailures` | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | |
 | `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes` | **Clean up after the merge**, **Unmerged branch timeout** | Same defaults (on, 60 minutes). |
 
-Repository › Settings › Agents › Pinning has no cyralph equivalent: pin a repository to an agent
+Pinning a repo to agents (**Repos › Agents**) has no cyralph equivalent: pin a repository to an agent
 when only that host has its toolchain.
 
 ### Environment variables
@@ -183,7 +183,7 @@ Do the steps in order. Each has a check, and [Rollback](#rollback) says how to u
 
 For every entry in cyralph's `repositories[]`:
 
-1. Make sure the repository is connected (**Repositories**), and enable the Omniralph review on it
+1. Make sure the repository is connected (**Repos**), and enable the Omniralph review on it
    if cyralph relied on review bots: review responses only come from Omniralph's own reviews.
 2. Enter the settings from the [mapping](#config-mapping): the repository's coding policy (extra
    instructions, open PR early, history rewrite, responding to reviews and CI), the organization's
