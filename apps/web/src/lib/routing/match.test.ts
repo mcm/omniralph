@@ -5,6 +5,7 @@ import {
   describeMatchRoute,
   matchesConflict,
   matchesWorkItem,
+  matchSentence,
   specificity,
   type WorkItemValues,
 } from "./match";
@@ -92,6 +93,20 @@ describe("describeMatch", () => {
     );
     expect(describeMatch(match({ withoutProject: true, labels: ["a", "b"] }))).toBe(
       "Team is SOC, no project, any label of a, b",
+    );
+  });
+});
+
+describe("matchSentence", () => {
+  it("reads like the Coding card's sentence", () => {
+    expect(matchSentence(match({ labels: ["product:portal"] }))).toBe(
+      "Linear team SOC, label product:portal",
+    );
+    expect(matchSentence(match({ team: "MOD", withoutProject: true }))).toBe(
+      "Linear team MOD, no project",
+    );
+    expect(matchSentence(match({ project: "Portal", labels: ["ui", "web"] }))).toBe(
+      "Linear team SOC, project Portal, label ui or web",
     );
   });
 });

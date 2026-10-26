@@ -1,5 +1,6 @@
 import {
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
+  RepositoryCodingInput,
   MAX_PATH_EXCLUDES,
   MAX_REVIEW_TASKS,
   PathExcludeGlob,
@@ -16,7 +17,11 @@ import type {
   RepositoryProblemAction,
   RepositoryStatus,
 } from "@/lib/repositories/status";
-import { WORK_ITEM_TRACKERS, workItemMatchSchema } from "./work-item-matches";
+import {
+  WORK_ITEM_TRACKERS,
+  workItemMatchInputSchema,
+  workItemMatchSchema,
+} from "./work-item-matches";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
@@ -477,14 +482,54 @@ export const playbooksCardInputSchema = z.strictObject({
 });
 export type PlaybooksCardInput = z.infer<typeof playbooksCardInputSchema>;
 
+/**
+ * `PUT /api/ui/repositories/{id}/coding` body: the whole Coding card, its switch, work item
+ * match (null for none) and policy, saved together.
+ */
+export const codingCardInputSchema = RepositoryCodingInput.extend({
+  workItemMatch: workItemMatchInputSchema.nullable(),
+});
+export type CodingCardInput = z.infer<typeof codingCardInputSchema>;
+
+/** `POST /api/ui/repositories/{id}/coding/match-check` body: an unsaved match. */
+export const codingMatchCheckInputSchema = z.strictObject({
+  workItemMatch: workItemMatchInputSchema,
+});
+export type CodingMatchCheckInput = z.infer<typeof codingMatchCheckInputSchema>;
+
+/**
+ * Another repo whose work item match conflicts with this one's (the same tracker, team and
+ * project condition, with labels in common or both without): a work item both match asks
+ * which repo to use.
+ */
+export const codingMatchWarningSchema = z.object({
+  id: z.string(),
+  fullPath: z.string(),
+  provider,
+  message: z.string(),
+});
+export type CodingMatchWarning = z.infer<typeof codingMatchWarningSchema>;
+
+/** `POST /api/ui/repositories/{id}/coding/match-check`'s answer. */
+export const codingMatchCheckSchema = z.object({ warnings: z.array(codingMatchWarningSchema) });
+export type CodingMatchCheck = z.infer<typeof codingMatchCheckSchema>;
+
 /** What a card save answers: the saved card, as the detail shows it. */
 export const cardSaveResultSchema = <T extends z.ZodType>(card: T) =>
   z.object({ ok: z.literal(true), card });
 
+/** `PUT /api/ui/repositories/{id}/coding`'s answer: the saved card and its match's conflicts. */
+export const codingCardSaveResultSchema = z.object({
+  ok: z.literal(true),
+  card: codingCardSchema,
+  warnings: z.array(codingMatchWarningSchema),
+});
+export type CodingCardSaveResult = z.infer<typeof codingCardSaveResultSchema>;
+
 /**
- * `GET`/`PUT /api/ui/repositories/{id}/coding` (admins): the repo's coding policy, exactly what
- * `PUT` takes (`RepositoryCodingInput`), and the review and CI fix rounds its story playbook
- * gives a PR (read-only: they're the playbook's).
+ * `GET /api/ui/repositories/{id}/coding` (admins, the old Coding tab): the repo's coding policy
+ * (`RepositoryCodingInput`), and the review and CI fix rounds its story playbook gives a PR
+ * (read-only: they're the playbook's).
  */
 export const repositoryCodingSchema = z.object({
   /** Whether work items routed to it are built. */

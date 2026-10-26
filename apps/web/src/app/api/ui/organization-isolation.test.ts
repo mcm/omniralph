@@ -222,7 +222,18 @@ const repositoryAsk = await import("./repositories/[id]/ask/route");
 const repositoryAgents = await import("./repositories/[id]/agents/route");
 const repositoryPlaybooks = await import("./repositories/[id]/playbooks/route");
 const repositoryCoding = await import("./repositories/[id]/coding/route");
+const repositoryMatchCheck = await import("./repositories/[id]/coding/match-check/route");
 const repositoryRules = await import("./repositories/[id]/rules/route");
+
+/** A valid Coding card save that changes a repo's defaults (Rewrite history: Always). */
+const CODING_CARD = {
+  codingEnabled: false,
+  workItemMatch: null,
+  codingInstructions: null,
+  openPullRequestEarly: false,
+  historyRewrite: "always",
+  respondToReviewsAndCi: true,
+};
 const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
 const gitlabConnections = await import("./gitlab-connections/route");
 const scmConnection = await import("./scm-connections/[id]/route");
@@ -1488,25 +1499,27 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         },
       }),
     ];
-    // A valid coding policy: the other organization's own.
-    state.userId = b.adminId;
-    const { roundLimits: _limits, ...coding } = (
-      await call(repositoryCoding.GET, { params: { id: b.repoId } })
-    ).body;
     const codingSave = (id: string) =>
-      call(repositoryCoding.PUT, { method: "PUT", params: { id }, body: coding });
+      call(repositoryCoding.PUT, { method: "PUT", params: { id }, body: CODING_CARD });
+    const matchCheck = (id: string) =>
+      call(repositoryMatchCheck.POST, {
+        method: "POST",
+        params: { id },
+        body: { workItemMatch: { tracker: "linear", team: "ENG" } },
+      });
     state.userId = a.adminId;
     // The card saves serve any of the user's organizations: the other's repo is not found.
-    for (const response of await Promise.all(cards(b.repoId, b.agentId))) {
+    for (const response of await Promise.all([
+      ...cards(b.repoId, b.agentId),
+      codingSave(b.repoId),
+      matchCheck(b.repoId),
+    ])) {
       expect(response).toMatchObject({ status: 404, body: { error: expect.any(String) } });
     }
-    expect(await codingSave(b.repoId)).toMatchObject({
-      status: 400,
-      body: { error: "That repository isn't connected." },
-    });
     for (const response of await Promise.all([
       ...cards("not-a-uuid", b.agentId),
       codingSave("not-a-uuid"),
+      matchCheck("not-a-uuid"),
     ])) {
       expect(response.status).toBe(404);
     }
@@ -1525,6 +1538,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     for (const response of await Promise.all([
       ...cards(b.repoId, b.agentId),
       codingSave(b.repoId),
+      matchCheck(b.repoId),
     ])) {
       expect(response.status).toBe(403);
     }
@@ -1533,6 +1547,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       reviewsEnabled: true,
       askEnabled: true,
       codingEnabled: false,
+      historyRewrite: "when-asked",
       reviewPlaybookIds: ["builtin:review-pr"],
     });
     expect(
@@ -1599,6 +1614,20 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         status: 200,
         body: { card: { bindings: { review: ["builtin:summarize-pr"] } } },
       });
+      expect(
+        await call(repositoryCoding.PUT, {
+          method: "PUT",
+          params: { id: b.repoId },
+          body: CODING_CARD,
+        }),
+      ).toMatchObject({ status: 200, body: { card: { historyRewrite: "always" }, warnings: [] } });
+      expect(
+        await call(repositoryMatchCheck.POST, {
+          method: "POST",
+          params: { id: b.repoId },
+          body: { workItemMatch: { tracker: "linear", team: "ENG" } },
+        }),
+      ).toEqual({ status: 200, body: { warnings: [] } });
       // An admin of the active organization only is refused (member of the repo's).
       await db
         .update(organizationMembers)
@@ -1638,6 +1667,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         .update(repositories)
         .set({
           askEnabled: before!.askEnabled,
+          historyRewrite: before!.historyRewrite,
           reviewDepth: before!.reviewDepth,
           reviewPlaybookIds: before!.reviewPlaybookIds,
         })

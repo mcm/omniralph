@@ -14,6 +14,7 @@ import {
   findings,
   getRepository,
   getRepositoryReviewSettings,
+  getWorkItemMatch,
   listRepositoryRules,
   upsertScmConnection,
   users,
@@ -310,6 +311,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect(
       await updateRepositoryCoding(b.repoId, {
         codingEnabled: true,
+        workItemMatch: { tracker: "linear", team: "ENG" },
         codingInstructions: "Sneaky.",
         openPullRequestEarly: true,
         historyRewrite: "always",
@@ -325,6 +327,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       codingInstructions: null,
       historyRewrite: "when-asked",
     });
+    expect(await getWorkItemMatch(db, b.orgId, b.repoId)).toBeNull();
 
     expect(await addCustomRule(b.repoId, { text: "Sneaky rule" })).toEqual(refused);
     expect(await editRule(b.repoId, b.ruleId, { text: "Edited" })).toEqual(refused);

@@ -10,6 +10,7 @@ import {
   getIntegrationById,
   getRepository,
   getTrackerLabels,
+  getWorkItemMatch,
   getScmConnection,
   listChatChannelPlaybookSettings,
   listConnectionRepositories,
@@ -37,6 +38,7 @@ import { listPlaybooks } from "@/lib/playbooks";
 import type { SettingsSection } from "@/lib/live/events";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { describeQuery } from "@/lib/routing/describe";
+import { matchSentence } from "@/lib/routing/match";
 import { userDisplayName } from "@/lib/user-display";
 
 /**
@@ -114,13 +116,19 @@ const HISTORY_REWRITE_LABELS: Record<Repository["historyRewrite"], string> = {
   never: "Never",
 };
 
-const REPOSITORY_CODING_FIELDS: SettingsFields = {
-  coding: { label: "Coding" },
-  codingInstructions: { label: "Extra instructions" },
-  openPullRequestEarly: { label: "Open the pull request early" },
-  historyRewrite: { label: "Rewrite history" },
-  respondToReviewsAndCi: { label: "Fix review comments and CI failures" },
-};
+/** The Coding card's fields, labeled as the card shows them (PR or MR by provider). */
+function repositoryCodingFields(provider: Repository["provider"]): SettingsFields {
+  return {
+    coding: { label: "Coding" },
+    workItemMatch: { label: "Work item match" },
+    codingInstructions: { label: "Extra instructions" },
+    openPullRequestEarly: {
+      label: `Open a draft ${provider === "gitlab" ? "merge" : "pull"} request after the first story`,
+    },
+    respondToReviewsAndCi: { label: "Fix review comments and CI failures" },
+    historyRewrite: { label: "Rewrite history" },
+  };
+}
 
 async function readRepositoryCoding(
   db: Database,
@@ -129,25 +137,27 @@ async function readRepositoryCoding(
 ): Promise<SettingsValues | null> {
   const repository = await getRepository(db, repositoryId, organizationId);
   if (!repository) return null;
+  const match = await getWorkItemMatch(db, organizationId, repositoryId);
   return {
     coding: onOff(repository.codingEnabled),
+    workItemMatch: match ? matchSentence(match) : null,
     codingInstructions: repository.codingInstructions,
     openPullRequestEarly: onOff(repository.openPullRequestEarly),
-    historyRewrite: HISTORY_REWRITE_LABELS[repository.historyRewrite],
     respondToReviewsAndCi: onOff(repository.respondToReviewsAndCi),
+    historyRewrite: HISTORY_REWRITE_LABELS[repository.historyRewrite],
   };
 }
 
+/** The repository's Coding card (`repository.coding`): its switch, work item match and policy. */
 export function trackedRepositoryCoding(
-  organizationId: string,
-  repositoryId: string,
+  repository: Pick<Repository, "id" | "organizationId" | "provider">,
 ): TrackedSettings {
   return {
-    organizationId,
+    organizationId: repository.organizationId,
     section: "repository.coding",
-    subjectId: repositoryId,
-    fields: REPOSITORY_CODING_FIELDS,
-    read: (db) => readRepositoryCoding(db, organizationId, repositoryId),
+    subjectId: repository.id,
+    fields: repositoryCodingFields(repository.provider),
+    read: (db) => readRepositoryCoding(db, repository.organizationId, repository.id),
   };
 }
 

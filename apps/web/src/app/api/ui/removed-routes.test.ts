@@ -16,6 +16,8 @@ describe("routes the configuration model removed", () => {
     // Each Repos card saves on its own endpoint.
     "/api/ui/repositories/x/settings",
     "/api/ui/repositories/x/task-types",
+    // The Coding card saves the work item match with the switch and policy.
+    "/api/ui/repositories/x/work-item-match",
   ])("%s has no handler (404)", (path) => {
     expect(servedByRouteHandler(path)).toBe(false);
   });
@@ -69,10 +71,10 @@ describe("routes the configuration model removed", () => {
     for (const path of [
       "/api/ui/repositories/x/reviews",
       "/api/ui/repositories/x/coding",
+      "/api/ui/repositories/x/coding/match-check",
       "/api/ui/repositories/x/ask",
       "/api/ui/repositories/x/agents",
       "/api/ui/repositories/x/playbooks",
-      "/api/ui/repositories/x/work-item-match",
       "/api/ui/routing-rules/test",
     ]) {
       expect(servedByRouteHandler(path), path).toBe(true);

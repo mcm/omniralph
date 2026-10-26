@@ -126,11 +126,15 @@ already had Coding on before work item matches keeps it until it's switched off.
 repository's switches.
 
 A repository's coding policy is six settings: on/off, the work item match and the four below.
-Admins read and save it with `GET`/`PUT /api/ui/repositories/{id}/coding` (the match has its own
-endpoint, `PUT /api/ui/repositories/{id}/work-item-match`). `PUT` takes exactly
-`{ codingEnabled, codingInstructions, openPullRequestEarly, historyRewrite, respondToReviewsAndCi }`
-and answers 400 for any other key; both answer the saved policy plus `roundLimits`, the story
-playbook's review and CI fix rounds (read-only).
+Admins save all six together, the Repos page's Coding card, with
+`PUT /api/ui/repositories/{id}/coding`. It takes exactly
+`{ codingEnabled, workItemMatch, codingInstructions, openPullRequestEarly, historyRewrite, respondToReviewsAndCi }`
+(`workItemMatch` null for none) and answers 400 for any other key. It saves in one transaction,
+turning Coding off before removing the match and setting the match before turning Coding on, and
+checks the match rules on the result: turning Coding on with a new match in one save works, and so
+does turning it off while clearing the match. It answers
+`{ ok, card, warnings }`: the saved card (with `roundLimits`, the story playbook's review and CI fix
+rounds, read-only) and the [conflicting matches](#work-item-matches).
 
 | Setting                                                           | Default      | What it does                                                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -185,7 +189,7 @@ A route to a repository with coding off makes the issue manual: it's for a perso
 ### Work item matches
 
 Each repository can say which work items it builds: its work item match
-(`PUT /api/ui/repositories/{id}/work-item-match`, admins; `{ "match": null }` clears it). A match
+(`workItemMatch` of `PUT /api/ui/repositories/{id}/coding`, admins; null clears it). A match
 has:
 
 - a tracker (`linear`, which must be connected) and a team, by key (`SOC`);
@@ -199,9 +203,10 @@ When several repositories match a work item, the most specific match wins. Speci
 conditions beyond tracker and team: a project or "no project" adds 1, labels add 1. When two or
 more matches tie at the highest specificity, routing asks which repository to use, and the route
 names the tied repositories (`work item matches of acme/api, acme/web tie`). Saving a match
-answers `warnings` naming each other repository whose match has the same tracker, team and
-project condition and whose labels intersect (or are both empty), since a work item both match
-would ask.
+answers `warnings` naming (`id`, `fullPath`) each other repository whose match has the same
+tracker, team and project condition and whose labels intersect (or are both empty), since a work
+item both match would ask. `POST /api/ui/repositories/{id}/coding/match-check` (admins) answers the
+same `{ warnings }` for an unsaved `{ workItemMatch }`, saving nothing.
 
 The run's **Routed by** reads like `work item match (Team is SOC, label product:portal)`.
 

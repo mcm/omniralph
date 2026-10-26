@@ -5,7 +5,11 @@
  */
 import { and, asc, eq, isNull, ne, notExists, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { recordRepositorySettingsChange, WorkItemMatchRequiredError } from "./repositories.js";
+import {
+  recordRepositorySettingsChange,
+  WorkItemMatchRequiredError,
+  type Repository,
+} from "./repositories.js";
 import { repositories, workItemMatches } from "./schema.js";
 
 export type WorkItemMatch = typeof workItemMatches.$inferSelect;
@@ -51,14 +55,21 @@ export async function getWorkItemMatch(
   return row ?? null;
 }
 
-/** The other connected repositories' matches with their full paths, e.g. to warn about overlaps. */
+/**
+ * The other connected repositories' matches with their full paths and providers, e.g. to warn
+ * about overlaps.
+ */
 export async function listOtherWorkItemMatches(
   db: Pick<Database, "select">,
   organizationId: string,
   repositoryId: string,
-): Promise<Array<WorkItemMatch & { fullPath: string }>> {
+): Promise<Array<WorkItemMatch & { fullPath: string; provider: Repository["provider"] }>> {
   const rows = await db
-    .select({ match: workItemMatches, fullPath: repositories.fullPath })
+    .select({
+      match: workItemMatches,
+      fullPath: repositories.fullPath,
+      provider: repositories.provider,
+    })
     .from(workItemMatches)
     .innerJoin(repositories, eq(repositories.id, workItemMatches.repositoryId))
     .where(
@@ -69,7 +80,7 @@ export async function listOtherWorkItemMatches(
       ),
     )
     .orderBy(asc(repositories.fullPath), asc(repositories.id));
-  return rows.map((r) => ({ ...r.match, fullPath: r.fullPath }));
+  return rows.map((r) => ({ ...r.match, fullPath: r.fullPath, provider: r.provider }));
 }
 
 export interface SaveWorkItemMatchInput {

@@ -1,18 +1,24 @@
 import "server-only";
 import { isDeepStrictEqual } from "node:util";
 import {
+  deleteWorkItemMatch,
   filterActiveAgentIds,
+  getIntegration,
   getRepository,
+  getWorkItemMatch,
   listRepositoryPinnedAgentIds,
   pinRepositoryToAgent,
+  saveWorkItemMatch,
   setRepositorySwitches,
   unpinRepositoryFromAgent,
+  updateRepositoryCoding,
   updateRepositoryPlaybookBindings,
   updateRepositorySettings,
   withSettingsChanges,
   type Database,
   type Repository,
   type SettingsActor,
+  type WorkItemMatchFields,
 } from "@omniralph/db";
 import { recordChange } from "@omniralph/db/changes";
 import type { FieldErrors } from "@omniralph/shared";
@@ -23,6 +29,9 @@ import type {
   AgentsCardInput,
   AskCard,
   AskCardInput,
+  CodingCardInput,
+  CodingCardSaveResult,
+  CodingMatchCheck,
   PlaybooksCard,
   PlaybooksCardInput,
   ReviewsCard,
@@ -36,16 +45,25 @@ import {
   REPOSITORY_BINDING_ROLES,
   type RepositoryBinding,
 } from "@/lib/playbooks";
+import type { WorkItemMatchInput } from "@/lib/api/work-item-matches";
 import {
   trackedRepositoryAgents,
   trackedRepositoryAsk,
+  trackedRepositoryCoding,
   trackedRepositoryPlaybooks,
   trackedRepositoryReviews,
 } from "@/lib/settings-history/sections";
-import { askCard, loadAgentsCard, loadPlaybooksCard, reviewsCard } from "./detail";
+import { askCard, loadAgentsCard, loadCodingCard, loadPlaybooksCard, reviewsCard } from "./detail";
+import {
+  ADD_WORK_ITEM_MATCH_FIRST,
+  matchConflicts,
+  refusingCodingWithoutMatch,
+  TRACKER_NOT_CONNECTED,
+  TURN_OFF_CODING_FIRST,
+} from "./work-item-match";
 
 /**
- * The Repos page's card saves: Reviews, Ask, Agents and Playbooks. Each saves its whole card
+ * The Repos page's card saves: Reviews, Coding, Ask, Agents and Playbooks. Each saves its whole card
  * in one transaction that records one change-history entry of the card's section
  * (`withSettingsChanges`) and the repo's live `repository` change (which refreshes its rail
  * row and detail), and answers the saved card in the detail's shape. A save that changes
@@ -62,11 +80,18 @@ async function connected(tx: Database, repository: Repository): Promise<Reposito
   return current;
 }
 
-/** Records the repo's live change (its rail row and detail), kept once `tx` commits. */
-function recordRepositoryChanged(tx: Database, repository: Repository): void {
+/**
+ * Records the repo's live change (its rail row and detail), and `others`' (of its
+ * organization), kept once `tx` commits.
+ */
+function recordRepositoryChanged(
+  tx: Database,
+  repository: Repository,
+  others: readonly string[] = [],
+): void {
   recordChange(tx, {
     resource: "repository",
-    ids: [repository.id],
+    ids: [repository.id, ...others],
     organizationId: repository.organizationId,
   });
 }
@@ -110,6 +135,124 @@ export async function saveReviewsCard(
     },
   );
   return { ok: true, card: reviewsCard(saved) };
+}
+
+// ── Coding ──────────────────────────────────────────────────────────────────
+
+/** A match's conditions, as compared and saved (a project only without "no project"). */
+function matchFields(match: WorkItemMatchFields): WorkItemMatchFields {
+  return {
+    tracker: match.tracker,
+    team: match.team,
+    project: match.withoutProject ? null : match.project,
+    withoutProject: match.withoutProject,
+    labels: [...match.labels],
+  };
+}
+
+/**
+ * Saves the Coding card: the switch, work item match (null clears it) and coding policy, in
+ * one transaction. Coding off is applied before the match is removed, and the match is set
+ * before Coding on, so that turning Coding on with a new match, or off while clearing the
+ * match, saves. The rules hold on the final state (409, saving nothing): Coding on needs a
+ * match ("Add a work item match…"), and clearing the match needs Coding off ("Turn off
+ * Coding…"); a repo that had Coding on before work item matches keeps it without one. A
+ * changed match needs its tracker connected (409). Answers the saved card and each other repo
+ * whose match conflicts with it; when the match changed, those repos' (and the ones that
+ * conflicted with the old match) change too.
+ */
+export async function saveCodingCard(
+  db: Database,
+  actor: SettingsActor,
+  repository: Repository,
+  input: CodingCardInput,
+): Promise<CodingCardSaveResult> {
+  const wantedMatch = input.workItemMatch ? matchFields(input.workItemMatch) : null;
+  const instructions = input.codingInstructions?.trim() ?? "";
+  const saved = await refusingCodingWithoutMatch(() =>
+    withSettingsChanges(db, actor, trackedRepositoryCoding(repository), async (tx) => {
+      const current = await connected(tx, repository);
+      const stored = await getWorkItemMatch(tx, current.organizationId, current.id);
+      const savedMatch = stored ? matchFields(stored) : null;
+      const matchChanged = !isDeepStrictEqual(savedMatch, wantedMatch);
+      const policy = {
+        codingInstructions: instructions,
+        openPullRequestEarly: input.openPullRequestEarly,
+        historyRewrite: input.historyRewrite,
+        respondToReviewsAndCi: input.respondToReviewsAndCi,
+      };
+      const policyChanged = !isDeepStrictEqual(policy, {
+        codingInstructions: current.codingInstructions ?? "",
+        openPullRequestEarly: current.openPullRequestEarly,
+        historyRewrite: current.historyRewrite,
+        respondToReviewsAndCi: current.respondToReviewsAndCi,
+      });
+      const switchChanged = current.codingEnabled !== input.codingEnabled;
+      if (!matchChanged && !policyChanged && !switchChanged) return current;
+
+      if (input.codingEnabled && !wantedMatch) {
+        if (savedMatch) throw new ApiRouteError(409, TURN_OFF_CODING_FIRST, "coding_enabled");
+        if (!current.codingEnabled) {
+          throw new ApiRouteError(409, ADD_WORK_ITEM_MATCH_FIRST, "work_item_match_required");
+        }
+      }
+      if (
+        wantedMatch &&
+        matchChanged &&
+        !(await getIntegration(tx, current.organizationId, wantedMatch.tracker))
+      ) {
+        throw new ApiRouteError(409, TRACKER_NOT_CONNECTED, "tracker_not_connected");
+      }
+
+      // Coding off first, so the match can go; the match next, so Coding can come on.
+      const update = { ...policy, codingEnabled: input.codingEnabled };
+      if (!input.codingEnabled) await updateRepositoryCoding(tx, current.id, update);
+      if (matchChanged) {
+        if (wantedMatch) {
+          const written = await saveWorkItemMatch(tx, {
+            organizationId: current.organizationId,
+            repositoryId: current.id,
+            userId: actor.userId,
+            match: wantedMatch,
+          });
+          if (!written) throw ApiRouteError.notFound();
+        } else {
+          await deleteWorkItemMatch(tx, current.organizationId, current.id);
+        }
+      }
+      if (input.codingEnabled) await updateRepositoryCoding(tx, current.id, update);
+
+      // A changed match changes the conflicts the old and new ones had with other repos.
+      const conflicted = new Set<string>();
+      for (const match of matchChanged ? [savedMatch, wantedMatch] : []) {
+        if (!match) continue;
+        const warnings = await matchConflicts(tx, current.organizationId, current.id, match);
+        for (const warning of warnings) conflicted.add(warning.id);
+      }
+      recordRepositoryChanged(tx, current, [...conflicted]);
+      return connected(tx, repository);
+    }),
+  );
+  const [card, warnings] = await Promise.all([
+    loadCodingCard(db, saved),
+    wantedMatch ? matchConflicts(db, saved.organizationId, saved.id, wantedMatch) : [],
+  ]);
+  return { ok: true, card, warnings };
+}
+
+/**
+ * The conflicts an unsaved match of `repository` would have (`matchConflicts`, as the Coding
+ * save answers them). Writes and publishes nothing.
+ */
+export async function checkCodingMatch(
+  db: Database,
+  repository: Repository,
+  match: WorkItemMatchInput,
+): Promise<CodingMatchCheck> {
+  const current = await connected(db, repository);
+  return {
+    warnings: await matchConflicts(db, current.organizationId, current.id, matchFields(match)),
+  };
 }
 
 // ── Ask ─────────────────────────────────────────────────────────────────────
