@@ -1,14 +1,15 @@
 /**
- * Which repository an issue routes to (`resolveRoute`): the organization's routing rules in
- * order (the first match wins), whenever it has any; then the work item matches of its
- * connected repositories (`match.ts`: the most specific one wins, and a tie asks); then the
- * default rules, which aren't stored:
+ * Which repository an issue routes to (`resolveRoute`): first the repository a member chose for
+ * it in Omniralph ("Change repo…", `work_item_overrides`) while that repository is connected;
+ * then the organization's routing rules in order (the first match wins), whenever it has any;
+ * then the work item matches of its connected repositories (`match.ts`: the most specific one
+ * wins, and a tie asks); then the default rules, which aren't stored:
  *
  *   1. follow-up   route it the same as the issue it was filed from (its source)
  *   2. sub-issue   route it the same as its parent
  *   3. ask         ask which repository to use (the repository question)
  *
- * A match on a repository with coding off makes the issue manual: a person does it. An issue
+ * A match or choice of a repository with coding off makes the issue manual: a person does it. An issue
  * is a follow-up only when Omniralph recorded its source (`recordFollowUpSource`); rules read
  * the source's fields as `source.*`.
  *
@@ -21,6 +22,7 @@
 import {
   getFollowUpSource,
   getIssueRepository,
+  getWorkItemOverride,
   listRoutingRepositories,
   listRoutingRules,
   listWorkItemMatches,
@@ -38,6 +40,10 @@ import {
 import { describeRule } from "./describe";
 import { evaluateQuery } from "./evaluate";
 import { describeMatchRoute, describeMatchTie, matchesWorkItem, specificity } from "./match";
+
+/** `routed_by` of a repository a member chose for the issue ("Change repo…"). */
+export const chosenBy = (fullPath: string) =>
+  `your choice in Omniralph (${fullPath.split("/").filter(Boolean).pop() ?? fullPath})`;
 
 /** Most "route the same as another issue" steps one resolution takes. */
 export const MAX_ROUTE_HOPS = 5;
@@ -63,6 +69,8 @@ export interface RouteMatch {
   defaultRule?: 1 | 2;
   /** The issue itself matched its repository's work item match. */
   workItemMatch?: true;
+  /** A member chose the repository for the issue in Omniralph ("Change repo…"). */
+  chosen?: true;
 }
 
 /** A route to a repository (coding on or off), with `rule` set for a direct custom-rule match. */
@@ -172,6 +180,10 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     if (seen.has(issue.id) || seen.has(issue.identifier)) return ASK;
     const visited = new Set([...seen, issueId, issue.id, issue.identifier]);
 
+    // A member's choice for this issue comes first, while its repository is connected.
+    const chosen = await chosenRoute(issue.id);
+    if (chosen) return chosen;
+
     const sourceId = await getFollowUpSource(deps.db, deps.organizationId, issue.id);
     const source = sourceId ? await sourceFields(issue.identifier, sourceId) : null;
 
@@ -201,6 +213,18 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     }
     // Default rule 3: ask.
     return ASK;
+  };
+
+  /** The route a member chose for `issueId` ("Change repo…"), or null without a usable choice. */
+  const chosenRoute = async (issueId: string): Promise<RoutedOutcome | null> => {
+    const override = await getWorkItemOverride(deps.db, {
+      organizationId: deps.organizationId,
+      tracker: "linear",
+      externalId: issueId,
+    });
+    const repository = override?.repositoryId ? byId.get(override.repositoryId) : undefined;
+    if (!repository) return null;
+    return { ...outcome(repository, chosenBy(repository.fullPath)), chosen: true };
   };
 
   /** A follow-up's source's fields; null (empty `source.*`) when it can't be read, e.g. deleted. */

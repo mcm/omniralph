@@ -10,6 +10,9 @@ import {
   organizations,
   ralphRuns,
   recordFollowUpSource,
+  clearWorkItemRepository,
+  setWorkItemRepository,
+  workItemOverrides,
   repositories,
   replaceRoutingRules,
   listWorkItemMatches,
@@ -134,6 +137,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
     await db.delete(ralphRuns);
     await db.delete(followUpSources);
     await db.delete(workItemMatches);
+    await db.delete(workItemOverrides);
     await rules();
     linear = new FakeLinearGateway();
   });
@@ -338,6 +342,109 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
         issue.id,
       );
       expect(route).toMatchObject({ repository: { id: web }, workItemMatch: true });
+    });
+  });
+
+  describe("a member's repo choice (Change repo…)", () => {
+    const choose = async (issueId: string, repositoryId: string) => {
+      const saved = await setWorkItemRepository(db, {
+        organizationId: orgId,
+        tracker: "linear",
+        externalId: issueId,
+        repositoryId,
+        userId: null,
+      });
+      expect(saved).not.toBeNull();
+    };
+
+    it("routes to the chosen repo before the routing rules and work item matches", async () => {
+      await rules([api, labels("backend")]);
+      await match(api, { labels: ["backend"] });
+      const issue = linear.add({ title: "Portal", labels: ["backend"] });
+      await choose(issue.id, web);
+      expect(await resolveRoute(deps(), issue.id)).toEqual({
+        repository: expect.objectContaining({ id: web, fullPath: "acme/web" }),
+        by: "your choice in Omniralph (web)",
+        chosen: true,
+      });
+      // By identifier too.
+      expect(await resolveRoute(deps(), issue.identifier)).toMatchObject({
+        repository: { id: web },
+      });
+      // Only this issue: another one still routes by the rules.
+      const other = linear.add({ title: "Other", labels: ["backend"] });
+      expect(await resolveRoute(deps(), other.id)).toMatchObject({ repository: { id: api } });
+    });
+
+    it("comes before the default rules", async () => {
+      const parent = linear.add({ title: "Epic" });
+      await runOf(parent.id, parent.identifier, api, "your selection");
+      const child = linear.add({ title: "Child", parentId: parent.id });
+      await choose(child.id, web);
+      expect(await resolveRoute(deps(), child.id)).toMatchObject({
+        repository: { id: web },
+        by: "your choice in Omniralph (web)",
+      });
+    });
+
+    it("makes the issue manual when the chosen repo has Coding off", async () => {
+      await rules([api, team("ENG")]);
+      const issue = linear.add({ title: "Docs" });
+      await choose(issue.id, docs);
+      expect(await resolveRoute(deps(), issue.id)).toEqual({
+        manual: expect.objectContaining({ id: docs }),
+        by: "your choice in Omniralph (docs)",
+        chosen: true,
+      });
+    });
+
+    it("falls back to normal routing when the chosen repo is disconnected", async () => {
+      const { id: gone } = await connectRepository(db, {
+        connectionId: (await db.select().from(repositories).where(eq(repositories.id, api)))[0]!
+          .connectionId,
+        provider: "github",
+        externalId: "gone-choice",
+        fullPath: "acme/gone-choice",
+      });
+      await db.update(repositories).set({ codingEnabled: true }).where(eq(repositories.id, gone));
+      await rules([api, team("ENG")]);
+      const issue = linear.add({ title: "Any" });
+      await choose(issue.id, gone);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: gone } });
+      await disconnectRepository(db, orgId, gone);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({
+        repository: { id: api },
+        rule: 1,
+      });
+    });
+
+    it("routes normally once the choice is cleared", async () => {
+      await rules([api, team("ENG")]);
+      const issue = linear.add({ title: "Any" });
+      await choose(issue.id, web);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({ repository: { id: web } });
+      expect(
+        await clearWorkItemRepository(db, {
+          organizationId: orgId,
+          tracker: "linear",
+          externalId: issue.id,
+        }),
+      ).toBe(true);
+      expect(await resolveRoute(deps(), issue.id)).toMatchObject({
+        repository: { id: api },
+        rule: 1,
+      });
+    });
+
+    it("is used when a sub-issue routes the same as its parent", async () => {
+      const parent = linear.add({ title: "Epic" });
+      await choose(parent.id, web);
+      const child = linear.add({ title: "Child", parentId: parent.id });
+      expect(await resolveRoute(deps(), child.id)).toMatchObject({
+        repository: { id: web },
+        by: `sub-issue of ${parent.identifier} → your choice in Omniralph (web)`,
+        defaultRule: 2,
+      });
     });
   });
 

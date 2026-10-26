@@ -743,6 +743,13 @@
       "when": 1793025425716,
       "tag": "0105_repository_default_branch",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1793048065906,
+      "tag": "0106_work_item_overrides_and_events",
+      "breakpoints": true
     }
   ]
 }

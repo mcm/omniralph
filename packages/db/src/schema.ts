@@ -958,6 +958,71 @@ export const followUpSources = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.issueId] })],
 );
 
+/**
+ * A member's repository choice for one work item ("Change repo…" on the Backlog). Routing
+ * tries it first (`createRouter`): while the repository stays connected, the item builds there.
+ */
+export const workItemOverrides = pgTable(
+  "work_item_overrides",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    /** The work item's ID in its tracker (a Linear issue ID). */
+    externalId: text("external_id").notNull(),
+    /** The chosen repository; null when it was deleted (routing then applies again). */
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    chosenBy: text("chosen_by").references(() => users.id, { onDelete: "set null" }),
+    chosenAt: timestamp("chosen_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.tracker, t.externalId] }),
+    index("work_item_overrides_repository_id_idx").on(t.repositoryId),
+  ],
+);
+
+/** What a work item's Activity shows of the actions taken on it in Omniralph. */
+export const workItemEventKind = pgEnum("work_item_event_kind", [
+  "created",
+  "repo_changed",
+  "repo_reset",
+  "moved_to_needs_refining",
+  "prd_edited",
+  "triage_requested",
+  "started",
+  "share_link_created",
+  "share_link_revoked",
+  "canceled",
+]);
+
+/** An action taken on a work item in Omniralph, for its Activity tab. */
+export const workItemEvents = pgTable(
+  "work_item_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    externalId: text("external_id").notNull(),
+    /** The member who acted; null for Om or a chat surface, or once the user is deleted. */
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** The actor's name when it happened, kept when the user is deleted. */
+    actorName: text("actor_name").notNull(),
+    kind: workItemEventKind("kind").notNull(),
+    /** Kind-specific details, e.g. `{ repository: "customer-portal" }` for `repo_changed`. */
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("work_item_events_item_idx").on(t.organizationId, t.tracker, t.externalId, t.createdAt),
+  ],
+);
+
 // ── Agents ───────────────────────────────────────────────────────────────
 
 /** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
