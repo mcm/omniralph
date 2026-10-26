@@ -2,15 +2,17 @@
 
 import { toast } from "@omniralph/ui";
 import { useIsMutating } from "@tanstack/react-query";
-import { useApiMutation } from "@/components/use-api-mutation";
+import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
 import { api, ApiError } from "@/lib/api/client";
 import {
+  INBOX_TABS,
   inboxItemActionResultSchema,
   type InboxCountsResponse,
   type InboxFeed,
   type InboxItem,
   type InboxItemActionRequest,
   type InboxItemActionResult,
+  type InboxTabParam,
 } from "@/lib/api/inbox";
 import { inboxKeys } from "@/lib/api/keys";
 import { useScopeParam } from "@/screens/scope";
@@ -21,6 +23,32 @@ const COUNT_OF: Record<InboxItem["tab"], keyof InboxCountsResponse> = {
   problems: "problems",
   running: "running",
 };
+
+/**
+ * Takes the item out of the scope's cached feeds (of `tabs`) and drops each tab's count it
+ * left (the nav count too) by one, before the server answers.
+ */
+export async function removeFromInbox(
+  cache: MutationCache,
+  scope: string,
+  itemKey: string,
+  tabs: readonly InboxTabParam[] = INBOX_TABS,
+): Promise<void> {
+  const inbox = inboxKeys(cache.keys);
+  for (const tab of tabs) {
+    let removed = false;
+    await cache.set<InboxFeed>(inbox.feed(tab, scope), (feed) => {
+      if (!feed?.items.some((entry) => entry.key === itemKey)) return feed;
+      removed = true;
+      return { ...feed, items: feed.items.filter((entry) => entry.key !== itemKey) };
+    });
+    if (!removed) continue;
+    const count = COUNT_OF[tab];
+    await cache.set<InboxCountsResponse>(inbox.counts(scope), (counts) =>
+      counts ? { ...counts, [count]: Math.max(0, counts[count] - 1) } : counts,
+    );
+  }
+}
 
 /** The mutation key of the decisions on one item, so every place it shows can disable them. */
 export function inboxDecisionKey(itemKey: string) {
@@ -55,20 +83,7 @@ export function useInboxDecision(item: Pick<InboxItem, "key" | "tab">) {
         throw error;
       }
     },
-    optimistic: async (_body, cache) => {
-      const inbox = inboxKeys(cache.keys);
-      let removed = false;
-      await cache.set<InboxFeed>(inbox.feed(item.tab, scope), (feed) => {
-        if (!feed?.items.some((entry) => entry.key === item.key)) return feed;
-        removed = true;
-        return { ...feed, items: feed.items.filter((entry) => entry.key !== item.key) };
-      });
-      if (!removed) return;
-      const count = COUNT_OF[item.tab];
-      await cache.set<InboxCountsResponse>(inbox.counts(scope), (counts) =>
-        counts ? { ...counts, [count]: Math.max(0, counts[count] - 1) } : counts,
-      );
-    },
+    optimistic: (_body, cache) => removeFromInbox(cache, scope, item.key, [item.tab]),
     invalidate: (keys) => [keys.inbox.all, keys.runs.all],
     success: null,
     onSuccess: (result) => {

@@ -6,6 +6,7 @@ import {
   inboxItemLabel,
   openFindingsCount,
   relativeSince,
+  relativeUntil,
 } from "./labels";
 import { inboxItem, NOW } from "./test-fixtures";
 
@@ -45,6 +46,19 @@ describe("durationSince and relativeSince", () => {
   ])("%d ms: %s, %s", (ms, duration, relative) => {
     expect(durationSince(ago(ms), NOW)).toBe(duration);
     expect(relativeSince(ago(ms), NOW)).toBe(relative);
+  });
+});
+
+describe("relativeUntil", () => {
+  const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+  it.each([
+    [-HOUR, "in less than a minute"],
+    [30_000, "in less than a minute"],
+    [42 * MIN, "in 42 minutes"],
+    [2 * HOUR, "in 2 hours"],
+    [3 * DAY, "in 3 days"],
+  ])("%d ms ahead reads %s", (ms, relative) => {
+    expect(relativeUntil(ahead(ms), NOW)).toBe(relative);
   });
 });
 

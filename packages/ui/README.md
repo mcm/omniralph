@@ -106,6 +106,11 @@ Keyboard-operable form controls (Design rule 12). Each shows the accent focus ri
 - `Checkbox`: a native `<input type="checkbox">` inside its `<label>` (or with `aria-label`),
   drawn with the custom appearance. `checked`, `defaultChecked`, `indeterminate` (sets the
   DOM property), `disabled`, `onCheckedChange`.
+- `RadioList`: one-of-N `options` (`{ value, label, disabled? }`; a label can be a reference
+  badge) as a vertical Radix radio group under a visible `label` that names it (`aside`
+  shows beside the label, outside the name); `value` +
+  `onValueChange` (or `defaultValue`), `disabled`, `name`. One tab stop; Up and Down move
+  and select (wrapping). `mono` draws the option labels in the mono face.
 - `SegmentedControl`: one-of-N `options` (`{ value, label, icon?, disabled? }`) as a
   `radiogroup` with one tab stop; `value` + `onValueChange` (or `defaultValue`), `size`
   `md` / `sm`. Arrow keys move and select, Home/End select the first and last option.

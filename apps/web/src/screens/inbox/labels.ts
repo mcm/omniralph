@@ -49,6 +49,11 @@ export function relativeSince(since: string, now: number): string {
   return ms < MINUTE ? "just now" : `${durationSince(since, now)} ago`;
 }
 
+/** When `at` will be, relative to now: "in 2 hours", "in less than a minute" (also once past). */
+export function relativeUntil(at: string, now: number): string {
+  return `in ${durationSince(new Date(now).toISOString(), new Date(at).getTime())}`;
+}
+
 export interface InboxItemLabel {
   /** The row's kind and state, e.g. "Manual story · Epic"; it also names the dot. */
   rowLabel: string;

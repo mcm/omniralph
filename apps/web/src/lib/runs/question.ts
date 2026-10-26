@@ -49,6 +49,8 @@ interface QuestionOption {
   id: string;
   label: string;
   reply: string;
+  /** A repository option's code host. */
+  provider?: RunRepository["provider"];
 }
 
 /** What a question's prompt names besides its own facts. */
@@ -71,7 +73,14 @@ function questionOptions(
       return subject.repositoryIds.flatMap((id) => {
         const repository = context.repositories.get(id);
         return repository
-          ? [{ id: repository.id, label: repository.fullPath, reply: repository.fullPath }]
+          ? [
+              {
+                id: repository.id,
+                label: repository.fullPath,
+                reply: repository.fullPath,
+                provider: repository.provider,
+              },
+            ]
           : [];
       });
     case "preparation":
@@ -139,7 +148,9 @@ export function questionView(
     key: candidate.key,
     kind: question.kind,
     prompt: questionPrompt(question, context),
-    options: questionOptions(question.subject, context).map(({ id, label }) => ({ id, label })),
+    options: questionOptions(question.subject, context).map(({ id, label, provider }) =>
+      provider ? { id, label, provider } : { id, label },
+    ),
     askedAt: new Date(question.askedAt).toISOString(),
     expiresAt: question.expiresAt ? new Date(question.expiresAt).toISOString() : null,
   };

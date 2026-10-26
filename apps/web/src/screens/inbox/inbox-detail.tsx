@@ -3,6 +3,7 @@
 import { EmptyState, StatusLine, toast, Toolbar } from "@omniralph/ui";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { ITEM_HANDLED } from "@/components/runs/decisions";
+import { QuestionForm } from "@/components/runs/question-form";
 import type { InboxItem } from "@/lib/api/inbox";
 import { InboxHeaderBadges } from "./inbox-badges";
 import { inboxItemLabel } from "./labels";
@@ -22,7 +23,8 @@ async function copyLink(item: InboxItem) {
 
 /**
  * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
- * the pane's heading, why it's here, and the decisions on it.
+ * the pane's heading, why it's here, and the decisions on it (a question's form, with its
+ * answers, for a run's open question).
  */
 export function InboxDetail({
   item,
@@ -49,7 +51,17 @@ export function InboxDetail({
         {item.title}
       </h2>
       <p className="or-inbox-detail__reason">{item.reason}</p>
-      <DecisionButtons key={item.key} item={item} />
+      {item.question && item.run && item.actions.includes("answer") ? (
+        <QuestionForm
+          key={item.key}
+          variant="inbox"
+          runId={item.run.id}
+          question={item.question}
+          item={item}
+        />
+      ) : (
+        <DecisionButtons key={item.key} item={item} />
+      )}
     </article>
   );
 }
