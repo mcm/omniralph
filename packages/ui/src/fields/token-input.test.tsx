@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Field } from "./field.js";
 import { TokenInput, type TokenInputProps } from "./token-input.js";
 
-function Harness(
+function Subject(
   props: Partial<TokenInputProps> & { initial?: string[]; onValues?: (v: string[]) => void },
 ) {
   const { initial = [], onValues, ...rest } = props;
@@ -30,23 +30,23 @@ const tokens = () =>
 
 describe("TokenInput", () => {
   it("renders each value as a chip with a labeled remove button", () => {
-    render(<Harness initial={["src/**", "docs/*.md"]} />);
+    render(<Subject initial={["src/**", "docs/*.md"]} />);
     expect(tokens()).toEqual(["src/**", "docs/*.md"]);
     expect(screen.getByRole("button", { name: "Remove src/**" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove docs/*.md" })).toBeTruthy();
   });
 
   it("has a text input labeled by the field", () => {
-    render(<Harness />);
+    render(<Subject />);
     const input = screen.getByRole("textbox", { name: "Paths" });
     expect(input.getAttribute("placeholder")).toBe("Add a path");
   });
 
   it("uses Geist Mono by default, and not when mono is false", () => {
-    const { container, unmount } = render(<Harness />);
+    const { container, unmount } = render(<Subject />);
     expect(container.querySelector(".or-tokens--mono")).toBeTruthy();
     unmount();
-    const second = render(<Harness mono={false} />);
+    const second = render(<Subject mono={false} />);
     expect(second.container.querySelector(".or-tokens")).toBeTruthy();
     expect(second.container.querySelector(".or-tokens--mono")).toBeNull();
   });
@@ -54,7 +54,7 @@ describe("TokenInput", () => {
   it("adds the trimmed input on Enter, keeping focus in the input", async () => {
     const user = userEvent.setup();
     const onValues = vi.fn();
-    render(<Harness onValues={onValues} />);
+    render(<Subject onValues={onValues} />);
     const input = screen.getByRole("textbox", { name: "Paths" });
     await user.type(input, "  src/**  {Enter}");
     expect(onValues).toHaveBeenLastCalledWith(["src/**"]);
@@ -65,7 +65,7 @@ describe("TokenInput", () => {
 
   it("adds a token on comma", async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<Subject />);
     const input = screen.getByRole("textbox");
     await user.type(input, "bug,feature,");
     expect(tokens()).toEqual(["bug", "feature"]);
@@ -75,7 +75,7 @@ describe("TokenInput", () => {
   it("does not add an empty value", async () => {
     const user = userEvent.setup();
     const onValues = vi.fn();
-    render(<Harness onValues={onValues} />);
+    render(<Subject onValues={onValues} />);
     await user.type(screen.getByRole("textbox"), "   ,{Enter}");
     expect(onValues).not.toHaveBeenCalled();
     expect(tokens()).toEqual([]);
@@ -86,7 +86,7 @@ describe("TokenInput", () => {
     const onSubmit = vi.fn((event: SubmitEvent) => event.preventDefault());
     render(
       <form onSubmit={(event) => onSubmit(event.nativeEvent as SubmitEvent)}>
-        <Harness />
+        <Subject />
       </form>,
     );
     await user.type(screen.getByRole("textbox"), "{Enter}");
@@ -96,7 +96,7 @@ describe("TokenInput", () => {
   it("does not add a duplicate value", async () => {
     const user = userEvent.setup();
     const onValues = vi.fn();
-    render(<Harness initial={["bug"]} onValues={onValues} />);
+    render(<Subject initial={["bug"]} onValues={onValues} />);
     await user.type(screen.getByRole("textbox"), "bug{Enter}");
     expect(onValues).not.toHaveBeenCalled();
     expect(tokens()).toEqual(["bug"]);
@@ -104,7 +104,7 @@ describe("TokenInput", () => {
 
   it("adds one token per non-empty line or comma-separated part of pasted text", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["a"]} />);
+    render(<Subject initial={["a"]} />);
     const input = screen.getByRole("textbox");
     await user.click(input);
     await user.paste("b\n\n c ,a, d\r\ne,");
@@ -115,7 +115,7 @@ describe("TokenInput", () => {
 
   it("pastes plain text without separators into the input", async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<Subject />);
     const input = screen.getByRole("textbox");
     await user.click(input);
     await user.paste("src/**");
@@ -125,7 +125,7 @@ describe("TokenInput", () => {
 
   it("removes the last token on Backspace in an empty input, keeping focus", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["a", "b"]} />);
+    render(<Subject initial={["a", "b"]} />);
     const input = screen.getByRole("textbox");
     await user.click(input);
     await user.keyboard("{Backspace}");
@@ -135,7 +135,7 @@ describe("TokenInput", () => {
 
   it("edits the text, not the tokens, on Backspace in a non-empty input", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["a"]} />);
+    render(<Subject initial={["a"]} />);
     const input = screen.getByRole("textbox");
     await user.type(input, "bc{Backspace}");
     expect(tokens()).toEqual(["a"]);
@@ -145,7 +145,7 @@ describe("TokenInput", () => {
   it("removes a token with its remove button and returns focus to the input", async () => {
     const user = userEvent.setup();
     const onValues = vi.fn();
-    render(<Harness initial={["a", "b", "c"]} onValues={onValues} />);
+    render(<Subject initial={["a", "b", "c"]} onValues={onValues} />);
     await user.click(screen.getByRole("button", { name: "Remove b" }));
     expect(onValues).toHaveBeenLastCalledWith(["a", "c"]);
     expect(tokens()).toEqual(["a", "c"]);
@@ -154,7 +154,7 @@ describe("TokenInput", () => {
 
   it("removes a token from the keyboard", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={["a", "b"]} />);
+    render(<Subject initial={["a", "b"]} />);
     screen.getByRole("button", { name: "Remove a" }).focus();
     await user.keyboard("{Enter}");
     expect(tokens()).toEqual(["b"]);
@@ -165,7 +165,7 @@ describe("TokenInput", () => {
     const user = userEvent.setup();
     const onValues = vi.fn();
     const validate = (value: string) => (value.startsWith("/") ? "Use a relative path." : null);
-    render(<Harness validate={validate} onValues={onValues} />);
+    render(<Subject validate={validate} onValues={onValues} />);
     const input = screen.getByRole("textbox", { name: "Paths" });
     await user.type(input, "/etc{Enter}");
     expect(onValues).not.toHaveBeenCalled();
@@ -186,7 +186,7 @@ describe("TokenInput", () => {
   it("adds the valid parts of a paste and keeps the rejected ones in the input", async () => {
     const user = userEvent.setup();
     const validate = (value: string) => (value.includes(" ") ? "No spaces." : null);
-    render(<Harness validate={validate} />);
+    render(<Subject validate={validate} />);
     const input = screen.getByRole("textbox");
     await user.click(input);
     await user.paste("good\nbad one\nfine");
@@ -201,7 +201,7 @@ describe("TokenInput", () => {
   });
 
   it("disables the input and remove buttons when disabled", () => {
-    render(<Harness initial={["a"]} disabled />);
+    render(<Subject initial={["a"]} disabled />);
     expect(screen.getByRole("textbox")).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Remove a" })).toHaveProperty("disabled", true);
   });

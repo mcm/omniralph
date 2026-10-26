@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Button } from "./button.js";
 import { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog.js";
 
-function Harness(props: Partial<ConfirmDialogProps> & { onConfirm: () => void }) {
+function Subject(props: Partial<ConfirmDialogProps> & { onConfirm: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <ConfirmDialog
@@ -29,7 +29,7 @@ async function openDialog(user: ReturnType<typeof userEvent.setup>) {
 describe("ConfirmDialog", () => {
   it("is an alertdialog named by its title and described by its description, with focus inside", async () => {
     const user = userEvent.setup();
-    render(<Harness onConfirm={vi.fn()} />);
+    render(<Subject onConfirm={vi.fn()} />);
     const dialog = await openDialog(user);
     expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
     expect(screen.getByRole("alertdialog", { name: "Delete repository?" })).toBe(dialog);
@@ -44,7 +44,7 @@ describe("ConfirmDialog", () => {
 
   it("draws a non-destructive confirm as a solid button", async () => {
     const user = userEvent.setup();
-    render(<Harness onConfirm={vi.fn()} destructive={false} confirmLabel="Archive" />);
+    render(<Subject onConfirm={vi.fn()} destructive={false} confirmLabel="Archive" />);
     await openDialog(user);
     expect(screen.getByRole("button", { name: "Archive" }).classList).toContain("or-btn--solid");
   });
@@ -52,7 +52,7 @@ describe("ConfirmDialog", () => {
   it("cancels on Escape and returns focus to the trigger without confirming", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
-    render(<Harness onConfirm={onConfirm} />);
+    render(<Subject onConfirm={onConfirm} />);
     await openDialog(user);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -63,7 +63,7 @@ describe("ConfirmDialog", () => {
   it("cancels from the Cancel button", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
-    render(<Harness onConfirm={onConfirm} cancelLabel="Keep it" />);
+    render(<Subject onConfirm={onConfirm} cancelLabel="Keep it" />);
     await openDialog(user);
     await user.click(screen.getByRole("button", { name: "Keep it" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -73,7 +73,7 @@ describe("ConfirmDialog", () => {
   it("makes the decision required when cancelLabel is null: no Cancel, Escape keeps it open", async () => {
     const user = userEvent.setup();
     render(
-      <Harness onConfirm={vi.fn()} cancelLabel={null} destructive={false} confirmLabel="Go on" />,
+      <Subject onConfirm={vi.fn()} cancelLabel={null} destructive={false} confirmLabel="Go on" />,
     );
     const dialog = await openDialog(user);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
@@ -85,7 +85,7 @@ describe("ConfirmDialog", () => {
   it("calls onConfirm once and closes", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
-    render(<Harness onConfirm={onConfirm} />);
+    render(<Subject onConfirm={onConfirm} />);
     await openDialog(user);
     const confirm = screen.getByRole("button", { name: "Delete repository" });
     await user.dblClick(confirm);
@@ -100,7 +100,7 @@ describe("ConfirmDialog", () => {
   it("keeps confirm disabled until the typed text matches exactly", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
-    render(<Harness onConfirm={onConfirm} typedConfirmation="acme/web" />);
+    render(<Subject onConfirm={onConfirm} typedConfirmation="acme/web" />);
     await openDialog(user);
     const input = screen.getByRole("textbox", { name: "Type acme/web to confirm" });
     expect(document.activeElement).toBe(input);
@@ -129,7 +129,7 @@ describe("ConfirmDialog", () => {
 
   it("clears the typed text each time it opens", async () => {
     const user = userEvent.setup();
-    render(<Harness onConfirm={vi.fn()} typedConfirmation="acme/web" />);
+    render(<Subject onConfirm={vi.fn()} typedConfirmation="acme/web" />);
     await openDialog(user);
     await user.type(screen.getByRole("textbox"), "acme");
     await user.keyboard("{Escape}");

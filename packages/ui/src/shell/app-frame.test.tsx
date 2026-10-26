@@ -44,7 +44,7 @@ const NAV: NavItem[] = [
   {
     id: "fleet",
     label: "Fleet",
-    href: "/harnesses",
+    href: "/agents",
     icon: IconBuildingFactory2,
     placement: "main",
     phone: "drawer",
@@ -366,7 +366,7 @@ describe("AppFrame", () => {
       // The same path again (a re-render) leaves it open.
       rerender(frame("/reviews/42"));
       expect(screen.getByRole("dialog", { name: "Menu" })).toBeTruthy();
-      rerender(frame("/harnesses"));
+      rerender(frame("/agents"));
       await expectClosed(hamburger);
     });
 
