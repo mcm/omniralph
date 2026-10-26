@@ -24,7 +24,7 @@ function activeOrganization(user: OrgUser): ScopedOrganization {
 }
 
 /** The user's membership of `organizationId` (the active one without a query), or null. */
-async function membership(
+export async function membership(
   user: OrgUser,
   organizationId: string,
 ): Promise<ScopedOrganization | null> {
