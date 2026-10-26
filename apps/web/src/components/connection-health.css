@@ -1,0 +1,33 @@
+/* A code-host connection's health: the token-health line, then each problem. */
+.or-connection-health {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.or-connection-health__problems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-connection-health__problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  color: var(--or-sec);
+  line-height: 1.4;
+}
+
+.or-connection-health__sentence {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

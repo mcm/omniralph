@@ -14,6 +14,7 @@ import {
   addGitLabProjects,
   listSelectableRepositories,
 } from "@/lib/repositories/manage";
+import { loadRepositoryList } from "@/lib/repositories/list";
 
 type Params = { id: string };
 
@@ -63,7 +64,8 @@ export const GET = apiHandler<
 /**
  * Connects the given repositories of the connection (GitLab: each with a project webhook), or
  * reconnects disconnected ones, with Reviews and Ask on and Coding off. Add-only: a repository
- * not in `ids` is never changed. Admins of `organizationId` only. Answers the repos added.
+ * not in `ids` is never changed. Admins of `organizationId` only. Answers the repos added
+ * and their Repos rail rows.
  */
 export const POST = apiHandler<"member", typeof addRepositoriesSchema, undefined, Params>(
   { body: addRepositoriesSchema },
@@ -71,12 +73,18 @@ export const POST = apiHandler<"member", typeof addRepositoriesSchema, undefined
     const organization = await requireOrganizationAccess(user, body.organizationId, {
       role: "admin",
     });
-    return (body.provider === "github" ? addGitHubRepositories : addGitLabProjects)(
-      getDb(),
+    const db = getDb();
+    const result = await (body.provider === "github" ? addGitHubRepositories : addGitLabProjects)(
+      db,
       user,
       organization.id,
       requireUuid(params.id),
       body.ids,
     );
+    if (!result.ok) return result;
+    const { repositories } = await loadRepositoryList(db, [organization], new Date(), {
+      repositoryIds: result.added.map((repo) => repo.id),
+    });
+    return { ...result, repositories };
   },
 );

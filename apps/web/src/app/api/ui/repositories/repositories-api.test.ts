@@ -112,10 +112,16 @@ const connectGitLab = (form: { baseUrl: string; token: string; organizationId?: 
 const disconnectRepository = (id: string) => call(repository.DELETE, "DELETE", id);
 const recreateGitLabWebhook = (id: string) => call(repositoryWebhook.POST, "POST", id);
 const removeScmConnection = (id: string) => call(scmConnection.DELETE, "DELETE", id);
+/** The add result without its rail rows (asserted on their own). */
+function withoutRows(result: Result): Result {
+  if (!result.ok) return result;
+  const { repositories: _rows, ...rest } = result as Result & { repositories?: unknown };
+  return rest;
+}
 const addGitHubRepositories = (id: string, ids: number[], organizationId = state.orgId) =>
-  call(selection.POST, "POST", id, { provider: "github", ids, organizationId });
+  call(selection.POST, "POST", id, { provider: "github", ids, organizationId }).then(withoutRows);
 const addGitLabProjects = (id: string, ids: number[], organizationId = state.orgId) =>
-  call(selection.POST, "POST", id, { provider: "gitlab", ids, organizationId });
+  call(selection.POST, "POST", id, { provider: "gitlab", ids, organizationId }).then(withoutRows);
 
 const GITLAB = "https://gitlab.example.com";
 const API = `${GITLAB}/api/v4`;
@@ -242,7 +248,18 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
   });
 
   const form = { baseUrl: `${GITLAB}/`, token: TOKEN };
-  const connected = { ok: true, connectionId: expect.any(String) };
+  const connected = {
+    ok: true,
+    connectionId: expect.any(String),
+    // The sheet adds it to its list from the response.
+    connection: {
+      id: expect.any(String),
+      provider: "gitlab",
+      name: "service_account_group_12_omniralph @ gitlab.example.com",
+      host: "gitlab.example.com",
+      health: { state: expect.any(String), problems: expect.any(Array) },
+    },
+  };
 
   /** Connects GitLab, then adds the given projects. Returns the connection's ID. */
   async function connectGitLabProjects(projectIds: number[] = []): Promise<string> {
@@ -429,6 +446,37 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       expect(await repoStates()).toEqual([
         ["acme/api", true, false, false, true],
         ["acme/sub/web", true, true, false, true],
+      ]);
+    });
+
+    it("answers the added projects' Repos rail rows, so the sheet adds them without a refetch", async () => {
+      const connectionId = await connectGitLabProjects([101]);
+
+      const result = (await call(selection.POST, "POST", connectionId, {
+        provider: "gitlab",
+        ids: [101, 102],
+        organizationId: state.orgId,
+      })) as Result & { repositories?: Record<string, unknown>[] };
+      expect(result).toMatchObject({
+        ok: true,
+        added: [{ id: expect.any(String), fullPath: "acme/sub/web" }],
+      });
+      const [added] = result.ok ? result.added! : [];
+      // Only the repo just added, not acme/api (connected before).
+      expect(result.repositories).toEqual([
+        {
+          id: added!.id,
+          organization: { id: state.orgId, name: expect.any(String), role: "admin" },
+          provider: "gitlab",
+          fullPath: "acme/sub/web",
+          name: "web",
+          group: "acme/sub",
+          webUrl: `${GITLAB}/acme/sub/web`,
+          reviewsEnabled: true,
+          codingEnabled: false,
+          askEnabled: true,
+          status: { running: 0, problems: expect.any(Array) },
+        },
       ]);
     });
 

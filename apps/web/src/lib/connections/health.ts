@@ -92,3 +92,30 @@ export function connectionHealth(
     expiresAt !== undefined && Date.parse(expiresAt) - now.getTime() <= EXPIRING_SOON_DAYS * DAY_MS;
   return summary(expiringSoon || problems.length > 0 ? "expiring" : "healthy");
 }
+
+/**
+ * The health once `repositoryId`'s webhook was recreated: its webhook problems are gone,
+ * and a connection with nothing else wrong is no longer `needs_attention`.
+ */
+export function withoutWebhookProblems(
+  summary: ConnectionHealthSummary,
+  repositoryId: string,
+  now: Date = new Date(),
+): ConnectionHealthSummary {
+  const problems = summary.problems.filter(
+    (problem) =>
+      problem.repositoryId !== repositoryId || !WEBHOOK_PROBLEM_CODES.includes(problem.code),
+  );
+  if (summary.state !== "needs_attention") return { ...summary, problems };
+  if (problems.some((problem) => !WARNING_CODES.has(problem.code))) {
+    return { ...summary, problems };
+  }
+  const expiringSoon =
+    summary.expiresAt !== undefined &&
+    Date.parse(summary.expiresAt) - now.getTime() <= EXPIRING_SOON_DAYS * DAY_MS;
+  return {
+    ...summary,
+    state: expiringSoon || problems.length > 0 ? "expiring" : "healthy",
+    problems,
+  };
+}

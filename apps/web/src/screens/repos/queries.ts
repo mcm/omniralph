@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, type QueryKey } from "@tanstack/react-query";
+import { useQueries, useQuery, type QueryKey } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
@@ -8,8 +8,14 @@ import type { QueryKeys } from "@/lib/api/keys";
 import {
   repositoryDetailSchema,
   repositoryListSchema,
+  repositorySetupSchema,
+  scmConnectionListSchema,
+  selectableRepositoriesSchema,
   type RepositoryDetail,
   type RepositoryList,
+  type RepositorySetup,
+  type ScmConnectionList,
+  type SelectableRepositories,
 } from "@/lib/api/repositories";
 import { repositoryRulesSchema, type RepositoryRules } from "@/lib/api/rules";
 import { useScopeParam } from "../scope";
@@ -81,5 +87,99 @@ export function useRepositoryRules(repositoryId: string) {
         repositoryRulesSchema,
         { organizationId: organization.id, signal },
       ),
+  });
+}
+
+/**
+ * Query keys of the add-repo sheet, in the `connections` area (scope-wide, so another
+ * organization's connection events reach them): an organization's connections, what its
+ * Connect buttons need, and what a connection's picker lists.
+ */
+export function addRepoKeys(keys: QueryKeys) {
+  return {
+    connections: (organizationId: string): QueryKey =>
+      keys.connections.list({ organization: organizationId }),
+    setup: (organizationId: string): QueryKey => keys.connections.part(organizationId, "setup"),
+    listing: (connectionId: string, organizationId: string): QueryKey =>
+      keys.connections.part(connectionId, "selectable", { organization: organizationId }),
+  };
+}
+
+/** `GET /api/ui/scm-connections?organization=`: the organization's connections and their health. */
+function fetchConnections(organizationId: string, signal?: AbortSignal) {
+  // No organization header: the sheet may list another organization's connections.
+  return api.get("/api/ui/scm-connections", scmConnectionListSchema, {
+    params: { organization: organizationId },
+    signal,
+  });
+}
+
+/**
+ * An organization's GitHub and GitLab connections with their health (admins). A live
+ * query: connection events (health checks, new connections) and repository events refetch it.
+ */
+export function useScmConnections(organizationId: string, enabled = true) {
+  const keys = useQueryKeys();
+  return useQuery<ScmConnectionList>({
+    queryKey: addRepoKeys(keys).connections(organizationId),
+    queryFn: ({ signal }) => fetchConnections(organizationId, signal),
+    enabled,
+  });
+}
+
+/** Each organization's connections (`useScmConnections`), to find which one has a connection. */
+export function useScmConnectionsOf(organizationIds: readonly string[], enabled: boolean) {
+  const keys = useQueryKeys();
+  return useQueries({
+    queries: organizationIds.map((organizationId) => ({
+      queryKey: addRepoKeys(keys).connections(organizationId),
+      queryFn: ({ signal }: { signal?: AbortSignal }) => fetchConnections(organizationId, signal),
+      enabled,
+    })),
+  });
+}
+
+/**
+ * What the Connect buttons need for the organization (`GET /api/ui/repositories/setup`). It
+ * may ask GitHub for the app's slug: loaded once per organization, never polled.
+ */
+export function useRepositorySetup(organizationId: string) {
+  const keys = useQueryKeys();
+  return useQuery<RepositorySetup>({
+    queryKey: addRepoKeys(keys).setup(organizationId),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/repositories/setup", repositorySetupSchema, {
+        params: { organization: organizationId },
+        signal,
+      }),
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * What a connection's picker lists, from the code host
+ * (`GET /api/ui/scm-connections/{id}/repositories`). An external call: it loads once per
+ * opening and on Refresh (and when a change event says which repos are connected), never
+ * on an interval or focus, and isn't retried (Retry is).
+ */
+export function useSelectableRepositories(
+  connection: { id: string; provider: "github" | "gitlab" },
+  organizationId: string,
+) {
+  const keys = useQueryKeys();
+  return useQuery<SelectableRepositories>({
+    queryKey: addRepoKeys(keys).listing(connection.id, organizationId),
+    queryFn: ({ signal }) =>
+      api.get(
+        `/api/ui/scm-connections/${encodeURIComponent(connection.id)}/repositories`,
+        selectableRepositoriesSchema,
+        { params: { provider: connection.provider, organization: organizationId }, signal },
+      ),
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
   });
 }

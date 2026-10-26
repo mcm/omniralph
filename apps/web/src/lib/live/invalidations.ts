@@ -189,6 +189,8 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "transcripts",
   "repositories",
   "settingsHistory",
+  // The add-repo sheet lists the connections of any organization the user is an admin of.
+  "connections",
 ];
 
 /**

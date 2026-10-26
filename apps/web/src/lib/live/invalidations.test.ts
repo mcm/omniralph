@@ -301,6 +301,11 @@ describe("createLiveInvalidator", () => {
       keys.inbox.all,
       ...repositoryViews,
     ]);
+    // The add-repo sheet keys another organization's connections by the active one.
+    const connection = changeEvent(OTHER_ORG, { resource: "connection", ids: [ID] });
+    expect(scopeInvalidations(connection, new Set([ORG, OTHER_ORG]))).toContainEqual(
+      keys.connections.all,
+    );
   });
 
   it("ignores an event for an organization outside the scope", () => {

@@ -230,7 +230,17 @@ describe("RepositoriesView", () => {
       "GET /api/ui/repositories/setup": SETUP,
       "POST /api/ui/gitlab-connections": () => {
         connected = true;
-        return jsonResponse({ ok: true, connectionId: CONNECTION_ID });
+        return jsonResponse({
+          ok: true,
+          connectionId: CONNECTION_ID,
+          connection: {
+            id: CONNECTION_ID,
+            provider: "gitlab",
+            name: "bot @ gitlab.com",
+            host: "gitlab.com",
+            health: { state: "not_checked", problems: [] },
+          },
+        });
       },
     });
     renderView();

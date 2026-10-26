@@ -1,0 +1,187 @@
+/*
+ * The add-repo sheet (Design board Repos): the organization, the connections with their
+ * health, Connect GitHub and GitLab, and a connection's picker. Only `--or-` tokens.
+ */
+.or-add-repos {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-add-repos__muted {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-add-repos__alert {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  background: var(--or-raised);
+}
+
+.or-add-repos__alert--fail {
+  border-color: var(--or-fail);
+  background: var(--or-fail-tint);
+}
+
+.or-add-repos__alert-title {
+  margin: 0;
+  color: var(--or-text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.or-add-repos__alert-text {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.or-add-repos__connections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-add-repos__connection-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  list-style: none;
+}
+
+.or-add-repos__connection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.or-add-repos__connection + .or-add-repos__connection {
+  border-top: 1px solid var(--or-line);
+}
+
+.or-add-repos__connection-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--or-text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.or-add-repos__connection-pick:hover .or-add-repos__connection-name {
+  text-decoration: underline;
+}
+
+.or-add-repos__connection-pick:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-add-repos__connection-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-add-repos__connection-host {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--or-ter);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-add-repos__connect,
+.or-add-repos__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-add-repos__actions {
+  position: sticky;
+  bottom: 0;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-add-repos__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-add-repos__picker-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.or-add-repos__picker-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.or-add-repos__repos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-add-repos__repos[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.or-add-repos__repo {
+  padding: 6px 0;
+}
+
+.or-add-repos__repo-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-add-repos__external {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}

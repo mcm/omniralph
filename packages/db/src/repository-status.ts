@@ -38,14 +38,17 @@ export interface ConnectedRepository {
 
 /**
  * The organizations' connected (not disconnected) repositories, by organization name, then
- * path, at most `limit` (`truncated` when there were more).
+ * path, at most `limit` (`truncated` when there were more); only `repositoryIds` when given.
  */
 export async function listConnectedRepositories(
   db: Database,
   organizationIds: readonly string[],
   limit: number,
+  { repositoryIds }: { repositoryIds?: readonly string[] } = {},
 ): Promise<{ repositories: ConnectedRepository[]; truncated: boolean }> {
-  if (organizationIds.length === 0) return { repositories: [], truncated: false };
+  if (organizationIds.length === 0 || repositoryIds?.length === 0) {
+    return { repositories: [], truncated: false };
+  }
   const rows = await db
     .select({
       id: repositories.id,
@@ -67,6 +70,7 @@ export async function listConnectedRepositories(
       and(
         inArray(repositories.organizationId, [...organizationIds]),
         isNull(repositories.disconnectedAt),
+        repositoryIds ? inArray(repositories.id, [...repositoryIds]) : undefined,
       ),
     )
     .orderBy(
