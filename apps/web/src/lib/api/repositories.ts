@@ -2,13 +2,14 @@ import { RALPH_HISTORY_REWRITE_POLICIES, ReviewDepthSchema } from "@omniralph/sh
 import { z } from "zod";
 import { organizationRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
+import { settingsHistoryEntrySchema } from "./settings-history";
 import type { RepositoryListRow, RepositoryListView } from "@/lib/repositories/list";
 import type {
   RepositoryProblem,
   RepositoryProblemAction,
   RepositoryStatus,
 } from "@/lib/repositories/status";
-import { workItemMatchSchema } from "./work-item-matches";
+import { WORK_ITEM_TRACKERS, workItemMatchSchema } from "./work-item-matches";
 
 /** Wire formats of the repository and code-host connection endpoints under `/api/ui`. */
 
@@ -207,11 +208,12 @@ export const repositoryAgentSchema = z.object({
 });
 
 /**
- * `GET /api/ui/repositories/{id}?next=`: a connected repository with what its Review settings
- * and Agents tabs show (and the Coding tab's task types), polled. A repository of another
- * of the user's organizations answers 409 `enter_organization`.
+ * `GET /api/ui/repositories/{id}/overview?next=`: a connected repository with what the old
+ * Review settings and Agents tabs show (and the Coding tab's task types), until those pages
+ * are removed. A repository of another of the user's organizations answers 409
+ * `enter_organization`.
  */
-export const repositoryDetailSchema = z.object({
+export const legacyRepositoryDetailSchema = z.object({
   repository: z.object({ id: z.string(), provider, fullPath: z.string(), webUrl: z.string() }),
   settings: z.object({
     /** The depth its reviews run at (`REVIEW_DEPTHS` in `@omniralph/shared` has the presets). */
@@ -240,6 +242,184 @@ export const repositoryDetailSchema = z.object({
    * position (1-based, in order, as `rule N` in `routed_by`) and condition in words.
    */
   routingRules: z.array(z.object({ position: z.number(), description: z.string() })),
+});
+export type LegacyRepositoryDetail = z.infer<typeof legacyRepositoryDetailSchema>;
+
+// ── The Repos page's repo detail (`GET /api/ui/repositories/{id}`) ──────────────────────────
+// Each card's shape is its own schema: the card save endpoints answer with the same one.
+
+/** The Reviews card: when and how Om reviews the repo's pull requests. */
+export const reviewsCardSchema = z.object({
+  enabled: z.boolean(),
+  triggers: z.object({ onOpen: z.boolean(), onPush: z.boolean(), drafts: z.boolean() }),
+  depth: ReviewDepthSchema,
+  pathExcludes: z.array(z.string()),
+  /** Empty for none. */
+  reviewerInstructions: z.string(),
+});
+export type ReviewsCard = z.infer<typeof reviewsCardSchema>;
+
+/** A routing rule that sends work to the repo: its 1-based position and condition in words. */
+export const repositoryRoutingRuleSchema = z.object({
+  position: z.number(),
+  description: z.string(),
+});
+
+/** The Coding card: which work items Om builds here, and how. */
+export const codingCardSchema = z.object({
+  enabled: z.boolean(),
+  /** The work items it builds; null when it has no match. */
+  workItemMatch: workItemMatchSchema.nullable(),
+  /** Appended to every story and request prompt; empty for none. */
+  codingInstructions: z.string(),
+  /** Open a draft PR after the first pushed story. */
+  openPullRequestEarly: z.boolean(),
+  historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
+  /** Fix review comments and CI failures on its runs' PRs. */
+  respondToReviewsAndCi: z.boolean(),
+  /** Read-only: the story playbook's review and CI fix rounds ("up to 3 rounds each"). */
+  roundLimits: z.object({ review: z.number(), fix: z.number() }),
+  /**
+   * Every routing rule of the organization that targets the repo (they apply before any
+   * match), in routing order, whatever the viewer's preferences.
+   */
+  routingRules: z.array(repositoryRoutingRuleSchema),
+});
+export type CodingCard = z.infer<typeof codingCardSchema>;
+
+/** The Ask card: whether Om answers questions about the repo's code. */
+export const askCardSchema = z.object({ enabled: z.boolean() });
+export type AskCard = z.infer<typeof askCardSchema>;
+
+/**
+ * A pinned agent's state on the Agents card: `revoked`, else `offline` (no recent
+ * heartbeat), else `running` (attempts of this repo in progress), else `updating` (updating
+ * itself), else `idle`.
+ */
+export const REPOSITORY_AGENT_STATES = [
+  "running",
+  "idle",
+  "offline",
+  "updating",
+  "revoked",
+] as const;
+export type RepositoryAgentState = (typeof REPOSITORY_AGENT_STATES)[number];
+
+/** The Agents card: the agents the repo's work runs on (any agent when none is pinned). */
+export const agentsCardSchema = z.object({
+  /** The pinned agents, by name (revoked ones last). */
+  pinned: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      state: z.enum(REPOSITORY_AGENT_STATES),
+      /** Its attempts of this repo's runs in progress. */
+      runningForRepo: z.number().int().min(0),
+    }),
+  ),
+  /** What "Pin agent" offers: the organization's agents that aren't pinned, revoked or deleted. */
+  pinnable: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+export type AgentsCard = z.infer<typeof agentsCardSchema>;
+export type PinnedAgent = AgentsCard["pinned"][number];
+
+/** A playbook a binding may use. */
+export const playbookChoiceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  builtin: z.boolean(),
+});
+
+/** One entry per binding: `review` (the review playbooks), `correlation`, `story`, `request`. */
+const perBinding = <T extends z.ZodType>(value: T) =>
+  z.object({ review: value, correlation: value, story: value, request: value });
+
+/**
+ * The Playbooks card: the playbook each of the repo's runs uses. Always filled: the viewer's
+ * "Show advanced settings" preference only shows or hides the card.
+ */
+export const playbooksCardSchema = z.object({
+  bindings: z.object({
+    /** The review and review-summary playbooks its reviews fan out to, in order. */
+    review: z.array(z.string()),
+    /** The playbook that combines its review runs' findings. */
+    correlation: z.string(),
+    story: z.string(),
+    request: z.string(),
+  }),
+  /** Each binding's choices: the built-ins of its roles first, then the organization's own. */
+  choices: perBinding(z.array(playbookChoiceSchema)),
+});
+export type PlaybooksCard = z.infer<typeof playbooksCardSchema>;
+
+/** A review depth preset as the Depth control and its "<Depth> review profile" popover show it. */
+export const reviewDepthOptionSchema = z.object({
+  id: ReviewDepthSchema,
+  label: z.string(),
+  /** One sentence: what a review at this depth does. */
+  summary: z.string(),
+  details: z.object({
+    model: z.string(),
+    tokenCap: z.string(),
+    reads: z.string(),
+    comments: z.string(),
+    typicalTime: z.string(),
+  }),
+});
+export type ReviewDepthOption = z.infer<typeof reviewDepthOptionSchema>;
+
+/** A connected tracker the work item match can read from. */
+export const repositoryTrackerSchema = z.object({
+  tracker: z.enum(WORK_ITEM_TRACKERS),
+  id: z.string(),
+  /** The tracker's workspace (Linear workspace name). */
+  workspaceName: z.string(),
+});
+export type RepositoryTracker = z.infer<typeof repositoryTrackerSchema>;
+
+/** The latest change of a card's settings section, with the runs since; null before any. */
+const latestChange = settingsHistoryEntrySchema.nullable();
+
+/**
+ * `GET /api/ui/repositories/{id}` (members): everything the Repos page shows for a connected
+ * repo of any of the user's organizations. Another organization's (or a disconnected) repo
+ * answers 404. Nothing in it depends on the viewer's preferences.
+ */
+export const repositoryDetailSchema = z.object({
+  repository: z.object({
+    id: z.string(),
+    /** Its organization, and the user's role there. */
+    organization: organizationRefSchema,
+    provider,
+    fullPath: z.string(),
+    /** The last path segment. */
+    name: z.string(),
+    /** The path before `name`, or null. */
+    group: z.string().nullable(),
+    webUrl: z.string(),
+    /** Null until it is known. */
+    defaultBranch: z.string().nullable(),
+  }),
+  /** The user is an admin of the repo's organization. */
+  canEdit: z.boolean(),
+  status: repositoryStatusSchema,
+  reviews: reviewsCardSchema,
+  /** Every review depth, fastest first. */
+  depths: z.array(reviewDepthOptionSchema),
+  coding: codingCardSchema,
+  /** The organization's connected trackers. */
+  trackers: z.array(repositoryTrackerSchema),
+  ask: askCardSchema,
+  agents: agentsCardSchema,
+  playbooks: playbooksCardSchema,
+  /** Each card's latest change (its ⓘ). */
+  history: z.object({
+    reviews: latestChange,
+    coding: latestChange,
+    ask: latestChange,
+    agents: latestChange,
+    playbooks: latestChange,
+  }),
 });
 export type RepositoryDetail = z.infer<typeof repositoryDetailSchema>;
 

@@ -13,12 +13,13 @@ import {
   TEST_ORGANIZATION_ID,
   type SeenRequest,
 } from "@/components/query-test-utils";
-import type { RepositoryDetail } from "@/lib/api/repositories";
+import type { LegacyRepositoryDetail } from "@/lib/api/repositories";
 import { queryKeys } from "@/lib/api/keys";
 import { RepositorySettingsView, type RepositorySettingsTab } from "./repository-settings-view";
 
 const REPO_ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
-const DETAIL = `/api/ui/repositories/${REPO_ID}`;
+const REPOSITORY = `/api/ui/repositories/${REPO_ID}`;
+const DETAIL = `${REPOSITORY}/overview`;
 const AGENT_ID = "0a7c3e1d-5b2f-4c8a-9d6e-1f2a3b4c5d6e";
 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
@@ -30,7 +31,9 @@ vi.mock("next/navigation", () => ({
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): RepositoryDetail {
+function detail(
+  overrides: Partial<LegacyRepositoryDetail["settings"]> = {},
+): LegacyRepositoryDetail {
   return {
     repository: {
       id: REPO_ID,
@@ -68,7 +71,7 @@ function detail(overrides: Partial<RepositoryDetail["settings"]> = {}): Reposito
   };
 }
 
-let served: RepositoryDetail;
+let served: LegacyRepositoryDetail;
 let requests: SeenRequest[];
 let client: QueryClient;
 
@@ -84,8 +87,8 @@ beforeEach(() => {
   served = detail();
   requests = mockFetch({
     [`GET ${DETAIL}`]: () => jsonResponse(served),
-    [`PUT ${DETAIL}/settings`]: (request) => {
-      served = detail(request.body as RepositoryDetail["settings"]);
+    [`PUT ${REPOSITORY}/settings`]: (request) => {
+      served = detail(request.body as LegacyRepositoryDetail["settings"]);
       return jsonResponse({ ok: true });
     },
   });
@@ -101,7 +104,7 @@ describe("RepositorySettingsView", () => {
     expect(document.querySelector(".freshness")?.textContent).toMatch(/^Updated /);
     expect(gets(DETAIL)[0]!.query.get("next")).toBe("/");
     // No tab asks for the coding settings.
-    expect(gets(`${DETAIL}/coding`)).toHaveLength(0);
+    expect(gets(`${REPOSITORY}/coding`)).toHaveLength(0);
   });
 
   it("follows a refetch while the form is clean, and never overwrites an edit", async () => {
@@ -138,7 +141,7 @@ describe("RepositorySettingsView", () => {
     // The saved values came back with the refetch: the form is clean, and says so.
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
     const put = requests.find((r) => r.method === "PUT")!;
-    expect(put.path).toBe(`${DETAIL}/settings`);
+    expect(put.path).toBe(`${REPOSITORY}/settings`);
     expect(put.body).toMatchObject({
       customInstructions: "Be terse.",
       pinnedAgentIds: [AGENT_ID],

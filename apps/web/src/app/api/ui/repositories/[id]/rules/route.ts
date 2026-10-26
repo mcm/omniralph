@@ -1,41 +1,38 @@
 import { z } from "zod";
 import { apiHandler } from "@/lib/api/handler";
-import { requireResourceInActiveOrganization, requireUuid } from "@/lib/api/resource";
 import type { RepositoryRules } from "@/lib/api/rules";
+import { requireRepositoryAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { addCustomRule, loadRepositoryRules } from "@/lib/rules/manage";
 
 type Params = { id: string };
 
-const rulesQuery = z.object({ next: z.string().max(2000).optional() });
-
 /**
- * Repository › Rules: a connected repository of the active organization with its custom and
- * learned rules, polled. `?next=` is the page asking: when the repository is another of the
- * user's organizations', the 409 that switches to it comes back there.
+ * A connected repository of any of the user's organizations with its custom and learned
+ * rules. Another organization's repository is not found.
  */
-export const GET = apiHandler<"member", undefined, typeof rulesQuery, Params>(
-  { query: rulesQuery },
-  async ({ user, params, query }): Promise<RepositoryRules> => {
-    await requireResourceInActiveOrganization(user, "repository", params.id, {
-      pathPrefix: `/repositories/${params.id}`,
-      next: query.next,
-    });
-    return loadRepositoryRules(getDb(), user.organization.id, params.id);
+export const GET = apiHandler<"member", undefined, undefined, Params>(
+  {},
+  async ({ user, params }): Promise<RepositoryRules> => {
+    const { organization } = await requireRepositoryAccess(user, params.id);
+    return loadRepositoryRules(getDb(), organization.id, params.id);
   },
 );
 
 /**
  * Adds an admin-written rule (`RuleInput`, checked by the add so its errors read like the
- * form's); it applies to the next review job of the repository.
+ * form's); it applies to the next review job of the repository. Admins of the repository's
+ * organization only.
  */
-export const POST = apiHandler<"admin", z.ZodUnknown, undefined, Params>(
-  { access: "admin", body: z.unknown() },
-  async ({ user, params, body }) =>
-    addCustomRule(
+export const POST = apiHandler<"member", z.ZodUnknown, undefined, Params>(
+  { body: z.unknown() },
+  async ({ user, params, body }) => {
+    const { organization } = await requireRepositoryAccess(user, params.id, "admin");
+    return addCustomRule(
       getDb(),
-      { id: user.id, organizationId: user.organization.id },
-      requireUuid(params.id),
+      { id: user.id, organizationId: organization.id },
+      params.id,
       body,
-    ),
+    );
+  },
 );

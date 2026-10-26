@@ -75,6 +75,8 @@ const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/rou
 const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
 const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
 
+type Coding = { routingRules: unknown[] };
+
 type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
 
 /** Calls an `/api/ui` handler of the repository `id`; resolves to the status and JSON body. */
@@ -250,16 +252,20 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
       [a.repoId, projectIs("App")],
     );
     try {
-      expect((await call(repositoryDetail.GET, a.repoId)).body.routingRules).toEqual([
+      expect(
+        ((await call(repositoryDetail.GET, a.repoId)).body.coding as Coding).routingRules,
+      ).toEqual([
         { position: 1, description: "Team is ENG" },
         { position: 3, description: "Project is App" },
       ]);
-      expect((await call(repositoryDetail.GET, web.id)).body.routingRules).toEqual([
-        { position: 2, description: "Labels contains any of backend" },
-      ]);
+      expect(
+        ((await call(repositoryDetail.GET, web.id)).body.coding as Coding).routingRules,
+      ).toEqual([{ position: 2, description: "Labels contains any of backend" }]);
       // Another organization's rules never show.
       state.userId = b.userId;
-      expect((await call(repositoryDetail.GET, b.repoId)).body.routingRules).toEqual([]);
+      expect(
+        ((await call(repositoryDetail.GET, b.repoId)).body.coding as Coding).routingRules,
+      ).toEqual([]);
     } finally {
       state.userId = a.userId;
       await setRoutingRules(db, a.orgId);
@@ -349,6 +355,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     expect((await getRepositoryReviewSettings(db, a.repoId))!.depth).toBe("deep");
     expect((await getRepository(db, b.repoId))!.reviewDepth).toBe("standard");
     const detail = await call(repositoryDetail.GET, a.repoId);
-    expect(detail.body.settings).toMatchObject({ depth: "deep" });
+    expect(detail.body.reviews).toMatchObject({ depth: "deep" });
   });
 });

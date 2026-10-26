@@ -566,6 +566,8 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           change("repository.reviews", repoId),
           change("repository.coding", repoId),
           change("repository.agents", repoId),
+          change("repository.ask", repoId),
+          change("repository.playbooks", repoId),
           change("routing_rules", null),
           change("connection", scmConnectionId),
           change("connection", integrationId),
@@ -603,6 +605,14 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
     it("repository.agents: every run of the repository", async () => {
       // Epic, Linear request, chat request, review and ask.
       expect(await runsSince("repository.agents", repoId)).toBe(5);
+    });
+
+    it("repository.ask: the asks about the repository's code", async () => {
+      expect(await runsSince("repository.ask", repoId)).toBe(1);
+    });
+
+    it("repository.playbooks: every run of the repository", async () => {
+      expect(await runsSince("repository.playbooks", repoId)).toBe(5);
     });
 
     it("routing_rules: the organization's epics, requests and triage", async () => {

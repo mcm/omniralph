@@ -46,6 +46,8 @@ const SETTINGS_INVALIDATIONS: Record<
   "repository.coding": (keys, id) => repositoryKeys(keys, id),
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.agents.all],
+  "repository.ask": (keys, id) => repositoryKeys(keys, id),
+  "repository.playbooks": (keys, id) => repositoryKeys(keys, id),
   // The routing rules, and the tracker labels routing applies.
   routing_rules: (keys) => [
     keys.settings.detail("routing"),

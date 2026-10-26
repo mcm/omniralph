@@ -213,6 +213,7 @@ const repositoryOverview = await import("./repositories/overview/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
 const repositoryDetail = repository;
+const legacyRepositoryDetail = await import("./repositories/[id]/overview/route");
 const repositoryWebhook = await import("./repositories/[id]/webhook/route");
 const repositorySettings = await import("./repositories/[id]/settings/route");
 const repositoryTaskTypes = await import("./repositories/[id]/task-types/route");
@@ -1399,17 +1400,38 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         state.userId = userId;
         const { status, body } = await call(repositoryDetail.GET, { params: { id: own.repoId } });
         expect(status).toBe(200);
-        expect(body).toMatchObject({ repository: { id: own.repoId, fullPath: own.repoPath } });
+        expect(body).toMatchObject({
+          repository: {
+            id: own.repoId,
+            fullPath: own.repoPath,
+            organization: { id: own.orgId, role: userId === own.adminId ? "admin" : "member" },
+          },
+          canEdit: userId === own.adminId,
+        });
         // Its own agents (an earlier test enrolled more), none of the other's (the markers).
-        expect((body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
+        expect((body.agents as { pinnable: { id: string }[] }).pinnable.map((h) => h.id)).toContain(
+          own.agentId,
+        );
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         expect(await call(repositoryDetail.GET, { params: { id: other.repoId } })).toMatchObject({
           status: 404,
         });
+        // The old settings pages' detail, until they're removed.
+        const legacy = await call(legacyRepositoryDetail.GET, { params: { id: own.repoId } });
+        expect(legacy).toMatchObject({ status: 200, body: { repository: { id: own.repoId } } });
+        expect((legacy.body.agents as { id: string }[]).map((h) => h.id)).toContain(own.agentId);
+        for (const marker of markers(other)) {
+          expect(JSON.stringify(legacy.body)).not.toContain(marker);
+        }
+        expect(
+          await call(legacyRepositoryDetail.GET, { params: { id: other.repoId } }),
+        ).toMatchObject({ status: 404 });
       }
-      expect(await call(repositoryDetail.GET, { params: { id: "not-a-uuid" } })).toMatchObject({
-        status: 404,
-      });
+      for (const handler of [repositoryDetail.GET, legacyRepositoryDetail.GET]) {
+        expect(await call(handler, { params: { id: "not-a-uuid" } })).toMatchObject({
+          status: 404,
+        });
+      }
 
       state.userId = own.adminId;
       const coding = await call(repositoryCoding.GET, { params: { id: own.repoId } });
@@ -1524,7 +1546,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ];
     state.userId = a.adminId;
     for (const response of await Promise.all(changes(b.repoId, b.ruleId))) {
-      expect(response).toMatchObject({ status: 400, body: { error: expect.any(String) } });
+      expect(response).toMatchObject({ status: 404, body: { error: expect.any(String) } });
     }
     // The other organization's rule under the admin's own repository.
     for (const response of await Promise.all(ruleChanges(a.repoId, b.ruleId))) {
@@ -1556,10 +1578,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     state.userId = user!.id;
 
     for (const [tab, handler] of [
-      ["settings", repositoryDetail.GET],
-      ["agents", repositoryDetail.GET],
+      ["settings", legacyRepositoryDetail.GET],
+      ["agents", legacyRepositoryDetail.GET],
       ["coding", repositoryCoding.GET],
-      ["rules", repositoryRules.GET],
     ] as const) {
       const page = `/repositories/${b.repoId}/${tab}`;
       const { status, body } = await call(handler, {
@@ -1577,11 +1598,114 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     }
   });
 
+  it("serves a member of both organizations the other's repo page, rules and webhook without switching", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-repos-page", email: "both-repos-page@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "admin" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    state.userId = user!.id;
+    const id = b.repoId;
+    const setRole = (role: Role) =>
+      db
+        .update(organizationMembers)
+        .set({ role })
+        .where(
+          and(
+            eq(organizationMembers.userId, user!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+    try {
+      // A member there: the page and rules read-only, whichever organization is active.
+      const page = await call(repositoryDetail.GET, { params: { id } });
+      expect(page).toMatchObject({
+        status: 200,
+        body: {
+          repository: { id, organization: { id: b.orgId, role: "member" } },
+          canEdit: false,
+        },
+      });
+      for (const marker of markers(a)) expect(JSON.stringify(page.body)).not.toContain(marker);
+      expect(await call(repositoryRules.GET, { params: { id } })).toMatchObject({
+        status: 200,
+        body: { repository: { id }, rules: [{ id: b.ruleId }] },
+      });
+      for (const response of [
+        await call(repositoryRules.POST, { params: { id }, body: { text: "Both rule" } }),
+        await call(repositoryRule.PATCH, {
+          method: "PATCH",
+          params: { id, ruleId: b.ruleId },
+          body: { enabled: false },
+        }),
+        await call(repositoryRule.DELETE, { method: "DELETE", params: { id, ruleId: b.ruleId } }),
+        await call(repositoryWebhook.POST, { method: "POST", params: { id } }),
+      ]) {
+        expect(response.status).toBe(403);
+      }
+
+      // An admin there edits them without entering it.
+      await setRole("admin");
+      expect(await call(repositoryDetail.GET, { params: { id } })).toMatchObject({
+        body: { repository: { organization: { role: "admin" } }, canEdit: true },
+      });
+      expect(
+        await call(repositoryRules.POST, { params: { id }, body: { text: "Both rule" } }),
+      ).toMatchObject({ status: 200, body: { ok: true } });
+      const added = (await listRepositoryRules(db, id)).find((r) => r.text === "Both rule")!;
+      expect(
+        await call(repositoryRule.PATCH, {
+          method: "PATCH",
+          params: { id, ruleId: added.id },
+          body: { text: "Both rule, edited" },
+        }),
+      ).toMatchObject({ status: 200, body: { ok: true } });
+      expect(
+        await call(repositoryRule.DELETE, { method: "DELETE", params: { id, ruleId: added.id } }),
+      ).toMatchObject({ status: 200, body: { ok: true } });
+      // The webhook handler runs in Beta (its repository is a GitHub one, so it has none).
+      expect(await call(repositoryWebhook.POST, { method: "POST", params: { id } })).toMatchObject({
+        status: 400,
+        body: { error: "That GitLab project isn't connected." },
+      });
+
+      // Leaving Beta loses its repos.
+      await db
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, user!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+      for (const response of [
+        await call(repositoryDetail.GET, { params: { id } }),
+        await call(repositoryRules.GET, { params: { id } }),
+        await call(repositoryRules.POST, { params: { id }, body: { text: "Both rule" } }),
+        await call(repositoryWebhook.POST, { method: "POST", params: { id } }),
+      ]) {
+        expect(response.status).toBe(404);
+      }
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
+      await db.delete(users).where(eq(users.id, user!.id));
+    }
+    expect((await listRepositoryRules(db, id)).map((r) => [r.text, r.enabled])).toEqual([
+      ["beta rule", true],
+    ]);
+  });
+
   it("refuses every repository and connection change on the other organization's rows", async () => {
     state.userId = a.adminId;
+    expect(
+      await call(repositoryWebhook.POST, { method: "POST", params: { id: b.repoId } }),
+    ).toMatchObject({ status: 404 });
     const refused = [
       await call(repository.DELETE, { method: "DELETE", params: { id: b.repoId } }),
-      await call(repositoryWebhook.POST, { method: "POST", params: { id: b.repoId } }),
       await call(scmConnection.DELETE, { method: "DELETE", params: { id: b.connectionId } }),
       await call(selectable.PUT, {
         method: "PUT",

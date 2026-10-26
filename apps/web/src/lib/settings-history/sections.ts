@@ -466,7 +466,10 @@ export function runsSinceScope(section: SettingsSection, subjectId: string | nul
       return { kinds: ["review"], repositoryId: subjectId ?? undefined };
     case "repository.coding":
       return { kinds: ["epic", "request"], repositoryId: subjectId ?? undefined };
+    case "repository.ask":
+      return { kinds: ["ask"], repositoryId: subjectId ?? undefined };
     case "repository.agents":
+    case "repository.playbooks":
       return { repositoryId: subjectId ?? undefined };
     case "routing_rules":
       return { kinds: ["epic", "request", "triage"] };

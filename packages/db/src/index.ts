@@ -101,6 +101,7 @@ export {
   listProviderScmConnections,
   listScmConnections,
   pinRepositoryToAgent,
+  recordConnectionChange,
   removeScmConnectionProblems,
   setRepositoryEnabled,
   setRepositorySwitches,

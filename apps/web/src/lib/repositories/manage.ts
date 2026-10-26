@@ -9,6 +9,7 @@ import {
   getRepository,
   getScmConnection,
   listConnectionRepositories,
+  recordConnectionChange,
   removeScmConnectionProblems,
   setRepositoryEnabled as setRepositoryEnabledRow,
   setRepositoryWebhookId,
@@ -280,10 +281,10 @@ export async function disconnectRepository(
  */
 export async function recreateGitLabWebhook(
   db: Database,
-  admin: Admin,
+  admin: Pick<OrgUser, "id" | "name" | "email">,
+  organizationId: string,
   repositoryId: string,
 ): Promise<ActionResult> {
-  const organizationId = admin.organization.id;
   const repo = await getRepository(db, repositoryId, organizationId);
   if (!repo || repo.disconnectedAt || repo.provider !== "gitlab") {
     return { ok: false, error: "That GitLab project isn't connected." };
@@ -322,6 +323,8 @@ export async function recreateGitLabWebhook(
     );
   }
   await removeScmConnectionProblems(db, connection.id, repo.id, WEBHOOK_PROBLEMS);
+  // Its health changed (the repository's change is its new webhook ID).
+  recordConnectionChange(db, connection);
   return { ok: true };
 }
 
