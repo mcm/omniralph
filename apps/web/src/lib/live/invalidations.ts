@@ -11,6 +11,7 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import {
   backlogKeys,
+  connectionKeys,
   queryKeys,
   runsKeys,
   settingsHistoryKeys,
@@ -166,6 +167,8 @@ export const LIVE_INVALIDATIONS = {
   ],
   connection: (_event, keys) => [
     keys.connections.all,
+    // Settings' connections (its section nav and connection pages).
+    connectionKeys(keys).list,
     // Connection health problems are repositories' problems.
     ...repositoryViews(keys),
     runsKeys(keys).filterOptionsAll,

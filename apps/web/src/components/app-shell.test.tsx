@@ -92,7 +92,7 @@ describe("AppShell", () => {
       ["Backlog", "/backlog"],
       ["Repos", "/repos"],
       ["Agents", "/agents"],
-      ["Settings", "/settings/organization"],
+      ["Settings", "/settings"],
     ]);
   });
 
@@ -105,6 +105,8 @@ describe("AppShell", () => {
     ["/repos", "Repos"],
     ["/repos/abc", "Repos"],
     ["/agents/abc", "Agents"],
+    ["/settings", "Settings"],
+    ["/settings/advanced/routing", "Settings"],
     ["/settings/routing", "Settings"],
   ])("marks the entry for %s as the current page: %s", (pathname, label) => {
     renderShell(pathname);

@@ -54,6 +54,7 @@ const SCREENS_2_0 = [
   /^src\/app\/\(app\)\/page\.tsx$/,
   /^src\/app\/\(app\)\/runs\//,
   /^src\/app\/\(app\)\/repos\//,
+  /^src\/app\/\(app\)\/settings\//,
 ];
 
 /** Files that must not reference the library at all. */
@@ -221,6 +222,8 @@ describe("@iamthemcmaster/ui boundary", () => {
     expect(screens).toContain("src/app/(app)/page.tsx");
     expect(screens).toContain("src/screens/repos/repos-view.tsx");
     expect(screens).toContain("src/app/(app)/repos/[id]/page.tsx");
+    expect(screens).toContain("src/app/(app)/settings/layout.tsx");
+    expect(screens).toContain("src/screens/settings/settings-layout-view.tsx");
     expect(screens.filter((file) => LIBRARY.test(source.get(file)!))).toEqual([]);
     // Nor through a module only today's screens may use.
     const throughLegacy = screens.flatMap((file) =>

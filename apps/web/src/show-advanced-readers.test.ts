@@ -10,13 +10,19 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
-/** The session that loads it, the `(app)` layout that passes it on, and `useShowAdvanced`. */
+/**
+ * The session that loads it, the `(app)` layout that passes it on, `useShowAdvanced`, and the
+ * Settings section nav that shows or hides its Advanced group by it.
+ */
 const READERS = new Set([
   "apps/web/src/auth.ts",
   "apps/web/src/lib/auth/session.ts",
   "apps/web/src/app/(app)/layout.tsx",
   "apps/web/src/components/app-shell.tsx",
   "apps/web/src/components/show-advanced.tsx",
+  // Settings' section nav, which lists the Advanced group only when it's on (TOOL-649).
+  "apps/web/src/screens/settings/settings-layout-view.tsx",
+  "apps/web/src/screens/settings/settings-nav.ts",
 ]);
 
 const SCANNED = ["apps", "packages"];

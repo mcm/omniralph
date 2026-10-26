@@ -178,3 +178,14 @@ export function backlogKeys(keys: QueryKeys) {
     details: [...keys.workItems.all, "detail"] as QueryKey,
   };
 }
+
+/**
+ * Query keys of Settings' connections (`GET /api/ui/connections`): the active organization's
+ * only, so they sit in the `settings` area, which (unlike `connections`) is not scope-wide:
+ * a `connection` event of the organization refetches them, another organization's doesn't.
+ */
+export function connectionKeys(keys: QueryKeys) {
+  return {
+    list: keys.settings.detail("connections"),
+  };
+}

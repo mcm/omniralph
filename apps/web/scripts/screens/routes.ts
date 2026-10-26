@@ -264,23 +264,48 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     ],
     viewportOnly: true,
   },
+  // Settings (2.0): the section nav beside each page.
+  { name: "settings", path: "/settings", page: "(app)/settings/page.tsx", auth: "signed-in" },
+  ...(
+    [
+      ["general", "general"],
+      ["members", "members"],
+      ["profile", "profile"],
+      ["linked-accounts", "linked-accounts"],
+      ["add-connection", "connections/new"],
+      ["advanced-routing", "advanced/routing"],
+      ["advanced-playbooks", "advanced/playbooks"],
+      ["advanced-chat", "advanced/chat"],
+    ] as const
+  ).map(([name, route]): ScreenRoute => ({
+    name: `settings-${name}`,
+    path: `/settings/${route}`,
+    page: `(app)/settings/${route}/page.tsx`,
+    auth: "signed-in",
+  })),
+  {
+    name: "settings-connection-linear",
+    path: `/settings/connections/linear/${ids.integrations.linear}`,
+    page: "(app)/settings/connections/[provider]/[id]/page.tsx",
+    auth: "signed-in",
+  },
   {
     name: "settings-chat-accounts",
     path: "/settings/chat-accounts",
-    page: "(app)/settings/chat-accounts/page.tsx",
+    page: "(app)/(legacy-settings)/settings/chat-accounts/page.tsx",
     auth: "signed-in",
   },
   {
     name: "settings-agent-defaults",
     path: "/settings/agent-defaults",
-    page: "(app)/settings/agent-defaults/page.tsx",
+    page: "(app)/(legacy-settings)/settings/agent-defaults/page.tsx",
     auth: "signed-in",
   },
   {
     // Defaults and the agent version save together, confirmed with the change list.
     name: "settings-agent-defaults-confirm",
     path: "/settings/agent-defaults",
-    page: "(app)/settings/agent-defaults/page.tsx",
+    page: "(app)/(legacy-settings)/settings/agent-defaults/page.tsx",
     auth: "signed-in",
     steps: [
       { action: "fill", selector: "#default-max-concurrency", value: "4" },
@@ -292,31 +317,31 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   {
     name: "settings-agent-defaults-host-tools",
     path: "/settings/agent-defaults/host-tools",
-    page: "(app)/settings/agent-defaults/host-tools/page.tsx",
+    page: "(app)/(legacy-settings)/settings/agent-defaults/host-tools/page.tsx",
     auth: "signed-in",
   },
   {
     name: "settings-integrations",
     path: "/settings/integrations",
-    page: "(app)/settings/integrations/page.tsx",
+    page: "(app)/(legacy-settings)/settings/integrations/page.tsx",
     auth: "signed-in",
   },
   {
     name: "settings-organization",
     path: "/settings/organization",
-    page: "(app)/settings/organization/page.tsx",
+    page: "(app)/(legacy-settings)/settings/organization/page.tsx",
     auth: "signed-in",
   },
   {
     name: "settings-routing",
     path: "/settings/routing",
-    page: "(app)/settings/routing/page.tsx",
+    page: "(app)/(legacy-settings)/settings/routing/page.tsx",
     auth: "signed-in",
   },
   {
     name: "settings-routing-edit",
     path: "/settings/routing",
-    page: "(app)/settings/routing/page.tsx",
+    page: "(app)/(legacy-settings)/settings/routing/page.tsx",
     auth: "signed-in",
     steps: [
       { action: "click", selector: ".routing-add-rule" },

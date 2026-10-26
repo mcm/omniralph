@@ -1,7 +1,14 @@
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
-import { backlogKeys, inboxKeys, queryKeys, runsKeys, settingsHistoryKeys } from "@/lib/api/keys";
+import {
+  backlogKeys,
+  connectionKeys,
+  inboxKeys,
+  queryKeys,
+  runsKeys,
+  settingsHistoryKeys,
+} from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
@@ -179,9 +186,10 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("connection: connections, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
+  it("connection: connections, Settings' connections, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
+      connectionKeys(keys).list,
       ...repositoryViews,
       runsKeys(keys).filterOptionsAll,
       keys.backlog.all,
@@ -330,6 +338,10 @@ describe("createLiveInvalidator", () => {
     const connection = changeEvent(OTHER_ORG, { resource: "connection", ids: [ID] });
     expect(scopeInvalidations(connection, new Set([ORG, OTHER_ORG]))).toContainEqual(
       keys.connections.all,
+    );
+    // Settings lists the active organization's connections only.
+    expect(scopeInvalidations(connection, new Set([ORG, OTHER_ORG]))).not.toContainEqual(
+      connectionKeys(keys).list,
     );
   });
 
