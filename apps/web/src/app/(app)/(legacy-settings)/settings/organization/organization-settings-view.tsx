@@ -33,7 +33,7 @@ import {
   Stack,
   Switch,
 } from "@iamthemcmaster/ui";
-import { IconDoorExit, IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
+import { IconMailPlus, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { AppHeader } from "@/components/app-header";
 import { Timestamp } from "@/components/list-table";
 import { MonoValue } from "@/components/mono-value";
@@ -41,11 +41,9 @@ import { PageHeader } from "@/components/page-header";
 import { QueryBoundary } from "@/components/query-boundary";
 import { useQueryKeys } from "@/components/query-provider";
 import { useApiMutation } from "@/components/use-api-mutation";
-import { useSeededDraft } from "@/components/use-seeded-draft";
 import { useCurrentUser } from "@/components/current-user";
-import { useExpectOrganizationSwitch } from "@/components/organization-guard";
 import { api } from "@/lib/api/client";
-import type { QueryKeys } from "@/lib/api/keys";
+import { organizationKeys, type QueryKeys } from "@/lib/api/keys";
 import {
   organizationSettingsSchema,
   type InvitationRow,
@@ -54,7 +52,6 @@ import {
 } from "@/lib/api/organization";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import { isRole, type Role } from "@/lib/auth/roles";
-import { MAX_ORGANIZATION_NAME_LENGTH } from "@/lib/organizations/name";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 
 export type { InvitationRow, MemberRow };
@@ -64,7 +61,7 @@ export function useOrganizationSettings() {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.organization.detail("settings"),
+    queryKey: organizationKeys(keys).settings,
     queryFn: ({ signal }) =>
       api.get("/api/ui/organization", organizationSettingsSchema, {
         organizationId: organization.id,
@@ -170,64 +167,6 @@ function DangerIconButton({
     >
       {children}
     </Button>
-  );
-}
-
-// ── General ───────────────────────────────────────────────────────────────────
-
-function GeneralCard({ name, isAdmin }: { name: string; isAdmin: boolean }) {
-  const router = useRouter();
-  // Follows a rename made elsewhere while the field isn't being edited.
-  const [value, setValue] = useSeededDraft(name);
-  const trimmed = value.trim();
-  const rename = useApiMutation({
-    mutationFn: (newName: string, { organizationId }) =>
-      send("PATCH", "", organizationId, { name: newName }),
-    invalidate: organizationChanged,
-    success: (_, newName) => `Renamed to ${newName}`,
-    // The sidebar's organization switcher shows the name too.
-    onSuccess: () => router.refresh(),
-  });
-  const pending = rename.isPending;
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!trimmed || trimmed === name) return;
-    rename.mutate(trimmed);
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">General</CardTitle>
-        <CardDescription>The organization&apos;s name, shown to its members.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Cluster gap={3} align="end" asChild>
-          <form onSubmit={submit}>
-            <Field label="Name" htmlFor="organization-name" required className="flex-1">
-              <Input
-                id="organization-name"
-                required
-                maxLength={MAX_ORGANIZATION_NAME_LENGTH}
-                value={value}
-                disabled={!isAdmin}
-                onChange={(e) => setValue(e.target.value)}
-              />
-            </Field>
-            {isAdmin && (
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={pending || !trimmed || trimmed === name}
-              >
-                {pending ? "Saving…" : "Rename"}
-              </Button>
-            )}
-          </form>
-        </Cluster>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -615,54 +554,6 @@ function DomainsCard({
   );
 }
 
-// ── Leave ─────────────────────────────────────────────────────────────────────
-
-function LeaveCard({ organizationName }: { organizationName: string }) {
-  const router = useRouter();
-  const expectSwitch = useExpectOrganizationSwitch();
-  const leave = useApiMutation({
-    // Leaving switches to another of the user's organizations, if any.
-    mutationFn: async (_: void, { organizationId }) => {
-      const result = await send("POST", "/leave", organizationId);
-      expectSwitch();
-      return result;
-    },
-    // Nothing to refetch here: the panel starts over in the next organization (or onboarding).
-    invalidate: () => [],
-    success: `Left ${organizationName}`,
-    onSuccess: () => {
-      router.push("/");
-      router.refresh();
-    },
-  });
-  const pending = leave.isPending || leave.isSuccess;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Leave organization</CardTitle>
-        <CardDescription>
-          You lose access to {organizationName}&apos;s repositories, agents and settings. The last
-          admin can&apos;t leave.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Confirm
-          title={`Leave ${organizationName}?`}
-          description="An admin has to invite you again to rejoin."
-          action="Leave"
-          onConfirm={() => leave.mutate()}
-          trigger={
-            <Button variant="danger" disabled={pending}>
-              <IconDoorExit size={14} />
-              Leave organization
-            </Button>
-          }
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function SettingsSkeleton() {
@@ -699,7 +590,7 @@ export function OrganizationSettingsView() {
           title="Organization"
           description={
             role === "admin"
-              ? `Settings for ${query.data?.organization.name ?? organization.name}: its name, members, invitations and email domains.`
+              ? `Settings for ${query.data?.organization.name ?? organization.name}: its members, invitations and email domains.`
               : `Settings for ${query.data?.organization.name ?? organization.name}. Only admins can change them.`
           }
         />
@@ -721,7 +612,6 @@ export function OrganizationSettingsContent({
 }: OrganizationSettings) {
   return (
     <>
-      <GeneralCard name={organization.name} isAdmin={isAdmin} />
       <MembersCard
         members={members}
         currentUserId={currentUserId}
@@ -734,7 +624,6 @@ export function OrganizationSettingsContent({
         allowDomainJoin={organization.allowDomainJoin}
         isAdmin={isAdmin}
       />
-      <LeaveCard organizationName={organization.name} />
     </>
   );
 }

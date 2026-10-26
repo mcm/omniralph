@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isoDate } from "./schemas";
+import { settingsHistoryEntrySchema } from "./settings-history";
 
 /**
  * Settings › Organization and the organization switcher (`/api/ui/organization/**`,
@@ -36,6 +37,8 @@ export const organizationSettingsSchema = z.object({
   members: z.array(memberRowSchema),
   /** Pending invitations; empty for members. */
   invitations: z.array(invitationRowSchema),
+  /** The latest change of the organization's settings (section `organization`), for its ⓘ. */
+  history: settingsHistoryEntrySchema.nullable(),
 });
 export type OrganizationSettings = z.infer<typeof organizationSettingsSchema>;
 

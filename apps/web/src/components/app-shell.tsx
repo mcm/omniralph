@@ -9,6 +9,7 @@ import { useInboxCounts } from "@/screens/inbox/queries";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
+import { LiveCurrentUser } from "./live-current-user";
 import { LiveNoticeSlot } from "./live/live-notice-slot";
 import { LiveProvider } from "./live/live-provider";
 import { OrganizationGuard } from "./organization-guard";
@@ -60,30 +61,32 @@ export function AppShell({
             key={`${user.organization.id}:${user.scope}`}
             organizationId={user.organization.id}
           >
-            <LiveProvider>
-              <OrganizationGuard
-                organizationName={
-                  user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
-                }
-                renderedCookie={organizationCookie}
-                renderedScopeCookie={scopeCookie}
-              >
-                <UiProvider linkComponent={Link}>
-                  <LiveAppFrame
-                    currentPath={pathname}
-                    brandHref="/"
-                    nav={navItems}
-                    orgPicker={<OrganizationPicker />}
-                    user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
-                    userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                  >
-                    <LiveNoticeSlot />
-                    {children}
-                  </LiveAppFrame>
-                  <Toaster />
-                </UiProvider>
-              </OrganizationGuard>
-            </LiveProvider>
+            <LiveCurrentUser>
+              <LiveProvider>
+                <OrganizationGuard
+                  organizationName={
+                    user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
+                  }
+                  renderedCookie={organizationCookie}
+                  renderedScopeCookie={scopeCookie}
+                >
+                  <UiProvider linkComponent={Link}>
+                    <LiveAppFrame
+                      currentPath={pathname}
+                      brandHref="/"
+                      nav={navItems}
+                      orgPicker={<OrganizationPicker />}
+                      user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
+                      userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                    >
+                      <LiveNoticeSlot />
+                      {children}
+                    </LiveAppFrame>
+                    <Toaster />
+                  </UiProvider>
+                </OrganizationGuard>
+              </LiveProvider>
+            </LiveCurrentUser>
           </QueryProvider>
         </ShowAdvancedProvider>
       </CurrentUserProvider>
