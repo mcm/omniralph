@@ -1,7 +1,7 @@
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
-import { queryKeys } from "@/lib/api/keys";
+import { inboxKeys, queryKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
 import {
@@ -9,6 +9,7 @@ import {
   createLiveInvalidator,
   LIVE_INVALIDATIONS,
   liveInvalidations,
+  scopeInvalidations,
 } from "./invalidations";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -128,11 +129,12 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([playbooks.all, keys.repositories.all, keys.connections.detail("integrations")]);
   });
 
-  it("agent: the agents list and each agent", () => {
+  it("agent: the agents list, each agent and the Inbox (offline agents)", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.agents.lists,
       keys.agents.detail(ID),
       keys.agents.detail(RUN),
+      keys.inbox.all,
     ]);
   });
 
@@ -228,6 +230,33 @@ describe("createLiveInvalidator", () => {
       scope,
     );
     expect(invalidated()).toEqual([playbooks.list, playbooks.detail(ID)]);
+  });
+
+  it("under All organizations, reaches the active organization's Inbox and Runs queries", () => {
+    const active = queryKeys(ORG);
+    const feed = inboxKeys(active).feed("needs-you", "all");
+    const counts = inboxKeys(active).counts("all");
+    seed(feed, counts, active.runs.detail(RUN), active.agents.list(), active.settings.detail("x"));
+    const both = new Set([ORG, OTHER_ORG]);
+    const invalidator = createLiveInvalidator(client);
+    invalidator.apply(changeEvent(OTHER_ORG, { resource: "run", runId: RUN }), both);
+    expect(invalidated()).toEqual([feed, counts, active.runs.detail(RUN)]);
+    invalidator.apply(
+      changeEvent(OTHER_ORG, { resource: "inbox_state", ids: ["manual_story:1"] }),
+      both,
+    );
+    // Another organization's agents and settings stay theirs.
+    invalidator.apply(changeEvent(OTHER_ORG, { resource: "agent", ids: [ID] }), both);
+    expect(invalidated()).not.toContainEqual(active.agents.list());
+  });
+
+  it("scopeInvalidations adds only the scope-wide areas of the other organizations", () => {
+    const other = changeEvent(OTHER_ORG, { resource: "agent", ids: [ID] });
+    expect(scopeInvalidations(other, new Set([OTHER_ORG]))).toEqual(liveInvalidations(other));
+    expect(scopeInvalidations(other, new Set([ORG, OTHER_ORG]))).toEqual([
+      ...liveInvalidations(other),
+      keys.inbox.all,
+    ]);
   });
 
   it("ignores an event for an organization outside the scope", () => {

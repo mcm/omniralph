@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isNavActive } from "@omniralph/ui";
 import { describe, expect, it } from "vitest";
-import { navItems } from "@/lib/navigation";
+import { navItems, withNavIndicators } from "@/lib/navigation";
 
 const APP_DIR = path.resolve(__dirname, "../app/(app)");
 
@@ -64,7 +64,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Runs, Repos and Agents, then Settings at the bottom", () => {
+  it("lists Inbox, Runs, Repos and Agents, then Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -74,6 +74,7 @@ describe("navItems", () => {
         phone,
       })),
     ).toEqual([
+      { id: "inbox", label: "Inbox", href: "/", placement: "main", phone: "tab" },
       { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repositories", placement: "main", phone: "drawer" },
       { id: "agents", label: "Agents", href: "/agents", placement: "main", phone: "drawer" },
@@ -92,6 +93,7 @@ describe("navItems", () => {
   });
 
   it.each([
+    ["/", "inbox"],
     ["/runs", "runs"],
     ["/runs/abc", "runs"],
     ["/reviews", "runs"],
@@ -112,10 +114,10 @@ describe("navItems", () => {
     ]);
   });
 
-  it("makes every page reachable from an entry, except the root redirect", () => {
-    const orphaned = [...pages.keys()]
-      .filter((route) => route !== "/")
-      .filter((route) => !navItems.some((item) => isNavActive(route, item)));
+  it("makes every page reachable from an entry", () => {
+    const orphaned = [...pages.keys()].filter(
+      (route) => !navItems.some((item) => isNavActive(route, item)),
+    );
     expect(orphaned).toEqual([]);
   });
 
@@ -133,5 +135,23 @@ describe("navItems", () => {
         expect(source, item.href).not.toMatch(/ACCESS_DENIED_PATH|role !== "admin"/);
       }
     }
+  });
+});
+
+describe("withNavIndicators", () => {
+  const indicator = (items: ReturnType<typeof withNavIndicators>, id: string) =>
+    items.find((item) => item.id === id)?.indicator;
+
+  it("counts what needs the user on Inbox and dots Runs while runs run", () => {
+    const items = withNavIndicators(navItems, { needsYou: 3, problems: 1, running: 2 });
+    expect(indicator(items, "inbox")).toEqual({ kind: "count", value: 3, label: "3 need you" });
+    expect(indicator(items, "runs")).toEqual({ kind: "dot", tone: "run", label: "2 running" });
+    expect(indicator(items, "repos")).toBeUndefined();
+  });
+
+  it("shows neither at 0 or before the counts load", () => {
+    const zero = withNavIndicators(navItems, { needsYou: 0, problems: 4, running: 0 });
+    expect(zero.every((item) => item.indicator === undefined)).toBe(true);
+    expect(withNavIndicators(navItems, undefined)).toBe(navItems);
   });
 });

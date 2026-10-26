@@ -68,7 +68,7 @@ describe("component CSS", () => {
     const files = readdirSync(stylesDir).filter(
       (file) => file.endsWith(".css") && file !== "tokens.css",
     );
-    expect(files).toEqual(expect.arrayContaining(["refs.css", "status.css"]));
+    expect(files).toEqual(expect.arrayContaining(["refs.css", "status.css", "layout.css"]));
     for (const file of files) {
       const literals = read(file).match(
         /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/gi,

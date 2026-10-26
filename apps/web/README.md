@@ -114,6 +114,10 @@ record (their theme, their memberships) re-render the shell from the server (`ro
   Queries still refetch when the tab regains focus or the network reconnects, and on every mount
   (`staleTime: 0`). Network and 5xx failures retry with backoff; 4xx answers don't. Handlers stay cheap all the same (paginated,
   indexed, `getDb()` on the Node runtime): every event refetches every open tab's matching queries.
+- **"All organizations".** Every query key starts with the active organization's id, also under
+  "All organizations", where the scope-wide screens (the Inbox and Runs, `SCOPE_WIDE_AREAS`) ask
+  for `organization=all` (`useScopeParam()` in `src/screens/scope.ts`) and key by it. An event of
+  any organization in the scope reaches those areas' queries under the active organization's keys.
 - **Throttling.** A query that refetches an expensive aggregate sets `meta: { liveThrottleMs: n }`:
   events invalidate it at most once per `n` ms, the last one of a burst delivered when the window
   ends (Analytics: `ANALYTICS_LIVE_THROTTLE_MS`, 10s).

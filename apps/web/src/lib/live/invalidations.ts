@@ -9,7 +9,7 @@
  * typecheck. Safe to import in the browser.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { queryKeys, type QueryKeys } from "@/lib/api/keys";
+import { queryKeys, type QueryArea, type QueryKeys } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
 import type {
   ChangeEvent,
@@ -115,6 +115,8 @@ export const LIVE_INVALIDATIONS = {
   agent: (event, keys) => [
     keys.agents.lists,
     ...event.ids.map((agentId) => keys.agents.detail(agentId)),
+    // Agents offline or failing to update are Inbox problems.
+    keys.inbox.all,
   ],
   repository: (event, keys) => [
     keys.repositories.lists,
@@ -130,8 +132,38 @@ export const LIVE_INVALIDATIONS = {
 
 /** The query-key prefixes `event` invalidates, in its organization's keys. */
 export function liveInvalidations(event: ChangeEvent): QueryKey[] {
+  return invalidationsIn(event, queryKeys(event.organizationId));
+}
+
+function invalidationsIn(event: ChangeEvent, keys: QueryKeys): QueryKey[] {
   const invalidate = LIVE_INVALIDATIONS[event.resource] as Invalidator<typeof event.resource>;
-  return invalidate(event as never, queryKeys(event.organizationId));
+  return invalidate(event as never, keys);
+}
+
+/**
+ * Areas whose queries cover the whole organization scope (`organization=all` under "All
+ * organizations"), keyed by the active organization like every query: an event of any
+ * organization in the scope reaches them.
+ */
+export const SCOPE_WIDE_AREAS: readonly QueryArea[] = ["inbox", "runs", "transcripts"];
+
+/**
+ * The prefixes `event` invalidates in the cache of a scope: its own organization's keys,
+ * plus, for the scope-wide areas (`SCOPE_WIDE_AREAS`), the same prefixes under every other
+ * organization of the scope, since "All organizations" keys its Inbox and Runs queries by
+ * the active one.
+ */
+export function scopeInvalidations(event: ChangeEvent, scope: ReadonlySet<string>): QueryKey[] {
+  const prefixes = liveInvalidations(event);
+  for (const organizationId of scope) {
+    if (organizationId === event.organizationId) continue;
+    prefixes.push(
+      ...invalidationsIn(event, queryKeys(organizationId)).filter((prefix) =>
+        SCOPE_WIDE_AREAS.includes(prefix[1] as QueryArea),
+      ),
+    );
+  }
+  return prefixes;
 }
 
 /**
@@ -194,7 +226,7 @@ export function createLiveInvalidator(
       if (!scope.has(event.organizationId)) return;
       const cache = client.getQueryCache();
       const seen = new Set<string>();
-      for (const prefix of liveInvalidations(event)) {
+      for (const prefix of scopeInvalidations(event, scope)) {
         for (const query of cache.findAll({ queryKey: prefix })) {
           if (seen.has(query.queryHash)) continue;
           seen.add(query.queryHash);

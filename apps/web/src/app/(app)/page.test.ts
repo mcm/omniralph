@@ -1,11 +1,22 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { isValidElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import HomePage from "./page";
+import { InboxView } from "@/screens/inbox/inbox-view";
+import InboxPage from "./page";
 
-describe("HomePage", () => {
-  it("sends the dashboard to the repositories page", () => {
-    // Next.js `redirect(path)` throws an error whose digest carries the path.
-    expect(() => HomePage()).toThrow(
-      expect.objectContaining({ digest: expect.stringContaining(";/repositories;") }),
-    );
+describe("the home page", () => {
+  it("renders the Inbox, inside a Suspense boundary for its URL state", () => {
+    const page = InboxPage() as ReactElement<{ children: ReactElement }>;
+    expect(isValidElement(page)).toBe(true);
+    const child = page.props.children;
+    expect(isValidElement(child)).toBe(true);
+    expect(child.type).toBe(InboxView);
+  });
+
+  it("no longer redirects anywhere", () => {
+    const source = readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(source).not.toMatch(/\bredirect\(/);
+    expect(source).not.toMatch(/@iamthemcmaster\/ui/);
   });
 });

@@ -180,6 +180,10 @@ truncated with an ellipsis and keeps the full text in `title`.
 - `StatusDot` (`tone`, required `label`): the dot alone, `role="img"` named by `label`.
 - `StatusText` (`tone`, children): a decorative dot followed by the label, in the tone's
   color.
+- `StatusLine` (`tone`, children, optional `dotLabel`): the line under a detail header
+  ("Waiting on you for 15 days"). A `role="status"` paragraph named by its sentence, a
+  `StatusDot` (named `dotLabel`, else the tone's `STATUS_LINE_DOT_LABELS` entry) and the
+  sentence, in the tone's color.
 
 Component CSS uses only `--or-` tokens: a test fails on any color literal outside
 `tokens.css`.
@@ -253,6 +257,20 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   checkbox and actions are its siblings. Tab order: checkbox, row link, actions.
 - `nestedInteractiveElements(root)`: every `a`, `button` or `input` inside an `a` or
   `button`. Lists and tables return none; screen tests can assert the same.
+
+## Layout
+
+- `SplitView`: a list beside its selected item's detail. Props: `list`, `detail` (or
+  null), `view` (`"list"` | `"detail"`), `backLink?` (`{ label, href }`, "‹ {label}" on the
+  detail), `listLabel` (names the list `region`), `detailLabel?` (default "Details"),
+  `listWidth?` (`{ wide, narrow }` px, default 340/300; `wide` applies from a 1200 px
+  viewport) and `fixedPane?` (`"list"`, default, or `"detail"`, which gives the width to the
+  detail and lets the list fill the rest). The panes sit in a size container
+  (`container: or-split / inline-size`): from a container width of 880 px both show; below
+  it only the pane `view` names does, the detail with its back link. That one rule covers
+  phone width and a content area narrowed by a side panel. No Next.js imports, no hints.
+- `useSplitWide(ref)`: whether the element is at least 880 px wide
+  (`SPLIT_WIDE_MIN_WIDTH`, followed with a `ResizeObserver`; false until measured).
 
 ## Shell
 

@@ -1,0 +1,92 @@
+/*
+ * Split view: a list beside its selected item's detail, in a size container. From a
+ * container width of 880 px both panes show; below it only the pane named by `data-view`
+ * does, and the detail shows its back link. The fixed pane is `--or-split-wide` wide from
+ * a 1200 px viewport up, `--or-split-narrow` below (set from `listWidth`).
+ */
+.or-split {
+  --or-split-size: var(--or-split-narrow);
+  container: or-split / inline-size;
+  height: 100%;
+  min-height: 0;
+}
+
+@media (min-width: 1200px) {
+  .or-split {
+    --or-split-size: var(--or-split-wide);
+  }
+}
+
+.or-split__panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.or-split__list,
+.or-split__detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.or-split[data-view="list"] .or-split__detail,
+.or-split[data-view="detail"] .or-split__list {
+  display: none;
+}
+
+.or-split__back {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 2px;
+  margin: 12px 16px 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.or-split__back:hover {
+  color: var(--or-text);
+}
+
+.or-split__back:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+  border-radius: var(--or-radius-sm);
+}
+
+@container or-split (min-width: 880px) {
+  .or-split__panes {
+    grid-template-columns: var(--or-split-size) minmax(0, 1fr);
+  }
+
+  .or-split[data-fixed="detail"] .or-split__panes {
+    grid-template-columns: minmax(0, 1fr) var(--or-split-size);
+  }
+
+  .or-split[data-view] .or-split__list,
+  .or-split[data-view] .or-split__detail {
+    display: flex;
+  }
+
+  .or-split__list {
+    border-right: 1px solid var(--or-line);
+  }
+
+  .or-split[data-fixed="detail"] .or-split__list {
+    border-right: 0;
+  }
+
+  .or-split[data-fixed="detail"] .or-split__detail {
+    border-left: 1px solid var(--or-line);
+  }
+
+  .or-split__back {
+    display: none;
+  }
+}

@@ -48,8 +48,20 @@ const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/lib/state-variants.ts",
 ];
 
+/**
+ * The 2.0 screens (Epic 5 on): their views, the run components and their pages build on
+ * `@omniralph/ui` only.
+ */
+const SCREENS_2_0 = [
+  /^src\/screens\//,
+  /^src\/components\/runs\//,
+  /^src\/app\/\(app\)\/page\.tsx$/,
+  /^src\/app\/\(app\)\/runs\//,
+];
+
 /** Files that must not reference the library at all. */
 const LIBRARY_FREE = [
+  ...SCREENS_2_0,
   /^src\/app\/\(auth\)\//,
   /^src\/app\/\(legal\)\//,
   /^src\/components\/auth-shell\.tsx$/,
@@ -203,6 +215,21 @@ describe("@iamthemcmaster/ui boundary", () => {
         LIBRARY_FREE.some((pattern) => pattern.test(file)) && LIBRARY.test(source.get(file)!),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("is not imported by the 2.0 screens, the run components or their pages", () => {
+    const screens = files.filter((file) => SCREENS_2_0.some((pattern) => pattern.test(file)));
+    // Sanity check: the Inbox is among them.
+    expect(screens).toContain("src/screens/inbox/inbox-view.tsx");
+    expect(screens).toContain("src/app/(app)/page.tsx");
+    expect(screens.filter((file) => LIBRARY.test(source.get(file)!))).toEqual([]);
+    // Nor through a module only today's screens may use.
+    const throughLegacy = screens.flatMap((file) =>
+      importsOf(file)
+        .filter((imported) => LEGACY_SCREEN_MODULES.includes(imported))
+        .map((imported) => `${file} → ${imported}`),
+    );
+    expect(throughLegacy).toEqual([]);
   });
 
   it("leaves the page's background, text color and font to the Ultraviolet tokens", () => {

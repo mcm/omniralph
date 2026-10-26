@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 import type { SessionUser } from "./current-user";
-import { testUser } from "./query-test-utils";
+import { mockFetch, TEST_ORGANIZATION_ID, testUser } from "./query-test-utils";
 
 const nav = vi.hoisted(() => ({
   pathname: "/reviews",
@@ -80,13 +80,14 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Runs, Repos and Agents, then Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Repos and Agents, then Settings, each linking its 2.0 page", () => {
     renderShell("/reviews");
     const links = within(sidebar())
       .getAllByRole("link")
       .filter((link) => link.classList.contains("or-nav__item"))
       .map((link) => [link.getAttribute("aria-label"), link.getAttribute("href")]);
     expect(links).toEqual([
+      ["Inbox", "/"],
       ["Runs", "/runs"],
       ["Repos", "/repositories"],
       ["Agents", "/agents"],
@@ -95,6 +96,7 @@ describe("AppShell", () => {
   });
 
   it.each([
+    ["/", "Inbox"],
     ["/runs/123", "Runs"],
     ["/reviews/123", "Runs"],
     ["/triage", "Runs"],
@@ -112,13 +114,13 @@ describe("AppShell", () => {
     expect(current(tabBar())).toEqual(["Runs"]);
   });
 
-  it("puts Runs in the tab bar and Repos, Agents and Settings in the drawer", async () => {
+  it("puts Inbox and Runs in the tab bar and Repos, Agents and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Runs"]);
+    ).toEqual(["Inbox", "Runs"]);
     const { drawer } = await openDrawer();
     const entries = within(drawer)
       .getAllByRole("link")
@@ -212,5 +214,51 @@ describe("AppShell", () => {
     check();
     await openDrawer();
     check();
+  });
+});
+
+describe("AppShell nav indicators", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("counts what needs the user on Inbox in the sidebar, the rail and the tab bar", async () => {
+    const seen = mockFetch({
+      "GET /api/ui/live/token": { token: null },
+      "GET /api/ui/inbox/counts": { needsYou: 4, problems: 1, running: 2 },
+    });
+    renderShell("/reviews");
+    const inbox = await within(sidebar()).findByRole("link", { name: "Inbox, 4 need you" });
+    expect(inbox.querySelector(".or-nav__count")!.textContent).toBe("4");
+    // On the icon rail the label is hidden by CSS but kept in the accessible name.
+    expect(inbox.querySelector(".or-nav__label")!.classList.contains("or-rail-hidden")).toBe(true);
+    const tab = within(tabBar()).getByRole("link", { name: "Inbox, 4 need you" });
+    expect(tab.querySelector(".or-nav__count")!.textContent).toBe("4");
+    // Runs shows a mint dot while runs run.
+    const runs = within(sidebar()).getByRole("link", { name: "Runs, 2 running" });
+    expect(runs.querySelector(".or-nav__pip")!.classList.contains("or-dot--run")).toBe(true);
+    const counts = seen.filter((request) => request.path === "/api/ui/inbox/counts");
+    expect(counts.map((request) => request.query.get("organization"))).toEqual([
+      TEST_ORGANIZATION_ID,
+    ]);
+  });
+
+  it("hides the count at 0 and asks for every organization under All organizations", async () => {
+    const seen = mockFetch({
+      "GET /api/ui/live/token": { token: null },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+    });
+    renderShell("/reviews", { ...twoOrganizations, scope: "all" });
+    await waitFor(() =>
+      expect(seen.some((request) => request.path === "/api/ui/inbox/counts")).toBe(true),
+    );
+    expect(
+      seen.find((request) => request.path === "/api/ui/inbox/counts")!.query.get("organization"),
+    ).toBe("all");
+    await waitFor(() =>
+      expect(within(sidebar()).getByRole("link", { name: "Inbox" })).toBeTruthy(),
+    );
+    expect(document.querySelector(".or-nav__count")).toBeNull();
+    expect(within(tabBar()).getByRole("link", { name: "Inbox" })).toBeTruthy();
   });
 });

@@ -1,0 +1,80 @@
+// Inbox items for the Inbox's tests, as `GET /api/ui/inbox` answers them.
+import { TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
+import type { InboxCountsResponse, InboxItem } from "@/lib/api/inbox";
+
+export const NOW = Date.parse("2026-10-26T12:00:00.000Z");
+export const BETA_ID = "22222222-2222-4222-8222-222222222222";
+
+const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+/** A manual story waiting 15 days, with overrides. */
+export function inboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return {
+    key: "manual_story:s1",
+    tab: "needs-you",
+    kind: "manual_story",
+    organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
+    title: "Rotate the staging certificates",
+    run: { id: "run-1", kind: "epic", status: "waiting" },
+    workItem: {
+      tracker: "linear",
+      identifier: "TOOL-42",
+      url: "https://linear.app/acme/issue/TOOL-42",
+    },
+    repository: { id: "repo-1", provider: "gitlab", fullPath: "acme/portal" },
+    pullRequest: null,
+    agent: null,
+    reason: "Om can't do this story: it needs access to the certificate store.",
+    since: minutesAgo(15 * 24 * 60),
+    actions: ["done", "skip", "snooze"],
+    question: null,
+    reviewState: null,
+    review: null,
+    ...overrides,
+  };
+}
+
+/** A GitLab merge request ready for review, with 3 open findings. */
+export function mrReadyItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return inboxItem({
+    key: "pr_waiting:lane-1",
+    kind: "pr_waiting",
+    title: "Add the billing export",
+    run: { id: "run-2", kind: "epic", status: "completed" },
+    pullRequest: {
+      provider: "gitlab",
+      number: 12,
+      url: "https://gitlab.com/acme/portal/-/merge_requests/12",
+    },
+    reason: "The merge request is ready for your review.",
+    since: minutesAgo(42),
+    actions: ["done", "snooze"],
+    reviewState: "review_requested",
+    review: {
+      runId: "run-3",
+      status: "completed",
+      openFindings: { critical: 0, high: 1, medium: 2, low: 0, info: 0 },
+    },
+    ...overrides,
+  });
+}
+
+/** An agent offline for 2 hours. */
+export function agentOfflineItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return inboxItem({
+    key: "agent_offline:agent-1",
+    tab: "problems",
+    kind: "agent_offline",
+    title: "build-box is offline",
+    run: null,
+    workItem: null,
+    repository: null,
+    agent: { id: "agent-1", name: "build-box" },
+    reason: "build-box hasn't checked in for 2 hours.",
+    since: minutesAgo(120),
+    actions: ["done", "snooze"],
+    ...overrides,
+  });
+}
+
+export const COUNTS: InboxCountsResponse = { needsYou: 2, problems: 1, running: 0 };
