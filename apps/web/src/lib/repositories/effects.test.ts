@@ -18,6 +18,7 @@ import {
   reviewsEnabledEffect,
   skipPathEffects,
   workItemMatchEffect,
+  workItemMatchText,
 } from "./effects";
 
 describe("Reviews effects", () => {
@@ -150,6 +151,23 @@ describe("Coding effects", () => {
     );
     expect(workItemMatchEffect("Linear team SOC", null).effect).toBe(
       "No work items route here by match.",
+    );
+  });
+
+  it("words a match as a sentence", () => {
+    const base = {
+      tracker: "linear",
+      team: "SOC",
+      project: null,
+      withoutProject: false,
+      labels: [],
+    } as const;
+    expect(workItemMatchText(base)).toBe("Linear team SOC");
+    expect(workItemMatchText({ ...base, project: "Portal", labels: ["bug", "ui"] })).toBe(
+      "Linear team SOC in project Portal and label bug or ui",
+    );
+    expect(workItemMatchText({ ...base, withoutProject: true, labels: ["bug"] })).toBe(
+      "Linear team SOC with no project and label bug",
     );
   });
 

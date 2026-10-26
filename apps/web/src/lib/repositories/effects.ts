@@ -142,6 +142,31 @@ export function reviewerInstructionsEffect(): FieldEffect {
 
 // ── Coding ───────────────────────────────────────────────────────────────────────────────
 
+/** A work item match's conditions, as the Coding card shows them. */
+export interface WorkItemMatchConditions {
+  tracker: "linear";
+  team: string;
+  project: string | null;
+  withoutProject: boolean;
+  labels: readonly string[];
+}
+
+const TRACKER_LABELS: Readonly<Record<WorkItemMatchConditions["tracker"], string>> = {
+  linear: "Linear",
+};
+
+/**
+ * A match as one sentence, the badge sentence's words: "Linear team SOC in project Portal and
+ * label bug or ui" ("with no project" for work items without one).
+ */
+export function workItemMatchText(match: WorkItemMatchConditions): string {
+  let text = `${TRACKER_LABELS[match.tracker]} team ${match.team}`;
+  if (match.withoutProject) text += " with no project";
+  else if (match.project !== null) text += ` in project ${match.project}`;
+  if (match.labels.length > 0) text += ` and label ${match.labels.join(" or ")}`;
+  return text;
+}
+
 /** The Coding switch. */
 export function codingEnabledEffect(to: boolean): FieldEffect {
   return toggle("codingEnabled", "Coding", to, {

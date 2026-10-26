@@ -589,6 +589,23 @@ export type CodingMatchWarning = z.infer<typeof codingMatchWarningSchema>;
 export const codingMatchCheckSchema = z.object({ warnings: z.array(codingMatchWarningSchema) });
 export type CodingMatchCheck = z.infer<typeof codingMatchCheckSchema>;
 
+/**
+ * `GET /api/ui/repositories/{id}/coding/tracker-options` (admins of the repo's organization):
+ * the connected Linear workspace's teams, projects and labels the match editor offers, or why
+ * there are none (`disconnected`: no workspace; `unavailable`: Linear didn't answer).
+ */
+export const codingTrackerOptionsSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("connected"),
+    teams: z.array(z.object({ key: z.string(), name: z.string() })),
+    projects: z.array(z.string()),
+    labels: z.array(z.string()),
+  }),
+  z.object({ status: z.literal("disconnected") }),
+  z.object({ status: z.literal("unavailable") }),
+]);
+export type CodingTrackerOptions = z.infer<typeof codingTrackerOptionsSchema>;
+
 /** What a card save answers: the saved card, as the detail shows it. */
 export const cardSaveResultSchema = <T extends z.ZodType>(card: T) =>
   z.object({ ok: z.literal(true), card });

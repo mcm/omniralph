@@ -206,7 +206,9 @@ names the tied repositories (`work item matches of acme/api, acme/web tie`). Sav
 answers `warnings` naming (`id`, `fullPath`) each other repository whose match has the same
 tracker, team and project condition and whose labels intersect (or are both empty), since a work
 item both match would ask. `POST /api/ui/repositories/{id}/coding/match-check` (admins) answers the
-same `{ warnings }` for an unsaved `{ workItemMatch }`, saving nothing.
+same `{ warnings }` for an unsaved `{ workItemMatch }`, saving nothing. The Repos page's match
+editor offers the Linear workspace's teams, projects and labels from
+`GET /api/ui/repositories/{id}/coding/tracker-options` (admins).
 
 The run's **Routed by** reads like `work item match (Team is SOC, label product:portal)`.
 

@@ -84,6 +84,18 @@ const state = vi.hoisted(() => ({
   } | null,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+/** The Linear workspace options the match editor reads (null: none connected; Error: fails). */
+const linear = vi.hoisted(() => ({
+  options: null as unknown,
+  organizations: [] as string[],
+}));
+vi.mock("@/lib/linear/settings-options", () => ({
+  getLinearSettingsOptions: async (organizationId: string) => {
+    linear.organizations.push(organizationId);
+    if (linear.options instanceof Error) throw linear.options;
+    return linear.options;
+  },
+}));
 vi.mock("@/lib/auth/session", () => ({
   // The signed-in user works in `state.orgId`.
   requireUser: async (role: Role = "member") =>
@@ -107,6 +119,8 @@ const agentsRoute = await import("@/app/api/ui/repositories/[id]/agents/route");
 const playbooksRoute = await import("@/app/api/ui/repositories/[id]/playbooks/route");
 const codingRoute = await import("@/app/api/ui/repositories/[id]/coding/route");
 const matchCheckRoute = await import("@/app/api/ui/repositories/[id]/coding/match-check/route");
+const trackerOptionsRoute =
+  await import("@/app/api/ui/repositories/[id]/coding/tracker-options/route");
 const detailRoute = await import("@/app/api/ui/repositories/[id]/route");
 const { enqueueReview } = await import("@/lib/review/enqueue");
 const { getDispatcher } = await import("@/lib/dispatch");
@@ -1238,6 +1252,59 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       expect(await detailCoding(docsRepo)).toMatchObject({
         routingRules: [{ position: 2, description: "Labels contains any of ui" }],
       });
+    });
+  });
+
+  describe("GET …/coding/tracker-options", () => {
+    const options = async (id = repoId) => {
+      const response = await trackerOptionsRoute.GET(new Request("http://localhost/api/ui"), {
+        params: Promise.resolve({ id }),
+      });
+      return { status: response.status, body: (await response.json()) as unknown };
+    };
+
+    beforeEach(() => {
+      linear.organizations = [];
+      linear.options = null;
+    });
+
+    it("answers the repo's organization's Linear teams, projects and labels", async () => {
+      linear.options = {
+        teams: [{ key: "SOC", name: "Social" }],
+        labels: ["product:portal"],
+        projects: ["Portal"],
+        states: ["Todo"],
+        projectMilestones: [],
+        cycles: [],
+        users: [],
+      };
+      expect(await options()).toEqual({
+        status: 200,
+        body: {
+          status: "connected",
+          teams: [{ key: "SOC", name: "Social" }],
+          projects: ["Portal"],
+          labels: ["product:portal"],
+        },
+      });
+      expect(linear.organizations).toEqual([orgId]);
+    });
+
+    it("says disconnected without a workspace and unavailable when Linear fails", async () => {
+      expect(await options()).toEqual({ status: 200, body: { status: "disconnected" } });
+      linear.options = new Error("Linear is down");
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await options()).toEqual({ status: 200, body: { status: "unavailable" } });
+    });
+
+    it("answers 403 for members and 404 for another organization's or an unknown repo", async () => {
+      state.user = MEMBER;
+      expect((await options()).status).toBe(403);
+      state.user = ADMIN;
+      expect((await options(otherRepoId)).status).toBe(404);
+      expect((await options(randomUUID())).status).toBe(404);
+      expect((await options("not-a-uuid")).status).toBe(404);
+      expect(linear.organizations).toEqual([]);
     });
   });
 });

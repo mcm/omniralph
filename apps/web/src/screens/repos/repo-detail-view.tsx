@@ -20,6 +20,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { ApiError } from "@/lib/api/client";
 import type { RepositoryDetail, RepositoryProblemItem } from "@/lib/api/repositories";
 import { runListHref } from "@/lib/runs/hrefs";
+import { CodingCard } from "./coding-card";
 import { useProblemAction } from "./mutations";
 import { useRepositoryDetail } from "./queries";
 import { RemoveRepoDialog } from "./remove-repo-dialog";
@@ -42,6 +43,9 @@ export const REPO_SECTIONS = [
   { id: "advanced", label: "Advanced" },
 ] as const;
 export type RepoSectionId = (typeof REPO_SECTIONS)[number]["id"];
+
+/** The sections that are one settings card (the card's title names the section). */
+const CARD_SECTIONS: Partial<Record<RepoSectionId, true>> = { reviews: true, coding: true };
 
 const SECTION_IDS: readonly RepoSectionId[] = REPO_SECTIONS.map((section) => section.id);
 
@@ -180,10 +184,14 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
           id={section.id}
           className="or-repo-section"
           // A card section is the card's own region (named by its title): not a second one.
-          aria-labelledby={section.id === "reviews" ? undefined : `or-repo-section-${section.id}`}
+          aria-labelledby={
+            section.id in CARD_SECTIONS ? undefined : `or-repo-section-${section.id}`
+          }
         >
           {section.id === "reviews" ? (
             <ReviewsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+          ) : section.id === "coding" ? (
+            <CodingCard detail={detail} titleId={`or-repo-section-${section.id}`} />
           ) : (
             <h2 id={`or-repo-section-${section.id}`} className="or-repo-section__title">
               {section.label}

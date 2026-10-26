@@ -223,6 +223,7 @@ const repositoryAgents = await import("./repositories/[id]/agents/route");
 const repositoryPlaybooks = await import("./repositories/[id]/playbooks/route");
 const repositoryCoding = await import("./repositories/[id]/coding/route");
 const repositoryMatchCheck = await import("./repositories/[id]/coding/match-check/route");
+const repositoryTrackerOptions = await import("./repositories/[id]/coding/tracker-options/route");
 const repositoryRules = await import("./repositories/[id]/rules/route");
 
 /** A valid Coding card save that changes a repo's defaults (Rewrite history: Always). */
@@ -1508,12 +1509,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         params: { id },
         body: { workItemMatch: { tracker: "linear", team: "ENG" } },
       });
+    const trackerOptions = (id: string) =>
+      call(repositoryTrackerOptions.GET, { method: "GET", params: { id } });
     state.userId = a.adminId;
     // The card saves serve any of the user's organizations: the other's repo is not found.
     for (const response of await Promise.all([
       ...cards(b.repoId, b.agentId),
       codingSave(b.repoId),
       matchCheck(b.repoId),
+      trackerOptions(b.repoId),
     ])) {
       expect(response).toMatchObject({ status: 404, body: { error: expect.any(String) } });
     }
@@ -1521,6 +1525,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ...cards("not-a-uuid", b.agentId),
       codingSave("not-a-uuid"),
       matchCheck("not-a-uuid"),
+      trackerOptions("not-a-uuid"),
     ])) {
       expect(response.status).toBe(404);
     }
@@ -1540,6 +1545,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ...cards(b.repoId, b.agentId),
       codingSave(b.repoId),
       matchCheck(b.repoId),
+      trackerOptions(b.repoId),
     ])) {
       expect(response.status).toBe(403);
     }
