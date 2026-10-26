@@ -394,3 +394,28 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* The Danger zone: the bottom of Advanced, its title in coral. */
+.or-repo-danger {
+  border-color: var(--or-fail);
+}
+
+.or-repo-danger .or-card__title {
+  color: var(--or-fail);
+}
+
+.or-repo-danger__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-repo-danger__text {
+  flex: 1 1 280px;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}

@@ -17,6 +17,7 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import { ShowAdvancedProvider } from "@/components/show-advanced";
 import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type {
   AgentsCard,
@@ -37,6 +38,8 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
 const nav = vi.hoisted(() => ({
   router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
+vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
@@ -100,7 +103,8 @@ const agentsCardData = (): AgentsCard => ({
 /** The card a save of `body` answers with: the pins, idle unless already known. */
 const savedCard = (body: AgentsCardInput): AgentsCard => ({
   pinned: body.pinnedAgentIds.map(
-    (id) => details[REPO_PORTAL]!.agents.pinned.find((agent) => agent.id === id) ?? pinned(id, "idle"),
+    (id) =>
+      details[REPO_PORTAL]!.agents.pinned.find((agent) => agent.id === id) ?? pinned(id, "idle"),
   ),
   pinnable: Object.keys(NAMES)
     .filter((id) => id !== OLD_BOX && !body.pinnedAgentIds.includes(id))
@@ -154,19 +158,21 @@ function renderRepos(
   const view = <ReposView repositoryId={options.repositoryId ?? REPO_PORTAL} />;
   render(
     <CurrentUserProvider user={options.user ?? testUser}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          <UnsavedChangesProvider>
-            {options.live ? (
-              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                {view}
-              </LiveProvider>
-            ) : (
-              view
-            )}
-          </UnsavedChangesProvider>
-        </UiProvider>
-      </QueryClientProvider>
+      <ShowAdvancedProvider initial={false}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            <UnsavedChangesProvider>
+              {options.live ? (
+                <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                  {view}
+                </LiveProvider>
+              ) : (
+                view
+              )}
+            </UnsavedChangesProvider>
+          </UiProvider>
+        </QueryClientProvider>
+      </ShowAdvancedProvider>
     </CurrentUserProvider>,
   );
   return { client };
@@ -228,9 +234,11 @@ describe("the Agents card", () => {
     expect(items).toHaveLength(4);
     expect(within(items[0]!).getByRole("img", { name: "Running 2" })).toBeTruthy();
     expect(items[0]!.querySelector(".or-status--run")?.textContent).toBe("Running 2");
-    expect(within(items[0]!).getByRole("link", { name: /build-1/ }).getAttribute("href")).toBe(
-      `/fleet/${BUILD_1}`,
-    );
+    expect(
+      within(items[0]!)
+        .getByRole("link", { name: /build-1/ })
+        .getAttribute("href"),
+    ).toBe(`/fleet/${BUILD_1}`);
     expect(items[1]!.querySelector(".or-status--neutral")?.textContent).toBe("Idle");
     expect(items[2]!.querySelector(".or-status--fail")?.textContent).toBe("Offline");
     expect(items[3]!.querySelector(".or-status--neutral")?.textContent).toBe("Updating");
@@ -349,9 +357,7 @@ describe("the Agents card", () => {
     expect(button.getAttribute("aria-disabled")).toBe("true");
     const user = userEvent.setup();
     await user.hover(button);
-    expect((await screen.findByRole("tooltip")).textContent).toBe(
-      "Every agent is already pinned",
-    );
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Every agent is already pinned");
     await user.click(button);
     expect(screen.queryByRole("menu")).toBeNull();
   });

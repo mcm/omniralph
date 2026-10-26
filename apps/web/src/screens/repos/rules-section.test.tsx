@@ -17,6 +17,7 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import { ShowAdvancedProvider } from "@/components/show-advanced";
 import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { RepositoryDetail, RepositoryListItem } from "@/lib/api/repositories";
 import type { RepositoryRules } from "@/lib/api/rules";
@@ -33,6 +34,8 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
 const nav = vi.hoisted(() => ({
   router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
+vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
@@ -178,19 +181,21 @@ function renderRepos(
   const view = <ReposView repositoryId={options.repositoryId ?? REPO_PORTAL} />;
   render(
     <CurrentUserProvider user={options.user ?? testUser}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          <UnsavedChangesProvider>
-            {options.live ? (
-              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                {view}
-              </LiveProvider>
-            ) : (
-              view
-            )}
-          </UnsavedChangesProvider>
-        </UiProvider>
-      </QueryClientProvider>
+      <ShowAdvancedProvider initial={false}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            <UnsavedChangesProvider>
+              {options.live ? (
+                <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                  {view}
+                </LiveProvider>
+              ) : (
+                view
+              )}
+            </UnsavedChangesProvider>
+          </UiProvider>
+        </QueryClientProvider>
+      </ShowAdvancedProvider>
     </CurrentUserProvider>,
   );
   return { client };
