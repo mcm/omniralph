@@ -19,7 +19,7 @@ import { useApiAction } from "@/components/use-api-action";
 import { useSeededDraft } from "@/components/use-seeded-draft";
 import { api } from "@/lib/api/client";
 import type {
-  HarnessDefaults,
+  AgentDefaults,
   HarnessDefaultsSave,
   OrganizationDefaults,
 } from "@/lib/api/harness-defaults";
@@ -89,7 +89,7 @@ export function DefaultsSection({
   packageName,
   defaults,
   builtInDefaults,
-}: HarnessDefaults) {
+}: AgentDefaults) {
   const apiAction = useApiAction();
   const saved = defaultsDraft(defaults, desiredVersion);
   // Follows a change saved elsewhere while the section isn't being edited.

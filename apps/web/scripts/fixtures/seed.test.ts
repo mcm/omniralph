@@ -4,8 +4,8 @@ import {
   decrypt,
   feedback,
   findings,
-  harnesses,
-  harnessRepoPins,
+  agents,
+  agentRepoPins,
   integrations,
   jobs,
   listRoutingRules,
@@ -87,7 +87,7 @@ describe("seedFixtures", () => {
   });
 
   it("has harnesses online, offline, outdated and revoked", async () => {
-    const rows = await db.select().from(harnesses);
+    const rows = await db.select().from(agents);
     const now = Date.now();
     const online = rows.filter(
       (h) => !h.revokedAt && h.lastHeartbeatAt && now - h.lastHeartbeatAt.getTime() < 60_000,
@@ -104,10 +104,10 @@ describe("seedFixtures", () => {
 
   it("pins the control panel to a revoked harness among others", async () => {
     const pins = await db
-      .select({ revokedAt: harnesses.revokedAt })
-      .from(harnessRepoPins)
-      .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
-      .where(eq(harnessRepoPins.repositoryId, FIXTURE_IDS.repositories.controlPanel));
+      .select({ revokedAt: agents.revokedAt })
+      .from(agentRepoPins)
+      .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+      .where(eq(agentRepoPins.repositoryId, FIXTURE_IDS.repositories.controlPanel));
     expect(pins.length).toBeGreaterThan(1);
     expect(pins.some((pin) => pin.revokedAt)).toBe(true);
   });

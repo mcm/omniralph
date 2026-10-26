@@ -1,18 +1,18 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import {
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   closeDb,
   createDb,
-  createHarnessEnrollment,
+  createAgentEnrollment,
   createReview,
-  enrollHarness,
+  enrollAgent,
   feedback,
   findings,
   jobs,
   insertMessage,
   insertPlaybook,
-  listHarnessAudit,
+  listAgentAudit,
   listMessages,
   ralphRuns,
   repositories,
@@ -185,9 +185,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
   /** Harness IDs by access token, for `startAs`. */
   const harnessIds = new Map<string, string>();
 
-  async function newAgent(values: Partial<typeof harnesses.$inferInsert> = {}) {
+  async function newAgent(values: Partial<typeof agents.$inferInsert> = {}) {
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1", ...values })
       .returning();
     const accessToken = await getTokenSigner().signAccessToken(agent!.id);
@@ -236,7 +236,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     await db
       .update(jobs)
       .set({
-        targetHarnessId: harnessIds.get(accessToken)!,
+        targetAgentId: harnessIds.get(accessToken)!,
         availableAt: past,
         ...(before.status === "running" && { leaseExpiresAt: past }),
       })
@@ -253,10 +253,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(body.job.id).toBe(jobId);
       return body;
     } finally {
-      await db
-        .update(jobs)
-        .set({ targetHarnessId: before.targetHarnessId })
-        .where(eq(jobs.id, jobId));
+      await db.update(jobs).set({ targetAgentId: before.targetAgentId }).where(eq(jobs.id, jobId));
     }
   }
 
@@ -286,15 +283,15 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         dedupeKey: "review:insert",
       });
       expect(created).toBe(true);
-      expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
+      expect(job).toMatchObject({ status: "queued", targetAgentId: null });
       expect(await jobRow(job.id)).toMatchObject({
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
         payload: { prNumber: 7 },
         status: "queued",
-        targetHarnessId: null,
-        harnessId: null,
+        targetAgentId: null,
+        agentId: null,
       });
     });
 
@@ -333,23 +330,23 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const busy = await newAgent({ name: "busy" });
       const idle = await newAgent({ name: "idle" });
       const revoked = await newAgent({ name: "revoked", revokedAt: new Date() });
-      await db.insert(harnessRepoPins).values([
-        { harnessId: busy.harnessId, repositoryId },
-        { harnessId: idle.harnessId, repositoryId },
-        { harnessId: revoked.harnessId, repositoryId },
+      await db.insert(agentRepoPins).values([
+        { agentId: busy.harnessId, repositoryId },
+        { agentId: idle.harnessId, repositoryId },
+        { agentId: revoked.harnessId, repositoryId },
       ]);
       await db.insert(jobs).values({
         organizationId: orgId,
         type: "review.run",
         taskType: "review",
         status: "running",
-        harnessId: busy.harnessId,
+        agentId: busy.harnessId,
       });
       try {
         const pinned = await newJob({ repositoryId });
         expect(await jobRow(pinned)).toMatchObject({
           status: "queued",
-          targetHarnessId: idle.harnessId,
+          targetAgentId: idle.harnessId,
         });
 
         // Explicit targets (e.g. `repo.sync` pre-clones) win over pins.
@@ -360,39 +357,39 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           repositoryId,
           targetHarnessId: busy.harnessId,
         });
-        expect(targeted.targetHarnessId).toBe(busy.harnessId);
-        expect((await jobRow(targeted.id)).targetHarnessId).toBe(busy.harnessId);
+        expect(targeted.targetAgentId).toBe(busy.harnessId);
+        expect((await jobRow(targeted.id)).targetAgentId).toBe(busy.harnessId);
       } finally {
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, repositoryId));
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
       }
 
       // Without pins, any harness of the organization may claim the job.
-      expect((await jobRow(await newJob({ repositoryId }))).targetHarnessId).toBeNull();
+      expect((await jobRow(await newJob({ repositoryId }))).targetAgentId).toBeNull();
     });
 
     it("republishes a queued job to its repo's current pins", async () => {
       const first = await newAgent({ name: "first" });
       const second = await newAgent({ name: "second" });
-      await db.insert(harnessRepoPins).values({ harnessId: first.harnessId, repositoryId });
+      await db.insert(agentRepoPins).values({ agentId: first.harnessId, repositoryId });
       try {
         const jobId = await newJob({ repositoryId });
-        expect((await jobRow(jobId)).targetHarnessId).toBe(first.harnessId);
+        expect((await jobRow(jobId)).targetAgentId).toBe(first.harnessId);
 
         // The pin moves to another harness.
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.harnessId, first.harnessId));
-        await db.insert(harnessRepoPins).values({ harnessId: second.harnessId, repositoryId });
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, first.harnessId));
+        await db.insert(agentRepoPins).values({ agentId: second.harnessId, repositoryId });
         expect(await dispatcher().republish(jobId)).toBe(true);
         expect(await jobRow(jobId)).toMatchObject({
           status: "queued",
-          targetHarnessId: second.harnessId,
+          targetAgentId: second.harnessId,
         });
 
         // Unpinned: any harness of the organization may claim it.
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, repositoryId));
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
         expect(await dispatcher().republish(jobId)).toBe(true);
-        expect((await jobRow(jobId)).targetHarnessId).toBeNull();
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
       } finally {
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, repositoryId));
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
       }
     });
 
@@ -401,14 +398,14 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const jobId = await newJob({ repositoryId });
       await db
         .update(jobs)
-        .set({ status: "running", harnessId: agent.harnessId })
+        .set({ status: "running", agentId: agent.harnessId })
         .where(eq(jobs.id, jobId));
-      await db.insert(harnessRepoPins).values({ harnessId: agent.harnessId, repositoryId });
+      await db.insert(agentRepoPins).values({ agentId: agent.harnessId, repositoryId });
       try {
         expect(await dispatcher().republish(jobId)).toBe(false);
-        expect(await jobRow(jobId)).toMatchObject({ status: "running", targetHarnessId: null });
+        expect(await jobRow(jobId)).toMatchObject({ status: "running", targetAgentId: null });
       } finally {
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.repositoryId, repositoryId));
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.repositoryId, repositoryId));
       }
       expect(await dispatcher().republish(randomUUID())).toBe(false);
     });
@@ -509,7 +506,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(principal).toMatchObject({ jobId, harnessId: agent.harnessId });
       expect(await jobRow(jobId)).toMatchObject({
         status: "running",
-        harnessId: agent.harnessId,
+        agentId: agent.harnessId,
         deliveryCount: 1,
       });
       expect((await jobRow(jobId)).leaseExpiresAt).toBeInstanceOf(Date);
@@ -695,7 +692,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const { organizationId, job } = await claimOrg();
       const old = await newAgent({ organizationId, reportedVersion: "0.9.0" });
       const current = await newAgent({ organizationId, reportedVersion: "0.10.0" });
-      const jobId = await job("claim.run", { minHarnessVersion: "0.10.0" });
+      const jobId = await job("claim.run", { minAgentVersion: "0.10.0" });
       expect((await claimAs(old.accessToken)).status).toBe(204);
       const res = await claimAs(current.accessToken);
       expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
@@ -774,8 +771,8 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const { organizationId, agent, job } = await claimOrg();
       const other = await newAgent({ organizationId });
       const untargeted = await job();
-      const theirs = await job("claim.run", { targetHarnessId: other.harnessId });
-      const ours = await job("claim.run", { targetHarnessId: agent.harnessId });
+      const theirs = await job("claim.run", { targetAgentId: other.harnessId });
+      const ours = await job("claim.run", { targetAgentId: agent.harnessId });
       const claimedId = async (accessToken: string) =>
         ((await (await claimAs(accessToken)).json()) as JobStartResponse & { action: "run" }).job
           .id;
@@ -819,7 +816,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const res = await claimAs(other.accessToken);
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ job: { id: jobId, deliveryCount: 2 } });
-      expect(await jobRow(jobId)).toMatchObject({ status: "running", harnessId: other.harnessId });
+      expect(await jobRow(jobId)).toMatchObject({ status: "running", agentId: other.harnessId });
 
       // The crashed harness's late result is rejected.
       const late = await result(
@@ -827,7 +824,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         ctx(jobId),
       );
       expect(late.status).toBe(409);
-      expect(await jobRow(jobId)).toMatchObject({ status: "running", harnessId: other.harnessId });
+      expect(await jobRow(jobId)).toMatchObject({ status: "running", agentId: other.harnessId });
     });
 
     it("rejects invalid bodies, bad tokens and revoked harnesses", async () => {
@@ -838,10 +835,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       );
       expect((await claimAs(agent.accessToken, { waitSeconds: 0 })).status).toBe(400);
       expect((await claimAs("garbage")).status).toBe(401);
-      await db
-        .update(harnesses)
-        .set({ revokedAt: new Date() })
-        .where(eq(harnesses.id, agent.harnessId));
+      await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agent.harnessId));
       expect((await claimAs(agent.accessToken)).status).toBe(401);
     });
   });
@@ -862,7 +856,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ status: "retry", retryAfterSeconds: 120 });
         const row = await jobRow(jobId);
-        expect(row).toMatchObject({ status: "queued", harnessId: null, leaseExpiresAt: null });
+        expect(row).toMatchObject({ status: "queued", agentId: null, leaseExpiresAt: null });
         // Claimable again only once the retry delay passed.
         expect(row.availableAt.getTime()).toBeGreaterThan(Date.now() + 110_000);
       }
@@ -933,7 +927,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         status: "completed",
         result: { findings: [] },
       });
-      const audit = await listHarnessAudit(db, { harnessId, event: "result_submitted" });
+      const audit = await listAgentAudit(db, { agentId: harnessId, event: "result_submitted" });
       expect(audit.map((a) => a.detail)).toEqual([{ jobId, status: "completed" }]);
     });
 
@@ -953,7 +947,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect((await failAs(jobId, stale.accessToken, { retryable: false })).status).toBe(409);
       expect(await jobRow(jobId)).toMatchObject({
         status: "running",
-        harnessId: current.harnessId,
+        agentId: current.harnessId,
       });
 
       const ok = await result(
@@ -1225,7 +1219,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     it("returns central config, refreshed job tokens and jobs to cancel", async () => {
       const { harnessId, accessToken } = await newAgent({ maxConcurrency: 2 });
       const other = await newAgent();
-      await db.insert(harnessRepoPins).values({ harnessId, repositoryId });
+      await db.insert(agentRepoPins).values({ agentId: harnessId, repositoryId });
 
       const running = await newJob();
       await startAs(running, accessToken);
@@ -1288,13 +1282,13 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(leases.get(takenOver)).toBe(stale.getTime());
       expect(leases.get(canceled)).not.toBeGreaterThan(before);
 
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [agent] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(agent).toMatchObject({
         reportedVersion: "0.2.0",
         reportedModels: [{ value: "opus", displayName: "Opus" }],
       });
       expect(agent!.lastHeartbeatAt).toBeInstanceOf(Date);
-      await db.delete(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId));
+      await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, harnessId));
     });
 
     it("refreshes both tokens of a run-spec job, by kind", async () => {
@@ -1352,7 +1346,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           kind: "prd",
           repositoryId,
           status: "running",
-          harnessId,
+          agentId: harnessId,
         })
         .returning();
       const [job] = await db
@@ -1362,7 +1356,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           type: "ralph.story",
           taskType: "coding",
           status: "running",
-          harnessId,
+          agentId: harnessId,
           ralphRunId: run!.id,
           deliveryCount: 1,
           startedAt: new Date(),
@@ -1405,7 +1399,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       const { harnessId, accessToken } = await newAgent();
       const bad = await heartbeat(agentRequest("heartbeat", accessToken, { body: { version: 1 } }));
       expect(bad.status).toBe(400);
-      await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, harnessId));
+      await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, harnessId));
       const revoked = await heartbeat(
         agentRequest("heartbeat", accessToken, {
           body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
@@ -1458,19 +1452,19 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
 
     it("has an enrolled harness claim coding jobs and run 5 at once with no organization settings", async () => {
       const organizationId = await newOrg();
-      const enrollment = await createHarnessEnrollment(db, { organizationId });
-      const { harnessId } = (await enrollHarness(db, {
+      const enrollment = await createAgentEnrollment(db, { organizationId });
+      const { agentId } = (await enrollAgent(db, {
         enrollmentToken: enrollment.token,
         name: "host",
         version: "0.2.0",
       }))!;
-      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(row).toMatchObject({
         maxConcurrency: null,
         reportedAcceptedTaskTypes: null,
         poolLimits: {},
       });
-      const accessToken = await getTokenSigner().signAccessToken(harnessId);
+      const accessToken = await getTokenSigner().signAccessToken(agentId);
 
       const jobId = await codingJob(organizationId);
       const res = await claimLong(accessToken);
@@ -1520,7 +1514,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       // Its heartbeat reports review only: stored, and no task types come back.
       const response = await heartbeatAs(agent.accessToken, { acceptedTaskTypes: ["review"] });
       expect(response.acceptedTaskTypes).toBeUndefined();
-      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, agent.harnessId));
+      const [row] = await db.select().from(agents).where(eq(agents.id, agent.harnessId));
       expect(row!.reportedAcceptedTaskTypes).toEqual(["review"]);
 
       const jobId = await codingJob(organizationId);
@@ -1599,7 +1593,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       otherRepositoryId = repo!.id;
     });
 
-    async function otherAgent(values: Partial<typeof harnesses.$inferInsert> = {}) {
+    async function otherAgent(values: Partial<typeof agents.$inferInsert> = {}) {
       return newAgent({ organizationId: otherOrgId, name: "globex-1", ...values });
     }
 
@@ -1618,24 +1612,24 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
     it("inserts each job for its own organization, never another's", async () => {
       const ours = await newJob({ repositoryId });
       const theirs = await otherJob({ repositoryId: otherRepositoryId });
-      expect(await jobRow(ours)).toMatchObject({ organizationId: orgId, targetHarnessId: null });
+      expect(await jobRow(ours)).toMatchObject({ organizationId: orgId, targetAgentId: null });
       expect(await jobRow(theirs)).toMatchObject({
         organizationId: otherOrgId,
-        targetHarnessId: null,
+        targetAgentId: null,
       });
     });
 
     it("never targets a job at a pinned or targeted harness of another organization", async () => {
       // A pin can't be created across organizations; even if one existed it's ignored.
       const foreign = await otherAgent();
-      await db.insert(harnessRepoPins).values({ harnessId: foreign.harnessId, repositoryId });
+      await db.insert(agentRepoPins).values({ agentId: foreign.harnessId, repositoryId });
       try {
         const jobId = await newJob({ repositoryId });
-        expect((await jobRow(jobId)).targetHarnessId).toBeNull();
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
         expect(await dispatcher().republish(jobId)).toBe(true);
-        expect((await jobRow(jobId)).targetHarnessId).toBeNull();
+        expect((await jobRow(jobId)).targetAgentId).toBeNull();
       } finally {
-        await db.delete(harnessRepoPins).where(eq(harnessRepoPins.harnessId, foreign.harnessId));
+        await db.delete(agentRepoPins).where(eq(agentRepoPins.agentId, foreign.harnessId));
       }
 
       const dedupeKey = randomUUID();
@@ -1651,7 +1645,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       ).rejects.toThrow(/organization/);
       expect(await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey))).toHaveLength(0);
       expect(
-        await db.select().from(jobs).where(eq(jobs.targetHarnessId, foreign.harnessId)),
+        await db.select().from(jobs).where(eq(jobs.targetAgentId, foreign.harnessId)),
       ).toHaveLength(0);
     });
 
@@ -1680,14 +1674,14 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
       expect(await startAs(jobId, foreign.accessToken)).toBeNull();
       expect(await jobRow(jobId)).toMatchObject({
         status: "queued",
-        harnessId: null,
+        agentId: null,
         deliveryCount: 0,
       });
 
       // Even a job (wrongly) marked running on the foreign harness can't be reported on.
       await db
         .update(jobs)
-        .set({ status: "running", harnessId: foreign.harnessId, deliveryCount: 1 })
+        .set({ status: "running", agentId: foreign.harnessId, deliveryCount: 1 })
         .where(eq(jobs.id, jobId));
       const res = await result(
         agentRequest(`jobs/${jobId}/result`, foreign.accessToken, { body: { result: {} } }),
@@ -1707,7 +1701,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
         .update(jobs)
         .set({
           status: "running",
-          harnessId: foreign.harnessId,
+          agentId: foreign.harnessId,
           deliveryCount: 1,
         })
         .where(eq(jobs.id, jobId));
@@ -1743,8 +1737,8 @@ describe.skipIf(!databaseAvailable)("job dispatch and harness API", () => {
           })
         ).status,
       ).toBe(401);
-      const audit = await listHarnessAudit(db, {
-        harnessId: foreign.harnessId,
+      const audit = await listAgentAudit(db, {
+        agentId: foreign.harnessId,
         event: "credential_issued",
       });
       expect(audit).toEqual([]);

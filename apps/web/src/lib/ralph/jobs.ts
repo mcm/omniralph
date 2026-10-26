@@ -43,9 +43,9 @@ export async function onRalphJobStarted(
     if (FINISHED_RUN_STATUSES.has(run.status)) return true;
     const repositoryId = job.repositoryId ?? run.repositoryId;
     const lane = repositoryId ? await getLaneByRepository(tx, run.id, repositoryId) : null;
-    if (lane && lane.harnessId !== harnessId) await updateLane(tx, lane.id, { harnessId });
+    if (lane && lane.agentId !== harnessId) await updateLane(tx, lane.id, { agentId: harnessId });
     const main = !repositoryId || repositoryId === run.repositoryId;
-    if (main && run.harnessId !== harnessId) await updateRun(tx, run.id, { harnessId });
+    if (main && run.agentId !== harnessId) await updateRun(tx, run.id, { agentId: harnessId });
     return false;
   });
   if (finished ?? true) {

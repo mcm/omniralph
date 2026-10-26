@@ -6,9 +6,9 @@ import { randomBytes } from "node:crypto";
 import {
   closeDb,
   connectRepository,
-  createHarnessEnrollment,
+  createAgentEnrollment,
   createDb,
-  enrollHarness,
+  enrollAgent,
   getActiveOrganization,
   hasPendingInvitation,
   listPendingInvitationsForEmail,
@@ -158,12 +158,12 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
       externalId: "1",
       fullPath: "journey/shared-app",
     });
-    const enrollment = await createHarnessEnrollment(db, {
+    const enrollment = await createAgentEnrollment(db, {
       organizationId: org.id,
       name: "journey-agent",
       createdBy: founder.id,
     });
-    const { harnessId } = (await enrollHarness(db, {
+    const { agentId } = (await enrollAgent(db, {
       enrollmentToken: enrollment.token,
       name: "journey-agent",
       version: "1.0.0",
@@ -200,7 +200,7 @@ describe.skipIf(!databaseAvailable)("organization onboarding journey", () => {
     const listed = await listHarnesses(new Request("http://localhost/api/ui/harnesses"), {
       params: Promise.resolve({}),
     });
-    expect(await listed.text()).toContain(harnessId);
+    expect(await listed.text()).toContain(agentId);
     const settings = await (
       await organizationRoute.GET(new Request("http://localhost/api/ui/organization"), {
         params: Promise.resolve({}),

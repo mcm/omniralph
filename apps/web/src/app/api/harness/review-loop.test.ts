@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  harnesses,
+  agents,
   connectRepository,
   closeDb,
   createDb,
@@ -354,7 +354,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
 
   async function newAgent() {
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: orgId,
         name: "coder-1",
@@ -507,12 +507,12 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     expect(job).toMatchObject({
       organizationId: orgId,
       status: "queued",
-      targetHarnessId: null,
+      targetAgentId: null,
       type: "review.task",
       taskType: "review",
       taskId: "builtin:review-pr",
       repositoryId,
-      minHarnessVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: REVIEW_TASKS_MIN_HARNESS_VERSION,
     });
     expect(job.payload).toMatchObject({
       trigger: { kind: "pr.updated" },
@@ -560,7 +560,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         maxFiles: payload.reviewConfig.profile.maxFiles,
       },
     });
-    expect(await reviewRow(reviewId)).toMatchObject({ status: "running", harnessId });
+    expect(await reviewRow(reviewId)).toMatchObject({ status: "running", agentId: harnessId });
 
     // Harness runs the review and reports the result.
     const output = await agentRun(job.payload);

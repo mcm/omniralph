@@ -3,11 +3,11 @@ import {
   closeDb,
   connectRepository,
   createDb,
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   organizations,
-  pinnedHarnessFor,
-  requestHarnessUpdate,
+  pinnedAgentFor,
+  requestAgentUpdate,
   upsertScmConnection,
   type Database,
 } from "@omniralph/db";
@@ -92,14 +92,14 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
 
   async function newHarness(lastHeartbeatAt: Date | null = null): Promise<string> {
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1", lastHeartbeatAt })
       .returning();
     return harness!.id;
   }
 
   async function row(harnessId: string) {
-    const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+    const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
     return harness!;
   }
 
@@ -161,7 +161,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
     it("clears a handled update request on the first heartbeat reporting it", async () => {
       const harnessId = await newHarness();
       await recordHeartbeat(db, harnessId, REPORT, at(0));
-      const requested = await requestHarnessUpdate(db, orgId, harnessId, "1.5.0");
+      const requested = await requestAgentUpdate(db, orgId, harnessId, "1.5.0");
       const handled = { ...REPORT, handledUpdateRequestId: requested!.updateRequestId };
       const returned = await recordHeartbeat(db, harnessId, handled, at(20));
       expect(returned?.updateRequestId).toBeNull();
@@ -230,7 +230,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
       expect(listed.online).toBe(true);
     });
 
-    it("breaks pinnedHarnessFor's tie on the Redis last-seen", async () => {
+    it("breaks pinnedAgentFor's tie on the Redis last-seen", async () => {
       const connection = (await upsertScmConnection(db, {
         organizationId: orgId,
         provider: "gitlab",
@@ -249,14 +249,14 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("harness last-seen", () =
       ).id;
       const older = await newHarness(new Date(Date.now() - 60_000));
       const newer = await newHarness(new Date(Date.now() - 30_000));
-      await db.insert(harnessRepoPins).values([
-        { harnessId: older, repositoryId },
-        { harnessId: newer, repositoryId },
+      await db.insert(agentRepoPins).values([
+        { agentId: older, repositoryId },
+        { agentId: newer, repositoryId },
       ]);
-      expect(await pinnedHarnessFor(db, orgId, repositoryId)).toBe(newer);
+      expect(await pinnedAgentFor(db, orgId, repositoryId)).toBe(newer);
       await getRedis().set(harnessLastSeenKey(older), String(Date.now()));
       expect(
-        await pinnedHarnessFor(db, orgId, repositoryId, { lastHeartbeats: readHarnessLastSeen }),
+        await pinnedAgentFor(db, orgId, repositoryId, { lastHeartbeats: readHarnessLastSeen }),
       ).toBe(older);
     });
   });

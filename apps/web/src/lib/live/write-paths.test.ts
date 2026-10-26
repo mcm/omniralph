@@ -6,9 +6,9 @@ import {
   deleteChatConnection,
   removeMember,
   removeOrganizationDomain,
-  requestHarnessUpdate,
+  requestAgentUpdate,
   revokeInvitation,
-  setHarnessDesiredVersion,
+  setAgentDesiredVersion,
   upsertChatChannelPlaybookSetting,
   addOrganizationDomain,
   captureChanges,
@@ -17,7 +17,7 @@ import {
   completeJob,
   connectRepository,
   createDb,
-  createHarnessEnrollment,
+  createAgentEnrollment,
   createHostTool,
   createInvitation,
   createCustomRule,
@@ -31,37 +31,37 @@ import {
   deleteWorkItemMatch,
   dismissFinding,
   deleteScmConnection,
-  enrollHarness,
+  enrollAgent,
   ensureChatThread,
   ensureLane,
   expireQueuedJobs,
   failJob,
   findings,
-  harnesses,
+  agents,
   insertJob,
   insertPlaybook,
   insertLearnedRule,
   insertRunActivity,
   jobs,
   mapThreadRun,
-  markHarnessDeleted,
+  markAgentDeleted,
   markReviewRunning,
   markReviewRunRunning,
   organizations,
-  pinRepositoryToHarness,
-  recordHarnessHeartbeat,
+  pinRepositoryToAgent,
+  recordAgentHeartbeat,
   replaceRoutingRules,
   requestJobCancel,
   resolveOpenFindings,
-  revokeHarness,
+  revokeAgent,
   saveChatConnection,
   saveIntegration,
   saveWorkItemMatch,
   setDefaultMaxConcurrency,
-  setHarnessHostToolPath,
+  setAgentHostToolPath,
   setRepositorySwitches,
   setTriageRunStatus,
-  updateHarnessConfig,
+  updateAgentConfig,
   updateLane,
   updateMemberRole,
   updateOrganization,
@@ -138,7 +138,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     });
     repoId = repo.id;
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "host", reportedVersion: "1.0.0" })
       .returning();
     harnessId = harness!.id;
@@ -405,23 +405,27 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
         }),
       ).toEqual([runEvent(run.id, [jobId])]);
       const claim = {
-        harnessId,
+        agentId: harnessId,
         organizationId: orgId,
         acceptedTaskTypes: ["coding"],
         pools: ["long"],
-        harnessVersion: "1.0.0",
+        agentVersion: "1.0.0",
         maxDeliveries: 3,
       };
       expect(await published(() => claimJob(db, claim))).toEqual([runEvent(run.id, [jobId])]);
       expect(
-        await published(() => failJob(db, { jobId, harnessId, retryable: true, maxDeliveries: 3 })),
+        await published(() =>
+          failJob(db, { jobId, agentId: harnessId, retryable: true, maxDeliveries: 3 }),
+        ),
       ).toEqual([runEvent(run.id, [jobId])]);
       await claimJob(db, claim);
-      expect(await published(() => completeJob(db, { jobId, harnessId, result: {} }))).toEqual([
-        runEvent(run.id, [jobId]),
-      ]);
+      expect(
+        await published(() => completeJob(db, { jobId, agentId: harnessId, result: {} })),
+      ).toEqual([runEvent(run.id, [jobId])]);
       // A rejected result (not running any more) publishes nothing.
-      expect(await published(() => completeJob(db, { jobId, harnessId, result: {} }))).toEqual([]);
+      expect(
+        await published(() => completeJob(db, { jobId, agentId: harnessId, result: {} })),
+      ).toEqual([]);
       const queued = await queuedJob(run);
       expect(await published(() => requestJobCancel(db, queued.id))).toEqual([
         runEvent(run.id, [queued.id]),
@@ -497,24 +501,24 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     });
 
     it("enroll, settings, pins, host tool paths, revoke and delete publish the agent", async () => {
-      const { token } = await createHarnessEnrollment(db, { organizationId: orgId });
+      const { token } = await createAgentEnrollment(db, { organizationId: orgId });
       let id = "";
       expect(
         await published(async () => {
-          id = (await enrollHarness(db, { enrollmentToken: token, name: "new", version: "1.0.0" }))!
-            .harnessId;
+          id = (await enrollAgent(db, { enrollmentToken: token, name: "new", version: "1.0.0" }))!
+            .agentId;
         }),
       ).toEqual([agentEvent(id)]);
       expect(
         await published(() =>
-          updateHarnessConfig(db, orgId, id, {
+          updateAgentConfig(db, orgId, id, {
             maxConcurrency: 2,
             poolLimits: {},
           }),
         ),
       ).toEqual([agentEvent(id)]);
       expect(
-        await published(() => pinRepositoryToHarness(db, { harnessId: id, repositoryId: repoId })),
+        await published(() => pinRepositoryToAgent(db, { agentId: id, repositoryId: repoId })),
       ).toEqual([
         agentEvent(id),
         {
@@ -530,28 +534,28 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       const tool = await createHostTool(db, orgId, { name: "psql" });
       if (!tool.ok) throw new Error("setup");
       expect(
-        await published(() => setHarnessHostToolPath(db, orgId, id, tool.hostTool.id, "/bin/psql")),
+        await published(() => setAgentHostToolPath(db, orgId, id, tool.hostTool.id, "/bin/psql")),
       ).toEqual([agentEvent(id)]);
-      const revoked = await published(() => revokeHarness(db, id, { organizationId: orgId }));
+      const revoked = await published(() => revokeAgent(db, id, { organizationId: orgId }));
       expect(revoked).toContainEqual(agentEvent(id));
       expect(revoked).toContainEqual(expect.objectContaining({ section: "repository.agents" }));
-      expect(await published(() => markHarnessDeleted(db, orgId, id))).toEqual([agentEvent(id)]);
+      expect(await published(() => markAgentDeleted(db, orgId, id))).toEqual([agentEvent(id)]);
     });
 
     it("a heartbeat publishes a changed update state or install, not a steady report", async () => {
       const report = { version: "1.0.0", installables: [] };
-      await recordHarnessHeartbeat(db, harnessId, report);
-      expect(await published(() => recordHarnessHeartbeat(db, harnessId, report))).toEqual([]);
+      await recordAgentHeartbeat(db, harnessId, report);
+      expect(await published(() => recordAgentHeartbeat(db, harnessId, report))).toEqual([]);
       const failing = {
         ...report,
         update: { status: "failed" as const, version: "1.1.0", error: "boom", at: "x" },
       };
-      expect(
-        await published(() => recordHarnessHeartbeat(db, harnessId, failing as never)),
-      ).toEqual([agentEvent(harnessId)]);
+      expect(await published(() => recordAgentHeartbeat(db, harnessId, failing as never))).toEqual([
+        agentEvent(harnessId),
+      ]);
       expect(
         await published(() =>
-          recordHarnessHeartbeat(db, harnessId, {
+          recordAgentHeartbeat(db, harnessId, {
             ...(failing as never as typeof report),
             installables: [{ name: "gh", version: "2.0.0" }],
           } as never),
@@ -561,27 +565,27 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
 
     it("a heartbeat publishes reported task types that differ from the stored ones", async () => {
       const report = { version: "1.0.0", acceptedTaskTypes: ["query", "review", "coding"] };
-      await recordHarnessHeartbeat(db, harnessId, report);
-      expect(await published(() => recordHarnessHeartbeat(db, harnessId, report))).toEqual([]);
+      await recordAgentHeartbeat(db, harnessId, report);
+      expect(await published(() => recordAgentHeartbeat(db, harnessId, report))).toEqual([]);
       expect(
         await published(() =>
-          recordHarnessHeartbeat(db, harnessId, { ...report, acceptedTaskTypes: ["review"] }),
+          recordAgentHeartbeat(db, harnessId, { ...report, acceptedTaskTypes: ["review"] }),
         ),
       ).toEqual([agentEvent(harnessId)]);
       // An older agent reports none: the stored ones stay, nothing is published.
       expect(
-        await published(() => recordHarnessHeartbeat(db, harnessId, { version: "1.0.0" })),
+        await published(() => recordAgentHeartbeat(db, harnessId, { version: "1.0.0" })),
       ).toEqual([]);
     });
 
     it("a desired version or an update request from the control panel publishes the agent", async () => {
-      expect(
-        await published(() => setHarnessDesiredVersion(db, orgId, harnessId, "1.2.0")),
-      ).toEqual([agentEvent(harnessId)]);
-      expect(await published(() => requestHarnessUpdate(db, orgId, harnessId, "1.2.0"))).toEqual([
+      expect(await published(() => setAgentDesiredVersion(db, orgId, harnessId, "1.2.0"))).toEqual([
         agentEvent(harnessId),
       ]);
-      expect(await published(() => setHarnessDesiredVersion(db, orgId, harnessId, null))).toEqual([
+      expect(await published(() => requestAgentUpdate(db, orgId, harnessId, "1.2.0"))).toEqual([
+        agentEvent(harnessId),
+      ]);
+      expect(await published(() => setAgentDesiredVersion(db, orgId, harnessId, null))).toEqual([
         agentEvent(harnessId),
       ]);
     });
@@ -592,7 +596,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           organizationId: orgId,
           type: "install",
           taskType: "system",
-          targetHarnessId: harnessId,
+          targetAgentId: harnessId,
         }),
       );
       expect(events).toContainEqual(agentEvent(harnessId));
@@ -923,7 +927,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     expect(await published(() => updateRun(db, randomUUID(), { status: "running" }))).toEqual([]);
     expect(
       await published(() =>
-        updateHarnessConfig(db, orgId, randomUUID(), {
+        updateAgentConfig(db, orgId, randomUUID(), {
           maxConcurrency: 2,
           poolLimits: {},
         }),

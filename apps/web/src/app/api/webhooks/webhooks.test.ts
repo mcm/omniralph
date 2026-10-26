@@ -292,7 +292,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       expect(job).toMatchObject({
         organizationId: orgId,
         status: "queued",
-        targetHarnessId: null,
+        targetAgentId: null,
       });
     });
 
@@ -549,7 +549,7 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       const [job, ...others] = await prJobs(githubRepoId, number);
       expect(others).toHaveLength(0);
       expect(await retried.json()).toMatchObject({ status: "enqueued", jobId: job!.id });
-      expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
+      expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     });
   });
 

@@ -1,7 +1,7 @@
 // What the specs import instead of `@playwright/test`: its `test` with the fixture database
 // (`db`) and the dev sign-in (`signIn`), plus helpers that play a harness, a webhook or a cron.
 import { test as base, type APIRequestContext, type BrowserContext } from "@playwright/test";
-import { closeDb, createDb, createHarnessEnrollment, type Database } from "@omniralph/db";
+import { closeDb, createDb, createAgentEnrollment, type Database } from "@omniralph/db";
 import { FIXTURE_EMAILS, FIXTURE_IDS } from "../scripts/fixtures/ids";
 
 export { expect } from "@playwright/test";
@@ -31,7 +31,7 @@ export async function createEnrollmentToken(
   db: Database,
   organizationId: string = FIXTURE_IDS.organizations.main,
 ): Promise<string> {
-  const { token } = await createHarnessEnrollment(db, { organizationId });
+  const { token } = await createAgentEnrollment(db, { organizationId });
   return token;
 }
 
@@ -39,7 +39,7 @@ export async function createEnrollmentToken(
  * Enrolls a harness with `token` through `POST /api/harness/enroll`, as a harness on another
  * machine does. Returns its id and refresh token.
  */
-export async function enrollHarness(
+export async function enrollAgent(
   request: APIRequestContext,
   token: string,
   name: string,

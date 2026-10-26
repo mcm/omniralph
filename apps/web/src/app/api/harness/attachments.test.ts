@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   connectRepository,
   closeDb,
   createDb,
@@ -98,7 +98,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
       })
     ).id;
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: orgId,
         name: "coder-1",
@@ -143,7 +143,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
         type: "ralph.story",
         taskType: "coding",
         status: "running",
-        harnessId,
+        agentId: harnessId,
         repositoryId,
         ralphRunId: run.id,
         payload: { attachments: listed.map((id) => ({ id, title: "shot.png", sources: ["x"] })) },
@@ -206,7 +206,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/jobs/{id}/attachments/{att
         taskType: "query",
         taskId: "builtin:chat-ask",
         status: "running",
-        harnessId,
+        agentId: harnessId,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?", attachments } } },
       })
       .returning();

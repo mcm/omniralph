@@ -1,12 +1,12 @@
 import { generateKeyPairSync } from "node:crypto";
 import {
-  harnessRefreshTokens,
-  harnesses,
-  createHarnessEnrollment,
+  agentRefreshTokens,
+  agents,
+  createAgentEnrollment,
   closeDb,
   createDb,
   jobs,
-  listHarnessAudit,
+  listAgentAudit,
   organizations,
   type Database,
 } from "@omniralph/db";
@@ -31,7 +31,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = SIGNING_KEY;
 const { POST: enroll } = await import("./enroll/route");
 const { POST: token } = await import("./token/route");
 const { requireHarness, requireJob } = await import("@/lib/harness-auth/verify");
-const { revokeHarness } = await import("@/lib/harness-auth/revoke");
+const { revokeAgent } = await import("@/lib/harness-auth/revoke");
 const { getTokenSigner, LocalTokenSigner } = await import("@/lib/harness-auth/signer");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -96,7 +96,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
   });
 
   async function enrollNew(ip = newIp()) {
-    const enrollment = await createHarnessEnrollment(db, { organizationId: orgId, name: null });
+    const enrollment = await createAgentEnrollment(db, { organizationId: orgId, name: null });
     const res = await enroll(
       post(
         "enroll",
@@ -131,7 +131,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
         type: "review.run",
         taskType: "review",
         status,
-        harnessId,
+        agentId: harnessId,
       })
       .returning({ id: jobs.id });
     return job!.id;
@@ -139,7 +139,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
 
   describe("POST /api/harness/enroll", () => {
     it("consumes the enrollment token, creates the harness and audits it", async () => {
-      const enrollment = await createHarnessEnrollment(db, {
+      const enrollment = await createAgentEnrollment(db, {
         organizationId: orgId,
         name: "Build box",
       });
@@ -157,7 +157,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
       };
       expect(refreshToken).toMatch(/^orr_[\w-]{43}$/);
 
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [agent] = await db.select().from(agents).where(eq(agents.id, harnessId));
       // The harness joins the enrollment's organization.
       expect(agent).toMatchObject({
         organizationId: orgId,
@@ -167,12 +167,12 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
       });
       const tokens = await db
         .select()
-        .from(harnessRefreshTokens)
-        .where(eq(harnessRefreshTokens.harnessId, harnessId));
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, harnessId));
       expect(tokens).toHaveLength(1);
       expect(tokens[0]!.tokenHash).not.toContain(refreshToken);
 
-      const audit = await listHarnessAudit(db, { harnessId, event: "enroll" });
+      const audit = await listAgentAudit(db, { agentId: harnessId, event: "enroll" });
       expect(audit).toHaveLength(1);
       expect(audit[0]!.ip).toBe(ip);
 
@@ -182,7 +182,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
     });
 
     it("rejects expired and unknown enrollment tokens", async () => {
-      const expired = await createHarnessEnrollment(db, {
+      const expired = await createAgentEnrollment(db, {
         organizationId: orgId,
         now: new Date(Date.now() - 61 * 60 * 1000),
       });
@@ -220,12 +220,14 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
       expect(next.status).toBe(200);
       const rows = await db
         .select()
-        .from(harnessRefreshTokens)
-        .where(eq(harnessRefreshTokens.harnessId, harnessId));
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, harnessId));
       expect(rows).toHaveLength(3);
       expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
       expect(rows.filter((r) => r.usedAt === null)).toHaveLength(1);
-      expect(await listHarnessAudit(db, { harnessId, event: "token_refresh" })).toHaveLength(2);
+      expect(await listAgentAudit(db, { agentId: harnessId, event: "token_refresh" })).toHaveLength(
+        2,
+      );
     });
 
     it("revokes the family and the harness when a used refresh token is presented again", async () => {
@@ -239,14 +241,16 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
       expect(reuse.status).toBe(401);
       expect(await reuse.json()).toEqual({ error: "refresh_token_reused" });
 
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [agent] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(agent!.revokedAt).not.toBeNull();
       const rows = await db
         .select()
-        .from(harnessRefreshTokens)
-        .where(eq(harnessRefreshTokens.harnessId, harnessId));
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, harnessId));
       expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
-      expect(await listHarnessAudit(db, { harnessId, event: "refresh_reuse" })).toHaveLength(1);
+      expect(await listAgentAudit(db, { agentId: harnessId, event: "refresh_reuse" })).toHaveLength(
+        1,
+      );
 
       // The legitimate holder's newer token and access token are dead too: re-enroll.
       expect((await refresh(first.refreshToken)).status).toBe(401);
@@ -259,7 +263,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
         r.map((res) => res.status).sort(),
       );
       expect(statuses).toEqual([200, 401]);
-      const [agent] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [agent] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(agent!.revokedAt).not.toBeNull();
     });
 
@@ -336,24 +340,24 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
       const ip = newIp();
       expect(await requireHarness(authed(accessToken, ip))).toEqual({ harnessId });
 
-      expect(await revokeHarness(harnessId, { revokedBy: null })).toBe(true);
+      expect(await revokeAgent(harnessId, { revokedBy: null })).toBe(true);
 
       const res = await requireHarness(authed(accessToken, ip));
       expect((res as Response).status).toBe(401);
       expect((await refresh(refreshToken)).status).toBe(401);
       const rows = await db
         .select()
-        .from(harnessRefreshTokens)
-        .where(eq(harnessRefreshTokens.harnessId, harnessId));
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, harnessId));
       expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
-      expect(await listHarnessAudit(db, { harnessId, event: "revoke" })).toHaveLength(1);
+      expect(await listAgentAudit(db, { agentId: harnessId, event: "revoke" })).toHaveLength(1);
     });
 
     it("samples auth_failed audit rows to one per harness per minute", async () => {
       const { harnessId, accessToken } = await accessTokenFor();
-      await revokeHarness(harnessId);
+      await revokeAgent(harnessId);
       for (let i = 0; i < 3; i++) await requireHarness(authed(accessToken, newIp()));
-      const failures = await listHarnessAudit(db, { harnessId, event: "auth_failed" });
+      const failures = await listAgentAudit(db, { agentId: harnessId, event: "auth_failed" });
       expect(failures).toHaveLength(1);
       expect(failures[0]!.detail).toMatchObject({ reason: "agent_revoked" });
     });
@@ -439,7 +443,7 @@ describe.skipIf(!databaseAvailable)("harness auth", () => {
         harnessId,
         scopes: ["credentials:read"],
       });
-      await revokeHarness(harnessId);
+      await revokeAgent(harnessId);
       expect(((await requireJob(authed(valid, ip), "credentials:read")) as Response).status).toBe(
         401,
       );

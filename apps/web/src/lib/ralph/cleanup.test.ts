@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   completeJob,
   connectRepository,
   closeDb,
@@ -145,10 +145,10 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(harnesses);
+    await db.delete(agents);
     await db.delete(webhookDeliveries);
     [{ id: agentA }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([
         {
           organizationId: orgId,
@@ -156,7 +156,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
           reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn();
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
@@ -176,10 +176,10 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
@@ -190,7 +190,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, agentId: agentA, result })).toEqual({
       status: "completed",
     });
     const done = (await getJob(db, job.id))!;
@@ -335,7 +335,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       type: "worktree.cleanup",
       taskType: "system",
       taskId: null,
-      targetHarnessId: agentA,
+      targetAgentId: agentA,
       dedupeKey: cleanupDedupeKey((await lane(run)).id),
     });
     expect(actionOf(job!)).toEqual({ kind: "cleanup", mergedSha: sha(1), stashes: [] });
@@ -377,9 +377,9 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   it("cleans up each lane on the agent that holds its worktree", async () => {
     const { run } = await epicWithPullRequest();
     const [{ id: agentB }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "agent-b", reportedAcceptedTaskTypes: ["coding"] })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
     const [other] = await db
       .insert(ralphLanes)
       .values({
@@ -388,17 +388,17 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
         branch: (await lane(run)).branch,
         baseBranch: "main",
         prMerged: true,
-        harnessId: agentB,
+        agentId: agentB,
       })
       .returning();
     // The run's (main lane's) agent is agentA: the other lane's worktree is on agentB.
-    expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
+    expect((await getRun(db, run.id))?.agentId).toBe(agentA);
     expect(await startCleanup(deps(), other!.id, sha(9))).toMatchObject({ status: "enqueued" });
     const [job, ...more] = await cleanupJobs(run.id);
     expect(more).toEqual([]);
     expect(job).toMatchObject({
       repositoryId: otherRepoId,
-      targetHarnessId: agentB,
+      targetAgentId: agentB,
       dedupeKey: cleanupDedupeKey(other!.id),
     });
 
@@ -406,7 +406,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     await db.delete(jobs);
     await db
       .update(ralphLanes)
-      .set({ harnessId: null, cleanup: null })
+      .set({ agentId: null, cleanup: null })
       .where(eq(ralphLanes.id, other!.id));
     expect(await startCleanup(deps(), other!.id, sha(9))).toEqual({ status: "nothing" });
     expect(await cleanupJobs(run.id)).toEqual([]);
@@ -415,9 +415,9 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     // reason names the lane's repository.
     await db
       .update(ralphLanes)
-      .set({ harnessId: agentB, cleanup: null })
+      .set({ agentId: agentB, cleanup: null })
       .where(eq(ralphLanes.id, other!.id));
-    await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+    await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentB));
     expect(await startCleanup(deps(), other!.id, sha(9))).toEqual({ status: "nothing" });
     expect(await cleanupJobs(run.id)).toEqual([]);
     expect((await getLane(db, other!.id))?.cleanup?.error).toBe(
@@ -612,7 +612,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
         expect(job).toMatchObject({
           type: "worktree.cleanup",
           taskType: "system",
-          targetHarnessId: agentA,
+          targetAgentId: agentA,
           dedupeKey: cleanupDedupeKey((await lane(run)).id),
         });
         expect(actionOf(job!)).toEqual({ kind: "cleanup", keepBranch: true, stashes: [] });

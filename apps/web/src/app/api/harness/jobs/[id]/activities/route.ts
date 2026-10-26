@@ -1,4 +1,4 @@
-import { getJobForHarness, insertRunActivity } from "@omniralph/db";
+import { getJobForAgent, insertRunActivity } from "@omniralph/db";
 import { RalphActivity } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
 import { requireJob } from "@/lib/harness-auth/verify";
@@ -28,7 +28,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   if (!jobId) return notFound();
   if (jobId !== principal.jobId) return forbidden("job_mismatch");
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   const activity = RalphActivity.safeParse(await readJson(req));
   if (!activity.success) return badRequest();

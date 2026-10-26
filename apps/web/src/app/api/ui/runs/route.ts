@@ -31,7 +31,7 @@ export const GET = apiHandler({}, async ({ user, request }): Promise<RunList> =>
     statuses: query.status,
     origins: query.origin,
     repositoryId: query.repository,
-    harnessId: query.agent,
+    agentId: query.agent,
     cursor: query.cursor,
     limit: query.limit,
   });

@@ -1,57 +1,57 @@
-// Harnesses, enrollments and harness settings are scoped to organizations.
+// Agents, enrollments and agent settings are scoped to organizations.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  createHarnessEnrollment,
-  enrollHarness,
-  getHarnessEnrollmentStatus,
-  revokeHarness,
-} from "./harness-auth.js";
+  createAgentEnrollment,
+  enrollAgent,
+  getAgentEnrollmentStatus,
+  revokeAgent,
+} from "./agent-auth.js";
 import {
   findJobPage,
-  getHarnessOverview,
-  resolveHarnessConfig,
+  getAgentOverview,
+  resolveAgentConfig,
   listJobs,
-  listHarnessInstallJobs,
-  listHarnessPinSyncJobs,
-  listActiveHarnessIds,
-  listHarnessOverview,
+  listAgentInstallJobs,
+  listAgentPinSyncJobs,
+  listActiveAgentIds,
+  listAgentOverview,
   listReportedInstallables,
   listReportedModels,
-  listRepositoryCodingHarnessIds,
-  markHarnessDeleted,
-  requestHarnessUpdate,
-  setHarnessDesiredVersion,
-  updateHarnessConfig,
-} from "./harnesses.js";
+  listRepositoryCodingAgentIds,
+  markAgentDeleted,
+  requestAgentUpdate,
+  setAgentDesiredVersion,
+  updateAgentConfig,
+} from "./agents.js";
 import {
-  getDesiredHarnessVersion,
+  getDesiredAgentVersion,
   setDefaultMaxConcurrency,
-  setDesiredHarnessVersion,
+  setDesiredAgentVersion,
 } from "./app-settings.js";
 import { closeDb, createDb, type Database } from "./client.js";
-import { recordHarnessHeartbeat } from "./jobs.js";
+import { recordAgentHeartbeat } from "./jobs.js";
 import { getResourceOrganizationId } from "./resource-organization.js";
-import { connectRepository, pinRepositoryToHarness } from "./repositories.js";
-import { harnesses, jobs, organizations, scmConnections } from "./schema.js";
-import { filterActiveHarnessIds, listPinnableHarnesses } from "./settings.js";
+import { connectRepository, pinRepositoryToAgent } from "./repositories.js";
+import { agents, jobs, organizations, scmConnections } from "./schema.js";
+import { filterActiveAgentIds, listPinnableAgents } from "./settings.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
+describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
   let orgB: string;
 
   const enroll = async (organizationId: string, name: string) => {
-    const enrollment = await createHarnessEnrollment(db, { organizationId, name });
-    return (await enrollHarness(db, {
+    const enrollment = await createAgentEnrollment(db, { organizationId, name });
+    return (await enrollAgent(db, {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
-    }))!.harnessId;
+    }))!.agentId;
   };
 
   beforeAll(async () => {
@@ -68,74 +68,74 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     await testDb?.stop();
   });
 
-  it("creates the harness in the enrollment's organization", async () => {
-    const harnessId = await enroll(orgB, "b-agent");
-    const [row] = await db.select().from(harnesses);
-    expect(row).toMatchObject({ id: harnessId, organizationId: orgB, name: "b-agent" });
+  it("creates the agent in the enrollment's organization", async () => {
+    const agentId = await enroll(orgB, "b-agent");
+    const [row] = await db.select().from(agents);
+    expect(row).toMatchObject({ id: agentId, organizationId: orgB, name: "b-agent" });
   });
 
-  it("reports which harness redeemed an enrollment, only to its organization", async () => {
-    const enrollment = await createHarnessEnrollment(db, { organizationId: orgB, name: "b-new" });
-    expect(await getHarnessEnrollmentStatus(db, orgB, enrollment.id)).toEqual({
+  it("reports which agent redeemed an enrollment, only to its organization", async () => {
+    const enrollment = await createAgentEnrollment(db, { organizationId: orgB, name: "b-new" });
+    expect(await getAgentEnrollmentStatus(db, orgB, enrollment.id)).toEqual({
       id: enrollment.id,
       expiresAt: enrollment.expiresAt,
-      harness: null,
+      agent: null,
     });
-    expect(await getHarnessEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
-    const { harnessId } = (await enrollHarness(db, {
+    expect(await getAgentEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
+    const { agentId } = (await enrollAgent(db, {
       enrollmentToken: enrollment.token,
       name: "host",
       version: "1.0.0",
     }))!;
-    expect(await getHarnessEnrollmentStatus(db, orgB, enrollment.id)).toMatchObject({
-      harness: { id: harnessId, name: "b-new" },
+    expect(await getAgentEnrollmentStatus(db, orgB, enrollment.id)).toMatchObject({
+      agent: { id: agentId, name: "b-new" },
     });
-    expect(await getHarnessEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
+    expect(await getAgentEnrollmentStatus(db, orgA, enrollment.id)).toBeNull();
   });
 
-  it("lists, reads and updates only the organization's harnesses", async () => {
+  it("lists, reads and updates only the organization's agents", async () => {
     const a = await enroll(orgA, "a-1");
     const b = await enroll(orgB, "b-1");
-    expect((await listHarnessOverview(db, orgA)).map((r) => r.id)).toEqual([a]);
-    expect((await listHarnessOverview(db, orgB)).map((r) => r.id)).toContain(b);
-    expect((await listHarnessOverview(db, orgB)).map((r) => r.id)).not.toContain(a);
-    expect(await getHarnessOverview(db, orgB, a)).toBeNull();
-    expect((await getHarnessOverview(db, orgA, a))?.id).toBe(a);
+    expect((await listAgentOverview(db, orgA)).map((r) => r.id)).toEqual([a]);
+    expect((await listAgentOverview(db, orgB)).map((r) => r.id)).toContain(b);
+    expect((await listAgentOverview(db, orgB)).map((r) => r.id)).not.toContain(a);
+    expect(await getAgentOverview(db, orgB, a)).toBeNull();
+    expect((await getAgentOverview(db, orgA, a))?.id).toBe(a);
 
     const config = { maxConcurrency: 2, poolLimits: { long: 1 } };
-    expect(await updateHarnessConfig(db, orgB, a, config)).toBeNull();
-    expect(await updateHarnessConfig(db, orgA, a, config)).toMatchObject({
+    expect(await updateAgentConfig(db, orgB, a, config)).toBeNull();
+    expect(await updateAgentConfig(db, orgA, a, config)).toMatchObject({
       maxConcurrency: 2,
       poolLimits: { long: 1 },
     });
-    expect(await setHarnessDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
-    expect(await setHarnessDesiredVersion(db, orgA, a, "1.2.3")).toMatchObject({
+    expect(await setAgentDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
+    expect(await setAgentDesiredVersion(db, orgA, a, "1.2.3")).toMatchObject({
       desiredVersion: "1.2.3",
     });
 
-    expect((await listPinnableHarnesses(db, orgB)).map((r) => r.id)).not.toContain(a);
-    expect(await filterActiveHarnessIds(db, orgB, [a, b])).toEqual(new Set([b]));
+    expect((await listPinnableAgents(db, orgB)).map((r) => r.id)).not.toContain(a);
+    expect(await filterActiveAgentIds(db, orgB, [a, b])).toEqual(new Set([b]));
 
-    expect(await revokeHarness(db, a, { organizationId: orgB })).toBeNull();
-    expect((await getHarnessOverview(db, orgA, a))?.revokedAt).toBeNull();
-    expect(await revokeHarness(db, a, { organizationId: orgA })).not.toBeNull();
+    expect(await revokeAgent(db, a, { organizationId: orgB })).toBeNull();
+    expect((await getAgentOverview(db, orgA, a))?.revokedAt).toBeNull();
+    expect(await revokeAgent(db, a, { organizationId: orgA })).not.toBeNull();
   });
 
-  it("resolves a harness's own max concurrency, else its organization's, and its reported task types", async () => {
+  it("resolves an agent's own max concurrency, else its organization's, and its reported task types", async () => {
     const [org] = await db.insert(organizations).values({ name: "Defaults" }).returning();
     const organizationId = org!.id;
     const inheriting = await enroll(organizationId, "inheriting");
     const own = await enroll(organizationId, "own");
     await db
-      .update(harnesses)
+      .update(agents)
       .set({ maxConcurrency: 2, reportedAcceptedTaskTypes: ["review"] })
-      .where(eq(harnesses.id, own));
-    const config = async (harnessId: string) => {
-      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
-      return resolveHarnessConfig(db, row!);
+      .where(eq(agents.id, own));
+    const config = async (agentId: string) => {
+      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+      return resolveAgentConfig(db, row!);
     };
-    const effective = async (harnessId: string) =>
-      (await getHarnessOverview(db, organizationId, harnessId))?.effective;
+    const effective = async (agentId: string) =>
+      (await getAgentOverview(db, organizationId, agentId))?.effective;
 
     // No organization setting and nothing reported: every task type, 5 at once.
     const builtIn = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 };
@@ -159,10 +159,10 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const organizationId = org!.id;
     const a = await enroll(organizationId, "override");
     await setDefaultMaxConcurrency(db, organizationId, 7, null);
-    const overview = async () => (await getHarnessOverview(db, organizationId, a))!;
+    const overview = async () => (await getAgentOverview(db, organizationId, a))!;
 
     expect(
-      await updateHarnessConfig(db, organizationId, a, { maxConcurrency: 2, poolLimits: {} }),
+      await updateAgentConfig(db, organizationId, a, { maxConcurrency: 2, poolLimits: {} }),
     ).toMatchObject({ maxConcurrency: 2 });
     expect((await overview()).effective).toEqual({
       acceptedTaskTypes: ["query", "review", "coding"],
@@ -171,7 +171,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
 
     // Back to the organization's max concurrency.
     expect(
-      await updateHarnessConfig(db, organizationId, a, { maxConcurrency: null, poolLimits: {} }),
+      await updateAgentConfig(db, organizationId, a, { maxConcurrency: null, poolLimits: {} }),
     ).toMatchObject({ maxConcurrency: null });
     const inheriting = await overview();
     expect(inheriting.effective).toEqual({
@@ -181,18 +181,18 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     expect(inheriting.defaults).toEqual({ maxConcurrency: 7 });
   });
 
-  it("soft-deletes only revoked harnesses of the organization and hides them", async () => {
+  it("soft-deletes only revoked agents of the organization and hides them", async () => {
     const a = await enroll(orgA, "a-delete");
-    expect(await markHarnessDeleted(db, orgA, a)).toBe(false);
-    await revokeHarness(db, a, { organizationId: orgA });
-    expect(await markHarnessDeleted(db, orgB, a)).toBe(false);
-    expect(await markHarnessDeleted(db, orgA, a)).toBe(true);
-    expect(await markHarnessDeleted(db, orgA, a)).toBe(false);
+    expect(await markAgentDeleted(db, orgA, a)).toBe(false);
+    await revokeAgent(db, a, { organizationId: orgA });
+    expect(await markAgentDeleted(db, orgB, a)).toBe(false);
+    expect(await markAgentDeleted(db, orgA, a)).toBe(true);
+    expect(await markAgentDeleted(db, orgA, a)).toBe(false);
 
-    expect((await listHarnessOverview(db, orgA)).map((r) => r.id)).not.toContain(a);
-    expect(await getHarnessOverview(db, orgA, a)).toBeNull();
-    expect(await getResourceOrganizationId(db, "harness", a)).toBeNull();
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, a));
+    expect((await listAgentOverview(db, orgA)).map((r) => r.id)).not.toContain(a);
+    expect(await getAgentOverview(db, orgA, a)).toBeNull();
+    expect(await getResourceOrganizationId(db, "agent", a)).toBeNull();
+    const [row] = await db.select().from(agents).where(eq(agents.id, a));
     expect(row?.deletedAt).toBeInstanceOf(Date);
   });
 
@@ -200,10 +200,10 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const a = await enroll(orgA, "a-models");
     const opus = { value: "opus", displayName: "Opus" };
     const heartbeat = (models?: { value: string; displayName: string }[]) =>
-      recordHarnessHeartbeat(db, a, { version: "1.0.0", models });
+      recordAgentHeartbeat(db, a, { version: "1.0.0", models });
     expect((await heartbeat([opus]))?.reportedModels).toEqual([opus]);
-    expect((await getHarnessOverview(db, orgA, a))?.reportedModels).toEqual([opus]);
-    // An older harness, or one whose login can't list them, reports none.
+    expect((await getAgentOverview(db, orgA, a))?.reportedModels).toEqual([opus]);
+    // An older agent, or one whose login can't list them, reports none.
     expect((await heartbeat())?.reportedModels).toEqual([]);
   });
 
@@ -224,33 +224,33 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       second = await enroll(org, "models-2");
       revoked = await enroll(org, "models-revoked");
       const other = await enroll(orgB, "models-other-org");
-      await recordHarnessHeartbeat(db, first, { version: "1.0.0", models: [opus, sonnet] });
-      await recordHarnessHeartbeat(db, second, { version: "1.0.0", models: [sonnet, haiku] });
-      await recordHarnessHeartbeat(db, revoked, { version: "1.0.0", models: [fable] });
-      await recordHarnessHeartbeat(db, other, { version: "1.0.0", models: [fable] });
-      await revokeHarness(db, revoked, { organizationId: org });
+      await recordAgentHeartbeat(db, first, { version: "1.0.0", models: [opus, sonnet] });
+      await recordAgentHeartbeat(db, second, { version: "1.0.0", models: [sonnet, haiku] });
+      await recordAgentHeartbeat(db, revoked, { version: "1.0.0", models: [fable] });
+      await recordAgentHeartbeat(db, other, { version: "1.0.0", models: [fable] });
+      await revokeAgent(db, revoked, { organizationId: org });
     });
 
-    it("de-duplicates overlapping models, sorted by display name, with their harnesses", async () => {
+    it("de-duplicates overlapping models, sorted by display name, with their agents", async () => {
       expect(await listReportedModels(db, org)).toEqual([
-        { ...haiku, harnessIds: [second] },
-        { ...opus, harnessIds: [first] },
-        { ...sonnet, harnessIds: [first, second] },
+        { ...haiku, agentIds: [second] },
+        { ...opus, agentIds: [first] },
+        { ...sonnet, agentIds: [first, second] },
       ]);
     });
 
-    it("filters by harness, ignoring other organizations' harnesses", async () => {
-      expect(await listReportedModels(db, org, { harnessIds: [second] })).toEqual([
-        { ...haiku, harnessIds: [second] },
-        { ...sonnet, harnessIds: [second] },
+    it("filters by agent, ignoring other organizations' agents", async () => {
+      expect(await listReportedModels(db, org, { agentIds: [second] })).toEqual([
+        { ...haiku, agentIds: [second] },
+        { ...sonnet, agentIds: [second] },
       ]);
-      expect(await listReportedModels(db, org, { harnessIds: [] })).toEqual([]);
-      const [other] = await listHarnessOverview(db, orgB);
-      expect(await listReportedModels(db, org, { harnessIds: [other!.id] })).toEqual([]);
+      expect(await listReportedModels(db, org, { agentIds: [] })).toEqual([]);
+      const [other] = await listAgentOverview(db, orgB);
+      expect(await listReportedModels(db, org, { agentIds: [other!.id] })).toEqual([]);
     });
 
-    it("ignores revoked harnesses, even when asked for them", async () => {
-      expect(await listReportedModels(db, org, { harnessIds: [revoked] })).toEqual([]);
+    it("ignores revoked agents, even when asked for them", async () => {
+      expect(await listReportedModels(db, org, { agentIds: [revoked] })).toEqual([]);
       expect((await listReportedModels(db, org)).map((m) => m.value)).not.toContain(fable.value);
     });
   });
@@ -269,16 +269,16 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       first = await enroll(org, "installables-1");
       second = await enroll(org, "installables-2");
       revoked = await enroll(org, "installables-revoked");
-      await recordHarnessHeartbeat(db, first, { version: "1.0.0", installables: [hello("1.0.0")] });
-      await recordHarnessHeartbeat(db, second, {
+      await recordAgentHeartbeat(db, first, { version: "1.0.0", installables: [hello("1.0.0")] });
+      await recordAgentHeartbeat(db, second, {
         version: "1.0.0",
         installables: [hello("1.1.0"), graph],
       });
-      await recordHarnessHeartbeat(db, revoked, {
+      await recordAgentHeartbeat(db, revoked, {
         version: "1.0.0",
         installables: [{ name: "@omniralph/gone", version: "1.0.0" }],
       });
-      await revokeHarness(db, revoked, { organizationId: org });
+      await revokeAgent(db, revoked, { organizationId: org });
       const install = (
         name: string,
         mcpServers: unknown,
@@ -289,7 +289,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
         type: "install",
         taskType: "system" as const,
         status,
-        targetHarnessId: second,
+        targetAgentId: second,
         payload: { name },
         result: { name, version: "1.0.0", changed: true, mcpServers },
         finishedAt,
@@ -304,23 +304,23 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
         ]);
     });
 
-    it("lists reported installables by name with their harnesses and latest MCP servers", async () => {
+    it("lists reported installables by name with their agents and latest MCP servers", async () => {
       expect(await listReportedInstallables(db, org)).toEqual([
-        { name: graph.name, harnessIds: [second], mcpServers: [] },
-        { name: "@omniralph/hello", harnessIds: [first, second], mcpServers: ["greet"] },
+        { name: graph.name, agentIds: [second], mcpServers: [] },
+        { name: "@omniralph/hello", agentIds: [first, second], mcpServers: ["greet"] },
       ]);
-      expect(await listActiveHarnessIds(db, org)).toEqual([first, second]);
+      expect(await listActiveAgentIds(db, org)).toEqual([first, second]);
     });
 
-    it("lists nothing for an organization without harnesses", async () => {
-      const [row] = await db.insert(organizations).values({ name: "No harnesses" }).returning();
+    it("lists nothing for an organization without agents", async () => {
+      const [row] = await db.insert(organizations).values({ name: "No agents" }).returning();
       expect(await listReportedInstallables(db, row!.id)).toEqual([]);
-      expect(await listActiveHarnessIds(db, row!.id)).toEqual([]);
+      expect(await listActiveAgentIds(db, row!.id)).toEqual([]);
     });
   });
 
-  it("lists a repository's coding harnesses: its pinned ones, else those accepting coding", async () => {
-    const [row] = await db.insert(organizations).values({ name: "Coding harnesses" }).returning();
+  it("lists a repository's coding agents: its pinned ones, else those accepting coding", async () => {
+    const [row] = await db.insert(organizations).values({ name: "Coding agents" }).returning();
     const org = row!.id;
     const [connection] = await db
       .insert(scmConnections)
@@ -341,45 +341,45 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     const inheriting = await enroll(org, "coding-a-inherits");
     const reviewOnly = await enroll(org, "coding-b-review-only");
     const revoked = await enroll(org, "coding-c-revoked");
-    await recordHarnessHeartbeat(db, reviewOnly, {
+    await recordAgentHeartbeat(db, reviewOnly, {
       version: "1.0.0",
       acceptedTaskTypes: ["review"],
     });
-    // A pin to a harness that was revoked since counts as none.
-    await pinRepositoryToHarness(db, { harnessId: revoked, repositoryId: repo.id });
-    await revokeHarness(db, revoked, { organizationId: org });
+    // A pin to an agent that was revoked since counts as none.
+    await pinRepositoryToAgent(db, { agentId: revoked, repositoryId: repo.id });
+    await revokeAgent(db, revoked, { organizationId: org });
     await enroll(orgB, "coding-other-org");
 
-    // Unpinned: every active harness that accepts coding (the task types it reports, all
+    // Unpinned: every active agent that accepts coding (the task types it reports, all
     // until it reports any).
-    const unpinned = (harnessIds: string[]) => ({ pinned: false, harnessIds });
-    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
-    await recordHarnessHeartbeat(db, inheriting, {
+    const unpinned = (agentIds: string[]) => ({ pinned: false, agentIds });
+    expect(await listRepositoryCodingAgentIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
+    await recordAgentHeartbeat(db, inheriting, {
       version: "1.0.0",
       acceptedTaskTypes: ["query"],
     });
-    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([]));
-    await recordHarnessHeartbeat(db, inheriting, {
+    expect(await listRepositoryCodingAgentIds(db, org, repo.id)).toEqual(unpinned([]));
+    await recordAgentHeartbeat(db, inheriting, {
       version: "1.0.0",
       acceptedTaskTypes: ["review", "coding"],
     });
-    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
+    expect(await listRepositoryCodingAgentIds(db, org, repo.id)).toEqual(unpinned([inheriting]));
 
-    // Pinned: its active pinned harnesses, whatever they accept.
-    await pinRepositoryToHarness(db, { harnessId: reviewOnly, repositoryId: repo.id });
-    expect(await listRepositoryCodingHarnessIds(db, org, repo.id)).toEqual({
+    // Pinned: its active pinned agents, whatever they accept.
+    await pinRepositoryToAgent(db, { agentId: reviewOnly, repositoryId: repo.id });
+    expect(await listRepositoryCodingAgentIds(db, org, repo.id)).toEqual({
       pinned: true,
-      harnessIds: [reviewOnly],
+      agentIds: [reviewOnly],
     });
   });
 
   it("stores the reported accepted task types, keeping them when a heartbeat has none", async () => {
     const a = await enroll(orgA, "a-task-types");
-    const reported = async () => (await getHarnessOverview(db, orgA, a))!;
+    const reported = async () => (await getAgentOverview(db, orgA, a))!;
     expect((await reported()).reportedAcceptedTaskTypes).toBeNull();
     expect((await reported()).effective.acceptedTaskTypes).toEqual(["query", "review", "coding"]);
     const heartbeat = (acceptedTaskTypes?: string[]) =>
-      recordHarnessHeartbeat(db, a, { version: "1.0.0", acceptedTaskTypes });
+      recordAgentHeartbeat(db, a, { version: "1.0.0", acceptedTaskTypes });
     expect((await heartbeat(["coding", "query"]))?.reportedAcceptedTaskTypes).toEqual([
       "coding",
       "query",
@@ -393,25 +393,25 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
 
   it("replaces the reported installables with each heartbeat's", async () => {
     const a = await enroll(orgA, "a-installables");
-    expect((await getHarnessOverview(db, orgA, a))?.reportedInstallables).toEqual([]);
+    expect((await getAgentOverview(db, orgA, a))?.reportedInstallables).toEqual([]);
     const hello = { name: "@omniralph/hello", version: "1.0.0" };
     const graph = { name: "@omniralph/code-graph", version: "0.3.1" };
     const heartbeat = (installables?: { name: string; version: string }[]) =>
-      recordHarnessHeartbeat(db, a, { version: "1.0.0", installables });
+      recordAgentHeartbeat(db, a, { version: "1.0.0", installables });
     expect((await heartbeat([hello, graph]))?.reportedInstallables).toEqual([hello, graph]);
     expect((await heartbeat([{ ...hello, version: "1.1.0" }]))?.reportedInstallables).toEqual([
       { ...hello, version: "1.1.0" },
     ]);
-    expect((await getHarnessOverview(db, orgA, a))?.reportedInstallables).toEqual([
+    expect((await getAgentOverview(db, orgA, a))?.reportedInstallables).toEqual([
       { ...hello, version: "1.1.0" },
     ]);
     expect((await heartbeat([]))?.reportedInstallables).toEqual([]);
     await heartbeat([hello]);
-    // An older harness reports none: nothing is known to be installed.
+    // An older agent reports none: nothing is known to be installed.
     expect((await heartbeat())?.reportedInstallables).toEqual([]);
   });
 
-  it("lists a harness's recent install jobs, newest first, within its organization", async () => {
+  it("lists an agent's recent install jobs, newest first, within its organization", async () => {
     const a = await enroll(orgA, "a-install-jobs");
     const other = await enroll(orgA, "a-install-other");
     const now = new Date("2026-10-12T12:00:00Z");
@@ -420,7 +420,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       organizationId: orgA,
       type: "install",
       taskType: "system" as const,
-      targetHarnessId: a,
+      targetAgentId: a,
       payload: { name: "@omniralph/hello" },
       ...values,
     });
@@ -439,11 +439,11 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
         createdAt: hoursAgo(1),
       }),
       job({ createdAt: hoursAgo(25) }),
-      job({ targetHarnessId: other, createdAt: hoursAgo(1) }),
+      job({ targetAgentId: other, createdAt: hoursAgo(1) }),
       job({ type: "repo.sync", createdAt: hoursAgo(1) }),
     ]);
 
-    const listed = await listHarnessInstallJobs(db, orgA, a, hoursAgo(24));
+    const listed = await listAgentInstallJobs(db, orgA, a, hoursAgo(24));
     expect(listed).toEqual([
       expect.objectContaining({
         status: "failed",
@@ -460,10 +460,10 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
         error: null,
       }),
     ]);
-    expect(await listHarnessInstallJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
+    expect(await listAgentInstallJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
   });
 
-  it("lists the latest sync job of each repository pinned to a harness", async () => {
+  it("lists the latest sync job of each repository pinned to an agent", async () => {
     const a = await enroll(orgA, "a-sync-jobs");
     const other = await enroll(orgA, "a-sync-other");
     const [connection] = await db
@@ -493,7 +493,7 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       organizationId: orgA,
       type: "repo.sync",
       taskType: "system" as const,
-      targetHarnessId: a,
+      targetAgentId: a,
       repositoryId: first,
       ...values,
     });
@@ -504,19 +504,19 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
         job({ status: "running", createdAt: hoursAgo(1) }),
         job({ repositoryId: second, status: "completed", createdAt: hoursAgo(2) }),
         job({ repositoryId: second, createdAt: hoursAgo(200) }),
-        job({ targetHarnessId: other, createdAt: hoursAgo(0.5) }),
+        job({ targetAgentId: other, createdAt: hoursAgo(0.5) }),
         job({ type: "install", createdAt: hoursAgo(0.5) }),
       ])
       .returning();
 
-    const listed = await listHarnessPinSyncJobs(db, orgA, a, hoursAgo(24));
+    const listed = await listAgentPinSyncJobs(db, orgA, a, hoursAgo(24));
     expect(listed.map((j) => [j.repositoryId, j.id, j.status]).sort()).toEqual(
       [
         [first, inserted[1]!.id, "running"],
         [second, inserted[2]!.id, "completed"],
       ].sort(),
     );
-    expect(await listHarnessPinSyncJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
+    expect(await listAgentPinSyncJobs(db, orgB, a, hoursAgo(24))).toEqual([]);
   });
 
   it("pages an organization's jobs and finds the page that shows a job", async () => {
@@ -551,19 +551,19 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     expect(await findJobPage(db, org!.id, "not-a-uuid", 2)).toBeNull();
   });
 
-  it("keeps an update request until the harness reports it handled", async () => {
+  it("keeps an update request until the agent reports it handled", async () => {
     const a = await enroll(orgA, "a-update");
-    expect(await requestHarnessUpdate(db, orgB, a, "2.0.0")).toBeNull();
-    const first = await requestHarnessUpdate(db, orgA, a, "2.0.0");
+    expect(await requestAgentUpdate(db, orgB, a, "2.0.0")).toBeNull();
+    const first = await requestAgentUpdate(db, orgA, a, "2.0.0");
     expect(first).toMatchObject({ updateRequestVersion: "2.0.0" });
     expect(first?.updateRequestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(first?.updateRequestedAt).toBeInstanceOf(Date);
     // Asking again replaces the pending request.
-    const second = await requestHarnessUpdate(db, orgA, a, "2.0.1");
+    const second = await requestAgentUpdate(db, orgA, a, "2.0.1");
     expect(second?.updateRequestId).not.toBe(first?.updateRequestId);
 
     const heartbeat = (handledUpdateRequestId?: string | null) =>
-      recordHarnessHeartbeat(db, a, { version: "1.0.0", handledUpdateRequestId });
+      recordAgentHeartbeat(db, a, { version: "1.0.0", handledUpdateRequestId });
     expect(await heartbeat()).toMatchObject({ updateRequestId: second!.updateRequestId });
     // An older request is handled: the new one stays.
     expect(await heartbeat(first!.updateRequestId)).toMatchObject({
@@ -576,11 +576,11 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
       updateRequestedAt: null,
     });
 
-    await revokeHarness(db, a, { organizationId: orgA });
-    expect(await requestHarnessUpdate(db, orgA, a, "2.0.0")).toBeNull();
+    await revokeAgent(db, a, { organizationId: orgA });
+    expect(await requestAgentUpdate(db, orgA, a, "2.0.0")).toBeNull();
   });
 
-  it("pins a repository only to a harness of its own organization", async () => {
+  it("pins a repository only to an agent of its own organization", async () => {
     const [connection] = await db
       .insert(scmConnections)
       .values({
@@ -599,24 +599,22 @@ describe.skipIf(!databaseAvailable)("organization-scoped harnesses", () => {
     });
     const own = await enroll(orgA, "a-pin");
     const foreign = await enroll(orgB, "b-pin");
-    expect(await pinRepositoryToHarness(db, { harnessId: foreign, repositoryId: repo.id })).toBe(
+    expect(await pinRepositoryToAgent(db, { agentId: foreign, repositoryId: repo.id })).toBe(
       "unknown_agent",
     );
-    expect(await pinRepositoryToHarness(db, { harnessId: own, repositoryId: repo.id })).toBe(
-      "pinned",
-    );
+    expect(await pinRepositoryToAgent(db, { agentId: own, repositoryId: repo.id })).toBe("pinned");
   });
 
-  it("keeps the desired harness version per organization", async () => {
-    await setDesiredHarnessVersion(db, orgA, "1.4.0", null);
-    expect(await getDesiredHarnessVersion(db, orgA)).toBe("1.4.0");
-    expect(await getDesiredHarnessVersion(db, orgB)).toBeNull();
-    await setDesiredHarnessVersion(db, orgB, "2.0.0", null);
-    await setDesiredHarnessVersion(db, orgA, "1.5.0", null);
-    expect(await getDesiredHarnessVersion(db, orgA)).toBe("1.5.0");
-    expect(await getDesiredHarnessVersion(db, orgB)).toBe("2.0.0");
-    await setDesiredHarnessVersion(db, orgA, null, null);
-    expect(await getDesiredHarnessVersion(db, orgA)).toBeNull();
-    expect(await getDesiredHarnessVersion(db, orgB)).toBe("2.0.0");
+  it("keeps the desired agent version per organization", async () => {
+    await setDesiredAgentVersion(db, orgA, "1.4.0", null);
+    expect(await getDesiredAgentVersion(db, orgA)).toBe("1.4.0");
+    expect(await getDesiredAgentVersion(db, orgB)).toBeNull();
+    await setDesiredAgentVersion(db, orgB, "2.0.0", null);
+    await setDesiredAgentVersion(db, orgA, "1.5.0", null);
+    expect(await getDesiredAgentVersion(db, orgA)).toBe("1.5.0");
+    expect(await getDesiredAgentVersion(db, orgB)).toBe("2.0.0");
+    await setDesiredAgentVersion(db, orgA, null, null);
+    expect(await getDesiredAgentVersion(db, orgA)).toBeNull();
+    expect(await getDesiredAgentVersion(db, orgB)).toBe("2.0.0");
   });
 });

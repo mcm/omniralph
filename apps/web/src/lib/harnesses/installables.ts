@@ -1,5 +1,5 @@
 import "server-only";
-import { getHarnessOverview, type Database } from "@omniralph/db";
+import { getAgentOverview, type Database } from "@omniralph/db";
 import { INSTALL_JOB_TYPE, type InstallPayload } from "@omniralph/shared";
 import { InstallablePackageName, InstallableVersion } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -27,7 +27,7 @@ export async function enqueueInstall(
   if (input.version !== undefined && !InstallableVersion.safeParse(input.version).success) {
     return { result: "invalid", field: "version" };
   }
-  const harness = await getHarnessOverview(db, input.organizationId, input.harnessId);
+  const harness = await getAgentOverview(db, input.organizationId, input.harnessId);
   if (!harness || harness.revokedAt) return { result: "unknown_harness" };
   const payload: InstallPayload = {
     name: input.name,

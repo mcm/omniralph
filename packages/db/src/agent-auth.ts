@@ -1,5 +1,5 @@
 /**
- * Harness identity: one-time enrollment tokens, rotating refresh tokens with
+ * Agent identity: one-time enrollment tokens, rotating refresh tokens with
  * reuse detection, revocation, the security audit log and fixed-window rate
  * limit counters. Tokens are 256-bit random values stored only as SHA-256
  * hashes (`hashToken()`).
@@ -11,18 +11,18 @@ import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
 import { recordJobChanges, type Job } from "./jobs.js";
 import {
-  harnessAudit,
-  harnessEnrollments,
-  harnessRefreshTokens,
-  harnessRepoPins,
-  harnesses,
+  agentAudit,
+  agentEnrollments,
+  agentRefreshTokens,
+  agentRepoPins,
+  agents,
   jobs,
   rateLimits,
 } from "./schema.js";
 
-export type Harness = typeof harnesses.$inferSelect;
-export type HarnessAuditEvent = (typeof harnessAudit.$inferSelect)["event"];
-export type HarnessAuditEntry = typeof harnessAudit.$inferSelect;
+export type Agent = typeof agents.$inferSelect;
+export type AgentAuditEvent = (typeof agentAudit.$inferSelect)["event"];
+export type AgentAuditEntry = typeof agentAudit.$inferSelect;
 
 /** Enrollment tokens are valid for one hour and can be used once. */
 export const ENROLLMENT_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -44,9 +44,9 @@ export interface CreatedEnrollment {
 
 /**
  * Creates a one-time enrollment token (valid for `ENROLLMENT_TOKEN_TTL_MS`); the
- * harness redeeming it joins `organizationId`.
+ * agent redeeming it joins `organizationId`.
  */
-export async function createHarnessEnrollment(
+export async function createAgentEnrollment(
   db: Database,
   input: {
     organizationId: string;
@@ -58,7 +58,7 @@ export async function createHarnessEnrollment(
   const token = generateToken(ENROLLMENT_TOKEN_PREFIX);
   const expiresAt = new Date((input.now ?? new Date()).getTime() + ENROLLMENT_TOKEN_TTL_MS);
   const [row] = await db
-    .insert(harnessEnrollments)
+    .insert(agentEnrollments)
     .values({
       organizationId: input.organizationId,
       tokenHash: hashToken(token),
@@ -66,61 +66,58 @@ export async function createHarnessEnrollment(
       expiresAt,
       createdBy: input.createdBy ?? null,
     })
-    .returning({ id: harnessEnrollments.id });
+    .returning({ id: agentEnrollments.id });
   return { id: row!.id, token, expiresAt };
 }
 
-export interface HarnessEnrollmentStatus {
+export interface AgentEnrollmentStatus {
   id: string;
   expiresAt: Date;
-  /** The harness that redeemed the token (null while unused, or once that harness is deleted). */
-  harness: { id: string; name: string } | null;
+  /** The agent that redeemed the token (null while unused, or once that agent is deleted). */
+  agent: { id: string; name: string } | null;
 }
 
 /**
- * An enrollment of `organizationId` and the harness that redeemed it, if any: what the
- * enrollment dialog polls to show the harness connecting. Null for another organization's
+ * An enrollment of `organizationId` and the agent that redeemed it, if any: what the
+ * enrollment dialog polls to show the agent connecting. Null for another organization's
  * enrollment.
  */
-export async function getHarnessEnrollmentStatus(
+export async function getAgentEnrollmentStatus(
   db: Database,
   organizationId: string,
   enrollmentId: string,
-): Promise<HarnessEnrollmentStatus | null> {
+): Promise<AgentEnrollmentStatus | null> {
   const [row] = await db
     .select({
-      id: harnessEnrollments.id,
-      expiresAt: harnessEnrollments.expiresAt,
-      harnessId: harnesses.id,
-      harnessName: harnesses.name,
+      id: agentEnrollments.id,
+      expiresAt: agentEnrollments.expiresAt,
+      agentId: agents.id,
+      agentName: agents.name,
     })
-    .from(harnessEnrollments)
+    .from(agentEnrollments)
     .leftJoin(
-      harnesses,
+      agents,
       and(
-        eq(harnesses.id, harnessEnrollments.harnessId),
-        eq(harnesses.organizationId, organizationId),
-        isNull(harnesses.deletedAt),
+        eq(agents.id, agentEnrollments.agentId),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.deletedAt),
       ),
     )
     .where(
       and(
-        eq(harnessEnrollments.id, enrollmentId),
-        eq(harnessEnrollments.organizationId, organizationId),
+        eq(agentEnrollments.id, enrollmentId),
+        eq(agentEnrollments.organizationId, organizationId),
       ),
     );
   if (!row) return null;
   return {
     id: row.id,
     expiresAt: row.expiresAt,
-    harness:
-      row.harnessId && row.harnessName !== null
-        ? { id: row.harnessId, name: row.harnessName }
-        : null,
+    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
   };
 }
 
-export interface EnrollHarnessInput {
+export interface EnrollAgentInput {
   enrollmentToken: string;
   name: string;
   version: string;
@@ -128,32 +125,32 @@ export interface EnrollHarnessInput {
 }
 
 /**
- * Consumes an unused, unexpired enrollment token, creates the harness (in the
+ * Consumes an unused, unexpired enrollment token, creates the agent (in the
  * enrollment's organization) and its
  * first refresh token (a new family). Returns `null` if the token is unknown,
  * expired or already used.
  */
-export async function enrollHarness(
+export async function enrollAgent(
   db: Database,
-  input: EnrollHarnessInput,
-): Promise<{ harnessId: string; refreshToken: string } | null> {
+  input: EnrollAgentInput,
+): Promise<{ agentId: string; refreshToken: string } | null> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [enrollment] = await tx
-      .update(harnessEnrollments)
+      .update(agentEnrollments)
       .set({ usedAt: now })
       .where(
         and(
-          eq(harnessEnrollments.tokenHash, hashToken(input.enrollmentToken)),
-          isNull(harnessEnrollments.usedAt),
-          gt(harnessEnrollments.expiresAt, now),
+          eq(agentEnrollments.tokenHash, hashToken(input.enrollmentToken)),
+          isNull(agentEnrollments.usedAt),
+          gt(agentEnrollments.expiresAt, now),
         ),
       )
       .returning();
     if (!enrollment) return null;
 
     const [agent] = await tx
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: enrollment.organizationId,
         // The admin's name for the enrollment wins over the host's self-reported one.
@@ -161,55 +158,55 @@ export async function enrollHarness(
         reportedVersion: input.version,
         enrolledBy: enrollment.createdBy,
       })
-      .returning({ id: harnesses.id });
-    const harnessId = agent!.id;
+      .returning({ id: agents.id });
+    const agentId = agent!.id;
     await tx
-      .update(harnessEnrollments)
-      .set({ harnessId })
-      .where(eq(harnessEnrollments.id, enrollment.id));
+      .update(agentEnrollments)
+      .set({ agentId })
+      .where(eq(agentEnrollments.id, enrollment.id));
 
     const refreshToken = generateToken(REFRESH_TOKEN_PREFIX);
-    await tx.insert(harnessRefreshTokens).values({
-      harnessId,
+    await tx.insert(agentRefreshTokens).values({
+      agentId,
       familyId: randomUUID(),
       tokenHash: hashToken(refreshToken),
       createdAt: now,
     });
     recordChange(tx, {
       resource: "agent",
-      ids: [harnessId],
+      ids: [agentId],
       organizationId: enrollment.organizationId,
     });
-    return { harnessId, refreshToken };
+    return { agentId, refreshToken };
   });
 }
 
-/** The harness a refresh token belongs to (for per-harness rate limiting), without consuming it. */
-export async function findRefreshTokenHarness(
+/** The agent a refresh token belongs to (for per-agent rate limiting), without consuming it. */
+export async function findRefreshTokenAgent(
   db: Database,
   refreshToken: string,
 ): Promise<string | null> {
   const [row] = await db
-    .select({ harnessId: harnessRefreshTokens.harnessId })
-    .from(harnessRefreshTokens)
-    .where(eq(harnessRefreshTokens.tokenHash, hashToken(refreshToken)));
-  return row?.harnessId ?? null;
+    .select({ agentId: agentRefreshTokens.agentId })
+    .from(agentRefreshTokens)
+    .where(eq(agentRefreshTokens.tokenHash, hashToken(refreshToken)));
+  return row?.agentId ?? null;
 }
 
 export type RotateRefreshTokenResult =
-  | { status: "rotated"; harnessId: string; familyId: string; refreshToken: string }
-  /** The token was already used: its family and the harness have been revoked. */
-  | { status: "reused"; harnessId: string; familyId: string }
+  | { status: "rotated"; agentId: string; familyId: string; refreshToken: string }
+  /** The token was already used: its family and the agent have been revoked. */
+  | { status: "reused"; agentId: string; familyId: string }
   | {
       status: "invalid";
-      harnessId: string | null;
+      agentId: string | null;
       reason: "unknown" | "revoked" | "agent_revoked";
     };
 
 /**
  * Rotates a refresh token: marks it used and issues a new one in the same
  * family. Presenting an already-used token revokes the whole family and the
- * harness. Rows are locked, so concurrent presentations of one token resolve to
+ * agent. Rows are locked, so concurrent presentations of one token resolve to
  * exactly one rotation (the other is treated as reuse).
  */
 export async function rotateRefreshToken(
@@ -220,94 +217,92 @@ export async function rotateRefreshToken(
   return db.transaction(async (tx) => {
     const [token] = await tx
       .select({
-        id: harnessRefreshTokens.id,
-        harnessId: harnessRefreshTokens.harnessId,
-        familyId: harnessRefreshTokens.familyId,
-        usedAt: harnessRefreshTokens.usedAt,
-        revokedAt: harnessRefreshTokens.revokedAt,
-        harnessRevokedAt: harnesses.revokedAt,
+        id: agentRefreshTokens.id,
+        agentId: agentRefreshTokens.agentId,
+        familyId: agentRefreshTokens.familyId,
+        usedAt: agentRefreshTokens.usedAt,
+        revokedAt: agentRefreshTokens.revokedAt,
+        agentRevokedAt: agents.revokedAt,
       })
-      .from(harnessRefreshTokens)
-      .innerJoin(harnesses, eq(harnesses.id, harnessRefreshTokens.harnessId))
-      .where(eq(harnessRefreshTokens.tokenHash, hashToken(refreshToken)))
+      .from(agentRefreshTokens)
+      .innerJoin(agents, eq(agents.id, agentRefreshTokens.agentId))
+      .where(eq(agentRefreshTokens.tokenHash, hashToken(refreshToken)))
       .for("update");
-    if (!token) return { status: "invalid", harnessId: null, reason: "unknown" };
-    const { harnessId, familyId } = token;
-    if (token.harnessRevokedAt) return { status: "invalid", harnessId, reason: "agent_revoked" };
+    if (!token) return { status: "invalid", agentId: null, reason: "unknown" };
+    const { agentId, familyId } = token;
+    if (token.agentRevokedAt) return { status: "invalid", agentId, reason: "agent_revoked" };
 
     if (token.usedAt) {
       await tx
-        .update(harnessRefreshTokens)
+        .update(agentRefreshTokens)
         .set({ revokedAt: now })
         .where(
-          and(eq(harnessRefreshTokens.familyId, familyId), isNull(harnessRefreshTokens.revokedAt)),
+          and(eq(agentRefreshTokens.familyId, familyId), isNull(agentRefreshTokens.revokedAt)),
         );
-      await tx.update(harnesses).set({ revokedAt: now }).where(eq(harnesses.id, harnessId));
-      return { status: "reused", harnessId, familyId };
+      await tx.update(agents).set({ revokedAt: now }).where(eq(agents.id, agentId));
+      return { status: "reused", agentId, familyId };
     }
-    if (token.revokedAt) return { status: "invalid", harnessId, reason: "revoked" };
+    if (token.revokedAt) return { status: "invalid", agentId, reason: "revoked" };
 
     await tx
-      .update(harnessRefreshTokens)
+      .update(agentRefreshTokens)
       .set({ usedAt: now })
-      .where(eq(harnessRefreshTokens.id, token.id));
+      .where(eq(agentRefreshTokens.id, token.id));
     const next = generateToken(REFRESH_TOKEN_PREFIX);
     await tx
-      .insert(harnessRefreshTokens)
-      .values({ harnessId, familyId, tokenHash: hashToken(next), createdAt: now });
-    return { status: "rotated", harnessId, familyId, refreshToken: next };
+      .insert(agentRefreshTokens)
+      .values({ agentId, familyId, tokenHash: hashToken(next), createdAt: now });
+    return { status: "rotated", agentId, familyId, refreshToken: next };
   });
 }
 
-export interface RevokeHarnessResult {
-  /** Running jobs put back to `queued` (failed-retryable): other harnesses claim them again. */
+export interface RevokeAgentResult {
+  /** Running jobs put back to `queued` (failed-retryable): other agents claim them again. */
   requeuedJobs: Job[];
   /** Running jobs that had used up their deliveries and are now `failed`. */
   failedJobs: Job[];
   /** Running jobs with a cancel request, now `canceled`. */
   canceledJobs: Job[];
-  /** Repositories that were pinned to the harness (the pins are removed). */
+  /** Repositories that were pinned to the agent (the pins are removed). */
   unpinnedRepositoryIds: string[];
 }
 
 /**
- * Revokes a harness: sets `revoked_at` and revokes every refresh-token family.
+ * Revokes an agent: sets `revoked_at` and revokes every refresh-token family.
  * Outstanding access and job tokens stop working immediately because every
  * authenticated request checks `revoked_at`. Its running jobs are failed as
  * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
- * like `failJob`), so other harnesses claim them again, and its repository pins are removed. Returns null
- * for unknown harnesses (with `organizationId`, also for harnesses of another
+ * like `failJob`), so other agents claim them again, and its repository pins are removed. Returns null
+ * for unknown agents (with `organizationId`, also for agents of another
  * organization).
  */
-export async function revokeHarness(
+export async function revokeAgent(
   db: Database,
-  harnessId: string,
+  agentId: string,
   options: { now?: Date; maxDeliveries?: number; organizationId?: string } = {},
-): Promise<RevokeHarnessResult | null> {
+): Promise<RevokeAgentResult | null> {
   const now = options.now ?? new Date();
   const maxDeliveries = options.maxDeliveries ?? 3;
   return db.transaction(async (tx) => {
     const [agent] = await tx
-      .update(harnesses)
-      .set({ revokedAt: sql`coalesce(${harnesses.revokedAt}, ${now})` })
+      .update(agents)
+      .set({ revokedAt: sql`coalesce(${agents.revokedAt}, ${now})` })
       .where(
         and(
-          eq(harnesses.id, harnessId),
-          options.organizationId ? eq(harnesses.organizationId, options.organizationId) : undefined,
+          eq(agents.id, agentId),
+          options.organizationId ? eq(agents.organizationId, options.organizationId) : undefined,
         ),
       )
-      .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+      .returning({ id: agents.id, organizationId: agents.organizationId });
     if (!agent) return null;
     recordChange(tx, { resource: "agent", ids: [agent.id], organizationId: agent.organizationId });
     await tx
-      .update(harnessRefreshTokens)
+      .update(agentRefreshTokens)
       .set({ revokedAt: now })
-      .where(
-        and(eq(harnessRefreshTokens.harnessId, harnessId), isNull(harnessRefreshTokens.revokedAt)),
-      );
+      .where(and(eq(agentRefreshTokens.agentId, agentId), isNull(agentRefreshTokens.revokedAt)));
 
-    const error = "Harness revoked";
-    const running = and(eq(jobs.harnessId, harnessId), eq(jobs.status, "running"));
+    const error = "Agent revoked";
+    const running = and(eq(jobs.agentId, agentId), eq(jobs.status, "running"));
     const canceledJobs = await tx
       .update(jobs)
       .set({ status: "canceled", error, finishedAt: now })
@@ -320,13 +315,13 @@ export async function revokeHarness(
       .returning();
     const requeuedJobs = await tx
       .update(jobs)
-      .set({ status: "queued", harnessId: null, error })
+      .set({ status: "queued", agentId: null, error })
       .where(running)
       .returning();
     const unpinned = await tx
-      .delete(harnessRepoPins)
-      .where(eq(harnessRepoPins.harnessId, harnessId))
-      .returning({ repositoryId: harnessRepoPins.repositoryId });
+      .delete(agentRepoPins)
+      .where(eq(agentRepoPins.agentId, agentId))
+      .returning({ repositoryId: agentRepoPins.repositoryId });
     recordJobChanges(tx, [...canceledJobs, ...failedJobs, ...requeuedJobs]);
     for (const repositoryId of unpinned.map((p) => p.repositoryId)) {
       recordChange(tx, {
@@ -346,71 +341,71 @@ export async function revokeHarness(
   });
 }
 
-/** Whether the harness is active, revoked, or doesn't exist. */
-export async function getHarnessAuthState(
+/** Whether the agent is active, revoked, or doesn't exist. */
+export async function getAgentAuthState(
   db: Database,
-  harnessId: string,
+  agentId: string,
 ): Promise<"active" | "revoked" | "unknown"> {
   const [row] = await db
-    .select({ revokedAt: harnesses.revokedAt })
-    .from(harnesses)
-    .where(eq(harnesses.id, harnessId));
+    .select({ revokedAt: agents.revokedAt })
+    .from(agents)
+    .where(eq(agents.id, agentId));
   if (!row) return "unknown";
   return row.revokedAt ? "revoked" : "active";
 }
 
-/** Whether the job is `running` on the given (non-revoked) harness, which belongs to its organization. */
-export async function isJobRunningOnHarness(
+/** Whether the job is `running` on the given (non-revoked) agent, which belongs to its organization. */
+export async function isJobRunningOnAgent(
   db: Database,
   jobId: string,
-  harnessId: string,
+  agentId: string,
 ): Promise<boolean> {
   const [row] = await db
     .select({ id: jobs.id })
     .from(jobs)
-    .innerJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+    .innerJoin(agents, eq(agents.id, jobs.agentId))
     .where(
       and(
         eq(jobs.id, jobId),
-        eq(jobs.harnessId, harnessId),
-        eq(jobs.organizationId, harnesses.organizationId),
+        eq(jobs.agentId, agentId),
+        eq(jobs.organizationId, agents.organizationId),
         eq(jobs.status, "running"),
-        isNull(harnesses.revokedAt),
+        isNull(agents.revokedAt),
       ),
     );
   return row !== undefined;
 }
 
-export interface HarnessAuditInput {
-  harnessId?: string | null;
-  event: HarnessAuditEvent;
+export interface AgentAuditInput {
+  agentId?: string | null;
+  event: AgentAuditEvent;
   ip?: string | null;
   detail?: Record<string, unknown>;
 }
 
-export async function writeHarnessAudit(db: Database, input: HarnessAuditInput): Promise<void> {
-  await db.insert(harnessAudit).values({
-    harnessId: input.harnessId ?? null,
+export async function writeAgentAudit(db: Database, input: AgentAuditInput): Promise<void> {
+  await db.insert(agentAudit).values({
+    agentId: input.agentId ?? null,
     event: input.event,
     ip: input.ip ?? null,
     detail: input.detail ?? {},
   });
 }
 
-export async function listHarnessAudit(
+export async function listAgentAudit(
   db: Database,
-  filter: { harnessId?: string; event?: HarnessAuditEvent } = {},
-): Promise<HarnessAuditEntry[]> {
+  filter: { agentId?: string; event?: AgentAuditEvent } = {},
+): Promise<AgentAuditEntry[]> {
   return db
     .select()
-    .from(harnessAudit)
+    .from(agentAudit)
     .where(
       and(
-        filter.harnessId ? eq(harnessAudit.harnessId, filter.harnessId) : undefined,
-        filter.event ? eq(harnessAudit.event, filter.event) : undefined,
+        filter.agentId ? eq(agentAudit.agentId, filter.agentId) : undefined,
+        filter.event ? eq(agentAudit.event, filter.event) : undefined,
       ),
     )
-    .orderBy(harnessAudit.createdAt);
+    .orderBy(agentAudit.createdAt);
 }
 
 /**

@@ -11,7 +11,7 @@ import {
   getMainLane,
   getRun,
   getRunBySession,
-  harnesses,
+  agents,
   jobs,
   listStories,
   organizations,
@@ -120,11 +120,11 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(harnesses);
+    await db.delete(agents);
     [{ id: agentA }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([{ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] }])
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -163,10 +163,10 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -181,13 +181,13 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        harnessId: agentA,
+        agentId: agentA,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      await completeJob(db, { jobId: job.id, harnessId: agentA, result: outcome });
+      await completeJob(db, { jobId: job.id, agentId: agentA, result: outcome });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
   }

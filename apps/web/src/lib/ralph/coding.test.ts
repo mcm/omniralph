@@ -314,7 +314,7 @@ describe("describing a lane's PR", () => {
       taskType: "query",
       taskId: customDescribe.id,
       repositoryId: payload.repositoryId,
-      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       payload: {
         trigger: {
           kind: "run.invoked",

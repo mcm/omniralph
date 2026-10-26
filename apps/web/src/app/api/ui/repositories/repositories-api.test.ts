@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   connectionCredentials,
   closeDb,
   createDb,
@@ -464,10 +464,10 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     await connectGitLabProjects([101]);
     const [repo] = await state.db.select().from(repositories);
     const [agent] = await state.db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning();
-    await state.db.insert(harnessRepoPins).values({ harnessId: agent!.id, repositoryId: repo!.id });
+    await state.db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo!.id });
     await state.db.insert(reviews).values({
       repositoryId: repo!.id,
       prNumber: 3,
@@ -482,13 +482,13 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     const [after] = await state.db.select().from(repositories).where(eq(repositories.id, repo!.id));
     expect(after).toMatchObject({ reviewsEnabled: false, webhookId: null });
     expect(after!.disconnectedAt).not.toBeNull();
-    expect(await state.db.select().from(harnessRepoPins)).toEqual([]);
+    expect(await state.db.select().from(agentRepoPins)).toEqual([]);
     expect(
       await state.db.select().from(reviews).where(eq(reviews.repositoryId, repo!.id)),
     ).toHaveLength(1);
     // It isn't connected any more.
     expect(await disconnectRepository(repo!.id)).toMatchObject({ ok: false });
-    await state.db.delete(harnesses);
+    await state.db.delete(agents);
   });
 
   it("still disconnects when the webhook can't be deleted, with a warning", async () => {

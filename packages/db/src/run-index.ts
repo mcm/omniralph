@@ -158,8 +158,8 @@ export interface RunIndexEntry {
   status: RunStatus;
   origin: RunOrigin;
   repositoryId: string | null;
-  /** The agent (harness) that ran (or runs) it. */
-  harnessId: string | null;
+  /** The agent (agent) that ran (or runs) it. */
+  agentId: string | null;
   createdAt: Date;
   updatedAt: Date;
   /** `created_at` to the microsecond (UTC ISO), for the cursor. */
@@ -181,15 +181,15 @@ export function runIndexSql(): SQL {
       (case r.mode when 'epic' then ${runStatusSql("epic", ralphStatus)}
         else ${runStatusSql("request", ralphStatus)} end) as status,
       ${caseOf(sql.raw(`(r.origin::text || ':' || r.mode::text)`), RUN_ORIGIN_MAP.ralph)} as origin,
-      r.repository_id, r.harness_id, r.created_at, r.updated_at
+      r.repository_id, r.agent_id, r.created_at, r.updated_at
     from ralph_runs r
     union all
     select rr.id, 'review', rr.organization_id,
       ${runStatusSql("review", sql.raw(`rr.status::text`))},
       ${caseOf(sql.raw(`rr.trigger::text`), RUN_ORIGIN_MAP.review)},
       rr.repository_id,
-      (select rv.harness_id from reviews rv
-        where rv.review_run_id = rr.id and rv.harness_id is not null
+      (select rv.agent_id from reviews rv
+        where rv.review_run_id = rr.id and rv.agent_id is not null
         order by rv.created_at limit 1),
       rr.created_at, rr.updated_at
     from review_runs rr
@@ -197,20 +197,20 @@ export function runIndexSql(): SQL {
     select t.id, 'triage', t.organization_id,
       ${runStatusSql("triage", sql.raw(`t.status::text`))},
       ${caseOf(sql.raw(`t.trigger::text`), RUN_ORIGIN_MAP.triage)},
-      tj.repository_id, tj.harness_id, t.created_at, t.updated_at
+      tj.repository_id, tj.agent_id, t.created_at, t.updated_at
     from triage_runs t
     left join lateral (
-      select j.repository_id, j.harness_id from jobs j
+      select j.repository_id, j.agent_id from jobs j
       where j.triage_run_id = t.id order by j.created_at desc, j.id desc limit 1
     ) tj on true
     union all
     select c.id, 'ask', c.organization_id,
       coalesce(${runStatusSql("ask", sql.raw(`aj.status::text`))}, 'queued'),
-      'chat', aj.repository_id, aj.harness_id, c.created_at,
+      'chat', aj.repository_id, aj.agent_id, c.created_at,
       coalesce(aj.finished_at, aj.started_at, aj.created_at, c.created_at)
     from chat_thread_runs c
     left join lateral (
-      select j.status, j.repository_id, j.harness_id, j.created_at, j.started_at, j.finished_at
+      select j.status, j.repository_id, j.agent_id, j.created_at, j.started_at, j.finished_at
       from jobs j where j.chat_thread_run_id = c.id or j.id = c.job_id
       order by j.created_at desc, j.id desc limit 1
     ) aj on true
@@ -224,14 +224,14 @@ export interface RunIndexRow extends Record<string, unknown> {
   status: RunStatus;
   origin: RunOrigin;
   repository_id: string | null;
-  harness_id: string | null;
+  agent_id: string | null;
   created_at: string;
   updated_at: string;
   created_key: string;
 }
 
 export const indexColumns = sql`runs.id, runs.kind, runs.organization_id, runs.status, runs.origin,
-  runs.repository_id, runs.harness_id, ${iso("runs.created_at")} as created_at,
+  runs.repository_id, runs.agent_id, ${iso("runs.created_at")} as created_at,
   ${iso("runs.updated_at")} as updated_at, ${iso("runs.created_at")} as created_key`;
 
 export function indexEntry(row: RunIndexRow): RunIndexEntry {
@@ -242,7 +242,7 @@ export function indexEntry(row: RunIndexRow): RunIndexEntry {
     status: row.status,
     origin: row.origin,
     repositoryId: row.repository_id,
-    harnessId: row.harness_id,
+    agentId: row.agent_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
     createdAtKey: row.created_key,
@@ -263,7 +263,7 @@ export interface RunIndexFilter {
   statuses?: readonly RunStatus[];
   origins?: readonly RunOrigin[];
   repositoryId?: string;
-  harnessId?: string;
+  agentId?: string;
   cursor?: RunCursor | null;
   /** Default 50. */
   limit?: number;
@@ -290,7 +290,7 @@ export async function listRunIndex(db: Queryable, filter: RunIndexFilter): Promi
   if (filter.statuses?.length) conditions.push(sql`runs.status in (${list(filter.statuses)})`);
   if (filter.origins?.length) conditions.push(sql`runs.origin in (${list(filter.origins)})`);
   if (filter.repositoryId) conditions.push(sql`runs.repository_id = ${filter.repositoryId}`);
-  if (filter.harnessId) conditions.push(sql`runs.harness_id = ${filter.harnessId}`);
+  if (filter.agentId) conditions.push(sql`runs.agent_id = ${filter.agentId}`);
   if (filter.cursor) {
     conditions.push(
       sql`(runs.created_at, runs.id) < (${filter.cursor.createdAt}::timestamptz, ${filter.cursor.id}::uuid)`,
@@ -609,7 +609,7 @@ export async function loadRunListEntries(
   const idsOf = (...kinds: RunKind[]) =>
     entries.filter((e) => kinds.includes(e.kind)).map((e) => e.id);
   const repositoryIds = [...new Set(entries.flatMap((e) => e.repositoryId ?? []))];
-  const harnessIds = [...new Set(entries.flatMap((e) => e.harnessId ?? []))];
+  const agentIds = [...new Set(entries.flatMap((e) => e.agentId ?? []))];
   const [ralph, review, triage, ask, repos, agents] = await Promise.all([
     ralphFacts(db, idsOf("epic", "request")),
     reviewFacts(db, idsOf("review")),
@@ -626,9 +626,9 @@ export async function loadRunListEntries(
             join scm_connections c on c.id = r.connection_id where r.id in (${list(repositoryIds)})`,
         )
       : null,
-    harnessIds.length
+    agentIds.length
       ? db.execute<{ id: string; name: string }>(
-          sql`select h.id, h.name from harnesses h where h.id in (${list(harnessIds)})`,
+          sql`select h.id, h.name from agents h where h.id in (${list(agentIds)})`,
         )
       : null,
   ]);
@@ -650,7 +650,7 @@ export async function loadRunListEntries(
       repository: (entry.repositoryId && repositoryById.get(entry.repositoryId)) || null,
       branch: facts?.branch ?? null,
       pullRequest: facts?.pullRequest ?? null,
-      agent: (entry.harnessId && agentById.get(entry.harnessId)) || null,
+      agent: (entry.agentId && agentById.get(entry.agentId)) || null,
       progress: facts?.progress ?? null,
       tokens: facts?.tokens ?? { in: 0, out: 0 },
       startedAt: facts?.startedAt ?? null,

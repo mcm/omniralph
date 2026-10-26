@@ -1,6 +1,6 @@
 /**
  * Drizzle schema for the Omniralph control panel. Postgres is the single source
- * of truth for repos, reviews, harnesses and jobs.
+ * of truth for repos, reviews, agents and jobs.
  *
  * After changing this file run `pnpm --filter db generate` to emit a migration
  * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
@@ -91,7 +91,7 @@ export const feedbackReason = pgEnum("feedback_reason", [
   "other",
 ]);
 export const ruleKind = pgEnum("rule_kind", ["custom", "learned"]);
-export const harnessAuditEvent = pgEnum("harness_audit_event", [
+export const agentAuditEvent = pgEnum("agent_audit_event", [
   "enroll",
   "token_refresh",
   "refresh_reuse",
@@ -752,7 +752,7 @@ export const chatLinearDelegations = pgTable(
 /**
  * An organization's own playbook (`@omniralph/tasks` `Playbook`, validated
  * when read) with the run requirements derived from it when it was saved
- * (`TaskRequirements`: installables, host tools, minimum harness version), so
+ * (`TaskRequirements`: installables, host tools, minimum agent version), so
  * enqueueing and claiming don't derive them again. `definition` holds every
  * field but the ID, name and role its columns hold. Built-in playbooks stay in
  * code under `builtin:<name>` IDs, so they never clash with these UUIDs.
@@ -953,10 +953,10 @@ export const followUpSources = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.issueId] })],
 );
 
-// ── Harnesses ───────────────────────────────────────────────────────────────
+// ── Agents ───────────────────────────────────────────────────────────────
 
-/** A harness's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
-export interface HarnessUpdateState {
+/** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
+export interface AgentUpdateState {
   state: "idle" | "draining" | "installing" | "confirming";
   version: string | null;
   previous: string | null;
@@ -966,7 +966,7 @@ export interface HarnessUpdateState {
 
 /**
  * Per-organization settings edited by its admins, one JSON value per key (e.g.
- * `harness.desiredVersion`).
+ * `agent.desiredVersion`).
  */
 export const appSettings = pgTable(
   "app_settings",
@@ -982,15 +982,15 @@ export const appSettings = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.key] })],
 );
 
-export const harnesses = pgTable(
-  "harnesses",
+export const agents = pgTable(
+  "agents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    /** Null: the organization's default (`app_settings` `harness.maxConcurrency`). */
+    /** Null: the organization's default (`app_settings` `agent.maxConcurrency`). */
     maxConcurrency: integer("max_concurrency"),
     /**
      * The task types the agent runs (`system` is always accepted), as it reports them: its
@@ -1003,30 +1003,30 @@ export const harnesses = pgTable(
      * `maxConcurrency`. Unset pools use the protocol's default limit.
      */
     poolLimits: jsonb("pool_limits").$type<Partial<Record<string, number>>>().notNull().default({}),
-    /** Overrides the organization's desired harness version (`app_settings` `harness.desiredVersion`). */
+    /** Overrides the organization's desired agent version (`app_settings` `agent.desiredVersion`). */
     desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
-    /** The installables installed on the harness, as its last heartbeat reported them. */
+    /** The installables installed on the agent, as its last heartbeat reported them. */
     reportedInstallables: jsonb("reported_installables")
       .$type<{ name: string; version: string }[]>()
       .notNull()
       .default([]),
-    /** The Claude models the harness's login can run, as its last heartbeat reported them. */
+    /** The Claude models the agent's login can run, as its last heartbeat reported them. */
     reportedModels: jsonb("reported_models")
       .$type<{ value: string; displayName: string }[]>()
       .notNull()
       .default([]),
-    /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older harnesses. */
+    /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
-    /** The harness's self-update progress, as last reported. */
-    updateState: jsonb("update_state").$type<HarnessUpdateState>(),
-    /** Versions the harness failed to install or keep running; it never retries them. */
+    /** The agent's self-update progress, as last reported. */
+    updateState: jsonb("update_state").$type<AgentUpdateState>(),
+    /** Versions the agent failed to install or keep running; it never retries them. */
     failedVersions: text("failed_versions")
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
     /**
-     * An admin's "Update now", sent with every heartbeat until the harness reports
+     * An admin's "Update now", sent with every heartbeat until the agent reports
      * it handled (`handledUpdateRequestId`); null when none is pending.
      */
     updateRequestId: uuid("update_request_id"),
@@ -1041,45 +1041,45 @@ export const harnesses = pgTable(
      */
     liveOnline: boolean("live_online").notNull().default(false),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    /** Soft delete (always after revoking): deleted harnesses are hidden everywhere. */
+    /** Soft delete (always after revoking): deleted agents are hidden everywhere. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("harnesses_organization_id_idx").on(t.organizationId)],
+  (t) => [index("agents_organization_id_idx").on(t.organizationId)],
 );
 
-export const harnessEnrollments = pgTable("harness_enrollments", {
+export const agentEnrollments = pgTable("agent_enrollments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  /** The organization the redeemed harness joins. */
+  /** The organization the redeemed agent joins. */
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   /** `hashToken()` of the one-time enrollment token; the token itself is never stored. */
   tokenHash: text("token_hash").notNull().unique(),
-  /** Display name for the harness this enrollment creates. */
+  /** Display name for the agent this enrollment creates. */
   name: text("name"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
-  /** The harness created when the token was redeemed. */
-  harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
+  /** The agent created when the token was redeemed. */
+  agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 
 /**
- * Opaque refresh tokens a harness exchanges for 15-minute access JWTs. Every refresh marks the
+ * Opaque refresh tokens an agent exchanges for 15-minute access JWTs. Every refresh marks the
  * presented token used and issues a new one in the same family; presenting a used token again
- * revokes the family and the harness (theft detection).
+ * revokes the family and the agent (theft detection).
  */
-export const harnessRefreshTokens = pgTable(
-  "harness_refresh_tokens",
+export const agentRefreshTokens = pgTable(
+  "agent_refresh_tokens",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    harnessId: uuid("harness_id")
+    agentId: uuid("agent_id")
       .notNull()
-      .references(() => harnesses.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" }),
     /** Rotation chain: one per enrollment. */
     familyId: uuid("family_id").notNull(),
     /** `hashToken()` of the 256-bit random token; the token itself is never stored. */
@@ -1089,25 +1089,25 @@ export const harnessRefreshTokens = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [
-    index("harness_refresh_tokens_harness_id_idx").on(t.harnessId),
-    index("harness_refresh_tokens_family_id_idx").on(t.familyId),
+    index("agent_refresh_tokens_agent_id_idx").on(t.agentId),
+    index("agent_refresh_tokens_family_id_idx").on(t.familyId),
   ],
 );
 
-/** Security events for harnesses (enrollment, token refresh/reuse, revocation, auth failures, ...). */
-export const harnessAudit = pgTable(
-  "harness_audit",
+/** Security events for agents (enrollment, token refresh/reuse, revocation, auth failures, ...). */
+export const agentAudit = pgTable(
+  "agent_audit",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
-    event: harnessAuditEvent("event").notNull(),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    event: agentAuditEvent("event").notNull(),
     ip: text("ip"),
     detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [
-    index("harness_audit_harness_id_created_at_idx").on(t.harnessId, t.createdAt),
-    index("harness_audit_created_at_idx").on(t.createdAt),
+    index("agent_audit_agent_id_created_at_idx").on(t.agentId, t.createdAt),
+    index("agent_audit_created_at_idx").on(t.createdAt),
   ],
 );
 
@@ -1125,27 +1125,27 @@ export const rateLimits = pgTable(
   ],
 );
 
-export const harnessRepoPins = pgTable(
-  "harness_repo_pins",
+export const agentRepoPins = pgTable(
+  "agent_repo_pins",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    harnessId: uuid("harness_id")
+    agentId: uuid("agent_id")
       .notNull()
-      .references(() => harnesses.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" }),
     repositoryId: uuid("repository_id")
       .notNull()
       .references(() => repositories.id, { onDelete: "cascade" }),
     createdAt: createdAt(),
   },
   (t) => [
-    uniqueIndex("harness_repo_pins_harness_repo_uq").on(t.harnessId, t.repositoryId),
-    index("harness_repo_pins_repository_id_idx").on(t.repositoryId),
+    uniqueIndex("agent_repo_pins_agent_repo_uq").on(t.agentId, t.repositoryId),
+    index("agent_repo_pins_repository_id_idx").on(t.repositoryId),
   ],
 );
 
 /**
- * An organization's catalog of host tools: software harness owners install by
- * hand (e.g. `opengrep`), which harnesses look up by name on their `PATH`.
+ * An organization's catalog of host tools: software agent owners install by
+ * hand (e.g. `opengrep`), which agents look up by name on their `PATH`.
  */
 export const hostTools = pgTable(
   "host_tools",
@@ -1164,30 +1164,30 @@ export const hostTools = pgTable(
 );
 
 /**
- * A host tool on one harness: the path an admin configured (null: none) and
- * what the harness last reported for it in its heartbeat.
+ * A host tool on one agent: the path an admin configured (null: none) and
+ * what the agent last reported for it in its heartbeat.
  */
-export const harnessHostTools = pgTable(
-  "harness_host_tools",
+export const agentHostTools = pgTable(
+  "agent_host_tools",
   {
-    harnessId: uuid("harness_id")
+    agentId: uuid("agent_id")
       .notNull()
-      .references(() => harnesses.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" }),
     hostToolId: uuid("host_tool_id")
       .notNull()
       .references(() => hostTools.id, { onDelete: "cascade" }),
     /** An absolute path; when set it wins over `discoveredPath`, even when it doesn't exist. */
     configuredPath: text("configured_path"),
-    /** Whether the configured path is a usable executable on the harness; null until reported or with none configured. */
+    /** Whether the configured path is a usable executable on the agent; null until reported or with none configured. */
     configuredPathExists: boolean("configured_path_exists"),
-    /** The first match the harness found on its own `PATH` (never one it blocks). */
+    /** The first match the agent found on its own `PATH` (never one it blocks). */
     discoveredPath: text("discovered_path"),
-    /** When the harness last reported on the tool. */
+    /** When the agent last reported on the tool. */
     reportedAt: timestamp("reported_at", { withTimezone: true }),
   },
   (t) => [
-    primaryKey({ columns: [t.harnessId, t.hostToolId] }),
-    index("harness_host_tools_host_tool_id_idx").on(t.hostToolId),
+    primaryKey({ columns: [t.agentId, t.hostToolId] }),
+    index("agent_host_tools_host_tool_id_idx").on(t.hostToolId),
   ],
 );
 
@@ -1296,7 +1296,7 @@ export const reviews = pgTable(
     budget: integer("budget").notNull(),
     durationMs: integer("duration_ms"),
     model: text("model"),
-    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     skippedFiles: jsonb("skipped_files").$type<SkippedFile[]>().notNull().default([]),
     /** SCM ID of the summary comment, so it is posted at most once per review. */
     summaryCommentId: text("summary_comment_id"),
@@ -1420,34 +1420,34 @@ export const rules = pgTable(
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
-/** How a harness runs a job (`JOB_TASK_TYPES` in `@omniralph/shared`). */
+/** How an agent runs a job (`JOB_TASK_TYPES` in `@omniralph/shared`). */
 export type JobTaskType = "query" | "review" | "coding" | "system";
 
 export const jobs = pgTable(
   "jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** Only harnesses of this organization receive the job and its credentials. */
+    /** Only agents of this organization receive the job and its credentials. */
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     /** Job type, e.g. `review.task` or `repo.sync`. */
     type: text("type").notNull(),
     /**
-     * How the harness runs the job: `query`, `review`, `coding` or `system` (a
-     * fixed command, no session). Only harnesses accepting it claim the job.
+     * How the agent runs the job: `query`, `review`, `coding` or `system` (a
+     * fixed command, no session). Only agents accepting it claim the job.
      */
     taskType: text("task_type").$type<JobTaskType>().notNull(),
     /** The task definition the job runs (`builtin:<name>` or a UUID); null for legacy jobs. */
     taskId: text("task_id"),
-    /** Only harnesses reporting at least this version (semver) claim the job. */
-    minHarnessVersion: text("min_harness_version"),
-    /** Only harnesses reporting every one of these installables (npm package names) claim the job. */
+    /** Only agents reporting at least this version (semver) claim the job. */
+    minAgentVersion: text("min_agent_version"),
+    /** Only agents reporting every one of these installables (npm package names) claim the job. */
     requiredInstallables: text("required_installables")
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
-    /** Only harnesses with an effective path for every one of these host tools (by name) claim the job. */
+    /** Only agents with an effective path for every one of these host tools (by name) claim the job. */
     requiredHostTools: text("required_host_tools")
       .array()
       .notNull()
@@ -1457,14 +1457,14 @@ export const jobs = pgTable(
     repositoryId: uuid("repository_id").references(() => repositories.id, {
       onDelete: "set null",
     }),
-    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
-    /** Only this harness may claim the job (a pinned repo's job, or `repo.sync`); null: any harness of the organization. */
-    targetHarnessId: uuid("target_harness_id").references((): AnyPgColumn => harnesses.id, {
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** Only this agent may claim the job (a pinned repo's job, or `repo.sync`); null: any agent of the organization. */
+    targetAgentId: uuid("target_agent_id").references((): AnyPgColumn => agents.id, {
       onDelete: "set null",
     }),
     /** When a `queued` job may be claimed (later than creation for a delayed retry). */
     availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
-    /** When a `running` job's lease lapses: another harness may then claim it (crash takeover). */
+    /** When a `running` job's lease lapses: another agent may then claim it (crash takeover). */
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     deliveryCount: integer("delivery_count").notNull().default(0),
     /** At most one queued/running job per dedupe key (see the partial unique index). */
@@ -1506,7 +1506,7 @@ export const jobs = pgTable(
       .on(t.dedupeKey)
       .where(sql`status in ('queued', 'running')`),
     index("jobs_status_created_at_idx").on(t.status, t.createdAt),
-    index("jobs_harness_id_idx").on(t.harnessId),
+    index("jobs_agent_id_idx").on(t.agentId),
     index("jobs_ralph_run_id_idx").on(t.ralphRunId),
     index("jobs_ralph_story_id_idx").on(t.ralphStoryId),
     index("jobs_review_run_id_idx").on(t.reviewRunId),
@@ -1565,12 +1565,12 @@ export const runPermissionRequests = pgTable(
     jobId: uuid("job_id")
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),
-    /** Chosen by the harness; it reads the answer back with it. */
+    /** Chosen by the agent; it reads the answer back with it. */
     requestId: text("request_id").notNull(),
     tool: text("tool").notNull(),
     detail: text("detail").notNull().default(""),
     askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
-    /** When the harness stops waiting and denies the call. */
+    /** When the agent stops waiting and denies the call. */
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     answer: text("answer").$type<RunPermissionAnswer>(),
     answeredAt: timestamp("answered_at", { withTimezone: true }),
@@ -1656,18 +1656,18 @@ export interface RalphPreparation {
 
 /**
  * A tool call a run's live session asked a person to approve in Linear (the
- * repository's Claude Code settings `ask` about it). One at a time: the harness
+ * repository's Claude Code settings `ask` about it). One at a time: the agent
  * waits for the answer before it asks about another call.
  */
 export interface RalphPermissionQuestion {
-  /** The harness's ID for the call; it reads the answer back with it. */
+  /** The agent's ID for the call; it reads the answer back with it. */
   requestId: string;
   /** The job whose session asks. */
   jobId: string;
   tool: string;
   detail: string;
   askedAt: string;
-  /** When the harness stops waiting and denies the call (ISO 8601). */
+  /** When the agent stops waiting and denies the call (ISO 8601). */
   expiresAt: string;
   /** Unset while pending; `expired` when nobody answered in time (or the job ended). */
   answer?: "allowed" | "denied" | "expired";
@@ -1720,10 +1720,10 @@ export const ralphRuns = pgTable(
     /** How the repository was chosen, e.g. "team `ENG`" or "your selection" (kept on re-routing). */
     routedBy: text("routed_by"),
     /**
-     * The main lane's sticky harness (`ralph_lanes.harness_id`), mirrored for
-     * run-level readers. Lane jobs are targeted at their lane's harness.
+     * The main lane's sticky agent (`ralph_lanes.agent_id`), mirrored for
+     * run-level readers. Lane jobs are targeted at their lane's agent.
      */
-    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     /** The `ralph.describe-pr` job whose outcome the run hasn't applied yet (the PR/MR step). */
     prJobId: uuid("pr_job_id").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
     /** The `ralph.request` job whose outcome the run hasn't applied yet. */
@@ -1960,7 +1960,7 @@ export type RalphLanePublish =
  * One repository a run works in (cyralph's `RepoLane`): its branch, PR/MR and
  * follow-up state. The lane of the run's `repository_id` is its main lane;
  * stories routed to other repositories get a lane each. All lanes of a run use
- * the run's sticky harness.
+ * the run's sticky agent.
  */
 export const ralphLanes = pgTable(
   "ralph_lanes",
@@ -1996,17 +1996,17 @@ export const ralphLanes = pgTable(
     ciFixRounds: integer("ci_fix_rounds").notNull().default(0),
     /** PR/MR head commits whose failed CI was seen. */
     handledCiShas: jsonb("handled_ci_shas").$type<string[]>().notNull().default([]),
-    /** Claude session of the last request, resumed for follow-ups on `request_harness_id`. */
+    /** Claude session of the last request, resumed for follow-ups on `request_agent_id`. */
     requestClaudeSessionId: text("request_claude_session_id"),
-    /** The harness holding that session's files. */
-    requestHarnessId: uuid("request_harness_id").references(() => harnesses.id, {
+    /** The agent holding that session's files. */
+    requestAgentId: uuid("request_agent_id").references(() => agents.id, {
       onDelete: "set null",
     }),
     /**
-     * The lane's sticky harness: the one its last job started on. Its later
-     * jobs are targeted at it while it is usable (`laneHarnessId`).
+     * The lane's sticky agent: the one its last job started on. Its later
+     * jobs are targeted at it while it is usable (`laneAgentId`).
      */
-    harnessId: uuid("harness_id").references(() => harnesses.id, { onDelete: "set null" }),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     stashes: jsonb("stashes").$type<RalphStash[]>().notNull().default([]),
     cleanup: jsonb("cleanup").$type<RalphLaneCleanup>(),
     publish: jsonb("publish").$type<RalphLanePublish>(),
@@ -2093,7 +2093,7 @@ export const ralphStories = pgTable(
 
 /**
  * A reply from the run's agent session for a running `ralph.*` job's live
- * Claude session (cyralph's live injection), or a pending request. The harness
+ * Claude session (cyralph's live injection), or a pending request. The agent
  * gets undelivered ones in its heartbeat (`jobMessages`) and acknowledges them
  * in the next. A message that can't be delivered becomes guidance (`kind`
  * `guidance`) or stays a pending request (`kind` `request`, no `job_id`).
@@ -2118,7 +2118,7 @@ export const ralphMessages = pgTable(
     /** Who wrote it in Linear, when known. */
     author: text("author"),
     createdAt: createdAt(),
-    /** The harness injected it into the job's live session. */
+    /** The agent injected it into the job's live session. */
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     /** Applied: stored as guidance, or handled as a request. */
     consumedAt: timestamp("consumed_at", { withTimezone: true }),

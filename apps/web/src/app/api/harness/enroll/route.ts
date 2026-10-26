@@ -1,4 +1,4 @@
-import { enrollHarness, writeHarnessAudit } from "@omniralph/db";
+import { enrollAgent, writeAgentAudit } from "@omniralph/db";
 import { EnrollRequest, type EnrollResponse } from "@omniralph/shared";
 import { authFailure, badRequest, clientIp, readJson } from "@/lib/harness-auth/request";
 import { getDb } from "@/lib/db";
@@ -27,12 +27,12 @@ async function post(req: Request): Promise<Response> {
   const body = EnrollRequest.safeParse(await readJson(req));
   if (!body.success) return badRequest();
 
-  const enrolled = await enrollHarness(db, { ...body.data, now });
+  const enrolled = await enrollAgent(db, { ...body.data, now });
   if (!enrolled) {
     return authFailure(db, req, { reason: "invalid_enrollment_token" }, now);
   }
-  await writeHarnessAudit(db, {
-    harnessId: enrolled.harnessId,
+  await writeAgentAudit(db, {
+    agentId: enrolled.agentId,
     event: "enroll",
     ip,
     detail: {
@@ -40,7 +40,11 @@ async function post(req: Request): Promise<Response> {
       version: body.data.version,
     },
   });
-  return Response.json(enrolled satisfies EnrollResponse);
+  // The wire field keeps its name until TOOL-584.
+  return Response.json({
+    harnessId: enrolled.agentId,
+    refreshToken: enrolled.refreshToken,
+  } satisfies EnrollResponse);
 }
 
 export const POST = liveRoute(post);

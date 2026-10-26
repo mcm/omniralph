@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { connectRepository, upsertScmConnection } from "./repositories.js";
 import { emptyFindingCounts, getReviewDetail, listReviews } from "./review-history.js";
-import { harnesses, findings, reviews, organizations } from "./schema.js";
+import { agents, findings, reviews, organizations } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -16,7 +16,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
   let orgId: string;
   let repoId: string;
   let otherRepoId: string;
-  let harnessId: string;
+  let agentId: string;
   /** Review IDs of `repoId`, newest first. */
   const newestFirst: string[] = [];
 
@@ -53,10 +53,10 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
     repoId = repo.id;
     otherRepoId = other.id;
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
       .returning();
-    harnessId = agent!.id;
+    agentId = agent!.id;
 
     // 30 reviews of `repoId`: every third is a mention, every fifth failed.
     const base = Date.parse("2026-10-01T00:00:00Z");
@@ -71,7 +71,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
       status: i % 5 === 0 ? ("failed" as const) : ("completed" as const),
       error: i % 5 === 0 ? "boom" : null,
       depth: "standard" as const,
-      harnessId,
+      agentId,
       budget: 200_000,
       tokensIn: 1000 + i,
       tokensOut: 100,
@@ -153,7 +153,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
         baseUrl: "https://gitlab.example.com",
       },
       depth: "standard",
-      agent: { id: harnessId, name: "coder-1" },
+      agent: { id: agentId, name: "coder-1" },
       tokensIn: 1029,
       tokensOut: 100,
       budget: 200_000,
@@ -218,7 +218,7 @@ describe.skipIf(!databaseAvailable)("review history queries", () => {
       review: { id: newestFirst[0], prNumber: 30, model: null },
       repository: { id: repoId, fullPath: "acme/api" },
       depth: "standard",
-      agent: { id: harnessId, name: "coder-1" },
+      agent: { id: agentId, name: "coder-1" },
     });
     expect(detail!.findings.map((f) => f.title)).toEqual(["Finding 1", "Finding 2", "Finding 3"]);
     expect(await getReviewDetail(db, orgId, randomUUID())).toBeNull();

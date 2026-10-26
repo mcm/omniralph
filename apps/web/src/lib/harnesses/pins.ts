@@ -1,7 +1,7 @@
 import "server-only";
 import {
   getRepositoryWithConnection,
-  pinRepositoryToHarness,
+  pinRepositoryToAgent,
   type Database,
   type PinRepositoryResult,
 } from "@omniralph/db";
@@ -21,7 +21,10 @@ export async function pinRepository(
   dispatcher: JobDispatcher,
   input: { harnessId: string; repositoryId: string },
 ): Promise<{ result: PinRepositoryResult; syncJobId?: string }> {
-  const result = await pinRepositoryToHarness(db, input);
+  const result = await pinRepositoryToAgent(db, {
+    agentId: input.harnessId,
+    repositoryId: input.repositoryId,
+  });
   if (result !== "pinned" && result !== "already_pinned") return { result };
   if (result === "pinned") await bumpHarnessHeartbeat(input.harnessId);
   const found = await getRepositoryWithConnection(db, input.repositoryId);

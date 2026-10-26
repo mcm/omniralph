@@ -1,6 +1,6 @@
 /**
- * Host tools: an organization's catalog of software harness owners install by
- * hand, and per harness the path an admin configured and what the harness
+ * Host tools: an organization's catalog of software agent owners install by
+ * hand, and per agent the path an admin configured and what the agent
  * reported for it. Every admin helper is scoped to one organization: a row of
  * another organization is never read or written.
  */
@@ -8,10 +8,10 @@ import { HOST_TOOL_NAME_PATTERN, type ReportedHostTool } from "@omniralph/shared
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { harnessHostTools, harnesses, hostTools } from "./schema.js";
+import { agentHostTools, agents, hostTools } from "./schema.js";
 
 export type HostTool = typeof hostTools.$inferSelect;
-export type HarnessHostToolRow = typeof harnessHostTools.$inferSelect;
+export type AgentHostToolRow = typeof agentHostTools.$inferSelect;
 
 /** Longest configured path accepted (as the heartbeat protocol). */
 const MAX_PATH_LENGTH = 4096;
@@ -25,12 +25,12 @@ export function isValidHostToolPath(path: string): boolean {
 }
 
 /**
- * The path a harness runs a host tool from: the configured path when one is
- * set and the harness found it usable (none when it didn't, or hasn't reported
+ * The path an agent runs a host tool from: the configured path when one is
+ * set and the agent found it usable (none when it didn't, or hasn't reported
  * yet: no fallback), else the path it discovered on its `PATH`, else none.
  */
 export function effectiveHostToolPath(
-  row: Pick<HarnessHostToolRow, "configuredPath" | "configuredPathExists" | "discoveredPath">,
+  row: Pick<AgentHostToolRow, "configuredPath" | "configuredPathExists" | "discoveredPath">,
 ): string | null {
   if (row.configuredPath !== null) {
     return row.configuredPathExists === true ? row.configuredPath : null;
@@ -76,7 +76,7 @@ export async function listHostTools(db: Database, organizationId: string): Promi
     .orderBy(asc(hostTools.name));
 }
 
-/** Removes a host tool (and every harness's path for it). False when the organization has no such tool. */
+/** Removes a host tool (and every agent's path for it). False when the organization has no such tool. */
 export async function deleteHostTool(
   db: Database,
   organizationId: string,
@@ -90,8 +90,8 @@ export async function deleteHostTool(
   return rows.length > 0;
 }
 
-/** A catalog host tool on one harness: its configured path and the harness's last report. */
-export interface HarnessHostTool {
+/** A catalog host tool on one agent: its configured path and the agent's last report. */
+export interface AgentHostTool {
   hostToolId: string;
   name: string;
   description: string | null;
@@ -104,33 +104,33 @@ export interface HarnessHostTool {
 }
 
 /**
- * Every host tool of the harness's organization with that harness's configured
+ * Every host tool of the agent's organization with that agent's configured
  * path and report (none for tools it has no row for), by name. Empty for an
- * unknown harness or one of another organization.
+ * unknown agent or one of another organization.
  */
-export async function listHarnessHostTools(
+export async function listAgentHostTools(
   db: Database,
   organizationId: string,
-  harnessId: string,
-): Promise<HarnessHostTool[]> {
+  agentId: string,
+): Promise<AgentHostTool[]> {
   const rows = await db
     .select({
       hostToolId: hostTools.id,
       name: hostTools.name,
       description: hostTools.description,
-      configuredPath: harnessHostTools.configuredPath,
-      configuredPathExists: harnessHostTools.configuredPathExists,
-      discoveredPath: harnessHostTools.discoveredPath,
-      reportedAt: harnessHostTools.reportedAt,
+      configuredPath: agentHostTools.configuredPath,
+      configuredPathExists: agentHostTools.configuredPathExists,
+      discoveredPath: agentHostTools.discoveredPath,
+      reportedAt: agentHostTools.reportedAt,
     })
     .from(hostTools)
     .innerJoin(
-      harnesses,
-      and(eq(harnesses.id, harnessId), eq(harnesses.organizationId, hostTools.organizationId)),
+      agents,
+      and(eq(agents.id, agentId), eq(agents.organizationId, hostTools.organizationId)),
     )
     .leftJoin(
-      harnessHostTools,
-      and(eq(harnessHostTools.hostToolId, hostTools.id), eq(harnessHostTools.harnessId, harnessId)),
+      agentHostTools,
+      and(eq(agentHostTools.hostToolId, hostTools.id), eq(agentHostTools.agentId, agentId)),
     )
     .where(eq(hostTools.organizationId, organizationId))
     .orderBy(asc(hostTools.name));
@@ -138,29 +138,29 @@ export async function listHarnessHostTools(
 }
 
 /**
- * For each of the organization's harnesses with at least one, the names of the
+ * For each of the organization's agents with at least one, the names of the
  * host tools it has an `effectiveHostToolPath` for, sorted: what `claimJob`
  * checks a job's `required_host_tools` against.
  */
-export async function listHarnessesUsableHostTools(
+export async function listAgentsUsableHostTools(
   db: Database,
   organizationId: string,
 ): Promise<Map<string, string[]>> {
   const rows = await db
     .select({
-      harnessId: harnessHostTools.harnessId,
+      agentId: agentHostTools.agentId,
       name: hostTools.name,
-      configuredPath: harnessHostTools.configuredPath,
-      configuredPathExists: harnessHostTools.configuredPathExists,
-      discoveredPath: harnessHostTools.discoveredPath,
+      configuredPath: agentHostTools.configuredPath,
+      configuredPathExists: agentHostTools.configuredPathExists,
+      discoveredPath: agentHostTools.discoveredPath,
     })
-    .from(harnessHostTools)
-    .innerJoin(hostTools, eq(hostTools.id, harnessHostTools.hostToolId))
+    .from(agentHostTools)
+    .innerJoin(hostTools, eq(hostTools.id, agentHostTools.hostToolId))
     .innerJoin(
-      harnesses,
+      agents,
       and(
-        eq(harnesses.id, harnessHostTools.harnessId),
-        eq(harnesses.organizationId, hostTools.organizationId),
+        eq(agents.id, agentHostTools.agentId),
+        eq(agents.organizationId, hostTools.organizationId),
       ),
     )
     .where(eq(hostTools.organizationId, organizationId))
@@ -168,71 +168,71 @@ export async function listHarnessesUsableHostTools(
   const usable = new Map<string, string[]>();
   for (const row of rows) {
     if (effectiveHostToolPath(row) === null) continue;
-    usable.set(row.harnessId, [...(usable.get(row.harnessId) ?? []), row.name]);
+    usable.set(row.agentId, [...(usable.get(row.agentId) ?? []), row.name]);
   }
   return usable;
 }
 
-export type SetHarnessHostToolPathResult =
+export type SetAgentHostToolPathResult =
   { ok: true } | { ok: false; error: "invalid_path" | "not_found" };
 
 /**
- * Sets (or, with null, clears) the path a harness runs a host tool from. The
+ * Sets (or, with null, clears) the path an agent runs a host tool from. The
  * last report on the configured path is cleared, since it was about another
- * path: the tool is unavailable until the harness reports on the new one.
- * `not_found` for an unknown or revoked harness, an unknown tool, or either of
+ * path: the tool is unavailable until the agent reports on the new one.
+ * `not_found` for an unknown or revoked agent, an unknown tool, or either of
  * another organization.
  */
-export async function setHarnessHostToolPath(
+export async function setAgentHostToolPath(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   hostToolId: string,
   configuredPath: string | null,
-): Promise<SetHarnessHostToolPathResult> {
+): Promise<SetAgentHostToolPathResult> {
   if (configuredPath !== null && !isValidHostToolPath(configuredPath)) {
     return { ok: false, error: "invalid_path" };
   }
   const [target] = await db
-    .select({ harnessId: harnesses.id, hostToolId: hostTools.id })
-    .from(harnesses)
+    .select({ agentId: agents.id, hostToolId: hostTools.id })
+    .from(agents)
     .innerJoin(
       hostTools,
-      and(eq(hostTools.id, hostToolId), eq(hostTools.organizationId, harnesses.organizationId)),
+      and(eq(hostTools.id, hostToolId), eq(hostTools.organizationId, agents.organizationId)),
     )
     .where(
       and(
-        eq(harnesses.id, harnessId),
-        eq(harnesses.organizationId, organizationId),
-        sql`${harnesses.revokedAt} is null`,
+        eq(agents.id, agentId),
+        eq(agents.organizationId, organizationId),
+        sql`${agents.revokedAt} is null`,
       ),
     );
   if (!target) return { ok: false, error: "not_found" };
   await db
-    .insert(harnessHostTools)
-    .values({ harnessId, hostToolId, configuredPath, configuredPathExists: null })
+    .insert(agentHostTools)
+    .values({ agentId, hostToolId, configuredPath, configuredPathExists: null })
     .onConflictDoUpdate({
-      target: [harnessHostTools.harnessId, harnessHostTools.hostToolId],
+      target: [agentHostTools.agentId, agentHostTools.hostToolId],
       set: { configuredPath, configuredPathExists: null },
     });
-  recordChange(db, { resource: "agent", ids: [harnessId], organizationId });
+  recordChange(db, { resource: "agent", ids: [agentId], organizationId });
   return { ok: true };
 }
 
 /**
- * Stores a harness's heartbeat report on its organization's host tools
+ * Stores an agent's heartbeat report on its organization's host tools
  * (creating rows as needed). Names not in the catalog are ignored and the
  * configured paths are left as they are. `configuredPathExists` is only kept
  * when it's about the configured path stored now: null when none is
- * configured, or when the harness says it checked another one (the path
- * changed since its last heartbeat response). The report is the harness's
+ * configured, or when the agent says it checked another one (the path
+ * changed since its last heartbeat response). The report is the agent's
  * whole state: a tool it has a row for but left out (an empty report included)
  * is stored as not found, its configured path kept.
  */
-export async function recordHarnessHostTools(
+export async function recordAgentHostTools(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   reported: readonly ReportedHostTool[],
   now: Date = new Date(),
 ): Promise<void> {
@@ -240,12 +240,12 @@ export async function recordHarnessHostTools(
     .select({
       id: hostTools.id,
       name: hostTools.name,
-      configuredPath: harnessHostTools.configuredPath,
+      configuredPath: agentHostTools.configuredPath,
     })
     .from(hostTools)
     .leftJoin(
-      harnessHostTools,
-      and(eq(harnessHostTools.hostToolId, hostTools.id), eq(harnessHostTools.harnessId, harnessId)),
+      agentHostTools,
+      and(eq(agentHostTools.hostToolId, hostTools.id), eq(agentHostTools.agentId, agentId)),
     )
     .where(
       and(
@@ -257,7 +257,7 @@ export async function recordHarnessHostTools(
       ),
     );
   const catalog = new Map(known.map((tool) => [tool.name, tool]));
-  const values = new Map<string, typeof harnessHostTools.$inferInsert>();
+  const values = new Map<string, typeof agentHostTools.$inferInsert>();
   for (const tool of reported) {
     const entry = catalog.get(tool.name);
     if (!entry) continue;
@@ -265,7 +265,7 @@ export async function recordHarnessHostTools(
       entry.configuredPath !== null &&
       (tool.configuredPath === undefined || tool.configuredPath === entry.configuredPath);
     values.set(entry.id, {
-      harnessId,
+      agentId,
       hostToolId: entry.id,
       configuredPathExists: current ? tool.configuredPathExists : null,
       discoveredPath: tool.discoveredPath,
@@ -273,20 +273,20 @@ export async function recordHarnessHostTools(
     });
   }
   await db
-    .update(harnessHostTools)
+    .update(agentHostTools)
     .set({ configuredPathExists: null, discoveredPath: null, reportedAt: now })
     .where(
       and(
-        eq(harnessHostTools.harnessId, harnessId),
-        notInArray(harnessHostTools.hostToolId, [...values.keys()]),
+        eq(agentHostTools.agentId, agentId),
+        notInArray(agentHostTools.hostToolId, [...values.keys()]),
       ),
     );
   if (values.size === 0) return;
   await db
-    .insert(harnessHostTools)
+    .insert(agentHostTools)
     .values([...values.values()])
     .onConflictDoUpdate({
-      target: [harnessHostTools.harnessId, harnessHostTools.hostToolId],
+      target: [agentHostTools.agentId, agentHostTools.hostToolId],
       set: {
         configuredPathExists: sql`excluded.configured_path_exists`,
         discoveredPath: sql`excluded.discovered_path`,

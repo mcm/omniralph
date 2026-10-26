@@ -8,7 +8,7 @@ import type { Database } from "./client.js";
 import { listFindingFeedback, type FeedbackEntry } from "./feedback.js";
 import type { FindingRow, Review } from "./reviews.js";
 import {
-  harnesses,
+  agents,
   findings,
   findingSeverity,
   repositories,
@@ -100,8 +100,8 @@ const reviewColumns = {
     baseUrl: scmConnections.baseUrl,
   },
   depth: reviews.depth,
-  harnessId: harnesses.id,
-  harnessName: harnesses.name,
+  agentId: agents.id,
+  agentName: agents.name,
 };
 
 /**
@@ -130,7 +130,7 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
       .from(reviews)
       .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
       .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-      .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
+      .leftJoin(agents, eq(agents.id, reviews.agentId))
       .where(where)
       .orderBy(desc(reviews.createdAt), desc(reviews.id))
       .limit(pageSize)
@@ -157,9 +157,9 @@ export async function listReviews(db: Database, filter: ReviewListFilter): Promi
   }
 
   return {
-    reviews: rows.map(({ harnessId, harnessName, ...row }) => ({
+    reviews: rows.map(({ agentId, agentName, ...row }) => ({
       ...row,
-      agent: harnessId && harnessName ? { id: harnessId, name: harnessName } : null,
+      agent: agentId && agentName ? { id: agentId, name: agentName } : null,
       findingCounts: counts.get(row.id) ?? emptyFindingCounts(),
     })),
     total: totalRow?.total ?? 0,
@@ -206,13 +206,13 @@ export async function getReviewDetail(
         baseUrl: scmConnections.baseUrl,
       },
       depth: reviews.depth,
-      harnessId: harnesses.id,
-      harnessName: harnesses.name,
+      agentId: agents.id,
+      agentName: agents.name,
     })
     .from(reviews)
     .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
     .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-    .leftJoin(harnesses, eq(harnesses.id, reviews.harnessId))
+    .leftJoin(agents, eq(agents.id, reviews.agentId))
     .where(and(eq(reviews.id, reviewId), eq(repositories.organizationId, organizationId)))
     .limit(1);
   if (!row) return null;
@@ -251,7 +251,7 @@ export async function getReviewDetail(
     review: row.review,
     repository: row.repository,
     depth: row.depth,
-    agent: row.harnessId && row.harnessName ? { id: row.harnessId, name: row.harnessName } : null,
+    agent: row.agentId && row.agentName ? { id: row.agentId, name: row.agentName } : null,
     findings: rows,
     feedback: await listFindingFeedback(
       db,

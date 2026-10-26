@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   chatConnections,
   chatThreadRuns,
   CANCELED_REVIEW_ERROR,
@@ -246,9 +246,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     ).id;
     await setCodingEnabled(db, repoA);
     [{ id: harnessId }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -321,7 +321,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   async function runOfEachKind() {
     // Epic: two stories, one built; its story job used tokens.
     const epic = await newRun();
-    await updateRun(db, epic.id, { status: "completed", harnessId });
+    await updateRun(db, epic.id, { status: "completed", agentId: harnessId });
     await updateLane(db, (await getMainLane(db, epic))!.id, {
       prNumber: 7,
       prUrl: "https://github.com/acme/api/pull/7",
@@ -384,7 +384,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       });
       await db
         .update(reviews)
-        .set({ status, harnessId, tokensIn: 50 + i, tokensOut: 5 })
+        .set({ status, agentId: harnessId, tokensIn: 50 + i, tokensOut: 5 })
         .where(eq(reviews.id, review.id));
     }
     await createdOn(reviewRuns, reviewRun.id, 3);
@@ -432,7 +432,11 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
     await db
       .update(jobs)
-      .set({ status: "canceled", harnessId, finishedAt: new Date(Date.UTC(2026, 9, 5, 1)) })
+      .set({
+        status: "canceled",
+        agentId: harnessId,
+        finishedAt: new Date(Date.UTC(2026, 9, 5, 1)),
+      })
       .where(eq(jobs.id, askJob.id));
     const ask = (await mapThreadRun(db, {
       organizationId: orgId,
@@ -713,14 +717,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     await updateRun(db, run.id, {
       status: "failed",
       error: "A story ran out of attempts.",
-      harnessId,
+      agentId: harnessId,
     });
 
     const builtJob = await attempt(
       { type: "ralph.story", ralphRunId: run.id, ralphStoryId: built!.id },
       {
         status: "completed",
-        harnessId,
+        agentId: harnessId,
         deliveryCount: 1,
         createdAt: at(9),
         startedAt: at(9),
@@ -733,7 +737,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       {
         status: "failed",
         error: "Tests failed.",
-        harnessId,
+        agentId: harnessId,
         deliveryCount: 2,
         createdAt: at(10),
         startedAt: at(10),
@@ -1031,7 +1035,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
             repositoryId: repoB,
             payload: { trigger: { kind: "pr.mention", context: { reviewId: pass.id } } },
           },
-          { status: pass === security ? "completed" : "failed", harnessId },
+          { status: pass === security ? "completed" : "failed", agentId: harnessId },
         ),
       );
     }
@@ -1172,7 +1176,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       .where(eq(jobs.id, firstTurn!.id));
     const secondTurn = await attempt(
       { type: "triage.run", taskType: "query", triageRunId: triage.id, repositoryId: repoA },
-      { status: "running", harnessId, startedAt: at(9), createdAt: at(9) },
+      { status: "running", agentId: harnessId, startedAt: at(9), createdAt: at(9) },
     );
 
     const triageView = await detailPage(triage.id);
@@ -1344,7 +1348,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
 
   it("stops a run whose job is running: the job shows its cancel request until its harness confirms", async () => {
     const { run, jobId } = await runningRun();
-    await db.update(jobs).set({ status: "running", harnessId }).where(eq(jobs.id, jobId));
+    await db.update(jobs).set({ status: "running", agentId: harnessId }).where(eq(jobs.id, jobId));
     expect(await stopRalphRun(run.id)).toEqual({ ok: true });
 
     const view = await detailPage(run.id);

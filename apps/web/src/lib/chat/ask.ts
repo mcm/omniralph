@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import {
   getRepositoryWithConnection,
   latestCompletedChatThreadJob,
-  listHarnessOverview,
-  listHarnessesUsableHostTools,
+  listAgentOverview,
+  listAgentsUsableHostTools,
   getJob,
   mapThreadRun,
   setThreadRunJob,
@@ -207,8 +207,8 @@ export async function enqueueChatAsk(
     hostTools: taskRequirements.hostTools,
   };
   const [overview, usableHostTools] = await Promise.all([
-    listHarnessOverview(db, input.organizationId).then(withLastSeen),
-    listHarnessesUsableHostTools(db, input.organizationId),
+    listAgentOverview(db, input.organizationId).then(withLastSeen),
+    listAgentsUsableHostTools(db, input.organizationId),
   ]);
   const harnesses = queryClaimableHarnesses(
     overview,
@@ -320,7 +320,7 @@ export async function retryChatAsk(
     type: job.type,
     taskType: job.taskType,
     taskId: job.taskId,
-    minHarnessVersion: job.minHarnessVersion,
+    minAgentVersion: job.minAgentVersion,
     requiredInstallables: job.requiredInstallables,
     requiredHostTools: job.requiredHostTools,
     payload: job.payload,

@@ -1,14 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter } from "@chat-adapter/tests";
 import {
-  harnessRepoPins,
+  agentRepoPins,
   appendChatMessage,
-  harnesses,
+  agents,
   closeDb,
   createHostTool,
   deleteHostTool,
   insertPlaybook,
-  recordHarnessHostTools,
+  recordAgentHostTools,
   listThreadRuns,
   connectRepository,
   createDb,
@@ -112,7 +112,7 @@ describe("queryClaimableHarnesses", () => {
     const all = harness({ name: "all", reportedInstallables: [graph, hello] });
     const missingInstallable = harness({ name: "no-hello", reportedInstallables: [graph] });
     const missingHostTool = harness({ name: "no-semgrep", reportedInstallables: [graph, hello] });
-    // As `listHarnessesUsableHostTools`: tools with an effective path, by harness ID.
+    // As `listAgentsUsableHostTools`: tools with an effective path, by harness ID.
     const usable = new Map([
       ["all", ["opengrep", "semgrep"]],
       ["no-hello", ["opengrep", "semgrep"]],
@@ -299,14 +299,14 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       fullPath: `${slug}/api`,
     });
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: org!.id, name: `${slug}-agent` })
       .returning();
     return { id: org!.id, repositoryId: repository.id, harnessId: agent!.id };
   }
 
-  const setAgent = (id: string, values: Partial<typeof harnesses.$inferInsert>) =>
-    db.update(harnesses).set(values).where(eq(harnesses.id, id));
+  const setAgent = (id: string, values: Partial<typeof agents.$inferInsert>) =>
+    db.update(agents).set(values).where(eq(agents.id, id));
 
   beforeAll(async () => {
     testDb = await createTestDatabase();
@@ -344,7 +344,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     };
     await setAgent(harnessId, capable);
     await setAgent(otherHarnessId, capable);
-    await db.delete(harnessRepoPins);
+    await db.delete(agentRepoPins);
     await db.execute("DELETE FROM chat_channel_task_settings");
   });
 
@@ -370,10 +370,10 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     expect(job).toMatchObject({
       status: "queued",
       repositoryId,
-      targetHarnessId: null,
+      targetAgentId: null,
       taskType: "query",
       taskId: "builtin:ask-about-code",
-      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       dedupeKey: chatAskDedupeKey(h.chatThread.id, "How are webhooks verified?"),
     });
     const payload = RunSpecJobPayload.parse(job!.payload);
@@ -584,7 +584,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   it("only counts the harnesses a pinned repository's jobs go to", async () => {
     const h = await harness();
     const [pinned] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: orgId,
         name: "pinned-agent",
@@ -592,7 +592,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
         lastHeartbeatAt: new Date(),
       })
       .returning();
-    await db.insert(harnessRepoPins).values({ harnessId: pinned!.id, repositoryId });
+    await db.insert(agentRepoPins).values({ agentId: pinned!.id, repositoryId });
 
     const result = await ask(h, { repository: "acme/api", question: "What is this?" });
 
@@ -600,7 +600,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       error: "no_capable_harness",
       harnesses: [{ name: "pinned-agent", capable: false }],
     });
-    await db.delete(harnesses).where(eq(harnesses.id, pinned!.id));
+    await db.delete(agents).where(eq(agents.id, pinned!.id));
   });
 
   it("runs the channel's ask about code playbook and enqueues nothing when it can't run", async () => {
@@ -697,7 +697,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       await setAgent(harnessId, {
         reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
       });
-      await recordHarnessHostTools(db, orgId, harnessId, [
+      await recordAgentHostTools(db, orgId, harnessId, [
         { name: "opengrep", configuredPathExists: null, discoveredPath: null },
       ]);
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
@@ -707,7 +707,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
       // The host tool alone isn't enough either.
       await setAgent(harnessId, { reportedInstallables: [] });
-      await recordHarnessHostTools(db, orgId, harnessId, [
+      await recordAgentHostTools(db, orgId, harnessId, [
         { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
       ]);
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({

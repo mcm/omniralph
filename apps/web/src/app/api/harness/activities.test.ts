@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   connectRepository,
   closeDb,
   createDb,
@@ -97,7 +97,7 @@ describe.skipIf(!databaseAvailable)("POST /api/harness/jobs/{id}/activities", ()
       })
     ).id;
     const [agent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: orgId,
         name: "coder-1",
@@ -138,7 +138,7 @@ describe.skipIf(!databaseAvailable)("POST /api/harness/jobs/{id}/activities", ()
         type: "ralph.story",
         taskType: "coding",
         status: "running",
-        harnessId,
+        agentId: harnessId,
         repositoryId,
         ...values,
       })

@@ -1,5 +1,5 @@
-import type { HarnessOverview } from "@omniralph/db";
-import { harnessVersionAtLeast } from "@omniralph/shared";
+import type { AgentOverview } from "@omniralph/db";
+import { agentVersionAtLeast } from "@omniralph/shared";
 import { isHarnessOnline } from "./display";
 
 /** A harness that would get a query run, and whether it can claim one now. */
@@ -30,11 +30,11 @@ export interface RunHarnessRequirements {
  * by the organization's default: `effective`), reports
  * the run's minimum version or later, reports every required installable and
  * has an effective path for every required host tool (`usableHostTools`, by
- * harness ID: `listHarnessesUsableHostTools`). Revoked and offline harnesses
+ * harness ID: `listAgentsUsableHostTools`). Revoked and offline harnesses
  * are left out.
  */
 export function queryClaimableHarnesses(
-  harnesses: readonly HarnessOverview[],
+  harnesses: readonly AgentOverview[],
   usableHostTools: ReadonlyMap<string, readonly string[]>,
   repositoryId: string,
   requirements: RunHarnessRequirements,
@@ -60,5 +60,5 @@ export function queryClaimableHarnesses(
 /** As `claimJob`: no minimum takes any harness, a minimum one that reported a version. */
 function versionCapable(reported: string | null, minimum: string | null): boolean {
   if (minimum === null) return true;
-  return reported !== null && harnessVersionAtLeast(reported, minimum);
+  return reported !== null && agentVersionAtLeast(reported, minimum);
 }

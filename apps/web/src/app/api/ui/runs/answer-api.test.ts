@@ -14,7 +14,7 @@ import {
   getMainLane,
   getRun,
   getRunPermissionRequest,
-  harnesses,
+  agents,
   insertJob,
   jobs,
   organizations,
@@ -195,9 +195,9 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       else repoB = repository.id;
     }
     [{ id: harnessId }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -544,7 +544,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     const lane = (await getMainLane(db, run))!;
     const askedAt = new Date().toISOString();
     await updateLane(db, lane.id, {
-      harnessId,
+      agentId: harnessId,
       prNumber: 3,
       prUrl: "https://github.com/acme/api/pull/3",
       cleanup: {

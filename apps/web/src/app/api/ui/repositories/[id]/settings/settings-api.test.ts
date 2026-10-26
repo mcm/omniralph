@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  harnessRepoPins,
-  harnesses,
+  agentRepoPins,
+  agents,
   connectRepository,
   insertPlaybook,
   closeDb,
@@ -176,19 +176,19 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
     await setCodingEnabled(db, repoId);
     [agentA, agentB, revokedAgent] = (
       await db
-        .insert(harnesses)
+        .insert(agents)
         .values([
           { organizationId: orgId, name: "coder-a" },
           { organizationId: orgId, name: "coder-b" },
           { organizationId: orgId, name: "coder-old", revokedAt: new Date() },
         ])
-        .returning({ id: harnesses.id })
+        .returning({ id: agents.id })
     ).map((a) => a.id) as [string, string, string];
   }, 180_000);
 
   beforeEach(async () => {
     state.user = { id: "admin-1", role: "admin", name: null, email: null, image: null };
-    await db.delete(harnessRepoPins);
+    await db.delete(agentRepoPins);
     await db.delete(jobs);
   });
 
@@ -199,9 +199,9 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
 
   async function pinnedHarnessIds(): Promise<string[]> {
     const rows = await db
-      .select({ harnessId: harnessRepoPins.harnessId })
-      .from(harnessRepoPins)
-      .where(eq(harnessRepoPins.repositoryId, repoId));
+      .select({ harnessId: agentRepoPins.agentId })
+      .from(agentRepoPins)
+      .where(eq(agentRepoPins.repositoryId, repoId));
     return rows.map((r) => r.harnessId).sort();
   }
 
@@ -276,7 +276,7 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       taskType: "system",
       status: "queued",
       repositoryId: repoId,
-      targetHarnessId: agentA,
+      targetAgentId: agentA,
     });
     expect(job!.payload).toMatchObject({ repository: { fullPath: "acme/api" } });
 
@@ -285,7 +285,7 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
       await updateRepositorySettings(repoId, { ...baseSettings, pinnedHarnessIds: [agentB] }),
     ).toEqual({ ok: true });
     expect(await pinnedHarnessIds()).toEqual([agentB]);
-    expect((await syncJobs()).map((j) => j.targetHarnessId)).toEqual([agentA, agentB]);
+    expect((await syncJobs()).map((j) => j.targetAgentId)).toEqual([agentA, agentB]);
     expect(
       await updateRepositorySettings(repoId, { ...baseSettings, pinnedHarnessIds: [agentB] }),
     ).toEqual({ ok: true });
@@ -299,9 +299,9 @@ describe.skipIf(!databaseAvailable)("repository settings: saves", () => {
   it("rejects revoked, unknown and other organizations' agents without saving anything", async () => {
     const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
     const [foreignAgent] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: otherOrg!.id, name: "coder-foreign" })
-      .returning({ id: harnesses.id });
+      .returning({ id: agents.id });
     for (const harnessId of [revokedAgent, randomUUID(), foreignAgent!.id]) {
       expect(
         await updateRepositorySettings(repoId, {

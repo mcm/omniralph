@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { harnesses } from "@omniralph/db";
-import { createEnrollmentToken, enrollHarness, expect, FIXTURE_IDS, test } from "./fixtures";
+import { agents } from "@omniralph/db";
+import { createEnrollmentToken, enrollAgent, expect, FIXTURE_IDS, test } from "./fixtures";
 
 test.describe("smoke", () => {
   test("an admin signs in and opens the repositories", async ({ page, signIn }) => {
@@ -21,9 +21,9 @@ test.describe("smoke", () => {
   }) => {
     const token = await createEnrollmentToken(db);
     const name = `e2e-smoke-${Date.now()}`;
-    const { harnessId } = await enrollHarness(request, token, name);
+    const { harnessId } = await enrollAgent(request, token, name);
 
-    const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+    const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
     expect(row).toMatchObject({ name, organizationId: FIXTURE_IDS.organizations.main });
   });
 });

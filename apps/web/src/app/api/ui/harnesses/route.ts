@@ -1,4 +1,4 @@
-import { listHarnessOverview } from "@omniralph/db";
+import { listAgentOverview } from "@omniralph/db";
 import { apiHandler } from "@/lib/api/handler";
 import type { HarnessList } from "@/lib/api/harnesses";
 import { getDb } from "@/lib/db";
@@ -14,7 +14,7 @@ export const GET = apiHandler({}, async ({ user }): Promise<HarnessList> => {
   const db = getDb();
   const now = new Date();
   const [harnesses, version] = await Promise.all([
-    listHarnessOverview(db, user.organization.id).then(withLastSeen),
+    listAgentOverview(db, user.organization.id).then(withLastSeen),
     organizationHarnessVersion(db, user.organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
   ]);
   return {

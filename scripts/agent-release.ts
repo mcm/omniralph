@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AGENT_MIN_VERSION, harnessVersionAtLeast } from "../packages/shared/src/agent-version.js";
+import { AGENT_MIN_VERSION, agentVersionAtLeast } from "../packages/shared/src/agent-version.js";
 import { AGENT, changesetReleases } from "./check-agent-changeset.js";
 
 export { AGENT };
@@ -131,7 +131,7 @@ export function releaseStatus({ version, changesets, npmView }: ReleaseStatusInp
       message: `Changesets are pending (${pending.join(", ")}): the Version Packages pull request releases them.`,
     };
   }
-  if (!harnessVersionAtLeast(version, AGENT_MIN_VERSION)) {
+  if (!agentVersionAtLeast(version, AGENT_MIN_VERSION)) {
     throw new Error(
       `${AGENT}@${version} is below ${AGENT_MIN_VERSION}, the first version of ${AGENT} to publish.`,
     );

@@ -57,9 +57,7 @@ function response({
       reviewsByStatus: { ...zero(REVIEW_STATUSES), completed: reviews },
       findingsBySeverity: { critical: 0, high: 2, medium: 0, low: 0, info: 0 },
       dismissalsByRepository: [],
-      jobsByHarness: [
-        { agent: { id: "h1", name: "build-box" }, total: 4, completed: 3, failed: 1 },
-      ],
+      jobsByAgent: [{ agent: { id: "h1", name: "build-box" }, total: 4, completed: 3, failed: 1 }],
     },
     ralph: {
       ...window,

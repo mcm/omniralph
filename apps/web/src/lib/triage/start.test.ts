@@ -190,11 +190,11 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       type: "triage.run",
       taskType: "query",
       taskId: "builtin:triage",
-      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",
-      targetHarnessId: null,
+      targetAgentId: null,
       triageRunId: run!.id,
       dedupeKey: `triage:${run!.id}`,
     });
@@ -250,7 +250,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     const run = await getTriageRunBySession(db, event.sessionId);
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job.repositoryId).toBeNull();
-    expect(job).toMatchObject({ status: "queued", targetHarnessId: null });
+    expect(job).toMatchObject({ status: "queued", targetAgentId: null });
     const { payload, context } = await payloadOf(job.id);
     expect(payload.ref).toBeUndefined();
     expect(payload.repositoryId).toBeUndefined();

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   connectRepository,
   closeDb,
   createDb,
@@ -381,7 +381,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       await conversationComment(number, "@omniralph review");
       const [job] = await prReviewJobs(number);
       const [agent] = await db
-        .insert(harnesses)
+        .insert(agents)
         .values({ organizationId: orgId, name: "agent-1" })
         .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
@@ -434,7 +434,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment[0]!.body).toContain("a fresh **Quick** review");
 
       const [agent] = await db
-        .insert(harnesses)
+        .insert(agents)
         .values({ organizationId: orgId, name: "agent-fresh" })
         .returning();
       await expect(onReviewJobStarted(db, job!, agent!.id)).resolves.toEqual({ skip: false });
@@ -615,12 +615,12 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(created[0]).toMatchObject({
         repositoryId: repoId,
         status: "queued",
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       expect(created[0]).toMatchObject({
         taskType: "query",
         taskId: "builtin:reply-to-finding",
-        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         // Once per asking comment.
         dedupeKey: expect.stringMatching(new RegExp(`^review\\.reply:${repoId}:\\d+$`)),
       });

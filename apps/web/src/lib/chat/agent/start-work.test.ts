@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  harnesses,
+  agents,
   appendChatMessage,
   chatMessages,
   closeDb,
@@ -238,10 +238,10 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
   async function startRequestJob(job: Job): Promise<void> {
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -259,7 +259,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       durationMs: 10,
       ...result,
     };
-    expect(await completeJob(db, { jobId: job.id, harnessId, result: outcome })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, agentId: harnessId, result: outcome })).toEqual({
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, ralph());
@@ -323,9 +323,9 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
     if (saved === "other_organization") throw new Error("taken");
     connection = saved;
     [{ id: harnessId }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -429,7 +429,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       type: "ralph.request",
       ralphRunId: run.id,
       status: "queued",
-      targetHarnessId: null,
+      targetAgentId: null,
     });
     const payload = RalphRequestPayload.parse(ralphJobPayload(job!));
     expect(payload).toMatchObject({

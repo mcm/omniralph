@@ -1,7 +1,7 @@
 import {
   answerRunPermissionRequest,
   createRunPermissionRequest,
-  getJobForHarness,
+  getJobForAgent,
 } from "@omniralph/db";
 import { RalphPermissionRequest } from "@omniralph/shared";
 import { badRequest, readJson } from "@/lib/harness-auth/request";
@@ -32,7 +32,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   if (!jobId) return notFound();
   if (jobId !== principal.jobId) return forbidden("job_mismatch");
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   const request = RalphPermissionRequest.safeParse(await readJson(req));
   if (!request.success) return badRequest();

@@ -13,7 +13,7 @@ import {
   getLaneByRepository,
   getRunningRunJob,
   insertMessage,
-  listHarnessUndeliveredMessages,
+  listAgentUndeliveredMessages,
   listStories,
   listStrandedMessages,
   listUndeliveredJobMessages,
@@ -145,7 +145,7 @@ export async function queueLiveReply(
     author: author ?? null,
     trigger,
   });
-  return { kind: "live", note: null, harnessId: job.harnessId };
+  return { kind: "live", note: null, harnessId: job.agentId };
 }
 
 /** The lane a running job works in, null for the main lane. */
@@ -182,7 +182,7 @@ export async function deliverToRunningJob(
     author: author ?? null,
     trigger,
   });
-  return { harnessId: job.harnessId };
+  return { harnessId: job.agentId };
 }
 
 /**
@@ -244,14 +244,14 @@ export async function exchangeJobMessages(
 ): Promise<JobMessageDelivery[]> {
   const delivered = new Set(acks.deliveredMessageIds);
   const ids = [...delivered, ...acks.rejectedMessageIds];
-  const acked = await listHarnessUndeliveredMessages(deps.db, harnessId, ids);
+  const acked = await listAgentUndeliveredMessages(deps.db, harnessId, ids);
   const runIds = [...new Set(acked.map((m) => m.runId))];
   const notes: { run: RalphRun; content: ActivityContent }[] = [];
   for (const runId of runIds) {
     await lockRun(deps.db, runId, async (tx, run) => {
       const now = new Date();
       // Re-read under the lock: the job's end may have settled them meanwhile.
-      const messages = await listHarnessUndeliveredMessages(tx, harnessId, ids);
+      const messages = await listAgentUndeliveredMessages(tx, harnessId, ids);
       for (const message of messages.filter((m) => m.runId === runId)) {
         if (delivered.has(message.id)) {
           if (message.kind === "guidance") await appendGuidance(tx, run.id, message.text, now);

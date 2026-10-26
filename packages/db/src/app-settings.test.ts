@@ -1,4 +1,4 @@
-// Organization defaults for harness max concurrency and the tracker labels.
+// Organization defaults for agent max concurrency and the tracker labels.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {

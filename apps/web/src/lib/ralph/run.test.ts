@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  harnessRepoPins,
+  agentRepoPins,
   insertPlaybook,
   chatLinearDelegations,
   chatMessages,
@@ -9,7 +9,7 @@ import {
   createChatLinearDelegation,
   ensureChatThread,
   saveChatConnection,
-  harnesses,
+  agents,
   hiddenRefs,
   completeJob,
   connectRepository,
@@ -30,12 +30,12 @@ import {
   listLanes,
   jobs,
   listStories,
-  pinRepositoryToHarness,
+  pinRepositoryToAgent,
   ralphLanes,
   ralphRuns,
   repositories,
   claimJob,
-  recordHarnessHeartbeat,
+  recordAgentHeartbeat,
   updateRepositoryCoding,
   setTrackerLabels,
   DEFAULT_TRACKER_LABELS,
@@ -72,7 +72,7 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { revokeHarness } from "@/lib/harness-auth/revoke";
+import { revokeAgent } from "@/lib/harness-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleLinearEvent } from "@/lib/linear/events";
 import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
@@ -216,10 +216,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     await db.delete(ralphRuns);
     // The fake gateway's issue IDs repeat from test to test.
     await db.delete(followUpSources);
-    await db.delete(harnessRepoPins);
-    await db.delete(harnesses);
+    await db.delete(agentRepoPins);
+    await db.delete(agents);
     [{ id: agentA }, { id: agentB }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([
         {
           organizationId: orgId,
@@ -232,7 +232,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
-      .returning({ id: harnesses.id })) as [{ id: string }, { id: string }];
+      .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -302,10 +302,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -313,7 +313,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        harnessId,
+        agentId: harnessId,
         retryable: false,
         error: outcome.jobError,
         maxDeliveries: MAX_JOB_DELIVERIES,
@@ -321,7 +321,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     } else {
       const status = await completeJob(db, {
         jobId: job.id,
-        harnessId,
+        agentId: harnessId,
         result: result(outcome),
       });
       expect(status).toEqual({ status: "completed" });
@@ -359,11 +359,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(job.type).toBe("ralph.describe-pr");
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
       // A query run needs a harness that runs query tasks.
-      harnessVersion: "99.0.0",
+      agentVersion: "99.0.0",
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -375,7 +375,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        harnessId,
+        agentId: harnessId,
         retryable: false,
         error: outcome.jobError,
         maxDeliveries: MAX_JOB_DELIVERIES,
@@ -392,7 +392,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         durationMs: 1000,
       };
       expect(sink?.parseResult?.(result)).not.toBeNull();
-      await completeJob(db, { jobId: job.id, harnessId, result });
+      await completeJob(db, { jobId: job.id, agentId: harnessId, result });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     const payload = describePrPayload(job);
@@ -438,7 +438,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const routing = (taskId: string) => ({
       taskType: "coding",
       taskId,
-      minHarnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
@@ -474,7 +474,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ...routing("builtin:implement-story"),
         repositoryId: repoId,
         ralphRunId: run.id,
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       const payload = storyPayload(first);
       // The job is linked to the story it works on.
@@ -534,9 +534,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           body: `✅ Completed by Omniralph in \`${sha(1).slice(0, 10)}\` on \`feat/epic\`.\n\nGamma done.`,
         },
       ]);
-      expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
+      expect((await getRun(db, run.id))?.agentId).toBe(agentA);
       const second = await activeJob(run.id);
-      expect(second.targetHarnessId).toBe(agentA);
+      expect(second.targetAgentId).toBe(agentA);
       expect(second).toMatchObject(routing("builtin:implement-story"));
       const betaPayload = storyPayload(second);
       expect(betaPayload.story.identifier).toBe("ENG-3");
@@ -556,11 +556,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(describeJob).toMatchObject({
         type: "ralph.describe-pr",
         taskType: "query",
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
         ralphRunId: run.id,
         dedupeKey: runDedupeKey(run.id),
         taskId: "builtin:describe-pr",
-        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       });
       // A query run of the story task's `prDescriptionTaskId` in a checkout of the branch, with
       // today's payload and the values its template renders.
@@ -672,31 +672,31 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("sends the first job to the pinned agent, then sticks to the agent that ran it until it's revoked", async () => {
-      await pinRepositoryToHarness(db, { harnessId: agentB, repositoryId: repoId });
+      await pinRepositoryToAgent(db, { agentId: agentB, repositoryId: repoId });
       const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
       for (const [i, title] of ["One", "Two", "Three"].entries()) {
         linear.add({ identifier: `ENG-1${i + 1}`, title, parentId: epic.id, subIssueSortOrder: i });
       }
       const run = await delegate(epic.id);
-      expect((await activeJob(run.id)).targetHarnessId).toBe(agentB);
+      expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
 
       // The pin is removed and the job retargeted, so agent A takes it: the run sticks to A from now on.
-      await db.delete(harnessRepoPins);
+      await db.delete(agentRepoPins);
       expect(await dispatcher.republish((await activeJob(run.id)).id)).toBe(true);
-      expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+      expect((await activeJob(run.id)).targetAgentId).toBeNull();
       await work(run.id, {}, agentA);
       const second = await activeJob(run.id);
-      expect(second.targetHarnessId).toBe(agentA);
+      expect(second.targetAgentId).toBe(agentA);
 
       // A is revoked while the job waits for it: it goes back to any of the org's ralph harnesses.
-      await revokeHarness(agentA, { db, dispatcher });
+      await revokeAgent(agentA, { db, dispatcher });
       expect(await getJob(db, second.id)).toMatchObject({
         status: "queued",
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       await work(run.id, {}, agentB);
-      expect((await getRun(db, run.id))?.harnessId).toBe(agentB);
-      expect((await activeJob(run.id)).targetHarnessId).toBe(agentB);
+      expect((await getRun(db, run.id))?.agentId).toBe(agentB);
+      expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
     });
 
     it("retries a failed attempt with its feedback and completes", async () => {
@@ -843,16 +843,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const job = await activeJob(runId);
       const { claim } = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
       expect(await onRalphJobStarted(db, job, agentA)).toEqual({ skip: false });
       const result = requestResult(outcome);
-      expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
+      expect(await completeJob(db, { jobId: job.id, agentId: agentA, result })).toEqual({
         status: "completed",
       });
       await expectRalphHooks(job);
@@ -904,7 +904,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         type: "ralph.request",
         ...routing("builtin:handle-request"),
         repositoryId: repoId,
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       expect(first.payload).toMatchObject({
         repositoryId: repoId,
@@ -919,7 +919,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         type: "ralph.request",
         ...routing("builtin:handle-request"),
         repositoryId: gitlabRepoId,
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       expect(second.payload).toMatchObject({
         repositoryId: gitlabRepoId,
@@ -961,10 +961,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       for (const harnessVersion of [null, "0.10.0"]) {
         const { claim } = await claimJob(db, {
           organizationId: orgId,
-          harnessId: agentA,
+          agentId: agentA,
           acceptedTaskTypes: ["query", "coding"],
           pools: ["short", "long"],
-          harnessVersion,
+          agentVersion: harnessVersion,
           maxDeliveries: MAX_JOB_DELIVERIES,
         });
         expect(claim).toBeNull();
@@ -1139,10 +1139,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await lapseLease();
         const started = await claimJob(db, {
           organizationId: orgId,
-          harnessId: agentA,
+          agentId: agentA,
           acceptedTaskTypes: ["query", "coding"],
           pools: ["short", "long"],
-          harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+          agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
           maxDeliveries: MAX_JOB_DELIVERIES,
         });
         expect(started.claim?.job.id).toBe(job.id);
@@ -1153,10 +1153,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await lapseLease();
       const gaveUp = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(gaveUp).toMatchObject({
@@ -1181,16 +1181,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const job = await activeJob(run.id);
       const { claim } = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
       const failed = await failJob(db, {
         jobId: job.id,
-        harnessId: agentA,
+        agentId: agentA,
         retryable: true,
         error: "Claude rate limit",
         maxDeliveries: MAX_JOB_DELIVERIES,
@@ -1251,10 +1251,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const payload = RalphPushPayload.parse(ralphJobPayload(job));
       const { claim } = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1262,7 +1262,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       if ("jobError" in outcome) {
         await failJob(db, {
           jobId: job.id,
-          harnessId: agentA,
+          agentId: agentA,
           retryable: false,
           error: outcome.jobError,
           maxDeliveries: MAX_JOB_DELIVERIES,
@@ -1277,7 +1277,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             result,
           ),
         ).toEqual(result);
-        await completeJob(db, { jobId: job.id, harnessId: agentA, result });
+        await completeJob(db, { jobId: job.id, agentId: agentA, result });
       }
       await expectRalphHooks(job);
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
@@ -1303,17 +1303,17 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(job).toMatchObject({
         type: "worktree.cleanup",
         taskType: "system",
-        targetHarnessId: null,
+        targetAgentId: null,
         repositoryId: repoId,
       });
       const payload = WorktreeCleanupPayload.parse(job.payload);
       expect(payload.action).toBeUndefined();
       const { claim } = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentB,
+        agentId: agentB,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1328,7 +1328,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         deletedRefs,
         durationMs: 10,
       };
-      await completeJob(db, { jobId: job.id, harnessId: agentB, result });
+      await completeJob(db, { jobId: job.id, agentId: agentB, result });
       await onRalphCleanupJobFinished(db, (await getJob(db, job.id))!, deps());
       return job;
     }
@@ -1400,7 +1400,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       // Every story is done: a push run with no session, on the sticky agent, before the describe job.
       const pushJob = await activeJob(run.id);
       expect(pushJob).toMatchObject({
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
         ralphRunId: run.id,
         repositoryId: repoId,
         dedupeKey: runDedupeKey(run.id),
@@ -1431,7 +1431,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(describeJob).toMatchObject({
         type: "ralph.describe-pr",
         taskId: "builtin:describe-pr",
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
       });
       expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({
         status: "describing",
@@ -1663,25 +1663,22 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
-    await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
-    await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentA));
+    await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
+    await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentA));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
   });
 
   it("sticks to an agent that hasn't reported its task types until it reports no coding", async () => {
-    await db
-      .update(harnesses)
-      .set({ reportedAcceptedTaskTypes: null })
-      .where(eq(harnesses.id, agentA));
+    await db.update(agents).set({ reportedAcceptedTaskTypes: null }).where(eq(agents.id, agentA));
     const epic = linear.add({ identifier: "ENG-38", title: "Epic" });
     linear.add({ identifier: "ENG-39", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
     linear.add({ identifier: "ENG-40", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
@@ -1689,34 +1686,34 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const run = await delegate(epic.id);
     const finishOnA = async () => {
       const job = await activeJob(run.id);
-      await db.update(jobs).set({ targetHarnessId: agentA }).where(eq(jobs.id, job.id));
+      await db.update(jobs).set({ targetAgentId: agentA }).where(eq(jobs.id, job.id));
       const { claim } = await claimJob(db, {
         organizationId: orgId,
-        harnessId: agentA,
+        agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+        agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
       await onRalphJobStarted(db, job, agentA);
-      await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
+      await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
     };
     await finishOnA();
-    expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
-    await recordHarnessHeartbeat(db, agentA, {
+    expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
+    await recordAgentHeartbeat(db, agentA, {
       version: CODING_TASKS_MIN_HARNESS_VERSION,
       acceptedTaskTypes: ["query", "review"],
     });
     await finishOnA();
-    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
   });
 
   it("never sticks to an agent of another organization", async () => {
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [foreign] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({
         organizationId: other!.id,
         name: "globex-1",
@@ -1730,18 +1727,18 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
     await onRalphJobStarted(db, job, agentA);
-    await completeJob(db, { jobId: job.id, harnessId: agentA, result: result() });
-    await db.update(ralphLanes).set({ harnessId: foreign!.id }).where(eq(ralphLanes.runId, run.id));
+    await completeJob(db, { jobId: job.id, agentId: agentA, result: result() });
+    await db.update(ralphLanes).set({ agentId: foreign!.id }).where(eq(ralphLanes.runId, run.id));
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
-    expect((await activeJob(run.id)).targetHarnessId).toBeNull();
+    expect((await activeJob(run.id)).targetAgentId).toBeNull();
   });
 
   it("runs a delegated sub-issue's story first, then the rest of the epic", async () => {
@@ -2257,16 +2254,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     // The job completes, but its outcome hook never ran (e.g. the control panel crashed).
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
     await completeJob(db, {
       jobId: job.id,
-      harnessId: agentA,
+      agentId: agentA,
       result: result({ commitSha: sha(7) }),
     });
     expect(await reconcileRuns(deps())).toEqual({ reconciled: 0, failed: 0 });
@@ -2389,9 +2386,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const harnessesOf = async () => {
         const lanes = await listLanes(db, run.id);
         return {
-          run: (await getRun(db, run.id))?.harnessId,
-          main: lanes.find((l) => l.repositoryId === repoId)?.harnessId,
-          web: lanes.find((l) => l.repositoryId === gitlabRepoId)?.harnessId,
+          run: (await getRun(db, run.id))?.agentId,
+          main: lanes.find((l) => l.repositoryId === repoId)?.agentId,
+          web: lanes.find((l) => l.repositoryId === gitlabRepoId)?.agentId,
         };
       };
       expect(await harnessesOf()).toEqual({ run: null, main: null, web: null });
@@ -2409,47 +2406,47 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     describe("laneHarnessId", () => {
       const lane = (harnessId: string | null, repositoryId = gitlabRepoId) => ({
-        harnessId,
+        agentId: harnessId,
         repositoryId,
       });
       const run = () => ({ organizationId: orgId });
 
       it("is the lane's sticky harness while it is usable", async () => {
-        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: gitlabRepoId });
         expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentB);
       });
 
       it("falls back to the repository's pinned harness when the sticky one is revoked", async () => {
-        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
-        await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+        await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: gitlabRepoId });
+        await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentB));
         expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentA);
       });
 
       it("falls back to the pinned harness when the sticky one doesn't take coding tasks", async () => {
-        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: gitlabRepoId });
         await db
-          .update(harnesses)
+          .update(agents)
           .set({ reportedAcceptedTaskTypes: ["review"] })
-          .where(eq(harnesses.id, agentB));
+          .where(eq(agents.id, agentB));
         expect(await laneHarnessId(db, run(), lane(agentB))).toBe(agentA);
       });
 
       it("falls back to the pinned harness when the sticky one is in another organization", async () => {
         const [other] = await db.insert(organizations).values({ name: "Initech" }).returning();
         const [foreign] = await db
-          .insert(harnesses)
+          .insert(agents)
           .values({
             organizationId: other!.id,
             name: "initech-1",
             reportedAcceptedTaskTypes: ["coding"],
           })
           .returning();
-        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: gitlabRepoId });
         expect(await laneHarnessId(db, run(), lane(foreign!.id))).toBe(agentA);
       });
 
       it("falls back to the pinned harness without a sticky one", async () => {
-        await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: gitlabRepoId });
+        await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: gitlabRepoId });
         expect(await laneHarnessId(db, run(), lane(null))).toBe(agentA);
         // Another repository's pin doesn't count.
         expect(await laneHarnessId(db, run(), lane(null, repoId))).toBeUndefined();
@@ -2457,7 +2454,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
       it("is undefined without a usable sticky harness or a pin", async () => {
         expect(await laneHarnessId(db, run(), lane(null))).toBeUndefined();
-        await db.update(harnesses).set({ revokedAt: new Date() }).where(eq(harnesses.id, agentB));
+        await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentB));
         expect(await laneHarnessId(db, run(), lane(agentB))).toBeUndefined();
       });
     });
@@ -2528,29 +2525,29 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("sends each lane's jobs to its own harness when its repository is pinned to another", async () => {
-      await pinRepositoryToHarness(db, { harnessId: agentA, repositoryId: repoId });
-      await pinRepositoryToHarness(db, { harnessId: agentB, repositoryId: gitlabRepoId });
+      await pinRepositoryToAgent(db, { agentId: agentA, repositoryId: repoId });
+      await pinRepositoryToAgent(db, { agentId: agentB, repositoryId: gitlabRepoId });
       const t = crossRepo("Web");
       const run = await delegate(t.epic.id);
       const laneHarnesses = async () =>
-        Object.fromEntries((await listLanes(db, run.id)).map((l) => [l.repositoryId, l.harnessId]));
+        Object.fromEntries((await listLanes(db, run.id)).map((l) => [l.repositoryId, l.agentId]));
 
       expect(await activeJob(run.id)).toMatchObject({
         repositoryId: repoId,
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
       });
       expect((await work(run.id, { commitSha: sha(51) }, agentA)).story.identifier).toBe("ENG-2");
       expect(await activeJob(run.id)).toMatchObject({
         repositoryId: gitlabRepoId,
-        targetHarnessId: agentB,
+        targetAgentId: agentB,
       });
       expect((await work(run.id, { commitSha: sha(52) }, agentB)).story.identifier).toBe("ENG-3");
       // Starting the app lane's job left the main lane (and the run) on A.
       expect(await laneHarnesses()).toEqual({ [repoId]: agentA, [gitlabRepoId]: agentB });
-      expect((await getRun(db, run.id))?.harnessId).toBe(agentA);
+      expect((await getRun(db, run.id))?.agentId).toBe(agentA);
       expect(await activeJob(run.id)).toMatchObject({
         repositoryId: repoId,
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
       });
       expect((await work(run.id, { commitSha: sha(53) }, agentA)).story.identifier).toBe("ENG-4");
 
@@ -2558,13 +2555,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(await activeJob(run.id)).toMatchObject({
         type: "ralph.describe-pr",
         repositoryId: repoId,
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
       });
       await describePr(run.id, { title: "API: priority" }, agentA);
       expect(await activeJob(run.id)).toMatchObject({
         type: "ralph.describe-pr",
         repositoryId: gitlabRepoId,
-        targetHarnessId: agentB,
+        targetAgentId: agentB,
       });
       await describePr(run.id, { title: "Web: badge" }, agentB);
       expect(await laneHarnesses()).toEqual({ [repoId]: agentA, [gitlabRepoId]: agentB });
@@ -2866,7 +2863,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const job = await activeJob(run.id);
         expect(job).toMatchObject({
           repositoryId: gitlabRepoId,
-          targetHarnessId: null,
+          targetAgentId: null,
         });
         const second = await work(run.id, { commitSha: sha(42) }, agentA);
         expect(second).toMatchObject({
@@ -2883,7 +2880,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         );
 
         // The main lane's jobs stick to its harness.
-        expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
+        expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
         expect((await work(run.id, { commitSha: sha(43) }, agentA)).repositoryId).toBe(repoId);
 
         // Each lane is published with its own describe job and its own PR/MR, the main one first.

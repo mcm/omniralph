@@ -7,7 +7,7 @@ import {
   createDb,
   createRun,
   getJob,
-  harnesses,
+  agents,
   hiddenRefs,
   jobs,
   organizations,
@@ -93,9 +93,9 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     repoId = (await repo("1", "acme/api")).id;
     otherRepoId = (await repo("2", "acme/web")).id;
     [{ id: harnessId }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -145,7 +145,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
         repositoryId: job.repositoryId,
         type: job.type,
         taskType: job.taskType,
-        targetHarnessId: job.targetHarnessId,
+        targetHarnessId: job.targetAgentId,
         action: payload.action,
         hiddenRefs: payload.hiddenRefs,
       };
@@ -200,10 +200,10 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     const [queued] = await db.select().from(jobs);
     const { claim } = await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(queued!.id);
@@ -222,7 +222,7 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     // A ref it wasn't asked to delete is ignored; one it couldn't delete stays for the sweep.
     await completeJob(db, {
       jobId: queued!.id,
-      harnessId,
+      agentId: harnessId,
       result: { ...result([ralphHiddenRef(crypto.randomUUID())]), error: "push rejected" },
     });
     expect(await applyHiddenRefsJob(db, (await getJob(db, queued!.id))!)).toBe(0);
@@ -231,13 +231,13 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     expect(again).toBeDefined();
     await claimJob(db, {
       organizationId: orgId,
-      harnessId,
+      agentId: harnessId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
-    await completeJob(db, { jobId: again!.id, harnessId, result: result([ref]) });
+    await completeJob(db, { jobId: again!.id, agentId: harnessId, result: result([ref]) });
     expect(await applyHiddenRefsJob(db, (await getJob(db, again!.id))!)).toBe(1);
 
     const [row] = await db.select().from(hiddenRefs).where(eq(hiddenRefs.runId, runId));

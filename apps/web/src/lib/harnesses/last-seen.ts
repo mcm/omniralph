@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { getHarness, recordHarnessHeartbeat, type Database } from "@omniralph/db";
+import { getAgent, recordAgentHeartbeat, type Database } from "@omniralph/db";
 import type { Redis } from "ioredis";
 import { getRedis, hotStateEnabled } from "@/lib/hot-state";
 
@@ -14,8 +14,8 @@ import { getRedis, hotStateEnabled } from "@/lib/hot-state";
  * row's `last_heartbeat_at` (at most a day behind).
  */
 
-export type HeartbeatReport = Omit<Parameters<typeof recordHarnessHeartbeat>[2], "now">;
-export type HarnessRow = NonNullable<Awaited<ReturnType<typeof recordHarnessHeartbeat>>>;
+export type HeartbeatReport = Omit<Parameters<typeof recordAgentHeartbeat>[2], "now">;
+export type HarnessRow = NonNullable<Awaited<ReturnType<typeof recordAgentHeartbeat>>>;
 
 const LAST_SEEN_PREFIX = "harness-last-seen:";
 const REPORT_PREFIX = "harness-report:";
@@ -59,7 +59,7 @@ export async function recordHeartbeat(
   report: HeartbeatReport,
   now: Date = new Date(),
 ): Promise<HarnessRow | null> {
-  if (!hotStateEnabled()) return recordHarnessHeartbeat(db, harnessId, { ...report, now });
+  if (!hotStateEnabled()) return recordAgentHeartbeat(db, harnessId, { ...report, now });
   const fingerprint = heartbeatReportFingerprint(report);
   const reportKey = harnessReportKey(harnessId);
   let redis: Redis;
@@ -71,15 +71,15 @@ export async function recordHeartbeat(
       .get(reportKey)
       .exec();
     if (!results || results.some(([error]) => error)) throw new Error("MULTI failed");
-    if (results[1]![1] === fingerprint) return getHarness(db, harnessId);
+    if (results[1]![1] === fingerprint) return getAgent(db, harnessId);
     // Dropped before the write: if setting the new one fails, the next heartbeat writes
     // again rather than trust a fingerprint the row no longer matches.
     await redis.del(reportKey);
   } catch (error) {
     console.warn("hot-state: heartbeat falling back to Postgres", error);
-    return recordHarnessHeartbeat(db, harnessId, { ...report, now });
+    return recordAgentHeartbeat(db, harnessId, { ...report, now });
   }
-  const row = await recordHarnessHeartbeat(db, harnessId, { ...report, now });
+  const row = await recordAgentHeartbeat(db, harnessId, { ...report, now });
   if (row) {
     await redis
       .set(reportKey, fingerprint, "PX", POSTGRES_HEARTBEAT_MAX_AGE_MS)

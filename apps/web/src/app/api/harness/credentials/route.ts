@@ -1,4 +1,4 @@
-import { getJobForHarness, getRepositoryWithConnection, writeHarnessAudit } from "@omniralph/db";
+import { getJobForAgent, getRepositoryWithConnection, writeAgentAudit } from "@omniralph/db";
 import { CloneCredentialPermissionError, type CloneCredential } from "@omniralph/scm";
 import { WORKTREE_CLEANUP_JOB_TYPE, type CloneCredentialResponse } from "@omniralph/shared";
 import { clientIp } from "@/lib/harness-auth/request";
@@ -53,7 +53,7 @@ async function post(req: Request): Promise<Response> {
   if (principal instanceof Response) return principal;
   const db = getDb();
   // A job of another organization than the harness's never gets credentials.
-  const job = await getJobForHarness(db, principal.jobId, principal.harnessId);
+  const job = await getJobForAgent(db, principal.jobId, principal.harnessId);
   if (!job) return forbidden("wrong_organization");
   if (!job.repositoryId) return forbidden("no_repository");
   const found = await getRepositoryWithConnection(db, job.repositoryId, job.organizationId);
@@ -76,8 +76,8 @@ async function post(req: Request): Promise<Response> {
     }
     throw error;
   }
-  await writeHarnessAudit(db, {
-    harnessId: principal.harnessId,
+  await writeAgentAudit(db, {
+    agentId: principal.harnessId,
     event: "credential_issued",
     ip: clientIp(req),
     detail: {

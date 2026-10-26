@@ -1,10 +1,10 @@
 import { apiHandler } from "@/lib/api/handler";
-import { harnessDefaultsSaveSchema, type HarnessDefaults } from "@/lib/api/harness-defaults";
+import { harnessDefaultsSaveSchema, type AgentDefaults } from "@/lib/api/harness-defaults";
 import { getDb } from "@/lib/db";
 import { loadHarnessDefaults, saveHarnessDefaults } from "@/lib/harnesses/defaults";
 
 /** Settings › Harness defaults (admins): the desired version and the task-type and concurrency defaults. */
-export const GET = apiHandler({ access: "admin" }, async ({ user }): Promise<HarnessDefaults> =>
+export const GET = apiHandler({ access: "admin" }, async ({ user }): Promise<AgentDefaults> =>
   loadHarnessDefaults(getDb(), user.organization.id),
 );
 

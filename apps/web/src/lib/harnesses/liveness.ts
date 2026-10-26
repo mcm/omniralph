@@ -1,8 +1,8 @@
 import "server-only";
 import {
-  listLiveOnlineHarnesses,
-  markHarnessLiveOnline,
-  markHarnessesLiveOffline,
+  listLiveOnlineAgents,
+  markAgentLiveOnline,
+  markAgentsLiveOffline,
   type Database,
 } from "@omniralph/db";
 import { getRedis, hotStateEnabled } from "@/lib/hot-state";
@@ -30,17 +30,17 @@ export function harnessLiveKey(harnessId: string): string {
 /** After a heartbeat (its last-seen recorded): announces the agent online if it wasn't. */
 export async function noteAgentOnline(db: Database, harnessId: string): Promise<void> {
   if (!hotStateEnabled()) {
-    await markHarnessLiveOnline(db, harnessId);
+    await markAgentLiveOnline(db, harnessId);
     return;
   }
   try {
     const redis = getRedis();
     if ((await redis.get(harnessLiveKey(harnessId))) === "1") return;
-    await markHarnessLiveOnline(db, harnessId);
+    await markAgentLiveOnline(db, harnessId);
     await redis.set(harnessLiveKey(harnessId), "1", "PX", HARNESS_ONLINE_WINDOW_MS);
   } catch (error) {
     console.warn("hot-state: noting the agent online falling back to Postgres", error);
-    await markHarnessLiveOnline(db, harnessId);
+    await markAgentLiveOnline(db, harnessId);
   }
 }
 
@@ -49,7 +49,7 @@ export async function noteAgentOnline(db: Database, harnessId: string): Promise<
  * last-seen, else the row's) is older than the online window. Returns their IDs.
  */
 export async function sweepAgentLiveness(db: Database, now: Date = new Date()): Promise<string[]> {
-  const online = await withLastSeen(await listLiveOnlineHarnesses(db));
+  const online = await withLastSeen(await listLiveOnlineAgents(db));
   const stale = online
     .filter(
       (h) =>
@@ -57,7 +57,7 @@ export async function sweepAgentLiveness(db: Database, now: Date = new Date()): 
         now.getTime() - h.lastHeartbeatAt.getTime() >= HARNESS_ONLINE_WINDOW_MS,
     )
     .map((h) => h.id);
-  const offline = await markHarnessesLiveOffline(db, stale);
+  const offline = await markAgentsLiveOffline(db, stale);
   if (offline.length > 0 && hotStateEnabled()) {
     await getRedis()
       .del(...offline.map(harnessLiveKey))

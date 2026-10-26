@@ -1,9 +1,9 @@
 import "server-only";
 import {
-  getDesiredHarnessVersion,
-  getLatestHarnessVersionCheck,
-  setLatestHarnessVersionCheck,
-  TRACK_LATEST_HARNESS_VERSION,
+  getDesiredAgentVersion,
+  getLatestAgentVersionCheck,
+  setLatestAgentVersionCheck,
+  TRACK_LATEST_AGENT_VERSION,
   type Database,
 } from "@omniralph/db";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
@@ -42,12 +42,12 @@ export async function organizationHarnessVersion(
   organizationId: string,
   options: ResolveOptions = {},
 ): Promise<OrganizationHarnessVersion> {
-  const setting = await getDesiredHarnessVersion(db, organizationId);
-  if (setting !== TRACK_LATEST_HARNESS_VERSION) {
+  const setting = await getDesiredAgentVersion(db, organizationId);
+  if (setting !== TRACK_LATEST_AGENT_VERSION) {
     return { version: setting, tracksLatest: false, latestError: null, latestCheckedAt: null };
   }
   const now = options.now ?? new Date();
-  const check = await getLatestHarnessVersionCheck(db, organizationId);
+  const check = await getLatestAgentVersionCheck(db, organizationId);
   if (check && now.getTime() - check.checkedAt.getTime() < LATEST_MAX_AGE_MS) {
     return {
       version: check.version,
@@ -69,7 +69,7 @@ export async function organizationHarnessVersion(
       err,
     );
   }
-  await setLatestHarnessVersionCheck(db, organizationId, { version, error });
+  await setLatestAgentVersionCheck(db, organizationId, { version, error });
   // Heartbeats answered from Redis keep the version they were cached with until then.
   if (version !== (check?.version ?? null)) await bumpOrganizationHeartbeat(organizationId);
   return { version, tracksLatest: true, latestError: error, latestCheckedAt: now };
@@ -81,6 +81,6 @@ export async function recordLatestHarnessVersion(
   organizationId: string,
   version: string,
 ): Promise<void> {
-  await setLatestHarnessVersionCheck(db, organizationId, { version, error: null });
+  await setLatestAgentVersionCheck(db, organizationId, { version, error: null });
   await bumpOrganizationHeartbeat(organizationId);
 }

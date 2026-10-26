@@ -254,10 +254,10 @@ describe.skipIf(!databaseAvailable)("repository rules and learned rules", () => 
         type: "review.learn-rule",
         taskType: "query",
         taskId: "builtin:learn-rule",
-        minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+        minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
         repositoryId: repoId,
         status: "queued",
-        targetHarnessId: null,
+        targetAgentId: null,
         dedupeKey: expect.stringMatching(/^review\.learn-rule:[0-9a-f-]{36}$/),
       });
       const payload = RunSpecJobPayload.parse(job.payload);

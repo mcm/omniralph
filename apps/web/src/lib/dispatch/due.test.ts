@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { closeDb, createDb, harnesses, jobs, organizations, type Database } from "@omniralph/db";
+import { closeDb, createDb, agents, jobs, organizations, type Database } from "@omniralph/db";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -103,7 +103,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     const organizationId = org!.id;
     async function newHarness() {
       const [harness] = await db
-        .insert(harnesses)
+        .insert(agents)
         .values({ organizationId, name: "coder-1" })
         .returning();
       return { id: harness!.id, token: await getTokenSigner().signAccessToken(harness!.id) };
@@ -235,7 +235,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("claim due set", () => {
     await sleep(2_000);
     expect(postgresCalls).toBe(0);
     expect(await claimedJobId(await pending)).toBe(job.id);
-    expect((await jobRow(job.id)).harnessId).toBe(other.id);
+    expect((await jobRow(job.id)).agentId).toBe(other.id);
     expect(Date.now() - leaseExpiresAt.getTime()).toBeLessThan(3_000);
   }, 30_000);
 

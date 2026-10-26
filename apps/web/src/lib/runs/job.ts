@@ -1,6 +1,6 @@
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
-  harnessVersionAtLeast,
+  agentVersionAtLeast,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   REVIEW_TASKS_MIN_HARNESS_VERSION,
   RunSpecJobPayload,
@@ -33,7 +33,7 @@ export function runSpecJobInput(
   taskId: string;
   payload: RunSpecJobPayload;
   repositoryId: string | null;
-  minHarnessVersion: string | null;
+  minAgentVersion: string | null;
   requiredInstallables: string[];
   requiredHostTools: string[];
 } {
@@ -43,7 +43,7 @@ export function runSpecJobInput(
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
-    minHarnessVersion: runSpecMinHarnessVersion(task, requirements?.minHarnessVersion ?? null),
+    minAgentVersion: runSpecMinHarnessVersion(task, requirements?.minHarnessVersion ?? null),
     requiredInstallables: [...new Set(requirements?.installables ?? [])].sort(),
     requiredHostTools: [...new Set(requirements?.hostTools ?? [])].sort(),
   };
@@ -66,7 +66,7 @@ export function runSpecMinHarnessVersion(
   ].filter((version) => version !== null);
   return needed.reduce<string | null>(
     (highest, version) =>
-      highest === null || !harnessVersionAtLeast(highest, version) ? version : highest,
+      highest === null || !agentVersionAtLeast(highest, version) ? version : highest,
     null,
   );
 }

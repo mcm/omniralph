@@ -1,7 +1,7 @@
 import {
   claimJob,
-  getHarness,
-  harnessAcceptedTaskTypes,
+  getAgent,
+  agentAcceptedTaskTypes,
   type Database,
   type SettledJob,
 } from "@omniralph/db";
@@ -61,10 +61,10 @@ async function post(req: Request): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     if (await hasDueJob(db, organizationId)) {
       // Read on every attempt: the harness may be revoked or reconfigured while the request is held.
-      const agent = await getHarness(db, harnessId);
+      const agent = await getAgent(db, harnessId);
       if (!agent || agent.revokedAt) return unauthorized();
       // The task types it runs: the request's, else the ones it last reported (older agents).
-      const acceptedTaskTypes = body.data.acceptedTaskTypes ?? harnessAcceptedTaskTypes(agent);
+      const acceptedTaskTypes = body.data.acceptedTaskTypes ?? agentAcceptedTaskTypes(agent);
       const run = await claimNext(db, { ...agent, acceptedTaskTypes }, body.data.pools);
       if (run) return Response.json(run satisfies ClaimRun);
       await reconcileDueJobs(db, organizationId);
@@ -93,11 +93,11 @@ async function claimNext(
     let tokens: SignedJobTokens | undefined;
     let runSpec: RunSpec | undefined;
     const { claim, settled } = await claimJob(db, {
-      harnessId: agent.id,
+      agentId: agent.id,
       organizationId: agent.organizationId,
       acceptedTaskTypes: agent.acceptedTaskTypes,
       pools,
-      harnessVersion: agent.reportedVersion,
+      agentVersion: agent.reportedVersion,
       maxDeliveries: MAX_JOB_DELIVERIES,
       // Sign and resolve while claiming: if signing (KMS) or loading fails, the
       // claim rolls back and no delivery is used up.

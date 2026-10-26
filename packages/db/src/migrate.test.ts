@@ -22,6 +22,32 @@ import {
 
 const databaseAvailable = testDatabaseAvailable();
 
+/**
+ * Applies the migrations before the one whose tag starts with `tag`. For tests of older
+ * migrations that read their tables by the names a later migration (0103) renames.
+ */
+async function migrateBefore(uri: string, tag: string): Promise<void> {
+  const before = mkdtempSync(join(tmpdir(), "migrations-"));
+  const client = new pg.Client({ connectionString: uri });
+  try {
+    cpSync(migrationsFolder, before, { recursive: true });
+    const journalPath = join(before, "meta", "_journal.json");
+    const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
+      entries: { tag: string }[];
+    };
+    const upTo = journal.entries.findIndex((e) => e.tag.startsWith(tag));
+    writeFileSync(
+      journalPath,
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, upTo) }),
+    );
+    await client.connect();
+    await migrate(drizzle(client), { migrationsFolder: before });
+  } finally {
+    await client.end();
+    rmSync(before, { recursive: true, force: true });
+  }
+}
+
 describe.skipIf(!databaseAvailable)("migrations", () => {
   let testDb: TestDatabase;
   let db: Database;
@@ -140,21 +166,21 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     ).rejects.toThrow();
   });
 
-  it("keys app settings by organization and puts harnesses in an organization (0033)", async () => {
+  it("keys app settings by organization and puts agents in an organization (0033)", async () => {
     const [a] = await db.insert(organizations).values({ name: "Settings A" }).returning();
     const [b] = await db.insert(organizations).values({ name: "Settings B" }).returning();
     await db.insert(appSettings).values([
-      { organizationId: a!.id, key: "harness.desiredVersion", value: "1.0.0" },
-      { organizationId: b!.id, key: "harness.desiredVersion", value: "2.0.0" },
+      { organizationId: a!.id, key: "agent.desiredVersion", value: "1.0.0" },
+      { organizationId: b!.id, key: "agent.desiredVersion", value: "2.0.0" },
     ]);
     await expect(
       db
         .insert(appSettings)
-        .values({ organizationId: a!.id, key: "harness.desiredVersion", value: 1 }),
+        .values({ organizationId: a!.id, key: "agent.desiredVersion", value: 1 }),
     ).rejects.toThrow();
-    await expect(db.execute(sql`insert into harnesses (name) values ('no-org')`)).rejects.toThrow();
+    await expect(db.execute(sql`insert into agents (name) values ('no-org')`)).rejects.toThrow();
     await expect(
-      db.execute(sql`insert into harness_enrollments (token_hash, expires_at) values ('h', now())`),
+      db.execute(sql`insert into agent_enrollments (token_hash, expires_at) values ('h', now())`),
     ).rejects.toThrow();
   });
 
@@ -303,7 +329,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [org, agent],
         );
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
         const { rows } = await client.query(
           `select dedupe_key, target_harness_id, lease_expires_at > now() + interval '100 seconds' as leased,
                   available_at <= now() as available
@@ -334,45 +360,45 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
   it("drops the poll interval from agents (0054)", async () => {
     const { rows } = await db.$client.query<{ column_name: string }>(
       `select column_name from information_schema.columns
-       where table_name = 'harnesses' and column_name = 'poll_interval_seconds'`,
+       where table_name = 'agents' and column_name = 'poll_interval_seconds'`,
     );
     expect(rows).toEqual([]);
   });
 
-  it("adds reported models to harnesses, empty by default (0078)", async () => {
+  it("adds reported models to agents, empty by default (0078)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Models" }).returning();
     const { rows } = await db.$client.query<{ reported_models: unknown }>(
-      `insert into harnesses (organization_id, name) values ($1, 'h') returning reported_models`,
+      `insert into agents (organization_id, name) values ($1, 'h') returning reported_models`,
       [org!.id],
     );
     expect(rows).toEqual([{ reported_models: [] }]);
   });
 
-  it("adds live_online to harnesses, false by default (0086)", async () => {
+  it("adds live_online to agents, false by default (0086)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Live" }).returning();
     const { rows } = await db.$client.query<{ live_online: unknown }>(
-      `insert into harnesses (organization_id, name) values ($1, 'h') returning live_online`,
+      `insert into agents (organization_id, name) values ($1, 'h') returning live_online`,
       [org!.id],
     );
     expect(rows).toEqual([{ live_online: false }]);
   });
 
-  it("adds reported installables to harnesses, empty by default (0071)", async () => {
+  it("adds reported installables to agents, empty by default (0071)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Installables" }).returning();
     const { rows } = await db.$client.query<{ reported_installables: unknown }>(
-      `insert into harnesses (organization_id, name) values ($1, 'h') returning reported_installables`,
+      `insert into agents (organization_id, name) values ($1, 'h') returning reported_installables`,
       [org!.id],
     );
     expect(rows).toEqual([{ reported_installables: [] }]);
     await expect(
       db.$client.query(
-        `update harnesses set reported_installables = null where organization_id = $1`,
+        `update agents set reported_installables = null where organization_id = $1`,
         [org!.id],
       ),
     ).rejects.toThrow(/not-null/);
   });
 
-  it("adds host_tools and harness_host_tools, cascading on delete (0072)", async () => {
+  it("adds host_tools and agent_host_tools, cascading on delete (0072)", async () => {
     const [org] = await db.insert(organizations).values({ name: "Host tools" }).returning();
     const q = db.$client;
     const {
@@ -385,15 +411,15 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       q.query(`insert into host_tools (organization_id, name) values ($1, 'opengrep')`, [org!.id]),
     ).rejects.toThrow(/host_tools_organization_name_uq/);
     const {
-      rows: [harness],
+      rows: [agent],
     } = await q.query<{ id: string }>(
-      `insert into harnesses (organization_id, name) values ($1, 'h') returning id`,
+      `insert into agents (organization_id, name) values ($1, 'h') returning id`,
       [org!.id],
     );
     const { rows } = await q.query(
-      `insert into harness_host_tools (harness_id, host_tool_id) values ($1, $2)
+      `insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)
        returning configured_path, configured_path_exists, discovered_path, reported_at`,
-      [harness!.id, tool!.id],
+      [agent!.id, tool!.id],
     );
     expect(rows).toEqual([
       {
@@ -404,15 +430,15 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       },
     ]);
     await expect(
-      q.query(`insert into harness_host_tools (harness_id, host_tool_id) values ($1, $2)`, [
-        harness!.id,
+      q.query(`insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)`, [
+        agent!.id,
         tool!.id,
       ]),
-    ).rejects.toThrow(/harness_host_tools_harness_id_host_tool_id_pk/);
+    ).rejects.toThrow(/agent_host_tools_agent_id_host_tool_id_pk/);
     await q.query(`delete from organizations where id = $1`, [org!.id]);
     const { rows: left } = await q.query(
       `select (select count(*) from host_tools where id = $1)::int as tools,
-              (select count(*) from harness_host_tools where host_tool_id = $1)::int as rows`,
+              (select count(*) from agent_host_tools where host_tool_id = $1)::int as rows`,
       [tool!.id],
     );
     expect(left).toEqual([{ tools: 0, rows: 0 }]);
@@ -428,11 +454,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     expect(rows).toEqual([{ required_installables: [], required_host_tools: [] }]);
   });
 
-  it("drops the capability columns from jobs and harnesses (0057)", async () => {
+  it("drops the capability columns from jobs and agents (0057)", async () => {
     const { rows } = await db.$client.query<{ table_name: string; column_name: string }>(
       `select table_name, column_name from information_schema.columns
        where (table_name = 'jobs' and column_name = 'capability')
-          or (table_name = 'harnesses'
+          or (table_name = 'agents'
               and column_name in ('enabled_capabilities', 'capability_limits', 'reported_capabilities'))`,
     );
     expect(rows).toEqual([]);
@@ -543,7 +569,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [org],
         );
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
         const { rows: harnesses } = await client.query(`select id, name from harnesses`);
         expect(harnesses).toEqual([{ id: agent, name: "a" }]);
         const { rows: jobRows } = await client.query(
@@ -759,7 +785,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [acme],
         );
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
         // 0102 then turned the inherited (null) task types into every type, as reported.
         const all = ["query", "review", "coding"];
         const { rows } = await client.query<{
@@ -1653,7 +1679,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [acme, connections[0]!.id],
         );
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
 
         const { rows: settings } = await client.query<{
           organization_id: string;
@@ -1922,7 +1948,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
         await organization("Malformed", ["review", "bogus"], [{ name: "malformed-agent" }]);
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
         const { rows } = await client.query<{
           name: string;
           reported_accepted_task_types: string[] | null;
@@ -1963,6 +1989,339 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       } finally {
         await client.end();
         rmSync(before, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("harnesses become agents (0103)", () => {
+    /** A database migrated up to just before 0103. */
+    async function beforeAgents(name: string) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      await migrateBefore(uri, "0103_");
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      return { uri, client };
+    }
+
+    /** Each table's rows, read by its names before (`harness`) and after (`agent`) 0103. */
+    const snapshot = async (client: pg.Client, renamed: boolean) => {
+      const n = (s: string) =>
+        renamed ? s.replaceAll("harnesses", "agents").replaceAll("harness", "agent") : s;
+      const read = async (query: string) =>
+        (await client.query(n(query))).rows as Record<string, unknown>[];
+      // The columns 0103 resets, compared on their own.
+      const reset = `'failed_versions' - 'update_state' - 'update_request_id'
+        - 'update_request_version' - 'update_requested_at'`;
+      return {
+        organizations: await read(`select id, name from organizations order by id`),
+        repositories: await read(`select id, organization_id from repositories order by id`),
+        agents: await read(
+          `select id, to_jsonb(h) - ${reset} as kept from harnesses h order by id`,
+        ),
+        pins: await read(
+          `select id, harness_id as agent, repository_id from harness_repo_pins order by id`,
+        ),
+        enrollments: await read(
+          `select id, harness_id as agent, organization_id, token_hash, used_at, expires_at
+           from harness_enrollments order by id`,
+        ),
+        refreshTokens: await read(
+          `select id, harness_id as agent, family_id, token_hash, used_at, revoked_at
+           from harness_refresh_tokens order by id`,
+        ),
+        audit: await read(
+          `select id, harness_id as agent, event::text, detail from harness_audit order by id`,
+        ),
+        hostTools: await read(
+          `select harness_id as agent, host_tool_id, configured_path, discovered_path
+           from harness_host_tools order by harness_id, host_tool_id`,
+        ),
+        jobs: await read(
+          `select id, harness_id as agent, target_harness_id as target, min_harness_version as min_version,
+             status::text, payload
+           from jobs order by id`,
+        ),
+        reviews: await read(`select id, harness_id as agent from reviews order by id`),
+        runs: await read(`select id, harness_id as agent from ralph_runs order by id`),
+        lanes: await read(
+          `select id, harness_id as agent, request_harness_id as request_agent
+           from ralph_lanes order by id`,
+        ),
+        auditEvents: await read(`select enum_range(null::harness_audit_event)::text[] as values`),
+      };
+    };
+
+    it("keeps every production row and reference, resets old-package version state and converts the settings", async () => {
+      const { uri, client } = await beforeAgents("agents_production");
+      try {
+        // Production: 3 organizations with 17 repositories, all 9 agents in the first.
+        const orgs: string[] = [];
+        for (const name of ["Frakinship", "Acme", "Initech"]) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into organizations (name) values ($1) returning id`,
+            [name],
+          );
+          orgs.push(rows[0]!.id);
+        }
+        const [org, other] = orgs as [string, string, string];
+        const repos: string[] = [];
+        for (const [i, organization] of orgs.entries()) {
+          const { rows: connections } = await client.query<{ id: string }>(
+            `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+             values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+            [organization],
+          );
+          for (let r = 0; r < [12, 3, 2][i]!; r++) {
+            const { rows } = await client.query<{ id: string }>(
+              `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+               values ($1, 'github', $2, $3, $4) returning id`,
+              [organization, `${i}-${r}`, `org${i}/repo-${r}`, connections[0]!.id],
+            );
+            repos.push(rows[0]!.id);
+          }
+        }
+        expect(repos).toHaveLength(17);
+
+        // 7 live agents and 2 revoked and soft-deleted, on the organization defaults.
+        const agents: string[] = [];
+        for (let i = 0; i < 9; i++) {
+          const gone = i >= 7;
+          const { rows } = await client.query<{ id: string }>(
+            `insert into harnesses (organization_id, name, reported_version, self_update, reported_models,
+               reported_installables, reported_accepted_task_types, last_heartbeat_at, live_online,
+               revoked_at, deleted_at)
+             values ($1, $2, '0.13.2', 'supported',
+               '[{"value": "claude-opus-5-5", "displayName": "Opus 5.5"}]',
+               '[{"name": "@anthropic-ai/claude-code", "version": "3.1.0"}]',
+               '{query,review,coding}', now(), $3, $4, $4)
+             returning id`,
+            [org, `coder-${i + 1}`, !gone, gone ? new Date("2026-09-01T00:00:00Z") : null],
+          );
+          agents.push(rows[0]!.id);
+        }
+        const [first, second, failing] = agents as [string, string, string];
+        // One agent failed an update: a failed version and its update state.
+        await client.query(
+          `update harnesses set failed_versions = '{0.12.0}',
+             update_state = '{"state": "idle", "version": "0.12.0", "previous": "0.11.0", "startsSincePending": 0, "error": "crashed"}',
+             update_request_id = gen_random_uuid(), update_request_version = '0.12.0', update_requested_at = now()
+           where id = $1`,
+          [failing],
+        );
+        // 16 pins over the first 8 repositories, two agents each.
+        for (let r = 0; r < 8; r++) {
+          for (const agent of [agents[r % 7]!, agents[(r + 1) % 7]!]) {
+            await client.query(
+              `insert into harness_repo_pins (harness_id, repository_id) values ($1, $2)`,
+              [agent, repos[r]],
+            );
+          }
+        }
+        // One used and linked enrollment, one expired and unused.
+        await client.query(
+          `insert into harness_enrollments (organization_id, token_hash, name, expires_at, used_at, harness_id)
+           values ($1, 'used', 'coder-1', now() + interval '1 hour', now(), $2),
+                  ($1, 'expired', null, now() - interval '1 day', null, null)`,
+          [org, first],
+        );
+        // Refresh-token families: used tokens and the current one.
+        for (const [agent, family] of [
+          [first, "11111111-1111-4111-8111-111111111111"],
+          [second, "22222222-2222-4222-8222-222222222222"],
+        ] as const) {
+          await client.query(
+            `insert into harness_refresh_tokens (harness_id, family_id, token_hash, used_at)
+             values ($1, $2, $3, now() - interval '30 minutes'), ($1, $2, $4, now() - interval '15 minutes'),
+                    ($1, $2, $5, null)`,
+            [agent, family, `${agent}-1`, `${agent}-2`, `${agent}-3`],
+          );
+        }
+        // An audit row for every event.
+        const { rows: events } = await client.query<{ event: string }>(
+          `select unnest(enum_range(null::harness_audit_event))::text as event`,
+        );
+        expect(events.length).toBeGreaterThan(1);
+        for (const { event } of events) {
+          await client.query(
+            `insert into harness_audit (harness_id, event, ip, detail) values ($1, $2, '10.0.0.1', $3)`,
+            [first, event, JSON.stringify({ event })],
+          );
+        }
+        // Jobs that ran on an agent, were targeted at one and need a harness version.
+        const payload = { kind: "review", spec: { prompt: "Review it" } };
+        for (const [status, agent, target] of [
+          ["completed", first, first],
+          ["running", second, second],
+          ["queued", null, first],
+          ["queued", null, null],
+        ] as const) {
+          await client.query(
+            `insert into jobs (organization_id, type, task_type, status, harness_id, target_harness_id,
+               min_harness_version, payload)
+             values ($1, 'review.run', 'review', $2, $3, $4, '0.11.0', $5)`,
+            [org, status, agent, target, JSON.stringify(payload)],
+          );
+        }
+        // A review, a run and its lane on agents.
+        await client.query(
+          `insert into reviews (repository_id, pr_number, head_sha, base_sha, trigger, budget, harness_id)
+           values ($1, 7, 'head', 'base', 'webhook', 200000, $2)`,
+          [repos[0], first],
+        );
+        const { rows: runs } = await client.query<{ id: string }>(
+          `insert into ralph_runs (organization_id, kind, repository_id, harness_id,
+             linear_issue_id, linear_identifier, linear_agent_session_id)
+           values ($1, 'prd', $2, $3, 'i1', 'TOOL-570', 's1') returning id`,
+          [org, repos[0], first],
+        );
+        await client.query(
+          `insert into ralph_lanes (run_id, repository_id, branch, base_branch, harness_id, request_harness_id)
+           values ($1, $2, 'omniralph/tool-570', 'v2', $3, $4)`,
+          [runs[0]!.id, repos[0], first, second],
+        );
+        // One host tool configured on an agent.
+        const { rows: tools } = await client.query<{ id: string }>(
+          `insert into host_tools (organization_id, name) values ($1, 'opengrep') returning id`,
+          [org],
+        );
+        await client.query(
+          `insert into harness_host_tools (harness_id, host_tool_id, configured_path, discovered_path)
+           values ($1, $2, '/usr/local/bin/opengrep', '/usr/bin/opengrep')`,
+          [first, tools[0]!.id],
+        );
+        // The organization's settings: tracking latest, a default concurrency and the cached latest.
+        await client.query(
+          `insert into app_settings (organization_id, key, value) values
+             ($1, 'harness.desiredVersion', '"latest"'),
+             ($1, 'harness.maxConcurrency', '2'),
+             ($1, 'harness.latestVersion', '{"version": "0.13.2", "checkedAt": "2026-10-26T00:00:00Z"}'),
+             ($1, 'chat.playbooks', '{}')`,
+          [org],
+        );
+
+        const before = await snapshot(client, false);
+        await runMigrations(uri);
+        const after = await snapshot(client, true);
+
+        // Every row, ID and reference is kept, and the enum's values too.
+        expect(after).toEqual(before);
+        expect(before.agents).toHaveLength(9);
+        expect(before.pins).toHaveLength(16);
+        expect(before.enrollments).toHaveLength(2);
+        expect(before.refreshTokens).toHaveLength(6);
+        expect(before.audit).toHaveLength(events.length);
+        expect(before.hostTools).toHaveLength(1);
+        expect(before.jobs).toHaveLength(4);
+        expect(before.lanes).toEqual([
+          expect.objectContaining({ agent: first, request_agent: second }),
+        ]);
+
+        // Version state naming @omniralph/harness versions is reset on every agent.
+        const { rows: versions } = await client.query(
+          `select distinct desired_version, failed_versions, update_state, update_request_id,
+             update_request_version, update_requested_at
+           from agents`,
+        );
+        expect(versions).toEqual([
+          {
+            desired_version: null,
+            failed_versions: [],
+            update_state: null,
+            update_request_id: null,
+            update_request_version: null,
+            update_requested_at: null,
+          },
+        ]);
+
+        // The settings move to `agent.*`; the cached latest is gone.
+        const { rows: settings } = await client.query(
+          `select key, value from app_settings order by key`,
+        );
+        expect(settings).toEqual([
+          { key: "agent.desiredVersion", value: "latest" },
+          { key: "agent.maxConcurrency", value: 2 },
+          { key: "chat.playbooks", value: {} },
+        ]);
+
+        // Nothing is named after harnesses any more.
+        const { rows: names } = await client.query(
+          `select relname as name from pg_class
+             where relnamespace = 'public'::regnamespace and relname like '%harness%'
+           union all select conname from pg_constraint where conname like '%harness%'
+           union all select typname from pg_type where typname like '%harness%'
+           union all select table_name || '.' || column_name from information_schema.columns
+             where table_schema = 'public' and column_name like '%harness%'`,
+        );
+        expect(names).toEqual([]);
+
+        // The renamed keys and constraints still enforce.
+        await expect(
+          client.query(`insert into agent_repo_pins (agent_id, repository_id) values ($1, $2)`, [
+            first,
+            repos[0],
+          ]),
+        ).rejects.toThrow(/agent_repo_pins_agent_repo_uq/);
+        await expect(
+          client.query(`insert into agent_repo_pins (agent_id, repository_id) values ($1, $2)`, [
+            other,
+            repos[0],
+          ]),
+        ).rejects.toThrow(/agent_repo_pins_agent_id_agents_id_fk/);
+        await client.query(`delete from agents where id = $1`, [first]);
+        const { rows: left } = await client.query(
+          `select (select count(*) from agent_repo_pins where agent_id = $1)::int as pins,
+                  (select count(*) from agent_refresh_tokens where agent_id = $1)::int as tokens,
+                  (select count(*) from agent_host_tools where agent_id = $1)::int as host_tools,
+                  (select count(*) from jobs where agent_id = $1 or target_agent_id = $1)::int as jobs,
+                  (select count(*) from jobs)::int as all_jobs,
+                  (select count(*) from agent_refresh_tokens)::int as all_tokens`,
+          [first],
+        );
+        expect(left).toEqual([
+          { pins: 0, tokens: 0, host_tools: 0, jobs: 0, all_jobs: 4, all_tokens: 3 },
+        ]);
+      } finally {
+        await client.end();
+      }
+    });
+
+    it("keeps a desired version of 2.0.0 or later and drops older ones", async () => {
+      const { uri, client } = await beforeAgents("agents_versions");
+      try {
+        const versions = ["latest", "0.13.2", "1.0.0", "2.0.0-rc.1", "2.0.0", "2.0.1", "10.0.0"];
+        const kept = ["latest", "2.0.0", "2.0.1", "10.0.0"];
+        for (const version of versions) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into organizations (name) values ($1) returning id`,
+            [version],
+          );
+          await client.query(
+            `insert into app_settings (organization_id, key, value) values ($1, 'harness.desiredVersion', $2)`,
+            [rows[0]!.id, JSON.stringify(version)],
+          );
+          await client.query(
+            `insert into harnesses (organization_id, name, desired_version) values ($1, $2, $2)`,
+            [rows[0]!.id, version],
+          );
+        }
+        await runMigrations(uri);
+        const { rows: settings } = await client.query<{ value: string }>(
+          `select value from app_settings where key = 'agent.desiredVersion'`,
+        );
+        expect(settings.map((r) => r.value).sort()).toEqual([...kept].sort());
+        const { rows: agents } = await client.query<{ name: string; desired_version: string }>(
+          `select name, desired_version from agents`,
+        );
+        expect(Object.fromEntries(agents.map((r) => [r.name, r.desired_version]))).toEqual(
+          Object.fromEntries(versions.map((v) => [v, kept.includes(v) ? v : null])),
+        );
+        const { rows: old } = await client.query(
+          `select key from app_settings where key like 'harness.%'`,
+        );
+        expect(old).toEqual([]);
+      } finally {
+        await client.end();
       }
     });
   });
@@ -2387,7 +2746,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           );
         }
 
-        await runMigrations(uri);
+        await migrateBefore(uri, "0103_");
         const { rows } = await client.query<{ branch: string; harness_id: string | null }>(
           `select branch, harness_id from ralph_lanes order by branch`,
         );

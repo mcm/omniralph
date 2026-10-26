@@ -82,7 +82,10 @@ function recordReviewRunChange(db: unknown, run: { id: string; organizationId: s
 }
 
 /** Records a live `run` change for the review runs of reviews (their passes). */
-export async function recordReviewChanges(db: Database, reviewIds: readonly string[]): Promise<void> {
+export async function recordReviewChanges(
+  db: Database,
+  reviewIds: readonly string[],
+): Promise<void> {
   if (!currentChangeCollector() || reviewIds.length === 0) return;
   const rows = await db
     .select({ id: reviewRuns.id, organizationId: reviewRuns.organizationId })
@@ -624,11 +627,11 @@ export async function getRepositoryReviewSettings(
 export async function markReviewRunning(
   db: Database,
   reviewId: string,
-  harnessId: string,
+  agentId: string,
 ): Promise<void> {
   const rows = await db
     .update(reviews)
-    .set({ status: "running", harnessId, error: null })
+    .set({ status: "running", agentId, error: null })
     .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)))
     .returning({ id: reviews.id });
   await recordReviewChanges(

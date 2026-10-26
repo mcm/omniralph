@@ -1,27 +1,27 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
-  harnessRefreshTokens,
-  harnessRepoPins,
-  harnesses,
+  agentRefreshTokens,
+  agentRepoPins,
+  agents,
   connectRepository,
   claimJob,
   closeDb,
   createDb,
   createHostTool,
   captureChanges,
-  getHarnessOverview,
+  getAgentOverview,
   jobs,
-  listHarnessAudit,
-  listHarnessHostTools,
-  listHarnessOverview,
-  listRecentHarnessAudit,
+  listAgentAudit,
+  listAgentHostTools,
+  listAgentOverview,
+  listRecentAgentAudit,
   setDefaultMaxConcurrency,
-  setDesiredHarnessVersion,
-  setHarnessHostToolPath,
-  unpinRepositoryFromHarness,
+  setDesiredAgentVersion,
+  setAgentHostToolPath,
+  unpinRepositoryFromAgent,
   upsertScmConnection,
   users,
-  writeHarnessAudit,
+  writeAgentAudit,
   type Database,
   organizations,
   type RecordedChange,
@@ -78,7 +78,7 @@ const harnessSettings = await import("@/app/api/ui/harnesses/[id]/settings/route
 const harnessUpdate = await import("@/app/api/ui/harnesses/[id]/update/route");
 const harnessRevoke = await import("@/app/api/ui/harnesses/[id]/revoke/route");
 const harnessInstalls = await import("@/app/api/ui/harnesses/[id]/installs/route");
-const harnessHostTools = await import("@/app/api/ui/harnesses/[id]/host-tools/route");
+const agentHostTools = await import("@/app/api/ui/harnesses/[id]/host-tools/route");
 const pins = await import("@/lib/harnesses/pins");
 const { bumpHarnessHeartbeat } = await import("@/lib/harnesses/heartbeat-cache");
 const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
@@ -167,14 +167,14 @@ async function ui(
 }
 
 /** The Settings tab's save of the config alone (the other parts are left as they are). */
-const updateHarnessConfig = (
+const updateAgentConfig = (
   id: string,
   config: {
     maxConcurrency: number | null;
     poolLimits: Record<string, number>;
   },
 ) => ui(harnessSettings.PUT, id, { method: "PUT", body: { config } });
-const setHarnessDesiredVersion = (id: string, version: string) =>
+const setAgentDesiredVersion = (id: string, version: string) =>
   ui(harnessSettings.PUT, id, { method: "PUT", body: { version } });
 // Pins are edited from the repository's settings; these call the same pin logic directly.
 async function pinRepository(harnessId: string, repositoryId: string) {
@@ -185,14 +185,14 @@ async function pinRepository(harnessId: string, repositoryId: string) {
     : { ok: false as const, error: result };
 }
 async function unpinRepository(harnessId: string, repositoryId: string) {
-  if (!(await unpinRepositoryFromHarness(state.db!, { harnessId, repositoryId }))) {
+  if (!(await unpinRepositoryFromAgent(state.db!, { agentId: harnessId, repositoryId }))) {
     return { ok: false as const };
   }
   await bumpHarnessHeartbeat(harnessId);
   return { ok: true as const };
 }
-const requestHarnessUpdate = (id: string) => ui(harnessUpdate.POST, id);
-const revokeHarness = (id: string) => ui(harnessRevoke.POST, id);
+const requestAgentUpdate = (id: string) => ui(harnessUpdate.POST, id);
+const revokeAgent = (id: string) => ui(harnessRevoke.POST, id);
 const cancelJob = (id: string) => ui(jobCancel.POST, id);
 const rerunJob = (id: string) => ui(jobRerun.POST, id);
 async function listedJob(id: string) {
@@ -206,7 +206,7 @@ const deleteHarness = (id: string) => ui(harnessDetail.DELETE, id, { method: "DE
 const installInstallable = (id: string, body: { name: string; version?: string }) =>
   ui(harnessInstalls.POST, id, { body });
 const setHostToolPath = (id: string, hostToolId: string, path: string) =>
-  ui(harnessHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
+  ui(agentHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
 const harnessList = await import("@/app/api/ui/harnesses/route");
 async function listHarnesses() {
   const response = await harnessList.GET(new Request("http://localhost/api/ui/harnesses"), {
@@ -214,7 +214,7 @@ async function listHarnesses() {
   });
   return ((await response.json()) as HarnessList).harnesses;
 }
-async function getHarness(id: string) {
+async function getAgent(id: string) {
   const response = await harnessDetail.GET(new Request(`http://localhost/api/ui/harnesses/${id}`), {
     params: Promise.resolve({ id }),
   });
@@ -333,7 +333,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const res = await redeem(result.token);
       expect(res.status).toBe(200);
       const { harnessId } = (await res.json()) as { harnessId: string };
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness!.name).toBe("Build box");
       expect(harness!.enrolledBy).toBe(adminId);
     });
@@ -373,7 +373,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         pinnedRepoIds: [],
       });
 
-      expect(await updateHarnessConfig(harnessId, { maxConcurrency: 4, poolLimits: {} })).toEqual({
+      expect(await updateAgentConfig(harnessId, { maxConcurrency: 4, poolLimits: {} })).toEqual({
         ok: true,
       });
       expect(await pinRepository(harnessId, repoA)).toEqual({ ok: true });
@@ -409,7 +409,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(agentChanges(first.changes)).toEqual([
         expect.objectContaining({ resource: "agent", ids: [harnessId], organizationId: orgId }),
       ]);
-      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(row!.reportedAcceptedTaskTypes).toEqual(["coding", "query"]);
 
       // The same report again changes nothing and publishes nothing.
@@ -422,7 +422,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         "query",
         "coding",
       ]);
-      expect((await getHarness(harnessId)).acceptedTaskTypes).toEqual(["query", "coding"]);
+      expect((await getAgent(harnessId)).acceptedTaskTypes).toEqual(["query", "coding"]);
 
       // An older agent reports none: it keeps the last report and is sent it.
       const legacy = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
@@ -453,7 +453,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         expect(response.status).toBe(400);
       }
       // Nothing was saved.
-      const harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      const harness = (await getAgentOverview(db, orgId, harnessId))!;
       expect(harness).toMatchObject({
         maxConcurrency: null,
         desiredVersion: null,
@@ -468,24 +468,24 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       // Unset: the long pool leaves one slot for short jobs.
       const config = { maxConcurrency: 3, poolLimits: {} };
-      expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
+      expect(await updateAgentConfig(harnessId, config)).toEqual({ ok: true });
       const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(defaults.poolLimits).toEqual({ short: 3, long: 2 });
 
       expect(
-        await updateHarnessConfig(harnessId, {
+        await updateAgentConfig(harnessId, {
           ...config,
           poolLimits: { long: 1, short: 3 },
         }),
       ).toEqual({ ok: true });
-      const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(row!.poolLimits).toEqual({ long: 1, short: 3 });
       const limited = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(limited.poolLimits).toEqual({ short: 3, long: 1 });
 
       // Lowering maxConcurrency clamps the effective values.
       expect(
-        await updateHarnessConfig(harnessId, {
+        await updateAgentConfig(harnessId, {
           ...config,
           maxConcurrency: 2,
           poolLimits: { long: 1, short: 2 },
@@ -495,8 +495,8 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(clamped.poolLimits).toEqual({ short: 2, long: 1 });
 
       // Blank limits go back to the defaults.
-      expect(await updateHarnessConfig(harnessId, config)).toEqual({ ok: true });
-      const [cleared] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(await updateAgentConfig(harnessId, config)).toEqual({ ok: true });
+      const [cleared] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(cleared!.poolLimits).toEqual({});
       const reset = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(reset.poolLimits).toEqual({ short: 3, long: 2 });
@@ -506,7 +506,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const { harnessId, accessToken } = await enrolledHarness();
       const heartbeat = async () =>
         (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      const row = async () => harnessRow((await getHarnessOverview(db, orgId, harnessId))!);
+      const row = async () => harnessRow((await getAgentOverview(db, orgId, harnessId))!);
       await setDefaultMaxConcurrency(db, orgId, 6, null);
       try {
         expect(await row()).toMatchObject({
@@ -518,9 +518,9 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         });
 
         // Override it.
-        expect(await updateHarnessConfig(harnessId, { maxConcurrency: 2, poolLimits: {} })).toEqual(
-          { ok: true },
-        );
+        expect(await updateAgentConfig(harnessId, { maxConcurrency: 2, poolLimits: {} })).toEqual({
+          ok: true,
+        });
         expect(await row()).toMatchObject({
           maxConcurrency: 2,
           overrides: { maxConcurrency: 2 },
@@ -534,18 +534,18 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         // Back to the organization's max concurrency; pool limits are checked against it.
         const inheritMax = { maxConcurrency: null };
         expect(
-          await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 7 } }),
+          await updateAgentConfig(harnessId, { ...inheritMax, poolLimits: { short: 7 } }),
         ).toMatchObject({ ok: false });
         expect(
-          await updateHarnessConfig(harnessId, { ...inheritMax, poolLimits: { short: 6 } }),
+          await updateAgentConfig(harnessId, { ...inheritMax, poolLimits: { short: 6 } }),
         ).toEqual({ ok: true });
-        const [stored] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+        const [stored] = await db.select().from(agents).where(eq(agents.id, harnessId));
         expect(stored).toMatchObject({ maxConcurrency: null, poolLimits: { short: 6 } });
         expect(await heartbeat()).toMatchObject({ maxConcurrency: 6 });
 
         // Inheriting: an organization change reaches the harness.
         expect(
-          await updateHarnessConfig(harnessId, { maxConcurrency: null, poolLimits: {} }),
+          await updateAgentConfig(harnessId, { maxConcurrency: null, poolLimits: {} }),
         ).toEqual({ ok: true });
         await setDefaultMaxConcurrency(db, orgId, 3, null);
         expect(await row()).toMatchObject({
@@ -568,13 +568,13 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
       expect(await desired(accessToken)).toBeNull();
 
-      await setDesiredHarnessVersion(db, orgId, "1.4.0", adminId);
+      await setDesiredAgentVersion(db, orgId, "1.4.0", adminId);
       // Another organization's version doesn't reach this organization's harnesses.
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
-      await setDesiredHarnessVersion(db, otherOrg!.id, "9.0.0", null);
+      await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
       expect(await desired(accessToken)).toBe("1.4.0");
-      expect(await setHarnessDesiredVersion(harnessId, "v1.5.0")).toEqual({ ok: true });
-      expect(await setHarnessDesiredVersion(harnessId, "latest")).toEqual({
+      expect(await setAgentDesiredVersion(harnessId, "v1.5.0")).toEqual({ ok: true });
+      expect(await setAgentDesiredVersion(harnessId, "latest")).toEqual({
         ok: false,
         error: expect.any(String),
       });
@@ -595,7 +595,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         update,
         failedVersions: ["1.3.0"],
       });
-      const overview = (await getHarnessOverview(db, orgId, harnessId))!;
+      const overview = (await getAgentOverview(db, orgId, harnessId))!;
       expect(overview).toMatchObject({
         selfUpdate: "supported",
         updateState: update,
@@ -610,18 +610,18 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       });
 
       // Cleared override: the global version again. Older harnesses report nothing.
-      expect(await setHarnessDesiredVersion(harnessId, "")).toEqual({ ok: true });
+      expect(await setAgentDesiredVersion(harnessId, "")).toEqual({ ok: true });
       expect(await desired(accessToken)).toBe("1.4.0");
-      const legacy = (await getHarnessOverview(db, orgId, harnessId))!;
+      const legacy = (await getAgentOverview(db, orgId, harnessId))!;
       expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
       expect(harnessRow(legacy, new Date(), "1.4.0").updateStatus).toBe("manual");
 
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await setHarnessDesiredVersion(harnessId, "1.6.0")).toEqual({
+      expect(await setAgentDesiredVersion(harnessId, "1.6.0")).toEqual({
         ok: false,
         error: expect.any(String),
       });
-      await setDesiredHarnessVersion(db, orgId, null, adminId);
+      await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
     it("tracking latest sends npm's latest, which Update now refreshes", async () => {
@@ -631,28 +631,28 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         (await (await sendHeartbeat(accessToken, supported)).json()) as HeartbeatResponse;
 
       state.latest = "2.0.0";
-      await setDesiredHarnessVersion(db, orgId, "latest", adminId);
+      await setDesiredAgentVersion(db, orgId, "latest", adminId);
       expect((await respond()).desiredVersion).toBe("2.0.0");
       expect(
-        harnessRow((await getHarnessOverview(db, orgId, harnessId))!, new Date(), "2.0.0", true),
+        harnessRow((await getAgentOverview(db, orgId, harnessId))!, new Date(), "2.0.0", true),
       ).toMatchObject({ desiredVersion: "2.0.0", tracksLatest: true, updateStatus: "updating" });
 
       // A new release is picked up once the stored read is old; until then heartbeats agree.
       state.latest = "2.1.0";
       expect((await respond()).desiredVersion).toBe("2.0.0");
       // Update now reads npm at once and records it, so heartbeats don't send the harness back.
-      expect(await requestHarnessUpdate(harnessId)).toEqual({ ok: true, version: "2.1.0" });
+      expect(await requestAgentUpdate(harnessId)).toEqual({ ok: true, version: "2.1.0" });
       expect(await respond()).toMatchObject({
         desiredVersion: "2.1.0",
         updateRequest: { version: "2.1.0" },
       });
 
       // An override still wins.
-      expect(await setHarnessDesiredVersion(harnessId, "1.9.0")).toEqual({ ok: true });
+      expect(await setAgentDesiredVersion(harnessId, "1.9.0")).toEqual({ ok: true });
       expect((await respond()).desiredVersion).toBe("1.9.0");
 
       state.latest = "2.0.0";
-      await setDesiredHarnessVersion(db, orgId, null, adminId);
+      await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
     it("Update now sends an update request until the harness reports it handled", async () => {
@@ -663,26 +663,26 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       // Older harnesses and harnesses outside pm2 can't update themselves.
       await respond();
-      expect(await requestHarnessUpdate(harnessId)).toEqual({
+      expect(await requestAgentUpdate(harnessId)).toEqual({
         ok: false,
         error: expect.any(String),
       });
       expect((await respond(supported)).updateRequest).toBeNull();
 
       // No version chosen: the latest on npm.
-      expect(await requestHarnessUpdate(harnessId)).toEqual({ ok: true, version: "2.0.0" });
+      expect(await requestAgentUpdate(harnessId)).toEqual({ ok: true, version: "2.0.0" });
       const { updateRequest } = await respond(supported);
       expect(updateRequest).toEqual({ id: expect.any(String), version: "2.0.0" });
-      const row = harnessRow((await getHarnessOverview(db, orgId, harnessId))!);
+      const row = harnessRow((await getAgentOverview(db, orgId, harnessId))!);
       expect(row).toMatchObject({
         updateRequest: { version: "2.0.0", requestedAt: expect.any(String) },
         updateStatus: "updating",
       });
 
       // The desired version, even one that failed on the harness.
-      expect(await setHarnessDesiredVersion(harnessId, "1.5.0")).toEqual({ ok: true });
+      expect(await setAgentDesiredVersion(harnessId, "1.5.0")).toEqual({ ok: true });
       await respond({ ...supported, failedVersions: ["1.5.0"] });
-      expect(await requestHarnessUpdate(harnessId)).toEqual({ ok: true, version: "1.5.0" });
+      expect(await requestAgentUpdate(harnessId)).toEqual({ ok: true, version: "1.5.0" });
       const second = (await respond(supported)).updateRequest;
       expect(second).toEqual({ id: expect.any(String), version: "1.5.0" });
       expect(second!.id).not.toBe(updateRequest!.id);
@@ -694,18 +694,16 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(
         (await respond({ ...supported, handledUpdateRequestId: second!.id })).updateRequest,
       ).toBeNull();
-      expect(
-        harnessRow((await getHarnessOverview(db, orgId, harnessId))!).updateRequest,
-      ).toBeNull();
+      expect(harnessRow((await getAgentOverview(db, orgId, harnessId))!).updateRequest).toBeNull();
 
       // Nothing to do on the desired version; members can't ask.
       await respond({ ...supported, version: "1.5.0" });
-      expect(await requestHarnessUpdate(harnessId)).toEqual({
+      expect(await requestAgentUpdate(harnessId)).toEqual({
         ok: false,
         error: expect.stringContaining("already runs 1.5.0"),
       });
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await requestHarnessUpdate(harnessId)).toEqual({
+      expect(await requestAgentUpdate(harnessId)).toEqual({
         ok: false,
         error: expect.any(String),
       });
@@ -714,7 +712,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("pinning enqueues a repo.sync job targeting the harness", async () => {
       const { harnessId } = await enrolledHarness();
       expect(await pinRepository(harnessId, repoB)).toEqual({ ok: true });
-      const targeted = await db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
+      const targeted = await db.select().from(jobs).where(eq(jobs.targetAgentId, harnessId));
       expect(targeted).toHaveLength(1);
       expect(targeted[0]).toMatchObject({
         type: "repo.sync",
@@ -727,7 +725,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("rejects invalid values, unknown pools, and non-admins", async () => {
       const { harnessId } = await enrolledHarness();
       const valid = { maxConcurrency: 2, poolLimits: {} };
-      const invalid: Parameters<typeof updateHarnessConfig>[1][] = [
+      const invalid: Parameters<typeof updateAgentConfig>[1][] = [
         { ...valid, maxConcurrency: 0 },
         { ...valid, maxConcurrency: 1.5 },
         { ...valid, poolLimits: { short: 0 } },
@@ -736,12 +734,12 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         { ...valid, poolLimits: { gpu: 1 } },
       ];
       for (const input of invalid) {
-        expect(await updateHarnessConfig(harnessId, input)).toMatchObject({ ok: false });
+        expect(await updateAgentConfig(harnessId, input)).toMatchObject({ ok: false });
       }
-      expect(await updateHarnessConfig(randomUUID(), valid)).toMatchObject({ ok: false });
+      expect(await updateAgentConfig(randomUUID(), valid)).toMatchObject({ ok: false });
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await updateHarnessConfig(harnessId, valid)).toMatchObject({ ok: false });
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(await updateAgentConfig(harnessId, valid)).toMatchObject({ ok: false });
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       // Unchanged: still inheriting.
       expect(harness!.maxConcurrency).toBeNull();
     });
@@ -758,7 +756,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         error: "Enter a version like 1.4.0, or leave it blank. Not saved: the desired version.",
       });
       // What came before the failure is saved; what came after isn't.
-      let harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      let harness = (await getAgentOverview(db, orgId, harnessId))!;
       expect(harness).toMatchObject({ maxConcurrency: 3, desiredVersion: null });
 
       const response = await harnessSettings.PUT(
@@ -774,7 +772,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(body.ok).toBe(true);
       // The harness has picked it up once a heartbeat is later than `savedAt`.
       expect(Date.parse(body.savedAt)).toBeLessThanOrEqual(Date.now());
-      harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      harness = (await getAgentOverview(db, orgId, harnessId))!;
       expect(harness.desiredVersion).toBe("1.4.0");
 
       // A single change keeps its own message.
@@ -804,7 +802,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         expect(response.status).toBe(400);
       }
       // Nothing was saved, not even the version sent alongside a pin.
-      const harness = (await getHarnessOverview(db, orgId, harnessId))!;
+      const harness = (await getAgentOverview(db, orgId, harnessId))!;
       expect(harness).toMatchObject({ desiredVersion: null, pinnedRepositories: [] });
     });
 
@@ -814,7 +812,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const second = await addHostTool({ name: "ui-save-b" });
       if (!first.ok || !second.ok) throw new Error("setup");
       expect(
-        await ui(harnessHostTools.PUT, harnessId, {
+        await ui(agentHostTools.PUT, harnessId, {
           method: "PUT",
           body: {
             paths: [
@@ -828,7 +826,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         error:
           "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank. Not saved: the ui-save-b path.",
       });
-      const tools = await listHarnessHostTools(db, orgId, harnessId);
+      const tools = await listAgentHostTools(db, orgId, harnessId);
       expect(Object.fromEntries(tools.map((t) => [t.name, t.configuredPath]))).toMatchObject({
         "ui-save-a": "/opt/a",
         "ui-save-b": null,
@@ -844,11 +842,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const ids: string[] = [];
       for (;;) {
         const { claim } = await claimJob(db, {
-          harnessId,
+          agentId: harnessId,
           organizationId: orgId,
           acceptedTaskTypes: [],
           pools: [],
-          harnessVersion: "0.2.0",
+          agentVersion: "0.2.0",
           maxDeliveries: 3,
         });
         if (!claim) return ids;
@@ -869,7 +867,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(
         await installInstallable(target.harnessId, { name: "@omniralph/hello", version: "1.2.0" }),
       ).toEqual({ ok: true });
-      const queued = await db.select().from(jobs).where(eq(jobs.targetHarnessId, target.harnessId));
+      const queued = await db.select().from(jobs).where(eq(jobs.targetAgentId, target.harnessId));
       expect(queued).toHaveLength(1);
       expect(queued[0]).toMatchObject({
         type: "install",
@@ -885,7 +883,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("stores the installables each heartbeat reports, replacing the last report", async () => {
       const { harnessId, accessToken } = await enrolledHarness();
       const reported = async () => {
-        const [row] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+        const [row] = await db.select().from(agents).where(eq(agents.id, harnessId));
         return row!.reportedInstallables;
       };
       expect(await reported()).toEqual([]);
@@ -914,7 +912,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const discovered = await createHostTool(db, orgId, { name: "hb-discovered" });
       if (!configured.ok || !discovered.ok) throw new Error("setup");
       expect(
-        await setHarnessHostToolPath(db, orgId, harnessId, configured.hostTool.id, "/opt/c/bin/c"),
+        await setAgentHostToolPath(db, orgId, harnessId, configured.hostTool.id, "/opt/c/bin/c"),
       ).toEqual({ ok: true });
 
       const response = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
@@ -936,7 +934,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         { name: "hb-not-in-catalog", configuredPathExists: null, discoveredPath: "/usr/bin/x" },
       ];
       expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools })).status).toBe(200);
-      const stored = await listHarnessHostTools(db, orgId, harnessId);
+      const stored = await listAgentHostTools(db, orgId, harnessId);
       expect(stored.filter((tool) => tool.name.startsWith("hb-"))).toEqual([
         expect.objectContaining({
           name: "hb-configured",
@@ -956,7 +954,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       // A heartbeat reporting no host tools: none is usable, configured paths stay.
       expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: [] })).status).toBe(200);
       expect(
-        (await listHarnessHostTools(db, orgId, harnessId)).filter((tool) =>
+        (await listAgentHostTools(db, orgId, harnessId)).filter((tool) =>
           tool.name.startsWith("hb-"),
         ),
       ).toEqual([
@@ -984,7 +982,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(
         await installInstallable(harnessId, { name: "@omniralph/graph", version: " " }),
       ).toEqual({ ok: true });
-      const [job] = await db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
+      const [job] = await db.select().from(jobs).where(eq(jobs.targetAgentId, harnessId));
       expect(job!.payload).toEqual({ name: "@omniralph/graph" });
     });
 
@@ -1000,7 +998,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await installInstallable(randomUUID(), { name: "@omniralph/x" })).toMatchObject({
         ok: false,
       });
-      await revokeHarness(harnessId);
+      await revokeAgent(harnessId);
       expect(await installInstallable(harnessId, { name: "@omniralph/x" })).toMatchObject({
         ok: false,
       });
@@ -1011,7 +1009,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       });
       const none = await db.select().from(jobs).where(eq(jobs.type, "install"));
       expect(
-        none.every((j) => j.targetHarnessId !== harnessId && j.targetHarnessId !== fresh.harnessId),
+        none.every((j) => j.targetAgentId !== harnessId && j.targetAgentId !== fresh.harnessId),
       ).toBe(true);
     });
 
@@ -1020,7 +1018,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const { harnessId } = await enrolledHarness();
       const enqueue = (input: { harnessId?: string; name: string; version?: string }) =>
         enqueueInstall(db, dispatcher, { organizationId: orgId, harnessId, ...input });
-      const installJobs = () => db.select().from(jobs).where(eq(jobs.targetHarnessId, harnessId));
+      const installJobs = () => db.select().from(jobs).where(eq(jobs.targetAgentId, harnessId));
 
       const pinned = await enqueue({ name: "@omniralph/fixture", version: "1.2.0" });
       const latest = await enqueue({ name: "@omniralph/fixture" });
@@ -1031,10 +1029,10 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         created: false,
       });
       expect(
-        (await installJobs()).map(({ type, taskType, targetHarnessId, dedupeKey }) => ({
+        (await installJobs()).map(({ type, taskType, targetAgentId, dedupeKey }) => ({
           type,
           taskType,
-          targetHarnessId,
+          targetAgentId,
           dedupeKey,
         })),
       ).toEqual(
@@ -1042,13 +1040,13 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
           {
             type: "install",
             taskType: "system",
-            targetHarnessId: harnessId,
+            targetAgentId: harnessId,
             dedupeKey: `install:${harnessId}:@omniralph/fixture@1.2.0`,
           },
           {
             type: "install",
             taskType: "system",
-            targetHarnessId: harnessId,
+            targetAgentId: harnessId,
             dedupeKey: `install:${harnessId}:@omniralph/fixture@latest`,
           },
         ]),
@@ -1064,11 +1062,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
       const [foreign] = await db
-        .insert(harnesses)
+        .insert(agents)
         .values({ organizationId: otherOrg!.id, name: "foreign" })
         .returning();
       const revoked = await enrolledHarness();
-      await revokeHarness(revoked.harnessId);
+      await revokeAgent(revoked.harnessId);
       for (const id of [randomUUID(), revoked.harnessId, foreign!.id]) {
         expect(await enqueue({ harnessId: id, name: "@omniralph/x" })).toEqual({
           result: "unknown_harness",
@@ -1077,7 +1075,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await installJobs()).toHaveLength(2);
       const stray = await db.select().from(jobs).where(eq(jobs.type, "install"));
       expect(
-        stray.some((job) => [revoked.harnessId, foreign!.id].includes(job.targetHarnessId ?? "")),
+        stray.some((job) => [revoked.harnessId, foreign!.id].includes(job.targetAgentId ?? "")),
       ).toBe(false);
     });
   });
@@ -1112,7 +1110,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
           },
         ],
       });
-      const [stored] = (await listHarnessHostTools(db, orgId, harnessId)).filter(
+      const [stored] = (await listAgentHostTools(db, orgId, harnessId)).filter(
         (tool) => tool.name === "ui-semgrep",
       );
       expect(stored).toMatchObject({
@@ -1169,7 +1167,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await knownTools(accessToken)).toEqual([{ name: "ui-ruff", configuredPath: null }]);
 
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
-      await revokeHarness(harnessId);
+      await revokeAgent(harnessId);
       expect(await setHostToolPath(harnessId, id, "/usr/bin/ruff")).toEqual({
         ok: false,
         error: missing,
@@ -1192,7 +1190,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             type: "review.run",
             taskType: "review",
             status: "running",
-            harnessId,
+            agentId: harnessId,
             deliveryCount: 1,
           },
           {
@@ -1200,7 +1198,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             type: "review.run",
             taskType: "review",
             status: "running",
-            harnessId,
+            agentId: harnessId,
             deliveryCount: 3,
           },
           {
@@ -1208,7 +1206,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             type: "review.run",
             taskType: "review",
             status: "running",
-            harnessId,
+            agentId: harnessId,
             deliveryCount: 1,
             cancelRequested: true,
           },
@@ -1218,7 +1216,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             taskType: "review",
             status: "queued",
             repositoryId: repoA,
-            targetHarnessId: harnessId,
+            targetAgentId: harnessId,
           },
           {
             organizationId: orgId,
@@ -1226,7 +1224,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             taskType: "system",
             status: "queued",
             repositoryId: repoA,
-            targetHarnessId: harnessId,
+            targetAgentId: harnessId,
           },
         ])
         .returning();
@@ -1236,7 +1234,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
         scopes: ["credentials:read"],
       });
 
-      expect(await revokeHarness(harnessId)).toEqual({ ok: true });
+      expect(await revokeAgent(harnessId)).toEqual({ ok: true });
 
       // Its unexpired access token, job token and refresh token are rejected right away.
       expect((await sendHeartbeat(accessToken)).status).toBe(401);
@@ -1251,17 +1249,17 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect((await token(post("token", { refreshToken }))).status).toBe(401);
       const tokens = await db
         .select()
-        .from(harnessRefreshTokens)
-        .where(eq(harnessRefreshTokens.harnessId, harnessId));
+        .from(agentRefreshTokens)
+        .where(eq(agentRefreshTokens.agentId, harnessId));
       expect(tokens.every((t) => t.revokedAt !== null)).toBe(true);
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness!.revokedAt).not.toBeNull();
 
       // Running jobs fail as retryable: back to queued for another harness to pick up.
       expect(await jobRow(running!.id)).toMatchObject({
         status: "queued",
-        harnessId: null,
-        error: "Harness revoked",
+        agentId: null,
+        error: "Agent revoked",
       });
       expect(await jobRow(lastDelivery!.id)).toMatchObject({ status: "failed" });
       expect(await jobRow(canceling!.id)).toMatchObject({ status: "canceled" });
@@ -1269,15 +1267,15 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       // Jobs only it could claim are redispatched (to any harness now) or skipped.
       expect(await jobRow(queuedForIt!.id)).toMatchObject({
         status: "queued",
-        targetHarnessId: null,
+        targetAgentId: null,
       });
       expect(await jobRow(syncForIt!.id)).toMatchObject({ status: "skipped" });
 
       // Pins removed; audited.
       expect(
-        await db.select().from(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId)),
+        await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, harnessId)),
       ).toEqual([]);
-      const [audit] = await listHarnessAudit(db, { harnessId, event: "revoke" });
+      const [audit] = await listAgentAudit(db, { agentId: harnessId, event: "revoke" });
       expect(audit!.detail).toMatchObject({
         revokedBy: adminId,
         requeuedJobIds: [running!.id],
@@ -1288,7 +1286,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
       // A revoked harness can't be configured or pinned.
       expect(
-        await updateHarnessConfig(harnessId, { maxConcurrency: 2, poolLimits: {} }),
+        await updateAgentConfig(harnessId, { maxConcurrency: 2, poolLimits: {} }),
       ).toMatchObject({ ok: false });
       expect(await pinRepository(harnessId, repoB)).toMatchObject({ ok: false });
     });
@@ -1296,11 +1294,11 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("is admin-only and reports unknown harnesses", async () => {
       const { harnessId } = await enrolledHarness();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await revokeHarness(harnessId)).toMatchObject({ ok: false });
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(await revokeAgent(harnessId)).toMatchObject({ ok: false });
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness!.revokedAt).toBeNull();
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
-      expect(await revokeHarness(randomUUID())).toMatchObject({ ok: false });
+      expect(await revokeAgent(randomUUID())).toMatchObject({ ok: false });
     });
   });
 
@@ -1315,7 +1313,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
           type: "review.run",
           taskType: "review",
           status: "running",
-          harnessId,
+          agentId: harnessId,
           deliveryCount: 1,
         })
         .returning();
@@ -1323,17 +1321,17 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       expect(await deleteHarness(harnessId)).toEqual({ ok: true });
 
       expect((await sendHeartbeat(accessToken)).status).toBe(401);
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness!.revokedAt).not.toBeNull();
       expect(harness!.deletedAt).not.toBeNull();
-      expect(await jobRow(running!.id)).toMatchObject({ status: "queued", harnessId: null });
+      expect(await jobRow(running!.id)).toMatchObject({ status: "queued", agentId: null });
       expect(
-        await db.select().from(harnessRepoPins).where(eq(harnessRepoPins.harnessId, harnessId)),
+        await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, harnessId)),
       ).toEqual([]);
-      expect((await listHarnessOverview(db, orgId)).map((a) => a.id)).not.toContain(harnessId);
-      expect(await getHarnessOverview(db, orgId, harnessId)).toBeNull();
-      expect(await listHarnessAudit(db, { harnessId, event: "revoke" })).toHaveLength(1);
-      const [audit] = await listHarnessAudit(db, { harnessId, event: "delete" });
+      expect((await listAgentOverview(db, orgId)).map((a) => a.id)).not.toContain(harnessId);
+      expect(await getAgentOverview(db, orgId, harnessId)).toBeNull();
+      expect(await listAgentAudit(db, { agentId: harnessId, event: "revoke" })).toHaveLength(1);
+      const [audit] = await listAgentAudit(db, { agentId: harnessId, event: "delete" });
       expect(audit!.detail).toEqual({ deletedBy: adminId });
 
       // Gone: it can't be deleted or revoked again.
@@ -1342,20 +1340,20 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
 
     it("deletes an already revoked harness without revoking it again", async () => {
       const { harnessId } = await enrolledHarness();
-      expect(await revokeHarness(harnessId)).toEqual({ ok: true });
-      const [before] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      expect(await revokeAgent(harnessId)).toEqual({ ok: true });
+      const [before] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(await deleteHarness(harnessId)).toEqual({ ok: true });
-      const [after] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [after] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(after!.revokedAt).toEqual(before!.revokedAt);
       expect(after!.deletedAt).not.toBeNull();
-      expect(await listHarnessAudit(db, { harnessId, event: "revoke" })).toHaveLength(1);
+      expect(await listAgentAudit(db, { agentId: harnessId, event: "revoke" })).toHaveLength(1);
     });
 
     it("is admin-only and reports unknown harnesses", async () => {
       const { harnessId } = await enrolledHarness();
       state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
       expect(await deleteHarness(harnessId)).toMatchObject({ ok: false });
-      const [harness] = await db.select().from(harnesses).where(eq(harnesses.id, harnessId));
+      const [harness] = await db.select().from(agents).where(eq(agents.id, harnessId));
       expect(harness).toMatchObject({ revokedAt: null, deletedAt: null });
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       expect(await deleteHarness(randomUUID())).toMatchObject({ ok: false });
@@ -1366,14 +1364,18 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
     it("lists the 50 most recent events, newest first", async () => {
       const { harnessId } = await enrolledHarness();
       for (let i = 0; i < 60; i++) {
-        await writeHarnessAudit(db, { harnessId, event: "credential_issued", detail: { i } });
+        await writeAgentAudit(db, {
+          agentId: harnessId,
+          event: "credential_issued",
+          detail: { i },
+        });
       }
-      await writeHarnessAudit(db, { harnessId, event: "refresh_reuse" });
-      const recent = await listRecentHarnessAudit(db, harnessId, 50);
+      await writeAgentAudit(db, { agentId: harnessId, event: "refresh_reuse" });
+      const recent = await listRecentAgentAudit(db, harnessId, 50);
       expect(recent).toHaveLength(50);
       expect(recent[0]!.event).toBe("refresh_reuse");
       expect(recent[1]!.detail).toEqual({ i: 59 });
-      expect(recent.every((e) => e.harnessId === harnessId)).toBe(true);
+      expect(recent.every((e) => e.agentId === harnessId)).toBe(true);
     });
   });
 
@@ -1394,14 +1396,14 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
             type: "review.run",
             taskType: "review",
             status: "running",
-            harnessId,
+            agentId: harnessId,
           },
           {
             organizationId: orgId,
             type: "review.run",
             taskType: "review",
             status: "completed",
-            harnessId,
+            agentId: harnessId,
           },
         ])
         .returning();
@@ -1458,7 +1460,7 @@ describe.skipIf(!databaseAvailable)("harnesses and jobs pages: server actions", 
       const copies = await db
         .select()
         .from(jobs)
-        .where(and(eq(jobs.targetHarnessId, harnessId), eq(jobs.status, "queued")));
+        .where(and(eq(jobs.targetAgentId, harnessId), eq(jobs.status, "queued")));
       expect(copies).toHaveLength(1);
       const failed = await jobRow(installed.jobId);
       expect(copies[0]).toMatchObject({

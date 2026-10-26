@@ -10,10 +10,10 @@ const state = vi.hoisted(() => ({
   now: new Date("2026-10-09T12:00:00Z"),
 }));
 vi.mock("@omniralph/db", () => ({
-  TRACK_LATEST_HARNESS_VERSION: "latest",
-  getDesiredHarnessVersion: async () => state.desired,
-  getLatestHarnessVersionCheck: async () => state.check,
-  setLatestHarnessVersionCheck: async (
+  TRACK_LATEST_AGENT_VERSION: "latest",
+  getDesiredAgentVersion: async () => state.desired,
+  getLatestAgentVersionCheck: async () => state.check,
+  setLatestAgentVersionCheck: async (
     _db: unknown,
     _organizationId: string,
     check: { version: string | null; error: string | null },

@@ -1,4 +1,4 @@
-import { getJobForHarness } from "@omniralph/db";
+import { getJobForAgent } from "@omniralph/db";
 import { MAX_ATTACHMENT_BYTES, RalphAttachmentId } from "@omniralph/shared";
 import { requireJob } from "@/lib/harness-auth/verify";
 import { jobIdParam, notFound } from "@/lib/harness-api/jobs";
@@ -54,7 +54,7 @@ async function get(req: Request, ctx: AttachmentRouteContext): Promise<Response>
   const attachmentId = RalphAttachmentId.safeParse((await ctx.params).attachmentId);
   if (!attachmentId.success) return notFound();
   const db = getDb();
-  const job = await getJobForHarness(db, jobId, principal.harnessId);
+  const job = await getJobForAgent(db, jobId, principal.harnessId);
   if (!job) return notFound();
   const attachment = await runAttachment(db, job, attachmentId.data);
   if (!attachment) return notFound();

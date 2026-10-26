@@ -137,7 +137,7 @@ function configValues(draft: ConfigDraft): Record<string, SettingValue> {
   };
 }
 
-/** What `updateHarnessConfig` saves for the draft. */
+/** What `updateAgentConfig` saves for the draft. */
 export function configInput(draft: ConfigDraft): HarnessConfigForm {
   const values = configValues(draft);
   return {
@@ -391,7 +391,7 @@ function versionValue(draft: VersionDraft): string | null {
 }
 
 /**
- * What `setHarnessDesiredVersion` saves for the draft ("" clears the override), or an error
+ * What `setAgentDesiredVersion` saves for the draft ("" clears the override), or an error
  * when the override isn't a version.
  */
 export function versionInput(draft: VersionDraft): { version: string } | { error: string } {

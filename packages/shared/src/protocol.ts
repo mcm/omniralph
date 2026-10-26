@@ -19,7 +19,7 @@ import { RunSpec } from "./run-spec.js";
 export {
   AGENT_MIN_VERSION,
   AGENT_PACKAGE,
-  harnessVersionAtLeast,
+  agentVersionAtLeast,
   SEMVER_PATTERN,
 } from "./agent-version.js";
 export { JobRepository, JobToken } from "./job-basics.js";

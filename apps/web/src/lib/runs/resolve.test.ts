@@ -1,7 +1,7 @@
 import type * as Db from "@omniralph/db";
 import {
   CODING_TASKS_MIN_HARNESS_VERSION,
-  harnessVersionAtLeast,
+  agentVersionAtLeast,
   QUERY_TASKS_MIN_HARNESS_VERSION,
   REVIEW_TASKS_MIN_HARNESS_VERSION,
   SETUP_COMMANDS_MIN_HARNESS_VERSION,
@@ -461,7 +461,7 @@ describe("runSpecJobInput", () => {
       taskId: "builtin:reply-to-finding",
       payload,
       repositoryId: REPO_ID,
-      minHarnessVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
+      minAgentVersion: QUERY_TASKS_MIN_HARNESS_VERSION,
       requiredInstallables: [],
       requiredHostTools: [],
     });
@@ -482,29 +482,29 @@ describe("runSpecJobInput", () => {
 
   it("requires a harness with the review lifecycle for review tasks", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "review" });
-    expect(runSpecJobInput(task, payload).minHarnessVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(REVIEW_TASKS_MIN_HARNESS_VERSION);
   });
 
   it("requires a harness with the coding lifecycle for coding tasks", () => {
     const task = TaskDefinition.parse({ ...taskInput, taskType: "coding" });
-    expect(runSpecJobInput(task, payload).minHarnessVersion).toBe(CODING_TASKS_MIN_HARNESS_VERSION);
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(CODING_TASKS_MIN_HARNESS_VERSION);
     // Coding runs run a coding task's setup commands too: the higher minimum wins.
     expect(
-      harnessVersionAtLeast(CODING_TASKS_MIN_HARNESS_VERSION, SETUP_COMMANDS_MIN_HARNESS_VERSION),
+      agentVersionAtLeast(CODING_TASKS_MIN_HARNESS_VERSION, SETUP_COMMANDS_MIN_HARNESS_VERSION),
     ).toBe(true);
     const withSetup = TaskDefinition.parse({
       ...taskInput,
       taskType: "coding",
       setupCommands: [{ name: "deps", command: "pnpm install" }],
     });
-    expect(runSpecJobInput(withSetup, payload).minHarnessVersion).toBe(
+    expect(runSpecJobInput(withSetup, payload).minAgentVersion).toBe(
       CODING_TASKS_MIN_HARNESS_VERSION,
     );
   });
 
   it("requires coding runs to wait for a harness release after 0.10.0", () => {
     // 0.10.0 predates the coding lifecycle and fails coding runs as an unsupported task type.
-    expect(harnessVersionAtLeast("0.10.0", CODING_TASKS_MIN_HARNESS_VERSION)).toBe(false);
+    expect(agentVersionAtLeast("0.10.0", CODING_TASKS_MIN_HARNESS_VERSION)).toBe(false);
   });
 
   it("requires a harness that runs setup and teardown commands when the task has any", () => {
@@ -512,7 +512,7 @@ describe("runSpecJobInput", () => {
       ...taskInput,
       setupCommands: [{ name: "lint", command: "semgrep --json ." }],
     });
-    expect(runSpecJobInput(setup, payload).minHarnessVersion).toBe(
+    expect(runSpecJobInput(setup, payload).minAgentVersion).toBe(
       SETUP_COMMANDS_MIN_HARNESS_VERSION,
     );
     const teardown = TaskDefinition.parse({
@@ -520,7 +520,7 @@ describe("runSpecJobInput", () => {
       taskType: "review",
       teardownCommands: [{ name: "clean", command: "rm -rf .cache" }],
     });
-    expect(runSpecJobInput(teardown, payload).minHarnessVersion).toBe(
+    expect(runSpecJobInput(teardown, payload).minAgentVersion).toBe(
       SETUP_COMMANDS_MIN_HARNESS_VERSION,
     );
   });

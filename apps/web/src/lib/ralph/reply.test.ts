@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
-  harnesses,
+  agents,
   completeJob,
   connectRepository,
   closeDb,
@@ -141,11 +141,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   beforeEach(async () => {
     await db.delete(jobs);
     await db.delete(ralphRuns);
-    await db.delete(harnesses);
+    await db.delete(agents);
     [{ id: agentA }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([{ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] }])
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
     linear = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
@@ -180,10 +180,10 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -199,13 +199,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     if ("jobError" in outcome) {
       await failJob(db, {
         jobId: job.id,
-        harnessId: agentA,
+        agentId: agentA,
         retryable: false,
         error: String(outcome.jobError),
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
     } else {
-      await completeJob(db, { jobId: job.id, harnessId: agentA, result: outcome });
+      await completeJob(db, { jobId: job.id, agentId: agentA, result: outcome });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
   }
@@ -333,16 +333,16 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     expect(job).toMatchObject({ type: "worktree.cleanup", taskType: "system" });
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
     await completeJob(db, {
       jobId: job.id,
-      harnessId: agentA,
+      agentId: agentA,
       result: {
         error: null,
         removedWorktree: true,
@@ -397,7 +397,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect((await getRun(db, run.id))?.status).toBe("stopped");
       const branch = await branchOf(run);
       const cleanup = await activeJob(run.id);
-      expect(cleanup.targetHarnessId).toBe(agentA);
+      expect(cleanup.targetAgentId).toBe(agentA);
       const responses = linear.bodies(run.linearAgentSessionId, "response").length;
       const cleaned = await cleanUp(run.id, { stashed: sha(7), stashes: [stashEntry(7)] });
       expect(cleaned).toMatchObject({
@@ -421,7 +421,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(resumed?.kind).toBe("guidance");
       expect(resumed?.advanced?.action).toBe("enqueued");
       expect(await laneCleanup(run)).toBeNull();
-      expect((await activeJob(run.id)).targetHarnessId).toBe(agentA);
+      expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
       const payload = await work(run.id);
       expect(payload).toMatchObject({ attempt: 1, guidance: ["Use the v2 API."], branch });
       expect(payload.story.linearIssueId).toBe(alpha.id);
@@ -915,7 +915,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         type: "worktree.exec",
         taskType: "system",
         taskId: null,
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
         dedupeKey: runDedupeKey(run.id),
       });
       const payload = await prepare(run.id, {});
@@ -957,11 +957,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const { run } = await manualEpic();
       await work(run.id, { commitSha: sha(7) });
       // The run's harness is only a mirror: the job follows the lane's.
-      await db.update(ralphRuns).set({ harnessId: null }).where(eq(ralphRuns.id, run.id));
+      await db.update(ralphRuns).set({ agentId: null }).where(eq(ralphRuns.id, run.id));
       await reply(run, "Run it");
       expect(await activeJob(run.id)).toMatchObject({
         type: "worktree.exec",
-        targetHarnessId: agentA,
+        targetAgentId: agentA,
       });
     });
 
@@ -1068,7 +1068,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
           expect(await activeJob(run.id)).toMatchObject({
             type: "worktree.exec",
             repositoryId: webId,
-            targetHarnessId: agentA,
+            targetAgentId: agentA,
           });
           const payload = await prepare(run.id, {});
           expect(payload).toMatchObject({

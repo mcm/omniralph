@@ -1,6 +1,6 @@
 /**
- * Harnesses and Jobs pages: the fleet overview, central harness configuration
- * (returned to the harness in its next heartbeat), the audit log and the job list.
+ * Agents and Jobs pages: the fleet overview, central agent configuration
+ * (returned to the agent in its next heartbeat), the audit log and the job list.
  */
 import { INSTALL_JOB_TYPE, REPO_SYNC_JOB_TYPE } from "@omniralph/shared";
 import {
@@ -20,18 +20,11 @@ import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { getDefaultMaxConcurrency } from "./app-settings.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import type { HarnessAuditEntry } from "./harness-auth.js";
+import type { AgentAuditEntry } from "./agent-auth.js";
 import type { Job, JobStatus } from "./jobs.js";
-import {
-  harnessAudit,
-  harnessRepoPins,
-  harnesses,
-  jobs,
-  repositories,
-  scmConnections,
-} from "./schema.js";
+import { agentAudit, agentRepoPins, agents, jobs, repositories, scmConnections } from "./schema.js";
 
-type HarnessRow = typeof harnesses.$inferSelect;
+type AgentRow = typeof agents.$inferSelect;
 
 /** The repository a job or pin refers to, with what's needed to link to it. */
 export interface RepositoryLink {
@@ -42,7 +35,7 @@ export interface RepositoryLink {
   baseUrl: string;
 }
 
-export interface HarnessJobSummary {
+export interface AgentJobSummary {
   id: string;
   type: string;
   taskType: Job["taskType"];
@@ -51,25 +44,25 @@ export interface HarnessJobSummary {
   repository: RepositoryLink | null;
 }
 
-export interface HarnessOverview extends HarnessRow {
-  /** Its configuration with the organization's defaults filled in (`effectiveHarnessConfig`). */
-  effective: EffectiveHarnessConfig;
+export interface AgentOverview extends AgentRow {
+  /** Its configuration with the organization's defaults filled in (`effectiveAgentConfig`). */
+  effective: EffectiveAgentConfig;
   /** The organization's defaults it inherits where its own values are null. */
-  defaults: HarnessDefaults;
-  runningJobs: HarnessJobSummary[];
+  defaults: AgentDefaults;
+  runningJobs: AgentJobSummary[];
   pinnedRepositories: RepositoryLink[];
 }
 
-/** The organization's harness defaults, for harnesses without their own values. */
-export interface HarnessDefaults {
+/** The organization's agent defaults, for agents without their own values. */
+export interface AgentDefaults {
   maxConcurrency: number;
 }
 
-/** What a harness runs: its own value where it has one, else the organization's default. */
-export interface EffectiveHarnessConfig {
+/** What an agent runs: its own value where it has one, else the organization's default. */
+export interface EffectiveAgentConfig {
   /**
    * Task types it may claim jobs of (`system` is always accepted): the ones it reports
-   * (`harnessAcceptedTaskTypes`).
+   * (`agentAcceptedTaskTypes`).
    */
   acceptedTaskTypes: TaskType[];
   maxConcurrency: number;
@@ -79,44 +72,44 @@ export interface EffectiveHarnessConfig {
  * The task types an agent runs, as it reported them (its local `acceptedTaskTypes`), in
  * `TASK_TYPES` order; every type until it reports any.
  */
-export function harnessAcceptedTaskTypes(
-  harness: Pick<HarnessRow, "reportedAcceptedTaskTypes">,
+export function agentAcceptedTaskTypes(
+  agent: Pick<AgentRow, "reportedAcceptedTaskTypes">,
 ): TaskType[] {
-  const reported = harness.reportedAcceptedTaskTypes;
+  const reported = agent.reportedAcceptedTaskTypes;
   return reported ? TASK_TYPES.filter((type) => reported.includes(type)) : [...TASK_TYPES];
 }
 
-/** The organization's harness defaults (`app_settings`, else the built-in ones). */
-export async function getHarnessDefaults(
+/** The organization's agent defaults (`app_settings`, else the built-in ones). */
+export async function getAgentDefaults(
   db: Database,
   organizationId: string,
-): Promise<HarnessDefaults> {
+): Promise<AgentDefaults> {
   return { maxConcurrency: await getDefaultMaxConcurrency(db, organizationId) };
 }
 
-/** A harness's effective configuration: each of its values when not null, else the default. */
-export function effectiveHarnessConfig(
-  harness: Pick<HarnessRow, "reportedAcceptedTaskTypes" | "maxConcurrency">,
-  defaults: HarnessDefaults,
-): EffectiveHarnessConfig {
+/** An agent's effective configuration: each of its values when not null, else the default. */
+export function effectiveAgentConfig(
+  agent: Pick<AgentRow, "reportedAcceptedTaskTypes" | "maxConcurrency">,
+  defaults: AgentDefaults,
+): EffectiveAgentConfig {
   return {
-    acceptedTaskTypes: harnessAcceptedTaskTypes(harness),
-    maxConcurrency: harness.maxConcurrency ?? defaults.maxConcurrency,
+    acceptedTaskTypes: agentAcceptedTaskTypes(agent),
+    maxConcurrency: agent.maxConcurrency ?? defaults.maxConcurrency,
   };
 }
 
 /**
- * A harness's effective configuration, reading its organization's defaults only when it
+ * An agent's effective configuration, reading its organization's defaults only when it
  * inherits something.
  */
-export async function resolveHarnessConfig(
+export async function resolveAgentConfig(
   db: Database,
-  harness: Pick<HarnessRow, "organizationId" | "reportedAcceptedTaskTypes" | "maxConcurrency">,
-): Promise<EffectiveHarnessConfig> {
+  agent: Pick<AgentRow, "organizationId" | "reportedAcceptedTaskTypes" | "maxConcurrency">,
+): Promise<EffectiveAgentConfig> {
   return {
-    acceptedTaskTypes: harnessAcceptedTaskTypes(harness),
+    acceptedTaskTypes: agentAcceptedTaskTypes(agent),
     maxConcurrency:
-      harness.maxConcurrency ?? (await getDefaultMaxConcurrency(db, harness.organizationId)),
+      agent.maxConcurrency ?? (await getDefaultMaxConcurrency(db, agent.organizationId)),
   };
 }
 
@@ -140,16 +133,16 @@ export function repositoryLink(row: {
 async function withJobsAndPins(
   db: Database,
   organizationId: string,
-  rows: HarnessRow[],
-): Promise<HarnessOverview[]> {
+  rows: AgentRow[],
+): Promise<AgentOverview[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const [defaults, running, pins] = await Promise.all([
-    getHarnessDefaults(db, organizationId),
+    getAgentDefaults(db, organizationId),
     db
       .select({
         id: jobs.id,
-        harnessId: jobs.harnessId,
+        agentId: jobs.agentId,
         type: jobs.type,
         taskType: jobs.taskType,
         status: jobs.status,
@@ -159,22 +152,22 @@ async function withJobsAndPins(
       .from(jobs)
       .leftJoin(repositories, eq(repositories.id, jobs.repositoryId))
       .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-      .where(and(inArray(jobs.harnessId, ids), eq(jobs.status, "running")))
+      .where(and(inArray(jobs.agentId, ids), eq(jobs.status, "running")))
       .orderBy(asc(jobs.startedAt)),
     db
-      .select({ harnessId: harnessRepoPins.harnessId, ...repositoryLinkColumns })
-      .from(harnessRepoPins)
-      .innerJoin(repositories, eq(repositories.id, harnessRepoPins.repositoryId))
+      .select({ agentId: agentRepoPins.agentId, ...repositoryLinkColumns })
+      .from(agentRepoPins)
+      .innerJoin(repositories, eq(repositories.id, agentRepoPins.repositoryId))
       .innerJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
-      .where(inArray(harnessRepoPins.harnessId, ids))
+      .where(inArray(agentRepoPins.agentId, ids))
       .orderBy(asc(repositories.fullPath)),
   ]);
   return rows.map((agent) => ({
     ...agent,
-    effective: effectiveHarnessConfig(agent, defaults),
+    effective: effectiveAgentConfig(agent, defaults),
     defaults,
     runningJobs: running
-      .filter((job) => job.harnessId === agent.id)
+      .filter((job) => job.agentId === agent.id)
       .map((job) => ({
         id: job.id,
         type: job.type,
@@ -184,89 +177,85 @@ async function withJobsAndPins(
         repository: repositoryLink(job),
       })),
     pinnedRepositories: pins
-      .filter((pin) => pin.harnessId === agent.id)
+      .filter((pin) => pin.agentId === agent.id)
       .map((pin) => repositoryLink(pin)!),
   }));
 }
 
 /**
- * The organization's harnesses (active first, then revoked; by name) with their
- * running jobs and pins. Deleted harnesses are left out.
+ * The organization's agents (active first, then revoked; by name) with their
+ * running jobs and pins. Deleted agents are left out.
  */
-export async function listHarnessOverview(
+export async function listAgentOverview(
   db: Database,
   organizationId: string,
-): Promise<HarnessOverview[]> {
+): Promise<AgentOverview[]> {
   const rows = await db
     .select()
-    .from(harnesses)
-    .where(and(eq(harnesses.organizationId, organizationId), isNull(harnesses.deletedAt)))
-    .orderBy(
-      asc(sql`${harnesses.revokedAt} is not null`),
-      asc(harnesses.name),
-      asc(harnesses.createdAt),
-    );
+    .from(agents)
+    .where(and(eq(agents.organizationId, organizationId), isNull(agents.deletedAt)))
+    .orderBy(asc(sql`${agents.revokedAt} is not null`), asc(agents.name), asc(agents.createdAt));
   return withJobsAndPins(db, organizationId, rows);
 }
 
-/** One of the organization's harnesses (null for unknown and deleted harnesses and other organizations'). */
-export async function getHarnessOverview(
+/** One of the organization's agents (null for unknown and deleted agents and other organizations'). */
+export async function getAgentOverview(
   db: Database,
   organizationId: string,
-  harnessId: string,
-): Promise<HarnessOverview | null> {
+  agentId: string,
+): Promise<AgentOverview | null> {
   const rows = await db
     .select()
-    .from(harnesses)
+    .from(agents)
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        eq(harnesses.id, harnessId),
-        isNull(harnesses.deletedAt),
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.deletedAt),
       ),
     );
   const [agent] = await withJobsAndPins(db, organizationId, rows);
   return agent ?? null;
 }
 
-/** A Claude model the organization's harnesses report, with the harnesses that can run it. */
+/** A Claude model the organization's agents report, with the agents that can run it. */
 export interface ReportedModelOption {
   value: string;
   displayName: string;
-  harnessIds: string[];
+  agentIds: string[];
 }
 
 /**
- * The de-duplicated models the organization's non-revoked harnesses (or those of
- * `harnessIds` among them) last reported, sorted by display name. A model's
- * display name is the first reported one, by harness name.
+ * The de-duplicated models the organization's non-revoked agents (or those of
+ * `agentIds` among them) last reported, sorted by display name. A model's
+ * display name is the first reported one, by agent name.
  */
 export async function listReportedModels(
   db: Database,
   organizationId: string,
-  options: { harnessIds?: readonly string[] } = {},
+  options: { agentIds?: readonly string[] } = {},
 ): Promise<ReportedModelOption[]> {
-  if (options.harnessIds?.length === 0) return [];
+  if (options.agentIds?.length === 0) return [];
   const rows = await db
-    .select({ id: harnesses.id, models: harnesses.reportedModels })
-    .from(harnesses)
+    .select({ id: agents.id, models: agents.reportedModels })
+    .from(agents)
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        isNull(harnesses.revokedAt),
-        isNull(harnesses.deletedAt),
-        options.harnessIds && inArray(harnesses.id, [...options.harnessIds]),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.revokedAt),
+        isNull(agents.deletedAt),
+        options.agentIds && inArray(agents.id, [...options.agentIds]),
       ),
     )
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+    .orderBy(asc(agents.name), asc(agents.createdAt));
   const byValue = new Map<string, ReportedModelOption>();
   for (const row of rows) {
     for (const model of row.models) {
       const option = byValue.get(model.value);
       if (!option) {
-        byValue.set(model.value, { ...model, harnessIds: [row.id] });
-      } else if (!option.harnessIds.includes(row.id)) {
-        option.harnessIds.push(row.id);
+        byValue.set(model.value, { ...model, agentIds: [row.id] });
+      } else if (!option.agentIds.includes(row.id)) {
+        option.agentIds.push(row.id);
       }
     }
   }
@@ -275,35 +264,32 @@ export async function listReportedModels(
   );
 }
 
-/** IDs of the organization's harnesses that aren't revoked or deleted, by name. */
-export async function listActiveHarnessIds(
-  db: Database,
-  organizationId: string,
-): Promise<string[]> {
+/** IDs of the organization's agents that aren't revoked or deleted, by name. */
+export async function listActiveAgentIds(db: Database, organizationId: string): Promise<string[]> {
   const rows = await db
-    .select({ id: harnesses.id })
-    .from(harnesses)
+    .select({ id: agents.id })
+    .from(agents)
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        isNull(harnesses.revokedAt),
-        isNull(harnesses.deletedAt),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.revokedAt),
+        isNull(agents.deletedAt),
       ),
     )
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+    .orderBy(asc(agents.name), asc(agents.createdAt));
   return rows.map((row) => row.id);
 }
 
-/** An installable the organization's harnesses report, with the harnesses that have it. */
+/** An installable the organization's agents report, with the agents that have it. */
 export interface ReportedInstallableOption {
   name: string;
-  harnessIds: string[];
+  agentIds: string[];
   /** Its MCP servers, from its latest completed install job (empty when none says). */
   mcpServers: string[];
 }
 
 /**
- * The installables the organization's non-revoked harnesses last reported, by name, with the
+ * The installables the organization's non-revoked agents last reported, by name, with the
  * MCP servers the latest completed install of each said it provides.
  */
 export async function listReportedInstallables(
@@ -311,22 +297,22 @@ export async function listReportedInstallables(
   organizationId: string,
 ): Promise<ReportedInstallableOption[]> {
   const rows = await db
-    .select({ id: harnesses.id, installables: harnesses.reportedInstallables })
-    .from(harnesses)
+    .select({ id: agents.id, installables: agents.reportedInstallables })
+    .from(agents)
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        isNull(harnesses.revokedAt),
-        isNull(harnesses.deletedAt),
+        eq(agents.organizationId, organizationId),
+        isNull(agents.revokedAt),
+        isNull(agents.deletedAt),
       ),
     )
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+    .orderBy(asc(agents.name), asc(agents.createdAt));
   const byName = new Map<string, ReportedInstallableOption>();
   for (const row of rows) {
     for (const { name } of row.installables) {
       const option = byName.get(name);
-      if (!option) byName.set(name, { name, harnessIds: [row.id], mcpServers: [] });
-      else if (!option.harnessIds.includes(row.id)) option.harnessIds.push(row.id);
+      if (!option) byName.set(name, { name, agentIds: [row.id], mcpServers: [] });
+      else if (!option.agentIds.includes(row.id)) option.agentIds.push(row.id);
     }
   }
   if (byName.size === 0) return [];
@@ -358,40 +344,40 @@ export async function listReportedInstallables(
 }
 
 /**
- * The harnesses that may run a repository's coding jobs: its active pinned harnesses, else every
- * harness of the organization that accepts coding (the task types it reports).
- * Revoked and deleted harnesses are left out (pins only to those count as none). `pinned` says
+ * The agents that may run a repository's coding jobs: its active pinned agents, else every
+ * agent of the organization that accepts coding (the task types it reports).
+ * Revoked and deleted agents are left out (pins only to those count as none). `pinned` says
  * which of the two the IDs are.
  */
-export async function listRepositoryCodingHarnessIds(
+export async function listRepositoryCodingAgentIds(
   db: Database,
   organizationId: string,
   repositoryId: string,
-): Promise<{ pinned: boolean; harnessIds: string[] }> {
+): Promise<{ pinned: boolean; agentIds: string[] }> {
   const active = and(
-    eq(harnesses.organizationId, organizationId),
-    isNull(harnesses.revokedAt),
-    isNull(harnesses.deletedAt),
+    eq(agents.organizationId, organizationId),
+    isNull(agents.revokedAt),
+    isNull(agents.deletedAt),
   );
   const pinned = await db
-    .select({ id: harnesses.id })
-    .from(harnessRepoPins)
-    .innerJoin(harnesses, eq(harnesses.id, harnessRepoPins.harnessId))
-    .where(and(eq(harnessRepoPins.repositoryId, repositoryId), active))
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
-  if (pinned.length > 0) return { pinned: true, harnessIds: pinned.map((r) => r.id) };
+    .select({ id: agents.id })
+    .from(agentRepoPins)
+    .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+    .where(and(eq(agentRepoPins.repositoryId, repositoryId), active))
+    .orderBy(asc(agents.name), asc(agents.createdAt));
+  if (pinned.length > 0) return { pinned: true, agentIds: pinned.map((r) => r.id) };
   const rows = await db
-    .select({ id: harnesses.id, reportedAcceptedTaskTypes: harnesses.reportedAcceptedTaskTypes })
-    .from(harnesses)
+    .select({ id: agents.id, reportedAcceptedTaskTypes: agents.reportedAcceptedTaskTypes })
+    .from(agents)
     .where(active)
-    .orderBy(asc(harnesses.name), asc(harnesses.createdAt));
+    .orderBy(asc(agents.name), asc(agents.createdAt));
   return {
     pinned: false,
-    harnessIds: rows.filter((r) => harnessAcceptedTaskTypes(r).includes("coding")).map((r) => r.id),
+    agentIds: rows.filter((r) => agentAcceptedTaskTypes(r).includes("coding")).map((r) => r.id),
   };
 }
 
-export interface HarnessConfigInput {
+export interface AgentConfigInput {
   /** Null inherits the organization's default. */
   maxConcurrency: number | null;
   /** Per-pool concurrency limits; pools left out use the default. */
@@ -399,27 +385,27 @@ export interface HarnessConfigInput {
 }
 
 /**
- * Updates a harness's central configuration. The harness picks it up from its
- * next heartbeat response. Returns null for unknown or revoked harnesses and
- * harnesses of another organization.
+ * Updates an agent's central configuration. The agent picks it up from its
+ * next heartbeat response. Returns null for unknown or revoked agents and
+ * agents of another organization.
  */
-export async function updateHarnessConfig(
+export async function updateAgentConfig(
   db: Database,
   organizationId: string,
-  harnessId: string,
-  input: HarnessConfigInput,
-): Promise<HarnessRow | null> {
+  agentId: string,
+  input: AgentConfigInput,
+): Promise<AgentRow | null> {
   const [row] = await db
-    .update(harnesses)
+    .update(agents)
     .set({
       maxConcurrency: input.maxConcurrency,
       poolLimits: input.poolLimits,
     })
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        eq(harnesses.id, harnessId),
-        isNull(harnesses.revokedAt),
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
       ),
     )
     .returning();
@@ -427,33 +413,33 @@ export async function updateHarnessConfig(
   return row ?? null;
 }
 
-/** Records a live `agent` change for the harness. */
-function recordAgentChange(db: Database, harness: { id: string; organizationId: string }): void {
+/** Records a live `agent` change for the agent. */
+function recordAgentChange(db: Database, agent: { id: string; organizationId: string }): void {
   recordChange(db, {
     resource: "agent",
-    ids: [harness.id],
-    organizationId: harness.organizationId,
+    ids: [agent.id],
+    organizationId: agent.organizationId,
   });
 }
 
 /**
- * Sets (or, with null, clears) a harness's desired-version override. Returns
- * null for unknown or revoked harnesses and harnesses of another organization.
+ * Sets (or, with null, clears) an agent's desired-version override. Returns
+ * null for unknown or revoked agents and agents of another organization.
  */
-export async function setHarnessDesiredVersion(
+export async function setAgentDesiredVersion(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   version: string | null,
-): Promise<HarnessRow | null> {
+): Promise<AgentRow | null> {
   const [row] = await db
-    .update(harnesses)
+    .update(agents)
     .set({ desiredVersion: version })
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        eq(harnesses.id, harnessId),
-        isNull(harnesses.revokedAt),
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
       ),
     )
     .returning();
@@ -462,20 +448,20 @@ export async function setHarnessDesiredVersion(
 }
 
 /**
- * Asks a harness to update to `version` now (an admin's "Update now"), replacing
- * any request it hasn't acted on yet. The harness gets it with its next heartbeat
+ * Asks an agent to update to `version` now (an admin's "Update now"), replacing
+ * any request it hasn't acted on yet. The agent gets it with its next heartbeat
  * and reports it handled, which clears it. Returns null for unknown or revoked
- * harnesses and harnesses of another organization.
+ * agents and agents of another organization.
  */
-export async function requestHarnessUpdate(
+export async function requestAgentUpdate(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   version: string,
   now: Date = new Date(),
-): Promise<HarnessRow | null> {
+): Promise<AgentRow | null> {
   const [row] = await db
-    .update(harnesses)
+    .update(agents)
     .set({
       updateRequestId: sql`gen_random_uuid()`,
       updateRequestVersion: version,
@@ -483,9 +469,9 @@ export async function requestHarnessUpdate(
     })
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        eq(harnesses.id, harnessId),
-        isNull(harnesses.revokedAt),
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNull(agents.revokedAt),
       ),
     )
     .returning();
@@ -494,68 +480,68 @@ export async function requestHarnessUpdate(
 }
 
 /**
- * Soft-deletes a revoked harness: it's hidden from the Harnesses pages from then on.
- * Returns false for unknown, active or already deleted harnesses and harnesses of
+ * Soft-deletes a revoked agent: it's hidden from the Agents pages from then on.
+ * Returns false for unknown, active or already deleted agents and agents of
  * another organization.
  */
-export async function markHarnessDeleted(
+export async function markAgentDeleted(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
   const rows = await db
-    .update(harnesses)
+    .update(agents)
     .set({ deletedAt: now })
     .where(
       and(
-        eq(harnesses.organizationId, organizationId),
-        eq(harnesses.id, harnessId),
-        isNotNull(harnesses.revokedAt),
-        isNull(harnesses.deletedAt),
+        eq(agents.organizationId, organizationId),
+        eq(agents.id, agentId),
+        isNotNull(agents.revokedAt),
+        isNull(agents.deletedAt),
       ),
     )
-    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+    .returning({ id: agents.id, organizationId: agents.organizationId });
   for (const row of rows) recordAgentChange(db, row);
   return rows.length > 0;
 }
 
-/** A harness's most recent audit events, newest first. */
-export async function listRecentHarnessAudit(
+/** An agent's most recent audit events, newest first. */
+export async function listRecentAgentAudit(
   db: Database,
-  harnessId: string,
+  agentId: string,
   limit = 50,
-): Promise<HarnessAuditEntry[]> {
+): Promise<AgentAuditEntry[]> {
   return db
     .select()
-    .from(harnessAudit)
-    .where(eq(harnessAudit.harnessId, harnessId))
-    .orderBy(desc(harnessAudit.createdAt), desc(harnessAudit.id))
+    .from(agentAudit)
+    .where(eq(agentAudit.agentId, agentId))
+    .orderBy(desc(agentAudit.createdAt), desc(agentAudit.id))
     .limit(limit);
 }
 
-/** An `install` job targeted at a harness, for its detail page. */
-export interface HarnessInstallJob {
+/** An `install` job targeted at an agent, for its detail page. */
+export interface AgentInstallJob {
   id: string;
   status: JobStatus;
   /** The payload's package name and version (null: `latest`). */
   name: string | null;
   version: string | null;
-  /** The version the harness installed, from the job's result. */
+  /** The version the agent installed, from the job's result. */
   installedVersion: string | null;
   error: string | null;
   createdAt: Date;
   finishedAt: Date | null;
 }
 
-/** The `install` jobs targeted at a harness of the organization since `since`, newest first. */
-export async function listHarnessInstallJobs(
+/** The `install` jobs targeted at an agent of the organization since `since`, newest first. */
+export async function listAgentInstallJobs(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   since: Date,
   limit = 50,
-): Promise<HarnessInstallJob[]> {
+): Promise<AgentInstallJob[]> {
   const rows = await db
     .select({
       id: jobs.id,
@@ -570,7 +556,7 @@ export async function listHarnessInstallJobs(
     .where(
       and(
         eq(jobs.organizationId, organizationId),
-        eq(jobs.targetHarnessId, harnessId),
+        eq(jobs.targetAgentId, agentId),
         eq(jobs.type, INSTALL_JOB_TYPE),
         gte(jobs.createdAt, since),
       ),
@@ -590,8 +576,8 @@ export async function listHarnessInstallJobs(
   }));
 }
 
-/** The latest `repo.sync` job of a repository pinned to a harness, for its detail page. */
-export interface HarnessPinSyncJob {
+/** The latest `repo.sync` job of a repository pinned to an agent, for its detail page. */
+export interface AgentPinSyncJob {
   repositoryId: string;
   id: string;
   status: JobStatus;
@@ -601,15 +587,15 @@ export interface HarnessPinSyncJob {
 }
 
 /**
- * The latest `repo.sync` job targeted at a harness of the organization since `since`, per
- * repository (the sync pinning enqueues): what the harness's pinned repositories show.
+ * The latest `repo.sync` job targeted at an agent of the organization since `since`, per
+ * repository (the sync pinning enqueues): what the agent's pinned repositories show.
  */
-export async function listHarnessPinSyncJobs(
+export async function listAgentPinSyncJobs(
   db: Database,
   organizationId: string,
-  harnessId: string,
+  agentId: string,
   since: Date,
-): Promise<HarnessPinSyncJob[]> {
+): Promise<AgentPinSyncJob[]> {
   const rows = await db
     .selectDistinctOn([jobs.repositoryId], {
       repositoryId: jobs.repositoryId,
@@ -623,7 +609,7 @@ export async function listHarnessPinSyncJobs(
     .where(
       and(
         eq(jobs.organizationId, organizationId),
-        eq(jobs.targetHarnessId, harnessId),
+        eq(jobs.targetAgentId, agentId),
         eq(jobs.type, REPO_SYNC_JOB_TYPE),
         isNotNull(jobs.repositoryId),
         gte(jobs.createdAt, since),
@@ -689,15 +675,15 @@ async function selectJobs(
       cancelRequested: jobs.cancelRequested,
       error: jobs.error,
       payload: jobs.payload,
-      harnessId: harnesses.id,
-      harnessName: harnesses.name,
+      agentId: agents.id,
+      agentName: agents.name,
       createdAt: jobs.createdAt,
       startedAt: jobs.startedAt,
       finishedAt: jobs.finishedAt,
       ...repositoryLinkColumns,
     })
     .from(jobs)
-    .leftJoin(harnesses, eq(harnesses.id, jobs.harnessId))
+    .leftJoin(agents, eq(agents.id, jobs.agentId))
     .leftJoin(repositories, eq(repositories.id, jobs.repositoryId))
     .leftJoin(scmConnections, eq(scmConnections.id, repositories.connectionId))
     .where(where)
@@ -713,10 +699,7 @@ async function selectJobs(
     cancelRequested: row.cancelRequested,
     error: row.error,
     payload: row.payload,
-    agent:
-      row.harnessId && row.harnessName !== null
-        ? { id: row.harnessId, name: row.harnessName }
-        : null,
+    agent: row.agentId && row.agentName !== null ? { id: row.agentId, name: row.agentName } : null,
     repository: repositoryLink(row),
     createdAt: row.createdAt,
     startedAt: row.startedAt,
@@ -780,15 +763,12 @@ export async function findJobPage(
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Queued jobs only this harness may claim (`target_harness_id`: pinned and `repo.sync` jobs). */
-export async function listQueuedJobsTargetingHarness(
-  db: Database,
-  harnessId: string,
-): Promise<Job[]> {
+/** Queued jobs only this agent may claim (`target_agent_id`: pinned and `repo.sync` jobs). */
+export async function listQueuedJobsTargetingAgent(db: Database, agentId: string): Promise<Job[]> {
   return db
     .select()
     .from(jobs)
-    .where(and(eq(jobs.status, "queued"), eq(jobs.targetHarnessId, harnessId)))
+    .where(and(eq(jobs.status, "queued"), eq(jobs.targetAgentId, agentId)))
     .orderBy(asc(jobs.createdAt));
 }
 
@@ -797,51 +777,51 @@ export async function listQueuedJobsTargetingHarness(
  * recording a live `agent` change. False when it was already online, or is revoked,
  * deleted or unknown: a steady heartbeat records nothing.
  */
-export async function markHarnessLiveOnline(db: Database, harnessId: string): Promise<boolean> {
+export async function markAgentLiveOnline(db: Database, agentId: string): Promise<boolean> {
   const rows = await db
-    .update(harnesses)
+    .update(agents)
     .set({ liveOnline: true })
     .where(
       and(
-        eq(harnesses.id, harnessId),
-        eq(harnesses.liveOnline, false),
-        isNull(harnesses.revokedAt),
-        isNull(harnesses.deletedAt),
+        eq(agents.id, agentId),
+        eq(agents.liveOnline, false),
+        isNull(agents.revokedAt),
+        isNull(agents.deletedAt),
       ),
     )
-    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+    .returning({ id: agents.id, organizationId: agents.organizationId });
   for (const row of rows) recordAgentChange(db, row);
   return rows.length > 0;
 }
 
 /** The agents the live events last announced online, with their row's last heartbeat. */
-export async function listLiveOnlineHarnesses(
+export async function listLiveOnlineAgents(
   db: Database,
 ): Promise<{ id: string; organizationId: string; lastHeartbeatAt: Date | null }[]> {
   return db
     .select({
-      id: harnesses.id,
-      organizationId: harnesses.organizationId,
-      lastHeartbeatAt: harnesses.lastHeartbeatAt,
+      id: agents.id,
+      organizationId: agents.organizationId,
+      lastHeartbeatAt: agents.lastHeartbeatAt,
     })
-    .from(harnesses)
-    .where(eq(harnesses.liveOnline, true));
+    .from(agents)
+    .where(eq(agents.liveOnline, true));
 }
 
 /**
  * Announces agents offline (clears `live_online`), recording a live `agent` change for
  * each that was still online. Returns their IDs.
  */
-export async function markHarnessesLiveOffline(
+export async function markAgentsLiveOffline(
   db: Database,
-  harnessIds: readonly string[],
+  agentIds: readonly string[],
 ): Promise<string[]> {
-  if (harnessIds.length === 0) return [];
+  if (agentIds.length === 0) return [];
   const rows = await db
-    .update(harnesses)
+    .update(agents)
     .set({ liveOnline: false })
-    .where(and(inArray(harnesses.id, [...harnessIds]), eq(harnesses.liveOnline, true)))
-    .returning({ id: harnesses.id, organizationId: harnesses.organizationId });
+    .where(and(inArray(agents.id, [...agentIds]), eq(agents.liveOnline, true)))
+    .returning({ id: agents.id, organizationId: agents.organizationId });
   for (const row of rows) recordAgentChange(db, row);
   return rows.map((row) => row.id);
 }

@@ -242,7 +242,7 @@ function itemFields(
       const repository = job.repositoryId
         ? (references.repositories.get(job.repositoryId) ?? null)
         : null;
-      const agent = job.harnessId ? (references.agents.get(job.harnessId) ?? null) : null;
+      const agent = job.agentId ? (references.agents.get(job.agentId) ?? null) : null;
       const payloadName = job.payload.name;
       const context: AttemptLabelContext = {
         repository: repository?.fullPath ?? null,

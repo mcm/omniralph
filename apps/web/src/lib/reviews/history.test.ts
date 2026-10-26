@@ -147,7 +147,7 @@ describe("view mapping", () => {
         budget: 1,
         durationMs: null,
         model: "claude-opus-5-5",
-        harnessId: null,
+        agentId: null,
         skippedFiles: [{ path: "big.lock", reason: "excluded" }],
         summaryCommentId: null,
         summary: null,

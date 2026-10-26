@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import {
   connectionCredentials,
-  DESIRED_HARNESS_VERSION_KEY,
+  DESIRED_AGENT_VERSION_KEY,
   getAppSetting,
   getChatConnection,
   getChatPlaybookDefaults,
@@ -17,7 +17,7 @@ import {
   listOrganizationDomains,
   listPendingInvitationsForOrganization,
   listRepositoryOverview,
-  listRepositoryPinnedHarnessNames,
+  listRepositoryPinnedAgentNames,
   listRoutingRules,
   getOrganization,
   recordSettingsChange,
@@ -173,7 +173,7 @@ export function trackedRepositoryAgents(
     fields: { agents: { label: "Pinned agents" } },
     read: async (db) =>
       (await getRepository(db, repositoryId, organizationId))
-        ? { agents: await listRepositoryPinnedHarnessNames(db, repositoryId) }
+        ? { agents: await listRepositoryPinnedAgentNames(db, repositoryId) }
         : null,
   };
 }
@@ -447,7 +447,7 @@ export function trackedAgentDefaults(organizationId: string): TrackedSettings {
     read: async (db) => {
       const [maxConcurrency, version] = await Promise.all([
         getDefaultMaxConcurrency(db, organizationId),
-        getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY),
+        getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY),
       ]);
       return {
         maxConcurrency,

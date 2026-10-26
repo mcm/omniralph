@@ -1,6 +1,6 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { InvalidInputLinearError } from "@linear/sdk";
-import { harnesses, closeDb, createDb, jobs, type Database, organizations } from "@omniralph/db";
+import { agents, closeDb, createDb, jobs, type Database, organizations } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
 import type * as Tasks from "@omniralph/tasks";
 import type * as LinearClient from "@/lib/linear/client";
@@ -137,7 +137,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
     orgId = org!.id;
     state.db = db;
     const [harness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1", reportedAcceptedTaskTypes: ["query"] })
       .returning();
     harnessId = harness!.id;
@@ -168,7 +168,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
         taskType: "query",
         taskId,
         status: "running",
-        harnessId,
+        agentId: harnessId,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?" } } },
         ...values,
       })
@@ -348,7 +348,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
   it("reads only through the run's own organization's integration", async () => {
     const [other] = await db.insert(organizations).values({ name: "Globex" }).returning();
     const [otherHarness] = await db
-      .insert(harnesses)
+      .insert(agents)
       .values({ organizationId: other!.id, name: "globex-1", reportedAcceptedTaskTypes: ["query"] })
       .returning();
     const globex = new FakeLinearGateway();
@@ -372,7 +372,7 @@ describe.skipIf(!databaseAvailable)("GET /api/harness/runs/{id}/linear/*", () =>
         taskType: "query",
         taskId: "builtin:linear-reader",
         status: "running",
-        harnessId: otherHarness!.id,
+        agentId: otherHarness!.id,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?" } } },
       })
       .returning();

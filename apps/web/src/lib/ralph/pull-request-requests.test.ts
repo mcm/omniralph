@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  harnesses,
+  agents,
   completeJob,
   connectRepository,
   closeDb,
@@ -150,9 +150,9 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     await db.delete(jobs);
     await db.delete(ralphRuns);
     await db.delete(reviews);
-    await db.delete(harnesses);
+    await db.delete(agents);
     [{ id: agentA }] = (await db
-      .insert(harnesses)
+      .insert(agents)
       .values([
         {
           organizationId: orgId,
@@ -160,7 +160,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
           reportedAcceptedTaskTypes: ["query", "review", "coding"],
         },
       ])
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);
     linear = new FakeLinearGateway();
@@ -180,10 +180,10 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     expect(more).toEqual([]);
     const started = await claimJob(db, {
       organizationId: orgId,
-      harnessId: agentA,
+      agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      harnessVersion: CODING_TASKS_MIN_HARNESS_VERSION,
+      agentVersion: CODING_TASKS_MIN_HARNESS_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
@@ -192,7 +192,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
   }
 
   async function finish(job: Job, result: Record<string, unknown>): Promise<void> {
-    expect(await completeJob(db, { jobId: job.id, harnessId: agentA, result })).toEqual({
+    expect(await completeJob(db, { jobId: job.id, agentId: agentA, result })).toEqual({
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());

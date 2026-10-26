@@ -67,7 +67,7 @@ import {
 } from "./repositories.js";
 import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
 import {
-  harnesses,
+  agents,
   hiddenRefs,
   chatConnections,
   jobs,
@@ -94,7 +94,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   let orgId: string;
   let repoA: string;
   let repoB: string;
-  let harnessId: string;
+  let agentId: string;
   let session = 0;
 
   beforeAll(async () => {
@@ -130,10 +130,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         fullPath: "acme/a-web",
       })
     ).id;
-    [{ id: harnessId }] = (await db
-      .insert(harnesses)
+    [{ id: agentId }] = (await db
+      .insert(agents)
       .values({ organizationId: orgId, name: "coder-1" })
-      .returning({ id: harnesses.id })) as [{ id: string }];
+      .returning({ id: agents.id })) as [{ id: string }];
   }, 180_000);
 
   afterAll(async () => {
@@ -327,7 +327,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(run).toMatchObject({
       ...columns,
       status: "pending",
-      harnessId: null,
+      agentId: null,
       guidance: [],
       ignoreBlockers: false,
       progress: "",
@@ -591,7 +591,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     const updated = await updateRun(db, run.id, {
       status: "waiting",
       waitingOn,
-      harnessId,
+      agentId,
       ignoreBlockers: true,
       pendingElicitation: { kind: "repository", repositoryIds: ["r"] },
       iterations: 2,
@@ -599,7 +599,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(updated).toMatchObject({
       status: "waiting",
       waitingOn,
-      harnessId,
+      agentId,
       iterations: 2,
     });
     expect(updated!.updatedAt.getTime()).toBeGreaterThanOrEqual(run.updatedAt.getTime());
@@ -805,7 +805,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     ).run;
     const a2 = (await createRun(db, runInput())).run;
     const b1 = (await createRun(db, runInput({ repositoryId: repoB }))).run;
-    await updateRun(db, a1.id, { status: "completed", harnessId });
+    await updateRun(db, a1.id, { status: "completed", agentId });
     await updateLane(db, (await getMainLane(db, a1))!.id, {
       prNumber: 3,
       prUrl: "https://example.com/3",
@@ -835,7 +835,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       linearUrl: "https://linear.app/acme/issue/A-1",
       status: "completed",
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
-      agent: { id: harnessId, name: "coder-1" },
+      agent: { id: agentId, name: "coder-1" },
       prNumber: 3,
       stories: { total: 3, completed: 2 },
     });
@@ -860,7 +860,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
 
   it("loads a run's detail: repository, agent, stories in order and jobs newest first", async () => {
     const run = (await createRun(db, runInput({ linearTitle: "Epic" }))).run;
-    await updateRun(db, run.id, { harnessId, status: "running" });
+    await updateRun(db, run.id, { agentId, status: "running" });
     const stories = await upsertStories(db, run.id, [
       { linearIssueId: "d-1", identifier: "D-1", title: "One" },
       { linearIssueId: "d-2", identifier: "D-2", title: "Two" },
@@ -879,7 +879,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     });
     await db
       .update(jobs)
-      .set({ createdAt: new Date(Date.UTC(2026, 9, 1)), status: "completed", harnessId })
+      .set({ createdAt: new Date(Date.UTC(2026, 9, 1)), status: "completed", agentId })
       .where(eq(jobs.id, first.id));
     await updateStory(db, stories[0]!.id, { lastJobId: first.id, commitSha: "c".repeat(40) });
     // Another run's job isn't listed.
@@ -895,7 +895,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(detail).toMatchObject({
       run: { id: run.id, status: "running", linearTitle: "Epic" },
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
-      agent: { id: harnessId, name: "coder-1" },
+      agent: { id: agentId, name: "coder-1" },
     });
     expect(detail!.stories.map((s) => [s.identifier, s.commitSha, s.lastJobId])).toEqual([
       ["D-1", "c".repeat(40), first.id],
@@ -1150,14 +1150,14 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         branch: "b",
         baseBranch: "main",
       });
-      await updateLane(db, (await getLaneByRepository(db, previous.id, repoB))!.id, { harnessId });
+      await updateLane(db, (await getLaneByRepository(db, previous.id, repoB))!.id, { agentId });
       await updateRun(db, previous.id, { status: "stopped" });
 
       const next = (await createRun(db, runInput({ repositoryId: null }))).run;
       const copied = await copyLanes(db, previous.id, next.id, { exceptRepositoryId: repoA });
-      // The lane keeps its sticky harness.
-      expect(copied.map((l) => [l.runId, l.repositoryId, l.branch, l.harnessId])).toEqual([
-        [next.id, repoB, "b", harnessId],
+      // The lane keeps its sticky agent.
+      expect(copied.map((l) => [l.runId, l.repositoryId, l.branch, l.agentId])).toEqual([
+        [next.id, repoB, "b", agentId],
       ]);
       expect(await listLanes(db, previous.id)).toHaveLength(2);
     });
@@ -1224,14 +1224,14 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         const same = await moveToRepository(db, run.id, repoA, { branch: "x", baseBranch: "y" });
         expect(same).toMatchObject({ left: null, lane: { id: started!.lane.id, branch: "kept" } });
 
-        // A main lane missing from the run's repository is created on the run's sticky harness.
+        // A main lane missing from the run's repository is created on the run's sticky agent.
         const { run: bare } = await createRun(db, runInput({ branch: undefined }));
-        await updateRun(db, bare.id, { harnessId });
+        await updateRun(db, bare.id, { agentId });
         const created = await moveToRepository(db, bare.id, repoA, {
           branch: "b",
           baseBranch: "main",
         });
-        expect(created?.lane).toMatchObject({ repositoryId: repoA, harnessId });
+        expect(created?.lane).toMatchObject({ repositoryId: repoA, agentId });
 
         expect(
           await moveToRepository(db, "00000000-0000-4000-8000-000000000000", repoA, {

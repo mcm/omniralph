@@ -5,10 +5,10 @@ import type { Database } from "./client.js";
 import { appSettings } from "./schema.js";
 
 /**
- * The version every harness of the organization should run unless it has its own override: a
- * version, `latest` (`TRACK_LATEST_HARNESS_VERSION`: the package's `latest` on npm) or absent.
+ * The version every agent of the organization should run unless it has its own override: a
+ * version, `latest` (`TRACK_LATEST_AGENT_VERSION`: the package's `latest` on npm) or absent.
  */
-export const DESIRED_HARNESS_VERSION_KEY = "harness.desiredVersion";
+export const DESIRED_AGENT_VERSION_KEY = "agent.desiredVersion";
 
 export interface AppSetting<T> {
   value: T;
@@ -58,41 +58,41 @@ export async function setAppSetting(
 
 /** The settings section a key's save changes (live `settings` changes); others are internal. */
 const SETTING_SECTIONS: Record<string, "agent_defaults" | "connection" | undefined> = {
-  "harness.desiredVersion": "agent_defaults",
-  "harness.maxConcurrency": "agent_defaults",
+  "agent.desiredVersion": "agent_defaults",
+  "agent.maxConcurrency": "agent_defaults",
   "chat.playbooks": "connection",
 };
 
-/** The organization's desired harness version (possibly `latest`), or null when none is chosen. */
-export async function getDesiredHarnessVersion(
+/** The organization's desired agent version (possibly `latest`), or null when none is chosen. */
+export async function getDesiredAgentVersion(
   db: Database,
   organizationId: string,
 ): Promise<string | null> {
-  const setting = await getAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY);
+  const setting = await getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY);
   return typeof setting?.value === "string" ? setting.value : null;
 }
 
-/** Sets (or, with null, clears) the organization's desired harness version. */
-export async function setDesiredHarnessVersion(
+/** Sets (or, with null, clears) the organization's desired agent version. */
+export async function setDesiredAgentVersion(
   db: Database,
   organizationId: string,
   version: string | null,
   updatedBy: string | null,
 ): Promise<void> {
-  await setAppSetting(db, organizationId, DESIRED_HARNESS_VERSION_KEY, version, updatedBy);
+  await setAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY, version, updatedBy);
 }
 
-/** The organization's desired harness version when its harnesses follow the package's `latest` on npm. */
-export const TRACK_LATEST_HARNESS_VERSION = "latest";
+/** The organization's desired agent version when its agents follow the package's `latest` on npm. */
+export const TRACK_LATEST_AGENT_VERSION = "latest";
 
 /**
  * The `latest` version last read from npm for an organization that tracks it
  * (`{ version, error }`; `updatedAt` is when it was read). Kept in the database
- * so every control panel instance hands harnesses the same version.
+ * so every control panel instance hands agents the same version.
  */
-export const LATEST_HARNESS_VERSION_KEY = "harness.latestVersion";
+export const LATEST_AGENT_VERSION_KEY = "agent.latestVersion";
 
-export interface LatestHarnessVersionCheck {
+export interface LatestAgentVersionCheck {
   /** The last version read, kept when a later read failed; null when none was read yet. */
   version: string | null;
   /** Why the last read failed, or null. */
@@ -100,11 +100,11 @@ export interface LatestHarnessVersionCheck {
   checkedAt: Date;
 }
 
-export async function getLatestHarnessVersionCheck(
+export async function getLatestAgentVersionCheck(
   db: Database,
   organizationId: string,
-): Promise<LatestHarnessVersionCheck | null> {
-  const setting = await getAppSetting(db, organizationId, LATEST_HARNESS_VERSION_KEY);
+): Promise<LatestAgentVersionCheck | null> {
+  const setting = await getAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY);
   if (!setting || typeof setting.value !== "object" || setting.value === null) return null;
   const { version, error } = setting.value as { version?: unknown; error?: unknown };
   return {
@@ -115,12 +115,12 @@ export async function getLatestHarnessVersionCheck(
 }
 
 /** Records a read of npm's `latest` (now). */
-export async function setLatestHarnessVersionCheck(
+export async function setLatestAgentVersionCheck(
   db: Database,
   organizationId: string,
   check: { version: string | null; error: string | null },
 ): Promise<void> {
-  await setAppSetting(db, organizationId, LATEST_HARNESS_VERSION_KEY, check, null);
+  await setAppSetting(db, organizationId, LATEST_AGENT_VERSION_KEY, check, null);
 }
 
 /**
@@ -170,14 +170,14 @@ export async function setChatPlaybookDefaults(
 }
 
 /**
- * How many jobs at once the organization's harnesses run unless they set their own (an integer,
+ * How many jobs at once the organization's agents run unless they set their own (an integer,
  * `MIN_MAX_CONCURRENCY`–`MAX_MAX_CONCURRENCY`). Absent: `DEFAULT_MAX_CONCURRENCY`.
  */
-export const DEFAULT_MAX_CONCURRENCY_KEY = "harness.maxConcurrency";
+export const DEFAULT_MAX_CONCURRENCY_KEY = "agent.maxConcurrency";
 
 export const MIN_MAX_CONCURRENCY = 1;
 export const MAX_MAX_CONCURRENCY = 32;
-/** The harness max concurrency when the organization hasn't chosen one. */
+/** The agent max concurrency when the organization hasn't chosen one. */
 export const DEFAULT_MAX_CONCURRENCY = 5;
 
 function isMaxConcurrency(value: unknown): value is number {
@@ -188,7 +188,7 @@ function isMaxConcurrency(value: unknown): value is number {
   );
 }
 
-/** The organization's default harness max concurrency; absent or out of range is the built-in default. */
+/** The organization's default agent max concurrency; absent or out of range is the built-in default. */
 export async function getDefaultMaxConcurrency(
   db: Database,
   organizationId: string,
@@ -198,7 +198,7 @@ export async function getDefaultMaxConcurrency(
 }
 
 /**
- * Sets (or, with null, clears back to the built-in default) the organization's default harness
+ * Sets (or, with null, clears back to the built-in default) the organization's default agent
  * max concurrency. Throws unless it is an integer from 1 to 32.
  */
 export async function setDefaultMaxConcurrency(

@@ -278,7 +278,7 @@ async function beginCleanup(
       organizationPlaybooks(deps.db, run.organizationId),
     );
     if (!coding.cleanupMergedWorktrees) return { status: "ignored", reason: "opted_out" };
-    if (!current.harnessId) {
+    if (!current.agentId) {
       await updateLane(tx, laneId, { cleanup: { ...state, status: "done", at: now() } });
       return { status: "nothing" };
     }
