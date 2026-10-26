@@ -13,6 +13,9 @@ describe("routes the configuration model removed", () => {
     "/api/ui/findings/x/restore",
     // The repo coding policy is the coding API's five fields.
     "/api/ui/repositories/x/coding/linear",
+    // Each Repos card saves on its own endpoint.
+    "/api/ui/repositories/x/settings",
+    "/api/ui/repositories/x/task-types",
   ])("%s has no handler (404)", (path) => {
     expect(servedByRouteHandler(path)).toBe(false);
   });
@@ -64,9 +67,11 @@ describe("routes the configuration model removed", () => {
 
   it("keeps the routes that replaced them", () => {
     for (const path of [
-      "/api/ui/repositories/x/settings",
+      "/api/ui/repositories/x/reviews",
       "/api/ui/repositories/x/coding",
-      "/api/ui/repositories/x/task-types",
+      "/api/ui/repositories/x/ask",
+      "/api/ui/repositories/x/agents",
+      "/api/ui/repositories/x/playbooks",
       "/api/ui/repositories/x/work-item-match",
       "/api/ui/routing-rules/test",
     ]) {

@@ -8,6 +8,7 @@ import {
   closeDb,
   connectRepository,
   createDb,
+  getRepository,
   agents,
   jobs,
   organizations,
@@ -27,6 +28,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 
 vi.mock("server-only", () => ({}));
+// The card saves reach the API handler, which imports next-auth; nothing here signs in.
+vi.mock("@/lib/auth/session", () => ({}));
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database, latest: "2.0.0" }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/agents/npm", () => ({
@@ -50,7 +53,7 @@ const { latestVersionKey } = await import("./heartbeat-cache");
 const manage = await import("./manage");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
-const { saveRepositorySettings } = await import("@/lib/repositories/settings");
+const { saveAgentsCard } = await import("@/lib/repositories/cards");
 const { sendToChatRun } = await import("@/lib/ralph/chat-reply");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -256,25 +259,18 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     ],
     [
       "unpin",
-      async ({ agentId, orgId }) => {
-        // Pinned before the warm-up (`setUp`), unpinned here from the repository's settings.
+      async ({ agentId }) => {
+        // Pinned before the warm-up (`setUp`), unpinned here from the repo's Agents card.
         const [repositoryId] = (await send(agentId)).response.pinnedRepoIds;
-        const saved = await saveRepositorySettings(
+        const repository = (await getRepository(db, repositoryId!))!;
+        const saved = await saveAgentsCard(
           db,
           new PostgresDispatcher({ db }),
-          orgId,
-          repositoryId!,
-          {
-            depth: "standard",
-            triggers: { onOpen: true, onPush: true, drafts: false },
-            pathExcludes: [],
-            customInstructions: "",
-            pinnedAgentIds: [],
-            reviewPlaybookIds: ["builtin:review-pr"],
-            correlationPlaybookId: "builtin:correlate-findings",
-          },
+          { userId: null, name: "Admin" },
+          repository,
+          { pinnedAgentIds: [] },
         );
-        expect(saved).toMatchObject({ status: "saved", unpinnedAgentIds: [agentId] });
+        expect(saved).toMatchObject({ ok: true, card: { pinned: [] } });
       },
       (response) => expect(response.pinnedRepoIds).toEqual([]),
     ],

@@ -452,12 +452,11 @@ export async function setRepositorySwitches(
     return null;
   }
   recordRepositoryChange(db, { id, organizationId });
-  // The reviews switch is the Reviews section's, the coding and ask switches the Coding one's.
+  // Each switch is its card's section's.
   const sections = [
     ...(switches.reviews !== undefined ? (["repository.reviews"] as const) : []),
-    ...(switches.coding !== undefined || switches.ask !== undefined
-      ? (["repository.coding"] as const)
-      : []),
+    ...(switches.coding !== undefined ? (["repository.coding"] as const) : []),
+    ...(switches.ask !== undefined ? (["repository.ask"] as const) : []),
   ];
   for (const section of sections) {
     recordRepositorySettingsChange(db, { id, organizationId }, section);
@@ -755,7 +754,12 @@ export async function unpinRepositoryFromAgent(
 export function recordRepositorySettingsChange(
   db: unknown,
   repository: { id: string; organizationId: string },
-  section: "repository.reviews" | "repository.coding" | "repository.agents",
+  section:
+    | "repository.reviews"
+    | "repository.coding"
+    | "repository.ask"
+    | "repository.agents"
+    | "repository.playbooks",
 ): void {
   recordChange(db, {
     resource: "settings",

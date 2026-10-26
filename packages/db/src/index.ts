@@ -482,6 +482,7 @@ export {
   listPinnableAgents,
   listRepositoryPinnedAgentIds,
   listRepositoryPinnedAgentNames,
+  updateRepositoryPlaybookBindings,
   updateRepositorySettings,
   type RepositorySettingsUpdate,
 } from "./settings.js";

@@ -22,7 +22,6 @@ import type {
   RepositoryAgentState,
   RepositoryCoding,
   RepositoryDetail,
-  RepositoryTaskTypes,
   RepositoryTracker,
   ReviewDepthOption,
   ReviewsCard,
@@ -384,15 +383,6 @@ export async function repositoryCoding(
     respondToReviewsAndCi: repository.respondToReviewsAndCi,
     roundLimits: { maxReviewRounds: settings.maxReviewRounds, maxFixRounds: settings.maxFixRounds },
   };
-}
-
-/** The organization's connected repository's switches (`repositoryTaskTypesSchema`). */
-export async function loadRepositoryTaskTypes(
-  organizationId: string,
-  id: string,
-): Promise<RepositoryTaskTypes> {
-  const { repository } = await connectedRepository(organizationId, id);
-  return repositorySwitches(repository);
 }
 
 /** The organization's connected repository's coding policy (`repositoryCodingSchema`). */

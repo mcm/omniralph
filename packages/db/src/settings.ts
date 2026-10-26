@@ -5,6 +5,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { ReviewDepth } from "@omniralph/shared";
 import type { Database } from "./client.js";
+import type { RepositoryPlaybookBindings } from "./playbooks.js";
 import { recordRepositorySettingsChange, type Repository } from "./repositories.js";
 import { agentRepoPins, agents, repositories, type RepositoryTriggers } from "./schema.js";
 
@@ -123,5 +124,36 @@ export async function updateRepositorySettings(
       recordRepositorySettingsChange(db, row, "repository.coding");
     }
   }
+  return row ?? null;
+}
+
+/**
+ * Saves a connected repository's playbook bindings (checked by the caller) and records the
+ * live change of its `repository.playbooks` section. Returns null if the organization has no
+ * such connected repository.
+ */
+export async function updateRepositoryPlaybookBindings(
+  db: Database,
+  organizationId: string,
+  id: string,
+  bindings: Omit<RepositoryPlaybookBindings, "id" | "fullPath">,
+): Promise<Repository | null> {
+  const [row] = await db
+    .update(repositories)
+    .set({
+      reviewPlaybookIds: bindings.reviewPlaybookIds,
+      correlationPlaybookId: bindings.correlationPlaybookId,
+      storyPlaybookId: bindings.storyPlaybookId,
+      requestPlaybookId: bindings.requestPlaybookId,
+    })
+    .where(
+      and(
+        eq(repositories.id, id),
+        eq(repositories.organizationId, organizationId),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
+    .returning();
+  if (row) recordRepositorySettingsChange(db, row, "repository.playbooks");
   return row ?? null;
 }

@@ -119,7 +119,7 @@ const clonePlaybook = async (id: string) =>
 const updatePlaybook = (id: string, input: unknown) =>
   callAction(playbookRoute.PUT, "PUT", { id }, input);
 const { getPlaybook } = await import("@/lib/playbooks");
-const { saveRepositorySettings } = await import("@/lib/repositories/settings");
+const { savePlaybooksCard } = await import("@/lib/repositories/cards");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -1101,22 +1101,21 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         }),
       ).toEqual({ ok: true });
 
-      // Enable it on the repository next to the built-in, through the settings save.
+      // Enable it on the repository next to the built-in, through the Playbooks card's save.
       const [current] = await db
         .select()
         .from(repositories)
         .where(eq(repositories.id, repositoryId));
       expect(
-        await saveRepositorySettings(db, dispatcher(), orgId, repositoryId, {
-          depth: current!.reviewDepth,
-          triggers: current!.triggers,
-          pathExcludes: current!.pathExcludes,
-          customInstructions: current!.customInstructions ?? "",
-          pinnedAgentIds: [],
-          reviewPlaybookIds: ["builtin:review-pr", taskClone.id],
-          correlationPlaybookId: current!.correlationPlaybookId,
+        await savePlaybooksCard(db, { userId: null, name: "Admin" }, current!, {
+          bindings: {
+            review: ["builtin:review-pr", taskClone.id],
+            correlation: current!.correlationPlaybookId,
+            story: current!.storyPlaybookId,
+            request: current!.requestPlaybookId,
+          },
         }),
-      ).toMatchObject({ status: "saved" });
+      ).toMatchObject({ ok: true });
 
       // The next review run fans out to both tasks.
       const prNumber = ++prCounter;

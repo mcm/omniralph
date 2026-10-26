@@ -51,11 +51,11 @@ Maintainer on the project).
 In Linear, as a workspace admin, open **Settings › API › OAuth applications › New** (one app per
 control panel; a preview deployment that should build issues needs its own app):
 
-| Field | Value |
-| -- | -- |
-| Name | `Omniralph` (shown as the agent's name in Linear) |
-| Callback URLs | `<APP_URL>/api/integrations/linear/callback` |
-| Webhooks | On, URL `<APP_URL>/api/webhooks/linear` |
+| Field          | Value                                                            |
+| -------------- | ---------------------------------------------------------------- |
+| Name           | `Omniralph` (shown as the agent's name in Linear)                |
+| Callback URLs  | `<APP_URL>/api/integrations/linear/callback`                     |
+| Webhooks       | On, URL `<APP_URL>/api/webhooks/linear`                          |
 | Webhook events | **Agent session events** and **Issues** (nothing else is needed) |
 
 Save, then copy the **client ID**, **client secret** and the webhook's **signing secret**.
@@ -73,10 +73,10 @@ control panel yourself), and redelivered events are deduplicated.
 
 On the Vercel project (per environment; [env.md](env.md#linear-app-om)):
 
-| Variable | Value |
-| -- | -- |
-| `LINEAR_CLIENT_ID` | The app's client ID |
-| `LINEAR_CLIENT_SECRET` | The app's client secret |
+| Variable                | Value                      |
+| ----------------------- | -------------------------- |
+| `LINEAR_CLIENT_ID`      | The app's client ID        |
+| `LINEAR_CLIENT_SECRET`  | The app's client secret    |
 | `LINEAR_WEBHOOK_SECRET` | The webhook signing secret |
 
 Redeploy afterwards. Without the client ID and secret, **Connect Linear** is disabled. Without the
@@ -114,9 +114,10 @@ the rules that target the repository (`routingRules`, position and condition) be
 (`workItemMatch`).
 
 Each repository has three plain switches, none of which inherits anything: **Reviews**, **Coding**
-and **Ask** (questions from `@bot` mentions, chat and triage). Admins read and save them with
-`GET`/`PUT /api/ui/repositories/{id}/task-types`, which takes and answers
-`{ reviews, coding, ask }`, each `true` or `false`. A new repository has Reviews and Ask on and
+and **Ask** (questions from `@bot` mentions, chat and triage), each `true` or `false` and each
+saved with its card on the Repos page: `reviewsEnabled` of `PUT /api/ui/repositories/{id}/reviews`,
+`codingEnabled` of `PUT /api/ui/repositories/{id}/coding` and `askEnabled` of
+`PUT /api/ui/repositories/{id}/ask` (admins). A new repository has Reviews and Ask on and
 Coding off. Coding needs a work item match: turning it on for a repository without one answers 409
 "Add a work item match before turning on Coding.", and clearing the match of a repository whose
 Coding is on answers 409 "Turn off Coding before removing the work item match." A repository that
@@ -131,32 +132,32 @@ endpoint, `PUT /api/ui/repositories/{id}/work-item-match`). `PUT` takes exactly
 and answers 400 for any other key; both answer the saved policy plus `roundLimits`, the story
 playbook's review and CI fix rounds (read-only).
 
-| Setting | Default | What it does |
-| -- | -- | -- |
-| **Coding** (`codingEnabled`) | off | Whether work items routed to the repository are built (the Coding switch; turning it on needs a work item match, 409 otherwise). |
-| **Extra instructions** (`codingInstructions`) | none | Text appended to every story and request prompt. |
-| **Open the pull request early** (`openPullRequestEarly`) | off | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. A story playbook that pushes only at the end never opens one early. |
-| **Rewrite history** (`historyRewrite`) | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
-| **Fix review comments and CI failures** (`respondToReviewsAndCi`) | on | Omniralph's review findings and `@bot` requests on the run's PR/MR, and a failed CI run on its head commit, become requests, up to the playbook's rounds. |
+| Setting                                                           | Default      | What it does                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Coding** (`codingEnabled`)                                      | off          | Whether work items routed to the repository are built (the Coding switch; turning it on needs a work item match, 409 otherwise).                                                                                                                                                                                      |
+| **Extra instructions** (`codingInstructions`)                     | none         | Text appended to every story and request prompt.                                                                                                                                                                                                                                                                      |
+| **Open the pull request early** (`openPullRequestEarly`)          | off          | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. A story playbook that pushes only at the end never opens one early.                                                                                    |
+| **Rewrite history** (`historyRewrite`)                            | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
+| **Fix review comments and CI failures** (`respondToReviewsAndCi`) | on           | Omniralph's review findings and `@bot` requests on the run's PR/MR, and a failed CI run on its head commit, become requests, up to the playbook's rounds.                                                                                                                                                             |
 
 Everything else a run works with lives in one place: the repository's story and request playbooks
 (`storyPlaybookId`, `requestPlaybookId`, by default `builtin:implement-story` and
 `builtin:handle-request`; see [definitions](definitions.md#coding-settings)) or the organization's
 tracker labels.
 
-| Where | Setting | Default | What it does |
-| -- | -- | -- | -- |
-| Story or request playbook | `model` / `fallbackModel` | `opus` / none | The Claude model alias or ID the sessions use, and the one used when it's overloaded. |
-| Story or request playbook | `verifyCommands` | none | Quality gates the job runs after the session reports a story (or request) done; a failing one sends its output back for the next attempt. |
-| Story or request playbook | `runPrdQualityGates` | on | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands. |
-| Story or request playbook | `worktreeSetupCommand` | none | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`. |
-| Request playbook | `maxReviewRounds` / `maxFixRounds` | 3 / 3 | How many reviews and failed CI runs of a PR/MR become requests. |
-| Story playbook | `pushTiming` | `per-story` | When the branch is pushed: after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened). |
-| Story playbook | `allowPreparation` | on | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered. |
-| Story playbook | `epicCompletedState` | none | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged. |
-| Story playbook | `cleanupMergedWorktrees` / `unmergedBranchTimeoutMinutes` | on / 60 | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer. |
-| Organization (`app_settings` `tracker.labels`) | `manualLabels` | `manual` | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one Om puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace. |
-| Organization (`app_settings` `tracker.labels`) | `blockedLabels` | `under-review`, `blocked` | Linear labels that keep Om off a work item (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear, whichever repository it routes to. A mention handed to a run that is already working is unaffected. |
+| Where                                          | Setting                                                   | Default                   | What it does                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Story or request playbook                      | `model` / `fallbackModel`                                 | `opus` / none             | The Claude model alias or ID the sessions use, and the one used when it's overloaded.                                                                                                                                                                                                                                                                                                                 |
+| Story or request playbook                      | `verifyCommands`                                          | none                      | Quality gates the job runs after the session reports a story (or request) done; a failing one sends its output back for the next attempt.                                                                                                                                                                                                                                                             |
+| Story or request playbook                      | `runPrdQualityGates`                                      | on                        | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands.                                                                                                                                                             |
+| Story or request playbook                      | `worktreeSetupCommand`                                    | none                      | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`.                                                                                                                                                                                                                                                                                                    |
+| Request playbook                               | `maxReviewRounds` / `maxFixRounds`                        | 3 / 3                     | How many reviews and failed CI runs of a PR/MR become requests.                                                                                                                                                                                                                                                                                                                                       |
+| Story playbook                                 | `pushTiming`                                              | `per-story`               | When the branch is pushed: after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened).                                                                                                                                                                                                                |
+| Story playbook                                 | `allowPreparation`                                        | on                        | Ask whether to run a manual story's `cyralph-prepare` commands ("Run it"). Off: the blocks are plain text and nothing is offered.                                                                                                                                                                                                                                                                     |
+| Story playbook                                 | `epicCompletedState`                                      | none                      | When every story of an epic (not a single issue) is complete, move the epic to this state: a state name (e.g. `In Review`), or `started` / `completed` for the first state of that type. Applied after the PR/MR step, even if it failed; a Linear error is only logged.                                                                                                                              |
+| Story playbook                                 | `cleanupMergedWorktrees` / `unmergedBranchTimeoutMinutes` | on / 60                   | Remove the worktree and local branch after the merge; a branch with unmerged commits is deleted after this many minutes without an answer.                                                                                                                                                                                                                                                            |
+| Organization (`app_settings` `tracker.labels`) | `manualLabels`                                            | `manual`                  | Linear labels that mark a story as a step for a person. Matching ignores case. The first label is the one Om puts on the manual stories it creates (from a PRD's `**Labels:** manual` stories, and follow-ups that need a person), so make it a label that exists in your Linear workspace.                                                                                                           |
+| Organization (`app_settings` `tracker.labels`) | `blockedLabels`                                           | `under-review`, `blocked` | Linear labels that keep Om off a work item (empty for none). Matching ignores case. A delegation or mention that would start a run of an issue with one of them (on the issue, or on its epic for a delegated story) is refused with a response saying why, before anything is created in Linear, whichever repository it routes to. A mention handed to a run that is already working is unaffected. |
 
 The organization's tracker labels are read by any member with `GET /api/ui/trackers/labels`
 (`{ "manualLabels": [...], "blockedLabels": [...] }`; nothing saved answers the defaults above).
@@ -341,12 +342,12 @@ Progress, say), the run starts as below. When the issue can't be read, the run s
 and the failure is logged. @mentions don't read readiness: `/coding` starts a run whatever the
 state, and `/triage` always triages.
 
-| Delegated issue | Run kind | Stories |
-| -- | -- | -- |
-| An epic with sub-issues | `children` | Each open sub-issue is a story. |
-| An issue whose description is a PRD (`### US-001: …` story headers with **Acceptance Criteria**, or a `prd.json` block) and has no sub-issues | `prd` | The PRD's stories are first materialized into sub-issues (with priorities, order and "blocks" relations), then built as `children`. |
-| A sub-issue of an epic | `children`, focused | The parent epic is loaded and the delegated story runs first. |
-| Any other issue | `single` | The issue itself is the only story. |
+| Delegated issue                                                                                                                               | Run kind            | Stories                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| An epic with sub-issues                                                                                                                       | `children`          | Each open sub-issue is a story.                                                                                                     |
+| An issue whose description is a PRD (`### US-001: …` story headers with **Acceptance Criteria**, or a `prd.json` block) and has no sub-issues | `prd`               | The PRD's stories are first materialized into sub-issues (with priorities, order and "blocks" relations), then built as `children`. |
+| A sub-issue of an epic                                                                                                                        | `children`, focused | The parent epic is loaded and the delegated story runs first.                                                                       |
+| Any other issue                                                                                                                               | `single`            | The issue itself is the only story.                                                                                                 |
 
 How the run behaves:
 
@@ -364,12 +365,18 @@ How the run behaves:
 
   ```markdown
   ## Quality Gates
+
   - `pnpm lint`
+
   ### acme/api
+
   - `cargo test`
+
   ### acme/web
+
   - `pnpm build`
   ```
+
 - **Order.** Stories in progress first, then by Linear priority, then sub-issue order. A story waits
   while it's blocked by an open issue. A failed or incomplete attempt is retried with feedback up
   to 3 times, then the story is marked exhausted and later independent stories still run.
@@ -410,18 +417,18 @@ How the run behaves:
 
 Reply in the agent session to steer a run:
 
-| Reply | Effect |
-| -- | -- |
-| `stop` (or Linear's stop button) | Stops the run and cancels its running job. A later `rerun preparation`, `start anyway` or guidance reply resumes it. |
-| An answer to the preparation question | `Run it` / `I'll do it myself` / `Not yet` (or `1`–`3`). |
-| `rerun preparation` | Asks the preparation question again. |
-| `start anyway` | Ignores the open blockers and continues. |
-| `/continue` | Resets the per-run iteration cap (50 story attempts), so the run keeps going. On its own, it continues without guidance (unfinished stories get fresh attempts and rounds, and their metric history is cleared); anything after `/continue` is handled as a reply of its own (usually guidance). |
-| Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request. |
-| Anything else | Stored as guidance for the next story attempts (unfinished stories get fresh attempts and rounds) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step. |
-| `/coding` | Switches a mention's run (request mode) to the story loop; its requests become guidance. `/ralph`, its name before the rename to Coding, still works. |
-| `/ship [notes]` | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
-| `Allow` / `Deny` (or `yes` / `no`) | Answers a request session's permission question (below). |
+| Reply                                        | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stop` (or Linear's stop button)             | Stops the run and cancels its running job. A later `rerun preparation`, `start anyway` or guidance reply resumes it.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| An answer to the preparation question        | `Run it` / `I'll do it myself` / `Not yet` (or `1`–`3`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `rerun preparation`                          | Asks the preparation question again.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `start anyway`                               | Ignores the open blockers and continues.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `/continue`                                  | Resets the per-run iteration cap (50 story attempts), so the run keeps going. On its own, it continues without guidance (unfinished stories get fresh attempts and rounds, and their metric history is cleared); anything after `/continue` is handled as a reply of its own (usually guidance).                                                                                                                                                                                                                                                                            |
+| Anything else, while a story or request runs | Passed to the agent that's working right now (within one heartbeat, about 20s): it answers in the same session, and later stories get the reply as guidance too. If the session can't take it (e.g. the story is running its quality gates), it becomes guidance for the next story attempt (a pending request in request mode). A reply asking to push or open/update a PR/MR (cyralph's pattern: `push`, `pull request`, `merge request`, `PR`, `MR`, `gh`, `glab`) never goes to a story agent: it is kept as a pending request.                                         |
+| Anything else                                | Stored as guidance for the next story attempts (unfinished stories get fresh attempts and rounds) and as a pending request. When the next story starts, it takes the reply (push/PR requests excepted). When no story runs (every story is done, or the run waits on blockers), it runs as a **request** (below). A reply to a run waiting after its PR/MR step failed only retries that step.                                                                                                                                                                              |
+| `/coding`                                    | Switches a mention's run (request mode) to the story loop; its requests become guidance. `/ralph`, its name before the rename to Coding, still works.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `/ship [notes]`                              | Ships the branch's work with a `ralph.request` job once nothing else runs (in an epic, once no story runs). The session brings earlier request sessions' stashed work back if it belongs, does what the notes ask, runs the quality gates and writes the commit message; then the job itself commits everything, pushes the branch and, when the lane has no PR/MR yet, opens one. Git runs outside Claude Code, so a repository whose `.claude/settings.json` asks before `git commit`/`git push` can still ship. Never passed to a running session, never story guidance. |
+| `Allow` / `Deny` (or `yes` / `no`)           | Answers a request session's permission question (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 **Retry from Omniralph.** Any member of the run's organization can retry an epic or request run
 without replying in Linear (`POST /api/ui/runs/{id}/retry`), unless Om is working on it (409). The
@@ -436,11 +443,11 @@ by {name}". Stop is open to members as well.
 The same endpoint retries the other run kinds, whatever their last attempt's status (failed,
 canceled or expired); retrying one of their attempts retries the run:
 
-| Run | Retry |
-| -- | -- |
+| Run    | Retry                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Review | Re-runs the review (every pass and the correlation) on the PR/MR's current head with the run's mode and profile, as a new `manual` review run (the answer is that run's detail). When a review of that head is already queued or running, nothing new starts: the answer is that run's detail with a `warning` ("A review of … is already queued or running."), as the review's Re-run does. A merged or closed PR/MR is refused. |
-| Triage | A new `triage.run` attempt on the same run, over the issue's current content, with the retried attempt's reply (and any reply since) and the run's last triage, as a session reply does. The session gets "Retried from Omniralph by {name}". |
-| Ask | A copy of the last `chat.ask` attempt on the same ask, so the answer is relayed to the same chat thread. |
+| Triage | A new `triage.run` attempt on the same run, over the issue's current content, with the retried attempt's reply (and any reply since) and the run's last triage, as a session reply does. The session gets "Retried from Omniralph by {name}".                                                                                                                                                                                     |
+| Ask    | A copy of the last `chat.ask` attempt on the same ask, so the answer is relayed to the same chat thread.                                                                                                                                                                                                                                                                                                                          |
 
 The answer's `warning` is null otherwise. A completed or skipped run or attempt can't be retried
 (400).
@@ -686,10 +693,10 @@ The issue's title and description are rewritten as a PRD following the `linear-p
 (Introduction, Goals, Quality Gates, Non-Goals, Design and Technical Considerations, Success
 Metrics) with a t-shirt size, then:
 
-| Size | Result |
-| -- | -- |
-| XS, S, M | A single issue: the description carries the user story and its acceptance criteria. |
-| L, XL | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
+| Size     | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XS, S, M | A single issue: the description carries the user story and its acceptance criteria.                                                                                                                                                                                                                                                                                                                                                                                                |
+| L, XL    | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
 
 An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
@@ -703,7 +710,7 @@ sub-issues, or a PRD with the wrong sections) is reformatted in place:
 - Sub-issues in any other state, and updates that don't name one of the issue's sub-issues, are
   ignored and listed in the response.
 - An epic without a sub-issue whose title starts with "Validate" gets a `Validate functional
-  requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
+requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
 - Triage never cancels, deletes, merges or re-parents sub-issues.
 
 An issue already in the right format is left as it is (`unchanged`); only its open questions are
@@ -727,10 +734,10 @@ The status follows the integration's [state mapping](#work-item-tracker-and-read
 team's override states first (the first of them in the workflow's order), else the team's first
 state of the mapping's first type. An issue that already has the readiness stays where it is.
 
-| Open questions | Status set |
-| -- | -- |
-| None | The first **Ready to start** state (by default Todo). The final response ends "ENG-12 is ready to start. Start it from the Backlog, or delegate it to Om again." Triage never starts the run itself. |
-| Some | The first **Needs refining** state (by default Backlog). The control panel also comments on the issue, @mentioning its creator, with the list. |
+| Open questions | Status set                                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None           | The first **Ready to start** state (by default Todo). The final response ends "ENG-12 is ready to start. Start it from the Backlog, or delegate it to Om again." Triage never starts the run itself. |
+| Some           | The first **Needs refining** state (by default Backlog). The control panel also comments on the issue, @mentioning its creator, with the list.                                                       |
 
 ### Replying to continue
 
@@ -760,15 +767,15 @@ Linear connection, `apps/web/src/lib/work-items/linear.ts`) and throws `TrackerN
 without one. A new adapter runs the shared contract suite
 (`describeWorkItemTrackerContract` in `apps/web/src/lib/work-items/contract.ts`).
 
-| Method | Linear |
-| -- | -- |
-| `get(ref)` | `getIssue` (an unknown ID or identifier is `WorkItemNotFoundError`) and its blockers |
-| `listCandidates({...})` | `listIssues`: one `issues(filter:)` query per page, blockers included |
-| `create`, `update` | `createIssue`, `updateIssue`, `addIssueLabels`, `removeIssueLabel` (labels by name, created when missing) |
-| `setState(ref, state)` | the team's first workflow state of type `backlog`, `unstarted` (todo), `started` (in progress), `completed` (done) or `canceled`; `{readiness}` moves to the mapping's first Ready-to-start or Needs-refining state (the team's override states first, then by type), leaving an issue that already has it |
-| `cancel(ref, {comment})` | the canceled state, then the comment |
-| `startTriage(ref)` | adds the `coding:triage` label, so the label webhook starts triage |
-| `delegateToOmniralph(ref)` | delegates the issue to the app user; an issue already delegated to it, with no active run, gets a new agent session instead, so the delegation is handled again |
+| Method                     | Linear                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get(ref)`                 | `getIssue` (an unknown ID or identifier is `WorkItemNotFoundError`) and its blockers                                                                                                                                                                                                                       |
+| `listCandidates({...})`    | `listIssues`: one `issues(filter:)` query per page, blockers included                                                                                                                                                                                                                                      |
+| `create`, `update`         | `createIssue`, `updateIssue`, `addIssueLabels`, `removeIssueLabel` (labels by name, created when missing)                                                                                                                                                                                                  |
+| `setState(ref, state)`     | the team's first workflow state of type `backlog`, `unstarted` (todo), `started` (in progress), `completed` (done) or `canceled`; `{readiness}` moves to the mapping's first Ready-to-start or Needs-refining state (the team's override states first, then by type), leaving an issue that already has it |
+| `cancel(ref, {comment})`   | the canceled state, then the comment                                                                                                                                                                                                                                                                       |
+| `startTriage(ref)`         | adds the `coding:triage` label, so the label webhook starts triage                                                                                                                                                                                                                                         |
+| `delegateToOmniralph(ref)` | delegates the issue to the app user; an issue already delegated to it, with no active run, gets a new agent session instead, so the delegation is handled again                                                                                                                                            |
 
 Every work item carries its `readiness`, from the integration's **state mapping**
 (`integrations.state_mapping`): which workflow states mean **Ready to start** and which **Needs
@@ -823,7 +830,7 @@ under pm2 update themselves to the version chosen on **Settings › Agent defaul
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
   issue: add a rule that matches it under **Settings › Routing**.
 - **"No repository has coding on".** Give a repository a work item match, then turn its Coding
-  switch on (`PUT /api/ui/repositories/{id}/task-types`).
+  switch on (`PUT /api/ui/repositories/{id}/coding`).
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
 - **"I couldn't download … attachment(s) from Linear".** `HTTP 401`/`403` or an HTML page means

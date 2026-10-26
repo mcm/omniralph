@@ -69,8 +69,8 @@ vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: asyn
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const repositoryDetail = await import("@/app/api/ui/repositories/[id]/route");
-const repositorySettings = await import("@/app/api/ui/repositories/[id]/settings/route");
-const repositoryTaskTypes = await import("@/app/api/ui/repositories/[id]/task-types/route");
+const repositoryReviews = await import("@/app/api/ui/repositories/[id]/reviews/route");
+const repositoryAsk = await import("@/app/api/ui/repositories/[id]/ask/route");
 const repositoryCoding = await import("@/app/api/ui/repositories/[id]/coding/route");
 const repositoryRules = await import("@/app/api/ui/repositories/[id]/rules/route");
 const repositoryRule = await import("@/app/api/ui/repositories/[id]/rules/[ruleId]/route");
@@ -99,10 +99,8 @@ async function save(handler: Handler, id: string, body: unknown) {
 }
 
 // The settings tabs' requests, under the names of the server actions they replace.
-const updateRepositorySettings = (id: string, input: unknown) =>
-  save(repositorySettings.PUT, id, input);
-const updateRepositoryTaskTypes = (id: string, input: unknown) =>
-  save(repositoryTaskTypes.PUT, id, input);
+const saveReviews = (id: string, input: unknown) => save(repositoryReviews.PUT, id, input);
+const saveAsk = (id: string, input: unknown) => save(repositoryAsk.PUT, id, input);
 const updateRepositoryCoding = (id: string, input: unknown) =>
   save(repositoryCoding.PUT, id, input);
 
@@ -299,18 +297,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
   it("refuses actions on another organization's repositories and rules", async () => {
     state.userId = a.userId;
     const refused = { ok: false, error: expect.any(String) };
+    expect(await saveAsk(b.repoId, { askEnabled: false })).toEqual(refused);
     expect(
-      await updateRepositoryTaskTypes(b.repoId, { reviews: false, coding: false, ask: false }),
-    ).toEqual(refused);
-    expect(
-      await updateRepositorySettings(b.repoId, {
-        depth: "deep",
+      await saveReviews(b.repoId, {
+        reviewsEnabled: false,
         triggers: { onOpen: false, onPush: false, drafts: false },
+        depth: "deep",
         pathExcludes: [],
-        customInstructions: "",
-        pinnedAgentIds: [],
-        reviewPlaybookIds: ["builtin:review-pr"],
-        correlationPlaybookId: "builtin:correlate-findings",
+        reviewerInstructions: "",
       }),
     ).toEqual(refused);
     expect(
@@ -324,6 +318,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
     ).toEqual(refused);
     expect(await getRepository(db, b.repoId)).toMatchObject({
       reviewsEnabled: true,
+      askEnabled: true,
       disconnectedAt: null,
       reviewDepth: "standard",
       codingEnabled: false,
@@ -342,16 +337,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
 
   it("sets the depth of the active organization's repositories only", async () => {
     state.userId = a.userId;
-    const settings = {
-      depth: "deep" as const,
-      triggers: { onOpen: true, onPush: true, drafts: false },
-      pathExcludes: [],
-      customInstructions: "",
-      pinnedAgentIds: [],
-      reviewPlaybookIds: ["builtin:review-pr"],
-      correlationPlaybookId: "builtin:correlate-findings",
-    };
-    expect(await updateRepositorySettings(a.repoId, settings)).toEqual({ ok: true });
+    expect(
+      await saveReviews(a.repoId, {
+        reviewsEnabled: true,
+        triggers: { onOpen: true, onPush: true, drafts: false },
+        depth: "deep",
+        pathExcludes: [],
+        reviewerInstructions: "",
+      }),
+    ).toMatchObject({ ok: true, card: { depth: "deep" } });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.depth).toBe("deep");
     expect((await getRepository(db, b.repoId))!.reviewDepth).toBe("standard");
     const detail = await call(repositoryDetail.GET, a.repoId);
