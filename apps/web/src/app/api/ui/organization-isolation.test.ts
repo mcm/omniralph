@@ -71,7 +71,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -85,6 +85,7 @@ import {
 import type { RoutingPreview } from "@/lib/api/routing-rules";
 import type * as LinearClient from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { CANCEL_REQUESTED_WARNING } from "@/lib/jobs/cancel";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/dispatch", () => ({
@@ -2161,6 +2162,43 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       status: 200,
       body: { ok: true },
     });
+  });
+
+  it("lets a member of both organizations cancel a job of the one that isn't active", async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ id: "both-cancel-member", email: "both-cancel@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: user!.id, role: "member" },
+      { organizationId: b.orgId, userId: user!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: user!.id, organizationId: a.orgId });
+    try {
+      state.userId = user!.id;
+      // The Runs screen under All organizations opens b's run without switching to b.
+      expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject(
+        {
+          status: 200,
+          body: { ok: true, warning: CANCEL_REQUESTED_WARNING },
+        },
+      );
+      // Once the user leaves b, its jobs are refused again.
+      await db
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, user!.id),
+            eq(organizationMembers.organizationId, b.orgId),
+          ),
+        );
+      expect(await call(jobCancel.POST, { method: "POST", params: { id: b.jobId } })).toMatchObject(
+        { status: 400, body: { error: "That job doesn't exist." } },
+      );
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, user!.id));
+      await db.delete(users).where(eq(users.id, user!.id));
+    }
   });
 
   it("refuses to rerun the other organization's job, and its own members may rerun it", async () => {
