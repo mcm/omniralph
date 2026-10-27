@@ -22,8 +22,8 @@ Setting chat up takes these steps (Slack and Discord are independent; set up eit
    [the Discord application](#2-create-the-discord-application).
 2. [Set up the AI Gateway](#3-set-up-the-ai-gateway).
 3. [Set the env vars](#4-set-the-env-vars) and redeploy.
-4. [Connect a workspace or server](#5-connect-from-settings--integrations) from **Settings ›
-   Integrations**.
+4. [Connect a workspace or server](#5-connect-from-settings--connections) from **Settings ›
+   Connections › Add connection**.
 5. [Ask a question](#6-ask-a-question), and [link your account](#account-linking).
 
 ## 1. Create the Slack app
@@ -122,28 +122,29 @@ On the Vercel project (per environment; [env.md](env.md#slack-chat)), then redep
 | `AI_GATEWAY_API_KEY`     | Only off Vercel: an AI Gateway API key                                   |
 | `CHAT_AGENT_MODEL`       | Optional: the AI Gateway model id (default `anthropic/claude-haiku-5.5`) |
 
-Each platform needs all of its variables. With any missing, its card under **Settings ›
-Integrations** shows a "not configured" notice with a disabled **Connect** button, and its webhook
-route answers `503`. Slack bot tokens are stored encrypted with `ENCRYPTION_KEY`, like the other
+Each platform needs all of its variables. With any missing, its **Connect** under **Settings ›
+Connections › Add connection** returns to that page with a "Slack app not configured" (or
+Discord) notice, and its webhook route answers `503`. Slack bot tokens are stored encrypted with `ENCRYPTION_KEY`, like the other
 integration credentials.
 
-## 5. Connect from Settings › Integrations
+## 5. Connect from Settings › Connections
 
-As an admin of the Omniralph organization, open **Settings › Integrations**:
+As an admin of the Omniralph organization, open **Settings › Connections › Add connection**:
 
-- **Connect Slack** opens Slack's consent screen for the workspace you're signed in to; approve it
-  and you return to the Integrations page, which lists the workspace and who installed it. Use
-  **Connect another workspace** for more.
-- **Connect Discord** opens Discord's bot authorization; pick the server (you need **Manage
-  Server** there) and authorize. The server is listed the same way; use **Connect another
-  server** for more.
+- **Slack › Connect** opens Slack's consent screen for the workspace you're signed in to; approve
+  it and you land on the new connection's page (**Settings › Connections › Slack**), which shows
+  the workspace and its linked accounts. Use **Add connection › Slack › Connect** again for more.
+- **Discord › Connect** opens Discord's bot authorization; pick the server (you need **Manage
+  Server** there) and authorize. The server gets its own page the same way; connect again for
+  more.
 
 Finish within 10 minutes of clicking and in the same browser. A workspace or server belongs to
 one organization: connecting one that another organization has is refused; disconnect it there
 first. An organization can connect several workspaces and servers.
 
-**Disconnect** removes the connection: Omniralph revokes the workspace's Slack bot token or makes
-the bot leave the Discord server. Uninstalling the app in Slack, or
+**Disconnect…** in the connection page's **⋯** menu removes the connection: Omniralph revokes the workspace's Slack bot token or makes
+the bot leave the Discord server. **⋯ › Edit connection** runs the connect flow again
+(reconnecting the workspace, e.g. to grant a new scope). Uninstalling the app in Slack, or
 removing the bot from the server in Discord, disconnects it too. Messages from workspaces and
 servers that aren't connected are ignored and never reach the model.
 
@@ -321,7 +322,7 @@ started the run: with their linked account's tools, else `read` tools only.
 ## Linear issues from chat
 
 Linked members can turn a conversation into a Linear issue, and have Om build it. The
-organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--integrations));
+organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--connections));
 without one the bot says an admin can connect it under **Settings › Connections › Add connection**.
 
 ### Filing an issue
@@ -454,8 +455,8 @@ Images and text files attached to messages in the thread reach the model:
   information and doesn't follow instructions in it. Text files are passed inside an
   untrusted-content fence.
 - In Slack, downloading files needs the bot's `files:read` scope ([step 1](#1-create-the-slack-app)).
-  A workspace connected before the scope was added must reconnect under **Settings ›
-  Integrations**; until then its files are skipped as "couldn't be fetched". Discord's attachment
+  A workspace connected before the scope was added must reconnect (**Settings › Connections › Slack › ⋯ ›
+  Edit connection**); until then its files are skipped as "couldn't be fetched". Discord's attachment
   links expire after about a day, so an old screenshot may no longer be fetchable.
 - Screenshots can be [embedded in Linear issues](#filing-an-issue) and attached files included in
   [code questions](#code-questions).
@@ -517,9 +518,9 @@ the opt-out. Leaving the organization ends the link's access straight away.
 
 | Symptom                                                  | Check                                                                                                                                                                                  |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Connect** is disabled                                  | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                        |
+| **Connect** returns "… app not configured"               | The platform's env vars are all set for this environment, and the deployment was redeployed after setting them.                                                                        |
 | Slack install fails for other workspaces                 | Public distribution is activated (step 1.3).                                                                                                                                           |
-| The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Integrations**.                                 |
+| The bot doesn't react to a Slack mention                 | The bot is in the channel; the event request URL is verified under **Event Subscriptions**; the workspace is listed under **Settings › Connections**.                                  |
 | The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)).                   |
 | "Om isn't set up in chat"                                | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                              |
 | The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand. |

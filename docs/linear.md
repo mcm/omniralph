@@ -37,7 +37,7 @@ Setting Om up takes five steps:
 
 1. [Create the Linear OAuth app](#1-create-the-linear-oauth-app).
 2. [Set the env vars](#2-set-the-env-vars) on the control panel.
-3. [Connect the workspace](#3-connect-from-settings--integrations) from **Settings › Integrations**.
+3. [Connect the workspace](#3-connect-from-settings--connections) from **Settings › Connections**.
 4. [Turn coding on and configure routing](#4-configure-routing) on a repository, and enable the
    `coding` task type on an agent ([deploy-agent.md](deploy-agent.md#coding-work)).
 5. [Delegate an issue](#5-delegate-an-issue).
@@ -79,15 +79,15 @@ On the Vercel project (per environment; [env.md](env.md#linear-app-om)):
 | `LINEAR_CLIENT_SECRET`  | The app's client secret    |
 | `LINEAR_WEBHOOK_SECRET` | The webhook signing secret |
 
-Redeploy afterwards. Without the client ID and secret, **Connect Linear** is disabled. Without the
+Redeploy afterwards. Without the client ID and secret, **Connect** returns "Linear app not configured". Without the
 webhook secret, every Linear webhook is rejected.
 
-## 3. Connect from Settings › Integrations
+## 3. Connect from Settings › Connections
 
 As an admin of the Omniralph organization that should use the workspace, open **Settings ›
-Integrations** and click **Connect Linear**. Linear shows its consent
-screen for the workspace you're signed in to; approve it and you return to the Integrations page,
-which then shows the connected workspace. Finish within 10 minutes of clicking (the sign-in link
+Connections › Add connection** and click Linear's **Connect**. Linear shows its consent screen for
+the workspace you're signed in to; approve it and you land on the connection's page (**Settings ›
+Connections › Linear**), which shows the connected workspace. Finish within 10 minutes of clicking (the sign-in link
 expires) and from the same browser.
 
 - The Linear workspace is connected **per organization**: each organization connects at most one
@@ -98,10 +98,11 @@ expires) and from the same browser.
 - Runs, routing and Om's repositories are per organization too: a delegated issue is only
   routed to repositories of the workspace's organization, and its jobs only go to that
   organization's agents. Only its members see the runs under **Coding tasks**.
-- **Disconnect** deletes the stored tokens. Runs can't advance (their stories are re-read from
+- **⋯ › Disconnect…** on the connection's page deletes the stored tokens. Runs can't advance (their stories are re-read from
   Linear before each one) until Linear is connected again. Stopping a run from **Coding tasks** still
   works.
-- To move to another workspace, disconnect, then connect again while signed in to the other one.
+- To reconnect the same workspace, use **⋯ › Edit connection**, which runs the consent flow again.
+  To move to another workspace, disconnect, then connect again while signed in to the other one.
   To move a workspace to another organization, disconnect it in the first and connect it from the
   second (runs stay with the organization that started them).
 
@@ -847,7 +848,7 @@ Agents under pm2 update themselves to the version chosen on **Fleet › Version 
 - **Stories fail to push.** The code host credentials lack write access: see
   [github-app.md](github-app.md) and [gitlab.md](gitlab.md).
 - **"I couldn't download … attachment(s) from Linear".** `HTTP 401`/`403` or an HTML page means
-  Linear refused the connected workspace's token (reconnect it under **Settings › Integrations**);
+  Linear refused the connected workspace's token (reconnect it with **Settings › Connections › Linear › ⋯ › Edit connection**);
   `larger than 25 MB` files aren't downloaded; `skipped: more than 20 attachments` ones are
   downloaded by the run's next job.
 - **Triage never starts from the label.** Neither a `coding:triage` nor a `ralph:triage` label exists in the workspace

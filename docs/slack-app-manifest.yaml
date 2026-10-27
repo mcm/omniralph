@@ -1,6 +1,6 @@
 # Slack app manifest for the Omniralph chat front door: one app per deployment,
-# installed into each organization's workspace from Settings › Integrations ›
-# Connect Slack (OAuth v2). Create the app at https://api.slack.com/apps ›
+# installed into each organization's workspace from Settings › Connections ›
+# Add connection › Slack › Connect (OAuth v2). Create the app at https://api.slack.com/apps ›
 # Create New App › From a manifest, replace https://omniralph.example.com with
 # the control panel's APP_URL, then set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and
 # SLACK_SIGNING_SECRET from Basic Information (docs/env.md).
