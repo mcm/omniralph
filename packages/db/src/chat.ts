@@ -4,7 +4,8 @@
  * agent's threads and their messages. Connection credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
-import { and, asc, desc, eq, gt, inArray, isNull, lte, lt, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
@@ -22,13 +23,17 @@ import {
   chatThreadRuns,
   chatThreads,
   chatUserProfiles,
+  chatWebMessages,
   jobs,
   organizations,
   ralphRuns,
   type ChatMessageAttachment,
+  type ChatWebCardRef,
 } from "./schema.js";
 
 export type ChatPlatform = (typeof chatConnections.$inferSelect)["platform"];
+/** The chat platforms an organization connects (the web is every organization's, hidden). */
+export type ExternalChatPlatform = Exclude<ChatPlatform, "web">;
 export type ChatIdentitySource = (typeof chatIdentities.$inferSelect)["source"];
 export type ChatMessageRole = (typeof chatMessages.$inferSelect)["role"];
 
@@ -41,6 +46,18 @@ export interface ChatConnection {
   installedByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** A Slack workspace or Discord server connection. */
+export interface ExternalChatConnection extends ChatConnection {
+  platform: ExternalChatPlatform;
+}
+
+/** Whether a connection is a Slack or Discord one (not an organization's hidden `web` one). */
+export function isExternalChatConnection<T extends Pick<ChatConnection, "platform">>(
+  connection: T,
+): connection is T & { platform: ExternalChatPlatform } {
+  return connection.platform !== "web";
 }
 
 export interface ChatConnectionWithCredentials<C> extends ChatConnection {
@@ -80,6 +97,8 @@ export interface LinkChatIdentityInput {
 }
 
 export interface ChatIdentityWithOrganization extends ChatIdentity {
+  /** Web chats need no identity: only Slack and Discord users are linked. */
+  platform: ExternalChatPlatform;
   organizationName: string;
   /**
    * The Slack workspace or Discord server the chat user belongs to: the organization's
@@ -236,17 +255,23 @@ export async function getChatConnectionWithCredentials<C>(
   return row ? withCredentials<C>(row, key) : null;
 }
 
-/** The organization's connections (without credentials), oldest first. */
+/**
+ * The organization's Slack and Discord connections (without credentials), oldest first. Its
+ * hidden `web` connection is never listed, so no connection list, count or disconnect
+ * includes it.
+ */
 export async function listChatConnections(
   db: Database,
   organizationId: string,
-): Promise<ChatConnection[]> {
+): Promise<ExternalChatConnection[]> {
   const rows = await db
     .select()
     .from(chatConnections)
-    .where(eq(chatConnections.organizationId, organizationId))
+    .where(
+      and(eq(chatConnections.organizationId, organizationId), ne(chatConnections.platform, "web")),
+    )
     .orderBy(asc(chatConnections.createdAt), asc(chatConnections.id));
-  return rows.map(toChatConnection);
+  return rows.map(toChatConnection).filter(isExternalChatConnection);
 }
 
 /**
@@ -625,7 +650,7 @@ export async function listChatIdentities(
     .select({ identity: chatIdentities, organizationName: organizations.name })
     .from(chatIdentities)
     .innerJoin(organizations, eq(organizations.id, chatIdentities.organizationId))
-    .where(eq(chatIdentities.userId, userId))
+    .where(and(eq(chatIdentities.userId, userId), ne(chatIdentities.platform, "web")))
     .orderBy(asc(chatIdentities.linkedAt), asc(chatIdentities.externalUserId));
   if (rows.length === 0) return [];
   const connections = await db
@@ -662,14 +687,16 @@ export async function listChatIdentities(
             ),
           );
   const seen = new Set(profiles.map((p) => `${p.connectionId}:${p.externalUserId}`));
-  return rows.map(({ identity, organizationName }) => {
+  return rows.flatMap(({ identity, organizationName }) => {
+    const { platform } = identity;
+    if (platform === "web") return [];
     const candidates = connections.filter(
       (c) => c.organizationId === identity.organizationId && c.platform === identity.platform,
     );
     const workspace =
       candidates.find((c) => seen.has(`${c.id}:${identity.externalUserId}`)) ??
       (candidates.length === 1 ? candidates[0] : undefined);
-    return { ...identity, organizationName, workspaceName: workspace?.name ?? null };
+    return [{ ...identity, platform, organizationName, workspaceName: workspace?.name ?? null }];
   });
 }
 
@@ -1350,4 +1377,334 @@ export async function takeChatLinearDelegation(
     )
     .returning();
   return taken.find((row) => row.id === latest.id) ?? null;
+}
+
+// ── Web chats ────────────────────────────────────────────────────────────────
+
+export type ChatWebMessage = typeof chatWebMessages.$inferSelect;
+export type ChatWebMessageAuthor = ChatWebMessage["author"];
+export type ChatWebMessageStatus = ChatWebMessage["status"];
+
+/** The name of every organization's hidden `web` connection. */
+export const WEB_CHAT_CONNECTION_NAME = "Omniralph";
+
+/** The longest web chat title (`webChatTitle`), "…" included. */
+export const WEB_CHAT_TITLE_MAX = 60;
+
+/**
+ * The organization's `web` connection (`external_id` = the organization ID, no
+ * credentials), created on first use. Concurrent calls create one row.
+ */
+export async function ensureWebChatConnection(
+  db: ChatExecutor,
+  organizationId: string,
+): Promise<ChatConnection> {
+  const where = and(
+    eq(chatConnections.platform, "web"),
+    eq(chatConnections.externalId, organizationId),
+  );
+  const [existing] = await db.select().from(chatConnections).where(where).limit(1);
+  if (existing) return toChatConnection(existing);
+  const [inserted] = await db
+    .insert(chatConnections)
+    .values({
+      organizationId,
+      platform: "web",
+      externalId: organizationId,
+      name: WEB_CHAT_CONNECTION_NAME,
+      encryptedCredentials: null,
+      installedByUserId: null,
+    })
+    .onConflictDoNothing({ target: [chatConnections.platform, chatConnections.externalId] })
+    .returning();
+  if (inserted) return toChatConnection(inserted);
+  // Another call created it between the select and the insert.
+  const [row] = await db.select().from(chatConnections).where(where).limit(1);
+  return toChatConnection(row!);
+}
+
+/** The Chat SDK channel ID of the organization's web chats. */
+export function webChatChannelId(organizationId: string): string {
+  return `web:${organizationId}`;
+}
+
+/** The Chat SDK thread ID of a web chat. */
+export function webChatExternalThreadId(organizationId: string, threadId: string): string {
+  return `${webChatChannelId(organizationId)}:${threadId}`;
+}
+
+/**
+ * A web chat's title from its first message: whitespace collapsed, cut at a word boundary to
+ * at most {@link WEB_CHAT_TITLE_MAX} characters with "…" (a single longer word is cut inside it).
+ */
+export function webChatTitle(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  const chars = Array.from(collapsed);
+  if (chars.length <= WEB_CHAT_TITLE_MAX) return collapsed;
+  const room = chars.slice(0, WEB_CHAT_TITLE_MAX - 1).join("");
+  // The cut falls between words when the next character is a space.
+  const atBoundary = chars[WEB_CHAT_TITLE_MAX - 1] === " ";
+  const lastSpace = room.lastIndexOf(" ");
+  const cut = atBoundary ? room : lastSpace > 0 ? room.slice(0, lastSpace) : room;
+  return `${cut.trimEnd()}…`;
+}
+
+export interface CreateWebChatThreadInput {
+  organizationId: string;
+  /** The member starting it: the only one who sees it. */
+  userId: string;
+  /** Null for "all of the organization's repos". */
+  repositoryId: string | null;
+  branch: string | null;
+  title: string;
+}
+
+/**
+ * Starts a web chat on the organization's `web` connection (created on first use):
+ * `external_thread_id` `web:{organizationId}:{id}`, `channel_id` `web:{organizationId}`.
+ */
+export async function createWebChatThread(
+  db: ChatExecutor,
+  input: CreateWebChatThreadInput,
+): Promise<ChatThread> {
+  const connection = await ensureWebChatConnection(db, input.organizationId);
+  const id = randomUUID();
+  const [row] = await db
+    .insert(chatThreads)
+    .values({
+      id,
+      organizationId: input.organizationId,
+      connectionId: connection.id,
+      platform: "web",
+      externalThreadId: webChatExternalThreadId(input.organizationId, id),
+      channelId: webChatChannelId(input.organizationId),
+      startedByExternalUserId: input.userId,
+      startedByUserId: input.userId,
+      title: input.title,
+      repositoryId: input.repositoryId,
+      branch: input.branch,
+    })
+    .returning();
+  return row!;
+}
+
+/** Touches a thread's `updated_at` (which orders the chats list). */
+export async function touchChatThread(
+  db: ChatExecutor,
+  threadId: string,
+  now: Date = new Date(),
+): Promise<ChatThread | null> {
+  const [row] = await db
+    .update(chatThreads)
+    .set({ updatedAt: now })
+    .where(eq(chatThreads.id, threadId))
+    .returning();
+  return row ?? null;
+}
+
+/** The position after which a page of web chats starts: the last chat of the previous page. */
+export interface WebChatCursor {
+  /** `updated_at` of the last chat, to the microsecond (UTC ISO). */
+  updatedAt: string;
+  id: string;
+}
+
+export interface ListWebChatsInput {
+  userId: string;
+  organizationIds: readonly string[];
+  cursor?: WebChatCursor | null;
+  /** Default 50. */
+  limit?: number;
+}
+
+export interface WebChatPage {
+  chats: (ChatThread & { cursor: WebChatCursor })[];
+  next: WebChatCursor | null;
+}
+
+/** The member's own web chats in the organizations, newest `updated_at` first (then `id`). */
+export async function listWebChats(
+  db: ChatExecutor,
+  input: ListWebChatsInput,
+): Promise<WebChatPage> {
+  if (input.organizationIds.length === 0) return { chats: [], next: null };
+  const limit = Math.max(1, Math.floor(input.limit ?? 50));
+  const { cursor } = input;
+  const rows = await db
+    .select({
+      thread: chatThreads,
+      updatedAtKey: sql<string>`to_char(${chatThreads.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+    })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.startedByUserId, input.userId),
+        inArray(chatThreads.organizationId, [...input.organizationIds]),
+        eq(chatThreads.platform, "web"),
+        cursor
+          ? or(
+              lt(chatThreads.updatedAt, sql`${cursor.updatedAt}::timestamptz`),
+              and(
+                eq(chatThreads.updatedAt, sql`${cursor.updatedAt}::timestamptz`),
+                lt(chatThreads.id, cursor.id),
+              ),
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(desc(chatThreads.updatedAt), desc(chatThreads.id))
+    .limit(limit + 1);
+  const chats = rows.slice(0, limit).map(({ thread, updatedAtKey }) => ({
+    ...thread,
+    cursor: { updatedAt: updatedAtKey, id: thread.id },
+  }));
+  const last = chats.at(-1);
+  return { chats, next: rows.length > limit && last ? last.cursor : null };
+}
+
+export interface AppendWebMessageInput {
+  threadId: string;
+  author: ChatWebMessageAuthor;
+  /** The member who wrote it (`user` messages). */
+  userId?: string | null;
+  markdown?: string;
+  /** Default `complete`. */
+  status?: ChatWebMessageStatus;
+  /** The serialized Chat SDK card. */
+  card?: unknown;
+  cardRef?: ChatWebCardRef | null;
+  /** The ask run a relayed answer came from. */
+  threadRunId?: string | null;
+}
+
+/**
+ * Appends a message to a web chat and touches the chat's `updated_at`, in the thread's
+ * organization. Null when the thread is gone.
+ */
+export async function appendWebMessage(
+  db: Database,
+  input: AppendWebMessageInput,
+): Promise<ChatWebMessage | null> {
+  return db.transaction(async (tx) => {
+    const thread = await touchChatThread(tx, input.threadId);
+    if (!thread) return null;
+    const [row] = await tx
+      .insert(chatWebMessages)
+      .values({
+        organizationId: thread.organizationId,
+        threadId: thread.id,
+        author: input.author,
+        userId: input.userId ?? null,
+        markdown: input.markdown ?? "",
+        status: input.status ?? "complete",
+        card: input.card ?? null,
+        cardRef: input.cardRef ?? null,
+        threadRunId: input.threadRunId ?? null,
+      })
+      .returning();
+    return row!;
+  });
+}
+
+export interface UpdateWebMessageInput {
+  markdown?: string;
+  status?: ChatWebMessageStatus;
+  /** A card's new state; null removes it. */
+  card?: unknown;
+  cardRef?: ChatWebCardRef | null;
+}
+
+/** Updates a web chat message (a streamed text, a finished turn, a card's new state), or null. */
+export async function updateWebMessage(
+  db: ChatExecutor,
+  id: string,
+  input: UpdateWebMessageInput,
+): Promise<ChatWebMessage | null> {
+  const set: Partial<typeof chatWebMessages.$inferInsert> = { updatedAt: new Date() };
+  if (input.markdown !== undefined) set.markdown = input.markdown;
+  if (input.status !== undefined) set.status = input.status;
+  if (input.card !== undefined) set.card = input.card;
+  if (input.cardRef !== undefined) set.cardRef = input.cardRef;
+  const [row] = await db
+    .update(chatWebMessages)
+    .set(set)
+    .where(eq(chatWebMessages.id, id))
+    .returning();
+  return row ?? null;
+}
+
+/** A web chat message by ID, or null. */
+export async function getWebMessage(db: ChatExecutor, id: string): Promise<ChatWebMessage | null> {
+  const [row] = await db.select().from(chatWebMessages).where(eq(chatWebMessages.id, id)).limit(1);
+  return row ?? null;
+}
+
+/** Removes a web chat message; whether it existed. */
+export async function deleteWebMessage(db: ChatExecutor, id: string): Promise<boolean> {
+  const rows = await db
+    .delete(chatWebMessages)
+    .where(eq(chatWebMessages.id, id))
+    .returning({ id: chatWebMessages.id });
+  return rows.length > 0;
+}
+
+export interface WebMessagePage {
+  /** Oldest first. */
+  messages: ChatWebMessage[];
+  /** The ID to pass as `before` for the older messages; null when there are none. */
+  nextBefore: string | null;
+}
+
+/**
+ * A web chat's latest `limit` messages (older than the message `before`, when given), oldest
+ * first. An unknown `before` (not a message of the thread) gives an empty page.
+ */
+export async function listWebMessages(
+  db: ChatExecutor,
+  threadId: string,
+  options: { before?: string | null; limit: number },
+): Promise<WebMessagePage> {
+  const limit = Math.max(1, Math.floor(options.limit));
+  let before: { id: string } | undefined;
+  if (options.before) {
+    [before] = await db
+      .select({ id: chatWebMessages.id })
+      .from(chatWebMessages)
+      .where(and(eq(chatWebMessages.threadId, threadId), eq(chatWebMessages.id, options.before)))
+      .limit(1);
+    if (!before) return { messages: [], nextBefore: null };
+  }
+  const anchor = before;
+  const rows = await db
+    .select()
+    .from(chatWebMessages)
+    .where(
+      and(
+        eq(chatWebMessages.threadId, threadId),
+        anchor
+          ? or(
+              // The anchor's own timestamp, compared in the database at full precision.
+              lt(
+                chatWebMessages.createdAt,
+                sql`(select created_at from chat_web_messages where id = ${anchor.id})`,
+              ),
+              and(
+                eq(
+                  chatWebMessages.createdAt,
+                  sql`(select created_at from chat_web_messages where id = ${anchor.id})`,
+                ),
+                lt(chatWebMessages.id, anchor.id),
+              ),
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(desc(chatWebMessages.createdAt), desc(chatWebMessages.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const oldest = page.at(-1);
+  return {
+    messages: page.reverse(),
+    nextBefore: rows.length > limit && oldest ? oldest.id : null,
+  };
 }

@@ -45,7 +45,7 @@ export interface RalphPullRequest {
 
 /** The chat thread a chat run was started from. */
 export interface RalphChatThreadRef {
-  platform: "slack" | "discord";
+  platform: "slack" | "discord" | "web";
   /** The Chat SDK channel ID (e.g. `slack:C0123`). */
   channelId: string;
 }
@@ -53,6 +53,7 @@ export interface RalphChatThreadRef {
 export const CHAT_PLATFORM_NAMES: Record<RalphChatThreadRef["platform"], string> = {
   slack: "Slack",
   discord: "Discord",
+  web: "Omniralph",
 };
 
 export interface RalphRunRow {
@@ -239,7 +240,7 @@ export function chatChannelLabel(channelId: string): string {
 
 /**
  * What the pages call a run: its Linear identifier, or for a chat run its
- * platform and channel (`Slack C0123`).
+ * platform and channel (`Slack C0123`), or `Ask` for a web chat's.
  */
 export function runSourceLabel(
   run: Pick<RalphRunRow, "origin" | "linearIdentifier" | "chatThread">,
@@ -247,6 +248,8 @@ export function runSourceLabel(
   if (run.origin === "linear") return run.linearIdentifier ?? "Linear issue";
   if (!run.chatThread) return "Chat";
   const { platform, channelId } = run.chatThread;
+  // A web chat's channel is its organization: nothing to show.
+  if (platform === "web") return "Ask";
   return `${CHAT_PLATFORM_NAMES[platform]} ${chatChannelLabel(channelId)}`;
 }
 

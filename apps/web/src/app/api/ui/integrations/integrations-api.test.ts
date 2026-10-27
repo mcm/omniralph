@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   chat: [] as Array<{
     id: string;
     organizationId: string;
-    platform: "slack" | "discord";
+    platform: "slack" | "discord" | "web";
     externalId?: string;
     name: string;
     credentials: { botToken: string } | null;
@@ -85,8 +85,11 @@ vi.mock("@omniralph/db", async () => ({
     state.integration = null;
     return removed;
   },
+  // As the real one (covered against Postgres in `web-chat.test.ts`): never the web connection.
   listChatConnections: async (_db: unknown, organizationId: string) =>
-    state.chat.filter((c) => c.organizationId === organizationId),
+    state.chat.filter((c) => c.organizationId === organizationId && c.platform !== "web"),
+  isExternalChatConnection: (connection: { platform: string }) => connection.platform !== "web",
+  // Finds any connection, the web one included: callers must refuse it.
   deleteChatConnection: async (_db: unknown, organizationId: string, id: string) => {
     state.chatDeletes.push([organizationId, id]);
     const removed = state.chat.find((c) => c.organizationId === organizationId && c.id === id);
@@ -152,6 +155,7 @@ const CONNECTIONS: Record<string, string> = {
   d2: "c0000000-0000-4000-8000-000000000004",
   foreign: "c0000000-0000-4000-8000-000000000005",
   missing: "c0000000-0000-4000-8000-000000000006",
+  web: "c0000000-0000-4000-8000-000000000007",
 };
 const cid = (name: string) => CONNECTIONS[name]!;
 
@@ -625,5 +629,60 @@ describe("saveChatChannelPlaybooks and removeChatChannelPlaybooks", () => {
     ).toMatchObject({ ok: false });
     expect(await removeChatChannelPlaybooks("s1", "slack:C1")).toMatchObject({ ok: false });
     expect(state.channelPlaybooks).toHaveLength(1);
+  });
+});
+
+describe("the organization's hidden web connection", () => {
+  beforeEach(() => {
+    state.user = user("admin");
+    state.chat = [
+      {
+        id: cid("s1"),
+        organizationId: "org-a",
+        platform: "slack",
+        externalId: "T1",
+        name: "Acme",
+        credentials: { botToken: "xoxb" },
+      },
+      {
+        id: cid("web"),
+        organizationId: "org-a",
+        platform: "web",
+        externalId: "org-a",
+        name: "Omniralph",
+        credentials: null,
+      },
+    ];
+    state.chatDeletes = [];
+    state.channelPlaybooks = [];
+    slackRevoke = () => HttpResponse.json({ ok: true, revoked: true });
+    discordLeave = () => new HttpResponse(null, { status: 204 });
+    slackRevoked.length = 0;
+    discordLeft.length = 0;
+  });
+
+  it("is never disconnected as a Slack workspace or Discord server", async () => {
+    expect(await disconnectSlack("web")).toEqual({
+      ok: false,
+      error: "That Slack workspace isn't connected.",
+    });
+    expect(await disconnectDiscord("web")).toEqual({
+      ok: false,
+      error: "That Discord server isn't connected.",
+    });
+    expect(state.chatDeletes).toEqual([]);
+    expect(state.chat).toHaveLength(2);
+    expect(slackRevoked).toEqual([]);
+    expect(discordLeft).toEqual([]);
+  });
+
+  it("takes no channel overrides", async () => {
+    expect(
+      await saveChatChannelPlaybooks("web", "C0123ABCD", {
+        ask: "builtin:ask-about-code",
+        startWork: null,
+      }),
+    ).toEqual({ ok: false, error: "That chat connection isn't connected." });
+    expect(state.channelPlaybooks).toEqual([]);
   });
 });

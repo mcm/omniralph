@@ -41,10 +41,15 @@ export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "
 export const integrationProvider = pgEnum("integration_provider", ["linear"]);
 /** The tracker a repository's work item match reads work items from. */
 export const workItemTracker = pgEnum("work_item_tracker", ["linear"]);
-export const chatPlatform = pgEnum("chat_platform", ["slack", "discord"]);
+/** Where a chat happens: Slack, Discord, or the Omniralph web app (`web`, one hidden connection per organization). */
+export const chatPlatform = pgEnum("chat_platform", ["slack", "discord", "web"]);
 /** How a chat identity was linked: by the member (`manual`) or by a matching email (`email`). */
 export const chatIdentitySource = pgEnum("chat_identity_source", ["manual", "email"]);
 export const chatMessageRole = pgEnum("chat_message_role", ["user", "assistant", "tool"]);
+/** Who wrote a web chat message: the member (`user`) or Om. */
+export const chatWebMessageAuthor = pgEnum("chat_web_message_author", ["user", "om"]);
+/** A web chat message being streamed (`streaming`) or finished (`complete`). */
+export const chatWebMessageStatus = pgEnum("chat_web_message_status", ["streaming", "complete"]);
 /** A repository's review depth (`REVIEW_DEPTHS` in `@omniralph/shared`). */
 export const reviewDepth = pgEnum("review_depth", ["quick", "standard", "deep"]);
 /**
@@ -478,7 +483,9 @@ export const oauthStateUses = pgTable(
 
 /**
  * A Slack workspace or Discord server connected to an organization
- * (`external_id` = the Slack team or enterprise ID, or the Discord guild ID).
+ * (`external_id` = the Slack team or enterprise ID, or the Discord guild ID), or an
+ * organization's hidden `web` connection (`external_id` = the organization ID, no
+ * credentials), created on first use by `ensureWebChatConnection`.
  */
 export const chatConnections = pgTable(
   "chat_connections",
@@ -581,7 +588,11 @@ export const chatUserProfiles = pgTable(
   (t) => [primaryKey({ columns: [t.connectionId, t.externalUserId] })],
 );
 
-/** A conversation with the control-panel agent: a thread started by mentioning the bot. */
+/**
+ * A conversation with the control-panel agent: a thread started by mentioning the bot, or a
+ * web chat (`platform` `web`: `external_thread_id` `web:{organizationId}:{id}`, with its
+ * title, repo, branch and the member who started it; null on Slack and Discord threads).
+ */
 export const chatThreads = pgTable(
   "chat_threads",
   {
@@ -597,6 +608,18 @@ export const chatThreads = pgTable(
     externalThreadId: text("external_thread_id").notNull(),
     channelId: text("channel_id").notNull(),
     startedByExternalUserId: text("started_by_external_user_id").notNull(),
+    /** A web chat's title: its first message, cut to 60 characters (`webChatTitle`). */
+    title: text("title"),
+    /** A web chat's repo; null for "all of the organization's repos". */
+    repositoryId: uuid("repository_id").references((): AnyPgColumn => repositories.id, {
+      onDelete: "set null",
+    }),
+    /** A web chat's branch (its repo's default branch when it started). */
+    branch: text("branch"),
+    /** The member who started a web chat: the only one who sees it. */
+    startedByUserId: text("started_by_user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -606,6 +629,12 @@ export const chatThreads = pgTable(
       t.externalThreadId,
     ),
     index("chat_threads_organization_id_idx").on(t.organizationId),
+    /** A member's web chats, newest first (the chats list). */
+    index("chat_threads_started_by_user_id_organization_id_updated_at_idx").on(
+      t.startedByUserId,
+      t.organizationId,
+      t.updatedAt,
+    ),
   ],
 );
 
@@ -684,6 +713,48 @@ export const chatMessages = pgTable(
       .default(sql`clock_timestamp()`),
   },
   (t) => [index("chat_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt)],
+);
+
+/** What a web chat card is, from its button actions (`webCardRef`). */
+export interface ChatWebCardRef {
+  kind: "request_draft" | "linear_issue_draft";
+  draftId: string;
+}
+
+/**
+ * A message of a web chat as the web shows it (as Slack's own message store is what Slack
+ * shows); `chat_messages` stays the model's history.
+ */
+export const chatWebMessages = pgTable(
+  "chat_web_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    author: chatWebMessageAuthor("author").notNull(),
+    /** The member who wrote it (`user` messages). */
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    markdown: text("markdown").notNull().default(""),
+    status: chatWebMessageStatus("status").notNull().default("complete"),
+    /** The serialized Chat SDK card, or null. */
+    card: jsonb("card").$type<unknown>(),
+    /** The draft the card shows, or null. */
+    cardRef: jsonb("card_ref").$type<ChatWebCardRef>(),
+    /** The ask run a relayed answer came from. */
+    threadRunId: uuid("thread_run_id").references((): AnyPgColumn => chatThreadRuns.id, {
+      onDelete: "set null",
+    }),
+    /** `clock_timestamp()`, so messages appended in one transaction keep their order. */
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chat_web_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt)],
 );
 
 /**
