@@ -72,3 +72,77 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Organization › Members */
+.or-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-member__avatar {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.or-member__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.or-invite__emails {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.or-invitations,
+.or-domains {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-invitations {
+  flex-direction: column;
+}
+
+.or-domains {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.or-invitation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--or-line);
+}
+
+.or-invitation__email {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--or-text);
+  text-overflow: ellipsis;
+}
+
+.or-invitation__expiry,
+.or-members__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}

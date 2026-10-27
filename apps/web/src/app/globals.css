@@ -173,9 +173,6 @@ body {
   color: var(--text-primary);
   text-decoration: none;
 }
-.list-nowrap {
-  white-space: nowrap;
-}
 .list-cell-stack {
   display: flex;
   flex-direction: column;
@@ -953,73 +950,6 @@ body {
   color: var(--or-text);
   text-decoration: underline;
   text-underline-offset: 0.2em;
-}
-
-/* org / integrations / host-tools: settings screens. */
-.org-role-select {
-  width: 7.5rem;
-}
-/* The invite email grows on a wide row; below this width Role and Invite wrap under it. */
-.org-invite-email {
-  flex: 1 1 16rem;
-  min-width: 0;
-}
-.org-danger-icon {
-  color: var(--danger-fg);
-}
-.org-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding-block: var(--space-3);
-}
-/* The name and email; the row's controls wrap below it before it gets narrower than this. */
-.org-row-text {
-  flex: 1 1 10rem;
-  min-width: 0;
-}
-/* A row's trailing controls wrap below its text as one group, kept at the end. */
-.org-row-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-left: auto;
-}
-.org-row-compact {
-  padding-block: var(--space-2);
-}
-.org-avatar {
-  flex-shrink: 0;
-  width: 2.25rem;
-  height: 2.25rem;
-}
-.org-avatar-fallback {
-  font-size: var(--text-xs);
-  background: var(--bg-raised);
-  color: var(--text-accent);
-}
-.org-row-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
-}
-.org-row-meta {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.host-tools-name {
-  flex: 1 1 0;
-  min-width: 12rem;
-}
-.host-tools-description {
-  flex: 2 1 0;
-  min-width: 16rem;
 }
 
 /* run, review, repo, jobs: list and detail pieces. */

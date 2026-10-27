@@ -214,7 +214,7 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
    organization (you become its admin), accept an invitation, or join one that allows your email
    domain. Anyone who can sign in can create organizations; switch between yours from the
    organization switcher in the sidebar.
-2. Under **Settings › Organization**, invite members by email (as `admin` or `member`; invitations
+2. Under **Settings › Members**, invite members by email (as `admin` or `member`; invitations
    expire after 14 days, no email is sent: invitees accept after signing in) and optionally set
    email domains and **Allow anyone with a matching email to join**.
 3. **Repos › Add repo › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**

@@ -53,7 +53,7 @@ function savingOrganization<T>(
 }
 
 /**
- * Settings › Organization: the caller's active organization with its members and email
+ * Organization › General and Members: the caller's active organization with its members and email
  * domains; admins also get its pending invitations.
  */
 export async function loadOrganizationSettings(

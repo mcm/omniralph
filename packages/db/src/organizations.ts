@@ -18,6 +18,9 @@ import {
   users,
 } from "./schema.js";
 import { normalizeEmail } from "./users.js";
+import { isValidDomain, normalizeDomain } from "./domains.js";
+
+export { isValidDomain, normalizeDomain };
 
 export type Organization = typeof organizations.$inferSelect;
 export type OrganizationRole = (typeof organizationMembers.$inferSelect)["role"];
@@ -35,26 +38,6 @@ export function emailDomain(email: string): string {
   const normalized = normalizeEmail(email);
   const at = normalized.lastIndexOf("@");
   return at === -1 ? "" : normalized.slice(at + 1);
-}
-
-/** Domains are stored lower-cased, without a leading `@`. */
-export function normalizeDomain(domain: string): string {
-  return domain.trim().toLowerCase().replace(/^@/, "");
-}
-
-const DOMAIN_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
-
-/**
- * Whether `domain` (normalized) is a syntactically valid domain name: at least two
- * dot-separated labels of letters, digits and inner hyphens, a non-numeric top-level
- * label, at most 253 characters.
- */
-export function isValidDomain(domain: string): boolean {
-  if (domain.length === 0 || domain.length > 253) return false;
-  const labels = domain.split(".");
-  if (labels.length < 2) return false;
-  if (!labels.every((label) => DOMAIN_LABEL.test(label))) return false;
-  return !/^[0-9]+$/.test(labels[labels.length - 1]!);
 }
 
 /** Whether the organization's domains allow `email`; any email is allowed when it has none. */
