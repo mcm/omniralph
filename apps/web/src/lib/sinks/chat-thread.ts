@@ -91,7 +91,9 @@ function referencesLine(
 /**
  * For a completed `builtin:ask-about-code` run: records the answer (trimmed,
  * with links to the files it cites), or a note why there is none, as the
- * thread's `response` event. Safe to call again for a replayed result: it
+ * thread's `response` event. An answered event also carries the `answer` alone
+ * (without the "Files:" line) and its `references`, which a web chat relays
+ * verbatim (`processThreadRunEvents`). Safe to call again for a replayed result: it
  * records at most once. `source` is the deployment's chat bot unless a test
  * passes another.
  */
@@ -108,7 +110,13 @@ export async function applyChatAnswer(
     switch (result.outcome) {
       case "answered": {
         const files = referencesLine(context, result.references, target.repositoryUrl);
-        return { ...details, text: files ? `${answer ?? ""}\n\n${files}` : (answer ?? "") };
+        return {
+          ...details,
+          text: files ? `${answer ?? ""}\n\n${files}` : (answer ?? ""),
+          // For a web chat, which relays the answer as is and shows the files as badges.
+          answer: answer ?? "",
+          references: result.references,
+        };
       }
       case "budget_exhausted":
         return {

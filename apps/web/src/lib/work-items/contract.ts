@@ -146,6 +146,33 @@ export function describeWorkItemTrackerContract(
       });
     });
 
+    describe("findByIdentifiers", () => {
+      it("finds the items it knows in one list, ignoring case and unknown identifiers", async () => {
+        const a = await h.seed({ teamId: teamA, title: "Add exports", state: "todo" });
+        const b = await h.seed({ teamId: teamB, title: "Fix login", state: "backlog" });
+        await h.seed({ teamId: teamA, title: "Not asked for", state: "todo" });
+        const found = await tracker.findByIdentifiers([
+          a.identifier.toLowerCase(),
+          b.identifier,
+          a.identifier,
+          "NOPE-999999",
+          "not an identifier",
+        ]);
+        expect(identifiers(found)).toEqual([a.identifier, b.identifier].sort());
+        expect(found.find((item) => item.id === b.id)).toMatchObject({
+          title: "Fix login",
+          team: { id: teamB },
+          state: { category: "backlog" },
+        });
+        expect(found.every((item) => item.url.startsWith("https://"))).toBe(true);
+      });
+
+      it("finds nothing for no identifiers, or none it knows", async () => {
+        expect(await tracker.findByIdentifiers([])).toEqual([]);
+        expect(await tracker.findByIdentifiers(["NOPE-999999", "x"])).toEqual([]);
+      });
+    });
+
     describe("delegate", () => {
       it("says who an item is delegated to and whether that's Omniralph", async () => {
         const none = await h.seed({ teamId: teamA, title: "None", state: "todo" });

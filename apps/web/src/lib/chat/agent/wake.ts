@@ -1,6 +1,7 @@
 import "server-only";
 import {
   appendChatMessage,
+  appendWebMessage,
   getChatConnection,
   getChatThread,
   getJob,
@@ -40,6 +41,8 @@ import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { withChatConnection } from "../bot";
+import { recordWebChatChange, webMessageView } from "../web-adapter";
+import { sendWebEvent } from "../web-stream";
 import { linkedMemberActor, type ChatActor } from "../identity";
 import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
 import { recordTurn, webChatScope, type ChatAgentDeps } from "./handler";
@@ -149,6 +152,52 @@ interface EventGroup {
   events: ChatRunEvent[];
 }
 
+/**
+ * The answer a web chat shows as is, with no model turn: an answered code question's
+ * `response` (its `answer`, without the "Files:" line, which the chat shows as badges).
+ * Null for any other event, and on Slack and Discord.
+ */
+export function relayedAnswer(
+  connection: Pick<ChatConnection, "platform">,
+  event: Pick<ChatRunEvent, "kind" | "body">,
+  run: Pick<ChatThreadRun, "kind"> | undefined,
+): string | null {
+  if (connection.platform !== "web" || event.kind !== "response" || run?.kind !== "query") {
+    return null;
+  }
+  const body = event.body as { outcome?: unknown; answer?: unknown } | null;
+  if (body?.outcome !== "answered" || typeof body.answer !== "string") return null;
+  return body.answer.trim() || null;
+}
+
+/** What a wake-up does, in order: relay one answer as is, or take a turn for a group. */
+type WakeStep = { answer: string; event: ChatRunEvent } | { group: EventGroup };
+
+/** `groups` as steps: in a web chat, each answered code question is relayed on its own. */
+function wakeSteps(
+  connection: ChatConnection,
+  runs: ReadonlyMap<string, ChatThreadRun>,
+  groups: readonly EventGroup[],
+): WakeStep[] {
+  const steps: WakeStep[] = [];
+  for (const group of groups) {
+    let turn: EventGroup | null = null;
+    for (const event of group.events) {
+      const answer = relayedAnswer(connection, event, runs.get(event.threadRunId));
+      if (answer !== null) {
+        steps.push({ answer, event });
+        turn = null;
+      } else if (turn) {
+        turn.events.push(event);
+      } else {
+        turn = { requester: group.requester, events: [event] };
+        steps.push({ group: turn });
+      }
+    }
+  }
+  return steps;
+}
+
 /** Keeps a held lock alive until stopped. */
 function heartbeat(state: StateAdapter, lock: Lock, ttlMs: number): () => void {
   const timer = setInterval(
@@ -166,6 +215,8 @@ function heartbeat(state: StateAdapter, lock: Lock, ttlMs: number): () => void {
  * the events are marked processed; an empty answer posts nothing. A failed
  * turn counts an attempt and leaves its events pending. The thread's Chat SDK
  * lock is held throughout: when a person's turn holds it, nothing happens.
+ * In a web chat, an answered code question is relayed as the agent wrote it,
+ * with no model turn (`relayedAnswer`).
  */
 export async function processThreadRunEvents(
   deps: WakeDeps,
@@ -186,7 +237,15 @@ export async function processThreadRunEvents(
     (e) => e.attempts < MAX_WAKE_ATTEMPTS,
   );
   if (pending.length === 0) return { status: "idle" };
-  if (!deps.model) return { status: "not_configured" };
+  if (!deps.model) {
+    // A web chat's code answers are relayed without the model.
+    const runs = new Map(
+      (await listThreadRuns(db, organizationId, chatThreadId)).map((r) => [r.id, r]),
+    );
+    if (!pending.every((e) => relayedAnswer(connection, e, runs.get(e.threadRunId)) !== null)) {
+      return { status: "not_configured" };
+    }
+  }
 
   const target = await loadChatTarget(deps.channel, {
     chatThreadId,
@@ -272,7 +331,24 @@ async function relayGroups(
   const rateLimits = deps.rateLimits ?? CHAT_AGENT_RATE_LIMITS;
   let processed = 0;
   let posted = 0;
-  for (const group of groups) {
+  for (const step of wakeSteps(connection, runs, groups)) {
+    if ("answer" in step) {
+      try {
+        await relayAnswer(deps, target, step.event, step.answer);
+        processed += 1;
+        posted += 1;
+      } catch (error) {
+        deps.logger.error("Relaying a code answer to a web chat failed", {
+          organizationId,
+          chatThreadId: target.thread.id,
+          error,
+        });
+        await recordRunEventAttempt(db, organizationId, [step.event.id]);
+        return { status: "failed", events: processed, posted };
+      }
+      continue;
+    }
+    const { group } = step;
     const ids = group.events.map((e) => e.id);
     const hit = await hitRateLimit(db, rateLimits.wakePerOrganization(organizationId), deps.now());
     if (hit.limited) {
@@ -298,6 +374,41 @@ async function relayGroups(
   return { status: "processed", events: processed, posted };
 }
 
+/**
+ * A web chat's code answer, relayed as the agent wrote it (no model turn): an `om` message
+ * linked to the ask's thread run (so the chat shows what it read and cites), the event
+ * marked processed, and the answer added to the model's history for follow-ups.
+ */
+async function relayAnswer(
+  deps: RelayDeps,
+  target: ChatTarget,
+  event: ChatRunEvent,
+  answer: string,
+): Promise<void> {
+  const { db } = deps;
+  const chatThread = target.thread;
+  const row = await appendWebMessage(db, {
+    threadId: chatThread.id,
+    author: "om",
+    markdown: answer,
+    threadRunId: event.threadRunId,
+  });
+  if (!row) throw new Error(`Web chat ${chatThread.id} is gone`);
+  recordWebChatChange(db, chatThread);
+  sendWebEvent("message", { message: webMessageView(row) });
+  await markRunEventsProcessed(db, event.organizationId, [event.id], deps.now());
+  await appendChatMessage(db, {
+    threadId: chatThread.id,
+    role: "assistant",
+    content: answer,
+  }).catch((error: unknown) =>
+    deps.logger.error("Couldn't record a relayed code answer", {
+      chatThreadId: chatThread.id,
+      error,
+    }),
+  );
+}
+
 /** One wake-up turn for `group`'s events. True when it posted a message. */
 async function relayGroup(
   deps: RelayDeps,
@@ -307,7 +418,8 @@ async function relayGroup(
   group: EventGroup,
 ): Promise<boolean> {
   const { db } = deps;
-  const model = deps.model!;
+  const model = deps.model;
+  if (!model) throw new Error("The chat agent isn't configured");
   const organizationId = connection.organizationId;
   const chatThread = target.thread;
   const appUrl = target.channel.appUrl.replace(/\/+$/, "");

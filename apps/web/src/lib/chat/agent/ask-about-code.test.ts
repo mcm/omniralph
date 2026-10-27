@@ -12,11 +12,14 @@ import {
   listThreadRuns,
   connectRepository,
   createDb,
+  createWebChatThread,
   ensureChatThread,
+  ensureWebChatConnection,
   jobs,
   listChatMessages,
   organizations,
   repositories,
+  users,
   saveChatConnection,
   upsertChatChannelPlaybookSetting,
   upsertScmConnection,
@@ -256,7 +259,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
   async function ask(
     h: Agent,
-    input: { repository: string; question: string; attachments?: string[] },
+    input: { repository?: string; question: string; attachments?: string[] },
   ) {
     const tool = chatTools.ask_about_code!;
     return (await tool.execute(tool.inputSchema.parse(input), h.context)) as Result;
@@ -520,6 +523,100 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       "Previous code question in this thread (about acme/api):\nWhere are sessions stored?",
     );
     expect(context).toContain("Its answer:\nIn Redis, see `src/session.ts`.");
+  });
+
+  describe("in a web chat", () => {
+    /** A web chat of Ada's, about `repository` (or all repos) on the branch it stored. */
+    async function webAgent(repository: { id: string; branch: string } | null): Promise<Agent> {
+      await db.insert(users).values({ id: "ada", email: "ada@acme.test" }).onConflictDoNothing();
+      const web = await ensureWebChatConnection(db, orgId);
+      const chatThread = await createWebChatThread(db, {
+        organizationId: orgId,
+        userId: "ada",
+        repositoryId: repository?.id ?? null,
+        branch: repository?.branch ?? null,
+        title: "Webhooks",
+      });
+      const h = await agent();
+      h.context.connection = { id: web.id, organizationId: orgId };
+      h.context.chatThread = chatThread;
+      return { ...h, chatThread };
+    }
+
+    const triggerOf = (payload: unknown) => RunSpecJobPayload.parse(payload);
+
+    it("asks about the chat's repo by default, on the branch the chat stored", async () => {
+      const h = await webAgent({ id: repositoryId, branch: "release/2.0" });
+
+      const result = await ask(h, { question: "How are webhooks verified?" });
+
+      expect(result).toMatchObject({ status: "started", repository: "acme/api" });
+      const [job] = await chatAskJobs(h.chatThread.id);
+      expect(job).toMatchObject({ repositoryId });
+      expect(triggerOf(job!.payload)).toMatchObject({
+        trigger: { context: { repository: "acme/api", branch: "release/2.0" } },
+        ref: "release/2.0",
+      });
+      // The default branch isn't read again.
+      expect(scm.calls).not.toContain("getDefaultBranch");
+      // Naming the chat's repo is the same.
+      await ask(h, { repository: "acme/api", question: "Where are retries configured?" });
+      expect((await chatAskJobs(h.chatThread.id)).map((j) => triggerOf(j.payload).ref)).toEqual([
+        "release/2.0",
+        "release/2.0",
+      ]);
+      expect(scm.calls).not.toContain("getDefaultBranch");
+    });
+
+    it("reads another repo's default branch when the question names it", async () => {
+      const [api] = await db.select().from(repositories).where(eq(repositories.id, repositoryId));
+      const docs = await connectRepository(db, {
+        connectionId: api!.connectionId,
+        provider: "github",
+        externalId: "repo-acme-docs",
+        fullPath: "acme/docs",
+      });
+      const h = await webAgent({ id: repositoryId, branch: "release/2.0" });
+
+      expect(
+        await ask(h, { repository: "acme/docs", question: "How is the site built?" }),
+      ).toMatchObject({ status: "started", repository: "acme/docs" });
+
+      const [job] = await chatAskJobs(h.chatThread.id);
+      expect(job).toMatchObject({ repositoryId: docs.id });
+      expect(triggerOf(job!.payload).ref).toBe("develop");
+      expect(scm.calls).toEqual(["getDefaultBranch"]);
+    });
+
+    it("needs a repository in a chat about all repos", async () => {
+      const h = await webAgent(null);
+      expect(await ask(h, { question: "Where is auth?" })).toMatchObject({
+        error: "repository_needed",
+      });
+      expect(await chatAskJobs(h.chatThread.id)).toEqual([]);
+      expect(await ask(h, { repository: "acme/api", question: "Where is auth?" })).toMatchObject({
+        status: "started",
+      });
+      const [job] = await chatAskJobs(h.chatThread.id);
+      expect(triggerOf(job!.payload).ref).toBe("develop");
+    });
+  });
+
+  it("reads the default branch for every question on Slack and Discord", async () => {
+    const h = await agent();
+    await ask(h, { repository: "acme/api", question: "Where is auth?" });
+    scm.defaultBranch = "main";
+    await ask(h, { repository: "acme/api", question: "Where is billing?" });
+    expect(scm.calls).toEqual(["getDefaultBranch", "getDefaultBranch"]);
+    expect(
+      (await chatAskJobs(h.chatThread.id))
+        .map((j) => RunSpecJobPayload.parse(j.payload).ref)
+        .sort(),
+    ).toEqual(["develop", "main"]);
+    // Without a repository, Slack and Discord threads have none to default to.
+    expect(await ask(h, { question: "Where is auth?" })).toMatchObject({
+      error: "repository_needed",
+    });
   });
 
   it("refuses a repository the organization hasn't connected", async () => {

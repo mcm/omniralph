@@ -234,6 +234,14 @@ of its members starts a chat; it is never listed under **Settings › Connection
   later (a code question an agent read the repo for, a run's news) and card changes reach every
   open view of the chat through live updates, without a refresh; change events name the chat only,
   on the member's own channel.
+- **Code answers as written.** A [code question](#code-questions) asked in a web chat runs on the
+  chat's repo (unless Om names another) and the branch the chat stored when it started. Its answer
+  is posted exactly as the agent wrote it, without a model turn in between, and shows how long the
+  agent took, how many files it read, the files it cites (linked on the code host at that branch)
+  and the work items it mentions that the organization's tracker knows (linked to their newest
+  run, else to the tracker). While the question runs, the chat says that Om is reading the repo,
+  with a live count of the files read. A failed question, one that ran out of budget, and a coding
+  run's news still go through Om, as on Slack and Discord.
 
 ## Om from chat
 
@@ -421,7 +429,7 @@ checkout of it:
   links to the files it cites, or says why the run failed. Asking the same question again while it
   runs doesn't queue it twice. A code question's run takes no replies: ask a follow-up instead.
 - The question is answered from the repository's **default branch** (other branches aren't
-  supported). The agent sees the question, the latest messages of the thread and the thread's
+  supported; a [web chat](#web-ask) uses the default branch it read when it started). The agent sees the question, the latest messages of the thread and the thread's
   previous code question and answer, so follow-ups work.
 - Attached text files (e.g. a pasted log) can go with the question: the agent passes them to
   `ask_about_code`, and their text (up to 3,000 characters each) is quoted in the question's
