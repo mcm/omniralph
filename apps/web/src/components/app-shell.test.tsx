@@ -80,7 +80,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Analytics and Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -92,6 +92,7 @@ describe("AppShell", () => {
       ["Backlog", "/backlog"],
       ["Repos", "/repos"],
       ["Fleet", "/fleet"],
+      ["Analytics", "/analytics"],
       ["Settings", "/settings"],
     ]);
   });
@@ -125,13 +126,15 @@ describe("AppShell", () => {
     expect(current(drawer)).toEqual(["Repos"]);
   });
 
-  it("marks no entry current on /analytics (its own entry comes later)", () => {
+  it("marks Analytics alone current on /analytics, in the sidebar and the phone drawer", async () => {
     renderShell("/analytics");
-    expect(current(sidebar())).toEqual([]);
+    expect(current(sidebar())).toEqual(["Analytics"]);
     expect(current(tabBar())).toEqual([]);
+    const { drawer } = await openDrawer();
+    expect(current(drawer)).toEqual(["Analytics"]);
   });
 
-  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Fleet and Settings in the drawer", async () => {
+  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Fleet, Analytics and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
@@ -145,6 +148,7 @@ describe("AppShell", () => {
     expect(entries.map((link) => link.getAttribute("aria-label"))).toEqual([
       "Repos",
       "Fleet",
+      "Analytics",
       "Settings",
     ]);
     expect(current(drawer)).toEqual(["Settings"]);

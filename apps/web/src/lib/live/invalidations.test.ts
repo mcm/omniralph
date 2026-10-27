@@ -2,6 +2,7 @@ import { QueryClient, type QueryKey } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import {
+  analyticsKeys,
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
@@ -11,7 +12,14 @@ import {
   settingsHistoryKeys,
 } from "@/lib/api/keys";
 import { playbookKeys } from "@/lib/api/playbook-keys";
-import { CHANGE_RESOURCES, parseChangeEvent, type ChangeEvent } from "./events";
+import {
+  CHANGE_RESOURCES,
+  parseChangeEvent,
+  SETTINGS_SECTIONS,
+  UNTRACKED_SETTINGS_SECTIONS,
+  USER_SETTINGS_SECTIONS,
+  type ChangeEvent,
+} from "./events";
 import {
   changesUserRecord,
   createLiveInvalidator,
@@ -29,6 +37,8 @@ const keys = queryKeys(ORG);
 const playbooks = playbookKeys(keys);
 const history = settingsHistoryKeys(keys);
 const backlog = backlogKeys(keys);
+/** Analytics queries covering ORG: its own and the `all` ones. */
+const analyticsOfOrg = analyticsKeys(keys).covering(ORG);
 
 /** Every repository's list and detail (their status follows runs, agents and connections). */
 const repositoryViews = [keys.repositories.lists, [...keys.repositories.all, "detail"]];
@@ -46,7 +56,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.runs.lists,
       keys.runs.detail(RUN),
       keys.inbox.all,
-      keys.analytics.all,
+      ...analyticsOfOrg,
       ...repositoryViews,
       backlog.details,
     ]);
@@ -54,9 +64,31 @@ describe("LIVE_INVALIDATIONS", () => {
 
   it("run without a run (system work): Analytics and the repositories' status (sync problems)", () => {
     expect(liveInvalidations(event({ resource: "run" }))).toEqual([
-      keys.analytics.all,
+      ...analyticsOfOrg,
       ...repositoryViews,
     ]);
+  });
+
+  it("no resource but run invalidates Analytics (a transcript changes no figure)", () => {
+    const events: ChangeEvent[] = CHANGE_RESOURCES.filter(
+      (resource) => resource !== "run" && resource !== "settings",
+    ).flatMap((resource) => [
+      event({ resource, runId: RUN, ids: [ID] }),
+      event({ resource, ids: [ID] }),
+    ]);
+    for (const section of [
+      ...SETTINGS_SECTIONS,
+      ...UNTRACKED_SETTINGS_SECTIONS,
+      ...USER_SETTINGS_SECTIONS,
+    ]) {
+      events.push(event({ resource: "settings", section, subjectId: ID }));
+    }
+    expect(events.map((e) => e.resource)).toContain("transcript");
+    for (const changed of events) {
+      for (const prefix of scopeInvalidations(changed, new Set([ORG, OTHER_ORG]))) {
+        expect(prefix[1], `${changed.resource}`).not.toBe("analytics");
+      }
+    }
   });
 
   it("transcript: only that run's transcript", () => {
@@ -424,9 +456,39 @@ describe("createLiveInvalidator", () => {
     expect(invalidated()).toEqual([keys.chatAccounts.list()]);
   });
 
+  it("refetches the Analytics queries whose scope covers the run event's organization", () => {
+    const analytics = analyticsKeys(keys);
+    const own = analytics.list({ days: 30, repositoryId: null, organization: ORG });
+    const ownRepo = analytics.list({ days: 7, repositoryId: ID, organization: ORG });
+    const all = analytics.list({ days: 90, repositoryId: null, organization: "all" });
+    const otherOnly = analytics.list({ days: 30, repositoryId: null, organization: OTHER_ORG });
+    seed(own, ownRepo, all, otherOnly);
+    const invalidator = createLiveInvalidator(client);
+    invalidator.apply(event({ resource: "run", runId: RUN }), scope);
+    expect(invalidated()).toEqual([own, ownRepo, all]);
+
+    // Under All organizations, another organization's run reaches the `all` queries only.
+    client.clear();
+    seed(own, all, otherOnly);
+    const both = new Set([ORG, OTHER_ORG]);
+    invalidator.apply(changeEvent(OTHER_ORG, { resource: "run", runId: OTHER_RUN }), both);
+    expect(invalidated()).toEqual([all, otherOnly]);
+
+    // A transcript growing changes no figure.
+    client.clear();
+    seed(own, all);
+    invalidator.apply(event({ resource: "transcript", runId: RUN }), scope);
+    expect(invalidated()).toEqual([]);
+    invalidator.dispose();
+  });
+
   it("throttles a query with meta.liveThrottleMs: one leading and one trailing per window", async () => {
     vi.useFakeTimers();
-    const throttledKey = keys.analytics.list({ days: 30 });
+    const throttledKey = analyticsKeys(keys).list({
+      days: 30,
+      repositoryId: null,
+      organization: ORG,
+    });
     client.getQueryCache().build(client, {
       queryKey: throttledKey,
       queryFn: async () => "analytics",
@@ -462,7 +524,11 @@ describe("createLiveInvalidator", () => {
 
   it("drops a pending trailing invalidation on dispose", async () => {
     vi.useFakeTimers();
-    const throttledKey = keys.analytics.list();
+    const throttledKey = analyticsKeys(keys).list({
+      days: 30,
+      repositoryId: null,
+      organization: "all",
+    });
     client.getQueryCache().build(client, {
       queryKey: throttledKey,
       queryFn: async () => "analytics",

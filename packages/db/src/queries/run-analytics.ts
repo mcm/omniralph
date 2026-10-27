@@ -8,19 +8,20 @@
  * Monday (UTC), so the first and last week buckets can cover fewer days than seven: each
  * bucket only counts what falls inside the window.
  *
- * Definitions match the existing Analytics page:
- * - Stories built: completed stories of the epic and request runs started in the bucket
- *   (as `getRalphAnalytics`' `firstAttempt + afterRetries`), attributed to the run's start.
+ * Definitions (stories and epic, request and review tokens are the 1.x Analytics page's,
+ * pinned by this module's tests):
+ * - Stories built: completed stories of the epic and request runs started in the bucket,
+ *   attributed to the run's start.
  * - Review runs: review runs created in the bucket.
  * - Attempts: jobs of a run (epic, request, review, triage or ask) that finished in the
  *   bucket. Success rate = completed / (completed + failed + expired); canceled and
  *   skipped attempts count as finished but not in the rate.
- * - Tokens: review tokens are the reviews' `tokens_in/out` (as `getAnalytics`, by the
- *   review's creation); epic and request tokens the `usage` of `ralph.*` jobs (as
- *   `getRalphAnalytics`, by the job's creation; a job with no run counts as epic); triage
- *   and ask tokens the `usage` of their runs' jobs, by the job's creation.
+ * - Tokens: review tokens are the reviews' `tokens_in/out`, by the review's creation; epic
+ *   and request tokens the `usage` of `ralph.*` jobs, by the job's creation (a job with no
+ *   run counts as epic); triage and ask tokens the `usage` of their runs' jobs, by the job's
+ *   creation.
  */
-import { and, eq, gte, inArray, isNotNull, like, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, like, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
 import { RUN_KINDS, type RunKind } from "../run-index.js";
 import {
@@ -32,11 +33,30 @@ import {
   reviewRuns,
   reviews,
 } from "../schema.js";
-import { analyticsWindow, type AnalyticsRange, type AnalyticsRepositoryRef } from "./analytics.js";
+
+/** The windows the Analytics screen offers, in days. */
+export const ANALYTICS_RANGES = [7, 30, 90] as const;
+export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
 
 /** The bucket sizes the run analytics offer. */
 export const RUN_ANALYTICS_BUCKETS = ["day", "week"] as const;
 export type RunAnalyticsBucket = (typeof RUN_ANALYTICS_BUCKETS)[number];
+
+export interface AnalyticsRepositoryRef {
+  id: string;
+  provider: "github" | "gitlab";
+  fullPath: string;
+}
+
+export interface AnalyticsOrganizationRef {
+  id: string;
+  name: string;
+}
+
+/** A repository of the scope, with its organization (the Analytics screen's filter). */
+export interface AnalyticsRepository extends AnalyticsRepositoryRef {
+  organization: AnalyticsOrganizationRef;
+}
 
 export interface RunAnalyticsFilter {
   /** Only these organizations' runs (at least one). */
@@ -87,13 +107,55 @@ export interface RunAnalytics {
   /** Every bucket that overlaps the window, oldest first, zero-filled. */
   buckets: RunAnalyticsBucketFigures[];
   totals: RunAnalyticsFigures;
-  /** Repositories with any activity in the window, by full path. */
-  byRepository: (RunAnalyticsFigures & { repository: AnalyticsRepositoryRef })[];
+  /** Repositories with any activity in the window, with their organization, by full path. */
+  byRepository: (RunAnalyticsFigures & {
+    repository: AnalyticsRepositoryRef;
+    organization: AnalyticsOrganizationRef;
+  })[];
   /** Every organization of the filter, by name, zero-filled. */
-  byOrganization: (RunAnalyticsFigures & { organization: { id: string; name: string } })[];
+  byOrganization: (RunAnalyticsFigures & { organization: AnalyticsOrganizationRef })[];
 }
 
 const DAY_MS = 86_400_000;
+
+/** UTC midnight that starts the day of `date`. */
+function startOfUtcDay(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+/** `[from, to)` for a window of `days` UTC days ending with the day of `now` (inclusive). */
+export function analyticsWindow(days: number, now: Date = new Date()): { from: Date; to: Date } {
+  const to = startOfUtcDay(now) + DAY_MS;
+  return { from: new Date(to - days * DAY_MS), to: new Date(to) };
+}
+
+/**
+ * Every repository of `organizationIds` with its organization, by full path, including
+ * ones with no activity and disconnected ones (whose history is kept): the Analytics
+ * screen's repository filter, and the repositories its `repository` may name.
+ */
+export async function listAnalyticsRepositories(
+  db: Database,
+  organizationIds: string[],
+): Promise<AnalyticsRepository[]> {
+  if (organizationIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: repositories.id,
+      provider: repositories.provider,
+      fullPath: repositories.fullPath,
+      organizationId: organizations.id,
+      organizationName: organizations.name,
+    })
+    .from(repositories)
+    .innerJoin(organizations, eq(organizations.id, repositories.organizationId))
+    .where(inArray(repositories.organizationId, organizationIds))
+    .orderBy(asc(repositories.fullPath), asc(repositories.id));
+  return rows.map(({ organizationId, organizationName, ...repository }) => ({
+    ...repository,
+    organization: { id: organizationId, name: organizationName },
+  }));
+}
 
 /** Postgres aggregates come back as strings (bigint/numeric) or null. */
 const num = (value: unknown): number => (value == null ? 0 : Number(value));
@@ -341,9 +403,11 @@ export async function getRunAnalytics(
             id: repositories.id,
             provider: repositories.provider,
             fullPath: repositories.fullPath,
+            organizationId: repositories.organizationId,
           })
           .from(repositories)
           .where(inArray(repositories.id, [...byRepository.keys()]));
+  const organizationNames = new Map(organizationRows.map((o) => [o.id, o.name]));
 
   return {
     from,
@@ -353,7 +417,11 @@ export async function getRunAnalytics(
     totals: figures(totals),
     byRepository: repositoryRefs
       .sort((a, b) => a.fullPath.localeCompare(b.fullPath))
-      .map((repository) => ({ repository, ...figures(byRepository.get(repository.id)!) })),
+      .map(({ organizationId, ...repository }) => ({
+        repository,
+        organization: { id: organizationId, name: organizationNames.get(organizationId) ?? "" },
+        ...figures(byRepository.get(repository.id)!),
+      })),
     byOrganization: organizationRows
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((organization) => ({ organization, ...figures(byOrganization.get(organization.id)!) })),

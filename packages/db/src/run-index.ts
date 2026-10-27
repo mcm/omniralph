@@ -375,7 +375,7 @@ export interface RunListEntry extends RunIndexEntry {
 
 const date = (value: string | null) => (value ? new Date(value) : null);
 
-/** `jobs.result` token usage, summed (`ralph-analytics.ts`). */
+/** `jobs.result` token usage, summed (as `run-analytics.ts`). */
 const usage = (field: "inputTokens" | "outputTokens") =>
   sql.raw(`coalesce(sum((j.result -> 'usage' ->> '${field}')::bigint), 0)::text`);
 

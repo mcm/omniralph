@@ -87,6 +87,26 @@ export function inboxKeys(keys: QueryKeys) {
 }
 
 /**
+ * Query keys of Analytics (`GET /api/ui/analytics/runs`): one per window, repository and
+ * organization scope (`all`, or an organization's id). A `run` change event of an
+ * organization invalidates the queries covering it (`covering`): those of that organization
+ * and the `all` ones, never another single organization's. `analytics` is a scope-wide area,
+ * so under "All organizations" every organization's run events reach the active one's keys.
+ */
+export function analyticsKeys(keys: QueryKeys) {
+  return {
+    all: keys.analytics.all,
+    list: (params: { days: number; repositoryId: string | null; organization: string }) =>
+      keys.analytics.list(params),
+    /** Prefixes of every query whose scope includes `organizationId`. */
+    covering: (organizationId: string): QueryKey[] => [
+      keys.analytics.list({ organization: organizationId }),
+      keys.analytics.list({ organization: "all" }),
+    ],
+  };
+}
+
+/**
  * Query keys of a connection's webhook delivery log (`GET /api/ui/connections/{scm|linear}/
  * {id}/deliveries`): one list per outcome filter (all its pages), under the connection's
  * key, which a `webhook_event` change event naming the connection invalidates.

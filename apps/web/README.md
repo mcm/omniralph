@@ -118,6 +118,8 @@ record (their theme, their memberships) re-render the shell from the server (`ro
   "All organizations", where the scope-wide screens (the Inbox and Runs, `SCOPE_WIDE_AREAS`) ask
   for `organization=all` (`useScopeParam()` in `src/screens/scope.ts`) and key by it. An event of
   any organization in the scope reaches those areas' queries under the active organization's keys.
+  Analytics keys each query by its scope too and a `run` event refetches only those covering its
+  organization (`analyticsKeys(keys).covering`: that organization's and the `all` ones).
 - **Throttling.** A query that refetches an expensive aggregate sets `meta: { liveThrottleMs: n }`:
   events invalidate it at most once per `n` ms, the last one of a burst delivered when the window
   ends (Analytics: `ANALYTICS_LIVE_THROTTLE_MS`, 10s).
@@ -182,13 +184,11 @@ to run once another tab has switched organizations. A mutation shown as a pendin
 gives itself a `mutationKey` and overlays the pending mutations' variables (`useMutationState` with
 `status: "pending"`) on the query data (`useFindingFeedback` in `reviews/[id]/finding-feedback.tsx`).
 
-**Loading, errors and freshness.** Wrap a query's content in `QueryBoundary`
-(`src/components/query-boundary.tsx`) with a `Skeleton` shaped like it: it shows the skeleton while
-the first load is pending and an in-place error with Retry when it fails. List and detail pages of
-in-flight entities put `Freshness` (`src/components/freshness.tsx`, "Updated 3s ago") in the page
-header; it turns into a warning with Retry after 30s of failed refetches. Relative times tick on the
-browser's clock: `<RelativeTime iso>`, `useRelativeTime(iso)` or `useNow()` from
-`src/components/relative-time.tsx`, never a server render time.
+**Loading, errors and freshness.** A screen shows placeholders shaped like its content while the
+first load is pending (no spinner text) and an in-place error with "Try again" when it fails; a
+refetch that fails keeps the figures shown and says so in a danger toast. There is no "Updated 3s
+ago" line: the shell's `LiveNotice` covers stopped live updates (Design rule 9). Relative times
+tick on the browser's clock (`useClock()` in `src/screens/clock.ts`), never a server render time.
 
 **Forms** seed from query data and re-seed only while not dirty, so a background refetch never
 overwrites an edit: `useSeededDraft(saved)` (`src/components/use-seeded-draft.ts`). A

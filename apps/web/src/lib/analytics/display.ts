@@ -1,18 +1,14 @@
 /**
- * Client-safe parts of the Analytics page: the window and repository filter
- * in the URL, view-prop types and chart labels.
+ * Client-safe parts of the Analytics screen: the window and repository filter in the URL,
+ * the bucket each window uses, the response's dates as strings, and the labels, formats
+ * and chart summaries the screen shows.
  */
 import type {
-  Analytics,
   AnalyticsRange,
-  RalphAnalytics,
-  RalphRunOutcome,
-  RalphStoryOutcomes,
+  AnalyticsRepository,
   RunAnalytics,
   RunAnalyticsBucket,
 } from "@omniralph/db";
-import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
-import { formatTokens } from "@/lib/reviews/display";
 
 /** Client-safe copy of the DB's `ANALYTICS_RANGES`. */
 export const ANALYTICS_RANGES = [7, 30, 90] as const satisfies readonly AnalyticsRange[];
@@ -58,88 +54,33 @@ export function analyticsHref(pathname: string, params: AnalyticsParams): string
   return query ? `${pathname}?${query}` : pathname;
 }
 
-/** `Analytics` with its dates as ISO strings, so it can be passed to the view. */
-export type AnalyticsData = Omit<Analytics, "from" | "to"> & { from: string; to: string };
-
-export function analyticsData(analytics: Analytics): AnalyticsData {
-  return { ...analytics, from: analytics.from.toISOString(), to: analytics.to.toISOString() };
-}
-
-/** `RalphAnalytics` with its dates as ISO strings, so it can be passed to the view. */
-export type RalphAnalyticsData = Omit<RalphAnalytics, "from" | "to"> & { from: string; to: string };
-
-export function ralphAnalyticsData(ralph: RalphAnalytics): RalphAnalyticsData {
-  return { ...ralph, from: ralph.from.toISOString(), to: ralph.to.toISOString() };
-}
-
 /** Client-safe copy of the DB's `RUN_ANALYTICS_BUCKETS`. */
 export const RUN_ANALYTICS_BUCKETS = [
   "day",
   "week",
 ] as const satisfies readonly RunAnalyticsBucket[];
 
-/** `RunAnalytics` with its dates as ISO strings, as `/api/ui/analytics/runs` sends it. */
+/** The bucket a window is charted by: days for 7 and 30 days, (UTC, Monday) weeks for 90. */
+export function bucketFor(days: AnalyticsRange): RunAnalyticsBucket {
+  return days === 90 ? "week" : "day";
+}
+
+/** `RunAnalytics` with its dates as ISO strings. */
 export type RunAnalyticsData = Omit<RunAnalytics, "from" | "to"> & { from: string; to: string };
 
 export function runAnalyticsData(analytics: RunAnalytics): RunAnalyticsData {
   return { ...analytics, from: analytics.from.toISOString(), to: analytics.to.toISOString() };
 }
 
-/** Client-safe copy of the DB's `RALPH_RUN_OUTCOMES`, in chart order. */
-export const RALPH_RUN_OUTCOMES = [
-  "completed",
-  "waiting",
-  "stopped",
-  "failed",
-  "running",
-] as const satisfies readonly RalphRunOutcome[];
-
-export const RALPH_RUN_OUTCOME_LABELS: Record<RalphRunOutcome, string> = {
-  completed: "Completed",
-  waiting: "Waiting",
-  stopped: "Stopped",
-  failed: "Failed",
-  running: "Running",
-};
-
-export type RalphStoryOutcome = keyof RalphStoryOutcomes;
-
-/** Story outcomes in chart order. */
-export const RALPH_STORY_OUTCOMES = [
-  "firstAttempt",
-  "afterRetries",
-  "exhausted",
-  "blocked",
-] as const satisfies readonly RalphStoryOutcome[];
-
-export const RALPH_STORY_OUTCOME_LABELS: Record<RalphStoryOutcome, string> = {
-  firstAttempt: "First attempt",
-  afterRetries: "After retries",
-  exhausted: "Exhausted",
-  blocked: "Blocked",
-};
-
 /**
- * One chart row per UTC day: ralph and review tokens (in + out) side by side,
- * the runs started that day by status, and those runs' story outcomes. Both
- * token series cover the same days.
+ * What `GET /api/ui/analytics/runs` answers: the figures, every repository of the scope
+ * (the filter's choices) and the filters as the server applied them (a repository outside
+ * the scope is ignored: `repositoryId: null`).
  */
-export function ralphDailyRows(
-  ralph: Pick<RalphAnalyticsData, "daily">,
-  reviews: Pick<AnalyticsData, "daily">,
-): ({ day: string; ralphTokens: number; reviewTokens: number } & Record<
-  RalphRunOutcome | RalphStoryOutcome,
-  number
->)[] {
-  const reviewTokens = new Map(reviews.daily.map((d) => [d.date, d.tokensIn + d.tokensOut]));
-  return ralph.daily.map((d) => ({
-    day: dayLabel(d.date),
-    ralphTokens: d.tokensIn + d.tokensOut,
-    reviewTokens: reviewTokens.get(d.date) ?? 0,
-    ...d.runs,
-    ...d.stories,
-  }));
-}
+export type RunAnalyticsPayload = RunAnalyticsData & {
+  repositories: AnalyticsRepository[];
+  params: { days: AnalyticsRange; bucket: RunAnalyticsBucket; repositoryId: string | null };
+};
 
 /** A UTC day (`YYYY-MM-DD`) as a short axis label, e.g. "Oct 5". */
 export function dayLabel(date: string): string {
@@ -150,37 +91,14 @@ export function dayLabel(date: string): string {
   });
 }
 
-/**
- * Value-axis ticks of a count chart: whole numbers only. The chart picks its
- * ticks itself (0, 0.5, 1, 1.5 … when the counts are small); the fractional
- * ones are left unlabelled.
- */
-export function countTick(value: number): string {
-  return Number.isInteger(value) ? value.toLocaleString("en-US") : "";
+/** A week bucket (its Monday, `YYYY-MM-DD`), e.g. "Week of Oct 5". */
+export function weekLabel(start: string): string {
+  return `Week of ${dayLabel(start)}`;
 }
 
-/** The widest `formatTokens` value ("12.3M"). */
-const TOKEN_TICK_WIDTH = 5;
-
-/**
- * A token-axis tick, padded at the start with figure spaces (a digit's width in the
- * mono tick face) to one width. Charts size their y axis to its widest tick, so stacked
- * token charts that use this share a plot area, and a day sits at the same x in each.
- */
-export function tokenTick(value: number): string {
-  return formatTokens(value).padStart(TOKEN_TICK_WIDTH, "\u2007");
-}
-
-/** A review depth's label; reviews from before depths were recorded have none. */
-export function depthLabel(depth: ReviewDepth | null): string {
-  return depth ? REVIEW_DEPTHS[depth].label : "Not recorded";
-}
-
-/** Mean tokens per review across depths, weighted by their review counts. */
-export function overallAverageTokens(byDepth: Analytics["byDepth"]): number {
-  const reviews = byDepth.reduce((sum, p) => sum + p.reviews, 0);
-  if (reviews === 0) return 0;
-  return Math.round(byDepth.reduce((sum, p) => sum + p.averageTokens * p.reviews, 0) / reviews);
+/** A bucket's label: "Oct 5" for a day, "Week of Oct 5" for a week. */
+export function bucketLabel(start: string, bucket: RunAnalyticsBucket): string {
+  return bucket === "week" ? weekLabel(start) : dayLabel(start);
 }
 
 /** A 0–1 rate as a percentage, e.g. "37%" (one decimal under 10%). */
@@ -189,7 +107,81 @@ export function formatRate(rate: number): string {
   return `${percent > 0 && percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
 
-/** The noun after a false-positive count: "1 false positive", "2 false positives". */
-export function falsePositivesNoun(count: number): string {
-  return count === 1 ? "false positive" : "false positives";
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** US dollars with two decimals, e.g. "$1,234.50". */
+export function formatUsd(amount: number): string {
+  return usd.format(amount);
+}
+
+/**
+ * Whether the response prices its tokens (`totals.costUsd`, set by Epic 12): only then does
+ * the screen show the Cost tile, chart and columns.
+ */
+export function hasCost(response: { totals: { costUsd?: number } }): boolean {
+  return typeof response.totals.costUsd === "number";
+}
+
+/** "Excludes 1 attempt with no list price", "Excludes 3 attempts with no list price". */
+export function unpricedLabel(count: number): string {
+  return `Excludes ${count} ${count === 1 ? "attempt" : "attempts"} with no list price`;
+}
+
+const DAY_MS = 86_400_000;
+
+export interface ChartSummaryInput {
+  /** What the chart shows, e.g. "Stories completed". */
+  title: string;
+  bucket: RunAnalyticsBucket;
+  /** The window, as the response sends it (`to` exclusive). */
+  from: string;
+  to: string;
+  points: readonly { start: string; value: number | null }[];
+  format: (value: number) => string;
+  /**
+   * `total`: the window's sum and the highest bucket. `rate`: the window's overall rate
+   * (null when nothing was rated) and the lowest bucket.
+   */
+  measure: { kind: "total" } | { kind: "rate"; overall: number | null };
+}
+
+/** Where a bucket sits in a sentence: "on Oct 12", "in the week of Oct 5". */
+function atBucket(start: string, bucket: RunAnalyticsBucket): string {
+  return bucket === "week" ? `in the week of ${dayLabel(start)}` : `on ${dayLabel(start)}`;
+}
+
+/**
+ * A chart's one-sentence summary, its accessible name: "Stories completed per day, Sep 25
+ * to Oct 24: 42 in total, most on Oct 12 (7)", or "Success rate per day, Sep 25 to Oct 24:
+ * 96% overall, lowest on Oct 3 (80%)".
+ */
+export function chartSummary({
+  title,
+  bucket,
+  from,
+  to,
+  points,
+  format,
+  measure,
+}: ChartSummaryInput): string {
+  const first = from.slice(0, 10);
+  const last = new Date(Date.parse(to) - DAY_MS).toISOString().slice(0, 10);
+  const head = `${title} per ${bucket}, ${dayLabel(first)} to ${dayLabel(last)}`;
+  const valued = points.filter(
+    (point): point is { start: string; value: number } => point.value !== null,
+  );
+  if (measure.kind === "rate") {
+    if (measure.overall === null || valued.length === 0) return `${head}: no finished attempts`;
+    const lowest = valued.reduce((low, point) => (point.value < low.value ? point : low));
+    return `${head}: ${format(measure.overall)} overall, lowest ${atBucket(lowest.start, bucket)} (${format(lowest.value)})`;
+  }
+  const total = valued.reduce((sum, point) => sum + point.value, 0);
+  if (total === 0) return `${head}: none`;
+  const most = valued.reduce((high, point) => (point.value > high.value ? point : high));
+  return `${head}: ${format(total)} in total, most ${atBucket(most.start, bucket)} (${format(most.value)})`;
 }

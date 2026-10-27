@@ -35,14 +35,15 @@ function reachableModules(entry: string): string[] {
 describe("page headers", () => {
   const pages = walk(appRoutes)
     .filter((path) => path.endsWith("page.tsx"))
-    // The 2.0 screens (the Inbox at the root, Runs, Backlog, Repos, Settings) title themselves
+    // The 2.0 screens (the Inbox at the root, Runs, Backlog, Repos, Fleet, Settings, Analytics) title themselves
     // without today's PageHeader.
     .filter((path) => path !== join(appRoutes, "page.tsx"))
     .filter((path) => !path.startsWith(join(appRoutes, "runs") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "backlog") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "repos") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "fleet") + sep))
-    .filter((path) => !path.startsWith(join(appRoutes, "settings") + sep));
+    .filter((path) => !path.startsWith(join(appRoutes, "settings") + sep))
+    .filter((path) => !path.startsWith(join(appRoutes, "analytics") + sep));
 
   it.each(pages.map((page) => [relative(appRoutes, page), page]))(
     "%s renders the shared PageHeader",
@@ -57,6 +58,8 @@ describe("page headers", () => {
   it("app pages don't hand-roll their h1", () => {
     const offenders = walk(appRoutes)
       .filter((path) => path.endsWith(".tsx") && !path.endsWith(".test.tsx"))
+      // Analytics is a 2.0 screen: its h1 is the Ultraviolet head row's.
+      .filter((path) => !path.startsWith(join(appRoutes, "analytics") + sep))
       .filter((path) => /<h1\b|<H1\b|as="h1"/.test(readFileSync(path, "utf8")))
       .map((path) => relative(src, path));
     expect(offenders).toEqual([]);

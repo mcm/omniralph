@@ -1,5 +1,6 @@
 import type { NavItem } from "@omniralph/ui";
 import {
+  IconChartBar,
   IconGitFork,
   IconInbox,
   IconLayoutList,
@@ -16,15 +17,15 @@ import type { NavIndicators } from "@/lib/api/nav-indicators";
  * never an old one kept for compatibility: Runs points at `/runs` (every run of every
  * kind), Repos at `/repos` (every repo's settings), Fleet at `/fleet` (every agent);
  * every entry is visible to members and admins. Runs lights up for `/runs/**` only, Repos
- * for `/repos/**` only, Fleet for `/fleet/**`. Analytics (its own entry in Epic 10) has no
- * entry and stays reachable by URL.
+ * for `/repos/**` only, Fleet for `/fleet/**`.
  *
- * Settings points at `/settings` (its section list on phone, General beside the section nav
- * when wide) and lights up for every `/settings/**` page.
+ * The bottom group holds Analytics (`/analytics`, in the phone drawer, no indicator) and then
+ * Settings, which points at `/settings` (its section list on phone, General beside the
+ * section nav when wide) and lights up for every `/settings/**` page.
  *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
- * started; phone tabs); Ask (bottom, a phone tab) is added by Epic 9 with its page. The
- * live indicators come from `withNavIndicators`.
+ * started; phone tabs); Ask (bottom, before Analytics, a phone tab) is added by Epic 9 with
+ * its page. The live indicators come from `withNavIndicators`.
  */
 export const navItems: readonly NavItem[] = [
   {
@@ -70,6 +71,15 @@ export const navItems: readonly NavItem[] = [
     placement: "main",
     phone: "drawer",
     activeFor: ["/fleet"],
+  },
+  {
+    id: "analytics",
+    label: "Analytics",
+    href: "/analytics",
+    icon: IconChartBar,
+    placement: "bottom",
+    phone: "drawer",
+    activeFor: ["/analytics"],
   },
   {
     id: "settings",

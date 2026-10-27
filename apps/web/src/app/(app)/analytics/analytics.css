@@ -1,0 +1,189 @@
+/*
+ * Analytics (app/(app)/analytics): one scrolling column, 24 px padding, at most 1200 px wide.
+ * The head row (the title, then the Window and Repository filters on one line), the summary
+ * card, the charts grid (two columns on desktop, one or two at 769–1199 px, one on phone),
+ * then the By repo, By organization and By kind cards. At 768 px and narrower the head row
+ * wraps with full-width filters, charts are one column and "By kind" sits in a collapsed
+ * section. Only `--or-` tokens.
+ */
+.or-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1200px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.or-analytics__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-analytics__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-analytics__filters {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-analytics__filters .or-select {
+  min-width: 200px;
+}
+
+.or-analytics__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.or-analytics__content[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+
+.or-analytics__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.or-analytics__charts > * {
+  min-width: 0;
+}
+
+.or-analytics__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Cost's dollar ticks are the widest: the stacked charts share one tick column. */
+.or-analytics__tokens .or-chart {
+  --or-chart-axis: 9ch;
+}
+
+.or-analytics__repo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A table cell's figure; its label shows on the phone card only. */
+.or-analytics__figure-label {
+  display: none;
+}
+
+.or-analytics__by-kind-phone {
+  display: none;
+}
+
+.or-analytics__placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-analytics__placeholder {
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+}
+
+.or-analytics__placeholder--summary {
+  height: 88px;
+}
+
+.or-analytics__placeholder--chart {
+  height: 260px;
+}
+
+.or-analytics .or-empty {
+  padding: 40px 20px;
+}
+
+.or-analytics__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+}
+
+.or-analytics__error-text {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .or-analytics {
+    padding: 16px 16px 24px;
+  }
+
+  /* The title on its own line, then each filter at full width. */
+  .or-analytics__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .or-analytics__filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .or-analytics__window,
+  .or-analytics__filters .or-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .or-analytics__window .or-seg__option {
+    flex: 1 1 0;
+  }
+
+  .or-analytics__charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .or-analytics__figure-label {
+    display: inline;
+    color: var(--or-ter);
+  }
+
+  /* On the card the organization leads the meta; the title is the repo alone. */
+  .or-cardrow__title .or-analytics__repo-org {
+    display: none;
+  }
+
+  .or-analytics__by-kind {
+    display: none;
+  }
+
+  .or-analytics__by-kind-phone {
+    display: block;
+  }
+
+  .or-analytics__placeholder--chart {
+    height: 220px;
+  }
+}

@@ -3,7 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-// Inbox, Runs (TOOL-642), Repos (TOOL-694), Settings (TOOL-649) and Fleet (TOOL-657) are live: change events refresh their queries, and
+// Inbox, Runs (TOOL-642), Repos (TOOL-694), Settings (TOOL-649), Fleet (TOOL-657) and Analytics (TOOL-637) are live: change events refresh their queries, and
 // they poll only as the live data layer's fallback while the realtime connection is down
 // (TOOL-632). No query of theirs, nor of the shared components the Repos epic (TOOL-645) built
 // for them and Settings, sets a `refetchInterval` of its own; `refetchInterval: false` (a query
@@ -18,6 +18,7 @@ const SCANNED = [
   "src/app/(app)/repos",
   "src/app/(app)/fleet",
   "src/app/(app)/settings",
+  "src/app/(app)/analytics",
   "src/components/use-staged-card.ts",
   "src/components/change-history-popover.tsx",
   "src/components/connection-health.tsx",

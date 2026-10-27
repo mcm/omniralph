@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  analyticsData,
   analyticsHref,
-  countTick,
-  tokenTick,
+  bucketFor,
+  bucketLabel,
+  chartSummary,
   dayLabel,
-  falsePositivesNoun,
   formatRate,
-  depthLabel,
-  overallAverageTokens,
+  formatUsd,
+  hasCost,
   parseAnalyticsParams,
-  ralphAnalyticsData,
-  ralphDailyRows,
+  runAnalyticsData,
+  unpricedLabel,
+  weekLabel,
+  type ChartSummaryInput,
 } from "./display";
 
 const repo = "6f1c2a64-6d1e-4f43-9a55-2a0b8f0c4e11";
@@ -58,25 +59,12 @@ describe("analyticsHref", () => {
 });
 
 describe("formatting", () => {
-  it("labels UTC days", () => {
+  it("labels UTC days and weeks", () => {
     expect(dayLabel("2026-10-05")).toBe("Oct 5");
     expect(dayLabel("2026-01-01")).toBe("Jan 1");
-  });
-
-  it("labels count ticks with whole numbers only", () => {
-    expect(countTick(0)).toBe("0");
-    expect(countTick(2)).toBe("2");
-    expect(countTick(1200)).toBe("1,200");
-    expect(countTick(0.5)).toBe("");
-    expect(countTick(1.5)).toBe("");
-  });
-
-  it("pads token ticks to one width, so stacked token charts share a plot area", () => {
-    const ticks = [0, 950, 9_500, 120_000, 1_200_000, 12_300_000].map(tokenTick);
-    expect(new Set(ticks.map((tick) => tick.length))).toEqual(new Set([5]));
-    expect(ticks[0]).toBe("\u2007\u2007\u2007\u20070");
-    expect(ticks[4]).toBe("\u20071.2M");
-    expect(ticks[5]).toBe("12.3M");
+    expect(weekLabel("2026-10-05")).toBe("Week of Oct 5");
+    expect(bucketLabel("2026-10-05", "day")).toBe("Oct 5");
+    expect(bucketLabel("2026-10-05", "week")).toBe("Week of Oct 5");
   });
 
   it("formats rates", () => {
@@ -86,90 +74,128 @@ describe("formatting", () => {
     expect(formatRate(1)).toBe("100%");
   });
 
-  it("weights the overall average by reviews", () => {
-    const depth = (reviews: number, averageTokens: number) => ({
-      depth: "standard" as const,
-      reviews,
-      averageTokens,
-    });
-    expect(overallAverageTokens([])).toBe(0);
-    expect(overallAverageTokens([depth(2, 600), depth(3, 2267)])).toBe(1600);
+  it("formats US dollars with two decimals", () => {
+    expect(formatUsd(0)).toBe("$0.00");
+    expect(formatUsd(12.3)).toBe("$12.30");
+    expect(formatUsd(1234.567)).toBe("$1,234.57");
   });
 
-  it("labels depths, and reviews from before depths were recorded", () => {
-    expect(depthLabel("deep")).toBe("Deep");
-    expect(depthLabel(null)).toBe("Not recorded");
+  it("counts the attempts a cost leaves out", () => {
+    expect(unpricedLabel(1)).toBe("Excludes 1 attempt with no list price");
+    expect(unpricedLabel(3)).toBe("Excludes 3 attempts with no list price");
   });
+});
 
+describe("bucketFor", () => {
+  it("charts 7 and 30 days by day, 90 by week", () => {
+    expect(bucketFor(7)).toBe("day");
+    expect(bucketFor(30)).toBe("day");
+    expect(bucketFor(90)).toBe("week");
+  });
+});
+
+describe("hasCost", () => {
+  it("is true only when the totals carry a cost", () => {
+    expect(hasCost({ totals: {} })).toBe(false);
+    expect(hasCost({ totals: { costUsd: 0 } })).toBe(true);
+    expect(hasCost({ totals: { costUsd: 12.5 } })).toBe(true);
+  });
+});
+
+describe("runAnalyticsData", () => {
   it("serializes the window dates", () => {
-    const data = analyticsData({
-      from: new Date("2026-09-29T00:00:00Z"),
-      to: new Date("2026-10-06T00:00:00Z"),
-      totals: { reviews: 0, tokensIn: 0, tokensOut: 0 },
-      daily: [],
-      byDepth: [],
-      reviewsByStatus: {
-        queued: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        budget_exhausted: 0,
-        skipped: 0,
-      },
-      findingsBySeverity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
-      dismissalsByRepository: [],
-      jobsByAgent: [],
+    const from = new Date("2026-09-29T00:00:00Z");
+    const to = new Date("2026-10-06T00:00:00Z");
+    const data = runAnalyticsData({
+      from,
+      to,
+      bucket: "day",
+      buckets: [],
+      totals: {} as never,
+      byRepository: [],
+      byOrganization: [],
     });
     expect(data.from).toBe("2026-09-29T00:00:00.000Z");
     expect(data.to).toBe("2026-10-06T00:00:00.000Z");
   });
 });
 
-describe("ralph analytics", () => {
-  const runs = { completed: 1, waiting: 0, stopped: 0, failed: 2, running: 0 };
-  const day = (date: string, tokensIn: number, tokensOut: number) => ({
-    date,
-    tokensIn,
-    tokensOut,
-  });
+describe("chartSummary", () => {
+  const window = { from: "2026-09-25T00:00:00.000Z", to: "2026-10-25T00:00:00.000Z" };
+  const base: Omit<ChartSummaryInput, "points" | "measure"> = {
+    title: "Stories completed",
+    bucket: "day",
+    ...window,
+    format: (value) => String(value),
+  };
 
-  it("puts ralph and review tokens of each day side by side with its runs and stories", () => {
-    const stories = { firstAttempt: 2, afterRetries: 1, exhausted: 0, blocked: 1 };
+  it("sums a count and names its highest bucket", () => {
     expect(
-      ralphDailyRows(
-        {
-          daily: [
-            { ...day("2026-10-04", 100, 10), runs, stories },
-            { ...day("2026-10-05", 0, 0), runs, stories },
-          ],
-        },
-        { daily: [{ ...day("2026-10-05", 400, 40), reviews: 2 }] },
-      ),
-    ).toEqual([
-      { day: "Oct 4", ralphTokens: 110, reviewTokens: 0, ...runs, ...stories },
-      { day: "Oct 5", ralphTokens: 0, reviewTokens: 440, ...runs, ...stories },
-    ]);
+      chartSummary({
+        ...base,
+        points: [
+          { start: "2026-10-11", value: 5 },
+          { start: "2026-10-12", value: 7 },
+          { start: "2026-10-13", value: 18 },
+        ],
+        measure: { kind: "total" },
+      }),
+    ).toBe("Stories completed per day, Sep 25 to Oct 24: 30 in total, most on Oct 13 (18)");
   });
 
-  it("serializes the window dates", () => {
-    const data = ralphAnalyticsData({
-      from: new Date("2026-09-29T00:00:00Z"),
-      to: new Date("2026-10-06T00:00:00Z"),
-      totals: { runs: 0, jobs: 0, tokensIn: 0, tokensOut: 0 },
-      daily: [],
-      runsByOutcome: runs,
-      storyOutcomes: { firstAttempt: 0, afterRetries: 0, exhausted: 0, blocked: 0 },
-      averageAttempts: 0,
-    });
-    expect(data.from).toBe("2026-09-29T00:00:00.000Z");
-    expect(data.to).toBe("2026-10-06T00:00:00.000Z");
+  it("matches the design's examples", () => {
+    expect(
+      chartSummary({
+        ...base,
+        points: [
+          { start: "2026-10-03", value: 35 },
+          { start: "2026-10-12", value: 7 },
+        ],
+        measure: { kind: "total" },
+      }),
+    ).toBe("Stories completed per day, Sep 25 to Oct 24: 42 in total, most on Oct 3 (35)");
+    expect(
+      chartSummary({
+        ...base,
+        title: "Success rate",
+        points: [
+          { start: "2026-10-03", value: 0.8 },
+          { start: "2026-10-04", value: null },
+          { start: "2026-10-05", value: 1 },
+        ],
+        format: formatRate,
+        measure: { kind: "rate", overall: 0.96 },
+      }),
+    ).toBe("Success rate per day, Sep 25 to Oct 24: 96% overall, lowest on Oct 3 (80%)");
   });
-});
 
-describe("falsePositivesNoun", () => {
-  it("is singular only for one", () => {
-    expect(falsePositivesNoun(1)).toBe("false positive");
-    expect(falsePositivesNoun(0)).toBe("false positives");
-    expect(falsePositivesNoun(2)).toBe("false positives");
+  it("names weeks", () => {
+    expect(
+      chartSummary({
+        ...base,
+        title: "Reviews",
+        bucket: "week",
+        from: "2026-07-27T00:00:00.000Z",
+        points: [
+          { start: "2026-07-27", value: 20 },
+          { start: "2026-10-19", value: 31 },
+        ],
+        measure: { kind: "total" },
+      }),
+    ).toBe("Reviews per week, Jul 27 to Oct 24: 51 in total, most in the week of Oct 19 (31)");
+  });
+
+  it("says when there is nothing to sum or rate", () => {
+    expect(
+      chartSummary({ ...base, points: [{ start: "2026-10-03", value: 0 }], measure: { kind: "total" } }),
+    ).toBe("Stories completed per day, Sep 25 to Oct 24: none");
+    expect(
+      chartSummary({
+        ...base,
+        title: "Success rate",
+        points: [{ start: "2026-10-03", value: null }],
+        measure: { kind: "rate", overall: null },
+      }),
+    ).toBe("Success rate per day, Sep 25 to Oct 24: no finished attempts");
   });
 });

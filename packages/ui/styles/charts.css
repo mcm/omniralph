@@ -1,0 +1,109 @@
+/*
+ * BarChart (src/charts/bar-chart.tsx): a figure with an optional caption, the plot (the 0
+ * and maximum ticks beside an SVG that stretches to the width, the first, middle and last
+ * bucket labels under it) and a collapsed "Show table". Marks are neutral: --or-sec bars,
+ * --or-text on hover, never the accent or a status color (Design rule 15). Ticks and labels
+ * are Geist Mono in --or-ter. Only `--or-` tokens.
+ */
+.or-chart {
+  --or-chart-height: 180px;
+  /* The tick column's width: stacked charts share it, so a bucket sits at the same x. */
+  --or-chart-axis: 7ch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.or-chart__title {
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-chart__plot {
+  display: grid;
+  grid-template-columns: var(--or-chart-axis) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-chart__y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: var(--or-chart-height);
+  text-align: end;
+}
+
+.or-chart__tick,
+.or-chart__label {
+  color: var(--or-ter);
+  font-family: var(--or-font-mono);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.or-chart__area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-chart__svg {
+  display: block;
+  width: 100%;
+  height: var(--or-chart-height);
+  border-bottom: 1px solid var(--or-line);
+  overflow: visible;
+}
+
+.or-chart__bar {
+  fill: var(--or-sec);
+}
+
+.or-chart__bar:hover {
+  fill: var(--or-text);
+}
+
+.or-chart__x {
+  position: relative;
+  height: 14px;
+}
+
+.or-chart__label {
+  position: absolute;
+  top: 0;
+}
+
+/* The first label starts at the plot's left edge, the last ends at its right edge. */
+.or-chart__label--first {
+  left: 0;
+}
+
+.or-chart__label--middle {
+  transform: translateX(-50%);
+}
+
+.or-chart__label--last {
+  right: 0;
+}
+
+.or-chart__table th[scope="row"] {
+  color: var(--or-text);
+  font-weight: 400;
+}
+
+/* Phone: shorter plots, and only the first and last bucket named (Design rule 16). */
+@media (max-width: 768px) {
+  .or-chart {
+    --or-chart-height: 140px;
+  }
+
+  .or-chart__label--middle {
+    display: none;
+  }
+}
