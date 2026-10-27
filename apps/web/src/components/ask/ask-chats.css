@@ -1,0 +1,65 @@
+/* Ask's chats list and New chat. Only `--or-` tokens. */
+.or-ask-chats {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--or-surf);
+}
+
+.or-ask-chats__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-ask-chats__title {
+  flex: 1;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.or-ask-chats__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.or-ask-chats__more {
+  height: 1px;
+}
+
+.or-ask-chats__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 12px;
+  color: var(--or-sec);
+}
+
+.or-ask-chats__error p {
+  margin: 0;
+}
+
+.or-ask-chats__skeleton {
+  height: 56px;
+  margin: 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-ask-new__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}

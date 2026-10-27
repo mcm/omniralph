@@ -1,39 +1,27 @@
 "use client";
 
-import { toast } from "@omniralph/ui";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
-import { MUTATION_FAILED, useApiMutation } from "@/components/use-api-mutation";
+import { useApiMutation } from "@/components/use-api-mutation";
 import {
   askCardActionResponseSchema,
   askChatDetailSchema,
   type AskCardActionRequest,
   type AskCardActionResponse,
 } from "@/lib/api/ask";
-import { api, ApiError } from "@/lib/api/client";
+import { api } from "@/lib/api/client";
 import { askKeys } from "@/lib/api/keys";
-import { streamAskTurn, type AskTurnEvent } from "@/lib/ask/stream-client";
 import type { AskCardClick } from "./card-actions";
-import {
-  chatMessages,
-  pendingUserMessage,
-  withMessage,
-  withMessageText,
-  withoutMessage,
-  withTurn,
-  type AskChatData,
-} from "./chat-cache";
-import { askTurn, setAskTurn, useAskTurn, type AskTurnState } from "./chat-memory";
+import { chatMessages, withMessage, withTurn, type AskChatData } from "./chat-cache";
+import { askTurn, useAskTurn } from "./chat-memory";
+import { runAskTurn, type AskSendResult } from "./turn";
 
 /** A chat's API path. */
 export const askChatPath = (chatId: string) => `/api/ui/ask/chats/${encodeURIComponent(chatId)}`;
 
-let pendingSeq = 0;
-
-/** How a send ended: `sent` once the server stored the message, else `failed` (nothing sent). */
-export type AskSendResult = "sent" | "failed";
+export type { AskSendResult } from "./turn";
 
 /** What a card's buttons need from the chat: whether its click is in flight, and its error. */
 export interface AskCardActionState {
@@ -80,88 +68,22 @@ export function useAskChat(chatId: string) {
     meta: { liveRunIds },
   });
 
-  const write = React.useCallback(
-    (update: (data: AskChatData) => AskChatData) =>
-      client.setQueryData<AskChatData>(queryKey, (data) => (data ? update(data) : data)),
-    [client, queryKey],
-  );
-
-  const apply = React.useCallback(
-    (event: AskTurnEvent) => {
-      switch (event.event) {
-        case "message": {
-          const { message } = event;
-          write((data) => withMessage(data, message));
-          setAskTurn(chatId, (current) => {
-            const streamed = new Map(current.streamed);
-            if (message.status === "streaming") streamed.set(message.id, message.markdown);
-            else streamed.delete(message.id);
-            return {
-              ...current,
-              pending: message.author === "user" ? null : current.pending,
-              streamed,
-            };
-          });
-          return;
-        }
-        case "delta": {
-          const current = askTurn(chatId);
-          const text = (current?.streamed.get(event.messageId) ?? "") + event.text;
-          write((data) => withMessageText(data, event.messageId, text));
-          setAskTurn(chatId, (state) => ({
-            ...state,
-            streamed: new Map(state.streamed).set(event.messageId, text),
-          }));
-          return;
-        }
-        case "status":
-          setAskTurn(chatId, (state) => ({ ...state, status: event.text }));
-          return;
-        case "error":
-          toast(event.message, { variant: "danger" });
-          return;
-        case "chat":
-        case "done":
-          return;
-      }
-    },
-    [chatId, write],
-  );
-
   /** Sends `text` as the member's next message; resolves when the turn is over. */
   const send = React.useCallback(
     async (text: string): Promise<AskSendResult> => {
       const trimmed = text.trim();
       if (!trimmed || askTurn(chatId)) return "failed";
-      const pending = pendingUserMessage(String(++pendingSeq), trimmed);
-      const started: AskTurnState = { pending, streamed: new Map(), status: null };
-      setAskTurn(chatId, started);
-      write((data) => withMessage(data, pending));
-      let stored = false;
-      try {
-        await streamAskTurn({
-          path: `${path}/messages`,
-          body: { text: trimmed },
-          organizationId: organization.id,
-          onEvent: apply,
-        });
-      } catch (error) {
-        toast(error instanceof ApiError ? error.message : MUTATION_FAILED, {
-          variant: "danger",
-        });
-      } finally {
-        const ended = askTurn(chatId);
-        stored = ended !== null && ended.pending === null;
-        if (!stored) write((data) => withoutMessage(data, pending.id));
-        setAskTurn(chatId, null);
-        // A stream cut short left a message unfinished: the stored copy is the truth.
-        if (stored && ended && ended.streamed.size > 0) {
-          void client.invalidateQueries({ queryKey, exact: true });
-        }
-      }
-      return stored ? "sent" : "failed";
+      return runAskTurn({
+        client,
+        chatKey: askKeys(keys).chat,
+        chatId,
+        path: `${path}/messages`,
+        body: { text: trimmed },
+        text: trimmed,
+        organizationId: organization.id,
+      });
     },
-    [apply, chatId, client, organization.id, path, queryKey, write],
+    [chatId, client, keys, organization.id, path],
   );
 
   const action = useApiMutation<AskCardActionResponse, AskCardActionRequest>({

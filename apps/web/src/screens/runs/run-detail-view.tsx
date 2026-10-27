@@ -57,6 +57,7 @@ import { NO_RUN_FILTERS, parseRunFilters, runInListHref, runStepHref } from "./f
 import { runRowLabel } from "./labels";
 import "@/components/runs/run-cards.css";
 import "./run-detail.css";
+import { useAskContextRepository } from "@/components/ask/ask-context";
 
 /** Shown for a run that doesn't exist, or is outside the user's organizations. */
 export const RUN_NOT_FOUND = "This run doesn't exist or isn't in your organizations.";
@@ -256,6 +257,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  */
 export function RunDetailView({ runId, menuItems }: RunDetailViewProps) {
   const detail = useRunDetail(runId);
+  useAskContextRepository(detail.data?.details.repository?.id);
   if (detail.isPending) return <RunDetailSkeleton />;
   if (detail.isError) {
     if (detail.error instanceof ApiError && detail.error.status === 404) {

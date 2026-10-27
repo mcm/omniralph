@@ -4,6 +4,7 @@ import { Toaster, UiProvider, type ThemePreference } from "@omniralph/ui";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
+import { AskContextProvider } from "./ask/ask-context";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
 import { LiveAppFrame } from "./live-app-frame";
@@ -69,17 +70,23 @@ export function AppShell({
                   renderedScopeCookie={scopeCookie}
                 >
                   <UiProvider linkComponent={Link}>
-                    <LiveAppFrame
-                      currentPath={pathname}
-                      brandHref="/"
-                      nav={navItems}
-                      orgPicker={<OrganizationPicker />}
-                      user={{ name, image: user.image ?? undefined, initials: userInitials(user) }}
-                      userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                    >
-                      <LiveNoticeSlot />
-                      {children}
-                    </LiveAppFrame>
+                    <AskContextProvider>
+                      <LiveAppFrame
+                        currentPath={pathname}
+                        brandHref="/"
+                        nav={navItems}
+                        orgPicker={<OrganizationPicker />}
+                        user={{
+                          name,
+                          image: user.image ?? undefined,
+                          initials: userInitials(user),
+                        }}
+                        userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                      >
+                        <LiveNoticeSlot />
+                        {children}
+                      </LiveAppFrame>
+                    </AskContextProvider>
                     <Toaster />
                   </UiProvider>
                 </OrganizationGuard>

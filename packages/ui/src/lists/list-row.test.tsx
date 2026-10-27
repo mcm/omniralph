@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { IconArchive } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { IconButton } from "../actions/icon-button.js";
 import { UiProvider, type LinkProps } from "../provider/ui-provider.js";
@@ -121,6 +121,19 @@ describe("ListRow", () => {
     expect(follow).not.toHaveBeenCalled();
     await user.click(screen.getByRole("link", { name: "Fix the login redirect" }));
     expect(follow).toHaveBeenCalledWith("/runs/r1");
+  });
+
+  it("calls onClick on a row link click, which can keep the link from navigating", async () => {
+    follow.mockClear();
+    const onClick = vi.fn((event: MouseEvent<HTMLAnchorElement>) => event.preventDefault());
+    render(
+      <RowList aria-label="Chats">
+        <ListRow href="/ask/c1" onClick={onClick} title="Where does login post?" mark={null} />
+      </RowList>,
+    );
+    await userEvent.setup().click(screen.getByRole("link", { name: "Where does login post?" }));
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(onClick.mock.calls[0]![0].defaultPrevented).toBe(true);
   });
 
   it("marks the selected row with aria-current", () => {

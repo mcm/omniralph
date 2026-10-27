@@ -54,6 +54,7 @@ import { ApiError } from "@/lib/api/client";
 import type { WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { backlogItemHref, parseBacklogFilters, parseWorkItemTab, type WorkItemTab } from "./url";
 import "./work-item-detail.css";
+import { useAskContextRepository } from "@/components/ask/ask-context";
 
 export const WORK_ITEM_NOT_FOUND = "This work item doesn't exist or you can't see it.";
 export const WORK_ITEM_LOAD_FAILED = "Couldn't load the work item.";
@@ -349,6 +350,7 @@ export function WorkItemDetailView({
   renderShareLink,
 }: WorkItemDetailViewProps) {
   const detail = useWorkItemDetail(workItemId);
+  useAskContextRepository(detail.data?.repository?.id);
 
   if (detail.isError && !detail.data) {
     if (detail.error instanceof ApiError && detail.error.status === 404) {

@@ -30,6 +30,7 @@ import { RemoveRepoDialog } from "./remove-repo-dialog";
 import { ReviewsCard } from "./reviews-card";
 import { RulesSection } from "./rules-section";
 import "./repo-detail.css";
+import { useAskContextRepository } from "@/components/ask/ask-context";
 
 /** Shown for a repo that doesn't exist, was removed, or is outside the user's organizations. */
 export const REPO_NOT_FOUND = "This repo doesn't exist or isn't in your organizations.";
@@ -249,6 +250,7 @@ function RepoDetailSkeleton() {
  */
 export function RepoDetailView({ repositoryId }: { repositoryId: string }) {
   const detail = useRepositoryDetail(repositoryId);
+  useAskContextRepository(repositoryId);
   if (detail.isPending) return <RepoDetailSkeleton />;
   if (detail.isError) {
     if (detail.error instanceof ApiError && detail.error.status === 404) {
