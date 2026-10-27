@@ -28,3 +28,47 @@
     padding: 16px;
   }
 }
+
+/* You › Profile & theme */
+.or-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.or-profile__avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 16px;
+}
+
+.or-profile__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.or-profile__facts dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-profile__name {
+  color: var(--or-text);
+  font-weight: 600;
+}
+
+.or-profile__email {
+  color: var(--or-sec);
+}
+
+/* You › Linked chat accounts */
+.or-linked-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

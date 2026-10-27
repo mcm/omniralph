@@ -81,6 +81,12 @@ export interface LinkChatIdentityInput {
 
 export interface ChatIdentityWithOrganization extends ChatIdentity {
   organizationName: string;
+  /**
+   * The Slack workspace or Discord server the chat user belongs to: the organization's
+   * connection of that platform where the user was seen, else its only one; null when
+   * that can't be told.
+   */
+  workspaceName: string | null;
 }
 
 export interface SaveChatUserProfileInput {
@@ -461,6 +467,17 @@ async function linkInTransaction(
   input: LinkChatIdentityInput,
 ): Promise<ChatIdentity> {
   const displayName = input.displayName ?? null;
+  const [previous] = await tx
+    .select({ userId: chatIdentities.userId })
+    .from(chatIdentities)
+    .where(
+      and(
+        eq(chatIdentities.organizationId, input.organizationId),
+        eq(chatIdentities.platform, input.platform),
+        eq(chatIdentities.externalUserId, input.externalUserId),
+      ),
+    )
+    .limit(1);
   const [row] = await tx
     .insert(chatIdentities)
     .values({ ...input, displayName })
@@ -489,7 +506,26 @@ async function linkInTransaction(
         ),
       );
   }
+  recordLinkedAccountsChange(tx, input.userId, input.organizationId);
+  // A link replacing another member's: their list loses it.
+  if (previous && previous.userId !== input.userId) {
+    recordLinkedAccountsChange(tx, previous.userId, input.organizationId);
+  }
   return row!;
+}
+
+/**
+ * Records that `userId`'s linked chat accounts changed (Settings › Linked chat accounts):
+ * a `settings` change of section `linked_accounts` on the user's own channel.
+ */
+function recordLinkedAccountsChange(db: unknown, userId: string, organizationId: string): void {
+  recordChange(db, {
+    resource: "settings",
+    section: "linked_accounts",
+    ids: [userId],
+    organizationId,
+    userId,
+  });
 }
 
 /** The member a chat user is linked to in the organization, or null. */
@@ -541,6 +577,7 @@ export async function unlinkChatIdentity(
       .insert(chatIdentityOptOuts)
       .values({ organizationId, platform, externalUserId })
       .onConflictDoNothing();
+    recordLinkedAccountsChange(tx, userId, organizationId);
     return true;
   });
 }
@@ -577,7 +614,50 @@ export async function listChatIdentities(
     .innerJoin(organizations, eq(organizations.id, chatIdentities.organizationId))
     .where(eq(chatIdentities.userId, userId))
     .orderBy(asc(chatIdentities.linkedAt), asc(chatIdentities.externalUserId));
-  return rows.map((r) => ({ ...r.identity, organizationName: r.organizationName }));
+  if (rows.length === 0) return [];
+  const connections = await db
+    .select({
+      id: chatConnections.id,
+      organizationId: chatConnections.organizationId,
+      platform: chatConnections.platform,
+      name: chatConnections.name,
+    })
+    .from(chatConnections)
+    .where(
+      inArray(chatConnections.organizationId, [
+        ...new Set(rows.map((r) => r.identity.organizationId)),
+      ]),
+    );
+  const profiles =
+    connections.length === 0
+      ? []
+      : await db
+          .select({
+            connectionId: chatUserProfiles.connectionId,
+            externalUserId: chatUserProfiles.externalUserId,
+          })
+          .from(chatUserProfiles)
+          .where(
+            and(
+              inArray(
+                chatUserProfiles.connectionId,
+                connections.map((c) => c.id),
+              ),
+              inArray(chatUserProfiles.externalUserId, [
+                ...new Set(rows.map((r) => r.identity.externalUserId)),
+              ]),
+            ),
+          );
+  const seen = new Set(profiles.map((p) => `${p.connectionId}:${p.externalUserId}`));
+  return rows.map(({ identity, organizationName }) => {
+    const candidates = connections.filter(
+      (c) => c.organizationId === identity.organizationId && c.platform === identity.platform,
+    );
+    const workspace =
+      candidates.find((c) => seen.has(`${c.id}:${identity.externalUserId}`)) ??
+      (candidates.length === 1 ? candidates[0] : undefined);
+    return { ...identity, organizationName, workspaceName: workspace?.name ?? null };
+  });
 }
 
 // ── User profiles ────────────────────────────────────────────────────────────

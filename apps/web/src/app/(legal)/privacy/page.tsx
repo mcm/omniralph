@@ -112,7 +112,7 @@ export default function PrivacyPage() {
       <h2>Your choices and rights</h2>
       <ul>
         <li>
-          Unlink a chat account under <strong>Settings › Chat accounts</strong>; an unlinked Slack
+          Unlink a chat account under <strong>Settings › Linked chat accounts</strong>; an unlinked Slack
           account isn&apos;t linked again by email.
         </li>
         <li>Leave an organization, or ask its admins to remove you.</li>

@@ -70,6 +70,8 @@ export const chatAccountSchema = z.object({
   organizationId: z.string(),
   organizationName: z.string(),
   platform: z.enum(["slack", "discord"]),
+  /** The Slack workspace or Discord server, when known. */
+  workspace: z.string().nullable(),
   externalUserId: z.string(),
   displayName: z.string().nullable(),
   source: z.enum(["manual", "email"]),
@@ -77,6 +79,7 @@ export const chatAccountSchema = z.object({
 });
 export type ChatAccount = z.infer<typeof chatAccountSchema>;
 export const chatAccountsSchema = z.object({ identities: z.array(chatAccountSchema) });
+export type ChatAccounts = z.infer<typeof chatAccountsSchema>;
 
 /** `POST /api/ui/chat-accounts/unlink`. */
 export const unlinkChatAccountSchema = z.object({

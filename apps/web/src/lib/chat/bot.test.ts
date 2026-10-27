@@ -878,7 +878,7 @@ describe.skipIf(!databaseAvailable)("chat bot webhooks", () => {
           thread: MENTION_TS,
           ephemeralTo: "U1",
           text: expect.stringContaining(
-            "because both use Ada@Acme.test. To unlink it, open https://omniralph.example.com/settings/chat-accounts",
+            "because both use Ada@Acme.test. To unlink it, open https://omniralph.example.com/settings/linked-accounts",
           ),
         },
       ]);

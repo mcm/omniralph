@@ -493,7 +493,7 @@ member.
   account in <organization>?". You must be a member of the organization, and the workspace or
   server must still be connected to it. Linking an identity that another account had replaces
   that link.
-- **Linked identities** are listed under **Settings › Chat accounts**, across all your
+- **Linked identities** are listed under **Settings › Linked chat accounts**, across all your
   organizations, each with **Unlink**.
 
 ### Automatic linking by Slack email
@@ -504,7 +504,7 @@ the bot, and tells them once, privately, which email it matched and where to unl
 profiles are read with `users.info` and cached for an hour, so email changes in Slack take up to
 an hour to show. Bots, deactivated users and profiles without an email aren't linked.
 
-**To opt out**, unlink the identity under **Settings › Chat accounts**. Omniralph remembers that
+**To opt out**, unlink the identity under **Settings › Linked chat accounts**. Omniralph remembers that
 you unlinked it and never links that Slack user automatically again; linking by hand later lifts
 the opt-out. Leaving the organization ends the link's access straight away.
 

@@ -23,6 +23,8 @@ const READERS = new Set([
   // Settings' section nav, which lists the Advanced group only when it's on (TOOL-649).
   "apps/web/src/screens/settings/settings-layout-view.tsx",
   "apps/web/src/screens/settings/settings-nav.ts",
+  // Profile & theme's "Show advanced settings" switch, the preference's only control (TOOL-667).
+  "apps/web/src/screens/settings/profile-settings.tsx",
 ]);
 
 const SCANNED = ["apps", "packages"];

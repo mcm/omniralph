@@ -10,13 +10,14 @@ import type { ChatAccount, UnlinkChatAccountInput } from "@/lib/api/organization
 
 const PLATFORMS: readonly string[] = ["slack", "discord"] satisfies ChatPlatform[];
 
-/** Settings › Chat accounts: the user's linked Slack and Discord accounts, in every organization. */
+/** Settings › Linked chat accounts: the user's linked Slack and Discord accounts, in every organization. */
 export async function loadChatAccounts(db: Database, userId: string): Promise<ChatAccount[]> {
   const identities = await listChatIdentities(db, userId);
   return identities.map((i) => ({
     organizationId: i.organizationId,
     organizationName: i.organizationName,
     platform: i.platform,
+    workspace: i.workspaceName,
     externalUserId: i.externalUserId,
     displayName: i.displayName,
     source: i.source,
