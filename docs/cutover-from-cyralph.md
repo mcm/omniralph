@@ -56,10 +56,10 @@ always behaves like cyralph's default and has no setting for it.
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
-| `accessToken`, `refreshToken` | **Settings › Integrations › Connect Linear** | Installs the Omniralph app (`actor=app`); its tokens are stored encrypted and refreshed automatically. Not copied from cyralph: they belong to cyralph's app. |
+| `accessToken`, `refreshToken` | **Settings › Connections › Add connection › Linear › Connect** | Installs the Omniralph app (`actor=app`); its tokens are stored encrypted and refreshed automatically. Not copied from cyralph: they belong to cyralph's app. |
 | `webhookSecret` | `LINEAR_WEBHOOK_SECRET` | The Omniralph app's own signing secret. |
 | `clientId`, `clientSecret` | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | The Omniralph app's own credentials. `cyralph auth` becomes **Connect Linear**. |
-| `workspaceId`, `workspaceName` | Not needed | Recorded when connecting; shown on **Settings › Integrations**. |
+| `workspaceId`, `workspaceName` | Not needed | Recorded when connecting; shown on **Settings › Connections › Linear**. |
 
 ### `ralph`
 
@@ -220,11 +220,11 @@ status line says **up to date**.
 ### 3. Install the Omniralph Linear app
 
 Create Omniralph's own Linear OAuth app, set `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` and
-`LINEAR_WEBHOOK_SECRET` on Vercel, redeploy, and **Connect Linear** from **Settings ›
-Integrations** ([linear.md](linear.md#1-create-the-linear-oauth-app), steps 1 to 3). Don't reuse
+`LINEAR_WEBHOOK_SECRET` on Vercel, redeploy, and connect Linear from **Settings ›
+Connections › Add connection** ([linear.md](linear.md#1-create-the-linear-oauth-app), steps 1 to 3). Don't reuse
 cyralph's OAuth app: its webhook points at cyralph.
 
-**Verify:** **Settings › Integrations** shows the workspace. In Linear, the Omniralph app can be
+**Verify:** **Settings › Connections › Linear** shows the workspace. In Linear, the Omniralph app can be
 picked as an issue's delegate and @mentioned. Delegate a throwaway issue that a routing rule (**Settings ›
 Advanced › Routing rules**) sends to a ralph-enabled repository: its
 session acknowledges within seconds, the run shows up under **Coding tasks**, a job runs on a
@@ -310,7 +310,7 @@ Every step before 6 is reversible from the control panel and cyralph's `config.j
 | -- | -- |
 | Step 1 | Turn the repository's **Coding** switch off: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
 | Step 2 | Remove `coding` from the agent's `acceptedTaskTypes` and restart it (running jobs finish; queued ones wait for another agent that accepts `coding`). Pin **Fleet › Version policy** back to the version pm2 agents ran. |
-| Step 3 | **Disconnect** Linear on **Settings › Integrations** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
+| Step 3 | Disconnect Linear with **Settings › Connections › Linear › ⋯ › Disconnect…** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
 | Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
 | Step 5 | Re-delegate stopped epics to cyralph (while it's still installed). |
 | Steps 6 and 7 | Harder: restore `~/.cyralph` (or re-create it from the saved `config.json`), recreate cyralph's Linear OAuth app and run `cyralph auth` again, re-add its GitHub webhook and tunnel, and `pm2 start` it. Then roll routing back team by team as for step 4. |

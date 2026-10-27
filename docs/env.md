@@ -72,14 +72,14 @@ under **Repos › Add repo › Connect GitLab** and stored encrypted. See [gitla
 
 See [linear.md](linear.md). One OAuth application in Linear (**Settings › API › OAuth applications**) for the whole
 deployment, which each organization's admins install into their organization's Linear workspace
-from **Settings › Integrations** (one workspace per organization, one organization per workspace). Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
+from **Settings › Connections › Add connection** (one workspace per organization, one organization per workspace). Callback URL `<APP_URL>/api/integrations/linear/callback`; enable
 webhooks to `<APP_URL>/api/webhooks/linear` with the **Agent session events** and **Issues** events.
 The app is installed with `actor=app` and scopes `read,write,app:assignable,app:mentionable`; its
 tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `LINEAR_CLIENT_ID` | for Om | — | The Linear OAuth application's client ID. Without it, **Connect Linear** is disabled. |
+| `LINEAR_CLIENT_ID` | for Om | — | The Linear OAuth application's client ID. Without it, Linear's **Connect** returns "Linear app not configured". |
 | `LINEAR_CLIENT_SECRET` | for Om | — | The Linear OAuth application's client secret (code exchange and token refresh). |
 | `LINEAR_WEBHOOK_SECRET` | for Om | — | The Linear app's webhook signing secret; verifies the `Linear-Signature` HMAC-SHA256 header. Unset → Linear webhooks are rejected. |
 
@@ -87,10 +87,10 @@ tokens are stored encrypted (`ENCRYPTION_KEY`) and refreshed automatically.
 
 One Slack app for the whole deployment, created from [slack-app-manifest.yaml](slack-app-manifest.yaml)
 (replace the placeholder URLs with `APP_URL`). Each organization's admins install it into their
-workspace from **Settings › Integrations › Connect Slack** (a workspace belongs to one
+workspace from **Settings › Connections › Add connection › Slack** (a workspace belongs to one
 organization). Redirect URL `<APP_URL>/api/integrations/slack/callback`; events go to
 `<APP_URL>/api/webhooks/slack`. Each workspace's bot token is stored encrypted (`ENCRYPTION_KEY`).
-Without all three variables, **Connect Slack** is disabled.
+Without all three variables, Slack's **Connect** returns "Slack app not configured".
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
@@ -101,12 +101,12 @@ Without all three variables, **Connect Slack** is disabled.
 ### Discord (chat)
 
 One Discord application for the whole deployment (Discord Developer Portal), with a bot user. Each
-organization's admins add the bot to their server from **Settings › Integrations › Connect
-Discord** (a server belongs to one organization). Add the redirect
+organization's admins add the bot to their server from **Settings › Connections › Add
+connection › Discord** (a server belongs to one organization). Add the redirect
 `<APP_URL>/api/integrations/discord/callback` under **OAuth2 › Redirects**; set the **Interactions
 Endpoint URL** to `<APP_URL>/api/webhooks/discord`. The deployment-wide bot token is used for every
-server, so nothing per-server is stored. Without all four variables, **Connect Discord** is
-disabled. Ordinary messages only arrive over the Discord Gateway, which the control panel doesn't
+server, so nothing per-server is stored. Without all four variables, Discord's **Connect**
+returns "Discord app not configured". Ordinary messages only arrive over the Discord Gateway, which the control panel doesn't
 connect to yet ([chat.md](chat.md#ordinary-discord-messages-arent-received-yet)); enable the
 **Message Content Intent** under **Bot** for when it does.
 

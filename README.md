@@ -16,8 +16,8 @@ All of them share the control panel, job dispatch, agents, repo cache and creden
 `ralph` jobs can get write credentials (one repository, short-lived), and the control panel
 performs every code-host and Linear API call for all of them.
 
-**Chat front door.** Connect a Slack workspace or Discord server under **Settings › Integrations**
-and mention the bot in a channel: Om, Omniralph's AI, running in the control panel on
+**Chat front door.** Connect a Slack workspace or Discord server under **Settings › Connections ›
+Add connection** and mention the bot in a channel: Om, Omniralph's AI, running in the control panel on
 the Vercel AI Gateway, answers in a thread about the organization's coding runs, reviews, jobs,
 agents and repositories, with links to the control panel. Replies in the thread continue the
 conversation. Linked members can also hand a change to a coding session, which works and answers in
@@ -180,13 +180,13 @@ details.
    request outside finding threads, or in them when the run has a Linear agent session, with
    the finding's whole review as context) has Om make the change. Admins can also use **Re-run** on a review's page or history row.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
-   Integrations**, enable Om and its Linear routing on a repository and `coding` tasks
+   Connections › Add connection**, enable Om and its Linear routing on a repository and `coding` tasks
    on an agent, then delegate an epic to the app (or @mention it with a request)
    → [docs/linear.md](docs/linear.md). Runs show up under **Coding tasks**. Replacing cyralph?
    Follow [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md).
 7. **Chat in Slack or Discord** (optional): create the Slack app from its manifest and/or the
    Discord application, enable the AI Gateway, set the env vars, connect the workspace or server
-   under **Settings › Integrations** and mention the bot: `@Omniralph what ralph runs are active?`
+   under **Settings › Connections › Add connection** and mention the bot: `@Omniralph what ralph runs are active?`
    Link your chat account when it asks (Slack users whose email matches their sign-in are linked
    automatically) → [docs/chat.md](docs/chat.md).
 8. **Tune** per-repo settings (Reviews, Coding and Ask, triggers, review depth, skip paths,
