@@ -1,0 +1,36 @@
+/*
+ * A connection's webhook deliveries: the failed outcome in coral, Replay on failed rows
+ * and revealed on the others' hover or keyboard focus (never on their phone cards), and
+ * the retention note. Only `--or-` tokens.
+ */
+.or-deliveries__outcome--fail {
+  color: var(--or-fail);
+}
+
+/* Hidden but focusable: Tab reaches it, and focusing it shows it. */
+.or-deliveries__replay--reveal {
+  opacity: 0;
+}
+
+.or-deliveries .or-tbl__row:hover .or-deliveries__replay--reveal,
+.or-deliveries .or-tbl__row:focus-within .or-deliveries__replay--reveal {
+  opacity: 1;
+}
+
+/* Phone cards offer Replay on failed deliveries only. */
+.or-deliveries .or-cards .or-deliveries__replay--reveal {
+  display: none;
+}
+
+.or-deliveries__more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.or-deliveries__note {
+  margin: 12px 0 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}

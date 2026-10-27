@@ -49,6 +49,12 @@ describe("SegmentedControl", () => {
     expect(checked()).toEqual([radio("Week")]);
   });
 
+  it("draws a fail-toned option's label in coral, checked or not", () => {
+    setup({ options: [...options.slice(0, 3), { value: "year", label: "Year", tone: "fail" }] });
+    expect(radio("Year").className).toBe("or-seg__option or-seg__option--fail");
+    expect(radio("Day").className).toBe("or-seg__option");
+  });
+
   it("is a single tab stop on the selected option", async () => {
     const { user } = setup();
     await user.click(screen.getByRole("button", { name: "Before" }));

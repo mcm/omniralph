@@ -43,6 +43,8 @@ export const deliveryRowSchema = z.object({
   run: z.object({ id: z.string(), kind: z.enum(RUN_KINDS) }).nullable(),
   /** The delivery this one replayed. */
   replayOfId: z.string().nullable(),
+  /** Who replayed it (a replay's row); "Someone" once their name is gone. */
+  replayedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
   /** The body was too large to keep, so the detail has no payload (and it can't be replayed). */
   payloadTruncated: z.boolean(),
   receivedAt: isoDate,
@@ -55,10 +57,9 @@ export const deliveryListSchema = z.object({
 });
 export type DeliveryList = z.infer<typeof deliveryListSchema>;
 
-/** A delivery with its stored payload, who replayed it, and its own replays (newest first). */
+/** A delivery with its stored payload and its own replays (newest first). */
 export const deliveryDetailSchema = deliveryRowSchema.extend({
   payload: z.unknown(),
-  replayedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
   replays: z.array(deliveryRowSchema),
 });
 export type DeliveryDetail = z.infer<typeof deliveryDetailSchema>;

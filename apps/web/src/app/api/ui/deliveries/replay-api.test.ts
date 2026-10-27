@@ -141,6 +141,19 @@ describe("webhookHeaderEvent", () => {
       "Pipeline Hook",
     );
     expect(webhookHeaderEvent("github", "unknown.opened", { action: "opened" })).toBeNull();
+    // CI deliveries name how the run went too.
+    expect(
+      webhookHeaderEvent("github", "workflow_run.completed.failure", {
+        action: "completed",
+        workflow_run: { conclusion: "failure" },
+      }),
+    ).toBe("workflow_run");
+    expect(
+      webhookHeaderEvent("gitlab", "Pipeline Hook.failed", {
+        object_kind: "pipeline",
+        object_attributes: { status: "failed" },
+      }),
+    ).toBe("Pipeline Hook");
   });
 });
 

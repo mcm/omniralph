@@ -245,7 +245,9 @@ describe.skipIf(!databaseAvailable)("webhook delivery log endpoints", () => {
       payloadTruncated: true,
       repository: null,
       replayOfId: acmeEvents[acmeEvents.length - 2]!.id,
+      replayedBy: { id: member.id, name: member.name ?? "Someone" },
     });
+    expect(started.replayedBy).toBeNull();
   });
 
   it("filters by outcome", async () => {

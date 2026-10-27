@@ -170,15 +170,16 @@ export interface WebhookEventSummary {
   reason: string | null;
   run: WebhookEventRun | null;
   replayOfId: string | null;
+  /** Who replayed it (a replay's row), while that user exists. */
+  replayedBy: { id: string; name: string | null } | null;
   payloadTruncated: boolean;
   /** UTC ISO to the microsecond (the cursor's precision). */
   receivedAt: string;
 }
 
-/** A delivery with its payload and who replayed it. */
+/** A delivery with its payload. */
 export interface WebhookEventDetail extends WebhookEventSummary {
   payload: unknown;
-  replayedBy: { id: string; name: string | null } | null;
 }
 
 export interface WebhookEventCursor {
@@ -213,11 +214,15 @@ const summaryColumns = {
   runId: webhookEvents.runId,
   runKind: webhookEvents.runKind,
   replayOfId: webhookEvents.replayOfId,
+  replayedById: users.id,
+  replayedByName: users.name,
   payloadTruncated: webhookEvents.payloadTruncated,
   receivedAt: receivedAtIso,
 };
 
-interface SummaryRow extends Omit<WebhookEventSummary, "repository" | "run"> {
+interface SummaryRow extends Omit<WebhookEventSummary, "repository" | "run" | "replayedBy"> {
+  replayedById: string | null;
+  replayedByName: string | null;
   repositoryId: string | null;
   repositoryProvider: "github" | "gitlab" | null;
   repositoryFullPath: string | null;
@@ -248,6 +253,7 @@ function summary(row: SummaryRow): WebhookEventSummary {
     reason: row.reason,
     run: row.runId && row.runKind ? { id: row.runId, kind: row.runKind } : null,
     replayOfId: row.replayOfId,
+    replayedBy: row.replayedById ? { id: row.replayedById, name: row.replayedByName } : null,
     payloadTruncated: row.payloadTruncated,
     receivedAt: row.receivedAt,
   };
@@ -277,6 +283,7 @@ export async function listWebhookEvents(
     .from(webhookEvents)
     .innerJoin(organizations, eq(organizations.id, webhookEvents.organizationId))
     .leftJoin(repositories, eq(repositories.id, webhookEvents.repositoryId))
+    .leftJoin(users, eq(users.id, webhookEvents.replayedBy))
     .where(and(...where))
     .orderBy(desc(webhookEvents.receivedAt), desc(webhookEvents.id))
     .limit(filter.limit + 1);
@@ -294,12 +301,7 @@ export async function getWebhookEvent(
   id: string,
 ): Promise<WebhookEventDetail | null> {
   const [row] = await db
-    .select({
-      ...summaryColumns,
-      payload: webhookEvents.payload,
-      replayedById: users.id,
-      replayedByName: users.name,
-    })
+    .select({ ...summaryColumns, payload: webhookEvents.payload })
     .from(webhookEvents)
     .innerJoin(organizations, eq(organizations.id, webhookEvents.organizationId))
     .leftJoin(repositories, eq(repositories.id, webhookEvents.repositoryId))
@@ -307,11 +309,7 @@ export async function getWebhookEvent(
     .where(eq(webhookEvents.id, id))
     .limit(1);
   if (!row) return null;
-  return {
-    ...summary(row),
-    payload: row.payload,
-    replayedBy: row.replayedById ? { id: row.replayedById, name: row.replayedByName } : null,
-  };
+  return { ...summary(row), payload: row.payload };
 }
 
 /** A delivery's replays, newest first. */
@@ -324,6 +322,7 @@ export async function listWebhookEventReplays(
     .from(webhookEvents)
     .innerJoin(organizations, eq(organizations.id, webhookEvents.organizationId))
     .leftJoin(repositories, eq(repositories.id, webhookEvents.repositoryId))
+    .leftJoin(users, eq(users.id, webhookEvents.replayedBy))
     .where(eq(webhookEvents.replayOfId, id))
     .orderBy(desc(webhookEvents.receivedAt), desc(webhookEvents.id));
   return rows.map(summary);

@@ -1,12 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import { connectionListSchema, type ConnectionList } from "@/lib/api/connections";
+import { deliveryListSchema, type DeliveryRow } from "@/lib/api/deliveries";
 import { chatPlaybooksSettingsSchema, type ChatPlaybooksSettings } from "@/lib/api/integrations";
-import { chatPlaybooksKey, connectionKeys, organizationKeys, type QueryKeys } from "@/lib/api/keys";
+import {
+  chatPlaybooksKey,
+  connectionKeys,
+  deliveryKeys,
+  organizationKeys,
+  type QueryKeys,
+} from "@/lib/api/keys";
 import {
   chatAccountsSchema,
   organizationSettingsSchema,
@@ -15,6 +22,7 @@ import {
 } from "@/lib/api/organization";
 import { routingRulesSchema, type RoutingRules } from "@/lib/api/routing-rules";
 import { trackerStateMappingSchema, type TrackerStateMappingView } from "@/lib/api/trackers";
+import { DELIVERY_FILTERS, type DeliveryFilter } from "./replay";
 
 /**
  * The active organization's connections (`GET /api/ui/connections`), for Settings' nav and
@@ -31,6 +39,36 @@ export function useConnections() {
         organizationId: organization.id,
         signal,
       }),
+  });
+}
+
+/**
+ * A code-host or Linear connection's webhook deliveries, newest first, of one outcome filter
+ * (`GET /api/ui/connections/{scm|linear}/{id}/deliveries`), a page at a time ("Show more"
+ * fetches the next with `nextCursor`). A live query: a `webhook_event` change event naming
+ * the connection (a delivery recorded or replayed) refetches every loaded page.
+ */
+export function useDeliveries(
+  connection: { kind: DeliveryRow["connection"]["kind"]; id: string },
+  filter: DeliveryFilter,
+) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  const { kind } = connection;
+  return useInfiniteQuery({
+    queryKey: deliveryKeys(keys).list(connection.id, filter),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      api.get(
+        `/api/ui/connections/${kind}/${encodeURIComponent(connection.id)}/deliveries`,
+        deliveryListSchema,
+        {
+          params: { outcome: [...DELIVERY_FILTERS[filter]], cursor: pageParam },
+          organizationId: organization.id,
+          signal,
+        },
+      ),
+    getNextPageParam: (last) => last.nextCursor,
   });
 }
 

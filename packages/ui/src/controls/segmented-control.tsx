@@ -9,6 +9,8 @@ export interface SegmentedOption<Value extends string = string> {
   /** An optional leading Tabler icon. */
   icon?: TablerIcon;
   disabled?: boolean;
+  /** `fail` draws the label in coral (e.g. "Failed 3" while there are failures). */
+  tone?: "fail";
 }
 
 export type SegmentedControlProps<Value extends string = string> = {
@@ -93,7 +95,7 @@ export function SegmentedControl<Value extends string = string>(
       role="radiogroup"
       className={["or-seg", size === "sm" && "or-seg--sm", className].filter(Boolean).join(" ")}
     >
-      {options.map(({ value: optionValue, label, icon: Icon, disabled }) => {
+      {options.map(({ value: optionValue, label, icon: Icon, disabled, tone }) => {
         const checked = optionValue === value;
         return (
           <button
@@ -108,7 +110,9 @@ export function SegmentedControl<Value extends string = string>(
             data-state={checked ? "checked" : "unchecked"}
             disabled={disabled}
             tabIndex={optionValue === tabStop ? 0 : -1}
-            className="or-seg__option"
+            className={["or-seg__option", tone && `or-seg__option--${tone}`]
+              .filter(Boolean)
+              .join(" ")}
             onClick={() => select(optionValue)}
             onKeyDown={(event) => onKeyDown(event, optionValue)}
           >

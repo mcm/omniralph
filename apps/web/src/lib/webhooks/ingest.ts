@@ -144,9 +144,28 @@ const ralphRun = (run: { id: string; mode: "epic" | "request" }): WebhookEventRu
   kind: run.mode,
 });
 
+/** How a CI run went, from its delivery: a GitHub run's conclusion, a GitLab pipeline's status. */
+function ciResult(provider: ScmProvider, payload: Record<string, unknown>): unknown {
+  const field = (value: unknown, key: string) =>
+    typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>)[key]
+      : undefined;
+  if (provider === "gitlab") {
+    return payload.object_kind === "pipeline"
+      ? field(payload.object_attributes, "status")
+      : undefined;
+  }
+  return (
+    field(payload.workflow_run, "conclusion") ??
+    field(payload.check_suite, "conclusion") ??
+    field(payload.check_run, "conclusion")
+  );
+}
+
 /**
  * The delivery's event as the log names it: the event header and the body's action
- * (`pull_request.synchronize`, `Merge Request Hook.update`).
+ * (`pull_request.synchronize`, `Merge Request Hook.update`), and for CI how it went
+ * (`workflow_run.completed.failure`, `Pipeline Hook.failed`).
  */
 export function webhookEventName(
   provider: ScmProvider,
@@ -162,8 +181,11 @@ export function webhookEventName(
       : typeof attributes === "object" && attributes !== null
         ? (attributes as Record<string, unknown>).action
         : undefined;
+  const result = ciResult(provider, payload);
   const event = eventName?.trim() || "unknown";
-  return typeof action === "string" && action ? `${event}.${action}` : event;
+  return [event, action, result]
+    .filter((part): part is string => typeof part === "string" && part !== "")
+    .join(".");
 }
 
 /**
@@ -318,7 +340,7 @@ export function webhookHeaderEvent(
   event: string,
   body: unknown,
 ): string | null {
-  // `.synchronize`, or nothing when the body has no action.
+  // `.synchronize` (`.completed.failure` for CI), or nothing when the body has no action.
   const action = webhookEventName(provider, "x", body).slice(1);
   const name = action && event.endsWith(action) ? event.slice(0, -action.length) : event;
   return name === "unknown" || name === "" ? null : name;

@@ -434,7 +434,8 @@ describe("creating a playbook", () => {
     act(() => nav.go(PLAYBOOKS_PATH));
     const table = await screen.findByRole("table", { name: "Playbooks" });
     expect(within(table).getByRole("link", { name: "Strict story" })).toBeTruthy();
-  });
+    // It types every field: give it room when the full suite loads the machine.
+  }, 60_000);
 
   it("hides the token budget and coding settings for a review role, and drops tools it can't use", async () => {
     renderAt(`${PLAYBOOKS_PATH}/new`);

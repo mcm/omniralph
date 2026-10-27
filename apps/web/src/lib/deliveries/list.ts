@@ -75,6 +75,10 @@ export function deliveryRow(
     reason: event.reason,
     run: event.run,
     replayOfId: event.replayOfId,
+    replayedBy: event.replayedBy && {
+      id: event.replayedBy.id,
+      name: event.replayedBy.name ?? "Someone",
+    },
     payloadTruncated: event.payloadTruncated,
     receivedAt: event.receivedAt,
   };
@@ -90,9 +94,5 @@ export function deliveryDetail(
     ...deliveryRow(event, organization),
     replays: replays.map((replay) => deliveryRow(replay, organization)),
     payload: event.payload,
-    replayedBy: event.replayedBy && {
-      id: event.replayedBy.id,
-      name: event.replayedBy.name ?? "Someone",
-    },
   };
 }

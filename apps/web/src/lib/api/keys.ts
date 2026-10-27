@@ -87,6 +87,21 @@ export function inboxKeys(keys: QueryKeys) {
 }
 
 /**
+ * Query keys of a connection's webhook delivery log (`GET /api/ui/connections/{scm|linear}/
+ * {id}/deliveries`): one list per outcome filter (all its pages), under the connection's
+ * key, which a `webhook_event` change event naming the connection invalidates.
+ */
+export function deliveryKeys(keys: QueryKeys) {
+  return {
+    all: keys.deliveries.all,
+    /** Every filter and page of one connection's log. */
+    connection: (connectionId: string) => keys.deliveries.detail(connectionId),
+    list: (connectionId: string, filter: string) =>
+      keys.deliveries.part(connectionId, "list", { filter }),
+  };
+}
+
+/**
  * The query key of the Fleet and Settings nav dots (`GET /api/ui/nav-indicators`), keyed by
  * organization scope: Fleet counts the scope's agents, Settings the active organization's
  * deliveries. Its own scope-wide area, which `agent`, `webhook_event`, `connection` and the

@@ -84,6 +84,16 @@ describe("controls.css", () => {
     );
   });
 
+  it("colors a fail-toned segment coral, also when hovered or selected", () => {
+    for (const selector of [
+      ".or-seg__option--fail",
+      ".or-seg__option--fail:hover:not(:disabled)",
+      '.or-seg__option--fail[aria-checked="true"]',
+    ]) {
+      expect(declarationsFor(selector).color).toBe("var(--or-fail)");
+    }
+  });
+
   it("scrolls the tab strip horizontally instead of wrapping", () => {
     expect(declarationsFor(".or-tabs")).toMatchObject({
       "flex-wrap": "nowrap",

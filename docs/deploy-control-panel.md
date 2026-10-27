@@ -230,7 +230,9 @@ summary comment links back to `/reviews/<id>`.
 
 ### Webhook deliveries and Replay
 
-Every verified GitHub, GitLab and Linear delivery is kept for 14 days with what it did
+Every verified GitHub, GitLab and Linear delivery is kept for 14 days with what it did, listed
+under **Settings › Connections › _connection_ › Webhook deliveries** (filter to the failed or
+ignored ones; Replay is on each failed row, and on the others' hover)
 (`GET /api/ui/connections/{scm|linear}/{id}/deliveries`, `GET /api/ui/deliveries/{id}`). After
 fixing a setting (a trigger, a switch, a routing rule), any member of the organization can replay
 one with `POST /api/ui/deliveries/{id}/replay`: it runs through the same processing as a live

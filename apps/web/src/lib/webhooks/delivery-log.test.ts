@@ -310,7 +310,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
       );
       expect(await res.json()).toEqual({ status: "accepted", event: "ci_failure" });
       expect(await onlyEvent()).toMatchObject({
-        event: "workflow_run.completed",
+        event: "workflow_run.completed.failure",
         outcome: "updated_run",
         runId: run.id,
         runKind: "epic",
