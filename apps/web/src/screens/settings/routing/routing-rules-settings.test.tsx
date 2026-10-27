@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import type * as OmniralphUi from "@omniralph/ui";
 import { UiProvider, type LinkProps } from "@omniralph/ui";
@@ -117,13 +118,19 @@ let seen: SeenRequest[];
 /** While set, `GET /api/ui/routing-rules` never answers: the view shows the cache. */
 let holdReads: boolean;
 let putAnswer: ((request: SeenRequest) => Response) | null;
+let previewAnswer: (request: SeenRequest) => Response;
+let testAnswer: (request: SeenRequest) => Response;
 
 beforeEach(() => {
   ui.toast.mockReset();
   rules = [labelsRule, teamRule];
   holdReads = false;
   putAnswer = null;
+  previewAnswer = () => jsonResponse({ results: [] });
+  testAnswer = () => jsonResponse({ error: "No such route" }, 500);
   seen = mockFetch({
+    "POST /api/ui/routing/preview": (request) => previewAnswer(request),
+    "POST /api/ui/routing-rules/test": (request) => testAnswer(request),
     "GET /api/ui/routing-rules": () =>
       holdReads ? new Promise<Response>(() => {}) : jsonResponse(routing(rules)),
     "PUT /api/ui/routing-rules": (request) => {
@@ -610,5 +617,261 @@ describe("live updates", () => {
     deliver(live, BETA_ID);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(reads()).toHaveLength(before);
+  });
+});
+
+describe("Test where an issue would go", () => {
+  const RUN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const testCard = () => screen.getByRole("region", { name: "Test where an issue would go" });
+  const input = () => within(testCard()).getByRole("textbox", { name: "Work items" });
+  const enter = async (...identifiers: string[]) => {
+    await userEvent.type(input(), `${identifiers.join(",")},`);
+  };
+  const testButton = () => within(testCard()).getByRole("button", { name: "Test" });
+  const results = () =>
+    within(testCard()).getByRole("table", { name: "Where each work item would go" });
+  /** Each result row's cells' text (repo badges' brand titles left out). */
+  const resultTexts = () =>
+    within(results())
+      .getAllByRole("row")
+      .slice(1)
+      .map((tableRow) =>
+        Array.from(tableRow.querySelectorAll("th, td"), (cell) => {
+          const copy = cell.cloneNode(true) as Element;
+          copy.querySelectorAll("svg, title").forEach((node) => node.remove());
+          return copy.textContent?.trim();
+        }),
+      );
+  const previews = () => seen.filter((r) => r.path === "/api/ui/routing/preview");
+  const tests = () => seen.filter((r) => r.path === "/api/ui/routing-rules/test");
+
+  const routed = {
+    issue: { identifier: "ENG-1", title: "Login page" },
+    outcome: "repository",
+    repository: { id: API, fullPath: "mcm/api", provider: "github", codingEnabled: true },
+    matched: "rule",
+    rule: { kind: "custom", number: 2, summary: "Team is ENG" },
+    by: "sub-issue of ENG-10 → rule 2 (Team is ENG)",
+    run: {
+      id: RUN,
+      routedBy: "your selection",
+      repository: { id: WEB, fullPath: "mcm/web", provider: "gitlab" },
+    },
+  };
+  const manual = {
+    issue: { identifier: "ENG-2", title: "Docs" },
+    outcome: "manual",
+    repository: { id: WEB, fullPath: "mcm/web", provider: "gitlab", codingEnabled: false },
+    matched: "match",
+    rule: null,
+    by: "work item match (Linear team ENG)",
+    run: null,
+  };
+  const tie = {
+    issue: { identifier: "OPS-1", title: "Infra" },
+    outcome: "ask",
+    repository: null,
+    matched: "match",
+    rule: null,
+    by: "work item matches of mcm/api, mcm/web tie",
+    run: null,
+  };
+  const asks = {
+    issue: { identifier: "OPS-2", title: "Billing" },
+    outcome: "ask",
+    repository: null,
+    matched: "default",
+    rule: { kind: "default", number: 3 },
+    by: null,
+    run: null,
+  };
+
+  it("is a card below the rules, the only place that offers the test", async () => {
+    renderRouting();
+    await loaded();
+    const regions = screen.getAllByRole("region").map((r) => r.getAttribute("aria-labelledby"));
+    expect(regions.indexOf("routing-test")).toBeGreaterThan(regions.indexOf("routing-rules"));
+    expect(within(testCard()).getByRole("textbox", { name: "Work items" })).toBeTruthy();
+    expect(within(card()).queryByRole("textbox", { name: "Work items" })).toBeNull();
+  });
+
+  it("previews the saved rules for every work item in one request", async () => {
+    previewAnswer = () =>
+      jsonResponse({
+        results: [
+          { identifier: "ENG-1", ...routed },
+          { identifier: "ENG-2", ...manual },
+          { identifier: "OPS-1", ...tie },
+          { identifier: "OPS-2", ...asks },
+          {
+            identifier: "ENG-404",
+            outcome: "not_found",
+            message: "There's no issue ENG-404 in your Linear workspace.",
+          },
+        ],
+      });
+    renderRouting();
+    await loaded();
+    await enter("eng-1", "ENG-2", "OPS-1", "OPS-2", "ENG-404");
+    await userEvent.click(testButton());
+    await waitFor(() => expect(resultTexts()).toHaveLength(5));
+
+    expect(previews()).toHaveLength(1);
+    expect(previews()[0]!.body).toEqual({
+      identifiers: ["ENG-1", "ENG-2", "OPS-1", "OPS-2", "ENG-404"],
+    });
+    expect(previews()[0]!.query.size).toBe(0);
+    expect(tests()).toHaveLength(0);
+    expect(resultTexts()).toEqual([
+      [
+        "ENG-1Login page",
+        "mcm/api",
+        "Rule 2",
+        "It is a sub-issue of ENG-10, which matched rule 2 (Team is ENG).",
+        "Already routed to mcm/web",
+      ],
+      [
+        "ENG-2Docs",
+        "mcm/webManual: Coding is off on this repo",
+        "Work item match",
+        "It matched the work item match (Linear team ENG).",
+        "",
+      ],
+      [
+        "OPS-1Infra",
+        "Asks which repo",
+        "Work item match",
+        "It matched the work item matches of mcm/api, mcm/web equally.",
+        "",
+      ],
+      [
+        "OPS-2Billing",
+        "Asks which repo",
+        "Default: asks which repo",
+        "No rule, work item match or parent picks a repo for it.",
+        "",
+      ],
+      ["ENG-404", "Not found", "", "", ""],
+    ]);
+    expect(
+      within(results())
+        .getByRole("link", { name: "Already routed to mcm/web" })
+        .getAttribute("href"),
+    ).toBe(`/runs/${RUN}`);
+    expect(screen.queryByText("Tested with your unsaved changes.")).toBeNull();
+  });
+
+  it("tests each work item against the staged rules, one request each", async () => {
+    testAnswer = (request) => {
+      const { identifier } = request.body as { identifier: string };
+      if (identifier === "ENG-404") {
+        return jsonResponse({ error: "There's no issue ENG-404.", code: "not_found" }, 404);
+      }
+      return jsonResponse(identifier === "ENG-1" ? routed : manual);
+    };
+    renderRouting();
+    await loaded();
+    await userEvent.click(within(ruleRow(1)).getByRole("button", { name: "Delete rule 1" }));
+    expect(within(testCard()).getByText(/Tests use your unsaved changes/)).toBeTruthy();
+    await enter("ENG-1", "ENG-2", "ENG-404");
+    await userEvent.click(testButton());
+    await waitFor(() => expect(resultTexts()).toHaveLength(3));
+
+    expect(previews()).toHaveLength(0);
+    expect(tests().map((r) => (r.body as { identifier: string }).identifier)).toEqual([
+      "ENG-1",
+      "ENG-2",
+      "ENG-404",
+    ]);
+    for (const request of tests()) {
+      expect(
+        summary(request.body as { rules: { repositoryId: string; query: unknown }[] }),
+      ).toEqual([[WEB, [{ field: "team", operator: "=", value: "ENG" }]]]);
+    }
+    expect(resultTexts().map((cells) => cells.slice(0, 3))).toEqual([
+      ["ENG-1Login page", "mcm/api", "Rule 2"],
+      ["ENG-2Docs", "mcm/webManual: Coding is off on this repo", "Work item match"],
+      ["ENG-404", "Not found", ""],
+    ]);
+    expect(within(testCard()).getByText("Tested with your unsaved changes.")).toBeTruthy();
+    // Nothing was saved.
+    expect(puts()).toHaveLength(0);
+  });
+
+  it("asks to save before testing more than 10 work items with staged changes", async () => {
+    renderRouting();
+    await loaded();
+    await userEvent.click(within(ruleRow(1)).getByRole("button", { name: "Delete rule 1" }));
+    const many = Array.from({ length: 11 }, (_, i) => `ENG-${i + 1}`);
+    await enter(...many);
+    await userEvent.click(testButton());
+    expect(within(testCard()).getByRole("alert").textContent).toBe(
+      "Save your changes to test more than 10 work items at once.",
+    );
+    expect(tests()).toHaveLength(0);
+    expect(previews()).toHaveLength(0);
+
+    // Without staged changes, the preview takes all of them.
+    previewAnswer = (request) =>
+      jsonResponse({
+        results: (request.body as { identifiers: string[] }).identifiers.map((identifier) => ({
+          identifier,
+          ...asks,
+          issue: { identifier, title: identifier },
+        })),
+      });
+    await userEvent.click(within(saveBar()!).getByRole("button", { name: "Discard" }));
+    await userEvent.click(testButton());
+    await waitFor(() => expect(resultTexts()).toHaveLength(11));
+    expect(previews()).toHaveLength(1);
+  });
+
+  it("takes identifiers like TEAM-123 only, up to 50", async () => {
+    renderRouting();
+    await loaded();
+    await enter("not an issue");
+    expect(within(testCard()).getByText(/isn't a work item identifier like ENG-123/)).toBeTruthy();
+    expect(input().getAttribute("aria-invalid")).toBe("true");
+    await userEvent.clear(input());
+    await enter(...Array.from({ length: 51 }, (_, i) => `ENG-${i + 1}`));
+    expect(within(testCard()).getByRole("alert").textContent).toBe(
+      "Test at most 50 work items at once.",
+    );
+    expect(within(testCard()).getAllByRole("button", { name: /^Remove ENG-/ })).toHaveLength(50);
+  });
+
+  it.each([
+    [429, "rate_limited", "That's a lot of tests in a minute. Try again in 42 seconds."],
+    [409, "linear_not_connected", "Connect Linear to preview where work items route."],
+  ])("shows a %i answer's message in an alert", async (status, code, message) => {
+    previewAnswer = () => jsonResponse({ error: message, code }, status);
+    testAnswer = () => jsonResponse({ error: message, code }, status);
+    renderRouting();
+    await loaded();
+    await enter("ENG-1");
+    await userEvent.click(testButton());
+    expect((await within(testCard()).findByRole("alert")).textContent).toBe(message);
+    expect(within(testCard()).queryByRole("table")).toBeNull();
+
+    // With staged changes too.
+    await userEvent.click(within(ruleRow(1)).getByRole("button", { name: "Delete rule 1" }));
+    await userEvent.click(testButton());
+    await waitFor(() => expect(tests()).toHaveLength(1));
+    expect((await within(testCard()).findByRole("alert")).textContent).toBe(message);
+  });
+
+  it("stacks the results as cards at 768 px and narrower", () => {
+    const view = readFileSync(path.resolve(__dirname, "routing-test-card.tsx"), "utf8");
+    expect(view).toMatch(/<DataTable\b/);
+    const uiStyles = path.dirname(
+      createRequire(import.meta.url).resolve("@omniralph/ui/styles.css"),
+    );
+    const lists = readFileSync(path.join(uiStyles, "lists.css"), "utf8");
+    const phone = /@media \(max-width: 768px\) \{([\s\S]*?)\n\}/.exec(lists)?.[1] ?? "";
+    expect(phone).toMatch(/\.or-tblwrap\s*\{\s*display: none;/);
+    expect(phone).toMatch(/\.or-cards\s*\{\s*display: flex;/);
+    // Nothing here overrides it.
+    const own = readFileSync(path.resolve(__dirname, "routing.css"), "utf8");
+    expect(own).not.toMatch(/\.or-(tblwrap|cards)\b/);
   });
 });

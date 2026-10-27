@@ -263,23 +263,28 @@ person: a delegation or mention gets "This routes to `x` (rule N), which has cod
 for a person." and nothing is built, created or moved in Linear. Triage still reads that
 repository.
 
-**Test an issue.** Below the rules, enter an issue identifier (`ENG-12`) and **Test** to see
-where it would route under the rules as they are on the page, unsaved changes included, and the
-saved work item matches (`POST /api/ui/routing-rules/test`; every member, at most 30 tests a
-minute each). The request can also carry one repository's unsaved match
-(`workItemMatch: { repositoryId, match }`, `match: null` for cleared), applied in place of its
-saved one. The answer's `matched` is `rule`, `match` or `default`. It shows the
-rule the issue matched (its number and conditions, a work item match, or the default rule), the chain, such as
-`sub-issue of ENG-10 → rule 2 (Team is ENG) → acme/web`, and the result: the repository,
-"manual (coding off)", or "Would ask which repository to use". It uses the same routing as a
-delegation, and nothing is saved or changed in Linear.
+**Test where an issue would go.** Below the rules in Settings › Advanced › Routing rules, enter
+one or more work item identifiers (`ENG-12`, up to 50) and **Test**. Each result shows the work
+item, where it goes (the repo, "Manual" when coding is off on it, or "Asks which repo"), what
+decided it ("Rule 2", "Work item match" or a default rule), the chain in a sentence and, when Om
+already started a run of the work item, "Already routed to" its repo with a link to the run. An
+identifier Linear doesn't know shows "Not found". With no unsaved changes it uses the routing
+preview below for all of them at once; with unsaved changes it tests each work item (at most 10)
+against the rules as they are on the page. It uses the same routing as a delegation, and nothing
+is saved or changed in Linear.
+
+`POST /api/ui/routing-rules/test` (every member, at most 30 tests a minute each) routes one
+`identifier` under `rules` (unsaved; left out, the saved ones) and the saved work item matches.
+The request can also carry one repository's unsaved match (`workItemMatch: { repositoryId,
+match }`, `match: null` for cleared), applied in place of its saved one. The answer's `matched`
+is `rule`, `match` or `default`, with the rule, the chain (`by`) and the work item's latest run.
 
 **Routing preview.** `POST /api/ui/routing/preview` with `{ "identifiers": ["ENG-12", …] }`
 (1–50, every member) answers the same result for each work item under the saved rules, in the
 order sent, plus the repository's coding switch and, when Om already started a run of the
 issue, that run's ID and how it was routed (`routed_by`), so the two can be compared. An issue
 Linear doesn't know is a `not_found` result rather than a failed request. Each request counts
-once against the "Test an issue" limit.
+once against the same limit.
 
 Routing comes only from the rules and the work item matches: text in the issue's description
 (such as a `[repo=…]` tag) only matters when a rule tests the description.

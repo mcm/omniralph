@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/routing-rules";
 import { routingRulesKey, useRoutingRules } from "../queries";
 import { ConditionBuilder } from "./condition-builder";
+import { RoutingTestCard } from "./routing-test-card";
 import {
   draftsOf,
   errorCount,
@@ -327,7 +328,8 @@ function RuleRow({
  * reorder and delete rules; every change is staged in the card's `SaveBar` and saved in one
  * `PUT /api/ui/routing-rules`, whose answer is written into the cache. Another admin's save
  * arrives through the live query; under staged changes the bar says so and offers Discard
- * or Keep editing instead of overwriting it silently.
+ * or Keep editing instead of overwriting it silently. Below it, "Test where an issue would go"
+ * routes work items by the saved rules, or by the staged ones while there are changes.
  */
 export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmin: boolean }) {
   const saved = React.useMemo<RoutingDraft>(() => ({ rules: draftsOf(data.rules) }), [data.rules]);
@@ -437,113 +439,118 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
   const full = rules.length >= MAX_ROUTING_RULES;
 
   return (
-    <Card
-      title="Routing rules"
-      titleId="routing-rules"
-      titleAddon={<ChangeHistoryPopover section="routing_rules" latest={data.history} />}
-      actions={
-        isAdmin ? (
-          <Button
-            icon={IconPlus}
-            size="sm"
-            className="or-routing__add"
-            disabled={full || card.saving}
-            disabledReason={full ? `At most ${MAX_ROUTING_RULES} rules.` : undefined}
-            onClick={() => open(null)}
-          >
-            Add rule
-          </Button>
-        ) : undefined
-      }
-    >
-      <p className="or-routing__lead">{ROUTING_RULES_DESCRIPTION}</p>
-      {isAdmin && repositories.length === 0 ? (
-        <p className="or-routing__note">
-          Connect a repo first: every rule names the repo its work items build in.
+    <>
+      <Card
+        title="Routing rules"
+        titleId="routing-rules"
+        titleAddon={<ChangeHistoryPopover section="routing_rules" latest={data.history} />}
+        actions={
+          isAdmin ? (
+            <Button
+              icon={IconPlus}
+              size="sm"
+              className="or-routing__add"
+              disabled={full || card.saving}
+              disabledReason={full ? `At most ${MAX_ROUTING_RULES} rules.` : undefined}
+              onClick={() => open(null)}
+            >
+              Add rule
+            </Button>
+          ) : undefined
+        }
+      >
+        <p className="or-routing__lead">{ROUTING_RULES_DESCRIPTION}</p>
+        {isAdmin && repositories.length === 0 ? (
+          <p className="or-routing__note">
+            Connect a repo first: every rule names the repo its work items build in.
+          </p>
+        ) : null}
+        {invalid > 0 || errors.list.length > 0 ? (
+          <p role="alert" className="or-routing__error">
+            {[
+              invalid === 1
+                ? "1 rule needs attention."
+                : invalid > 1
+                  ? `${invalid} rules need attention.`
+                  : null,
+              ...errors.list,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          </p>
+        ) : null}
+        {rules.length === 0 ? (
+          <p className="or-routing__note">
+            No rules yet: each repo&apos;s work item match decides.
+          </p>
+        ) : null}
+        <ol ref={list} aria-label="Routing rules" className="or-routing__rules">
+          {rules.map((rule, index) => (
+            <RuleRow
+              key={rule.key}
+              rule={rule}
+              index={index}
+              count={rules.length}
+              fields={data.fields}
+              repositories={repositories}
+              errors={errors.rules.get(index)}
+              canEdit={isAdmin}
+              disabled={card.saving}
+              onMove={(to) => move(index, to)}
+              onEdit={() => open(index)}
+              onDelete={() => remove(index)}
+            />
+          ))}
+        </ol>
+        <h3 className="or-routing__subheading" id="routing-built-in">
+          After each repo&apos;s work item match
+        </h3>
+        <ul aria-labelledby="routing-built-in" className="or-routing__rules">
+          {DEFAULT_RULES.map((label) => (
+            <li
+              key={label}
+              aria-label={`Default rule: ${label}`}
+              className="or-routing__rule or-routing__rule--default"
+            >
+              <span className="or-routing__number" aria-hidden="true" />
+              <div className="or-routing__body">
+                <p className="or-routing__description">{label}</p>
+              </div>
+              <MetaBadge text="Default" />
+            </li>
+          ))}
+        </ul>
+        <p role="status" className="or-routing__announce">
+          {announcement}
         </p>
-      ) : null}
-      {invalid > 0 || errors.list.length > 0 ? (
-        <p role="alert" className="or-routing__error">
-          {[
-            invalid === 1
-              ? "1 rule needs attention."
-              : invalid > 1
-                ? `${invalid} rules need attention.`
-                : null,
-            ...errors.list,
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        </p>
-      ) : null}
-      {rules.length === 0 ? (
-        <p className="or-routing__note">No rules yet: each repo&apos;s work item match decides.</p>
-      ) : null}
-      <ol ref={list} aria-label="Routing rules" className="or-routing__rules">
-        {rules.map((rule, index) => (
-          <RuleRow
-            key={rule.key}
-            rule={rule}
-            index={index}
-            count={rules.length}
-            fields={data.fields}
-            repositories={repositories}
-            errors={errors.rules.get(index)}
-            canEdit={isAdmin}
-            disabled={card.saving}
-            onMove={(to) => move(index, to)}
-            onEdit={() => open(index)}
-            onDelete={() => remove(index)}
+        {isAdmin ? (
+          <SaveBar
+            changes={card.changes}
+            onSave={save}
+            onDiscard={discard}
+            saving={card.saving}
+            error={card.error}
+            conflict={card.conflict}
           />
-        ))}
-      </ol>
-      <h3 className="or-routing__subheading" id="routing-built-in">
-        After each repo&apos;s work item match
-      </h3>
-      <ul aria-labelledby="routing-built-in" className="or-routing__rules">
-        {DEFAULT_RULES.map((label) => (
-          <li
-            key={label}
-            aria-label={`Default rule: ${label}`}
-            className="or-routing__rule or-routing__rule--default"
-          >
-            <span className="or-routing__number" aria-hidden="true" />
-            <div className="or-routing__body">
-              <p className="or-routing__description">{label}</p>
-            </div>
-            <MetaBadge text="Default" />
-          </li>
-        ))}
-      </ul>
-      <p role="status" className="or-routing__announce">
-        {announcement}
-      </p>
-      {isAdmin ? (
-        <SaveBar
-          changes={card.changes}
-          onSave={save}
-          onDiscard={discard}
-          saving={card.saving}
-          error={card.error}
-          conflict={card.conflict}
-        />
-      ) : null}
-      {editing ? (
-        <RuleSheet
-          key={editing.session}
-          number={editing.index === null ? rules.length + 1 : editing.index + 1}
-          adding={editing.index === null}
-          initial={editing.index === null ? newRule() : rules[editing.index]!}
-          errors={editing.index === null ? undefined : errors.rules.get(editing.index)}
-          fields={data.fields}
-          fieldsById={fieldsById}
-          linear={data.linear}
-          repositories={repositories}
-          onApply={apply}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
-    </Card>
+        ) : null}
+        {editing ? (
+          <RuleSheet
+            key={editing.session}
+            number={editing.index === null ? rules.length + 1 : editing.index + 1}
+            adding={editing.index === null}
+            initial={editing.index === null ? newRule() : rules[editing.index]!}
+            errors={editing.index === null ? undefined : errors.rules.get(editing.index)}
+            fields={data.fields}
+            fieldsById={fieldsById}
+            linear={data.linear}
+            repositories={repositories}
+            onApply={apply}
+            onClose={() => setEditing(null)}
+          />
+        ) : null}
+      </Card>
+      <RoutingTestCard staged={card.dirty ? rules : null} fields={data.fields} />
+    </>
   );
 }
 

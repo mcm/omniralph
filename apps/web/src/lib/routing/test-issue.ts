@@ -117,6 +117,7 @@ export async function routeIssues(
         repository: {
           id: repository.id,
           fullPath: repository.fullPath,
+          provider: repository.provider,
           codingEnabled: repository.codingEnabled,
         },
         by: route.by,
@@ -162,14 +163,19 @@ export async function testRoutingRules(
   if (!result || result.outcome === "not_found") {
     throw new ApiRouteError(404, unknownIssueMessage(identifier), "not_found");
   }
-  const { issue, outcome, repository, matched, rule, by } = result;
+  const { issue, outcome, repository, matched, rule, by, run } = result;
   return {
     issue,
     outcome,
-    repository: repository && { id: repository.id, fullPath: repository.fullPath },
+    repository: repository && {
+      id: repository.id,
+      fullPath: repository.fullPath,
+      provider: repository.provider,
+    },
     matched,
     rule,
     by,
+    run,
   };
 }
 

@@ -203,3 +203,46 @@
   color: var(--or-sec);
   font-size: 12px;
 }
+
+/* "Test where an issue would go": the identifiers and Test, then the results (a DataTable,
+   stacked cards at 768 px and narrower). */
+.or-routing-test__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.or-routing-test__field {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.or-routing-test__item,
+.or-routing-test__outcome {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-routing-test__title {
+  color: var(--or-text);
+  overflow-wrap: anywhere;
+}
+
+.or-routing-test__outcome {
+  color: var(--or-sec);
+}
+
+.or-routing-test__missing {
+  color: var(--or-fail);
+}
+
+@media (max-width: 768px) {
+  .or-routing-test__form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

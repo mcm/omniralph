@@ -95,12 +95,28 @@ export const routingTestRequestSchema = z.object({
 });
 export type RoutingTestRequest = z.infer<typeof routingTestRequestSchema>;
 
+/** A work item's latest run: how it was routed and the repo it builds in (null before one). */
+const issueRunSchema = z.object({
+  id: z.string(),
+  routedBy: z.string().nullable(),
+  repository: z
+    .object({ id: z.string(), fullPath: z.string(), provider: z.enum(["github", "gitlab"]) })
+    .nullable(),
+});
+
 /** Where `POST /api/ui/routing-rules/test`'s issue routes under the rules it was sent. */
 export const routingTestResultSchema = z.object({
   issue: z.object({ identifier: z.string(), title: z.string() }),
   /** `repository` builds there (coding on), `manual` is for a person (coding off), `ask` asks. */
   outcome: z.enum(["repository", "manual", "ask"]),
-  repository: z.object({ id: z.string(), fullPath: z.string() }).nullable(),
+  repository: z
+    .object({
+      id: z.string(),
+      fullPath: z.string(),
+      /** Its code host, for its `RepoBadge`. */
+      provider: z.enum(["github", "gitlab"]),
+    })
+    .nullable(),
   /**
    * What the issue itself matched: a routing rule, a work item match (or a tie of the most
    * specific ones, which asks) or a default rule.
@@ -124,6 +140,8 @@ export const routingTestResultSchema = z.object({
    * asks, except for a tie of work item matches, which names their repositories.
    */
   by: z.string().nullable(),
+  /** The work item's latest run, when Om already started one, and how it was routed. */
+  run: issueRunSchema.nullable(),
 });
 export type RoutingTestResult = z.infer<typeof routingTestResultSchema>;
 
@@ -154,12 +172,11 @@ export const routingPreviewItemSchema = z.union([
       .object({
         id: z.string(),
         fullPath: z.string(),
+        provider: z.enum(["github", "gitlab"]),
         /** The repo's coding switch: off makes the work item manual. */
         codingEnabled: z.boolean(),
       })
       .nullable(),
-    /** The work item's latest run, when Om already started one, and how it was routed. */
-    run: z.object({ id: z.string(), routedBy: z.string().nullable() }).nullable(),
   }),
   z.object({
     identifier: z.string(),
