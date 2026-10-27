@@ -126,13 +126,18 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.agents.all,
       history.section("repository.agents", ID),
     ]);
-    for (const section of ["repository.ask", "repository.playbooks"] as const) {
-      expect(settings(section, ID)).toEqual([
-        keys.repositories.lists,
-        keys.repositories.detail(ID),
-        history.section(section, ID),
-      ]);
-    }
+    expect(settings("repository.ask", ID)).toEqual([
+      keys.repositories.lists,
+      keys.repositories.detail(ID),
+      history.section("repository.ask", ID),
+    ]);
+    // A binding change shows on Advanced › Playbooks' list and details.
+    expect(settings("repository.playbooks", ID)).toEqual([
+      keys.repositories.lists,
+      keys.repositories.detail(ID),
+      playbookKeys(keys).all,
+      history.section("repository.playbooks", ID),
+    ]);
     expect(settings("repository.coding")).toEqual([
       keys.repositories.all,
       keys.backlog.all,
@@ -189,6 +194,7 @@ describe("LIVE_INVALIDATIONS", () => {
       runsKeys(keys).filterOptionsAll,
       history.subject(ID),
       keys.backlog.all,
+      playbookKeys(keys).all,
     ]);
   });
 

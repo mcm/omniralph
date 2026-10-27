@@ -136,7 +136,7 @@ export async function updateRepositoryPlaybookBindings(
   db: Database,
   organizationId: string,
   id: string,
-  bindings: Omit<RepositoryPlaybookBindings, "id" | "fullPath">,
+  bindings: Omit<RepositoryPlaybookBindings, "id" | "fullPath" | "provider">,
 ): Promise<Repository | null> {
   const [row] = await db
     .update(repositories)

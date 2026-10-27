@@ -299,6 +299,12 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   })),
   {
+    name: "settings-advanced-playbook",
+    path: "/settings/advanced/playbooks/builtin%3Aimplement-story",
+    page: "(app)/settings/advanced/playbooks/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
     name: "settings-connection-linear",
     path: `/settings/connections/linear/${ids.integrations.linear}`,
     page: "(app)/settings/connections/[provider]/[id]/page.tsx",

@@ -179,6 +179,7 @@ describe.skipIf(!databaseAvailable)("playbook queries", () => {
     expect(await listRepositoryPlaybookBindings(db, orgA)).toEqual([
       expect.objectContaining({
         fullPath: "acme/a",
+        provider: "github",
         reviewPlaybookIds: ["builtin:review-pr"],
         correlationPlaybookId: playbookId,
         storyPlaybookId: playbookId,

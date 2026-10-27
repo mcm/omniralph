@@ -201,7 +201,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
         builtin: false,
         model: null,
         usedBy: {
-          repositories: [{ id: repoId, fullPath: "acme/api", roles: ["review"] }],
+          repositories: [
+            { id: repoId, fullPath: "acme/api", provider: "github", roles: ["review"] },
+          ],
           chatPlaybooks: [],
           chatChannels: [],
           playbooks: [],
