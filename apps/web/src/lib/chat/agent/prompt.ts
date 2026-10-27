@@ -21,6 +21,31 @@ export interface SystemPromptInput {
   threadRun?: ThreadRun | null;
   /** A wake-up: the turn relays run events (`wakeUpMessage`) instead of answering a person. */
   wakeUp?: boolean;
+  /** A web chat's scope (`platform` `web`). */
+  webChat?: WebChatScope | null;
+}
+
+/** What a web chat is about: one repository (on a branch), or all of the organization's. */
+export interface WebChatScope {
+  /** The repository's full path (`acme/customer-portal`), or null for all repositories. */
+  repository: string | null;
+  branch: string | null;
+}
+
+function webChatRules(chat: WebChatScope): string[] {
+  const about = chat.repository
+    ? `the repository ${chat.repository}${chat.branch ? ` (branch ${chat.branch})` : ""}`
+    : "all of the organization's repositories";
+  return [
+    "This chat (Ask in the Omniralph web app):",
+    `- The member started this chat in the Omniralph web app, about ${about}. Only they see it, and nobody else writes in it.`,
+    ...(chat.repository
+      ? [
+          `- ask_about_code defaults to ${chat.repository}: when a question doesn't name a repository, it is about this one.`,
+        ]
+      : []),
+    "- Your answer is rendered as Markdown in the web app.",
+  ];
 }
 
 export interface ThreadRun {
@@ -114,6 +139,7 @@ export function systemPrompt(input: SystemPromptInput): string {
     '- When a user asks to have Omniralph build an issue ("file an issue for X and build it"), draft a new one with draft_linear_issue and tell them to click Create and delegate; for an existing issue, call delegate_linear_issue with its identifier.',
     "- Omniralph then works in the issue's Linear agent session; this thread only gets a message when the run starts, opens its pull/merge request, and finishes or fails. Share the issue's link after delegating.",
     ...(input.threadRun ? threadRunRules(input.threadRun) : []),
+    ...(input.platform === "web" && input.webChat ? webChatRules(input.webChat) : []),
     ...(input.wakeUp ? WAKE_UP_RULES : []),
   ].join("\n");
 }

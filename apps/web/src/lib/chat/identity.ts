@@ -64,7 +64,9 @@ export interface ResolveChatActorInput {
  * user who is no longer a member counts as unlinked. An unlinked Slack user
  * whose profile email (cached for an hour) is the sign-in email of a member is
  * linked to that member automatically, unless they unlinked before. Discord
- * never exposes emails, so Discord users need an explicit link.
+ * never exposes emails, so Discord users need an explicit link. On the `web`
+ * platform the external user ID is the Omniralph user ID: a current member is
+ * a `member`, anyone else `unlinked` (the API refuses them first).
  */
 export async function resolveChatActor(
   deps: ChatIdentityDeps,
@@ -75,6 +77,9 @@ export async function resolveChatActor(
   // The connection decides the organization; a mismatch is a caller bug, not access.
   if (connection.organizationId !== organizationId || connection.platform !== platform) {
     return { kind: "unlinked" };
+  }
+  if (platform === "web") {
+    return (await memberActor(db, organizationId, externalUserId)) ?? { kind: "unlinked" };
   }
 
   const identity = await getChatIdentity(db, organizationId, platform, externalUserId);
@@ -116,7 +121,8 @@ export async function resolveChatActor(
 
 /**
  * The organization member a chat user is linked to, or null (no identity
- * lookup on the platform, no auto-linking): who a wake-up acts for.
+ * lookup on the platform, no auto-linking): who a wake-up acts for. A web
+ * chat's user is the member itself while they still are one.
  */
 export async function linkedMemberActor(
   db: Database,
@@ -124,6 +130,7 @@ export async function linkedMemberActor(
   platform: ChatPlatform,
   externalUserId: string,
 ): Promise<ChatMemberActor | null> {
+  if (platform === "web") return memberActor(db, organizationId, externalUserId);
   const identity = await getChatIdentity(db, organizationId, platform, externalUserId);
   return identity ? memberActor(db, organizationId, identity.userId) : null;
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import {
   analyticsKeys,
+  askKeys,
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
@@ -281,6 +282,30 @@ describe("LIVE_INVALIDATIONS", () => {
     }
     expect(under(backlog.detail(`linear-${OTHER_RUN}`))).toBe(false);
     expect(under(keys.runs.lists)).toBe(false);
+  });
+
+  it("chat: the viewer's chats lists and the named chats, never another chat", () => {
+    const ask = askKeys(keys);
+    const prefixes = liveInvalidations(event({ resource: "chat", ids: [ID] }));
+    expect(prefixes).toEqual([ask.chatLists, ask.chat(ID)]);
+    const under = (key: QueryKey) =>
+      prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
+    expect(under(ask.chats("all"))).toBe(true);
+    expect(under(ask.chats(ORG))).toBe(true);
+    expect(under(ask.chat(ID))).toBe(true);
+    expect(under(ask.chat(OTHER_RUN))).toBe(false);
+    expect(under(ask.repositories(ORG))).toBe(false);
+  });
+
+  it("chat: reaches the chats list of every organization in the scope", () => {
+    const other = askKeys(queryKeys(OTHER_ORG));
+    const prefixes = scopeInvalidations(
+      changeEvent(OTHER_ORG, { resource: "chat", ids: [ID] }),
+      new Set([ORG, OTHER_ORG]),
+    );
+    expect(prefixes).toEqual(
+      expect.arrayContaining([other.chatLists, askKeys(keys).chatLists, askKeys(keys).chat(ID)]),
+    );
   });
 
   it("organization: the organization's queries", () => {

@@ -2,9 +2,12 @@ import "server-only";
 import {
   appendChatMessage,
   getOrganization,
+  getRepository,
   getRunByChatThread,
   listChatMessages,
+  type ChatConnection,
   type ChatMessageRole,
+  type ChatThread,
   type Database,
 } from "@omniralph/db";
 import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
@@ -23,7 +26,7 @@ import {
   CHAT_ATTACHMENT_LIMITS,
   type ChatAttachmentLimits,
 } from "./config";
-import { historyMessages, systemPrompt } from "./prompt";
+import { historyMessages, systemPrompt, type WebChatScope } from "./prompt";
 import { chatTools } from "./registry";
 import { toAiTools, type ChatToolRegistry } from "./tools";
 
@@ -115,6 +118,22 @@ export async function recordTurn(
     await record(m.role === "tool" ? "tool" : "assistant", content);
   }
   if (last?.role !== "assistant" && posted !== null) await record("assistant", posted);
+}
+
+/** What a web chat is about, for the system prompt; null for a Slack or Discord thread. */
+export async function webChatScope(
+  db: Database,
+  connection: Pick<ChatConnection, "platform" | "organizationId">,
+  chatThread: Pick<ChatThread, "repositoryId" | "branch">,
+): Promise<WebChatScope | null> {
+  if (connection.platform !== "web") return null;
+  const repository = chatThread.repositoryId
+    ? await getRepository(db, chatThread.repositoryId, connection.organizationId)
+    : null;
+  return {
+    repository: repository?.fullPath ?? null,
+    branch: repository ? chatThread.branch : null,
+  };
 }
 
 export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHandler {
@@ -215,6 +234,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               status: threadRun.status,
               working: !!(await chatRunSession(db, chatThread.id)),
             },
+            webChat: await webChatScope(db, connection, chatThread),
           }),
           messages: historyMessages(history, {
             includeTools: Object.keys(tools).length > 0,

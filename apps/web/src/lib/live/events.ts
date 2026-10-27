@@ -33,6 +33,7 @@ export const CHANGE_RESOURCES = [
   "connection",
   "organization",
   "work_item",
+  "chat",
 ] as const satisfies readonly ChangeResource[];
 export type ChangeEventResource = (typeof CHANGE_RESOURCES)[number];
 
@@ -108,6 +109,9 @@ const base = {
  * - `work_item`: work items of a tracker changed there or in Omniralph (an action, a run or
  *   triage of them, a repo choice), so the Backlog, its counts, Up next and their details may
  *   have (`ids` = work item URL IDs, `linear-<issue id>`).
+ * - `chat`: a web chat (Ask) was created, got a message (posted, streamed to the end, edited
+ *   or removed), or one of its cards changed (`ids` = chat IDs); only on its owner's channel,
+ *   since a web chat is private to the member who started it.
  */
 export const changeEventSchemas = {
   run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
@@ -152,6 +156,7 @@ export const changeEventSchemas = {
     // Work item URL IDs: the tracker and its ID there, never text.
     ids: z.array(z.string().regex(WORK_ITEM_ID_PATTERN)).min(1),
   }),
+  chat: z.strictObject({ ...base, resource: z.literal("chat") }),
 } satisfies { [R in ChangeEventResource]: z.ZodType<{ resource: R }> };
 
 export const changeEventSchema = z.discriminatedUnion("resource", [
@@ -166,6 +171,7 @@ export const changeEventSchema = z.discriminatedUnion("resource", [
   changeEventSchemas.connection,
   changeEventSchemas.organization,
   changeEventSchemas.work_item,
+  changeEventSchemas.chat,
 ]);
 
 export type ChangeEvent = z.infer<typeof changeEventSchema>;

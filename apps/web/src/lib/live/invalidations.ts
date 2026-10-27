@@ -11,6 +11,7 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import {
   analyticsKeys,
+  askKeys,
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
@@ -221,6 +222,11 @@ export const LIVE_INVALIDATIONS = {
     keys.backlog.all,
     ...event.ids.map((id) => backlogKeys(keys).detail(id)),
   ],
+  // The viewer's chats lists (a chat's title and activity order them) and the named chats.
+  chat: (event, keys) => [
+    askKeys(keys).chatLists,
+    ...event.ids.map((chatId) => askKeys(keys).chat(chatId)),
+  ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
 };
@@ -257,6 +263,8 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "navIndicators",
   // Analytics under "All organizations" counts every organization's runs (`organization=all`).
   "analytics",
+  // Ask lists the viewer's chats of every organization, and opens any of them.
+  "ask",
 ];
 
 /**

@@ -9,6 +9,7 @@ import type { QueryKey } from "@tanstack/react-query";
  */
 export const QUERY_AREAS = [
   "analytics",
+  "ask",
   "backlog",
   "chatAccounts",
   "connections",
@@ -262,5 +263,24 @@ export function chatPlaybooksKey(keys: QueryKeys) {
 export function organizationKeys(keys: QueryKeys) {
   return {
     settings: keys.organization.detail("settings"),
+  };
+}
+
+/**
+ * Query keys of Ask (`/api/ui/ask/**`): the viewer's chats list per organization scope, one
+ * chat (its messages) per ID, and New chat's repos per scope, all under `keys.ask.all`. A
+ * `chat` change event (on the viewer's own channel) invalidates the chats lists and the chats
+ * it names. Scope-wide: "All organizations" lists every organization's chats under the
+ * active one's keys.
+ */
+export function askKeys(keys: QueryKeys) {
+  return {
+    all: keys.ask.all,
+    /** Every scope's chats list (all their pages). */
+    chatLists: keys.ask.lists,
+    chats: (scope: string) => keys.ask.list({ organization: scope }),
+    chat: (chatId: string) => keys.ask.detail(chatId),
+    repositories: (scope: string) =>
+      [...keys.ask.all, "repositories", { organization: scope }] as QueryKey,
   };
 }
