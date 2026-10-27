@@ -5,20 +5,33 @@ import {
   deletePlaybook as deletePlaybookRow,
   getStoredPlaybook,
   insertPlaybook,
+  listReportedInstallables,
+  listReportedModels,
   updatePlaybook as updatePlaybookRow,
   type Database,
 } from "@omniralph/db";
+import { CLAUDE_CODE_TOOLS } from "@omniralph/shared";
 import {
+  AGENT_TOOLS,
+  CUSTOM_PLAYBOOK_ROLES,
+  INSTALLABLE_MCP_SERVER_SEPARATOR,
   isBuiltinId,
+  LINEAR_TOOLS,
   playbookRequirements,
   playbookTaskType,
   type Playbook,
 } from "@omniralph/tasks";
 import type { ActionResult } from "@/lib/action-result";
 import { ApiRouteError } from "@/lib/api/handler";
-import type { PlaybookDetail, PlaybookList, SavedPlaybook } from "@/lib/api/playbooks";
+import type {
+  PlaybookDetail,
+  PlaybookFormOptions,
+  PlaybookList,
+  PlaybookSummary,
+  SavedPlaybook,
+} from "@/lib/api/playbooks";
 import type { OrgUser } from "@/lib/auth/session";
-import { getPlaybook, listPlaybooks } from "./index";
+import { getPlaybook, listPlaybookChoices, listPlaybooks } from "./index";
 import { hasNoReferrers, loadPlaybookUsage, type PlaybookReferrers } from "./referrers";
 import { validateOrganizationPlaybook } from "./validation";
 
@@ -60,9 +73,9 @@ function withId(input: unknown, id: string): Record<string, unknown> {
   return { ...fields, id };
 }
 
-/** `name` as a copy's name, within the name limit. */
+/** `name` as a copy's name ("<name> copy"), within the name limit. */
 function copyName(name: string): string {
-  const suffix = " (copy)";
+  const suffix = " copy";
   return `${name.slice(0, MAX_NAME_LENGTH - suffix.length)}${suffix}`;
 }
 
@@ -104,15 +117,65 @@ export async function loadPlaybookList(db: Database, user: OrgUser): Promise<Pla
     loadPlaybookUsage(db, organizationId),
   ]);
   return {
-    playbooks: playbooks.map(({ playbook, builtin }) => ({
-      id: playbook.id,
-      name: playbook.name,
-      description: playbook.description,
-      role: playbook.role,
-      builtin,
-      model: playbook.model,
-      usedBy: usage.get(playbook.id),
-    })),
+    playbooks: playbooks.map(({ playbook, builtin }) =>
+      playbookSummary(playbook, builtin, usage.get(playbook.id)),
+    ),
+  };
+}
+
+/** A playbook's row in the list. */
+function playbookSummary(
+  playbook: Playbook,
+  builtin: boolean,
+  usedBy: PlaybookReferrers,
+): PlaybookSummary {
+  return {
+    id: playbook.id,
+    name: playbook.name,
+    description: playbook.description,
+    role: playbook.role,
+    builtin,
+    model: playbook.model,
+    usedBy,
+  };
+}
+
+/** The answer to a create, clone or save: the playbook's ID, detail and list row. */
+async function savedPlaybook(db: Database, user: OrgUser, id: string): Promise<SavedPlaybook> {
+  const detail = await loadPlaybookDetail(db, user, id);
+  if (!detail) throw ApiRouteError.notFound(NOT_FOUND);
+  return {
+    ok: true,
+    id,
+    detail,
+    summary: playbookSummary(detail.playbook, detail.builtin, detail.usedBy),
+  };
+}
+
+/**
+ * What the playbook editor offers: the roles a custom playbook can take, the models the
+ * organization's non-revoked agents report, the built-in, agent and Linear tool names, the
+ * MCP servers of the installables its agents report (`<package>:<server>`) and the PR
+ * description playbooks a story or request playbook can name.
+ */
+export async function loadPlaybookFormOptions(
+  db: Database,
+  user: OrgUser,
+): Promise<PlaybookFormOptions> {
+  const organizationId = user.organization.id;
+  const [models, installables, prDescriptionPlaybooks] = await Promise.all([
+    listReportedModels(db, organizationId),
+    listReportedInstallables(db, organizationId),
+    listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
+  ]);
+  return {
+    roles: [...CUSTOM_PLAYBOOK_ROLES],
+    models: models.map(({ value, displayName }) => ({ value, displayName })),
+    tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], linear: [...LINEAR_TOOLS] },
+    mcpServers: installables.flatMap(({ name, mcpServers }) =>
+      mcpServers.map((server) => `${name}${INSTALLABLE_MCP_SERVER_SEPARATOR}${server}`),
+    ),
+    prDescriptionPlaybooks,
   };
 }
 
@@ -169,7 +232,7 @@ export async function createPlaybook(
     requirements: validation.requirements,
     createdBy: admin.id,
   });
-  return { ok: true, id };
+  return savedPlaybook(db, admin, id);
 }
 
 /**
@@ -182,7 +245,7 @@ export async function updatePlaybook(
   admin: OrgUser,
   id: string,
   input: unknown,
-): Promise<ActionResult> {
+): Promise<ActionResult | SavedPlaybook> {
   if (isBuiltinId(id)) throw conflict(BUILTIN_READ_ONLY, "builtin_read_only");
   const organizationId = admin.organization.id;
   const current = await getStoredPlaybook(db, organizationId, id);
@@ -208,7 +271,7 @@ export async function updatePlaybook(
     updatedBy: admin.id,
   });
   if (!row) throw ApiRouteError.notFound(NOT_FOUND);
-  return { ok: true };
+  return savedPlaybook(db, admin, id);
 }
 
 /**
@@ -247,7 +310,7 @@ export async function clonePlaybook(
     requirements: validation.requirements,
     createdBy: admin.id,
   });
-  return { ok: true, id: cloneId };
+  return savedPlaybook(db, admin, cloneId);
 }
 
 /**

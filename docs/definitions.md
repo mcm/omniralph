@@ -167,19 +167,23 @@ They are served by the Playbooks API (`apps/web/src/app/api/ui/playbooks`), whic
 `deletePlaybook` in `apps/web/src/lib/playbooks/manage.ts`. Paths carry a `builtin:` ID
 URI-encoded (`builtin%3Areview-pr`).
 
-| Request                             | Who     | What it does                                                                                                                                                                     |
-| ----------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/ui/playbooks`             | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it). |
-| `GET /api/ui/playbooks/{id}`        | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.          |
-| `POST /api/ui/playbooks`            | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id }`.                                                                                                       |
-| `PUT /api/ui/playbooks/{id}`        | Admins  | Replaces a custom playbook. A built-in is refused with 409 `builtin_read_only`.                                                                                                  |
-| `POST /api/ui/playbooks/{id}/clone` | Admins  | Copies a built-in or custom playbook into a new one named `<name> (copy)`; answers `{ ok, id }`. A built-in-only role can't be copied.                                           |
-| `DELETE /api/ui/playbooks/{id}`     | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                           |
+| Request                              | Who     | What it does                                                                                                                                                                                                                                  |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/ui/playbooks`              | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it).                                                              |
+| `GET /api/ui/playbooks/{id}`         | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.                                                                       |
+| `GET /api/ui/playbooks/form-options` | Admins  | What the editor offers: the custom roles, the models the organization's non-revoked agents report, the built-in, agent and Linear tool names, the reported installables' MCP servers (`<package>:<server>`) and the PR description playbooks. |
+| `POST /api/ui/playbooks`             | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id, detail, summary }` (its detail and list row).                                                                                                                         |
+| `PUT /api/ui/playbooks/{id}`         | Admins  | Replaces a custom playbook; answers `{ ok, id, detail, summary }`. A built-in is refused with 409 `builtin_read_only`.                                                                                                                        |
+| `POST /api/ui/playbooks/{id}/clone`  | Admins  | Copies a built-in or custom playbook into a new one named `<name> copy`; answers `{ ok, id, detail, summary }`. A built-in-only role can't be copied.                                                                                         |
+| `DELETE /api/ui/playbooks/{id}`      | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                                                                                        |
 
 Every save, clone and delete publishes the `playbooks` settings change event with the playbook as
 its subject. A playbook's role can't change on **Save** while anything
 [uses it](#delete-refusals), since whatever uses it picked it for its role. A custom playbook may
 name a built-in PR description playbook.
+
+Admins edit them in Settings › Advanced › Playbooks: **New playbook**, and on a playbook's page
+**Clone** (the copy opens in the editor) and, for a custom one, ⋯ **Edit** and **Delete…**.
 
 ### Setup and teardown commands
 

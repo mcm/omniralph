@@ -9,7 +9,7 @@ export const GET = apiHandler({}, async ({ user }): Promise<PlaybookList> =>
   loadPlaybookList(getDb(), user),
 );
 
-/** Creates one of the organization's playbooks (admins); answers its ID. */
+/** Creates one of the organization's playbooks (admins); answers its ID, detail and list row. */
 export const POST = apiHandler({ access: "admin", body: z.unknown() }, async ({ user, body }) =>
   createPlaybook(getDb(), user, body),
 );

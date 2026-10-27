@@ -10,5 +10,7 @@ export function playbookKeys(keys: QueryKeys) {
     all: keys.settings.detail("playbooks"),
     list: keys.settings.part("playbooks", "list"),
     detail: (id: string) => keys.settings.part("playbooks", "detail", { id }),
+    /** What the editor offers; agents reporting models or installables change it too. */
+    formOptions: keys.settings.part("playbooks", "form-options"),
   };
 }
