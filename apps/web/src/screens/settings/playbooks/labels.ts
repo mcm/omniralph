@@ -10,6 +10,14 @@ export function playbookHref(id: string): string {
   return `${PLAYBOOKS_PATH}/${encodeURIComponent(id)}`;
 }
 
+/** Advanced › Playbooks › New playbook. */
+export const NEW_PLAYBOOK_PATH = `${PLAYBOOKS_PATH}/new`;
+
+/** A custom playbook's editor. */
+export function playbookEditHref(id: string): string {
+  return `${playbookHref(id)}/edit`;
+}
+
 /** Each role in plain words. */
 export const PLAYBOOK_ROLE_LABELS: Record<PlaybookRole, string> = {
   review: "Review",

@@ -5,7 +5,7 @@ import { clonePlaybook } from "@/lib/playbooks/manage";
 
 type Params = { id: string };
 
-/** Copies a playbook (a built-in or one of the organization's) into a new one (admins); answers its ID. */
+/** Copies a playbook (a built-in or one of the organization's) into a new one (admins); answers its ID, detail and list row. */
 export const POST = apiHandler<"admin", undefined, undefined, Params>(
   { access: "admin" },
   async ({ user, params }) => clonePlaybook(getDb(), user, decodeId(params.id)),

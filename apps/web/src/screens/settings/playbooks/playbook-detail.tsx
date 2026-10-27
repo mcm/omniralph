@@ -3,6 +3,7 @@
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   MetaBadge,
   RepoBadge,
@@ -12,10 +13,28 @@ import {
   type MenuItem,
 } from "@omniralph/ui";
 import { CODING_DEFAULTS, roleTaskType, type Playbook } from "@omniralph/tasks";
-import { IconCopy, IconMessageCircle } from "@tabler/icons-react";
-import { createElement, type ReactNode } from "react";
-import { ApiError } from "@/lib/api/client";
-import type { PlaybookDetail as PlaybookDetailData, PlaybookUsedBy } from "@/lib/api/playbooks";
+import {
+  IconCopy,
+  IconCopyPlus,
+  IconMessageCircle,
+  IconPencil,
+  IconTrash,
+} from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
+import { createElement, useState, type ReactNode } from "react";
+import { useCurrentUser } from "@/components/current-user";
+import { useApiMutation } from "@/components/use-api-mutation";
+import { api, ApiError } from "@/lib/api/client";
+import { playbookKeys } from "@/lib/api/playbook-keys";
+import {
+  deletedPlaybookSchema,
+  playbookPath,
+  savedPlaybookSchema,
+  type PlaybookDetail as PlaybookDetailData,
+  type PlaybookUsedBy,
+  type SavedPlaybook,
+} from "@/lib/api/playbooks";
+import { hasRole } from "@/lib/auth/roles";
 import { SettingsPage } from "../settings-page";
 import {
   CHAT_PLAYBOOK_LABELS,
@@ -23,10 +42,11 @@ import {
   modelLabel,
   PLAYBOOK_ROLE_LABELS,
   PLAYBOOKS_PATH,
+  playbookEditHref,
   playbookHref,
   REPOSITORY_BINDING_LABELS,
 } from "./labels";
-import { usePlaybook } from "./queries";
+import { usePlaybook, writeDeletedPlaybook, writeSavedPlaybook } from "./queries";
 import "./playbooks.css";
 
 /** Shown for an unknown playbook, or another organization's. */
@@ -48,14 +68,24 @@ export function minutesLabel(minutes: number): string {
   return unit(minutes, "minute");
 }
 
-/** The ⋯ menu's items (TOOL-703 adds Clone, Edit and Delete…). */
-export function playbookMenuItems(id: string): MenuItem[] {
+/**
+ * The ⋯ menu's items: Copy playbook ID, and for an admin on a custom playbook "Edit" and,
+ * after a separator, "Delete…".
+ */
+export function playbookMenuItems(id: string, edit?: { onDelete: () => void }): MenuItem[] {
   return [
     {
       label: "Copy playbook ID",
       icon: IconCopy,
       onSelect: () => void copyPlaybookId(id),
     },
+    ...(edit
+      ? ([
+          { label: "Edit", icon: IconPencil, href: playbookEditHref(id) },
+          "separator",
+          { label: "Delete…", icon: IconTrash, destructive: true, onSelect: edit.onDelete },
+        ] satisfies MenuItem[])
+      : []),
   ];
 }
 
@@ -351,13 +381,40 @@ function UsedByCard({ usedBy }: { usedBy: PlaybookUsedBy }) {
 }
 
 /**
- * Advanced › Playbooks › one playbook, read-only: its role, model and budget, the system
- * prompt and prompt template, tools, requirements, commands, a coding playbook's coding
- * settings and what uses it, with the ⋯ menu. Live: an edit, a delete or a binding change
- * by anyone shows at once; an unknown playbook (another organization's too) says so.
+ * Advanced › Playbooks › one playbook: its role, model and budget, the system prompt and
+ * prompt template, tools, requirements, commands, a coding playbook's coding settings and
+ * what uses it, with the toolbar: admins get Clone (a copy opened in the editor) and, on a
+ * custom playbook, ⋯ Edit and Delete… (confirmed; the server refuses one in use). Live: an
+ * edit, a delete or a binding change by anyone shows at once; an unknown playbook (another
+ * organization's too) says so.
  */
 export function PlaybookDetail({ id }: { id: string }) {
   const query = usePlaybook(id);
+  const router = useRouter();
+  const isAdmin = hasRole(useCurrentUser(), "admin");
+  const [confirming, setConfirming] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const clone = useApiMutation<SavedPlaybook, void>({
+    mutationFn: (_none, { organizationId }) =>
+      api.post(playbookPath(id, "clone"), savedPlaybookSchema, { organizationId }),
+    applyResult: (saved, cache) => writeSavedPlaybook(cache, saved),
+    invalidate: (keys) => [playbookKeys(keys).all],
+    success: (saved) => `Created ${saved.summary.name}`,
+    onSuccess: (saved) => router.push(playbookEditHref(saved.id)),
+  });
+  const remove = useApiMutation<{ ok: true }, string>({
+    mutationFn: (_name, { organizationId }) =>
+      api.delete(playbookPath(id), deletedPlaybookSchema, { organizationId }),
+    applyResult: (_result, cache) => writeDeletedPlaybook(cache, id),
+    invalidate: (keys) => [playbookKeys(keys).list],
+    success: (_result, name) => `Deleted ${name}`,
+    onSuccess: () => {
+      // The page is on its way to the list: don't refetch the playbook it no longer has.
+      setLeaving(true);
+      router.push(PLAYBOOKS_PATH);
+    },
+  });
+  if (leaving) return null;
   const back = (
     <AppLink href={PLAYBOOKS_PATH} className="or-playbook__back">
       ‹ Playbooks
@@ -396,7 +453,25 @@ export function PlaybookDetail({ id }: { id: string }) {
           <MetaBadge text={PLAYBOOK_ROLE_LABELS[playbook.role]} />
           {detail.builtin ? <MetaBadge text="Built-in" /> : null}
         </div>
-        <Toolbar label="Playbook actions" menu={playbookMenuItems(playbook.id)} />
+        <Toolbar
+          label="Playbook actions"
+          actions={
+            isAdmin
+              ? [
+                  {
+                    label: "Clone",
+                    icon: IconCopyPlus,
+                    disabled: clone.isPending,
+                    onSelect: () => clone.mutate(),
+                  },
+                ]
+              : []
+          }
+          menu={playbookMenuItems(
+            playbook.id,
+            isAdmin && !detail.builtin ? { onDelete: () => setConfirming(true) } : undefined,
+          )}
+        />
       </div>
       <OverviewCard detail={detail} />
       <PromptsCard playbook={playbook} />
@@ -405,6 +480,17 @@ export function PlaybookDetail({ id }: { id: string }) {
       <CommandsCard playbook={playbook} />
       {roleTaskType(playbook.role) === "coding" ? <CodingCard playbook={playbook} /> : null}
       <UsedByCard usedBy={detail.usedBy} />
+      {isAdmin && !detail.builtin ? (
+        <ConfirmDialog
+          open={confirming}
+          onOpenChange={setConfirming}
+          title={`Delete ${playbook.name}?`}
+          description="This can't be undone."
+          confirmLabel="Delete playbook"
+          destructive
+          onConfirm={() => remove.mutate(playbook.name)}
+        />
+      ) : null}
     </SettingsPage>
   );
 }

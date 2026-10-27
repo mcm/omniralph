@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  agents,
   closeDb,
   connectRepository,
   createDb,
@@ -20,7 +21,14 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { BUILTIN_PLAYBOOKS, getBuiltinPlaybook } from "@omniralph/tasks";
+import { CLAUDE_CODE_TOOLS, INSTALL_JOB_TYPE } from "@omniralph/shared";
+import {
+  AGENT_TOOLS,
+  BUILTIN_PLAYBOOKS,
+  CUSTOM_PLAYBOOK_ROLES,
+  getBuiltinPlaybook,
+  LINEAR_TOOLS,
+} from "@omniralph/tasks";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -56,6 +64,7 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const list = await import("./route");
 const detail = await import("./[id]/route");
 const clone = await import("./[id]/clone/route");
+const formOptions = await import("./form-options/route");
 
 type Handler = (request: Request, route: { params: Promise<{ id: string }> }) => Promise<Response>;
 
@@ -77,6 +86,7 @@ const getOne = (id: string) => call(detail.GET, "GET", id);
 const update = (id: string, body: unknown) => call(detail.PUT, "PUT", id, body);
 const remove = (id: string) => call(detail.DELETE, "DELETE", id);
 const cloneOf = (id: string) => call(clone.POST, "POST", id);
+const getFormOptions = () => call(formOptions.GET as Handler, "GET");
 
 /** A custom playbook's input: a copy of built-in `id` without its ID. */
 function input(id: string, overrides: Record<string, unknown> = {}) {
@@ -260,6 +270,99 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
     });
   });
 
+  describe("GET form-options", () => {
+    beforeEach(async () => {
+      await db.delete(agents);
+      const models = (...names: string[]) =>
+        names.map((name) => ({ value: `claude-${name}`, displayName: name }));
+      await db.insert(agents).values([
+        {
+          organizationId: state.orgId,
+          name: "a-builder",
+          reportedModels: models("Opus 5.5", "Sonnet 5.5"),
+          reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
+        },
+        { organizationId: state.orgId, name: "b-builder", reportedModels: models("Sonnet 5.5") },
+        {
+          organizationId: state.orgId,
+          name: "c-revoked",
+          revokedAt: new Date(),
+          reportedModels: models("Haiku 5.5"),
+        },
+        { organizationId: otherOrgId, name: "theirs", reportedModels: models("Fable 5.1") },
+      ]);
+      await db.insert(jobs).values([
+        {
+          organizationId: state.orgId,
+          type: INSTALL_JOB_TYPE,
+          taskType: "system",
+          status: "completed",
+          payload: {},
+          result: { name: "@omniralph/code-graph", mcpServers: ["graph", "search"] },
+        },
+        // Another organization's install says nothing about this one's servers.
+        {
+          organizationId: otherOrgId,
+          type: INSTALL_JOB_TYPE,
+          taskType: "system",
+          status: "completed",
+          payload: {},
+          result: { name: "@omniralph/code-graph", mcpServers: ["theirs"] },
+        },
+      ]);
+      await insertPlaybook(db, otherOrgId, {
+        name: "Their PR description",
+        role: "pr-description",
+        definition: input("builtin:describe-pr"),
+        requirements: {},
+        createdBy: null,
+      });
+    });
+
+    it("offers the custom roles, the organization's reported models, the tools and MCP servers", async () => {
+      const mine = await insertPlaybook(db, state.orgId, {
+        name: "Our PR description",
+        role: "pr-description",
+        definition: input("builtin:describe-pr"),
+        requirements: {},
+        createdBy: null,
+      });
+      const response = await getFormOptions();
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        roles: [...CUSTOM_PLAYBOOK_ROLES],
+        // Non-revoked agents only, de-duplicated, by display name.
+        models: [
+          { value: "claude-Opus 5.5", displayName: "Opus 5.5" },
+          { value: "claude-Sonnet 5.5", displayName: "Sonnet 5.5" },
+        ],
+        tools: {
+          builtin: [...CLAUDE_CODE_TOOLS],
+          agent: [...AGENT_TOOLS],
+          linear: [...LINEAR_TOOLS],
+        },
+        mcpServers: ["@omniralph/code-graph:graph", "@omniralph/code-graph:search"],
+        prDescriptionPlaybooks: [
+          expect.objectContaining({ id: "builtin:describe-pr", builtin: true }),
+          { id: mine.id, name: "Our PR description", builtin: false },
+        ],
+      });
+      const roles = response.body.roles as string[];
+      for (const builtinOnly of ["triage", "learn-rule", "reply-to-finding"]) {
+        expect(roles).not.toContain(builtinOnly);
+      }
+      const json = JSON.stringify(response.body);
+      for (const marker of ["Fable 5.1", "Haiku 5.5", "theirs", "Their PR description"]) {
+        expect(json).not.toContain(marker);
+      }
+    });
+
+    it("is admin-only", async () => {
+      state.user = { id: memberId, role: "member" };
+      expect((await getFormOptions()).status).toBe(403);
+    });
+  });
+
   describe("writes", () => {
     it("are admin-only", async () => {
       const row = await insertPlaybook(db, state.orgId, {
@@ -285,7 +388,15 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
       const { result, changes } = await captureChanges(() =>
         create(input("builtin:ask-about-code", { requires: { hostTools: ["opengrep"] } })),
       );
-      expect(result).toMatchObject({ status: 200, body: { ok: true, id: expect.any(String) } });
+      expect(result).toMatchObject({
+        status: 200,
+        body: {
+          ok: true,
+          id: expect.any(String),
+          detail: { builtin: false, playbook: { name: "Security review", role: "chat-ask" } },
+          summary: { name: "Security review", role: "chat-ask", builtin: false },
+        },
+      });
       const id = result.body.id as string;
       expect(changes).toEqual([playbookEvent(id)]);
       const [row] = await db.select().from(playbooks).where(eq(playbooks.id, id));
@@ -320,7 +431,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
       const { result, changes } = await captureChanges(() =>
         update(id, input("builtin:ask-about-code", { name: "Renamed", model: "claude-opus-5-5" })),
       );
-      expect(result).toEqual({ status: 200, body: { ok: true } });
+      // The answer carries the saved detail and list row, for the views' caches.
+      expect(result).toEqual({
+        status: 200,
+        body: { ok: true, id, detail: (await getOne(id)).body, summary: expect.any(Object) },
+      });
+      expect(result.body.summary).toEqual(
+        ((await getList()).body.playbooks as { id: string }[]).find((row) => row.id === id),
+      );
       expect(changes).toEqual([playbookEvent(id)]);
       expect((await getOne(id)).body.playbook).toMatchObject({
         id,
@@ -333,6 +451,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
       const { result, changes } = await captureChanges(() => cloneOf("builtin:review-pr"));
       expect(result).toMatchObject({ status: 200, body: { ok: true } });
       const id = result.body.id as string;
+      expect(result.body.detail).toEqual((await getOne(id)).body);
+      expect(result.body.summary).toMatchObject({ id, name: "Review a pull request copy" });
       expect(changes).toEqual([playbookEvent(id)]);
       expect((await getOne(id)).body).toMatchObject({
         builtin: false,
@@ -343,7 +463,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
         },
       });
       expect((await getOne(id)).body.playbook).toMatchObject({
-        name: expect.stringContaining("(copy)"),
+        name: `${getBuiltinPlaybook("builtin:review-pr")!.name} copy`,
       });
       expect(await cloneOf(id)).toMatchObject({ status: 200, body: { ok: true } });
       // Built-in-only roles can't be copied.
@@ -399,9 +519,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
         body: { fieldErrors: { role: expect.stringContaining("repo acme/api (review)") } },
       });
       // The same role is fine.
-      expect(await update(id, input("builtin:summarize-pr", { name: "Renamed" }))).toEqual({
+      expect(await update(id, input("builtin:summarize-pr", { name: "Renamed" }))).toMatchObject({
         status: 200,
-        body: { ok: true },
+        body: { ok: true, id, summary: { name: "Renamed", role: "review-summary" } },
       });
     });
 

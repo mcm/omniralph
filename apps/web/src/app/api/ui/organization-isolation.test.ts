@@ -305,6 +305,7 @@ const channelPlaybooks = await import("./integrations/chat-connections/[id]/chan
 const playbookList = await import("./playbooks/route");
 const playbookDetail = await import("./playbooks/[id]/route");
 const playbookClone = await import("./playbooks/[id]/clone/route");
+const playbookFormOptions = await import("./playbooks/form-options/route");
 const agentDefaults = await import("./agent-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
@@ -3709,7 +3710,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           method: "PUT",
           body: { ...playbookInput(a), name: "alpha-renamed" },
         }),
-      ).toEqual({ status: 200, body: { ok: true } });
+      ).toMatchObject({ status: 200, body: { ok: true, id: cloneId } });
       expect(
         await call(playbookDetail.DELETE, { params: { id: cloneId }, method: "DELETE" }),
       ).toEqual({ status: 200, body: { ok: true } });
@@ -3726,6 +3727,49 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(list).not.toContain(builtinClone.body.id as string);
       expect(list).not.toContain(cloneId);
       expect(list).toContain(own(b));
+    });
+
+    it("offers each organization only its own agents' models and installables' MCP servers in the editor", async () => {
+      for (const tenant of [a, b]) {
+        await db
+          .update(agents)
+          .set({
+            reportedModels: [
+              { value: `${tenant.name}-model`, displayName: `${tenant.name}-model` },
+            ],
+            reportedInstallables: [{ name: `${tenant.name}-tools`, version: "1.0.0" }],
+          })
+          .where(eq(agents.id, tenant.agentId));
+        await db.insert(jobs).values({
+          organizationId: tenant.orgId,
+          type: "install",
+          taskType: "system",
+          status: "completed",
+          payload: {},
+          result: { name: `${tenant.name}-tools`, mcpServers: [`${tenant.name}-server`] },
+        });
+      }
+      for (const [mine, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        state.userId = mine.memberId;
+        expect((await call(playbookFormOptions.GET)).status).toBe(403);
+
+        state.userId = mine.adminId;
+        const options = await call(playbookFormOptions.GET);
+        expect(options).toMatchObject({
+          status: 200,
+          body: {
+            models: [{ value: `${mine.name}-model` }],
+            mcpServers: [`${mine.name}-tools:${mine.name}-server`],
+          },
+        });
+        const json = JSON.stringify(options.body);
+        for (const marker of [`${other.name}-model`, `${other.name}-tools`, ...markers(other)]) {
+          expect(json).not.toContain(marker);
+        }
+      }
     });
   });
   describe("agent defaults", () => {

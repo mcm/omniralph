@@ -175,13 +175,14 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([playbooks.all, keys.repositories.all, keys.connections.detail("integrations")]);
   });
 
-  it("agent: the agents list, each agent, the Inbox (offline agents) and the repositories' agents", () => {
+  it("agent: the agents list, each agent, the Inbox (offline agents), the repositories' agents and the playbook editor's options", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.agents.lists,
       keys.agents.detail(ID),
       keys.agents.detail(RUN),
       keys.inbox.all,
       ...repositoryViews,
+      playbookKeys(keys).formOptions,
     ]);
   });
 

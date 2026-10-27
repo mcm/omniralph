@@ -77,6 +77,37 @@ export const playbookDetailSchema = z.object({
 });
 export type PlaybookDetail = z.infer<typeof playbookDetailSchema>;
 
-/** A created or cloned playbook, to navigate to. */
-export const savedPlaybookSchema = z.object({ ok: z.literal(true), id: z.string() });
+/**
+ * A created, cloned or saved playbook: its ID (to navigate to), its detail and its list row,
+ * which the views write into their caches at once.
+ */
+export const savedPlaybookSchema = z.object({
+  ok: z.literal(true),
+  id: z.string(),
+  detail: playbookDetailSchema,
+  summary: playbookSummarySchema,
+});
 export type SavedPlaybook = z.infer<typeof savedPlaybookSchema>;
+
+/** A deleted playbook. */
+export const deletedPlaybookSchema = z.object({ ok: z.literal(true) });
+
+/**
+ * `GET /api/ui/playbooks/form-options` (admins): what the playbook editor offers. The roles a
+ * custom playbook can take, the models the organization's agents report, the tool names per
+ * group, the installables' MCP servers (`<package>:<server>`) and the PR description playbooks.
+ */
+export const playbookFormOptionsSchema = z.object({
+  roles: z.array(PlaybookRoleSchema),
+  models: z.array(z.object({ value: z.string(), displayName: z.string() })),
+  tools: z.object({
+    builtin: z.array(z.string()),
+    agent: z.array(z.string()),
+    linear: z.array(z.string()),
+  }),
+  mcpServers: z.array(z.string()),
+  prDescriptionPlaybooks: z.array(
+    z.object({ id: z.string(), name: z.string(), builtin: z.boolean() }),
+  ),
+});
+export type PlaybookFormOptions = z.infer<typeof playbookFormOptionsSchema>;

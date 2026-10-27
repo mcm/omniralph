@@ -8,9 +8,17 @@ import {
   RepoBadge,
   type DataTableColumn,
 } from "@omniralph/ui";
-import { IconMessageCircle } from "@tabler/icons-react";
+import { IconMessageCircle, IconPlus } from "@tabler/icons-react";
+import { useCurrentUser } from "@/components/current-user";
 import type { PlaybookSummary, PlaybookUsedBy } from "@/lib/api/playbooks";
-import { modelLabel, PLAYBOOK_ROLE_LABELS, playbookHref, usedBySummary } from "./labels";
+import { hasRole } from "@/lib/auth/roles";
+import {
+  modelLabel,
+  NEW_PLAYBOOK_PATH,
+  PLAYBOOK_ROLE_LABELS,
+  playbookHref,
+  usedBySummary,
+} from "./labels";
 import { usePlaybooks } from "./queries";
 import "./playbooks.css";
 
@@ -67,11 +75,13 @@ export function playbookColumns(): DataTableColumn<PlaybookSummary>[] {
 
 /**
  * Advanced › Playbooks: every built-in and custom playbook of the organization (built-ins
- * first) with its role, model and what uses it; each opens its page. Every member may look.
- * Live: a playbook saved or deleted, or a repo's bindings changed, by anyone, shows at once.
+ * first) with its role, model and what uses it; each opens its page. Every member may look;
+ * admins also get "New playbook". Live: a playbook saved or deleted, or a repo's bindings
+ * changed, by anyone, shows at once.
  */
 export function PlaybooksSettings() {
   const query = usePlaybooks();
+  const isAdmin = hasRole(useCurrentUser(), "admin");
   if (query.isPending) return <p aria-busy="true">Loading…</p>;
   if (query.isError) {
     return (
@@ -87,13 +97,22 @@ export function PlaybooksSettings() {
     );
   }
   return (
-    <DataTable
-      caption="Playbooks"
-      className="or-playbooks"
-      rows={query.data.playbooks}
-      getRowId={(playbook) => playbook.id}
-      getRowHref={(playbook) => playbookHref(playbook.id)}
-      columns={playbookColumns()}
-    />
+    <>
+      {isAdmin ? (
+        <div className="or-playbooks__actions">
+          <Button variant="outline" icon={IconPlus} href={NEW_PLAYBOOK_PATH}>
+            New playbook
+          </Button>
+        </div>
+      ) : null}
+      <DataTable
+        caption="Playbooks"
+        className="or-playbooks"
+        rows={query.data.playbooks}
+        getRowId={(playbook) => playbook.id}
+        getRowHref={(playbook) => playbookHref(playbook.id)}
+        columns={playbookColumns()}
+      />
+    </>
   );
 }

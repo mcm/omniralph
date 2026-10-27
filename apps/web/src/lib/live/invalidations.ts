@@ -162,6 +162,8 @@ export const LIVE_INVALIDATIONS = {
     keys.inbox.all,
     // Repositories show their pinned agents' state and "No agent online".
     ...repositoryViews(keys),
+    // The playbook editor offers the models and MCP servers agents report.
+    playbookKeys(keys).formOptions,
   ],
   repository: (event, keys) => [
     keys.repositories.lists,

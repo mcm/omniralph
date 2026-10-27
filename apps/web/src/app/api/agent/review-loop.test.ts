@@ -1099,7 +1099,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
           name: "Security review",
           systemPrompt: RUBRIC,
         }),
-      ).toEqual({ ok: true });
+      ).toMatchObject({ ok: true, id: taskClone.id, summary: { name: "Security review" } });
 
       // Enable it on the repository next to the built-in, through the Playbooks card's save.
       const [current] = await db

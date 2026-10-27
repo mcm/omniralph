@@ -142,3 +142,87 @@
     margin-bottom: 8px;
   }
 }
+
+/* The list's "New playbook" (admins). */
+.or-playbooks__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The playbook editor: cards of fields, groups of boxes and ordered list editors. */
+.or-playbook-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-playbook-editor__alert {
+  padding: 8px 12px;
+  border: 1px solid var(--or-fail);
+  border-radius: var(--or-radius);
+  color: var(--or-fail);
+}
+
+.or-playbook-editor__alert p {
+  margin: 0;
+}
+
+.or-playbook-editor__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.or-playbook-editor__group legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: 500;
+}
+
+.or-playbook-editor__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.or-playbook-editor__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.or-playbook-editor__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.or-playbook-editor__row-fields {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-playbook-editor__row-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.or-playbook-editor__actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .or-playbook-editor__row {
+    flex-direction: column;
+  }
+}

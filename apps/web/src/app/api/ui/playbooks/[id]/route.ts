@@ -16,7 +16,7 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
   },
 );
 
-/** Replaces one of the organization's playbooks (admins); a built-in is refused (409). */
+/** Replaces one of the organization's playbooks (admins), answering its detail and list row; a built-in is refused (409). */
 export const PUT = apiHandler<"admin", z.ZodUnknown, undefined, Params>(
   { access: "admin", body: z.unknown() },
   async ({ user, params, body }) => updatePlaybook(getDb(), user, decodeId(params.id), body),
