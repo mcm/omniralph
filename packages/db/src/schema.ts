@@ -360,6 +360,9 @@ export interface ScmConnectionHealth {
   problems: ScmConnectionProblem[];
 }
 
+/** The kind of GitHub account a GitHub App installation is on (`installation.account.type`). */
+export type GitHubAccountType = "User" | "Organization";
+
 export const scmConnections = pgTable(
   "scm_connections",
   {
@@ -377,6 +380,12 @@ export const scmConnections = pgTable(
     encryptedCredentials: text("encrypted_credentials").notNull(),
     /** GitLab: the token user's username, the bot's `@` handle. Null for GitHub. */
     botUsername: text("bot_username"),
+    /**
+     * GitHub: the kind of account the installation is on, which decides where its settings
+     * page is. Null for GitLab, and for installations saved before it was recorded until
+     * the next installation webhook or repository picker fills it in.
+     */
+    accountType: text("account_type").$type<GitHubAccountType>(),
     /** GitLab: the last daily connection check (`/api/cron/gitlab-maintenance`); null until the first. */
     health: jsonb("health").$type<ScmConnectionHealth>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),

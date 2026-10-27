@@ -8,6 +8,7 @@ import {
   getMainLane,
   updateLane,
   updateRun,
+  deleteScmConnection,
   getScmConnection,
   createDb,
   getRepository,
@@ -886,6 +887,67 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
         credentials: {},
       });
       expect(moved?.organizationId).toBe(beta!.id);
+    });
+  });
+  describe("GitHub App installation account", () => {
+    it("records the installation's account type from its installation events", async () => {
+      const connection = (await upsertScmConnection(db, {
+        organizationId: orgId,
+        provider: "github",
+        name: "acme-org",
+        baseUrl: "https://api.github.com",
+        externalId: "7070",
+        credentials: {},
+      }))!;
+      expect(connection.accountType).toBeNull();
+      const event = (action: string, type: string) => ({
+        action,
+        installation: { id: 7070, account: { login: "acme-org", type } },
+      });
+
+      // Unsigned deliveries change nothing.
+      const forged = await github(
+        githubRequest(event("created", "Organization"), { event: "installation", secret: "wrong" }),
+      );
+      expect(forged.status).toBe(401);
+      expect((await getScmConnection(db, orgId, connection.id))?.accountType).toBeNull();
+
+      const first = await captureChanges(() =>
+        github(
+          githubRequest(event("added", "Organization"), { event: "installation_repositories" }),
+        ),
+      );
+      expect(await first.result.json()).toEqual({ status: "updated", connections: 1 });
+      expect((await getScmConnection(db, orgId, connection.id))?.accountType).toBe("Organization");
+      expect(first.changes).toEqual([
+        expect.objectContaining({
+          resource: "connection",
+          ids: [connection.id],
+          organizationId: orgId,
+        }),
+      ]);
+
+      // Already recorded: nothing changes or publishes.
+      const repeat = await captureChanges(() =>
+        github(githubRequest(event("suspend", "Organization"), { event: "installation" })),
+      );
+      expect(await repeat.result.json()).toEqual({ status: "updated", connections: 0 });
+      expect(repeat.changes).toEqual([]);
+
+      // An account type other than User or Organization isn't recorded.
+      await github(githubRequest(event("unsuspend", "Enterprise"), { event: "installation" }));
+      expect((await getScmConnection(db, orgId, connection.id))?.accountType).toBe("Organization");
+
+      // An installation that isn't connected is ignored.
+      expect(
+        await github(
+          githubRequest(
+            { action: "created", installation: { id: 7071, account: { type: "User" } } },
+            { event: "installation" },
+          ),
+        ).then((r) => r.json()),
+      ).toEqual({ status: "ignored", reason: "unknown_installation" });
+      await deleteScmConnection(db, orgId, connection.id);
     });
   });
 });

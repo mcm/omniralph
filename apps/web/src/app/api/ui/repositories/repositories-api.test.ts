@@ -1040,6 +1040,13 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
     expect(
       (listed.body.repos as { fullPath: string; connected: boolean }[]).map((r) => r.connected),
     ).toEqual([true, true]);
+    // Listing the picker fills in the account type of an installation saved without one.
+    expect(connection!.accountType).toBeNull();
+    const [stored] = await state.db
+      .select({ accountType: scmConnections.accountType })
+      .from(scmConnections)
+      .where(eq(scmConnections.id, connection!.id));
+    expect(stored?.accountType).toBe("Organization");
   });
 
   it("refuses a GitLab connection that belongs to another organization", async () => {

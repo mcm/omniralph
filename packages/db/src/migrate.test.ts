@@ -3827,4 +3827,57 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       await client.end();
     }
   });
+
+  it("adds a nullable account type to code-host connections, keeping existing ones (0109)", async () => {
+    await db.execute(sql.raw(`create database account_type_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/account_type_before");
+    await migrateBefore(uri, "0109_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = rows[0]!.id;
+      await client.query(
+        `insert into scm_connections (organization_id, provider, name, base_url, external_id,
+           encrypted_credentials, bot_username)
+         values ($1, 'github', 'managed-services', 'https://api.github.com', '4242', 'enc', null),
+                ($1, 'gitlab', 'ops @ gitlab.netbuilder.io', 'https://gitlab.netbuilder.io', '17',
+                 'enc', 'omniralph-bot')`,
+        [org],
+      );
+
+      await runMigrations(uri);
+
+      const { rows: after } = await client.query<{
+        provider: string;
+        name: string;
+        external_id: string;
+        bot_username: string | null;
+        account_type: string | null;
+      }>(
+        `select provider, name, external_id, bot_username, account_type
+         from scm_connections order by provider`,
+      );
+      expect(after).toEqual([
+        {
+          provider: "github",
+          name: "managed-services",
+          external_id: "4242",
+          bot_username: null,
+          account_type: null,
+        },
+        {
+          provider: "gitlab",
+          name: "ops @ gitlab.netbuilder.io",
+          external_id: "17",
+          bot_username: "omniralph-bot",
+          account_type: null,
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
 });

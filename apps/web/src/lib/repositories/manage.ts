@@ -12,6 +12,7 @@ import {
   recordConnectionChange,
   removeScmConnectionProblems,
   setRepositoryWebhookId,
+  setScmConnectionAccountType,
   upsertScmConnection,
   withSettingsChanges,
   type Database,
@@ -32,6 +33,7 @@ import type { SelectableRepositories } from "@/lib/api/repositories";
 import { gitlabWebhookUrl } from "@/lib/app-url";
 import type { OrgUser } from "@/lib/auth/session";
 import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
+import { githubAccountType } from "@/lib/connections/github-installation";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 import { parseGitLabConnectForm, type GitLabConnectForm } from "@/lib/repositories/gitlab-input";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -529,6 +531,11 @@ export async function listSelectableRepositories(
       getInstallation(auth, installationId),
       listInstallationRepos(auth, installationId),
     ]);
+    // Fills in the account type of an installation saved before it was recorded.
+    const accountType = githubAccountType(installation.accountType);
+    if (accountType && accountType !== connection.accountType) {
+      await setScmConnectionAccountType(db, connection.id, accountType);
+    }
     return {
       account: installation.account,
       manageUrl: installation.htmlUrl,

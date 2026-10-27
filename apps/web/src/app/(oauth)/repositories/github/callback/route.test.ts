@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   user: null as { id: string; role: Role; name: null; email: null; image: null } | null,
   /** The signed-in user's active organization. */
   orgId: "org-a",
-  installations: new Map<number, { id: number; account: string }>(),
+  installations: new Map<number, { id: number; account: string; accountType: string }>(),
   /** Stored connections (by installation ID). */
   connections: new Map<string, Connection>(),
   upserts: [] as Array<Record<string, unknown>>,
@@ -46,7 +46,7 @@ vi.mock("@omniralph/scm", () => ({
     const installation = state.installations.get(id);
     // Installations of other apps 404 for our app JWT.
     if (!installation) throw Object.assign(new Error("Not Found"), { status: 404 });
-    return { ...installation, accountType: "Organization", repositorySelection: "selected" };
+    return { ...installation, repositorySelection: "selected" };
   },
 }));
 // The change history is covered by the settings-history tests; here a connect just saves.
@@ -123,7 +123,7 @@ describe("GET /repositories/github/callback", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.orgId = "org-a";
-    state.installations = new Map([[42, { id: 42, account: "acme" }]]);
+    state.installations = new Map([[42, { id: 42, account: "acme", accountType: "Organization" }]]);
     state.connections = new Map();
     state.upserts = [];
     state.usedNonces = new Set();
@@ -147,9 +147,24 @@ describe("GET /repositories/github/callback", () => {
         name: "acme",
         baseUrl: "https://api.github.com",
         externalId: "42",
+        accountType: "Organization",
         credentials: {},
         createdBy: "admin-1",
       },
+    ]);
+  });
+
+  it("records whether the installation is on a personal account or an organization", async () => {
+    state.installations = new Map([
+      [7, { id: 7, account: "octocat", accountType: "User" }],
+      [8, { id: 8, account: "big-corp", accountType: "Enterprise" }],
+    ]);
+    await callback("installation_id=7&setup_action=install");
+    await callback("installation_id=8&setup_action=install");
+    expect(state.upserts).toEqual([
+      expect.objectContaining({ name: "octocat", accountType: "User" }),
+      // Neither: not recorded, so its settings link falls back to the personal account's page.
+      expect.objectContaining({ name: "big-corp", accountType: null }),
     ]);
   });
 

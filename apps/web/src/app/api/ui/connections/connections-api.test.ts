@@ -301,6 +301,40 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
     }
   });
 
+  it("opens each GitHub installation's settings page by the kind of account it's on", async () => {
+    const installation = async (name: string, accountType: "User" | "Organization" | null) =>
+      (await upsertScmConnection(db, {
+        organizationId: acme,
+        provider: "github",
+        name,
+        baseUrl: "https://api.github.com",
+        externalId: `${name}-42`,
+        accountType,
+        credentials: {},
+      }))!.id;
+    const ids = [
+      await installation("acme-org", "Organization"),
+      await installation("octocat", "User"),
+      // Saved before the account type was recorded.
+      await installation("legacy", null),
+    ];
+    try {
+      const { status, body } = await getList();
+      expect(status).toBe(200);
+      expect(
+        Object.fromEntries(
+          body.connections.map((connection) => [connection.name, connection.installationUrl]),
+        ),
+      ).toEqual({
+        "acme-org": "https://github.com/organizations/acme-org/settings/installations/acme-org-42",
+        octocat: "https://github.com/settings/installations/octocat-42",
+        legacy: "https://github.com/settings/installations/legacy-42",
+      });
+    } finally {
+      for (const id of ids) await disconnect("github", acme, id);
+    }
+  });
+
   it("carries each connection's latest recorded change", async () => {
     const gitlab = await connect("gitlab", acme, "hist");
     const linear = await connect("linear", acme, "Hist workspace");

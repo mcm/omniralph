@@ -764,6 +764,13 @@
       "when": 1793085137661,
       "tag": "0108_agent_reported_host",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1793085247201,
+      "tag": "0109_scm_connection_account_type",
+      "breakpoints": true
     }
   ]
 }
