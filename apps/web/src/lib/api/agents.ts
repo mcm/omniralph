@@ -219,9 +219,23 @@ export const agentSecuritySchema = z.object({
   lastTokenRefreshAt: isoDate.nullable(),
   /** `refresh_reuse` audit events in the last 30 days. */
   reuseAlerts30d: z.number(),
+  /** The latest of them; null when none. */
+  lastReuseAt: isoDate.nullable(),
   /** `auth_failed` audit events in the last 30 days. */
   authFailures30d: z.number(),
 });
+
+/** An install on the agent that is queued or running, or failed in the last 24 hours (Packages). */
+export const agentInstallSchema = z.object({
+  id: z.string(),
+  /** The package; null when the job names none. */
+  name: z.string().nullable(),
+  state: z.enum(["installing", "failed"]),
+  /** Why it failed; null while installing. */
+  error: z.string().nullable(),
+  createdAt: isoDate,
+});
+export type AgentInstall = z.infer<typeof agentInstallSchema>;
 
 export const agentDetailSchema = z.object({
   agent: fleetAgentRowSchema,
@@ -229,6 +243,8 @@ export const agentDetailSchema = z.object({
   models: z.array(z.object({ value: z.string(), displayName: z.string() })),
   /** The packages it last reported installed. */
   installables: z.array(z.object({ name: z.string(), version: z.string() })),
+  /** Installs in progress, and failed ones of the last 24 hours, newest first. */
+  installs: z.array(agentInstallSchema),
   /** Its running attempts, oldest first. */
   runningNow: z.array(runningAttemptSchema),
   /** Its last 10 finished attempts (system work included), newest first. */

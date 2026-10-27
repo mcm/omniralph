@@ -1,8 +1,6 @@
 import type { IntentVariant } from "@iamthemcmaster/ui";
 import type { RalphStoryOutcome } from "@/lib/analytics/display";
-import type { AuditEventName } from "@/lib/agents/display";
 import type { JobRow } from "@/lib/agents/rows";
-import type { AgentUpdateStatus } from "@/lib/agents/update";
 import type { RalphMessageState, RalphRunRow, RalphStoryView } from "@/lib/ralph/display";
 import type { ReviewRow } from "@/lib/reviews/display";
 
@@ -95,16 +93,6 @@ export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], Severit
   info: "quiet",
 };
 
-/** A host tool's configured path as last checked, and whether it can run at all. */
-export type HostToolPathState = "unchecked" | "exists" | "missing" | "unavailable";
-
-export const HOST_TOOL_PATH_VARIANTS: Record<HostToolPathState, IntentVariant> = {
-  unchecked: "neutral",
-  exists: "success",
-  missing: "danger",
-  unavailable: "warning",
-};
-
 /** An integration's state: a saved connection the server can't use (app not configured) warns. */
 export type IntegrationState = "connected" | "unconfigured" | "disconnected";
 
@@ -123,40 +111,6 @@ export const INTEGRATION_STATE_LABELS: Record<IntegrationState, string> = {
   connected: "Connected",
   unconfigured: "Connected · not configured",
   disconnected: "Not connected",
-};
-
-export type AgentConnectionState = "online" | "offline" | "revoked";
-
-export function agentConnectionState(agent: {
-  online: boolean;
-  revoked: boolean;
-}): AgentConnectionState {
-  if (agent.revoked) return "revoked";
-  return agent.online ? "online" : "offline";
-}
-
-export const AGENT_CONNECTION_VARIANTS: Record<AgentConnectionState, IntentVariant> = {
-  online: "success",
-  offline: "neutral",
-  revoked: "danger",
-};
-
-export const AGENT_UPDATE_STATUS_VARIANTS: Record<AgentUpdateStatus, IntentVariant> = {
-  up_to_date: "success",
-  updating: "info",
-  failed: "danger",
-  manual: "warning",
-};
-
-export const AGENT_AUDIT_EVENT_VARIANTS: Record<AuditEventName, IntentVariant> = {
-  enroll: "success",
-  token_refresh: "neutral",
-  refresh_reuse: "danger",
-  revoke: "danger",
-  delete: "danger",
-  credential_issued: "info",
-  result_submitted: "info",
-  auth_failed: "warning",
 };
 
 /**

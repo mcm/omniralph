@@ -220,7 +220,7 @@ whole instance. See [ADR 0004](adr/0004-organizations.md).
 3. **Repos › Add repo › Connect GitHub** ([github-app.md](github-app.md)) and/or **Connect GitLab**
    ([gitlab.md](gitlab.md)), as an admin of the organization. Each GitHub installation and GitLab
    connection belongs to the organization that connected it.
-4. **Agents › Enroll agent** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
+4. **Fleet › Enroll** and follow [deploy-agent.md](deploy-agent.md). Agents run only their
    organization's jobs.
 5. Optionally tune each repository's **Settings** (triggers, path excludes, instructions, pinning)
    and **Rules**. Reviews run at the repository's review depth (Standard by default).

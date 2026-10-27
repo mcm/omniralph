@@ -155,3 +155,110 @@ export function pinBadges<T>(pins: readonly T[]): { shown: T[]; more: number } {
   if (pins.length <= 2) return { shown: [...pins], more: 0 };
   return { shown: pins.slice(0, 1), more: pins.length - 1 };
 }
+
+/** "Oct 20": a month and day, as the agent detail dates things. */
+export function shortDate(value: Date | string): string {
+  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** "just now", "2 minutes ago", "3 hours ago", "4 days ago". */
+export function relativeAgo(from: Date | string, now: Date): string {
+  const elapsed = Math.max(0, now.getTime() - new Date(from).getTime());
+  const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (elapsed < MINUTE_MS) return "just now";
+  if (elapsed < HOUR_MS) return count(Math.floor(elapsed / MINUTE_MS), "minute");
+  if (elapsed < DAY_MS) return count(Math.floor(elapsed / HOUR_MS), "hour");
+  return count(Math.floor(elapsed / DAY_MS), "day");
+}
+
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/**
+ * How far `version` is behind `target`: "1 version behind" when both are plain versions of
+ * one minor line (counted in patches), else "behind 2.1.0".
+ */
+export function versionsBehind(version: string | null, target: string): string {
+  const from = version ? SEMVER.exec(version) : null;
+  const to = SEMVER.exec(target);
+  if (from && to && from[1] === to[1] && from[2] === to[2] && Number(to[3]) > Number(from[3])) {
+    const n = Number(to[3]) - Number(from[3]);
+    return n === 1 ? "1 version behind" : `${n} versions behind`;
+  }
+  return `behind ${target}`;
+}
+
+export interface AgentStatusLineInput extends AgentStatusInput {
+  status: AgentStatus;
+  version: string | null;
+  /** The version it should run; null when none is chosen. */
+  desiredVersion: string | null;
+  revokedAt: Date | string | null;
+}
+
+/**
+ * The agent detail's status line: "Running · up to date", "Offline 3d · 1 version behind",
+ * "Update failed: 2.0.4", "Revoked Oct 20", "Never connected", "Updating to 2.0.4".
+ */
+export function agentStatusLine(agent: AgentStatusLineInput): { label: string; tone: FleetTone } {
+  const { status } = agent;
+  if (status.kind === "revoked") {
+    return {
+      label: agent.revokedAt ? `Revoked ${shortDate(agent.revokedAt)}` : "Revoked",
+      tone: "neutral",
+    };
+  }
+  if (status.kind === "never_connected") return { label: status.label, tone: status.tone };
+  if (status.kind === "update_failed") {
+    const failed = agent.desiredVersion ? `: ${agent.desiredVersion}` : "";
+    return { label: `Update failed${failed}`, tone: "fail" };
+  }
+  if (status.kind === "updating") {
+    return {
+      label: agent.desiredVersion ? `Updating to ${agent.desiredVersion}` : "Updating",
+      tone: "neutral",
+    };
+  }
+  const head = status.kind === "running" ? "Running" : status.label;
+  const versionPart =
+    agent.updateStatus === "failed"
+      ? "update failed"
+      : agent.desiredVersion === null || agent.version === agent.desiredVersion
+        ? "up to date"
+        : versionsBehind(agent.version, agent.desiredVersion);
+  return { label: `${head} · ${versionPart}`, tone: status.tone };
+}
+
+export interface SecurityInput {
+  lastTokenRefreshAt: Date | string | null;
+  reuseAlerts30d: number;
+  lastReuseAt: Date | string | null;
+  /** Whether the agent has ever heartbeated. */
+  connected: boolean;
+}
+
+/**
+ * The agent detail's Security line: "Token reuse detected Oct 20" (fail) when a refresh token
+ * was reused in the last 30 days, else "Token refreshed 2 minutes ago · no reuse alerts", or
+ * "Never connected" before its first heartbeat.
+ */
+export function securityLine(
+  security: SecurityInput,
+  now: Date = new Date(),
+): { label: string; tone: FleetTone } {
+  if (security.reuseAlerts30d > 0) {
+    return {
+      label: security.lastReuseAt
+        ? `Token reuse detected ${shortDate(security.lastReuseAt)}`
+        : "Token reuse detected",
+      tone: "fail",
+    };
+  }
+  if (!security.connected) return { label: "Never connected", tone: "neutral" };
+  if (!security.lastTokenRefreshAt) {
+    return { label: "Token not refreshed yet · no reuse alerts", tone: "neutral" };
+  }
+  return {
+    label: `Token refreshed ${relativeAgo(security.lastTokenRefreshAt, now)} · no reuse alerts`,
+    tone: "neutral",
+  };
+}

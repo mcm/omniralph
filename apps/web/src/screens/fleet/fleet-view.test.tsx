@@ -26,6 +26,7 @@ import {
   AGENT_REVOKED,
   agentRow,
   BETA_ID,
+  detailRoutes,
   fleet,
   summary,
 } from "./test-fixtures";
@@ -79,7 +80,11 @@ let data: AgentList;
 let seen: SeenRequest[];
 
 function serve(extra: Parameters<typeof mockFetch>[0] = {}) {
-  seen = mockFetch({ "GET /api/ui/agents": () => jsonResponse(data), ...extra });
+  seen = mockFetch({
+    "GET /api/ui/agents": () => jsonResponse(data),
+    ...detailRoutes(() => data),
+    ...extra,
+  });
 }
 
 function renderFleet(
@@ -293,16 +298,10 @@ describe("the agents table", () => {
   it("marks the open agent's row current", async () => {
     renderFleet({ agentId: AGENT_BRAVO });
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
-    expect(bodyRows().map((row) => row.getAttribute("aria-current"))).toEqual([
-      null,
-      "true",
-      null,
-    ]);
+    expect(bodyRows().map((row) => row.getAttribute("aria-current"))).toEqual([null, "true", null]);
     const detail = screen.getByRole("region", { name: "Agent" });
-    expect(within(detail).getByRole("heading", { level: 2, name: "coder-2" })).toBeTruthy();
-    expect(within(detail).getByRole("link", { name: /Fleet/ }).getAttribute("href")).toBe(
-      "/fleet",
-    );
+    expect(await within(detail).findByRole("heading", { level: 2, name: "coder-2" })).toBeTruthy();
+    expect(within(detail).getByRole("link", { name: /Fleet/ }).getAttribute("href")).toBe("/fleet");
     expect(document.querySelector(".or-split")!.getAttribute("data-view")).toBe("detail");
     expect(document.querySelector(".or-split")!.getAttribute("data-fixed")).toBe("detail");
   });
@@ -397,9 +396,7 @@ describe("live updates", () => {
     event: Parameters<typeof changeEvent>[1],
   ) =>
     act(() =>
-      live
-        .current()
-        .deliver(`org:${organizationId}:changes`, changeEvent(organizationId, event)),
+      live.current().deliver(`org:${organizationId}:changes`, changeEvent(organizationId, event)),
     );
 
   it("turns a row Offline and updates Health when the liveness cron marks an agent offline", async () => {
@@ -506,9 +503,7 @@ describe("the Enroll sheet", () => {
     expect(within(sheet).getByLabelText("Enroll command").textContent).toBe(
       "omniralph-agent enroll --server https://x --token ore_secret",
     );
-    expect(within(sheet).getByRole("status").textContent).toBe(
-      "Waiting for build-box to connect…",
-    );
+    expect(within(sheet).getByRole("status").textContent).toBe("Waiting for build-box to connect…");
     for (const label of ["Copy install command", "Copy enroll command", "Copy token"]) {
       expect(within(sheet).getByRole("button", { name: label })).toBeTruthy();
     }
@@ -524,9 +519,7 @@ describe("the Enroll sheet", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Copy token" }));
     expect(writeText).toHaveBeenCalledWith("ore_secret");
     expect(ui.toast).toHaveBeenCalledWith("Token copied");
-    expect(within(sheet).getByRole("status").textContent).toBe(
-      "Waiting for the agent to connect…",
-    );
+    expect(within(sheet).getByRole("status").textContent).toBe("Waiting for the agent to connect…");
   });
 
   it("says when copying fails", async () => {

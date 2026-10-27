@@ -16,7 +16,7 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
  * kind), Repos at `/repos` (every repo's settings), the other entries at today's pages
  * until their epics replace them (TOOL-575, "Coexistence with today's pages"); every entry
  * is visible to members and admins. Runs lights up for `/runs/**` only, Repos for
- * `/repos/**` only, Fleet for `/fleet/**` (and today's `/agents/{id}` pages). Analytics (its own entry in Epic 10) has no entry and
+ * `/repos/**` only, Fleet for `/fleet/**`. Analytics (its own entry in Epic 10) has no entry and
  * stays reachable by URL; the other Settings pages light up Settings.
  *
  * Settings points at `/settings` (its section list on phone, General beside the section nav
@@ -69,8 +69,7 @@ export const navItems: readonly NavItem[] = [
     icon: IconServer2,
     placement: "main",
     phone: "drawer",
-    // Today's agent pages (`/agents/{id}/**`) stay under Fleet until its agent detail replaces them.
-    activeFor: ["/fleet", "/agents"],
+    activeFor: ["/fleet"],
   },
   {
     id: "settings",

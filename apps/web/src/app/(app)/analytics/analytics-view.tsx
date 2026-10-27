@@ -63,6 +63,7 @@ import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/s
 import { ProviderIcon } from "@/components/provider-icon";
 import type { AnalyticsRepository } from "@/lib/api/analytics";
 import { useAnalytics } from "./analytics-queries";
+import { agentHref } from "@/lib/runs/hrefs";
 
 /**
  * Series: the headline in accent; the comparison in neutral through
@@ -701,7 +702,7 @@ export function AnalyticsContent({
                   <TableRow key={a.agent.id}>
                     <TableCell className="analytics-cell-text">
                       {isAdmin ? (
-                        <Link href={`/agents/${a.agent.id}`} className="analytics-link">
+                        <Link href={agentHref(a.agent.id)} className="analytics-link">
                           {a.agent.name}
                         </Link>
                       ) : (

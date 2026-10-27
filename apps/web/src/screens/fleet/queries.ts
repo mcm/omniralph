@@ -5,8 +5,10 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import {
+  agentDetailSchema,
   agentListSchema,
   enrollmentStatusSchema,
+  type AgentDetail,
   type AgentList,
   type CreatedEnrollment,
   type EnrollmentStatus,
@@ -24,6 +26,7 @@ export function fleetKeys(keys: QueryKeys) {
   return {
     lists: keys.agents.lists,
     list: (scope: string): QueryKey => keys.agents.list({ organization: scope }),
+    detail: (agentId: string): QueryKey => keys.agents.detail(agentId),
     enrollment: (enrollmentId: string): QueryKey => [
       ...keys.agents.lists,
       "enrollment",
@@ -46,6 +49,24 @@ export function useFleet() {
     queryFn: ({ signal }) =>
       api.get("/api/ui/agents", agentListSchema, {
         params: { organization: scope },
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/**
+ * One agent's detail (`GET /api/ui/agents/{id}`), of any of the user's organizations. A live
+ * query: the agent's `agent` change events (a heartbeat that changes what the panel shows,
+ * going offline, starting or finishing an attempt) refetch it.
+ */
+export function useAgentDetail(agentId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<AgentDetail>({
+    queryKey: fleetKeys(keys).detail(agentId),
+    queryFn: ({ signal }) =>
+      api.get(`/api/ui/agents/${encodeURIComponent(agentId)}`, agentDetailSchema, {
         organizationId: organization.id,
         signal,
       }),

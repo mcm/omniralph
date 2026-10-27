@@ -1,5 +1,5 @@
-import { TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
-import type { AgentList, FleetAgentRow, FleetSummary } from "@/lib/api/agents";
+import { jsonResponse, TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
+import type { AgentDetail, AgentList, FleetAgentRow, FleetSummary } from "@/lib/api/agents";
 
 export const BETA_ID = "22222222-2222-4222-8222-222222222222";
 export const AGENT_ALPHA = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
@@ -93,4 +93,44 @@ export function fleet(): AgentList {
     ],
     summary: summary({ total: 2, online: 1, offline: 1, busy: 1 }),
   };
+}
+
+/** An agent's detail: `agent` with nothing running, no history, reports or installs. */
+export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
+  return {
+    agent,
+    models: [],
+    installables: [],
+    installs: [],
+    runningNow: [],
+    recentWork: [],
+    security: {
+      lastTokenRefreshAt: null,
+      reuseAlerts30d: 0,
+      lastReuseAt: null,
+      authFailures30d: 0,
+    },
+    globalDesiredVersion: "2.0.3 (latest on npm)",
+    audit: [],
+    pinSyncJobs: [],
+  };
+}
+
+/** The detail route of every agent of `list`, plus a 404 for `missing` IDs. */
+export function detailRoutes(
+  list: () => AgentList,
+  overrides: () => Record<string, AgentDetail> = () => ({}),
+  missing: readonly string[] = [],
+) {
+  const routes: Record<string, () => Response> = {};
+  for (const agent of list().agents) {
+    routes[`GET /api/ui/agents/${agent.id}`] = () => {
+      const current = list().agents.find((row) => row.id === agent.id)!;
+      return jsonResponse(overrides()[agent.id] ?? agentDetail(current));
+    };
+  }
+  for (const id of missing) {
+    routes[`GET /api/ui/agents/${id}`] = () => jsonResponse({ ok: false, error: "Not found" }, 404);
+  }
+  return routes;
 }

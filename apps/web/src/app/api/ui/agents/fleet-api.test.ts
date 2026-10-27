@@ -148,6 +148,7 @@ function expectNoRawJobType(body: unknown) {
 const databaseAvailable = testDatabaseAvailable();
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
+const HOUR = 60 * MINUTE;
 
 describe.skipIf(!databaseAvailable)("Fleet API", () => {
   let testDb: TestDatabase;
@@ -346,6 +347,37 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       ralphStoryId: storyIds[0],
     });
     await job({ type: "repo.sync", status: "queued", agentId: null, targetAgentId: ids["b-idle"] });
+    // b-idle's installs: one queued, one failed today, one failed two days ago.
+    await job({
+      type: "install",
+      status: "queued",
+      agentId: null,
+      targetAgentId: ids["b-idle"],
+      payload: { name: "ripgrep" },
+      createdAt: ago(MINUTE),
+    });
+    await job({
+      type: "install",
+      status: "failed",
+      agentId: ids["b-idle"],
+      targetAgentId: ids["b-idle"],
+      payload: { name: "jq" },
+      error: "Not on the allow-list",
+      createdAt: ago(5 * HOUR),
+      startedAt: ago(5 * HOUR),
+      finishedAt: ago(5 * HOUR),
+    });
+    await job({
+      type: "install",
+      status: "failed",
+      agentId: ids["b-idle"],
+      targetAgentId: ids["b-idle"],
+      payload: { name: "yq" },
+      error: "Not on the allow-list",
+      createdAt: ago(2 * DAY),
+      startedAt: ago(2 * DAY),
+      finishedAt: ago(2 * DAY),
+    });
 
     await db.insert(agentAudit).values([
       { agentId: ids["b-idle"], event: "token_refresh", createdAt: ago(40 * DAY) },
@@ -533,9 +565,26 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     ]);
     expect(idle.body.models).toEqual([{ value: "claude-opus-5-5", displayName: "Opus 5.5" }]);
     expect(idle.body.installables).toEqual([{ name: "gh", version: "2.0.0" }]);
+    expect(idle.body.installs).toEqual([
+      {
+        id: expect.any(String),
+        name: "ripgrep",
+        state: "installing",
+        error: null,
+        createdAt: ago(MINUTE).toISOString(),
+      },
+      {
+        id: expect.any(String),
+        name: "jq",
+        state: "failed",
+        error: "Not on the allow-list",
+        createdAt: ago(5 * HOUR).toISOString(),
+      },
+    ]);
     expect(idle.body.security).toEqual({
       lastTokenRefreshAt: ago(2 * MINUTE).toISOString(),
       reuseAlerts30d: 1,
+      lastReuseAt: ago(DAY).toISOString(),
       authFailures30d: 1,
     });
     // Newest first (the two 40-day-old events tie).
@@ -550,7 +599,13 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     expect(never.body).toMatchObject({
       runningNow: [],
       recentWork: [],
-      security: { lastTokenRefreshAt: null, reuseAlerts30d: 0, authFailures30d: 0 },
+      installs: [],
+      security: {
+        lastTokenRefreshAt: null,
+        reuseAlerts30d: 0,
+        lastReuseAt: null,
+        authFailures30d: 0,
+      },
     });
   });
 

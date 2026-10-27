@@ -8,6 +8,7 @@ import {
   getAgentSecuritySummary,
   getRunIndexEntries,
   listAgentAttempts,
+  listAgentInstallJobs,
   listAgentOverview,
   listRecentAgentAudit,
   listAgentPinSyncJobs,
@@ -19,6 +20,7 @@ import {
 import { TASK_TYPES } from "@omniralph/tasks";
 import type {
   AgentDetail,
+  AgentInstall,
   AgentList,
   FleetAgentRow,
   FleetSummary,
@@ -48,6 +50,8 @@ const RECENT_WORK_LIMIT = 10;
 const SECURITY_WINDOW_MS = 30 * 24 * 3600_000;
 /** How far back pinned repositories' sync jobs are shown. */
 const PIN_SYNC_WINDOW_MS = 7 * 24 * 3600_000;
+/** How far back Packages shows installs. */
+const INSTALLS_WINDOW_MS = 24 * 3600_000;
 
 function versionPolicy(version: OrganizationAgentVersion): VersionPolicy {
   if (version.tracksLatest) return { mode: "latest", version: null, target: version.version };
@@ -149,7 +153,7 @@ export async function loadAgentDetail(
   organization: ScopedOrganization,
 ): Promise<AgentDetail | null> {
   const now = new Date();
-  const [agent, version, attempts, security, audit, pinSyncJobs] = await Promise.all([
+  const [agent, version, attempts, security, audit, pinSyncJobs, installJobs] = await Promise.all([
     getAgentOverview(db, organization.id, agentId).then(withAgentLastSeen),
     organizationAgentVersion(db, organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
     listAgentAttempts(db, agentId, RECENT_WORK_LIMIT),
@@ -160,6 +164,12 @@ export async function loadAgentDetail(
       organization.id,
       agentId,
       new Date(now.getTime() - PIN_SYNC_WINDOW_MS),
+    ),
+    listAgentInstallJobs(
+      db,
+      organization.id,
+      agentId,
+      new Date(now.getTime() - INSTALLS_WINDOW_MS),
     ),
   ]);
   if (!agent) return null;
@@ -224,11 +234,25 @@ export async function loadAgentDetail(
     agent: row,
     models: agent.reportedModels,
     installables: agent.reportedInstallables,
+    installs: installJobs.flatMap((job): AgentInstall[] => {
+      const installing = job.status === "queued" || job.status === "running";
+      if (!installing && job.status !== "failed") return [];
+      return [
+        {
+          id: job.id,
+          name: job.name,
+          state: installing ? "installing" : "failed",
+          error: installing ? null : job.error,
+          createdAt: job.createdAt.toISOString(),
+        },
+      ];
+    }),
     runningNow,
     recentWork,
     security: {
       lastTokenRefreshAt: security.lastTokenRefreshAt?.toISOString() ?? null,
       reuseAlerts30d: security.reuseAlerts,
+      lastReuseAt: security.lastReuseAt?.toISOString() ?? null,
       authFailures30d: security.authFailures,
     },
     globalDesiredVersion: version.tracksLatest

@@ -962,6 +962,8 @@ export async function listAgentAttempts(
 export interface AgentSecuritySummary {
   lastTokenRefreshAt: Date | null;
   reuseAlerts: number;
+  /** The latest `refresh_reuse` since `since`; null when none. */
+  lastReuseAt: Date | null;
   authFailures: number;
 }
 
@@ -980,6 +982,10 @@ export async function getAgentSecuritySummary(
         sql<number>`count(*) filter (where ${agentAudit.event} = 'refresh_reuse' and ${agentAudit.createdAt} >= ${since})`.mapWith(
           Number,
         ),
+      lastReuseAt:
+        sql<Date | null>`max(${agentAudit.createdAt}) filter (where ${agentAudit.event} = 'refresh_reuse' and ${agentAudit.createdAt} >= ${since})`.mapWith(
+          (value: string | Date | null) => (value === null ? null : new Date(value)),
+        ),
       authFailures:
         sql<number>`count(*) filter (where ${agentAudit.event} = 'auth_failed' and ${agentAudit.createdAt} >= ${since})`.mapWith(
           Number,
@@ -990,6 +996,7 @@ export async function getAgentSecuritySummary(
   return {
     lastTokenRefreshAt: row?.lastTokenRefreshAt ?? null,
     reuseAlerts: row?.reuseAlerts ?? 0,
+    lastReuseAt: row?.lastReuseAt ?? null,
     authFailures: row?.authFailures ?? 0,
   };
 }
