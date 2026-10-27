@@ -305,12 +305,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    name: "settings-chat-accounts",
-    path: "/settings/chat-accounts",
-    page: "(app)/(legacy-settings)/settings/chat-accounts/page.tsx",
-    auth: "signed-in",
-  },
-  {
     name: "settings-agent-defaults",
     path: "/settings/agent-defaults",
     page: "(app)/(legacy-settings)/settings/agent-defaults/page.tsx",

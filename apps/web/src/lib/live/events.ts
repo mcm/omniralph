@@ -61,9 +61,10 @@ export type UntrackedSettingsSection = (typeof UNTRACKED_SETTINGS_SECTIONS)[numb
 /**
  * Sections of the user's own record a `settings` event names, only on the user's own
  * channel and not part of the settings history: `profile` (their theme and
- * whether they show advanced settings).
+ * whether they show advanced settings) and `linked_accounts` (their chat accounts linked
+ * or unlinked, in the event's organization).
  */
-export const USER_SETTINGS_SECTIONS = ["profile"] as const;
+export const USER_SETTINGS_SECTIONS = ["profile", "linked_accounts"] as const;
 export type UserSettingsSection = (typeof USER_SETTINGS_SECTIONS)[number];
 
 const id = z.guid();
@@ -94,7 +95,8 @@ const base = {
  * - `settings`: a settings `section` was saved, for `subjectId` (e.g. the repository) when
  *   the section has one (`ids` = the subject, else the organization). A playbook's save or
  *   delete is section `playbooks` with the playbook as its subject.
- *   Section `profile` is the user's own record (`ids` = the user), on the user's channel.
+ *   Section `profile` is the user's own record and `linked_accounts` their linked chat
+ *   accounts (`ids` = the user), on the user's channel.
  * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its
  *   settings, pins, update state or installs changed (`ids` = agent IDs).
  * - `repository`: repositories were connected, disconnected or switched (`ids` = repo IDs).

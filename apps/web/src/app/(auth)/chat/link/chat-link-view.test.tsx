@@ -60,8 +60,8 @@ describe("ChatLinkView", () => {
       await screen.findByRole("heading", { level: 1, name: "Slack account linked" }),
     ).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Linked ada");
-    expect(screen.getByRole("link", { name: "Chat accounts" }).getAttribute("href")).toBe(
-      "/settings/chat-accounts",
+    expect(screen.getByRole("link", { name: "Linked chat accounts" }).getAttribute("href")).toBe(
+      "/settings/linked-accounts",
     );
   });
 

@@ -86,6 +86,8 @@ const SETTINGS_INVALIDATIONS: Record<
   ],
   // The user's own record (their theme): no query shows it, the shell applies it.
   profile: () => [],
+  // The user's linked chat accounts (Settings › Linked chat accounts), in every organization.
+  linked_accounts: (keys) => [keys.chatAccounts.all],
 };
 
 function isTrackedSection(
@@ -225,6 +227,22 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
 ];
 
 /**
+ * Areas whose queries show the user's own data across every organization they belong to
+ * (their linked chat accounts), keyed by the active organization: an event on the user's
+ * own channel reaches them from any of the user's organizations, in the scope or not.
+ */
+export const USER_WIDE_AREAS: readonly QueryArea[] = ["chatAccounts"];
+
+/** `event`'s prefixes in the user-wide areas, under each organization of the scope. */
+function userWideInvalidations(event: ChangeEvent, scope: ReadonlySet<string>): QueryKey[] {
+  return [...scope].flatMap((organizationId) =>
+    invalidationsIn(event, queryKeys(organizationId)).filter((prefix) =>
+      USER_WIDE_AREAS.includes(prefix[1] as QueryArea),
+    ),
+  );
+}
+
+/**
  * The prefixes `event` invalidates in the cache of a scope: its own organization's keys,
  * plus, for the scope-wide areas (`SCOPE_WIDE_AREAS`), the same prefixes under every other
  * organization of the scope, since "All organizations" keys its Inbox, Runs, Repos and Fleet
@@ -236,8 +254,10 @@ export function scopeInvalidations(event: ChangeEvent, scope: ReadonlySet<string
   for (const organizationId of scope) {
     if (organizationId === event.organizationId) continue;
     prefixes.push(
-      ...invalidationsIn(event, queryKeys(organizationId)).filter((prefix) =>
-        SCOPE_WIDE_AREAS.includes(prefix[1] as QueryArea),
+      ...invalidationsIn(event, queryKeys(organizationId)).filter(
+        (prefix) =>
+          SCOPE_WIDE_AREAS.includes(prefix[1] as QueryArea) ||
+          USER_WIDE_AREAS.includes(prefix[1] as QueryArea),
       ),
     );
   }
@@ -301,10 +321,14 @@ export function createLiveInvalidator(
 
   return {
     apply(event, scope) {
-      if (!scope.has(event.organizationId)) return;
+      // Another organization's event reaches only the user's own data (it came on their
+      // own channel: the token grants no other organization's channel).
+      const prefixes = scope.has(event.organizationId)
+        ? scopeInvalidations(event, scope)
+        : userWideInvalidations(event, scope);
       const cache = client.getQueryCache();
       const seen = new Set<string>();
-      for (const prefix of scopeInvalidations(event, scope)) {
+      for (const prefix of prefixes) {
         for (const query of cache.findAll({ queryKey: prefix })) {
           if (seen.has(query.queryHash)) continue;
           seen.add(query.queryHash);

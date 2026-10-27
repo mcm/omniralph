@@ -52,6 +52,7 @@ import {
   type ChatPlatform,
 } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
+import { captureChanges } from "./changes.js";
 import { decrypt } from "./crypto.js";
 import { migrationsFolder } from "./migrate.js";
 import {
@@ -449,6 +450,74 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
     );
     expect(await isChatLinkStateUsed(db, stale)).toBe(false);
     expect(await isChatLinkStateUsed(db, id)).toBe(true);
+  });
+
+  it("names each linked account's workspace", async () => {
+    const link = (organizationId: string, platform: ChatPlatform, externalUserId: string) =>
+      linkChatIdentity(db, {
+        organizationId,
+        platform,
+        externalUserId,
+        userId: "member-1",
+        source: "manual",
+      });
+    // Acme has two Slack workspaces (U1 was seen in Platform) and no Discord server; Other
+    // has one Discord server.
+    await connect("slack", "T1", null, orgId, "Engineering");
+    const platform = await connect("slack", "T2", null, orgId, "Platform");
+    await connect("discord", "G1", null, otherOrgId, "Other guild");
+    await saveChatUserProfile(db, {
+      connectionId: platform.id,
+      externalUserId: "U1",
+      email: null,
+      displayName: "Ada",
+    });
+    await link(orgId, "slack", "U1");
+    await link(orgId, "slack", "U2");
+    await link(orgId, "discord", "D9");
+    await link(otherOrgId, "discord", "D1");
+    expect(
+      (await listChatIdentities(db, "member-1")).map((i) => [i.externalUserId, i.workspaceName]),
+    ).toEqual([
+      ["U1", "Platform"],
+      // Two workspaces and never seen in either: unknown.
+      ["U2", null],
+      ["D9", null],
+      // The organization's only server.
+      ["D1", "Other guild"],
+    ]);
+  });
+
+  it("records a linked-accounts change on the user's own channel", async () => {
+    const link = (userId: string) =>
+      linkChatIdentity(db, {
+        organizationId: orgId,
+        platform: "slack",
+        externalUserId: "U1",
+        userId,
+        source: "manual",
+      });
+    const change = (userId: string) =>
+      expect.objectContaining({
+        resource: "settings",
+        section: "linked_accounts",
+        ids: [userId],
+        organizationId: orgId,
+        userId,
+      });
+    expect((await captureChanges(() => link("member-1"))).changes).toEqual([change("member-1")]);
+    // Linking it to another member takes it from the first.
+    expect((await captureChanges(() => link("admin-1"))).changes).toEqual([
+      change("admin-1"),
+      change("member-1"),
+    ]);
+    expect(
+      (await captureChanges(() => unlinkChatIdentity(db, "admin-1", orgId, "slack", "U1"))).changes,
+    ).toEqual([change("admin-1")]);
+    // Nothing unlinked, nothing recorded.
+    expect(
+      (await captureChanges(() => unlinkChatIdentity(db, "admin-1", orgId, "slack", "U1"))).changes,
+    ).toEqual([]);
   });
 
   it("caches chat user profiles per connection", async () => {

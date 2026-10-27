@@ -68,7 +68,7 @@ export function ChatLinkView({ problem, confirmation }: ChatLinkViewProps) {
         <div className="auth-actions">
           {linked ? (
             <Button href={CHAT_ACCOUNTS_PATH} variant="solid">
-              Chat accounts
+              Linked chat accounts
             </Button>
           ) : (
             <>

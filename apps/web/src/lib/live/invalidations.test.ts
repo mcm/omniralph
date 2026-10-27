@@ -161,6 +161,7 @@ describe("LIVE_INVALIDATIONS", () => {
       history.section("agent_defaults", undefined),
     ]);
     expect(settings("profile")).toEqual([]);
+    expect(settings("linked_accounts")).toEqual([keys.chatAccounts.all]);
   });
 
   it("settings: a playbook refetches every playbook query and the settings that bind playbooks", () => {
@@ -250,6 +251,9 @@ describe("changesUserRecord", () => {
     expect(changesUserRecord(event({ resource: "organization" }))).toBe(true);
     expect(changesUserRecord(event({ resource: "settings", section: "profile" }))).toBe(true);
     expect(changesUserRecord(event({ resource: "settings", section: "organization" }))).toBe(false);
+    expect(changesUserRecord(event({ resource: "settings", section: "linked_accounts" }))).toBe(
+      false,
+    );
     expect(changesUserRecord(event({ resource: "inbox_state", ids: ["manual_story:1"] }))).toBe(
       false,
     );
@@ -364,6 +368,27 @@ describe("createLiveInvalidator", () => {
       scope,
     );
     expect(invalidated()).toEqual([]);
+  });
+
+  it("reaches the user's linked chat accounts from any of their organizations, and nothing else", () => {
+    const linked = (organizationId: string) =>
+      changeEvent(organizationId, { resource: "settings", section: "linked_accounts" });
+    seed(keys.chatAccounts.list(), keys.agents.list(), queryKeys(OTHER_ORG).chatAccounts.list());
+    const invalidator = createLiveInvalidator(client);
+    // A link in an organization outside the scope (on the user's own channel).
+    invalidator.apply(linked(OTHER_ORG), scope);
+    expect(invalidated()).toEqual([keys.chatAccounts.list()]);
+    client.clear();
+    seed(keys.chatAccounts.list(), keys.agents.list());
+    // Other resources of an organization outside the scope still reach nothing.
+    invalidator.apply(changeEvent(OTHER_ORG, { resource: "agent", ids: [ID] }), scope);
+    invalidator.apply(
+      changeEvent(OTHER_ORG, { resource: "settings", section: "profile", ids: [ID] }),
+      scope,
+    );
+    expect(invalidated()).toEqual([]);
+    invalidator.apply(linked(ORG), scope);
+    expect(invalidated()).toEqual([keys.chatAccounts.list()]);
   });
 
   it("throttles a query with meta.liveThrottleMs: one leading and one trailing per window", async () => {

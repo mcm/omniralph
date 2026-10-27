@@ -5,8 +5,13 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import { connectionListSchema, type ConnectionList } from "@/lib/api/connections";
-import { connectionKeys, organizationKeys } from "@/lib/api/keys";
-import { organizationSettingsSchema, type OrganizationSettings } from "@/lib/api/organization";
+import { connectionKeys, organizationKeys, type QueryKeys } from "@/lib/api/keys";
+import {
+  chatAccountsSchema,
+  organizationSettingsSchema,
+  type ChatAccounts,
+  type OrganizationSettings,
+} from "@/lib/api/organization";
 
 /**
  * The active organization's connections (`GET /api/ui/connections`), for Settings' nav and
@@ -39,6 +44,30 @@ export function useOrganizationSettings() {
     queryKey: organizationKeys(keys).settings,
     queryFn: ({ signal }) =>
       api.get("/api/ui/organization", organizationSettingsSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/** The signed-in user's linked chat accounts' query key (keyed by the active organization). */
+export function chatAccountsKey(keys: QueryKeys) {
+  return keys.chatAccounts.list();
+}
+
+/**
+ * The signed-in user's linked Slack and Discord accounts in every organization
+ * (`GET /api/ui/chat-accounts`), for You › Linked chat accounts. A live query: a link or
+ * unlink in any of the user's organizations (`settings` section `linked_accounts` on the
+ * user's own channel) refetches it.
+ */
+export function useChatAccounts() {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<ChatAccounts>({
+    queryKey: chatAccountsKey(keys),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/chat-accounts", chatAccountsSchema, {
         organizationId: organization.id,
         signal,
       }),
