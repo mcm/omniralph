@@ -125,7 +125,8 @@ pins and audit log, with no new enrollment.
    - **not imported: versions of @omniralph/harness**: `update-state.json` and `update-request.json`
      name old package versions, so they stay behind. Self-update starts afresh.
    - **kept by the control panel**: concurrency, pool limits, pins, host tool paths and the desired
-     version were never in the file. They carry over in the control panel.
+     version were never in the file. They carry over in the control panel (see
+     [Central config](#central-config)).
 
    Warnings follow when the `workspaceRoot` or data directory is missing: the agent then clones
    repositories and reinstalls installables again, which is slow but harmless. The import refuses,
@@ -146,7 +147,7 @@ pins and audit log, with no new enrollment.
    systemd, rename the unit to `omniralph-agent.service` and point `ExecStart=` at
    `…/node_modules/@omniralph/agent/dist/cli.js` ([systemd](#systemd)); for tmux, use the
    [tmux commands](#tmux). Update the Coder template's startup script to match. Then check that
-   `curl -s http://127.0.0.1:9310/healthz` says `"connected": true` and that the **Agents** page shows
+   `curl -s http://127.0.0.1:9310/healthz` says `"connected": true` and that **Fleet** shows
    the new version after the next heartbeat.
 5. **Uninstall the old package** once the agent is back: `npm uninstall -g @omniralph/harness`.
 6. **Never start the old daemon again** once the agent has run: the agent rotates the refresh token
@@ -257,8 +258,7 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
   `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
   `pm2 restart omniralph-agent --update-env`.
 - To upgrade: choose a version with **Fleet › Version policy › Edit** and the agent updates itself (see below),
-  or trigger an update with **Update now** on the agent's page or `omniralph-agent update` on the
-  host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
+  or trigger an update with `omniralph-agent update` on the host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
 - Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
   self-update and relies on pm2 to start it again.
 
@@ -369,7 +369,7 @@ on) the current version.
 has heartbeated successfully for 60 seconds it's confirmed (`pending` is cleared). If it starts a
 fourth time without that (it crashes, or can't reach the control panel), the agent reinstalls
 `previous`, adds the pending version to `failed` and exits, so pm2 starts the previous version.
-Failed versions are reported in the heartbeat, shown on the agent's page and never retried by that
+Failed versions are reported in the heartbeat (the agent shows **Update failed** on Fleet) and never retried by that
 agent on its own; to try one again after fixing the host, [trigger an update](#triggering-an-update). With `--max-restarts 5`, pm2 still allows the four starts a rollback
 needs.
 
@@ -384,26 +384,23 @@ needs.
   public) and keeps it in the database, reading it again once it's 5 minutes old; every heartbeat
   then hands out that version. If the registry can't be read, agents get the last version read
   (none before the first read: they stay where they are) and agents stay behind it on Fleet.
-  **Update now** reads npm at once and records that version too.
-- **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
-  or to pin a host to an older version. Clear the override to follow the organization's version again.
+- A version for one agent (e.g. to try a release on one host first, or to keep a host on an older
+  version) belongs to the agent machine: it moves to the agent's local config, and the control
+  panel has no page for it. Until then every agent follows the organization's version.
 - To pin every agent, set the organization's version to an exact version instead of `latest`;
   agents never move on their own.
 
-The **Agents** list and each agent's page show the reported version, the desired version, the
-update status (**Up to date**, **Updating** with the step, **Failed** when the desired version
-failed on that agent, **Update manually**) and the failed versions.
+**Fleet** shows whether every online agent runs the desired version ("All agents on 2.0.3", "2
+agents behind", "1 update failed"); each agent's row and detail show **Updating** or **Update
+failed** while that applies, and its detail the version it reports.
 
 Agents not run by pm2 (systemd, tmux) report `selfUpdate: "unsupported"`, never install anything
-and show **Update manually**: upgrade them by hand as in [Install](#2-install).
+and stay behind on Fleet: upgrade them by hand as in [Install](#2-install).
 
 #### Triggering an update
 
-An update can also be started on demand, from either side:
+An update can also be started on demand, on the host:
 
-- **Agents › <agent> › Version › Update now** (admins; only for agents under pm2). The control panel
-  sends an update request with every heartbeat until the agent reports it handled; meanwhile the
-  agent shows **Updating** (_<version> requested_).
 - `omniralph-agent update` on the host (as the agent's user, with the same `--config` as `start`).
   It writes `update-request.json` next to `agent.json` (mode 0600); the running agent picks it up
   with its next heartbeat and removes it. If the agent isn't running, it acts on it once started.
@@ -413,7 +410,7 @@ or to the package's `latest` on npm when none is chosen or the organization trac
 `failed` (it's taken off the list first). A request for the version already running does nothing.
 Choosing a different version than the desired one isn't possible this way: the agent would
 update back to the desired version straight away, so change the desired version instead. Agents
-not under pm2 only log the request and show it as the last update error.
+not under pm2 only log the request.
 
 ## Central config
 
@@ -423,19 +420,24 @@ types the agent runs) is configured centrally and delivered in every heartbeat r
 
 | Setting                                                             | Where                                                                                      | Default                                                            |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| Max concurrency (parallel jobs)                                     | **Agents › <agent>**                                                                  | 1                                                                  |
-| Concurrency per pool (1 to max concurrency)                         | **Agents › <agent>**                                                                  | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
-| Pinned repositories                                                 | **Repos › Agents** (the agent's overview lists them, read-only) | none (every agent is eligible for every repo)                    |
-| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**; per-agent override on **Agents › <agent>**                | none (not managed)                                                 |
+| Max concurrency (parallel jobs)                                     | the agent machine's local config (see below)                                               | 1                                                                  |
+| Concurrency per pool (1 to max concurrency)                         | the agent machine's local config (see below)                                               | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
+| Pinned repositories                                                 | **Repos › Agents** (**Fleet** lists them, read-only)                                       | none (every agent is eligible for every repo)                      |
+| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**                                                                 | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
+
+Max concurrency, pool limits and host tool paths belong to the agent machine, like its accepted
+task types: they move to its local config, and the control panel has no page for them. Until then
+the control panel still delivers them in the heartbeat, so every agent runs with the defaults
+above.
 
 Accepted task types decide what a host may run (trust), so the host itself decides them: the
 `acceptedTaskTypes` key of its `agent.json` (all three when unset), read when the agent starts.
 `query` covers replies, code questions, learned rules and triage, `review` PR/MR reviews and
 `coding` the jobs of coding runs (`ralph.*`), which change code and push. `repo.sync` and other housekeeping jobs always run.
 The agent sends its list in every heartbeat and claim, and only claims jobs of those types (and
-only asks for the pools they run in); the control panel stores what it reports and shows it on the
-**Agents** page, read-only. Pool limits decide how many of an agent's
+only asks for the pools they run in); the control panel stores what it reports and shows it on
+**Fleet**, read-only. Pool limits decide how many of an agent's
 slots one pool's jobs may take (concurrency): `short` holds query and review jobs, `long` coding
 jobs. The agent only claims a pool's jobs while that pool is under its limit, so with the default an
 agent with two or more slots always keeps one free for reviews while hours-long stories run.
@@ -453,8 +455,9 @@ worktree, with whatever is on the agent's `PATH` and without the job tokens. See
 runs.
 
 Pinning a repository to an agent routes its jobs to that agent only and makes the agent pre-clone it
-(`repo.sync`). The **Agents** page shows each agent's last heartbeat, version, running jobs and its
-audit log (enrollment, token refreshes, credential issuance, revocation).
+(`repo.sync`). **Fleet** shows each agent's status (online, offline since its last heartbeat,
+running), its running and recent work, its packages, its security line and, under **⋯ › Audit
+log**, its audit log (enrollment, token refreshes, credential issuance, revocation).
 
 ## Coding work
 
@@ -635,11 +638,11 @@ The agent exits with `omniralph-agent: re-enrollment required (…); run 'omnira
 again` when the control panel rejects its refresh token:
 
 - **`refresh_reuse`**: an already used refresh token was presented again. The control panel revoked
-  the whole token family **and the agent**, and the agent's page shows a "Possible token theft"
-  alert. Causes: the config file was copied to another host or restored from a backup, two
+  the whole token family **and the agent**, and the agent's **Security** line on Fleet shows
+  "Token reuse detected". Causes: the config file was copied to another host or restored from a backup, two
   processes ran with the same config, or the agent crashed between receiving and saving a rotated
   token.
-- **Revoked**: an admin of its organization revoked the agent on the **Agents** page.
+- **Revoked**: an admin of its organization revoked the agent (**Fleet › _agent_ › ⋯ › Revoke agent…**).
 
 What to do:
 
@@ -653,10 +656,9 @@ What to do:
    organization), as the agent's user. This
    creates a **new agent** (new ID) and overwrites `agent.json`; the revoked agent stays in the list
    for its history.
-4. Re-apply the old agent's central config to the new one: max concurrency and pool limits,
-   and pin its repositories to it again from each repository's **Settings › Agents › Pinning**
-   (pins belong to the agent ID). Add back any optional keys of the old `agent.json` you
-   used (`acceptedTaskTypes`, `installables`, `blockedExecPaths`, `dataDir`).
+4. Pin the old agent's repositories to the new one again from **Repos › Agents** (pins belong to
+   the agent ID). Add back any optional keys of the old `agent.json` you used
+   (`acceptedTaskTypes`, `installables`, `blockedExecPaths`, `dataDir`).
 5. Start the agent again.
 
 When an admin revokes an agent, its running jobs are re-queued at once. After a `refresh_reuse`, the

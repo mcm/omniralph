@@ -54,7 +54,9 @@ failure with the reset time (5 minutes if unknown), the job goes back to `queued
 redelivers it after that delay. A job gives up after its 3rd delivery. To keep reviews and
 interactive work apart:
 
-- lower the agent's **Max concurrency** under **Agents › <agent>** (central config, no restart),
+- keep the agent's max concurrency low (it belongs to the agent machine's local config; until
+  it moves there, every agent runs one job at a time,
+  [deploy-agent.md](deploy-agent.md#central-config)),
 - use a cheaper review depth (Quick) on busy repositories, or
 - give the agent its own credentials: an `ANTHROPIC_API_KEY` in its environment, or a separate
   subscription's `claude` login for a dedicated agent user.

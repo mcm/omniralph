@@ -25,9 +25,9 @@ orchestrates runs).
   directory. Omniralph keeps runs, stories, lanes, requests and messages in Postgres (shown under
   **Coding tasks**); agents keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
-  **Settings › Integrations** (Linear), **Fleet › Version policy** (agent version), **Agents › <agent>**
-  (concurrency, pool limits), each agent's local config (accepted task types), each repository's coding policy and its story
-  and request playbooks.
+  **Settings › Connections › Linear**, **Fleet › Version policy** (agent version), each agent
+  machine's local config (accepted task types, concurrency, pool limits), each repository's coding
+  policy and its story and request playbooks.
   Changes apply from a run's next decision, without restarts.
 - **Two Linear apps.** Omniralph is its own Linear app (OAuth application). An issue is handled by
   whichever app it's delegated to (or @mentioned); each app's routing only picks the repository.
@@ -47,7 +47,7 @@ always behaves like cyralph's default and has no setting for it.
 | `port`, `baseUrl` | Not needed | The control panel runs on Vercel at `APP_URL`; webhooks and the OAuth callback use it ([env.md](env.md)). No tunnel. |
 | `stateDir` | Not needed | Run state is in Postgres. Agents keep repositories and branch worktrees under their `workspaceRoot` ([deploy-agent.md](deploy-agent.md#workspaceroot-and-disk-usage)). |
 | `model`, `fallbackModel` | **Model** / **Fallback model** per repository | Same names and defaults (`opus` / none), set per repository instead of globally. |
-| `maxConcurrentSessions` | **Max concurrency** and **Concurrency per pool** on **Agents › <agent>** | Per agent. The `long` pool (coding) limit defaults to max concurrency − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
+| `maxConcurrentSessions` | Max concurrency and concurrency per pool in each agent machine's local config | Per agent; until they move there, every agent runs with the defaults ([deploy-agent.md](deploy-agent.md#central-config)). The `long` pool (coding) limit defaults to max concurrency − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
 | `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repos › Add repo › Connect GitLab**), so the code host is known per repository. |
 | `blockerPollMinutes` | Fixed | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes. |
 | `permissionMode` | Fixed | Coding sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**. |
@@ -206,15 +206,16 @@ is delegated to Omniralph yet, so nothing runs.
    commands call), and private registry credentials, all for the agent's user. Sessions can use
    any `gh`/`glab` login that user has (see the linked section).
 2. Make sure each agent accepts `coding`: its `agent.json` has no `acceptedTaskTypes` (all
-   types), or lists `coding` (restart it after editing). On **Agents › <agent>**, set **Max
-   concurrency** (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `long`
-   limit under **Concurrency per pool**.
+   types), or lists `coding` (restart it after editing). Max concurrency (cyralph's
+   `maxConcurrentSessions` is a good start) and the `long` pool limit belong to the agent
+   machine's local config; until they move there, every agent runs with the defaults
+   ([deploy-agent.md](deploy-agent.md#central-config)).
 3. For pm2 agents, choose the version with **Fleet › Version policy › Edit** (replaces cyralph's `autoUpdate`).
 4. If a repository is pinned to agents, at least one of them needs to accept `coding`.
 
-**Verify:** the agent's page shows `ralph` enabled, the limits and a recent heartbeat;
-`curl -s http://127.0.0.1:9310/healthz` on the host says `"connected": true`; for pm2 agents the
-update status is **Up to date**.
+**Verify:** the agent shows online on **Fleet**;
+`curl -s http://127.0.0.1:9310/healthz` on the host says `"connected": true`; for pm2 agents its
+status line says **up to date**.
 
 ### 3. Install the Omniralph Linear app
 
@@ -308,7 +309,7 @@ Every step before 6 is reversible from the control panel and cyralph's `config.j
 | Undo | How |
 | -- | -- |
 | Step 1 | Turn the repository's **Coding** switch off: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
-| Step 2 | Untick `ralph` on the agent (running jobs finish; queued ones wait for another agent that accepts `coding`). Set a pm2 agent's version override back to the version it ran. |
+| Step 2 | Remove `coding` from the agent's `acceptedTaskTypes` and restart it (running jobs finish; queued ones wait for another agent that accepts `coding`). Pin **Fleet › Version policy** back to the version pm2 agents ran. |
 | Step 3 | **Disconnect** Linear on **Settings › Integrations** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
 | Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
 | Step 5 | Re-delegate stopped epics to cyralph (while it's still installed). |

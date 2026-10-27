@@ -159,7 +159,7 @@ details.
    **Repos › Add repo › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repos › Add repo › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
 4. **Run an agent** on a Coder workspace as the workspace user, logged in with `claude`, enrolled
-   from **Agents › Enroll agent** and run under pm2, tmux or systemd
+   from **Fleet › Enroll** and run under pm2, tmux or systemd
    → [docs/deploy-agent.md](docs/deploy-agent.md), [docs/claude-auth.md](docs/claude-auth.md).
 
    ```bash
@@ -192,9 +192,8 @@ details.
 8. **Tune** per-repo settings (Reviews, Coding and Ask, triggers, review depth, skip paths,
    instructions, agent pinning, playbooks) and rules on **Repos**. **Analytics**
    shows tokens per review by review depth, dismissal rates per repo and jobs per agent over 7/30/90 days,
-   plus coding tokens, runs by status and story outcomes. Pick the agents' version on **Settings ›
-   Agents**, and trigger an update with **Update now** on an agent's page or `omniralph-agent update`
-   on its host.
+   plus coding tokens, runs by status and story outcomes. Pick the agents' version on **Fleet ›
+   Version policy**, and trigger an update with `omniralph-agent update` on an agent's host.
 
 ## Documentation
 

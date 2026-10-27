@@ -21,7 +21,7 @@ omniralph-agent --version
 
 ## Enroll
 
-As an admin, open **Agents › Enroll agent** in the control panel and run the command it shows on
+As an admin, open **Fleet › Enroll** in the control panel and run the command it shows on
 the host, as the agent's user:
 
 ```sh
@@ -50,7 +50,7 @@ omniralph-agent --version
 ```
 
 Start it again. Upgrading keeps the config and the repo cache. The version shows on the agent's
-row on the **Agents** page after its next heartbeat.
+detail on **Fleet** after its next heartbeat.
 
 ### From @omniralph/harness
 
