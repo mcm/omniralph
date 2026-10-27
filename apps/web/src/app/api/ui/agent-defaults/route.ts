@@ -3,7 +3,7 @@ import { agentDefaultsSaveSchema, type AgentDefaults } from "@/lib/api/agent-def
 import { getDb } from "@/lib/db";
 import { loadAgentDefaults, saveAgentDefaults } from "@/lib/agents/defaults";
 
-/** Settings › Agent defaults (admins): the desired version and the task-type and concurrency defaults. */
+/** The organization's agent defaults (admins; Fleet edits the version policy): the desired version and the task-type and concurrency defaults. */
 export const GET = apiHandler({ access: "admin" }, async ({ user }): Promise<AgentDefaults> =>
   loadAgentDefaults(getDb(), user.organization.id),
 );

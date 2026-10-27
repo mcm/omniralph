@@ -3,7 +3,7 @@ import { addHostToolSchema } from "@/lib/api/agent-defaults";
 import { getDb } from "@/lib/db";
 import { addHostTool, loadHostToolCatalog } from "@/lib/agents/defaults";
 
-/** Settings › Agent defaults › Host tools (admins): the organization's catalog. */
+/** The host tool catalog (admins): the organization's catalog. */
 export const GET = apiHandler({ access: "admin" }, async ({ user }) => ({
   hostTools: await loadHostToolCatalog(getDb(), user.organization.id),
 }));

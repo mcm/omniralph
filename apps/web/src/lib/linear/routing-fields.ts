@@ -8,7 +8,7 @@ import type { RoutingFieldValues, RoutingIssueValue } from "@/lib/routing/evalua
 import type { RoutingIssue, RoutingIssueFields } from "./gateway";
 
 /**
- * The Linear issue fields routing rules test (Settings › Routing), under Linear's own names.
+ * The Linear issue fields routing rules test (Settings › Advanced › Routing rules), under Linear's own names.
  * Each is offered for the issue itself, its parent (`parent.labels`, "Parent › Labels") and,
  * for a follow-up, the issue it was filed from (`source.team`, "Source › Team"). Names
  * (labels, projects, milestones, states) match ignoring case.

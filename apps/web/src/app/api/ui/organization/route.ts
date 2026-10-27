@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { changeOrganization, loadOrganizationSettings } from "@/lib/organizations/settings";
 
 /**
- * Settings › Organization: the active organization with its members and email domains,
+ * Settings › General and Members: the active organization with its members and email domains,
  * and (admins) its pending invitations.
  */
 export const GET = apiHandler({}, async ({ user }): Promise<OrganizationSettings> =>

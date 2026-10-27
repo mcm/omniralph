@@ -97,6 +97,7 @@ const ALLOWED: Allowed[] = [
       "apps/web/src/proxy.test.ts",
       "apps/web/src/lib/run-model/attempt-labels.test.ts",
       "apps/web/src/lib/webhooks/reasons.test.ts",
+      "apps/web/src/lib/connections/connect-notices.test.ts",
     ],
     reason:
       "tests that the old routes, token audience, claims and words are gone or rejected name them",

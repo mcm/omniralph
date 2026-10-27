@@ -290,7 +290,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     const result = await draft();
 
     expect(result.error).toBe("linear_not_connected");
-    expect(result.message).toContain("Settings › Integrations");
+    expect(result.message).toContain("Settings › Connections › Add connection");
     expect(thread.post).not.toHaveBeenCalled();
     expect(await db.select().from(chatLinearIssueDrafts)).toHaveLength(0);
   });

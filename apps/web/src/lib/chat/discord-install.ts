@@ -30,7 +30,7 @@ import {
 import { requireInstallAdmin } from "./install-auth";
 
 /**
- * Settings › Add connection › Discord › Connect: sends an admin to Discord's
+ * Settings › Connections › Add connection › Discord › Connect: sends an admin to Discord's
  * add-bot screen with a signed `state` naming their active organization,
  * bound to them and to this browser.
  */

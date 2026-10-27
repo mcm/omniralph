@@ -30,7 +30,7 @@ import {
 } from "./slack-oauth";
 
 /**
- * Settings › Add connection › Slack › Connect: sends an admin to Slack's install
+ * Settings › Connections › Add connection › Slack › Connect: sends an admin to Slack's install
  * screen with a signed `state` naming their active organization, bound to
  * them and to this browser.
  */

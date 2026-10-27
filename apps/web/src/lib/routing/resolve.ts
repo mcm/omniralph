@@ -88,7 +88,7 @@ export interface RouteDeps {
   db: Pick<Database, "select">;
   organizationId: string;
   linear: Pick<LinearGateway, "getRoutingFields">;
-  /** Rules to route by instead of the saved ones, in order (Settings › Routing's unsaved list). */
+  /** Rules to route by instead of the saved ones, in order (Settings › Advanced › Routing rules' unsaved list). */
   rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
   /** Work item matches to route by instead of the saved ones (an unsaved match applied). */
   matches?: readonly RouteWorkItemMatch[];

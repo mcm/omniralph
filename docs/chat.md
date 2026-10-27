@@ -322,7 +322,7 @@ started the run: with their linked account's tools, else `read` tools only.
 
 Linked members can turn a conversation into a Linear issue, and have Om build it. The
 organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--integrations));
-without one the bot says an admin can connect it under **Settings › Integrations**.
+without one the bot says an admin can connect it under **Settings › Connections › Add connection**.
 
 ### Filing an issue
 

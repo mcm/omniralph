@@ -33,7 +33,7 @@ import { agentVersionTooOld } from "./min-version";
 import { latestAgentVersion, NpmRegistryError } from "./npm";
 
 /**
- * Settings › Agent defaults: the organization-wide agent settings every agent gets
+ * The organization-wide agent defaults (Fleet edits the version policy) every agent gets
  * with its heartbeat, and the host tool catalog. The logic behind `/api/ui/agent-defaults`
  * and `/api/ui/host-tools/**`, whose handlers parse, authorize and serialize. Every function
  * is scoped to the admin's active organization and answers an `ActionResult` worded for the

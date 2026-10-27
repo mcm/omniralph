@@ -74,7 +74,7 @@ export async function updateAgentConfig(
 }
 
 /**
- * Sets the version this agent should run, overriding Settings › Agent defaults; blank
+ * Sets the version this agent should run, overriding the version policy (Fleet › Version policy); blank
  * clears the override. Agents under pm2 update themselves to it.
  */
 export async function setAgentDesiredVersion(

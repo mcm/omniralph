@@ -256,7 +256,7 @@ export const agentDetailSchema = z.object({
   /** Its last 10 finished attempts (system work included), newest first. */
   recentWork: z.array(recentAttemptSchema),
   security: agentSecuritySchema,
-  /** Settings › Agent defaults version ("1.5.0 (latest on npm)" when it tracks npm's latest); null: not set. */
+  /** The version policy's version (Fleet › Version policy; "1.5.0 (latest on npm)" when it tracks npm's latest); null: not set. */
   globalDesiredVersion: z.string().nullable(),
   /** The 50 most recent audit events, newest first. */
   audit: z.array(auditRowSchema),
@@ -313,7 +313,7 @@ export type AgentHostTools = z.infer<typeof agentHostToolsSchema>;
  * its own (its local `acceptedTaskTypes`), so sending any is refused.
  */
 export const agentConfigFormSchema = z.strictObject({
-  /** Null uses the organization's default (Settings › Agents). */
+  /** Null uses the organization's default (`/api/ui/agent-defaults`). */
   maxConcurrency: z.number().nullable(),
   /** Per-pool concurrency limits (1 to the effective max concurrency); left-out pools use the default. */
   poolLimits: z.record(z.string(), z.number()),

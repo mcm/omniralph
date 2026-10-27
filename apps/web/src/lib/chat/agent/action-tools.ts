@@ -389,7 +389,7 @@ export const sendRalphGuidance = defineChatTool({
 export const LINEAR_NOT_CONNECTED_RESULT = {
   error: "linear_not_connected",
   message:
-    "This organization has no Linear workspace connected, so you can't create Linear issues. Tell the user an admin can connect one under Settings › Integrations in the control panel.",
+    "This organization has no Linear workspace connected, so you can't create Linear issues. Tell the user an admin can connect one under Settings › Connections › Add connection in the control panel.",
 } as const;
 
 /** The team `ref` names (key, name or ID, ignoring case), or undefined. */
