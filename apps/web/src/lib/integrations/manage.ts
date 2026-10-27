@@ -13,10 +13,19 @@ import {
   setChatPlaybookDefaults,
   upsertChatChannelPlaybookSetting,
   withSettingsChanges,
+  type ChatChannelPlaybookSetting,
+  type ChatConnection,
+  type ChatPlaybooks,
   type Database,
 } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
-import type { IntegrationsSettings } from "@/lib/api/integrations";
+import type {
+  ChannelPlaybooks,
+  ChatPlaybooksSettings,
+  IntegrationsSettings,
+  SavedChannelPlaybooks,
+} from "@/lib/api/integrations";
+import { channelName, findChatChannel, type ChannelLookupDeps } from "@/lib/chat/channel-lookup";
 import type { OrgUser } from "@/lib/auth/session";
 import { discordOAuthConfig, leaveDiscordGuild } from "@/lib/chat/discord-oauth";
 import { revokeSlackToken, slackOAuthConfig, type SlackCredentials } from "@/lib/chat/slack-oauth";
@@ -52,6 +61,53 @@ function savingConnection<T>(
 }
 
 /**
+ * The playbooks chat runs in the organization (`GET /api/ui/integrations/chat-tasks`, any
+ * member; Advanced › Chat channel overrides): its choice, the built-ins, the playbooks each
+ * can run, and each chat connection's channel overrides. Database only; no secrets.
+ * `loaded` reuses what the caller already read.
+ */
+export async function loadChatPlaybookSettings(
+  db: Database,
+  organizationId: string,
+  loaded?: {
+    defaults: ChatPlaybooks;
+    connections: ChatConnection[];
+    channels: ChatChannelPlaybookSetting[];
+  },
+): Promise<ChatPlaybooksSettings> {
+  const [{ defaults, connections, channels }, askChoices, startWorkChoices] = await Promise.all([
+    loaded ??
+      Promise.all([
+        getChatPlaybookDefaults(db, organizationId),
+        listChatConnections(db, organizationId),
+        listChatChannelPlaybookSettings(db, organizationId),
+      ]).then(([defaults, connections, channels]) => ({ defaults, connections, channels })),
+    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.ask),
+    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.startWork),
+  ]);
+  return {
+    defaults,
+    builtinDefaults: DEFAULT_CHAT_PLAYBOOKS,
+    choices: { ask: askChoices, startWork: startWorkChoices },
+    connections: connections.map((c) => ({
+      id: c.id,
+      name: c.name,
+      platform: c.platform,
+      channels: channels.filter((t) => t.connectionId === c.id).map(channelPlaybooksOf),
+    })),
+  };
+}
+
+function channelPlaybooksOf(setting: ChatChannelPlaybookSetting): ChannelPlaybooks {
+  return {
+    channelId: setting.channelId,
+    channel: platformChannelId(setting.channelId),
+    ask: setting.askPlaybookId,
+    startWork: setting.startWorkPlaybookId,
+  };
+}
+
+/**
  * Settings › Integrations: the active organization's Linear workspace, Slack workspaces and
  * Discord servers, whether this server has each app's credentials, and the playbooks chat runs.
  * Database and environment only (it is polled): no call to Linear, Slack or Discord.
@@ -61,20 +117,11 @@ export async function loadIntegrations(
   admin: OrgUser,
 ): Promise<IntegrationsSettings> {
   const organizationId = admin.organization.id;
-  const [
-    integration,
-    chatConnections,
-    chatPlaybookDefaults,
-    channelPlaybooks,
-    askChoices,
-    startWorkChoices,
-  ] = await Promise.all([
+  const [integration, chatConnections, chatPlaybookDefaults, channelPlaybooks] = await Promise.all([
     getIntegration(db, organizationId, "linear"),
     listChatConnections(db, organizationId),
     getChatPlaybookDefaults(db, organizationId),
     listChatChannelPlaybookSettings(db, organizationId),
-    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.ask),
-    listPlaybookChoices(db, organizationId, CHAT_PLAYBOOK_FILTERS.startWork),
   ]);
   // The installer may have left the organization since, so look them up as a user.
   const installers = new Map(
@@ -118,24 +165,11 @@ export async function loadIntegrations(
         connectedAt: c.updatedAt.toISOString(),
       })),
     discordConfigured: discordOAuthConfig() !== null,
-    chatPlaybooks: {
+    chatPlaybooks: await loadChatPlaybookSettings(db, organizationId, {
       defaults: chatPlaybookDefaults,
-      builtinDefaults: DEFAULT_CHAT_PLAYBOOKS,
-      choices: { ask: askChoices, startWork: startWorkChoices },
-      connections: chatConnections.map((c) => ({
-        id: c.id,
-        name: c.name,
-        platform: c.platform,
-        channels: channelPlaybooks
-          .filter((t) => t.connectionId === c.id)
-          .map((t) => ({
-            channelId: t.channelId,
-            channel: platformChannelId(t.channelId),
-            ask: t.askPlaybookId,
-            startWork: t.startWorkPlaybookId,
-          })),
-      })),
-    },
+      connections: chatConnections,
+      channels: channelPlaybooks,
+    }),
   };
 }
 
@@ -300,26 +334,35 @@ export async function saveChatPlaybookDefaults(
 
 /**
  * Sets the playbooks a channel of one of the active organization's chat connections runs
- * (`channel`: the ID the platform shows), overriding the organization's; null keeps its
- * choice. Each chosen playbook must pass `validateChatPlaybookChoice` among its playbooks.
+ * (`channel`: the ID the platform shows, or the channel's name, looked up on the platform),
+ * overriding the organization's; null keeps its choice. Each chosen playbook must pass
+ * `validateChatPlaybookChoice` among its playbooks. Answers the saved override.
  */
 export async function saveChatChannelPlaybooks(
   db: Database,
   admin: OrgUser,
   connectionId: string,
   input: unknown,
-): Promise<ActionResult> {
+  deps: Omit<ChannelLookupDeps, "db"> = {},
+): Promise<ActionResult | SavedChannelPlaybooks> {
   const organizationId = admin.organization.id;
   const connection = await getChatConnection(db, organizationId, connectionId);
   if (!connection) return { ok: false, error: "That chat connection isn't connected." };
   const { channel, ...playbooks } = asObject(input);
-  const channelId = typeof channel === "string" ? chatChannelId(connection, channel) : null;
-  if (!channelId) {
-    const error =
+  const typed = typeof channel === "string" ? channel.trim() : "";
+  const name = channelName(typed);
+  const channelError = (error: string): ActionResult => ({
+    ok: false,
+    error,
+    fieldErrors: { channel: error },
+  });
+  let channelId = chatChannelId(connection, typed);
+  if (!channelId && !name) {
+    return channelError(
       connection.platform === "slack"
-        ? "Enter a Slack channel ID, like C0123ABCD (in the channel's details)."
-        : "Enter a Discord channel ID, like 123456789012345678 (Copy Channel ID).";
-    return { ok: false, error, fieldErrors: { channel: error } };
+        ? "Enter a Slack channel ID like C0123ABCD (in the channel's details), or its name."
+        : "Enter a Discord channel ID like 123456789012345678 (Copy Channel ID), or its name.",
+    );
   }
   const invalid = invalidChatPlaybooks(
     await chatPlaybookErrors(db, organizationId, playbooks, true),
@@ -329,18 +372,31 @@ export async function saveChatChannelPlaybooks(
   if (chosen.ask === null && chosen.startWork === null) {
     return { ok: false, error: "Choose a playbook for the channel to run." };
   }
+  if (!channelId && name) {
+    const found = await findChatChannel({ db, ...deps }, connection, name);
+    if (!found.ok) {
+      return channelError(
+        found.reason === "not_found"
+          ? `Om can't find #${name} in ${connection.name}. Enter its channel ID instead.`
+          : `Couldn't look up #${name} in ${connection.name}. Enter its channel ID instead.`,
+      );
+    }
+    channelId = chatChannelId(connection, found.channel);
+  }
+  if (!channelId) return channelError(`Om can't find #${typed} in ${connection.name}.`);
+  const resolved = channelId;
   const saved = await savingConnection(db, admin, connection.id, (tx) =>
     upsertChatChannelPlaybookSetting(tx, {
       organizationId,
       connectionId: connection.id,
-      channelId,
+      channelId: resolved,
       askPlaybookId: chosen.ask,
       startWorkPlaybookId: chosen.startWork,
       updatedBy: admin.id,
     }),
   );
   if (!saved) return { ok: false, error: "That chat connection isn't connected." };
-  return { ok: true };
+  return { ok: true, channel: channelPlaybooksOf(saved) };
 }
 
 /**

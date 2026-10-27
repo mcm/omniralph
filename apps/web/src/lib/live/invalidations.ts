@@ -11,6 +11,7 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import {
   backlogKeys,
+  chatPlaybooksKey,
   connectionKeys,
   queryKeys,
   runsKeys,
@@ -83,6 +84,13 @@ const SETTINGS_INVALIDATIONS: Record<
   playbooks: (keys) => [
     playbookKeys(keys).all,
     keys.repositories.all,
+    keys.connections.detail("integrations"),
+    chatPlaybooksKey(keys),
+  ],
+  // The playbooks chat runs (Advanced › Chat channel overrides), which playbooks list as users.
+  chat_playbooks: (keys) => [
+    chatPlaybooksKey(keys),
+    playbookKeys(keys).all,
     keys.connections.detail("integrations"),
   ],
   // The user's own record (their theme): no query shows it, the shell applies it.
@@ -187,6 +195,8 @@ export const LIVE_INVALIDATIONS = {
     connectionKeys(keys).list,
     // A tracker connection's work item states (a save by another admin, a disconnect).
     connectionKeys(keys).stateMappings,
+    // The chat connections whose channels Advanced › Chat channel overrides lists.
+    chatPlaybooksKey(keys),
     // Connection health problems are repositories' problems.
     ...repositoryViews(keys),
     runsKeys(keys).filterOptionsAll,

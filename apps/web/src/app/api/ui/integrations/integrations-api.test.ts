@@ -515,13 +515,13 @@ describe("saveChatChannelPlaybooks and removeChatChannelPlaybooks", () => {
         ask: "builtin:ask-about-code",
         startWork: null,
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(
       await saveChatChannelPlaybooks("d1", "222", {
         ask: null,
         startWork: "builtin:handle-request",
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(state.channelPlaybooks).toEqual([
       {
         organizationId: "org-a",
@@ -551,7 +551,7 @@ describe("saveChatChannelPlaybooks and removeChatChannelPlaybooks", () => {
         ask: IDS.query,
         startWork: IDS.coding,
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(state.channelPlaybooks).toEqual([
       expect.objectContaining({
         channelId: "slack:C0123ABCD",
@@ -591,7 +591,7 @@ describe("saveChatChannelPlaybooks and removeChatChannelPlaybooks", () => {
       await saveChatChannelPlaybooks("s1", "C0123ABCD", { ask: null, startWork: null }),
     ).toMatchObject({ ok: false });
     expect(
-      await saveChatChannelPlaybooks("s1", "#general", {
+      await saveChatChannelPlaybooks("s1", "not a channel!", {
         ask: "builtin:ask-about-code",
         startWork: null,
       }),

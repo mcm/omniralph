@@ -286,6 +286,28 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       ).toEqual(["C2"]);
     });
 
+    it("records one chat_playbooks change per save and removal, none when nothing changed", async () => {
+      const slack = await connect("slack", "T1", { botToken: "t" });
+      const change = expect.objectContaining({
+        resource: "settings",
+        section: "chat_playbooks",
+        ids: [slack.id],
+        subjectId: slack.id,
+        organizationId: orgId,
+      });
+      expect((await captureChanges(() => save(slack.id, "C1"))).changes).toEqual([change]);
+      expect(
+        (await captureChanges(() => deleteChatChannelPlaybookSetting(db, orgId, slack.id, "C1")))
+          .changes,
+      ).toEqual([change]);
+      expect(
+        (await captureChanges(() => deleteChatChannelPlaybookSetting(db, orgId, slack.id, "C1")))
+          .changes,
+      ).toEqual([]);
+      const theirs = await connect("slack", "T2", { botToken: "t" }, otherOrgId);
+      expect((await captureChanges(() => save(theirs.id, "C1"))).changes).toEqual([]);
+    });
+
     it("goes with its connection", async () => {
       const slack = await connect("slack", "T1", { botToken: "t" });
       const discord = await connect("discord", "G1", null);
@@ -321,7 +343,15 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       startWork: "builtin:handle-request",
     });
     const chosen = { ask: "builtin:other-query", startWork: "builtin:other-coding" };
-    await setChatPlaybookDefaults(db, orgId, chosen, "admin-1");
+    const saved = await captureChanges(() => setChatPlaybookDefaults(db, orgId, chosen, "admin-1"));
+    expect(saved.changes).toEqual([
+      expect.objectContaining({
+        resource: "settings",
+        section: "chat_playbooks",
+        ids: [orgId],
+        organizationId: orgId,
+      }),
+    ]);
     expect(await getChatPlaybookDefaults(db, orgId)).toEqual(chosen);
     expect(await getChatPlaybookDefaults(db, otherOrgId)).toEqual(DEFAULT_CHAT_PLAYBOOKS);
     expect((await getAppSetting(db, orgId, CHAT_PLAYBOOKS_KEY))?.updatedBy).toBe("admin-1");

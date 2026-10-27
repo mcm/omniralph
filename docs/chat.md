@@ -158,22 +158,27 @@ admin chooses others, it runs the built-ins:
   Default: `builtin:handle-request`.
 
 An admin can choose other playbooks of the same role, built-in or the organization's own
-([custom playbooks](definitions.md)), for the whole organization or for one channel. Choosing them
-is an advanced setting: the 2.0 Settings screen shows it to users who turn on **Show advanced
-settings**, but the setting works the same whether or not anyone shows it. Until that screen
-ships, it is set through the API (admins only):
+([custom playbooks](definitions.md)), for the whole organization or for one channel, in **Settings ›
+Advanced › Chat channel overrides** (`/settings/advanced/chat`): the **Organization default** card
+("Answer questions with", "Start work with") and the **Channel overrides** card (Add override: the
+connection, the channel and each playbook or "Organization default"). Every member sees them;
+only admins change them. The Advanced group shows in the Settings nav for users who turn on **Show
+advanced settings**, but the page and the setting work the same whether or not anyone shows it.
+The same through the API:
 
-| Request                                                      | Body                                                       | What it does                                                                                                                                                    |
-| ------------------------------------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/ui/integrations`                                   |                                                            | `chatPlaybooks`: the organization's choice (`defaults`), the built-in defaults, the playbooks each can run (`choices`) and each connection's channel overrides. |
-| `PUT /api/ui/integrations/chat-tasks`                        | `{ "ask": "<playbook ID>", "startWork": "<playbook ID>" }` | Sets the organization's choice (`chat.playbooks` in `app_settings`).                                                                                            |
-| `PUT /api/ui/integrations/chat-connections/{id}/channels`    | `{ "channel": "C0123ABCD", "ask": …, "startWork": … }`     | Sets a channel's overrides (`chat_channel_task_settings`). `null` keeps the organization's choice for that one; at least one must be set.                       |
-| `DELETE /api/ui/integrations/chat-connections/{id}/channels` | `{ "channelId": "slack:C0123ABCD" }`                       | Removes a channel's overrides: it runs the organization's choice again.                                                                                         |
+| Request                                                      | Body                                                       | What it does                                                                                                                                                             |
+| ------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/ui/integrations/chat-tasks`                        |                                                            | Any member: the organization's choice (`defaults`), the built-in defaults, the playbooks each can run (`choices`) and each connection's channel overrides.               |
+| `PUT /api/ui/integrations/chat-tasks`                        | `{ "ask": "<playbook ID>", "startWork": "<playbook ID>" }` | Sets the organization's choice (`chat.playbooks` in `app_settings`).                                                                                                     |
+| `PUT /api/ui/integrations/chat-connections/{id}/channels`    | `{ "channel": "C0123ABCD", "ask": …, "startWork": … }`     | Sets a channel's overrides (`chat_channel_task_settings`) and answers the saved override. `null` keeps the organization's choice for that one; at least one must be set. |
+| `DELETE /api/ui/integrations/chat-connections/{id}/channels` | `{ "channelId": "slack:C0123ABCD" }`                       | Removes a channel's overrides: it runs the organization's choice again.                                                                                                  |
 
 `channel` is the ID the platform shows (Slack: `C0123ABCD`, from the channel's details; Discord:
-the channel's numeric ID, with Developer Mode on). Each chosen playbook must have its slot's role
-(`chat-ask` for `ask`, `request` for `startWork`); anything else is refused with a field error, and
-nothing is saved. Every save publishes a live change event, so open pages update.
+the channel's numeric ID, with Developer Mode on), or the channel's name (`#general`), which is
+looked up in the Slack workspace (channels the app can see) or the Discord server. Each chosen
+playbook must have its slot's role (`chat-ask` for `ask`, `request` for `startWork`); anything else
+is refused with a field error, and nothing is saved. Every save publishes a live change event
+(`settings`, section `chat_playbooks`), so open pages update.
 
 A channel runs its override where it has one, else the organization's choice, else the built-in.
 Changes apply to the next question or request, with no deploy; runs already started keep their
@@ -334,7 +339,7 @@ labels, priority, title and a preview of the description) and three buttons:
 | Button                  | Does                                                                                          |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | **Create**              | Creates the issue in Linear. The card then shows its identifier and an **Open ENG-123** link. |
-| **Create and delegate** | Creates the issue and [delegates it to Om](#delegating-to-om).                          |
+| **Create and delegate** | Creates the issue and [delegates it to Om](#delegating-to-om).                                |
 | **Cancel**              | Discards the draft; the card says so.                                                         |
 
 - Only the member who asked can click them; anyone else gets a private note to mention the bot
@@ -464,11 +469,11 @@ answering [coding runs](#om-from-chat), and
 [filing and delegating Linear issues](#linear-issues-from-chat)); see
 [What needs a linked account](#what-needs-a-linked-account) for each tool's tier.
 
-| Who                                                                                                                                                                             | Gets                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **Linked member**: a chat user [linked](#account-linking) to an Omniralph account that is a member of the organization owning the connection                                    | `read` and `action` tools                                                   |
+| Who                                                                                                                                                                        | Gets                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Linked member**: a chat user [linked](#account-linking) to an Omniralph account that is a member of the organization owning the connection                               | `read` and `action` tools                                                   |
 | **Slack user on the organization's email domains**: not linked, but their Slack profile email's domain is one of the organization's email domains (**Settings › Members**) | `read` tools only                                                           |
-| **Everyone else**                                                                                                                                                               | No tools; the bot answers without organization data and posts a link prompt |
+| **Everyone else**                                                                                                                                                          | No tools; the bot answers without organization data and posts a link prompt |
 
 - An organization without email domains grants no domain-based access, and the deployment-wide
   `ALLOWED_EMAIL_DOMAINS` is never used for chat.
@@ -518,12 +523,12 @@ the opt-out. Leaving the organization ends the link's access straight away.
 | The bot doesn't react to a Discord mention               | Expected for now: no Gateway connection delivers ordinary messages ([Ordinary Discord messages aren't received yet](#ordinary-discord-messages-arent-received-yet)).                   |
 | "Om isn't set up in chat"                                | The AI Gateway is enabled for the Vercel team, or `AI_GATEWAY_API_KEY` is set off Vercel.                                                                                              |
 | The bot asks to link although you're a member            | On Discord, always link by hand. On Slack, your Slack email isn't your Omniralph sign-in email (and its domain isn't one of the organization's), or you unlinked before: link by hand. |
-| A reply didn't reach the coding session                   | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                              |
+| A reply didn't reach the coding session                  | You're a linked member, and the thread's run is still unfinished; the bot passes replies on with `reply_to_run` (ask it to if it didn't).                                              |
 | A run's answer or question never showed up in the thread | The `/api/cron/chat-run-events` cron is running (Vercel › **Cron Jobs**) and `CRON_SECRET` is set; the AI Gateway is configured. `get_run_status` shows what the run is doing.         |
 | The bot says the channel's playbook can't run            | An admin chooses another **Ask about code** or **Start work** playbook for the organization (or removes the channel's override): see [Chat playbooks](#chat-playbooks).                |
-| The bot won't start an Om request                      | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                               |
+| The bot won't start an Om request                        | You're a linked member; the repository has coding on and is written as `owner/repo`; the thread has no active run (reply to it instead).                                               |
 | The Linear card's buttons do nothing (Slack)             | **Interactivity** is on under **Interactivity & Shortcuts** with the request URL `<APP_URL>/api/webhooks/slack`.                                                                       |
 | "Only the person who asked…" on a card                   | Only the member who asked for the draft can click it; mention the bot to draft your own.                                                                                               |
-| A code question says no agent can take it              | An agent that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to agents, it's one of them).                                            |
+| A code question says no agent can take it                | An agent that accepts `query` tasks on version 0.9.0 or later is online (and, if the repository pins jobs to agents, it's one of them).                                                |
 | The bot says it couldn't fetch a Slack attachment        | The app has the `files:read` scope and the workspace reconnected after it was added.                                                                                                   |
-| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and an agent that accepts `coding` is online; the run must start within an hour of the delegation.                          |
+| A delegated issue's thread got no "started" message      | The issue's team is routed to a repository with coding on and an agent that accepts `coding` is online; the run must start within an hour of the delegation.                           |

@@ -288,6 +288,20 @@ export async function deleteChatConnectionByExternalId(
 
 // ── Channel playbook settings ────────────────────────────────────────────────
 
+/**
+ * Records a saved or removed channel override (the `chat_playbooks` settings section, the
+ * connection its subject): Advanced › Chat channel overrides and the playbooks it names.
+ */
+function recordChatPlaybooksChange(db: unknown, organizationId: string, connectionId: string) {
+  recordChange(db, {
+    resource: "settings",
+    section: "chat_playbooks",
+    ids: [connectionId],
+    subjectId: connectionId,
+    organizationId,
+  });
+}
+
 export type ChatChannelPlaybookSetting = typeof chatChannelTaskSettings.$inferSelect;
 
 export interface UpsertChatChannelPlaybookSettingInput {
@@ -379,8 +393,7 @@ export async function upsertChatChannelPlaybookSetting(
         setWhere: eq(chatChannelTaskSettings.organizationId, input.organizationId),
       })
       .returning();
-    if (row)
-      recordConnectionChange(tx, { id: input.connectionId, organizationId: input.organizationId });
+    if (row) recordChatPlaybooksChange(tx, input.organizationId, input.connectionId);
     return row ?? null;
   });
 }
@@ -402,7 +415,7 @@ export async function deleteChatChannelPlaybookSetting(
       ),
     )
     .returning({ id: chatChannelTaskSettings.id });
-  if (removed.length > 0) recordConnectionChange(db, { id: connectionId, organizationId });
+  if (removed.length > 0) recordChatPlaybooksChange(db, organizationId, connectionId);
   return removed.length > 0;
 }
 

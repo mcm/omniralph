@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeEvent } from "@/components/live/live-test-utils";
 import {
   backlogKeys,
+  chatPlaybooksKey,
   connectionKeys,
   inboxKeys,
   queryKeys,
@@ -172,7 +173,20 @@ describe("LIVE_INVALIDATIONS", () => {
   it("settings: a playbook refetches every playbook query and the settings that bind playbooks", () => {
     expect(
       liveInvalidations(event({ resource: "settings", section: "playbooks", subjectId: ID })),
-    ).toEqual([playbooks.all, keys.repositories.all, keys.connections.detail("integrations")]);
+    ).toEqual([
+      playbooks.all,
+      keys.repositories.all,
+      keys.connections.detail("integrations"),
+      chatPlaybooksKey(keys),
+    ]);
+  });
+
+  it("settings: the playbooks chat runs refetch Chat channel overrides and the playbooks naming chat", () => {
+    for (const subjectId of [undefined, ID]) {
+      expect(
+        liveInvalidations(event({ resource: "settings", section: "chat_playbooks", subjectId })),
+      ).toEqual([chatPlaybooksKey(keys), playbooks.all, keys.connections.detail("integrations")]);
+    }
   });
 
   it("agent: the agents list, each agent, the Inbox (offline agents), the repositories' agents and the playbook editor's options", () => {
@@ -204,6 +218,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.connections.all,
       connectionKeys(keys).list,
       connectionKeys(keys).stateMappings,
+      chatPlaybooksKey(keys),
       ...repositoryViews,
       runsKeys(keys).filterOptionsAll,
       keys.backlog.all,

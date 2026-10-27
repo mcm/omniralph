@@ -25,6 +25,7 @@ export const channelPlaybooksSchema = z.object({
 });
 export type ChannelPlaybooks = z.infer<typeof channelPlaybooksSchema>;
 
+/** `GET /api/ui/integrations/chat-tasks` (any member): the playbooks chat runs. */
 export const chatPlaybooksSettingsSchema = z.object({
   /** The organization's playbooks (the built-in ones unless chosen). */
   defaults: slotPlaybooks(z.string()),
@@ -91,13 +92,20 @@ export interface ChatPlaybooksInput {
 
 /**
  * `PUT /api/ui/integrations/chat-connections/[id]/channels`: a channel's playbooks (`channel`:
- * the ID the platform shows; null keeps the organization's playbook).
+ * the ID the platform shows, or the channel's name; null keeps the organization's playbook).
  */
 export interface ChannelPlaybooksInput {
   channel: string;
   ask: string | null;
   startWork: string | null;
 }
+
+/** The answer of a saved channel override: the override as the server stored it. */
+export const savedChannelPlaybooksSchema = z.object({
+  ok: z.literal(true),
+  channel: channelPlaybooksSchema,
+});
+export type SavedChannelPlaybooks = z.infer<typeof savedChannelPlaybooksSchema>;
 
 /** `DELETE /api/ui/integrations/chat-connections/[id]/channels`: the Chat SDK channel ID. */
 export const removeChannelPlaybooksSchema = z.object({ channelId: z.string() });
