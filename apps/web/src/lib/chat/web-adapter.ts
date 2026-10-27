@@ -39,6 +39,7 @@ import {
   type ThreadInfo,
 } from "chat";
 import { LINEAR_ISSUE_ACTIONS } from "./linear-issue";
+import { REQUEST_DRAFT_ACTIONS } from "./request-draft";
 import { sendWebEvent } from "./web-stream";
 
 /**
@@ -94,14 +95,21 @@ function cardButtons(children: readonly CardChild[]): Array<{ id: string; value?
 }
 
 /**
- * The draft a card acts on, from its buttons' actions: a Linear issue draft's card
- * (`LINEAR_ISSUE_ACTIONS`, the draft's ID as their value); null for any other card.
+ * The draft a card acts on, from its buttons' actions: a request draft's card
+ * (`REQUEST_DRAFT_ACTIONS`) or a Linear issue draft's (`LINEAR_ISSUE_ACTIONS`), the draft's ID
+ * as their value; null for any other card.
  */
 export function webCardRef(card: CardElement): ChatWebCardRef | null {
-  const button = cardButtons(card.children).find(
-    (b) => LINEAR_ISSUE_ACTIONS.includes(b.id) && b.value,
-  );
-  return button ? { kind: "linear_issue_draft", draftId: button.value! } : null;
+  for (const button of cardButtons(card.children)) {
+    if (!button.value) continue;
+    if (REQUEST_DRAFT_ACTIONS.includes(button.id)) {
+      return { kind: "request_draft", draftId: button.value };
+    }
+    if (LINEAR_ISSUE_ACTIONS.includes(button.id)) {
+      return { kind: "linear_issue_draft", draftId: button.value };
+    }
+  }
+  return null;
 }
 
 /** A card's text for a reader without cards (and the model's history). */

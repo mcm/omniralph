@@ -255,7 +255,8 @@ of its members starts a chat; it is never listed under **Settings › Connection
 The control panel's API for it lives under `/api/ui/ask` (`apps/web/src/lib/api/ask.ts`): the
 member's chats (`GET /chats`, newest activity first), a new chat with its first message
 (`POST /chats`), a chat with its messages, cards and in-flight question (`GET /chats/{id}`), a
-follow-up (`POST /chats/{id}/messages`) and the repos a new chat can pick (`GET /repositories`).
+follow-up (`POST /chats/{id}/messages`), a click on a card's button (`POST /chats/{id}/actions`,
+handled as the same click on Slack is) and the repos a new chat can pick (`GET /repositories`).
 Sending answers with the turn's server-sent events (`apps/web/src/lib/ask/sse.ts`).
 
 ## Om from chat
@@ -287,6 +288,26 @@ ambiguous) and starts the run with its `start_work` tool:
   the same repository continues that branch and PR/MR.
 - One run per thread at a time: while the thread's run is active, new requests go to it as
   [replies](#replies-while-a-run-works) instead.
+
+### Drafted requests
+
+When the answer to a question is a code change, Om doesn't only describe it: it drafts the request
+from the conversation with its `draft_request` tool. Its card follows Om's reply ("I drafted the
+request from this conversation:") on every platform, with the request's title and repo and three
+buttons:
+
+- **Start request** starts the thread's request run in the draft's repo, as `start_work` does, with
+  the draft's description and the chat's latest messages quoted. The card then says **Request
+  started** with a link to the run, whose news comes back to the thread as run events. When the run
+  can't start (coding is off for the repo, or the thread already has a run), the card says why and
+  keeps its buttons.
+- **Add to backlog** (only when the repo has a work item match and its tracker is connected) files
+  it as a work item.
+- **Not now** dismisses it.
+
+Only the member who asked can click them (anyone else is told so privately), each choice counts
+once, and after 24 hours the card says **This draft expired**. Om still uses `start_work` when a
+member asks it outright to make a change, and `draft_linear_issue` when they ask to file an issue.
 
 ### What the thread sees while a run works
 
@@ -362,6 +383,7 @@ The tools and their [tiers](#access-levels):
 | `ask_about_code` (start a [code question](#code-questions)), `get_run_status`, `get_ralph_run`, `list_ralph_runs` | `read`   |
 | `start_work`, `reply_to_run`, `answer_run_permission`, `answer_run_cleanup`, `send_ralph_guidance`                | `action` |
 | `draft_linear_issue`, `delegate_linear_issue` ([Linear issues](#linear-issues-from-chat))                         | `action` |
+| `draft_request` ([drafted requests](#drafted-requests))                                                           | `action` |
 
 Only [linked members](#access-levels) can use `action` tools. Slack users admitted by email
 domain can ask about runs and ask code questions but not change anything or answer a run's

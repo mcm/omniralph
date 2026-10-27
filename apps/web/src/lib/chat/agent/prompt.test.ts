@@ -36,4 +36,17 @@ describe("systemPrompt", () => {
     }
     expect(systemPrompt({ ...base, platform: "slack" })).toContain("in Slack");
   });
+
+  it("drafts a request when an answer needs a code change, on every platform", () => {
+    for (const platform of ["web", "slack", "discord"] as const) {
+      const prompt = systemPrompt({ ...base, platform });
+      expect(prompt).toContain(
+        "When the answer to a question is a code change (a fix, a missing feature, a refactor the code needs), draft the request with draft_request",
+      );
+      expect(prompt).toContain(
+        "Use start_work instead when a member explicitly asks you to make a change, and draft_linear_issue when they ask to file an issue.",
+      );
+      expect(prompt).toContain("I drafted the request from this conversation:");
+    }
+  });
 });

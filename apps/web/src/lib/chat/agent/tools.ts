@@ -24,7 +24,8 @@ export interface ChatToolContext {
   db: Database;
   organizationId: string;
   /** The chat connection that received the message (its channel's chat playbooks, `chatPlaybooksFor`). */
-  connection: Pick<ChatConnection, "id" | "organizationId">;
+  connection: Pick<ChatConnection, "id" | "organizationId"> &
+    Partial<Pick<ChatConnection, "platform">>;
   actor: ChatActor;
   /** The chat user ID of the author of the message being answered. */
   requesterExternalUserId: string;
@@ -48,6 +49,11 @@ export interface ChatToolContext {
    * answer then posts nothing.
    */
   handedOff(): void;
+  /**
+   * Runs `post` once the turn's text is posted, so a card follows the answer that introduces
+   * it. Without it (e.g. a tool called outside a turn), the tool posts right away.
+   */
+  afterTurn?(post: () => Promise<void>): void;
 }
 
 export interface ChatTool<S extends z.ZodType = z.ZodType> {

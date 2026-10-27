@@ -19,6 +19,7 @@ import {
   chatLinearIssueDrafts,
   chatLinkStateUses,
   chatMessages,
+  chatRequestDrafts,
   chatRunEvents,
   chatThreadRuns,
   chatThreads,
@@ -1317,6 +1318,168 @@ export async function expireChatLinearIssueDraft(
         eq(chatLinearIssueDrafts.id, id),
         eq(chatLinearIssueDrafts.status, "pending"),
         lte(chatLinearIssueDrafts.expiresAt, now),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// ── Request drafts ───────────────────────────────────────────────────────────
+
+export type ChatRequestDraft = typeof chatRequestDrafts.$inferSelect;
+export type ChatRequestDraftStatus = ChatRequestDraft["status"];
+
+export interface CreateChatRequestDraftInput {
+  organizationId: string;
+  threadId: string;
+  requestedByUserId: string;
+  requestedByExternalUserId: string;
+  repositoryId: string;
+  title: string;
+  request: string;
+  expiresAt: Date;
+}
+
+/** Stores a `pending` draft (its card isn't posted yet). */
+export async function createChatRequestDraft(
+  db: Database,
+  input: CreateChatRequestDraftInput,
+): Promise<ChatRequestDraft> {
+  const [row] = await db.insert(chatRequestDrafts).values(input).returning();
+  return row!;
+}
+
+/** A draft by ID, or null. */
+export async function getChatRequestDraft(
+  db: Database,
+  id: string,
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .select()
+    .from(chatRequestDrafts)
+    .where(eq(chatRequestDrafts.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Records the chat message of the draft's card. */
+export async function setChatRequestDraftMessage(
+  db: Database,
+  id: string,
+  messageId: string,
+): Promise<void> {
+  await db
+    .update(chatRequestDrafts)
+    .set({ messageId, updatedAt: new Date() })
+    .where(eq(chatRequestDrafts.id, id));
+}
+
+/** A pending draft that hasn't expired at `now`. */
+const actionable = (id: string, now: Date) =>
+  and(
+    eq(chatRequestDrafts.id, id),
+    eq(chatRequestDrafts.status, "pending"),
+    gt(chatRequestDrafts.expiresAt, now),
+  );
+
+/**
+ * Moves a `pending` draft that hasn't expired at `now` to `starting` or `adding` (clearing
+ * its last error), so one click acts once. Null when it isn't pending or has expired.
+ */
+export async function claimChatRequestDraft(
+  db: Database,
+  id: string,
+  to: "starting" | "adding",
+  now: Date,
+  set: { triageNow?: boolean } = {},
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({ ...set, status: to, error: null, updatedAt: now })
+    .where(actionable(id, now))
+    .returning();
+  return row ?? null;
+}
+
+/** A claimed draft whose click didn't go through goes back to `pending`, with why. */
+export async function releaseChatRequestDraft(
+  db: Database,
+  id: string,
+  error: string,
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({ status: "pending", error, updatedAt: new Date() })
+    .where(
+      and(eq(chatRequestDrafts.id, id), inArray(chatRequestDrafts.status, ["starting", "adding"])),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/** Marks a `starting` draft `started` with its request run. */
+export async function completeChatRequestDraftStart(
+  db: Database,
+  id: string,
+  ralphRunId: string,
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({ status: "started", ralphRunId, updatedAt: new Date() })
+    .where(and(eq(chatRequestDrafts.id, id), eq(chatRequestDrafts.status, "starting")))
+    .returning();
+  return row ?? null;
+}
+
+/** Marks an `adding` draft `added` with its work item. */
+export async function completeChatRequestDraftAdd(
+  db: Database,
+  id: string,
+  item: { tracker: string; externalId: string; identifier: string; url: string },
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({
+      status: "added",
+      workItemTracker: item.tracker,
+      workItemExternalId: item.externalId,
+      workItemIdentifier: item.identifier,
+      workItemUrl: item.url,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(chatRequestDrafts.id, id), eq(chatRequestDrafts.status, "adding")))
+    .returning();
+  return row ?? null;
+}
+
+/** Dismisses (Not now) a `pending` draft that hasn't expired at `now`; null otherwise. */
+export async function dismissChatRequestDraft(
+  db: Database,
+  id: string,
+  now: Date,
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({ status: "dismissed", error: null, updatedAt: now })
+    .where(actionable(id, now))
+    .returning();
+  return row ?? null;
+}
+
+/** Marks a `pending` draft that expired by `now` `expired`; null otherwise. */
+export async function expireChatRequestDraft(
+  db: Database,
+  id: string,
+  now: Date,
+): Promise<ChatRequestDraft | null> {
+  const [row] = await db
+    .update(chatRequestDrafts)
+    .set({ status: "expired", error: null, updatedAt: now })
+    .where(
+      and(
+        eq(chatRequestDrafts.id, id),
+        eq(chatRequestDrafts.status, "pending"),
+        lte(chatRequestDrafts.expiresAt, now),
       ),
     )
     .returning();

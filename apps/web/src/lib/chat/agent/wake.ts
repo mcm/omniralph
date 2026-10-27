@@ -447,6 +447,8 @@ async function relayGroup(
     const { defaultDeps } = await import("@/lib/ralph/jobs");
     return defaultDeps(db, organizationId);
   };
+  // What tools post after the turn's text (e.g. a drafted request's card).
+  const afterTurn: Array<() => Promise<void>> = [];
   const tools = toAiTools(
     deps.tools ?? chatTools,
     {
@@ -464,6 +466,9 @@ async function relayGroup(
       getPlaybook: deps.getPlaybook,
       // A tool's own message (a card) doesn't change what the answer posts.
       handedOff: () => undefined,
+      afterTurn: (post) => {
+        afterTurn.push(post);
+      },
     },
     // Nobody to send a link to: the tool's refusal tells the model.
     () => undefined,
@@ -505,6 +510,11 @@ async function relayGroup(
       ? sanitizeCapped(answer, { allowedHosts: target.allowedHosts }, MAX_BODY_CHARS)
       : null;
     if (text) await thread.post({ markdown: text });
+    for (const post of afterTurn.splice(0)) {
+      await post().catch((error: unknown) =>
+        deps.logger.error("Couldn't post a wake-up card", { chatThreadId: chatThread.id, error }),
+      );
+    }
     // Only once the post went out: a failed post leaves the events for another try.
     await markRunEventsProcessed(
       db,

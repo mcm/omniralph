@@ -4061,4 +4061,43 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       await client.end();
     }
   });
+
+  it("creates chat_request_drafts with its foreign keys and thread index (0111)", async () => {
+    const { rows: columns } = await db.$client.query<{ column_name: string; is_nullable: string }>(
+      `select column_name, is_nullable from information_schema.columns
+       where table_name = 'chat_request_drafts' order by column_name`,
+    );
+    expect(columns.filter((c) => c.is_nullable === "NO").map((c) => c.column_name)).toEqual([
+      "created_at",
+      "expires_at",
+      "id",
+      "organization_id",
+      "repository_id",
+      "request",
+      "requested_by_external_user_id",
+      "requested_by_user_id",
+      "status",
+      "thread_id",
+      "title",
+      "updated_at",
+    ]);
+    const { rows: keys } = await db.$client.query<{ column: string; target: string; rule: string }>(
+      `select kcu.column_name as column, ccu.table_name as target, rc.delete_rule as rule
+       from information_schema.referential_constraints rc
+       join information_schema.key_column_usage kcu on kcu.constraint_name = rc.constraint_name
+       join information_schema.constraint_column_usage ccu on ccu.constraint_name = rc.constraint_name
+       where kcu.table_name = 'chat_request_drafts' order by kcu.column_name`,
+    );
+    expect(keys).toEqual([
+      { column: "organization_id", target: "organizations", rule: "CASCADE" },
+      { column: "ralph_run_id", target: "ralph_runs", rule: "SET NULL" },
+      { column: "repository_id", target: "repositories", rule: "CASCADE" },
+      { column: "requested_by_user_id", target: "users", rule: "CASCADE" },
+      { column: "thread_id", target: "chat_threads", rule: "CASCADE" },
+    ]);
+    const { rows: indexes } = await db.$client.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where indexname = 'chat_request_drafts_thread_id_idx'`,
+    );
+    expect(indexes[0]?.indexdef).toContain("(thread_id)");
+  });
 });
