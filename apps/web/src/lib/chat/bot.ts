@@ -402,6 +402,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
         resolveActor,
         ralph: deps.ralph,
         getPlaybook: deps.getPlaybook,
+        tracker: deps.tracker,
         env: deps.env,
         now: deps.now,
         logger,

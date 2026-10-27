@@ -197,6 +197,8 @@ export const askRequestDraftSchema = z.object({
    * sent with the click) or `follow_up` (the card asks "Triage it now?" after the click).
    */
   triageChoice: z.enum(["inline", "follow_up"]),
+  /** What the card asks before its buttons: "Triage it now?" on Slack and Discord; else null. */
+  question: z.string().nullable(),
   /** Start request, Add to backlog (when the repo can take work items), Not now; none after. */
   actions: z.array(askCardActionSchema.extend({ style: z.enum(REQUEST_DRAFT_ACTION_STYLES) })),
   /** What came of it, replacing the buttons; null while it can still be acted on. */
@@ -216,6 +218,26 @@ export const askRequestDraftSchema = z.object({
   error: z.string().nullable(),
 });
 export type RequestDraftView = z.infer<typeof askRequestDraftSchema>;
+
+/**
+ * The `value` the web sends with a request draft's Add to backlog: the draft's ID and the
+ * card's Triage now choice (`triageChoice: "inline"`).
+ */
+export function requestDraftAddValue(draftId: string, triageNow: boolean): string {
+  return `${draftId}:${triageNow ? "triage" : "no_triage"}`;
+}
+
+/** A request draft button's `value`: the draft's ID, and the Triage now choice if it carries one. */
+export function parseRequestDraftValue(
+  value: string,
+): { draftId: string; triageNow: boolean | null } | null {
+  const match = /^([0-9a-f-]{36})(?::(triage|no_triage))?$/i.exec(value);
+  if (!match) return null;
+  return {
+    draftId: match[1]!,
+    triageNow: match[2] === undefined ? null : match[2] === "triage",
+  };
+}
 
 /** A card in a chat: a request or Linear issue draft, or any other card as its title, text and buttons. */
 export const askCardSchema = z.discriminatedUnion("kind", [
