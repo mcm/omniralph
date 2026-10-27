@@ -24,6 +24,8 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { captureChanges } from "@omniralph/db/changes";
+import { QueryClient } from "@tanstack/react-query";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -34,11 +36,15 @@ import {
   type BacklogCounts,
   type BacklogUpNext,
 } from "@/lib/api/backlog";
+import { backlogKeys, queryKeys } from "@/lib/api/keys";
 import { workItemRowSchema, type WorkItemRow } from "@/lib/api/work-items";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as LinearClient from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import type { IssueSummary, WorkflowState } from "@/lib/linear/gateway";
+import { signBody } from "@/lib/linear/webhook";
+import { parseChangeEvent } from "@/lib/live/events";
+import { createLiveInvalidator } from "@/lib/live/invalidations";
 
 vi.mock("server-only", () => ({}));
 
@@ -97,6 +103,8 @@ const upNext = await import("./up-next/route");
 const { dropBacklogCache, resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
 const { BACKLOG_CANDIDATE_CAP, TRACKER_UNAVAILABLE_REASON } =
   await import("@/lib/work-items/backlog");
+const { handleLinearWebhook } = await import("@/lib/linear/ingest");
+const { changeMessage } = await import("@/lib/live/publisher");
 
 type Handler = (
   request: Request,
@@ -588,4 +596,83 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     // A list within the cap isn't cut.
     expect((await getBacklog()).truncated).toBe(false);
   }, 60_000);
+
+  it("shows an item triaged to Todo in Ready to start within 5 seconds of Linear's Issue webhook, without a refresh", async () => {
+    const orgId = await organization("Live");
+    await repo(orgId, "live/api", {});
+    const live = new FakeLinearGateway();
+    const idea = live.add({
+      identifier: "LIV-1",
+      title: "Rough idea",
+      stateType: "backlog",
+      stateName: "Backlog",
+    });
+    await connectLinear(orgId, live);
+    const scope = { organization: orgId };
+    const before = await getBacklog(scope);
+    expect(identifiers(before.groups.needsRefining)).toEqual(["LIV-1"]);
+    expect(before.groups.readyToStart).toEqual([]);
+
+    // The page's queries, as the browser holds them.
+    const backlog = backlogKeys(queryKeys(orgId));
+    const client = new QueryClient();
+    const views = [backlog.list({}, orgId), backlog.counts(orgId), backlog.upNext(orgId)];
+    for (const key of views) client.setQueryData(key, {});
+    const invalidator = createLiveInvalidator(client);
+
+    // Triage finishes in Linear: the item moves to Todo. The cached Backlog still has it in
+    // Needs refining until Linear tells us.
+    await live.setIssueState(idea.id, { type: "unstarted" });
+    expect(identifiers((await getBacklog(scope)).groups.needsRefining)).toEqual(["LIV-1"]);
+
+    const webhookAt = Date.now();
+    const body = JSON.stringify({
+      type: "Issue",
+      action: "update",
+      organizationId: `workspace-${orgId}`,
+      webhookTimestamp: webhookAt,
+      data: { id: idea.id, identifier: "LIV-1" },
+      updatedFrom: { stateId: "state-backlog" },
+    });
+    const { result, changes } = await captureChanges(() =>
+      handleLinearWebhook(
+        new Request("https://omniralph.example.com/api/webhooks/linear", {
+          method: "POST",
+          headers: {
+            "linear-signature": signBody(body, "secret"),
+            "linear-delivery": randomUUID(),
+          },
+          body,
+        }),
+        { db, secret: "secret", handle: async () => {} },
+      ),
+    );
+    expect(result.status).toBe(200);
+
+    // The published event names the work item, by ID only.
+    const messages = changes.map(changeMessage);
+    const message = messages.find((m) => m.event.resource === "work_item");
+    expect(message).toMatchObject({
+      channel: `org:${orgId}:changes`,
+      event: { resource: "work_item", organizationId: orgId, ids: [`linear-${idea.id}`] },
+    });
+    // The browser invalidates the Backlog list, counts and Up next.
+    const event = parseChangeEvent(JSON.parse(JSON.stringify(message!.event)));
+    expect(event).not.toBeNull();
+    invalidator.apply(event!, new Set([orgId]));
+    for (const key of views) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    invalidator.dispose();
+
+    // Their refetch lists it in Ready to start.
+    const after = await getBacklog(scope);
+    expect(identifiers(after.groups.readyToStart)).toEqual(["LIV-1"]);
+    expect(after.groups.needsRefining).toEqual([]);
+    const counted = await call<BacklogCounts>(counts.GET, scope);
+    expect(backlogCountsSchema.parse(counted.body)).toEqual({
+      readyToStart: 1,
+      needsRefining: 0,
+      total: 1,
+    });
+    expect(Date.now() - webhookAt).toBeLessThan(5_000);
+  });
 });

@@ -567,6 +567,26 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
     });
 
+    it("builds in the repo a member chose with Change repo", async () => {
+      const item = ready("Chosen repo", { branchName: "chosen-repo" });
+      expect(
+        (
+          await call(repositoryRoute.PUT, urlId(item), {
+            method: "PUT",
+            body: { repositoryId: repos.portal },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await call(startRoute.POST, urlId(item), { method: "POST" })).status).toBe(200);
+      await deliverSession(item, "session-chosen-repo");
+
+      const run = (await getRunBySession(db, "session-chosen-repo"))!;
+      expect(run).toMatchObject({
+        repositoryId: repos.portal,
+        routedBy: "your choice in Omniralph (customer-portal)",
+      });
+    });
+
     it("refuses an item that needs refining, and starts a blocked one", async () => {
       const unrefined = refine("Rough idea");
       expect(await call(startRoute.POST, urlId(unrefined), { method: "POST" })).toEqual({
