@@ -284,6 +284,12 @@
   color: var(--or-text);
 }
 
+.or-seg__option--fail,
+.or-seg__option--fail:hover:not(:disabled),
+.or-seg__option--fail[aria-checked="true"] {
+  color: var(--or-fail);
+}
+
 .or-seg__option:disabled {
   color: var(--or-ter);
   cursor: not-allowed;

@@ -150,7 +150,9 @@ export const LIVE_INVALIDATIONS = {
       : [keys.runs.all, keys.inbox.all],
   inbox_state: (_event, keys) => [keys.inbox.all],
   webhook_event: (event, keys) => [
-    keys.deliveries.all,
+    // The delivery's own detail and its connection's log (`ids` name both, and a replay's
+    // original), never another connection's.
+    ...event.ids.map((id) => keys.deliveries.detail(id)),
     // Connection health shows the latest deliveries; its problems are repositories' problems.
     keys.connections.all,
     // Settings' connections count each connection's failed deliveries not yet replayed.

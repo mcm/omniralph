@@ -9,7 +9,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "@/lib/api/connections";
-import type { DeliveryDetail } from "@/lib/api/deliveries";
+import type { DeliveryDetail, DeliveryRow } from "@/lib/api/deliveries";
 import type { NavIndicators } from "@/lib/api/nav-indicators";
 import { navItems } from "@/lib/navigation";
 import { useReplayDelivery } from "@/screens/settings/replay";
@@ -109,6 +109,15 @@ function replayAnswer(outcome: DeliveryDetail["outcome"]): DeliveryDetail {
   };
 }
 
+/** The failed delivery the Replay button replays. */
+const { payload: _payload, replays: _replays, ...replayed } = replayAnswer("failed");
+const failedDelivery: DeliveryRow = {
+  ...replayed,
+  id: FAILED_DELIVERY_ID,
+  replayOfId: null,
+  replayedBy: null,
+};
+
 let indicators: NavIndicators;
 let connections: Connection[];
 let replayOutcome: DeliveryDetail["outcome"];
@@ -151,7 +160,7 @@ afterEach(() => {
 function ReplayButton() {
   const replay = useReplayDelivery();
   return (
-    <button type="button" onClick={() => replay.mutate({ id: FAILED_DELIVERY_ID })}>
+    <button type="button" onClick={() => replay.mutate(failedDelivery)}>
       Replay
     </button>
   );

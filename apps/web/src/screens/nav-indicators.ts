@@ -32,37 +32,45 @@ export function useNavIndicators() {
   });
 }
 
-/** `indicators` with one of `connectionId`'s failed deliveries replayed successfully. */
-export function withoutFailedDelivery(
+/**
+ * `indicators` with `delta` more (or, negative, fewer) of `connectionId`'s failed deliveries
+ * not yet replayed: the Settings dot's count and the connection's entry, which leaves at zero.
+ */
+export function withFailedDeliveries(
   indicators: NavIndicators,
   connectionId: string,
+  delta: number,
 ): NavIndicators {
-  const entry = indicators.settings.byConnection.find((c) => c.id === connectionId);
-  if (!entry) return indicators;
+  const { byConnection } = indicators.settings;
+  const entry = byConnection.find((c) => c.id === connectionId);
+  const failed = Math.max(0, (entry?.failed ?? 0) + delta);
+  const change = failed - (entry?.failed ?? 0);
+  if (change === 0) return indicators;
+  const rest = entry ? byConnection : [...byConnection, { id: connectionId, failed }];
   return {
     ...indicators,
     settings: {
-      failedDeliveries: Math.max(0, indicators.settings.failedDeliveries - 1),
-      byConnection: indicators.settings.byConnection.flatMap((c) =>
-        c.id !== connectionId ? [c] : c.failed > 1 ? [{ ...c, failed: c.failed - 1 }] : [],
+      failedDeliveries: Math.max(0, indicators.settings.failedDeliveries + change),
+      byConnection: rest.flatMap((c) =>
+        c.id !== connectionId ? [c] : failed > 0 ? [{ ...c, failed }] : [],
       ),
     },
   };
 }
 
 /**
- * Writes a successful replay of one of `connectionId`'s failed deliveries into the cache:
- * the Settings and connection dots (every scope's nav indicators) and the connection's
- * "Failed N" count drop it at once. A replay that failed again is a new unreplayed failure,
- * so nothing changes then.
+ * Writes `delta` more (or fewer) of `connectionId`'s failed deliveries not yet replayed into
+ * the cache: the Settings and connection dots (every scope's nav indicators) and the
+ * connection's "Failed N" count. A replay lowers it at once, and raises it back when the
+ * replay failed again (a new unreplayed failure).
  */
-export async function writeReplayedDelivery(
+export async function writeFailedDeliveries(
   cache: MutationCache,
-  { connectionId, failed }: { connectionId: string; failed: boolean },
+  connectionId: string,
+  delta: number,
 ): Promise<void> {
-  if (failed) return;
   await cache.set<NavIndicators>(cache.keys.navIndicators.all, (previous) =>
-    previous ? withoutFailedDelivery(previous, connectionId) : previous,
+    previous ? withFailedDeliveries(previous, connectionId, delta) : previous,
   );
   await cache.set<ConnectionList>(connectionKeys(cache.keys).list, (previous) =>
     previous
@@ -70,7 +78,10 @@ export async function writeReplayedDelivery(
           ...previous,
           connections: previous.connections.map((connection) =>
             connection.id === connectionId
-              ? { ...connection, failedDeliveries: Math.max(0, connection.failedDeliveries - 1) }
+              ? {
+                  ...connection,
+                  failedDeliveries: Math.max(0, connection.failedDeliveries + delta),
+                }
               : connection,
           ),
         }

@@ -86,16 +86,18 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([keys.inbox.all]);
   });
 
-  it("webhook_event: deliveries, connection health, Settings' failed counts and dots and the run it started", () => {
-    expect(liveInvalidations(event({ resource: "webhook_event" }))).toEqual([
-      keys.deliveries.all,
+  it("webhook_event: its connection's deliveries, connection health, Settings' failed counts and dots and the run it started", () => {
+    const CONNECTION = "66666666-6666-4666-8666-666666666666";
+    expect(liveInvalidations(event({ resource: "webhook_event", ids: [ID, CONNECTION] }))).toEqual([
+      keys.deliveries.detail(ID),
+      keys.deliveries.detail(CONNECTION),
       keys.connections.all,
       connectionKeys(keys).list,
       keys.navIndicators.all,
       ...repositoryViews,
     ]);
-    expect(liveInvalidations(event({ resource: "webhook_event", runId: RUN }))).toEqual([
-      keys.deliveries.all,
+    expect(liveInvalidations(event({ resource: "webhook_event", ids: [ID], runId: RUN }))).toEqual([
+      keys.deliveries.detail(ID),
       keys.connections.all,
       connectionKeys(keys).list,
       keys.navIndicators.all,

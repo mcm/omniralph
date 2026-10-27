@@ -44,6 +44,7 @@ import { navigateTo, openInNewTab } from "@/lib/navigate";
 import { useConnections } from "./queries";
 import { SETTINGS_PATH } from "./settings-nav";
 import { SettingsPage } from "./settings-page";
+import { WebhookDeliveriesCard } from "./webhook-deliveries-card";
 import { WorkItemStatesCard } from "./work-item-states-card";
 
 /** Shown for a connection the organization doesn't have (removed, or another organization's). */
@@ -314,6 +315,11 @@ function ConnectionView({
           history={connection.history}
         />
       ) : null}
+      {connection.provider === "github" ||
+      connection.provider === "gitlab" ||
+      connection.provider === "linear" ? (
+        <WebhookDeliveriesCard connection={connection} />
+      ) : null}
       {isAdmin && connection.provider === "gitlab" ? (
         <ReplaceTokenSheet connection={connection} open={editing} onOpenChange={setEditing} />
       ) : null}
@@ -337,7 +343,8 @@ function ConnectionView({
  * A connection's page (Design board Settings): the provider's mark and name with badges for
  * the host and account, the admins' toolbar (Rotate token for GitLab; ⋯ Edit connection and
  * Disconnect…), the summary (Token, Repos using it or Linked accounts, Used as), the token's
- * problems and, for Linear, the work item states. One the organization doesn't have (removed,
+ * problems, for Linear the work item states and, for code hosts and Linear, the webhook
+ * deliveries with Replay (Slack and Discord deliveries aren't logged). One the organization doesn't have (removed,
  * or another organization's) says so; the list is live, so another admin's rotate, the daily
  * check or a disconnect elsewhere shows at once.
  */

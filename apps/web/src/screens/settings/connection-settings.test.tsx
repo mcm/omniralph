@@ -207,6 +207,12 @@ beforeEach(() => {
     [`DELETE /api/ui/integrations/slack/${IDS.slack}`]: { ok: true },
     [`DELETE /api/ui/integrations/discord/${IDS.discord}`]: { ok: true },
     [`POST /api/ui/repositories/${REPO_ID}/webhook`]: { ok: true },
+    [`GET /api/ui/connections/scm/${IDS.github}/deliveries`]: { deliveries: [], nextCursor: null },
+    [`GET /api/ui/connections/scm/${IDS.gitlab}/deliveries`]: { deliveries: [], nextCursor: null },
+    [`GET /api/ui/connections/linear/${IDS.linear}/deliveries`]: {
+      deliveries: [],
+      nextCursor: null,
+    },
     "GET /api/ui/settings-history": () =>
       jsonResponse({ latest: history, entries: [history], next: null }),
   });
