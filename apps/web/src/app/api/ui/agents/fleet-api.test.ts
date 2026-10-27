@@ -549,6 +549,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
         run: { id: epicId, kind: "epic", title: "Billing exports" },
         repository: { id: alpha.repoIds[1], provider: "gitlab", fullPath: "acme/billing" },
         workItem: {
+          id: "linear-issue-epic",
           tracker: "linear",
           identifier: "SOC-1700",
           url: "https://linear.app/acme/issue/SOC-1700/billing-exports",
