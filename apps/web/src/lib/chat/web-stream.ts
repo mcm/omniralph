@@ -43,7 +43,17 @@ export const WEB_STREAM_ERROR = "Sorry, something went wrong. Please try again."
  */
 export function webEventStream(
   run: () => Promise<void>,
-  options: { onError?: (error: unknown) => void } = {},
+  options: {
+    onError?: (error: unknown) => void;
+    /**
+     * Completes an event before it's written (the route adds what the view model knows to a
+     * `message`). Events stay in the order they were sent; a failure writes the event as sent.
+     */
+    prepare?: <K extends AskStreamEventName>(
+      name: K,
+      data: AskStreamEvents[K],
+    ) => Promise<AskStreamEvents[K]> | AskStreamEvents[K];
+  } = {},
 ): { body: ReadableStream<Uint8Array>; finished: Promise<void> } {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -56,14 +66,30 @@ export function webEventStream(
       closed = true;
     },
   });
+  const write: WebStreamWriter["send"] = (name, data) => {
+    if (closed) return;
+    try {
+      controller.enqueue(encoder.encode(formatSseEvent(name, data)));
+    } catch {
+      closed = true;
+    }
+  };
+  const { prepare } = options;
+  // Prepared events are written one after the other, in the order they were sent.
+  let queue: Promise<void> = Promise.resolve();
   const writer: WebStreamWriter = {
     send(name, data) {
-      if (closed) return;
-      try {
-        controller.enqueue(encoder.encode(formatSseEvent(name, data)));
-      } catch {
-        closed = true;
-      }
+      if (!prepare) return write(name, data);
+      queue = queue.then(async () => {
+        if (closed) return;
+        let prepared = data;
+        try {
+          prepared = await prepare(name, data);
+        } catch (error) {
+          options.onError?.(error);
+        }
+        write(name, prepared);
+      });
     },
   };
   const finished = (async () => {
@@ -73,7 +99,8 @@ export function webEventStream(
       options.onError?.(error);
       writer.send("error", { message: WEB_STREAM_ERROR });
     }
-    writer.send("done", {});
+    await queue;
+    write("done", {});
     if (!closed) {
       closed = true;
       try {

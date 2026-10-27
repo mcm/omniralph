@@ -113,13 +113,24 @@ function previewFields(draft: Draft): CardChild[] {
   return [Fields(fields)];
 }
 
+/** A draft's title and description preview as its cards show them (sanitized: it's the model's text). */
+export function draftPreview(draft: Pick<Draft, "title" | "description">): {
+  title: string;
+  description: string;
+} {
+  return {
+    title: shownTitle(draft),
+    description: draft.description.trim()
+      ? sanitizeCapped(draft.description, { allowedHosts: [] }, MAX_PREVIEW_CHARS)
+      : "_No description_",
+  };
+}
+
 /** The pending draft: preview with **Create** / **Cancel**. */
 export function draftCard(draft: Draft): CardElement {
-  const description = draft.description.trim()
-    ? sanitizeCapped(draft.description, { allowedHosts: [] }, MAX_PREVIEW_CHARS)
-    : "_No description_";
+  const { title, description } = draftPreview(draft);
   return Card({
-    title: `New Linear issue: ${shownTitle(draft)}`,
+    title: `New Linear issue: ${title}`,
     children: [
       ...previewFields(draft),
       CardText(description),

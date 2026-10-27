@@ -260,6 +260,7 @@ describe.skipIf(!databaseAvailable)("the Ask message view model", () => {
       run: null,
       files: [],
       workItems: [],
+      card: null,
     });
     const blob = "https://github.com/acme/portal/blob/release/2.0";
     expect(om).toEqual({
@@ -276,6 +277,7 @@ describe.skipIf(!databaseAvailable)("the Ask message view model", () => {
         { path: "README.md", startLine: null, endLine: null, url: `${blob}/README.md` },
       ],
       workItems: [eng12],
+      card: null,
     });
     // One lookup for the answer, with every identifier it mentions; none for the question.
     expect(resolve).toHaveBeenCalledTimes(1);

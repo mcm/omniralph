@@ -242,6 +242,16 @@ of its members starts a chat; it is never listed under **Settings › Connection
   run, else to the tracker). While the question runs, the chat says that Om is reading the repo,
   with a live count of the files read. A failed question, one that ran out of budget, and a coding
   run's news still go through Om, as on Slack and Discord.
+- **Fixed repo and branch.** A new chat offers the organization's connected repos with Ask on,
+  or all of its repos. The chat's title is its first message (at most 60 characters), its repo
+  can't change once it starts, and its branch is the repo's default branch when it started (the
+  last one stored, when the code host can't be reached).
+
+The control panel's API for it lives under `/api/ui/ask` (`apps/web/src/lib/api/ask.ts`): the
+member's chats (`GET /chats`, newest activity first), a new chat with its first message
+(`POST /chats`), a chat with its messages, cards and in-flight question (`GET /chats/{id}`), a
+follow-up (`POST /chats/{id}/messages`) and the repos a new chat can pick (`GET /repositories`).
+Sending answers with the turn's server-sent events (`apps/web/src/lib/ask/sse.ts`).
 
 ## Om from chat
 
