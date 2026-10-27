@@ -30,7 +30,7 @@ export const POST = apiHandler<"member", typeof runAnswerRequestSchema, undefine
     await answerQuestion(db, run, body, userDisplayName(user));
     // The index entry carries the run's status: read it again.
     const current = (await getRunIndexEntry(db, run.id)) ?? run;
-    const detail = await loadRunDetail(db, current, organization);
+    const detail = await loadRunDetail(db, current, organization, user.id);
     if (!detail) throw ApiRouteError.notFound(NOT_FOUND);
     return detail;
   },

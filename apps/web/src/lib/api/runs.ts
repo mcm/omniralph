@@ -1,4 +1,4 @@
-import type { InboxQuestionKind, RunKind, RunOrigin, RunStatus } from "@omniralph/db";
+import type { ChatPlatform, InboxQuestionKind, RunKind, RunOrigin, RunStatus } from "@omniralph/db";
 import { FEEDBACK_REASONS } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
@@ -340,6 +340,25 @@ export const runDetailsSchema = z.object({
 });
 export type RunDetails = z.infer<typeof runDetailsSchema>;
 
+/** Client-safe copy of the chat platforms (`ChatPlatform` in `@omniralph/db`). */
+export const CHAT_PLATFORMS = [
+  "slack",
+  "discord",
+  "web",
+] as const satisfies readonly ChatPlatform[];
+
+/**
+ * The chat an ask run, or a run started from a chat, came from. `href` opens it in Ask
+ * (`/ask/{threadId}`) for the member who started a web chat; null for anyone else's web chat
+ * and for Slack and Discord threads.
+ */
+export const runChatSchema = z.object({
+  threadId: z.string(),
+  platform: z.enum(CHAT_PLATFORMS),
+  href: z.string().nullable(),
+});
+export type RunChat = z.infer<typeof runChatSchema>;
+
 /**
  * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its reason, steps (in
  * order), attempts (newest first) and details.
@@ -353,6 +372,8 @@ export const runDetailSchema = runRowSchema.extend({
   steps: z.array(runStepSchema),
   attempts: z.array(runAttemptSchema),
   details: runDetailsSchema,
+  /** The chat it came from; null for a run that didn't come from one. */
+  chat: runChatSchema.nullable(),
 });
 export type RunDetail = z.infer<typeof runDetailSchema>;
 

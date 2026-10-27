@@ -35,7 +35,8 @@ export const RUN_BUSY_MESSAGE = "Om is already working on this run.";
 const NOT_FOUND = "That run doesn't exist.";
 
 /**
- * Retries `run` for a user who is `organization.role` there; answers its detail afterwards
+ * Retries `run` for the user `by` (their ID and the name notes give), who is
+ * `organization.role` there; answers its detail afterwards
  * (a review's: the review run of the current head), with a `warning` when nothing new started.
  */
 export async function retryRun(
@@ -43,9 +44,10 @@ export async function retryRun(
   run: RunIndexEntry,
   organization: ScopedOrganization,
   target: RunRetryTarget,
-  retriedBy: string | undefined,
+  by: { userId: string; name: string | undefined },
 ): Promise<RunRetryResult> {
-  const detail = await loadRunDetail(db, run, organization);
+  const retriedBy = by.name;
+  const detail = await loadRunDetail(db, run, organization, by.userId);
   if (!detail) throw ApiRouteError.notFound(NOT_FOUND);
   if (detail.attempts.some((a) => a.status === "queued" || a.status === "running")) {
     throw new ApiRouteError(409, RUN_BUSY_MESSAGE, "run_busy");
@@ -76,7 +78,7 @@ export async function retryRun(
   // The index entry carries the run's status: read it again.
   const current = (await getRunIndexEntry(db, retried.id)) ?? retried;
   const fresh =
-    (await loadRunDetail(db, current, organization)) ??
+    (await loadRunDetail(db, current, organization, by.userId)) ??
     (current.id === run.id ? detail : notFound());
   return { ...fresh, warning };
 }

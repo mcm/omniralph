@@ -246,6 +246,11 @@ of its members starts a chat; it is never listed under **Settings › Connection
   or all of its repos. The chat's title is its first message (at most 60 characters), its repo
   can't change once it starts, and its branch is the repo's default branch when it started (the
   last one stored, when the code host can't be reached).
+- **Back from Runs.** A code question shows in Runs as an Ask run titled with the question (one
+  line, at most 120 characters). Its run detail, and that of a run started from a chat, names the
+  chat it came from (`chat` in `GET /api/ui/runs/{id}`); for the member who started a web chat, the
+  run's ⋯ menu has **Open chat**, back to it. Other members, and Slack and Discord threads, get no
+  link.
 
 The control panel's API for it lives under `/api/ui/ask` (`apps/web/src/lib/api/ask.ts`): the
 member's chats (`GET /chats`, newest activity first), a new chat with its first message

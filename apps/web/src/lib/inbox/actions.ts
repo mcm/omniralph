@@ -124,7 +124,7 @@ export async function actOnInboxItem(
       }
       const entry = await getRunIndexEntry(db, runOf(item));
       if (!entry) throw ApiRouteError.notFound(ITEM_HANDLED_MESSAGE);
-      const detail = await retryRun(db, entry, organization, { kind: "run" }, actor.name);
+      const detail = await retryRun(db, entry, organization, { kind: "run" }, actor);
       return result({ runId: detail.id, warning: detail.warning });
     }
   }

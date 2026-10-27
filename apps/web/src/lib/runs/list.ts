@@ -15,8 +15,10 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { truncate } from "@/lib/ralph/display";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 
-/** Longest title a row carries (an ask's question, a chat run's request). */
+/** Longest title a row carries (a chat run's request). */
 export const RUN_TITLE_MAX_LENGTH = 200;
+/** Longest title an ask's row carries: its question, on one line. */
+export const ASK_RUN_TITLE_MAX_LENGTH = 120;
 
 /** `{createdAt, id}` of the last row, as an opaque base64url string. */
 export function encodeRunCursor(cursor: RunCursor): string {
@@ -104,7 +106,9 @@ export function runRow(entry: RunListEntry, organization: ScopedOrganization): R
     status: entry.status,
     origin: entry.origin,
     organization: { id: organization.id, name: organization.name, role: organization.role },
-    title: title ? truncate(title, RUN_TITLE_MAX_LENGTH) : fallbackTitle(entry),
+    title: title
+      ? truncate(title, entry.kind === "ask" ? ASK_RUN_TITLE_MAX_LENGTH : RUN_TITLE_MAX_LENGTH)
+      : fallbackTitle(entry),
     workItem: entry.workItem?.issueId
       ? {
           id: workItemUrlId("linear", entry.workItem.issueId),

@@ -26,7 +26,10 @@ export const POST = apiHandler<"member", undefined, undefined, Params>(
       notFoundMessage: "That run doesn't exist.",
     });
     const { target } = await retryBody(request);
-    return retryRun(getDb(), run, organization, target, userDisplayName(user));
+    return retryRun(getDb(), run, organization, target, {
+      userId: user.id,
+      name: userDisplayName(user),
+    });
   },
 );
 

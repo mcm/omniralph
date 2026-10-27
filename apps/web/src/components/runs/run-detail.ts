@@ -1,5 +1,5 @@
 import type { MenuItem, StatusTone } from "@omniralph/ui";
-import { IconCopy, IconExternalLink, IconPlayerStop } from "@tabler/icons-react";
+import { IconCopy, IconExternalLink, IconMessage, IconPlayerStop } from "@tabler/icons-react";
 import type { RunDetail, RunRetryTarget, RunStep } from "@/lib/api/runs";
 import { stepState } from "./progress";
 import { RUN_STATUS_LABELS, RUN_STATUS_TONES } from "./run-status";
@@ -119,20 +119,23 @@ export interface RunMenuHandlers {
   onCopyBranch: () => void;
   /** Asks to confirm, then stops the run. */
   onStop: () => void;
-  /** Items other screens add first (the Backlog's "View PRD", Ask's "Open chat"). */
+  /** Items other screens add first (the Backlog's "View PRD"). */
   leading?: readonly MenuItem[];
 }
 
 /**
  * The run detail's ⋯ menu, the single source of its entries: the `leading` items other
- * screens add, Open in Linear (the work item) and Copy branch, then, after a divider, "Stop
- * run" (destructive; `onStop` confirms) when the run can be stopped.
+ * screens add, Open chat (the caller's own Ask chat the run came from), Open in Linear (the
+ * work item) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
+ * confirms) when the run can be stopped.
  */
 export function runMenuItems(
-  detail: Pick<RunDetail, "workItem" | "branch" | "details">,
+  detail: Pick<RunDetail, "workItem" | "branch" | "details" | "chat">,
   { onCopyBranch, onStop, leading = [] }: RunMenuHandlers,
 ): MenuItem[] {
   const items: MenuItem[] = [...leading];
+  if (detail.chat?.href)
+    items.push({ label: "Open chat", icon: IconMessage, href: detail.chat.href });
   if (detail.workItem?.url) {
     items.push({ label: "Open in Linear", icon: IconExternalLink, href: detail.workItem.url });
   }

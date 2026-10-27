@@ -18,7 +18,7 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
     const { run, organization } = await requireRunAccess(user, params.id, {
       notFoundMessage: "That run doesn't exist.",
     });
-    const detail = await loadRunDetail(getDb(), run, organization);
+    const detail = await loadRunDetail(getDb(), run, organization, user.id);
     if (!detail) throw ApiRouteError.notFound("That run doesn't exist.");
     return detail;
   },

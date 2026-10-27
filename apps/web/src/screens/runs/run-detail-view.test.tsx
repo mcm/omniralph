@@ -388,6 +388,22 @@ describe("the toolbar and menu", () => {
     expect(within(menu).getAllByRole("separator")).toHaveLength(1);
   });
 
+  it("offers Open chat before the divider when the run came from the user's own Ask chat", async () => {
+    detail = { ...detail, chat: { threadId: "chat-1", platform: "web", href: "/ask/chat-1" } };
+    renderRun();
+    await loaded();
+    const menu = await openMenu();
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Open chat",
+      "Open in Linear",
+      "Copy branch",
+      "Stop run",
+    ]);
+    expect(items[0]!.getAttribute("href")).toBe("/ask/chat-1");
+    expect(within(menu).getAllByRole("separator")).toHaveLength(1);
+  });
+
   it("renders a menu item's element through useRunDetailOverlay, and closes it on dismiss", async () => {
     function TestSheet() {
       const overlay = useRunDetailOverlay();
