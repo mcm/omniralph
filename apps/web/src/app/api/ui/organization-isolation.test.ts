@@ -298,7 +298,6 @@ const organizationLeave = await import("./organization/leave/route");
 const organizationSwitch = await import("./organizations/switch/route");
 const chatAccounts = await import("./chat-accounts/route");
 const chatAccountUnlink = await import("./chat-accounts/unlink/route");
-const integrations = await import("./integrations/route");
 const linearIntegration = await import("./integrations/linear/route");
 const slackIntegration = await import("./integrations/slack/[id]/route");
 const discordIntegration = await import("./integrations/discord/[id]/route");
@@ -3536,33 +3535,33 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
     });
 
-    it("shows each organization's own integrations to its admins only, and none of the other's", async () => {
+    it("lists each organization's own Linear, Slack and Discord connections to its members, and none of the other's", async () => {
       for (const [own, other] of [
         [a, b],
         [b, a],
       ] as const) {
-        state.userId = own.adminId;
-        const { status, body } = await call(integrations.GET);
-        expect(status).toBe(200);
-        expect(body).toMatchObject({
-          linear: { workspaceId: `${own.name}-linear` },
-          slack: [{ id: extra(own).slackId, installedBy: `admin@${own.name}.io` }],
-          discord: [{ id: extra(own).discordId }],
-        });
-        const connections = (
-          body.chatPlaybooks as { connections: { id: string; channels: unknown[] }[] }
-        ).connections;
-        expect(connections.map((c) => [c.id, c.channels.length])).toEqual(
-          expect.arrayContaining([
-            [extra(own).slackId, 1],
-            [extra(own).discordId, 1],
-          ]),
-        );
-        const json = JSON.stringify(body);
-        for (const marker of markersOf(other)) expect(json).not.toContain(marker);
-
-        state.userId = own.memberId;
-        expect(await call(integrations.GET)).toMatchObject({ status: 403 });
+        for (const userId of [own.memberId, own.adminId]) {
+          state.userId = userId;
+          const { status, body } = await call(connectionList.GET);
+          expect(status).toBe(200);
+          const rows = (body as { connections: { provider: string; id: string; name: string }[] })
+            .connections;
+          expect(
+            rows
+              .filter((row) => ["linear", "slack", "discord"].includes(row.provider))
+              .map((row) => [row.provider, row.name])
+              .sort(),
+          ).toEqual([
+            ["discord", `${own.name}-discord workspace`],
+            ["linear", `${own.name}-linear workspace`],
+            ["slack", `${own.name}-slack workspace`],
+          ]);
+          expect(rows.map((row) => row.id)).toEqual(
+            expect.arrayContaining([extra(own).slackId, extra(own).discordId]),
+          );
+          const json = JSON.stringify(body);
+          for (const marker of markersOf(other)) expect(json).not.toContain(marker);
+        }
       }
     });
 
@@ -3701,10 +3700,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         status: 400,
         body: { error: "No Linear workspace is connected." },
       });
-      expect(await call(integrations.GET)).toMatchObject({
-        status: 200,
-        body: { linear: null, slack: [], discord: [{ id: extra(a).discordId }] },
-      });
+      const { body: listed } = await call(connectionList.GET);
+      expect(
+        (listed as { connections: { provider: string; id: string }[] }).connections
+          .filter((row) => ["linear", "slack", "discord"].includes(row.provider))
+          .map((row) => [row.provider, row.id]),
+      ).toEqual([["discord", extra(a).discordId]]);
 
       // The other organization keeps everything.
       expect(await getIntegration(db, b.orgId, "linear")).not.toBeNull();

@@ -196,3 +196,16 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Connections › Add connection */
+.or-add-connection__mark {
+  display: inline-flex;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
+.or-add-connection__description {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}

@@ -93,26 +93,6 @@ export const SEVERITY_VARIANTS: Record<keyof ReviewRow["findingCounts"], Severit
   info: "quiet",
 };
 
-/** An integration's state: a saved connection the server can't use (app not configured) warns. */
-export type IntegrationState = "connected" | "unconfigured" | "disconnected";
-
-export function integrationState(connected: boolean, configured: boolean): IntegrationState {
-  if (!connected) return "disconnected";
-  return configured ? "connected" : "unconfigured";
-}
-
-export const INTEGRATION_STATE_VARIANTS: Record<IntegrationState, IntentVariant> = {
-  connected: "success",
-  unconfigured: "warning",
-  disconnected: "neutral",
-};
-
-export const INTEGRATION_STATE_LABELS: Record<IntegrationState, string> = {
-  connected: "Connected",
-  unconfigured: "Connected · not configured",
-  disconnected: "Not connected",
-};
-
 /**
  * Story outcomes on the analytics chart. Both completions are `success` in
  * meaning; the one that needed retries takes `accent` so the two stay apart.

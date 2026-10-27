@@ -22,10 +22,15 @@ import {
   discordRedirectUri,
   exchangeDiscordCode,
 } from "./discord-oauth";
-import { INTEGRATIONS_PATH, requireInstallAdmin } from "./install-auth";
+import {
+  connectedPath,
+  connectNoticePath,
+  type ConnectNotice,
+} from "@/lib/connections/connect-notices";
+import { requireInstallAdmin } from "./install-auth";
 
 /**
- * Settings › Integrations › Connect Discord: sends an admin to Discord's
+ * Settings › Add connection › Discord › Connect: sends an admin to Discord's
  * add-bot screen with a signed `state` naming their active organization,
  * bound to them and to this browser.
  */
@@ -34,7 +39,7 @@ export async function discordConnect(request: NextRequest): Promise<NextResponse
   const admin = await requireInstallAdmin(to);
   if (admin instanceof NextResponse) return admin;
   const config = discordOAuthConfig();
-  if (!config) return to(`${INTEGRATIONS_PATH}?discord=not_configured`);
+  if (!config) return to(connectNoticePath("discord", "not_configured"));
 
   const { state, nonce } = await createSignedState(DISCORD_OAUTH_STATE_PURPOSE, {
     userId: admin.id,
@@ -76,7 +81,7 @@ export async function discordCallback(
     response.cookies.delete({ name: DISCORD_STATE_COOKIE, path: DISCORD_CALLBACK_PATH });
     return response;
   };
-  const notice = (value: string) => to(`${INTEGRATIONS_PATH}?discord=${value}`);
+  const notice = (value: ConnectNotice) => to(connectNoticePath("discord", value));
   const admin = await requireInstallAdmin(to);
   if (admin instanceof NextResponse) return admin;
 
@@ -141,5 +146,5 @@ export async function discordCallback(
     return notice("error");
   }
   if (saved === "other_organization") return notice("other_organization");
-  return notice("connected");
+  return to(connectedPath("discord", saved.id));
 }

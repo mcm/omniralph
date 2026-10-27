@@ -280,12 +280,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    name: "settings-integrations",
-    path: "/settings/integrations",
-    page: "(app)/(legacy-settings)/settings/integrations/page.tsx",
-    auth: "signed-in",
-  },
-  {
     name: "settings-advanced-routing-edit",
     path: "/settings/advanced/routing",
     page: "(app)/settings/advanced/routing/page.tsx",

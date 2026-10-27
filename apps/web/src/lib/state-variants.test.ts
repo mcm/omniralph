@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  integrationState,
-  INTEGRATION_STATE_VARIANTS,
   JOB_STATUS_VARIANTS,
   RALPH_RUN_STATUS_VARIANTS,
   RALPH_STORY_STATUS_VARIANTS,
@@ -79,13 +77,6 @@ describe("state variants", () => {
     for (const severity of FINDING_SEVERITIES) {
       expect(running.has(SEVERITY_VARIANTS[severity]), severity).toBe(false);
     }
-  });
-
-  it("warns about a saved integration the server isn't configured for", () => {
-    expect(integrationState(true, true)).toBe("connected");
-    expect(integrationState(true, false)).toBe("unconfigured");
-    expect(integrationState(false, false)).toBe("disconnected");
-    expect(INTEGRATION_STATE_VARIANTS.unconfigured).toBe("warning");
   });
 });
 

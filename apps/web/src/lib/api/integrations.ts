@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { isoDate } from "./schemas";
 
-/** Settings › Integrations (`/api/ui/integrations/**`). OAuth connect/callback stay under `/api/integrations`. */
+/**
+ * Chat settings and disconnects (`/api/ui/integrations/**`). OAuth connect/callback stay under
+ * `/api/integrations`.
+ */
 
 const slotPlaybooks = <T extends z.ZodType>(playbook: T) =>
   z.object({ ask: playbook, startWork: playbook });
@@ -43,46 +45,6 @@ export const chatPlaybooksSettingsSchema = z.object({
   ),
 });
 export type ChatPlaybooksSettings = z.infer<typeof chatPlaybooksSettingsSchema>;
-
-const chatConnectionSchema = z.object({
-  /** The chat connection's ID. */
-  id: z.string(),
-  name: z.string(),
-  /** Name or email of the admin who installed it, null when unknown. */
-  installedBy: z.string().nullable(),
-  connectedAt: isoDate,
-});
-
-export const slackWorkspaceSchema = chatConnectionSchema.extend({
-  /** Slack team ID (or enterprise ID for an org-wide install). */
-  workspaceId: z.string(),
-});
-export type SlackWorkspace = z.infer<typeof slackWorkspaceSchema>;
-
-export const discordServerSchema = chatConnectionSchema.extend({
-  /** Discord guild ID. */
-  serverId: z.string(),
-});
-export type DiscordServer = z.infer<typeof discordServerSchema>;
-
-export const linearConnectionSchema = z.object({
-  name: z.string(),
-  workspaceId: z.string(),
-  connectedAt: isoDate,
-});
-export type LinearConnection = z.infer<typeof linearConnectionSchema>;
-
-/** `GET /api/ui/integrations` (admins): what is connected and whether this server can use it. */
-export const integrationsSettingsSchema = z.object({
-  linear: linearConnectionSchema.nullable(),
-  linearConfigured: z.boolean(),
-  slack: z.array(slackWorkspaceSchema),
-  slackConfigured: z.boolean(),
-  discord: z.array(discordServerSchema),
-  discordConfigured: z.boolean(),
-  chatPlaybooks: chatPlaybooksSettingsSchema,
-});
-export type IntegrationsSettings = z.infer<typeof integrationsSettingsSchema>;
 
 /** `PUT /api/ui/integrations/chat-tasks`: the organization's chat playbooks. */
 export interface ChatPlaybooksInput {

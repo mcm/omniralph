@@ -125,7 +125,7 @@ describe("GET /api/integrations/linear/connect", () => {
 
     // The round trip with this state and cookie is accepted.
     const done = await callbackWith(`code=code-1&state=${signedState}`, cookie!.value);
-    expect(location(done)).toBe("/settings/integrations?linear=connected");
+    expect(location(done)).toBe("/settings/connections/linear/integration-1?linear=connected");
   });
 
   it("refuses members and signed-out users", async () => {
@@ -144,7 +144,7 @@ describe("GET /api/integrations/linear/connect", () => {
     try {
       expect(
         location(await connect(new NextRequest(`${BASE}/api/integrations/linear/connect`))),
-      ).toBe("/settings/integrations?linear=not_configured");
+      ).toBe("/settings/connections/new?linear=not_configured");
     } finally {
       process.env.LINEAR_CLIENT_ID = "client-1";
     }
@@ -155,7 +155,7 @@ describe("GET /api/integrations/linear/callback", () => {
   it("exchanges the code and stores the tokens and workspace", async () => {
     const { state: signed, nonce } = await createOAuthState("admin-1");
     const res = await callbackWith(`code=code-1&state=${encodeURIComponent(signed)}`, nonce);
-    expect(location(res)).toBe("/settings/integrations?linear=connected");
+    expect(location(res)).toBe("/settings/connections/linear/integration-1?linear=connected");
     expect(Object.fromEntries(tokenRequests[0]!)).toEqual({
       grant_type: "authorization_code",
       code: "code-1",
@@ -186,7 +186,7 @@ describe("GET /api/integrations/linear/callback", () => {
     const { state: signed, nonce } = await createOAuthState("admin-1");
     const query = `code=code-1&state=${encodeURIComponent(signed)}`;
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?linear=connected",
+      "/settings/connections/linear/integration-1?linear=connected",
     );
     // Consumed until the state would have expired.
     const expiresAt = state.consumed.get(nonce)!;
@@ -194,7 +194,7 @@ describe("GET /api/integrations/linear/callback", () => {
     expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(10 * 60_000);
 
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?linear=invalid_state",
+      "/settings/connections/new?linear=invalid_state",
     );
     expect(tokenRequests).toHaveLength(1);
     expect(state.saved).toHaveLength(1);
@@ -203,13 +203,13 @@ describe("GET /api/integrations/linear/callback", () => {
     const declined = await createOAuthState("admin-1");
     const declinedQuery = `error=access_denied&state=${encodeURIComponent(declined.state)}`;
     expect(location(await callbackWith(declinedQuery, declined.nonce))).toBe(
-      "/settings/integrations?linear=denied",
+      "/settings/connections/new?linear=denied",
     );
     expect(
       location(
         await callbackWith(`code=c&state=${encodeURIComponent(declined.state)}`, declined.nonce),
       ),
-    ).toBe("/settings/integrations?linear=invalid_state");
+    ).toBe("/settings/connections/new?linear=invalid_state");
   });
 
   it("rejects a missing, forged, foreign or cookie-less state without exchanging the code", async () => {
@@ -228,7 +228,7 @@ describe("GET /api/integrations/linear/callback", () => {
     ];
     for (const [query, cookie] of cases) {
       expect(location(await callbackWith(query, cookie))).toBe(
-        "/settings/integrations?linear=invalid_state",
+        "/settings/connections/new?linear=invalid_state",
       );
     }
     expect(tokenRequests).toEqual([]);
@@ -239,7 +239,7 @@ describe("GET /api/integrations/linear/callback", () => {
     state.takenWorkspaces.add("org-1");
     const { state: signed, nonce } = await createOAuthState("admin-1");
     expect(location(await callbackWith(`code=c&state=${encodeURIComponent(signed)}`, nonce))).toBe(
-      "/settings/integrations?linear=other_organization",
+      "/settings/connections/new?linear=other_organization",
     );
     expect(state.saved).toEqual([]);
   });
@@ -251,17 +251,17 @@ describe("GET /api/integrations/linear/callback", () => {
     };
     let { s, nonce } = await fresh();
     expect(location(await callbackWith(`error=access_denied&state=${s}`, nonce))).toBe(
-      "/settings/integrations?linear=denied",
+      "/settings/connections/new?linear=denied",
     );
     ({ s, nonce } = await fresh());
     expect(location(await callbackWith(`state=${s}`, nonce))).toBe(
-      "/settings/integrations?linear=invalid",
+      "/settings/connections/new?linear=invalid",
     );
     tokenStatus = 400;
     vi.spyOn(console, "error").mockImplementation(() => {});
     ({ s, nonce } = await fresh());
     expect(location(await callbackWith(`code=bad&state=${s}`, nonce))).toBe(
-      "/settings/integrations?linear=error",
+      "/settings/connections/new?linear=error",
     );
     expect(state.saved).toEqual([]);
   });

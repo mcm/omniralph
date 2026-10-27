@@ -7,7 +7,6 @@ import {
   getChatConnection,
   getChatPlaybookDefaults,
   getIntegration,
-  getUserById,
   listChatChannelPlaybookSettings,
   listChatConnections,
   setChatPlaybookDefaults,
@@ -22,13 +21,12 @@ import type { ActionResult } from "@/lib/action-result";
 import type {
   ChannelPlaybooks,
   ChatPlaybooksSettings,
-  IntegrationsSettings,
   SavedChannelPlaybooks,
 } from "@/lib/api/integrations";
 import { channelName, findChatChannel, type ChannelLookupDeps } from "@/lib/chat/channel-lookup";
 import type { OrgUser } from "@/lib/auth/session";
 import { discordOAuthConfig, leaveDiscordGuild } from "@/lib/chat/discord-oauth";
-import { revokeSlackToken, slackOAuthConfig, type SlackCredentials } from "@/lib/chat/slack-oauth";
+import { revokeSlackToken, type SlackCredentials } from "@/lib/chat/slack-oauth";
 import {
   CHAT_PLAYBOOK_FILTERS,
   CHAT_PLAYBOOK_SLOTS,
@@ -38,7 +36,7 @@ import {
   type ChatPlaybookSlot,
 } from "@/lib/chat/playbooks";
 import { getPlaybook, listPlaybookChoices } from "@/lib/playbooks";
-import { linearOAuthConfig, revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
+import { revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
 import {
   settingsActor,
   trackedChatPlaybookDefaults,
@@ -104,72 +102,6 @@ function channelPlaybooksOf(setting: ChatChannelPlaybookSetting): ChannelPlayboo
     channel: platformChannelId(setting.channelId),
     ask: setting.askPlaybookId,
     startWork: setting.startWorkPlaybookId,
-  };
-}
-
-/**
- * Settings › Integrations: the active organization's Linear workspace, Slack workspaces and
- * Discord servers, whether this server has each app's credentials, and the playbooks chat runs.
- * Database and environment only (it is polled): no call to Linear, Slack or Discord.
- */
-export async function loadIntegrations(
-  db: Database,
-  admin: OrgUser,
-): Promise<IntegrationsSettings> {
-  const organizationId = admin.organization.id;
-  const [integration, chatConnections, chatPlaybookDefaults, channelPlaybooks] = await Promise.all([
-    getIntegration(db, organizationId, "linear"),
-    listChatConnections(db, organizationId),
-    getChatPlaybookDefaults(db, organizationId),
-    listChatChannelPlaybookSettings(db, organizationId),
-  ]);
-  // The installer may have left the organization since, so look them up as a user.
-  const installers = new Map(
-    await Promise.all(
-      [...new Set(chatConnections.map((c) => c.installedByUserId))]
-        .filter((id): id is string => id !== null)
-        .map(async (id) => {
-          const user = await getUserById(db, id);
-          return [id, user ? (user.name ?? user.email) : null] as const;
-        }),
-    ),
-  );
-  const installedBy = (userId: string | null) => (userId && installers.get(userId)) ?? null;
-
-  return {
-    linear: integration
-      ? {
-          name: integration.name,
-          workspaceId: integration.externalId,
-          connectedAt: integration.updatedAt.toISOString(),
-        }
-      : null,
-    linearConfigured: linearOAuthConfig() !== null,
-    slack: chatConnections
-      .filter((c) => c.platform === "slack")
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        workspaceId: c.externalId,
-        installedBy: installedBy(c.installedByUserId),
-        connectedAt: c.updatedAt.toISOString(),
-      })),
-    slackConfigured: slackOAuthConfig() !== null,
-    discord: chatConnections
-      .filter((c) => c.platform === "discord")
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        serverId: c.externalId,
-        installedBy: installedBy(c.installedByUserId),
-        connectedAt: c.updatedAt.toISOString(),
-      })),
-    discordConfigured: discordOAuthConfig() !== null,
-    chatPlaybooks: await loadChatPlaybookSettings(db, organizationId, {
-      defaults: chatPlaybookDefaults,
-      connections: chatConnections,
-      channels: channelPlaybooks,
-    }),
   };
 }
 

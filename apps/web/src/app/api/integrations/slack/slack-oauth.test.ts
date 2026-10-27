@@ -180,7 +180,7 @@ describe("GET /api/integrations/slack/connect", () => {
 
     // The round trip with this state and cookie is accepted.
     const done = await callbackWith(`code=code-1&state=${signedState}`, cookie!.value);
-    expect(location(done)).toBe("/settings/integrations?slack=connected");
+    expect(location(done)).toBe("/settings/connections/slack/connection-1?slack=connected");
   });
 
   it("refuses members and signed-out users", async () => {
@@ -199,7 +199,7 @@ describe("GET /api/integrations/slack/connect", () => {
     try {
       expect(
         location(await connect(new NextRequest(`${BASE}/api/integrations/slack/connect`))),
-      ).toBe("/settings/integrations?slack=not_configured");
+      ).toBe("/settings/connections/new?slack=not_configured");
     } finally {
       process.env.SLACK_SIGNING_SECRET = "signing-1";
     }
@@ -210,7 +210,7 @@ describe("GET /api/integrations/slack/callback", () => {
   it("exchanges the code and stores the workspace and its bot token", async () => {
     const { s, nonce } = await fresh();
     const res = await callbackWith(`code=code-1&state=${s}`, nonce);
-    expect(location(res)).toBe("/settings/integrations?slack=connected");
+    expect(location(res)).toBe("/settings/connections/slack/connection-1?slack=connected");
     expect(tokenRequests).toHaveLength(1);
     expect(tokenRequests[0]!.url).toBe("https://slack.com/api/oauth.v2.access");
     expect(Object.fromEntries(tokenRequests[0]!.body)).toEqual({
@@ -250,7 +250,7 @@ describe("GET /api/integrations/slack/callback", () => {
       });
     const { s, nonce } = await fresh();
     expect(location(await callbackWith(`code=c&state=${s}`, nonce))).toBe(
-      "/settings/integrations?slack=connected",
+      "/settings/connections/slack/connection-1?slack=connected",
     );
     expect(state.saved).toEqual([
       expect.objectContaining({
@@ -266,10 +266,10 @@ describe("GET /api/integrations/slack/callback", () => {
     const { s, nonce } = await fresh();
     const query = `code=code-1&state=${s}`;
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?slack=connected",
+      "/settings/connections/slack/connection-1?slack=connected",
     );
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?slack=invalid_state",
+      "/settings/connections/new?slack=invalid_state",
     );
     expect(tokenRequests).toHaveLength(1);
     expect(state.saved).toHaveLength(1);
@@ -297,7 +297,7 @@ describe("GET /api/integrations/slack/callback", () => {
     ];
     for (const [query, cookie] of cases) {
       expect(location(await callbackWith(query, cookie))).toBe(
-        "/settings/integrations?slack=invalid_state",
+        "/settings/connections/new?slack=invalid_state",
       );
     }
     expect(tokenRequests).toEqual([]);
@@ -308,7 +308,7 @@ describe("GET /api/integrations/slack/callback", () => {
     state.takenWorkspaces.add("T01");
     const { s, nonce } = await fresh();
     expect(location(await callbackWith(`code=c&state=${s}`, nonce))).toBe(
-      "/settings/integrations?slack=other_organization",
+      "/settings/connections/new?slack=other_organization",
     );
     expect(state.saved).toEqual([]);
   });
@@ -316,7 +316,7 @@ describe("GET /api/integrations/slack/callback", () => {
   it("reports a cancelled install without exchanging a code", async () => {
     const { s, nonce } = await fresh();
     expect(location(await callbackWith(`error=access_denied&state=${s}`, nonce))).toBe(
-      "/settings/integrations?slack=denied",
+      "/settings/connections/new?slack=denied",
     );
     expect(tokenRequests).toEqual([]);
   });
@@ -326,7 +326,7 @@ describe("GET /api/integrations/slack/callback", () => {
     delete process.env.SLACK_CLIENT_SECRET;
     try {
       expect(location(await callbackWith(`code=c&state=${s}`, nonce))).toBe(
-        "/settings/integrations?slack=not_configured",
+        "/settings/connections/new?slack=not_configured",
       );
     } finally {
       process.env.SLACK_CLIENT_SECRET = "secret-1";
@@ -337,7 +337,7 @@ describe("GET /api/integrations/slack/callback", () => {
   it("handles a missing code and token endpoint errors", async () => {
     let { s, nonce } = await fresh();
     expect(location(await callbackWith(`state=${s}`, nonce))).toBe(
-      "/settings/integrations?slack=invalid",
+      "/settings/connections/new?slack=invalid",
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
     const failures: Array<() => Response> = [
@@ -350,7 +350,7 @@ describe("GET /api/integrations/slack/callback", () => {
       tokenResponse = failure;
       ({ s, nonce } = await fresh());
       expect(location(await callbackWith(`code=bad&state=${s}`, nonce))).toBe(
-        "/settings/integrations?slack=error",
+        "/settings/connections/new?slack=error",
       );
     }
     expect(state.saved).toEqual([]);

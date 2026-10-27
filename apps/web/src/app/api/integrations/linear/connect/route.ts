@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AuthorizationError } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser } from "@/lib/auth/session";
+import { connectNoticePath } from "@/lib/connections/connect-notices";
 import { createSignedState, SIGNED_STATE_TTL_SECONDS } from "@/lib/auth/signed-state";
 import {
   authorizeUrl,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/linear/oauth";
 
 /**
- * Settings › Integrations › Connect Linear: sends an admin to Linear's consent
+ * Settings › Add connection › Linear › Connect: sends an admin to Linear's consent
  * screen (`actor=app`) with a signed `state` naming their active organization,
  * bound to them and to this browser.
  */
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     );
   }
   const config = linearOAuthConfig();
-  if (!config) return to("/settings/integrations?linear=not_configured");
+  if (!config) return to(connectNoticePath("linear", "not_configured"));
 
   const { state, nonce } = await createSignedState(LINEAR_OAUTH_STATE_PURPOSE, {
     userId: admin.id,
