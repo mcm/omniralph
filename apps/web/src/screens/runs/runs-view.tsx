@@ -14,6 +14,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { viewPrdMenuItems } from "@/components/work-items/view-prd-sheet";
 import { RUN_STATUS_LABELS } from "@/components/runs/run-status";
 import { RUN_KINDS, RUN_STATUSES, type RunRow } from "@/lib/api/runs";
 import { useClock } from "../clock";
@@ -48,11 +49,13 @@ const STATUS_OPTIONS: FilterOption<RunStatus>[] = RUN_STATUSES.map((value) => ({
 export interface RunsViewProps {
   /** The open run (`/runs/{id}`), whose row is selected; none on `/runs`. */
   runId?: string | null;
-  /** The detail of the run beside the rail; `RunDetailView` by default. */
+  /** The detail of the run beside the rail; `RunDetailView` with View PRD by default. */
   renderDetail?: (runId: string) => ReactNode;
 }
 
-const defaultDetail = (runId: string) => <RunDetailView key={runId} runId={runId} />;
+const defaultDetail = (runId: string) => (
+  <RunDetailView key={runId} runId={runId} menuItems={viewPrdMenuItems} />
+);
 
 /**
  * The Runs screen (Design board Runs): a rail with the title, the Kind, Status and Repo
