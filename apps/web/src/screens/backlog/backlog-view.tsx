@@ -24,6 +24,7 @@ import { BlockedBadge } from "@/components/work-items/blocked";
 import type { Backlog } from "@/lib/api/backlog";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
+import { NewWorkItemSheet } from "./new-work-item-sheet";
 import { useBacklog } from "./queries";
 import {
   backlogHref,
@@ -97,8 +98,11 @@ export interface BacklogViewProps {
    * listed item (an action took this one out of the Backlog).
    */
   renderDetail?: (workItemId: string, context: BacklogDetailContext) => ReactNode;
-  /** The New work item flow, shown while open (`close` ends it). */
-  renderNewWorkItem?: (close: () => void) => ReactNode;
+  /**
+   * The New work item flow, shown while open (`close` ends it; `onCreated` selects the new
+   * item); `NewWorkItemSheet` by default.
+   */
+  renderNewWorkItem?: (close: () => void, context: NewWorkItemContext) => ReactNode;
   /** The detail's Share review link flow, shown while open (`close` ends it). */
   renderShareLink?: (item: WorkItemDetail, close: () => void) => ReactNode;
 }
@@ -109,6 +113,22 @@ export interface BacklogDetailContext {
   onLeave: () => void;
   renderShareLink?: BacklogViewProps["renderShareLink"];
 }
+
+/** What the Backlog gives its New work item flow. */
+export interface NewWorkItemContext {
+  /** Opens the created item (its row is already in the list). */
+  onCreated: (item: WorkItemRow) => void;
+  /** The Repo filter's repo, if any: the flow's first choice. */
+  repositoryId: string | null;
+}
+
+const defaultNewWorkItem = (close: () => void, context: NewWorkItemContext) => (
+  <NewWorkItemSheet
+    onClose={close}
+    onCreated={context.onCreated}
+    defaultRepositoryId={context.repositoryId}
+  />
+);
 
 const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
   <WorkItemDetailView
@@ -129,7 +149,7 @@ const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
 export function BacklogView({
   workItemId = null,
   renderDetail = defaultDetail,
-  renderNewWorkItem,
+  renderNewWorkItem = defaultNewWorkItem,
   renderShareLink,
 }: BacklogViewProps) {
   const router = useRouter();
@@ -340,7 +360,12 @@ export function BacklogView({
         listLabel="Backlog"
         detailLabel="Work item"
       />
-      {creating && renderNewWorkItem ? renderNewWorkItem(() => setCreating(false)) : null}
+      {creating
+        ? renderNewWorkItem(() => setCreating(false), {
+            onCreated: (item) => router.push(backlogItemHref(item.id, filters), { scroll: false }),
+            repositoryId: filters.repo,
+          })
+        : null}
     </>
   );
 }

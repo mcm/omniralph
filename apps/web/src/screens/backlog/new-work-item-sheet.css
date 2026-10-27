@@ -1,0 +1,23 @@
+/* New work item (NewWorkItemSheet): the form's fields and notes. Only `--or-` tokens. */
+.or-new-work-item {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-new-work-item__note {
+  margin: -8px 0 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-new-work-item__error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-fail-tint);
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}

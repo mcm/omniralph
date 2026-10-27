@@ -153,7 +153,7 @@ export function settingsHistoryKeys(keys: QueryKeys) {
 
 /**
  * Query keys of the Backlog (`/api/ui/backlog/**`), keyed by organization scope: a list per
- * filters, the counts (the nav count) and Up next, all under `keys.backlog.all`, which a
+ * filters, the counts (the nav count), Up next and New work item's repos, all under `keys.backlog.all`, which a
  * `work_item` change event invalidates. A work item's detail and its parts (share links) sit
  * under `keys.workItems.detail(id)` (`id` = the work item URL ID, `linear-<issue id>`).
  */
@@ -170,6 +170,9 @@ export function backlogKeys(keys: QueryKeys) {
     counts: (scope: string) => [...keys.backlog.all, "counts", { organization: scope }] as QueryKey,
     upNext: (scope: string) =>
       [...keys.backlog.all, "up-next", { organization: scope }] as QueryKey,
+    /** New work item's repos (`GET /api/ui/work-items/targets`). */
+    targets: (scope: string) =>
+      [...keys.backlog.all, "targets", { organization: scope }] as QueryKey,
     detail: (id: string) => keys.workItems.detail(id),
     /** Every work item's detail. */
     details: [...keys.workItems.all, "detail"] as QueryKey,
