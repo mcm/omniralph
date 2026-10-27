@@ -29,6 +29,7 @@ import {
   type RunSpecAgentInput,
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
+import { pino } from "pino";
 import { TRIAGE_SYSTEM_APPEND, triageTemplateContext } from "@omniralph/ralph";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
@@ -97,8 +98,20 @@ describe("runQueryTask", () => {
   let repos: RepoCache;
   let controller: AbortController;
   let mainSha: string;
+  let posted: { url: string; auth: string | null; body: unknown }[];
+
+  /** Records the activities the run posts and accepts them. */
+  const recordingFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    posted.push({
+      url: String(input),
+      auth: new Headers(init?.headers).get("authorization"),
+      body: JSON.parse(String(init?.body)) as unknown,
+    });
+    return Response.json({ ok: true });
+  }) as typeof fetch;
 
   beforeEach(async () => {
+    posted = [];
     root = await mkdtemp(path.join(tmpdir(), "omniralph-query-test-"));
     workspaceRoot = path.join(root, "workspace");
     tmp = path.join(root, "tmp");
@@ -122,7 +135,7 @@ describe("runQueryTask", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  function context(): JobContext {
+  function context(logger = silentLogger()): JobContext {
     return {
       signal: controller.signal,
       jobToken: () => "lifecycle-token",
@@ -135,7 +148,7 @@ describe("runQueryTask", () => {
       server: "https://omniralph.example.com",
       workspaceRoot,
       repos,
-      logger: silentLogger(),
+      logger,
     };
   }
 
@@ -181,10 +194,11 @@ describe("runQueryTask", () => {
     });
   }
 
-  async function run(runSpec: RunSpecType, fake = answering()) {
+  async function run(runSpec: RunSpecType, fake = answering(), fetchFn = recordingFetch) {
     const result = await runQueryTask(runSpec, context(), {
       runner: createSessionRunner(fake.query),
       tmpDir: tmp,
+      fetch: fetchFn,
     });
     return { result, calls: fake.calls };
   }
@@ -814,6 +828,69 @@ describe("runQueryTask", () => {
       usage: { inputTokens: 900, outputTokens: 150 },
     });
     await expectTornDown();
+  });
+
+  describe("activities", () => {
+    function readingThenAnswering() {
+      return answering([
+        {
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: {
+            id: "m1",
+            content: [
+              { type: "tool_use", id: "t1", name: "Read", input: { file_path: "src/list.ts" } },
+            ],
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
+        } as unknown as SDKMessage,
+        assistantMessage("`last()` reads one past the end.", { id: "m2" }),
+        resultMessage(ANSWER),
+      ]);
+    }
+
+    it("posts the session's tool calls and thoughts, in order, with the session token", async () => {
+      const runSpec = spec();
+      const { result } = await run(runSpec, readingThenAnswering());
+
+      expect(result.outcome).toBe("answered");
+      const url = `https://omniralph.example.com/api/agent/jobs/${runSpec.jobId}/activities`;
+      expect(posted).toEqual([
+        {
+          url,
+          auth: "Bearer session-token",
+          body: { type: "action", body: "Read", parameter: "src/list.ts", ephemeral: true },
+        },
+        {
+          url,
+          auth: "Bearer session-token",
+          body: { type: "thought", body: "`last()` reads one past the end.", ephemeral: false },
+        },
+      ]);
+    });
+
+    it("logs a refused activity post and still answers", async () => {
+      const refusing = (async () =>
+        Response.json({ error: "forbidden" }, { status: 403 })) as typeof fetch;
+      const logs: { level: number; msg: string; type?: string }[] = [];
+      const logger = pino(
+        { level: "info" },
+        { write: (line: string) => logs.push(JSON.parse(line)) },
+      );
+      const fake = readingThenAnswering();
+      const result = await runQueryTask(spec(), context(logger), {
+        runner: createSessionRunner(fake.query),
+        tmpDir: tmp,
+        fetch: refusing,
+      });
+
+      expect(result.outcome).toBe("answered");
+      expect(result.answer).toBe(ANSWER);
+      expect(
+        logs.filter((log) => log.msg === "relaying an activity failed").map((log) => log.type),
+      ).toEqual(["action", "thought"]);
+      await expectTornDown();
+    });
   });
 
   it("stops before a tool call's next turn would cross the budget", async () => {

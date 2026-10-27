@@ -12,6 +12,7 @@ import {
 import { renderTemplate, taskCatalog } from "@omniralph/tasks";
 import { z } from "zod";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
+import type { FetchFn } from "../api.js";
 import { withoutJobEnv } from "../job-env.js";
 import type { Logger } from "../logger.js";
 import {
@@ -20,6 +21,7 @@ import {
   type SessionResult,
   type SessionRunner,
 } from "../session/session.js";
+import { ActivityRelay } from "../tools/activities.js";
 import {
   createOmniralphServer,
   offeredAgentTools,
@@ -46,6 +48,8 @@ export interface QueryTaskOptions {
   tmpDir?: string;
   /** Options of the `omniralph` agent tools (tests). */
   agentTools?: Pick<OmniralphServerOptions, "fetch" | "permissionTimeoutMs" | "pollIntervalMs">;
+  /** For relaying the session's activities; defaults to the global `fetch`. */
+  fetch?: FetchFn;
 }
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -150,6 +154,9 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    server, which calls the control panel with the session token too; with
  *    none, no server is attached. The installable MCP servers the agent lists
  *    (`<package>:<server>`) are attached from the installed packages.
+ *    Claude's text and tool calls are posted as the run's activities
+ *    (`ActivityRelay`, with the session token); a failed post is only logged,
+ *    and every activity is sent (or dropped) before the result is returned.
  * 4. Finish: a structured result is validated against the task's output
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
@@ -164,6 +171,13 @@ export async function runQueryTask(
   const started = Date.now();
   const runner = options.runner ?? createSessionRunner();
   const log = ctx.logger.child({ taskId: spec.task.id, agentId: spec.agent.id });
+  const relay = new ActivityRelay({
+    server: ctx.server,
+    jobId: spec.jobId,
+    jobToken: ctx.sessionToken,
+    logger: log,
+    ...(options.fetch && { fetch: options.fetch }),
+  });
   const git: VariableGitOptions = { env: ctx.env(), signal: ctx.signal };
   const noSession = (outcome: "no_checkout"): QueryRunResult => ({
     outcome,
@@ -259,6 +273,7 @@ export async function runQueryTask(
       ...(runTmpDir !== workspace.cwd && { additionalDirectories: [runTmpDir] }),
       env: ctx.sessionEnv(),
       signal: ctx.signal,
+      onEvent: (event) => relay.event(event),
     });
     log.info({ stop: result.stop, usage: result.usage }, "query session finished");
     return finish(result, workspace);
@@ -308,24 +323,36 @@ export async function runQueryTask(
     }
   };
 
-  const sha =
-    spec.repository && spec.ref !== null
-      ? await checkoutSha(ctx, spec.repository, spec.ref, git, log)
-      : null;
-  if (sha === null && spec.requireCheckout) {
-    log.info({ ref: spec.ref }, "nothing to check out; finishing without a session");
-    return noSession("no_checkout");
-  }
-  if (spec.repository && sha !== null) {
-    return ctx.repos.withWorktree(spec.repository, sha, { ...git, jobId: spec.jobId }, (worktree) =>
-      run({ cwd: worktree.path, checkout: { path: worktree.path, sha }, files: true }),
-    );
-  }
-  const cwd = await mkdtemp(path.join(options.tmpDir ?? tmpdir(), "omniralph-query-"));
+  const runInWorkspace = async (): Promise<QueryRunResult> => {
+    const sha =
+      spec.repository && spec.ref !== null
+        ? await checkoutSha(ctx, spec.repository, spec.ref, git, log)
+        : null;
+    if (sha === null && spec.requireCheckout) {
+      log.info({ ref: spec.ref }, "nothing to check out; finishing without a session");
+      return noSession("no_checkout");
+    }
+    if (spec.repository && sha !== null) {
+      return ctx.repos.withWorktree(
+        spec.repository,
+        sha,
+        { ...git, jobId: spec.jobId },
+        (worktree) =>
+          run({ cwd: worktree.path, checkout: { path: worktree.path, sha }, files: true }),
+      );
+    }
+    const cwd = await mkdtemp(path.join(options.tmpDir ?? tmpdir(), "omniralph-query-"));
+    try {
+      // Without a ref there's nothing to read anyway; a ref that couldn't be checked out turns the file tools off.
+      return await run({ cwd, checkout: null, files: spec.ref === null });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  };
+
   try {
-    // Without a ref there's nothing to read anyway; a ref that couldn't be checked out turns the file tools off.
-    return await run({ cwd, checkout: null, files: spec.ref === null });
+    return await runInWorkspace();
   } finally {
-    await rm(cwd, { recursive: true, force: true });
+    await relay.flush();
   }
 }
