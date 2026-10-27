@@ -8,7 +8,11 @@ import { useServerAction } from "../../use-server-action";
 import { CHAT_ACCOUNTS_PATH } from "@/lib/chat/link-paths";
 import { linkChatAccountAction } from "./actions";
 
-const PLATFORM_NAMES: Record<ChatPlatform, string> = { slack: "Slack", discord: "Discord" };
+const PLATFORM_NAMES: Record<ChatPlatform, string> = {
+  slack: "Slack",
+  discord: "Discord",
+  web: "Omniralph",
+};
 
 interface ChatLinkViewProps {
   /** Why the link can't be used. */

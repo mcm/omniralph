@@ -31,6 +31,10 @@ describe("formatting", () => {
     expect(
       runSourceLabel({ ...chat, chatThread: { platform: "discord", channelId: "discord:9:42" } }),
     ).toBe("Discord 42");
+    // A web chat's channel is its organization: nothing to show of it.
+    expect(
+      runSourceLabel({ ...chat, chatThread: { platform: "web", channelId: "web:org-1" } }),
+    ).toBe("Ask");
     // Its thread is gone.
     expect(runSourceLabel({ ...chat, chatThread: null })).toBe("Chat");
     expect(chatChannelLabel("C0123")).toBe("C0123");

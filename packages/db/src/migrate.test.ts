@@ -2,6 +2,7 @@
 // (Testcontainers, see testing/global-setup.ts). Skipped when no container runtime (Docker) is available.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -9,7 +10,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getChatThreadWithConnection, listChatMessages, listThreadRuns } from "./chat.js";
 import { closeDb, createDb, type Database } from "./client.js";
+import { encrypt } from "./crypto.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
 import {
   appSettings,
@@ -3875,6 +3878,184 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           bot_username: "omniralph-bot",
           account_type: null,
         },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("makes the web a chat platform, keeping Slack and Discord chats (0110)", async () => {
+    await db.execute(sql.raw(`create database web_chat_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/web_chat_before");
+    await migrateBefore(uri, "0110_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    const tables = [
+      "chat_connections",
+      "chat_threads",
+      "chat_messages",
+      "chat_thread_runs",
+      "chat_run_events",
+      "jobs",
+      "ralph_runs",
+    ];
+    const snapshot = async () => {
+      const result: Record<string, Record<string, unknown>[]> = {};
+      for (const table of tables) {
+        const { rows } = await client.query<{ row: Record<string, unknown> }>(
+          `select to_jsonb(t) as row from ${table} t order by id`,
+        );
+        result[table] = rows.map((r) => r.row);
+      }
+      return result;
+    };
+    try {
+      const key = randomBytes(32);
+      // Production (Oct 24): a Slack and a Discord connection, 4 threads with their messages,
+      // an ask with its job, a chat-started coding run, and a run event.
+      const { rows: orgRows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = orgRows[0]!.id;
+      const { rows: connections } = await client.query<{ id: string; platform: string }>(
+        `insert into chat_connections (organization_id, platform, external_id, name, encrypted_credentials)
+         values ($1, 'slack', 'T0123', 'Managed Services', $2),
+                ($1, 'discord', '998877', 'Ops', null)
+         returning id, platform`,
+        [org, encrypt(JSON.stringify({ botToken: "xoxb-1" }), key)],
+      );
+      const slack = connections.find((c) => c.platform === "slack")!.id;
+      const discord = connections.find((c) => c.platform === "discord")!.id;
+      const threads: string[] = [];
+      for (const [i, [connection, platform, channel]] of (
+        [
+          [slack, "slack", "slack:C01"],
+          [slack, "slack", "slack:C01"],
+          [slack, "slack", "slack:C02"],
+          [discord, "discord", "discord:998877:4455"],
+        ] as const
+      ).entries()) {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into chat_threads (organization_id, connection_id, platform, external_thread_id,
+             channel_id, started_by_external_user_id, created_at, updated_at)
+           values ($1, $2, $3, $4, $5, 'U01', now() - interval '20 days', $6)
+           returning id`,
+          [org, connection, platform, `${channel}:${i}`, channel, `2026-10-${10 + i}T09:00:00Z`],
+        );
+        threads.push(rows[0]!.id);
+      }
+      for (const thread of threads) {
+        await client.query(
+          `insert into chat_messages (thread_id, role, external_user_id, author_name, content, attachments)
+           values ($1, 'user', 'U01', 'Steve', '"What does the deploy job do?"',
+                   '[{"type":"image","name":"shot.png","mimeType":"image/png","size":10,"url":"https://files.slack.com/x","fetchMetadata":null}]'),
+                  ($1, 'assistant', null, null,
+                   '[{"type":"tool-call","toolCallId":"c1","toolName":"ask_about_code","input":{"question":"deploy"}}]', '[]'),
+                  ($1, 'tool', null, null,
+                   '[{"type":"tool-result","toolCallId":"c1","toolName":"ask_about_code","output":{"type":"json","value":{"queued":true}}}]', '[]'),
+                  ($1, 'assistant', null, null, '"It builds and ships the portal."', '[]')`,
+          [thread],
+        );
+      }
+      const { rows: jobRows } = await client.query<{ id: string }>(
+        `insert into jobs (organization_id, type, task_type, status, payload)
+         values ($1, 'chat.ask', 'query', 'completed', '{"question":"deploy"}') returning id`,
+        [org],
+      );
+      const { rows: queryRuns } = await client.query<{ id: string }>(
+        `insert into chat_thread_runs (organization_id, chat_thread_id, kind, job_id)
+         values ($1, $2, 'query', $3) returning id`,
+        [org, threads[0], jobRows[0]!.id],
+      );
+      await client.query(`update jobs set chat_thread_run_id = $1 where id = $2`, [
+        queryRuns[0]!.id,
+        jobRows[0]!.id,
+      ]);
+      const { rows: ralphRows } = await client.query<{ id: string }>(
+        `insert into ralph_runs (organization_id, origin, chat_thread_id, kind, mode, status)
+         values ($1, 'chat', $2, 'single', 'request', 'completed') returning id`,
+        [org, threads[1]],
+      );
+      await client.query(
+        `insert into chat_thread_runs (organization_id, chat_thread_id, kind, ralph_run_id)
+         values ($1, $2, 'coding', $3)`,
+        [org, threads[1], ralphRows[0]!.id],
+      );
+      await client.query(
+        `insert into chat_run_events (organization_id, chat_thread_id, thread_run_id, kind, body,
+           idempotency_key, processed_at, attempts)
+         values ($1, $2, $3, 'response', '{"answer":"It builds and ships the portal."}', 'job:1:response',
+           now(), 1)`,
+        [org, threads[0], queryRuns[0]!.id],
+      );
+      const before = await snapshot();
+
+      await runMigrations(uri);
+
+      const after = await snapshot();
+      const added = ["title", "repository_id", "branch", "started_by_user_id"];
+      for (const row of after.chat_threads!) {
+        for (const column of added) {
+          expect(row[column]).toBeNull();
+          delete row[column];
+        }
+      }
+      expect(after).toEqual(before);
+      expect(before.chat_messages).toHaveLength(16);
+
+      const migrated = createDb(uri);
+      try {
+        for (const thread of threads) {
+          const found = await getChatThreadWithConnection(migrated, thread, key);
+          expect(found?.thread.id).toBe(thread);
+          expect(found?.connection.organizationId).toBe(org);
+          const messages = await listChatMessages(migrated, thread, 50);
+          expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+        }
+        const slackThread = await getChatThreadWithConnection(migrated, threads[0]!, key);
+        expect(slackThread?.connection).toMatchObject({
+          platform: "slack",
+          credentials: { botToken: "xoxb-1" },
+        });
+        const discordThread = await getChatThreadWithConnection(migrated, threads[3]!, key);
+        expect(discordThread?.connection).toMatchObject({ platform: "discord", credentials: null });
+        expect(
+          (await listThreadRuns(migrated, org, threads[0]!)).map((r) => [r.kind, r.jobId]),
+        ).toEqual([["query", jobRows[0]!.id]]);
+        expect(
+          (await listThreadRuns(migrated, org, threads[1]!)).map((r) => [r.kind, r.ralphRunId]),
+        ).toEqual([["coding", ralphRows[0]!.id]]);
+      } finally {
+        await closeDb(migrated);
+      }
+
+      // The new columns and table work on the migrated database.
+      const { rows: web } = await client.query<{ id: string }>(
+        `insert into chat_connections (organization_id, platform, external_id, name)
+         values ($1, 'web', $2, 'Omniralph') returning id`,
+        [org, org],
+      );
+      const { rows: webThreads } = await client.query<{ id: string }>(
+        `insert into chat_threads (organization_id, connection_id, platform, external_thread_id,
+           channel_id, started_by_external_user_id, title, branch)
+         values ($1, $2, 'web', $3, $4, 'u1', 'Hello', 'main')
+         returning id`,
+        [org, web[0]!.id, `web:${org}:1`, `web:${org}`],
+      );
+      await client.query(
+        `insert into chat_web_messages (organization_id, thread_id, author, markdown, thread_run_id)
+         values ($1, $2, 'om', 'Hi', $3)`,
+        [org, webThreads[0]!.id, queryRuns[0]!.id],
+      );
+      const { rows: indexes } = await client.query<{ indexname: string }>(
+        `select indexname from pg_indexes
+         where indexname in ('chat_threads_started_by_user_id_organization_id_updated_at_idx',
+                             'chat_web_messages_thread_id_created_at_idx')
+         order by indexname`,
+      );
+      expect(indexes.map((i) => i.indexname)).toEqual([
+        "chat_threads_started_by_user_id_organization_id_updated_at_idx",
+        "chat_web_messages_thread_id_created_at_idx",
       ]);
     } finally {
       await client.end();

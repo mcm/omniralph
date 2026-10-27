@@ -3,7 +3,7 @@
  * code-host connection and on the Linear tracker, the deliveries that failed and weren't
  * replayed, and the chat identities linked per platform.
  */
-import { and, count, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { chatIdentities, repositories, webhookEvents, workItemMatches } from "./schema.js";
 import { WEBHOOK_EVENT_RETENTION_DAYS } from "./webhook-events.js";
@@ -78,13 +78,19 @@ export async function getConnectionUsage(
     db
       .select({ platform: chatIdentities.platform, accounts: count() })
       .from(chatIdentities)
-      .where(eq(chatIdentities.organizationId, organizationId))
+      .where(
+        and(eq(chatIdentities.organizationId, organizationId), ne(chatIdentities.platform, "web")),
+      )
       .groupBy(chatIdentities.platform),
   ]);
   return {
     reposByScmConnection: new Map(repos.map((row) => [row.connectionId, Number(row.repos)])),
     linearMatchedRepos: Number(matched[0]?.repos ?? 0),
     failedDeliveries,
-    linkedAccounts: new Map(identities.map((row) => [row.platform, Number(row.accounts)])),
+    linkedAccounts: new Map(
+      identities.flatMap(({ platform, accounts }) =>
+        platform === "web" ? [] : [[platform, Number(accounts)] as const],
+      ),
+    ),
   };
 }

@@ -3,7 +3,11 @@ import type { FilePart, ImagePart, ModelMessage, TextPart } from "ai";
 import { attachmentName, fencedText, formatBytes, type ThreadAttachment } from "../attachments";
 import type { ChatActor } from "../identity";
 
-const PLATFORM_NAMES: Record<ChatPlatform, string> = { slack: "Slack", discord: "Discord" };
+const PLATFORM_NAMES: Record<ChatPlatform, string> = {
+  slack: "Slack",
+  discord: "Discord",
+  web: "Omniralph",
+};
 
 export interface SystemPromptInput {
   organizationName: string;

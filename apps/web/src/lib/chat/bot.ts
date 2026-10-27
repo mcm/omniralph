@@ -69,7 +69,11 @@ export interface ChatConversationHandler {
   handle(thread: Thread, message: Message, context: ChatConversationContext): Promise<void>;
 }
 
-const PLATFORM_NAMES: Record<ChatPlatform, string> = { slack: "Slack", discord: "Discord" };
+const PLATFORM_NAMES: Record<ChatPlatform, string> = {
+  slack: "Slack",
+  discord: "Discord",
+  web: "Omniralph",
+};
 
 /** The thread note when `text` went to the author by DM. */
 export const SENT_BY_DM_NOTE = "I sent you a direct message: check your DMs.";

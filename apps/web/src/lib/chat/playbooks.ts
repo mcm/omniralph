@@ -5,6 +5,8 @@ import {
   type ChatConnection,
   type ChatPlaybooks,
   type Database,
+  type ExternalChatConnection,
+  type ExternalChatPlatform,
 } from "@omniralph/db";
 import type { Playbook, PlaybookRole } from "@omniralph/tasks";
 import type { PlaybookFilter } from "@/lib/playbooks";
@@ -91,7 +93,7 @@ export async function chatPlaybooksFor(
   };
 }
 
-const PLATFORM_CHANNEL_ID: Record<ChatConnection["platform"], RegExp> = {
+const PLATFORM_CHANNEL_ID: Record<ExternalChatPlatform, RegExp> = {
   slack: /^[CGD][A-Z0-9]{6,40}$/,
   discord: /^\d{1,30}$/,
 };
@@ -103,7 +105,7 @@ const PLATFORM_CHANNEL_ID: Record<ChatConnection["platform"], RegExp> = {
  * `discord:{guild}:{channel}`. Null when it isn't one.
  */
 export function chatChannelId(
-  connection: Pick<ChatConnection, "platform" | "externalId">,
+  connection: Pick<ExternalChatConnection, "platform" | "externalId">,
   platformChannelId: string,
 ): string | null {
   const id = platformChannelId.trim();

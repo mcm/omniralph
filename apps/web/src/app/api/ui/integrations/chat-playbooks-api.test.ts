@@ -8,6 +8,7 @@ import {
   closeDb,
   createDb,
   DEFAULT_CHAT_PLAYBOOKS,
+  ensureWebChatConnection,
   getChatChannelPlaybookSetting,
   getChatPlaybookDefaults,
   insertPlaybook,
@@ -69,6 +70,8 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
   let acme: string;
   let other: string;
   let slack: string;
+  /** Acme's hidden web connection: never listed, and has no channels. */
+  let web: string;
   /** Acme's own chat-ask playbook, and another organization's. */
   let ownAsk: string;
   let foreignAsk: string;
@@ -113,6 +116,7 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
     });
     if (connection === "other_organization") throw new Error("setup");
     slack = connection.id;
+    web = (await ensureWebChatConnection(db, acme)).id;
     ownAsk = await storeAsk(acme, "Security Q&A");
     foreignAsk = await storeAsk(other, "Their Q&A");
   }, 180_000);
@@ -179,6 +183,7 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
         ],
       });
       const json = JSON.stringify(result);
+      expect(json).not.toContain(web);
       expect(json).not.toContain("xoxb");
       expect(json).not.toContain(foreignAsk);
       state.user = admin;
@@ -248,6 +253,18 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
   });
 
   describe("PUT and DELETE /api/ui/integrations/chat-connections/[id]/channels", () => {
+    it("refuses the hidden web connection", async () => {
+      expect(
+        await callAction(
+          channels.PUT,
+          "PUT",
+          { id: web },
+          { channel: "C0WEB001", ask: "builtin:ask-about-code", startWork: null },
+        ),
+      ).toEqual({ ok: false, error: "That chat connection isn't connected." });
+      expect(await getChatChannelPlaybookSetting(db, acme, web, `web:${acme}`)).toBeNull();
+    });
+
     const overrideChange = () =>
       expect.objectContaining({
         resource: "settings",

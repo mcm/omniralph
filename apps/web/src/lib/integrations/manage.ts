@@ -7,14 +7,15 @@ import {
   getChatConnection,
   getChatPlaybookDefaults,
   getIntegration,
+  isExternalChatConnection,
   listChatChannelPlaybookSettings,
   listChatConnections,
   setChatPlaybookDefaults,
   upsertChatChannelPlaybookSetting,
   withSettingsChanges,
   type ChatChannelPlaybookSetting,
-  type ChatConnection,
   type ChatPlaybooks,
+  type ExternalChatConnection,
   type Database,
 } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
@@ -69,7 +70,7 @@ export async function loadChatPlaybookSettings(
   organizationId: string,
   loaded?: {
     defaults: ChatPlaybooks;
-    connections: ChatConnection[];
+    connections: ExternalChatConnection[];
     channels: ChatChannelPlaybookSetting[];
   },
 ): Promise<ChatPlaybooksSettings> {
@@ -279,7 +280,10 @@ export async function saveChatChannelPlaybooks(
 ): Promise<ActionResult | SavedChannelPlaybooks> {
   const organizationId = admin.organization.id;
   const connection = await getChatConnection(db, organizationId, connectionId);
-  if (!connection) return { ok: false, error: "That chat connection isn't connected." };
+  // The hidden web connection has no channels to override.
+  if (!connection || !isExternalChatConnection(connection)) {
+    return { ok: false, error: "That chat connection isn't connected." };
+  }
   const { channel, ...playbooks } = asObject(input);
   const typed = typeof channel === "string" ? channel.trim() : "";
   const name = channelName(typed);

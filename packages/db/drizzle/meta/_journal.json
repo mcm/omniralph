@@ -771,6 +771,13 @@
       "when": 1793085247201,
       "tag": "0109_scm_connection_account_type",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1793127428581,
+      "tag": "0110_web_chat_platform",
+      "breakpoints": true
     }
   ]
 }
