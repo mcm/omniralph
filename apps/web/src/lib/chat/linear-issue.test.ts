@@ -24,10 +24,9 @@ import {
 import type { ActionEvent, Adapter, CardElement, Thread } from "chat";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { disconnectedLinearGateway } from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { LinearGateway } from "@/lib/linear/gateway";
 import type { RalphDeps } from "@/lib/ralph/run";
+import { fakeWorkItemTracker } from "@/lib/testing/work-item-tracker";
+import { TrackerNotConnectedError, type WorkItemTracker } from "@/lib/work-items/tracker";
 import type { ChatActor } from "./identity";
 import type { ChatToolContext } from "./agent/tools";
 import { threadAttachments, type FetchAttachment, type ThreadAttachment } from "./attachments";
@@ -41,8 +40,8 @@ const {
   CREATE_LINEAR_ISSUE_ACTION,
   DELEGATION_FAILED_REPLY,
   LINEAR_ISSUE_DRAFT_TTL_MS,
-  LINEAR_NOT_CONNECTED_REPLY,
   NOT_REQUESTER_REPLY,
+  TRACKER_NOT_CONNECTED_REPLY,
   handleLinearIssueAction,
 } = await import("./linear-issue");
 
@@ -61,6 +60,11 @@ const actors: Record<string, ChatActor> = {
 
 type Result = Record<string, unknown>;
 
+/** An organization without a tracker, as `getWorkItemTracker` answers it. */
+const disconnected = async (): Promise<WorkItemTracker> => {
+  throw new TrackerNotConnectedError();
+};
+
 /** The text of a card, children included. */
 function cardText(card: CardElement): string {
   return JSON.stringify(card);
@@ -73,8 +77,10 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   let connection: ChatConnection;
   let otherConnection: ChatConnection;
   let chatThread: ChatThread;
-  let linear: FakeLinearGateway;
-  let gateway: LinearGateway;
+  /** The fake workspace behind the organization's tracker. */
+  let linear: ReturnType<typeof fakeWorkItemTracker>["workspace"];
+  /** The organization's tracker, as `getWorkItemTracker` would return it. */
+  let tracker: () => Promise<WorkItemTracker>;
   let thread: Thread;
 
   async function connect(organizationId: string, externalId: string): Promise<ChatConnection> {
@@ -120,12 +126,14 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     await db.delete(chatLinearDelegations);
     await db.delete(chatMessages);
     attachments = undefined;
-    linear = new FakeLinearGateway();
-    linear.teams = [
-      { id: "team-1", key: "ENG", name: "Engineering" },
-      { id: "team-2", key: "DES", name: "Design" },
-    ];
-    gateway = linear;
+    const fake = fakeWorkItemTracker({
+      teams: [
+        { id: "team-1", key: "ENG", name: "Engineering" },
+        { id: "team-2", key: "DES", name: "Design" },
+      ],
+    });
+    linear = fake.workspace;
+    tracker = async () => fake.tracker;
     thread = {
       id: THREAD_ID,
       post: vi.fn(async () => ({ id: CARD_ID })),
@@ -143,7 +151,8 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     appUrl: "https://omniralph.example.com",
     chatThread,
     turnMessages: [{ author: "Ada", text: "file an issue for the login bug" }],
-    ralph: async () => ({ linear: gateway }) as unknown as RalphDeps,
+    ralph: async () => ({}) as unknown as RalphDeps,
+    tracker: () => tracker(),
     handedOff: () => undefined,
     attachments,
   });
@@ -202,7 +211,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
         db,
         fetchAttachment: options.fetchAttachment,
         resolveActor: async (_c, externalUserId) => actors[externalUserId] ?? { kind: "unlinked" },
-        linear: async () => gateway,
+        tracker: () => tracker(),
         now: () => options.now ?? new Date(),
         logger: { warn: vi.fn(), error: vi.fn() } as never,
       },
@@ -284,12 +293,13 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(await draft({ team: "design" })).toMatchObject({ draft: { team: "DES" } });
   });
 
-  it("returns an error the agent explains when the organization has no Linear integration", async () => {
-    gateway = disconnectedLinearGateway();
+  it("returns an error the agent explains when the organization has no tracker connected", async () => {
+    tracker = disconnected;
 
     const result = await draft();
 
-    expect(result.error).toBe("linear_not_connected");
+    expect(result.error).toBe("tracker_not_connected");
+    expect(result.message).toContain("Connect a tracker to file work items.");
     expect(result.message).toContain("Settings › Connections › Add connection");
     expect(thread.post).not.toHaveBeenCalled();
     expect(await db.select().from(chatLinearIssueDrafts)).toHaveLength(0);
@@ -393,18 +403,19 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect((await recorded())[0]!.content).toContain("expired");
   });
 
-  it("keeps the draft when Linear isn't connected anymore, and tells the requester", async () => {
+  it("keeps the draft when no tracker is connected anymore, and tells the requester", async () => {
     const id = await drafted();
-    gateway = disconnectedLinearGateway();
+    tracker = disconnected;
     const { event, adapter, postEphemeral } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
     expect(postEphemeral).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "D-ADA" }),
-      LINEAR_NOT_CONNECTED_REPLY,
+      TRACKER_NOT_CONNECTED_REPLY,
       expect.anything(),
     );
+    expect(TRACKER_NOT_CONNECTED_REPLY).toContain("Connect a tracker to file work items.");
     expect(adapter.editMessage).not.toHaveBeenCalled();
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
   });
@@ -530,6 +541,23 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
     });
 
+    it("creates the issue without a screenshot the tracker can't upload, and says so", async () => {
+      const { shot } = await attach();
+      linear.failures.set("uploadFile", new Error("Upload refused"));
+      const result = await draft({ attachments: [shot] });
+      const id = (result.draft as { id: string }).id;
+      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      await handle(event, { fetchAttachment: fetchFile });
+
+      expect(linear.issues.size).toBe(1);
+      const [issue] = [...linear.issues.values()];
+      expect(issue!.description).toBe(
+        "Users signing in with SSO get a 500.\n\n- [ ] SSO login works",
+      );
+      expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
+      expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+    });
+
     it("refuses refs that aren't images of the thread, listing the ones there are", async () => {
       const { shot, log } = await attach();
       for (const ref of [log, "deadbeef-9"]) {
@@ -631,13 +659,15 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       expect(await db.select().from(chatLinearDelegations)).toHaveLength(0);
     });
 
-    it("explains a Linear failure, and a missing Linear integration", async () => {
+    it("explains a tracker failure, and a missing tracker", async () => {
       linear.add({ identifier: "ENG-8", title: "Search" });
       linear.failures.set("delegateIssue", new Error("Linear is down"));
-      expect(await delegate("ENG-8")).toMatchObject({ error: "linear_error" });
+      expect(await delegate("ENG-8")).toMatchObject({ error: "tracker_error" });
 
-      gateway = disconnectedLinearGateway();
-      expect(await delegate("ENG-8")).toMatchObject({ error: "linear_not_connected" });
+      tracker = disconnected;
+      const result = await delegate("ENG-8");
+      expect(result).toMatchObject({ error: "tracker_not_connected" });
+      expect(result.message).toContain("Connect a tracker to file work items.");
     });
 
     it("is an action tool: a domain user can't delegate", async () => {

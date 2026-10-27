@@ -1,7 +1,8 @@
-/** Coding playbooks for tests: a repository's story or request playbook with its own coding settings. */
+/** Helpers for ralph tests: coding playbooks with their own coding settings, and a fake Linear workspace. */
 import { eq } from "drizzle-orm";
 import { insertPlaybook, repositories, type Database } from "@omniralph/db";
 import { getBuiltinPlaybook, type Playbook, type PlaybookCoding } from "@omniralph/tasks";
+import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 
 /**
  * Binds `repositoryId` to a copy of its built-in story (or request) playbook with `coding`
@@ -41,4 +42,12 @@ export async function bindBuiltinPlaybooks(db: Database, repositoryId: string): 
       requestPlaybookId: "builtin:handle-request",
     })
     .where(eq(repositories.id, repositoryId));
+}
+
+/**
+ * The ralph orchestrator's Linear workspace for tests (`RalphDeps.linear`): a fake one, for
+ * tests of modules that don't import from `@/lib/linear/` themselves (the chat).
+ */
+export function fakeRalphLinear(): FakeLinearGateway {
+  return new FakeLinearGateway();
 }

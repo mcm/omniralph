@@ -441,6 +441,7 @@ async function relayGroup(
   const record = (role: ChatMessageRole, content: unknown) =>
     appendChatMessage(db, { threadId: chatThread.id, role, content });
 
+  const trackerFor = deps.tracker;
   const ralph = async () => {
     if (deps.ralph) return deps.ralph(organizationId);
     const { defaultDeps } = await import("@/lib/ralph/jobs");
@@ -459,6 +460,7 @@ async function relayGroup(
       chatThread,
       turnMessages: [],
       ralph,
+      ...(trackerFor && { tracker: () => trackerFor(organizationId) }),
       getPlaybook: deps.getPlaybook,
       // A tool's own message (a card) doesn't change what the answer posts.
       handedOff: () => undefined,

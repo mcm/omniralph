@@ -25,6 +25,9 @@ import {
   WorkItemConflictError,
   WorkItemNotFoundError,
   WorkItemProjectNotFoundError,
+  WorkItemTeamNotFoundError,
+  findTeam,
+  type CreatedWorkItem,
   type CreateWorkItemInput,
   type ListCandidatesInput,
   type ReadinessStateTarget,
@@ -35,6 +38,7 @@ import {
   type WorkItem,
   type WorkItemBlocker,
   type WorkItemComment,
+  type WorkItemImage,
   type WorkItemRouting,
   type WorkItemStory,
   type WorkItemPage,
@@ -193,14 +197,46 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     );
   }
 
-  /** The ID of the workspace's project of this name, ignoring case. */
-  private async projectId(name: string): Promise<string> {
-    const wanted = name.toLowerCase();
+  /** The ID of the workspace's project of this name (or, `byId`, this ID), ignoring case. */
+  private async projectId(ref: string, byId = false): Promise<string> {
+    const wanted = ref.trim().toLowerCase();
     const project = (await this.gateway.listProjects()).find(
-      (candidate) => candidate.name.toLowerCase() === wanted,
+      (candidate) =>
+        candidate.name.toLowerCase() === wanted || (byId && candidate.id === ref.trim()),
     );
-    if (!project) throw new WorkItemProjectNotFoundError(name);
+    if (!project) throw new WorkItemProjectNotFoundError(ref);
     return project.id;
+  }
+
+  /** The ID of the team `ref` names (key, name or ID, ignoring case). */
+  private async teamId(ref: string): Promise<string> {
+    const team = findTeam(await this.gateway.listTeams(), ref);
+    if (!team) throw new WorkItemTeamNotFoundError(ref);
+    return team.id;
+  }
+
+  /**
+   * Uploads the images to Linear: the Markdown that embeds them at the end of a description,
+   * and the names of those that failed to upload.
+   */
+  private async embedImages(
+    images: readonly WorkItemImage[],
+  ): Promise<{ markdown: string; failed: string[] }> {
+    const embedded: string[] = [];
+    const failed: string[] = [];
+    for (const image of images) {
+      try {
+        const url = await this.gateway.uploadFile(image);
+        embedded.push(`![${image.filename}](${url})`);
+      } catch (error) {
+        console.warn(`Couldn't upload ${image.filename} to Linear`, error);
+        failed.push(image.filename);
+      }
+    }
+    return {
+      markdown: embedded.length > 0 ? `\n\n## Screenshots\n\n${embedded.join("\n\n")}` : "",
+      failed,
+    };
   }
 
   async get(ref: WorkItemRef): Promise<WorkItem> {
@@ -265,20 +301,28 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     };
   }
 
-  async create(input: CreateWorkItemInput): Promise<WorkItem> {
+  async create(input: CreateWorkItemInput): Promise<CreatedWorkItem> {
+    const teamId = input.teamId ?? (input.team !== undefined && (await this.teamId(input.team)));
+    if (!teamId) throw new Error("A work item needs a team (teamId or team).");
     const projectId =
-      input.projectId ?? (input.projectName && (await this.projectId(input.projectName)));
+      input.projectId ??
+      (input.project && (await this.projectId(input.project, true))) ??
+      (input.projectName && (await this.projectId(input.projectName)));
+    const images = input.images?.length ? await this.embedImages(input.images) : null;
     const issue = await this.gateway.createIssue({
-      teamId: input.teamId,
+      teamId,
       title: input.title,
-      description: input.description,
+      description: `${input.description}${images?.markdown ?? ""}`,
       ...(projectId && { projectId }),
       ...(input.parentId && { parentId: input.parentId }),
       ...(input.labels?.length && { labels: input.labels }),
       ...(input.priority !== undefined && { priority: input.priority }),
     });
     // A new issue has no relations yet, and isn't delegated.
-    return this.workItem(issue, [], null);
+    return {
+      ...this.workItem(issue, [], null),
+      ...(images && { failedImages: images.failed }),
+    };
   }
 
   async update(
@@ -418,7 +462,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     }
   }
 
-  async listTeams(): Promise<TrackerTeam[]> {
+  async teams(): Promise<TrackerTeam[]> {
     return (await this.gateway.listTeams()).map(({ id, key, name }) => ({ id, key, name }));
   }
 

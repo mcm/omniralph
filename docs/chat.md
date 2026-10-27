@@ -386,9 +386,15 @@ labels, priority, title and a preview of the description) and three buttons:
   [step 1](#1-create-the-slack-app)); an app created from an older manifest must turn it on.
 - Screenshots attached in the thread can go into the issue: when they're relevant, the agent
   passes them to `draft_linear_issue` and the card lists them under **Screenshots**. On **Create**
-  they're fetched from the chat platform again, uploaded to Linear and embedded at the end of the
-  description (`## Screenshots`). One that can't be fetched anymore is left out, and the card says
-  so.
+  they're fetched from the chat platform again, uploaded to the tracker and embedded at the end of
+  the description (`## Screenshots`). One that can't be fetched or uploaded is left out, and the
+  card says so.
+- The chat creates and delegates work items only through the tracker-neutral `WorkItemTracker`
+  (`apps/web/src/lib/work-items/tracker.ts`): **Create** calls its `create`, **Create and
+  delegate** and `delegate_linear_issue` its `delegateToOmniralph`, and the team comes from its
+  `teams()`. Nothing under `lib/chat`, `lib/ask` or `components/ask` imports the Linear modules (a
+  test checks). With no tracker connected, the tools and the card say "Connect a tracker to file
+  work items."
 
 ### Delegating to Om
 

@@ -30,7 +30,7 @@ import type { Thread } from "chat";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { fakeRalphLinear } from "@/lib/ralph/testing";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -58,7 +58,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   let repositoryId: string;
   let otherRepositoryId: string;
   let chatThread: ChatThread;
-  let linear: FakeLinearGateway;
+  let linear: ReturnType<typeof fakeRalphLinear>;
   let seq = 0;
 
   const ralph = (organizationId: string): RalphDeps => ({
@@ -197,7 +197,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   });
 
   beforeEach(() => {
-    linear = new FakeLinearGateway();
+    linear = fakeRalphLinear();
   });
 
   it("is an action tool", () => {

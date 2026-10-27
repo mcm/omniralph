@@ -43,7 +43,7 @@ import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { fakeRalphLinear } from "@/lib/ralph/testing";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { threadAttachments } from "../attachments";
@@ -219,7 +219,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   const ralph = (organizationId: string): RalphDeps => ({
     db,
     organizationId,
-    linear: new FakeLinearGateway(),
+    linear: fakeRalphLinear(),
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => scm.asAdapter(),
   });

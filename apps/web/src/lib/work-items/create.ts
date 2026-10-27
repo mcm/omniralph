@@ -139,7 +139,7 @@ export async function createWorkItem(
   try {
     tracker = await getTracker(organizationId);
     const teamKey = match.team.toLowerCase();
-    const team = (await tracker.listTeams()).find((t) => t.key.toLowerCase() === teamKey);
+    const team = (await tracker.teams()).find((t) => t.key.toLowerCase() === teamKey);
     if (!team) return failure("tracker_failed", unknownTeamMessage(match.team));
     item = await tracker.create({
       teamId: team.id,

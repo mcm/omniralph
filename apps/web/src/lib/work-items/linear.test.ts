@@ -125,6 +125,9 @@ function linearAgent(
     async sessionsOpened(id) {
       return fake.sessionsCreated.filter((s) => s.issueId === id).length;
     },
+    failImageUploads() {
+      fake.failures.set("uploadFile", new Error("Upload refused"));
+    },
   };
 }
 

@@ -11,6 +11,7 @@ import {
   WorkItemConflictError,
   WorkItemNotFoundError,
   WorkItemProjectNotFoundError,
+  WorkItemTeamNotFoundError,
   type TrackerWorkflowState,
   type WorkItem,
   type WorkItemStateCategory,
@@ -67,7 +68,15 @@ export interface WorkItemTrackerAgent {
   setActiveRun(id: string): void;
   /** How many new Omniralph agent sessions were opened on the item. */
   sessionsOpened(id: string): Promise<number>;
+  /** From now on, the tracker refuses every image upload. */
+  failImageUploads(): void;
 }
+
+/** A tiny PNG, for `create`'s images. */
+const PNG = {
+  contentType: "image/png",
+  data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+};
 
 const stateOf = (states: TrackerWorkflowState[], category: WorkItemStateCategory) => {
   const state = states.find((s) => s.category === category);
@@ -170,6 +179,17 @@ export function describeWorkItemTrackerContract(
       it("finds nothing for no identifiers, or none it knows", async () => {
         expect(await tracker.findByIdentifiers([])).toEqual([]);
         expect(await tracker.findByIdentifiers(["NOPE-999999", "x"])).toEqual([]);
+      });
+    });
+
+    describe("teams", () => {
+      it("lists every team with its ID, key and name", async () => {
+        const teams = await tracker.teams();
+        expect(teams.map((team) => team.id).sort()).toEqual([teamA, teamB].sort());
+        for (const team of teams) {
+          expect(team.key).not.toBe("");
+          expect(team.name).not.toBe("");
+        }
       });
     });
 
@@ -599,6 +619,76 @@ export function describeWorkItemTrackerContract(
         ).rejects.toBeInstanceOf(WorkItemProjectNotFoundError);
         const { items } = await allPages(tracker, { teamId: teamA, limit: 50 });
         expect(items.map((item) => item.title)).not.toContain("Lost");
+      });
+
+      it("creates a work item in a team given by its key, name or ID, ignoring case", async () => {
+        const team = (await tracker.teams()).find((t) => t.id === teamB)!;
+        for (const ref of [team.key.toLowerCase(), team.name.toUpperCase(), team.id]) {
+          const item = await tracker.create({ team: ref, title: `In ${ref}`, description: "" });
+          expect(item.team).toMatchObject({ id: teamB, key: team.key });
+        }
+      });
+
+      it("creates nothing for a team the tracker doesn't have", async () => {
+        await expect(
+          tracker.create({ team: "No such team", title: "Teamless", description: "" }),
+        ).rejects.toBeInstanceOf(WorkItemTeamNotFoundError);
+        const { items } = await allPages(tracker, { limit: 50 });
+        expect(items.map((item) => item.title)).not.toContain("Teamless");
+      });
+
+      it("creates a work item in a project given by its ID or name", async () => {
+        const byId = await tracker.create({
+          teamId: teamA,
+          project: h.projectId,
+          title: "Project by ID",
+          description: "",
+        });
+        const byName = await tracker.create({
+          teamId: teamA,
+          project: h.projectName.toLowerCase(),
+          title: "Project by name",
+          description: "",
+        });
+        expect(byId.project).toMatchObject({ id: h.projectId });
+        expect(byName.project).toMatchObject({ id: h.projectId });
+        await expect(
+          tracker.create({
+            teamId: teamA,
+            project: "No such project",
+            title: "Lost",
+            description: "",
+          }),
+        ).rejects.toBeInstanceOf(WorkItemProjectNotFoundError);
+      });
+
+      it("embeds images at the end of the description", async () => {
+        const item = await tracker.create({
+          teamId: teamA,
+          title: "With screenshots",
+          description: "The login button is gone.",
+          images: [
+            { filename: "login.png", ...PNG },
+            { filename: "after.png", ...PNG },
+          ],
+        });
+        expect(item.failedImages).toEqual([]);
+        expect(item.description).toMatch(
+          /^The login button is gone\.\n\n## Screenshots\n\n!\[login\.png\]\(https:\/\/\S+\)\n\n!\[after\.png\]\(https:\/\/\S+\)$/,
+        );
+        expect((await tracker.get(item.id)).description).toBe(item.description);
+      });
+
+      it("creates the work item without the images that fail to upload", async () => {
+        h.failImageUploads();
+        const item = await tracker.create({
+          teamId: teamA,
+          title: "Upload fails",
+          description: "Details",
+          images: [{ filename: "broken.png", ...PNG }],
+        });
+        expect(item.failedImages).toEqual(["broken.png"]);
+        expect(item.description).toBe("Details");
       });
 
       it("creates a plain work item", async () => {
