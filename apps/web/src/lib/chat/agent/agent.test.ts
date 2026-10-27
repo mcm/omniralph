@@ -245,6 +245,17 @@ describe.skipIf(!databaseAvailable)("control-panel agent", () => {
     await testDb?.stop();
   });
 
+  it("answers a Discord thread with one finished message, never streaming", async () => {
+    const doStream = vi.fn();
+    const model = new MockLanguageModelV2({
+      doGenerate: async () => textResult("Two runs are active."),
+      doStream,
+    });
+    await turn(build(model), "What's running?", member);
+    expect(posts).toEqual(["Two runs are active."]);
+    expect(doStream).not.toHaveBeenCalled();
+  });
+
   it("answers in plain text with the thread's history and a system prompt", async () => {
     for (let i = 0; i < 56; i += 1) {
       await appendChatMessage(db, {

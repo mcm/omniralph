@@ -35,9 +35,11 @@ import {
   type FetchResult,
   type FormattedContent,
   type RawMessage,
+  type StreamChunk,
   type ThreadInfo,
 } from "chat";
 import { LINEAR_ISSUE_ACTIONS } from "./linear-issue";
+import { sendWebEvent } from "./web-stream";
 
 /**
  * The web as a Chat SDK platform (Ask): its "platform" is Omniralph's own database. A web
@@ -52,6 +54,9 @@ import { LINEAR_ISSUE_ACTIONS } from "./linear-issue";
  */
 
 export const WEB_ADAPTER_NAME = "web";
+
+/** The status line while Om works on a reply, before it uses a tool. */
+export const WEB_THINKING_STATUS = "Thinking";
 
 /** The author of Om's messages in a web chat. */
 export const WEB_BOT_USER_ID = "omniralph";
@@ -142,6 +147,20 @@ export function recordWebChatChange(
   });
 }
 
+/** How often at most a streaming message's text is written to the database. */
+export const WEB_STREAM_FLUSH_MS = 1000;
+
+/** A stored web message as the open request's `message` event carries it. */
+export function webMessageView(row: ChatWebMessage) {
+  return {
+    id: row.id,
+    author: row.author,
+    markdown: row.markdown,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 /** A stored web message as a Chat SDK message (`author`: the member who wrote it, else Om). */
 export function webMessage(
   row: ChatWebMessage,
@@ -227,7 +246,63 @@ export function createWebAdapter(deps: WebAdapterDeps): WebAdapter {
     });
     if (!row) throw new Error(`No web chat ${threadId}`);
     recordWebChatChange(db, thread);
+    sendWebEvent("message", { message: webMessageView(row) });
     return raw(threadId, row);
+  }
+
+  /**
+   * Om's reply as it is written: a `streaming` row (published and sent in full), each
+   * chunk sent to the open request as a `delta`, the row's text written at most once a
+   * second (unpublished) and at the end. The final edit (`editMessage`) completes it.
+   */
+  async function stream(
+    threadId: string,
+    textStream: AsyncIterable<string | StreamChunk>,
+  ): Promise<RawMessage<ChatWebMessage>> {
+    const thread = await loadThread(threadId);
+    const row = await appendWebMessage(db, {
+      threadId: thread.id,
+      author: "om",
+      markdown: "",
+      status: "streaming",
+    });
+    if (!row) throw new Error(`No web chat ${threadId}`);
+    recordWebChatChange(db, thread);
+    sendWebEvent("message", { message: webMessageView(row) });
+
+    let text = "";
+    let written = "";
+    let lastWrite = Date.now();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let writing: Promise<unknown> = Promise.resolve();
+    const write = () => {
+      timer = null;
+      lastWrite = Date.now();
+      if (text === written) return;
+      const markdown = text;
+      written = markdown;
+      writing = writing.then(() =>
+        updateWebMessage(db, row.id, { markdown }).catch(() => undefined),
+      );
+    };
+    try {
+      for await (const chunk of textStream) {
+        const delta =
+          typeof chunk === "string" ? chunk : chunk.type === "markdown_text" ? chunk.text : "";
+        if (!delta) continue;
+        text += delta;
+        sendWebEvent("delta", { messageId: row.id, text: delta });
+        if (timer) continue;
+        const wait = WEB_STREAM_FLUSH_MS - (Date.now() - lastWrite);
+        if (wait <= 0) write();
+        else timer = setTimeout(write, wait);
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
+      write();
+      await writing;
+    }
+    return raw(threadId, { ...row, markdown: text });
   }
 
   return {
@@ -255,6 +330,7 @@ export function createWebAdapter(deps: WebAdapterDeps): WebAdapter {
     },
 
     postMessage,
+    stream,
 
     async editMessage(threadId, messageId, message) {
       const thread = await loadThread(threadId);
@@ -269,6 +345,7 @@ export function createWebAdapter(deps: WebAdapterDeps): WebAdapter {
       });
       if (!row) throw new Error(`No message ${messageId} in the chat`);
       recordWebChatChange(db, thread);
+      sendWebEvent("message", { message: webMessageView(row) });
       return raw(threadId, row);
     },
 
@@ -339,8 +416,10 @@ export function createWebAdapter(deps: WebAdapterDeps): WebAdapter {
       return stringifyMarkdown(content);
     },
 
-    // The web shows what Om is doing in the reply's stream, not as a typing indicator.
-    async startTyping() {},
+    // The web shows what Om is doing as a status line in the reply's stream.
+    async startTyping(_threadId, status) {
+      sendWebEvent("status", { text: status || WEB_THINKING_STATUS });
+    },
 
     async addReaction() {},
     async removeReaction() {},
@@ -408,6 +487,7 @@ export async function handleWebMessage(
   });
   if (!row) throw new Error(`No web chat ${thread.id}`);
   recordWebChatChange(db, thread);
+  sendWebEvent("message", { message: webMessageView(row) });
 
   const name = user.name || user.email || user.id;
   const message = webMessage(row, {

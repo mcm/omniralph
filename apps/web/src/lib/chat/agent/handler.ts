@@ -10,8 +10,16 @@ import {
   type ChatThread,
   type Database,
 } from "@omniralph/db";
-import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai";
-import { ConsoleLogger, type Logger, type Message } from "chat";
+import {
+  generateText,
+  stepCountIs,
+  streamText,
+  type LanguageModel,
+  type ModelMessage,
+  type StopCondition,
+  type ToolSet,
+} from "ai";
+import { ConsoleLogger, type Logger, type Message, type Thread } from "chat";
 import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
 import { chatRunSession } from "@/lib/ralph/chat-reply";
@@ -28,7 +36,9 @@ import {
 } from "./config";
 import { historyMessages, systemPrompt, type WebChatScope } from "./prompt";
 import { chatTools } from "./registry";
+import { toolStatus } from "./tool-status";
 import { toAiTools, type ChatToolRegistry } from "./tools";
+import { sendWebEvent } from "../web-stream";
 
 /**
  * The control-panel agent: answers each message of a thread the bot is part
@@ -136,6 +146,70 @@ export async function webChatScope(
   };
 }
 
+/**
+ * `stream` from its first non-empty chunk on, or null when it ends without text: a turn
+ * that only used tools streams nothing (no empty message while they run).
+ */
+async function fromFirstText(stream: AsyncIterable<string>): Promise<AsyncIterable<string> | null> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let first = await iterator.next();
+  while (!first.done && !first.value) first = await iterator.next();
+  if (first.done) return null;
+  const head = first.value;
+  return (async function* () {
+    yield head;
+    for (let next = await iterator.next(); !next.done; next = await iterator.next()) {
+      yield next.value;
+    }
+  })();
+}
+
+/** What a model turn produced: its text and response messages. */
+interface TurnResult {
+  text: string;
+  messages: ModelMessage[];
+}
+
+/** The arguments of a turn's model call, the same streamed or not. */
+interface ModelCall {
+  model: LanguageModel;
+  system: string;
+  messages: ModelMessage[];
+  tools: ToolSet;
+  stopWhen: StopCondition<ToolSet>;
+  maxRetries: number;
+}
+
+/**
+ * A web chat's turn: the reply streams to the open request through the web adapter
+ * (`thread.post` of the text stream) while tool calls send what Om is doing as `status`
+ * events. Returns the streamed message's ID (null when nothing streamed) through
+ * `onPosted` as soon as it exists, so a failure can replace it.
+ */
+async function streamTurn(
+  thread: Thread,
+  call: ModelCall,
+  onPosted: (messageId: string) => void,
+): Promise<TurnResult> {
+  let failure: { error: unknown } | null = null;
+  const result = streamText({
+    ...call,
+    onChunk: ({ chunk }) => {
+      if (chunk.type === "tool-call") {
+        sendWebEvent("status", { text: toolStatus(chunk.toolName, chunk.input) });
+      }
+    },
+    onError: ({ error }) => {
+      failure ??= { error };
+    },
+  });
+  const text = await fromFirstText(result.textStream);
+  if (text) onPosted((await thread.post(text)).id);
+  if (failure) throw (failure as { error: unknown }).error;
+  const [finalText, response] = await Promise.all([result.text, result.response]);
+  return { text: finalText, messages: response.messages };
+}
+
 export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHandler {
   const { db } = deps;
   const logger = deps.logger ?? new ConsoleLogger("info", "chat-agent");
@@ -180,6 +254,9 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
 
       let linkNeeded = actor.kind === "unlinked";
       let handedOff = false;
+      const web = connection.platform === "web";
+      // The web reply streamed so far (web only): what an error or the final text replaces.
+      let streamedId: string | null = null;
       try {
         const appUrl = getAppUrl(deps.env);
         const organization = await getOrganization(db, organizationId);
@@ -220,7 +297,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             linkNeeded = true;
           },
         );
-        const result = await generateText({
+        const call: ModelCall = {
           model: deps.model,
           system: systemPrompt({
             organizationName: organization?.name ?? "your organization",
@@ -243,7 +320,12 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           tools,
           stopWhen: stepCountIs(deps.maxSteps ?? CHAT_AGENT_MAX_STEPS),
           maxRetries: 1,
-        });
+        };
+        const result: TurnResult = web
+          ? await streamTurn(thread, call, (id) => {
+              streamedId = id;
+            })
+          : await generateText(call).then((r) => ({ text: r.text, messages: r.response.messages }));
 
         // After a tool posted its own message (e.g. a card), an empty answer posts nothing.
         const quiet = handedOff && !result.text.trim();
@@ -254,13 +336,25 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               { allowedHosts: [new URL(appUrl).host] },
               MAX_BODY_CHARS,
             );
-        if (!quiet) await thread.post({ markdown: text });
-        await recordTurn(record, result.response.messages, quiet ? null : text);
+        if (streamedId) {
+          // The streamed text, replaced by what may be shown (or removed when nothing is).
+          if (quiet) await thread.adapter.deleteMessage(thread.id, streamedId);
+          else await thread.adapter.editMessage(thread.id, streamedId, { markdown: text });
+        } else if (!quiet) {
+          await thread.post({ markdown: text });
+        }
+        await recordTurn(record, result.messages, quiet ? null : text);
       } catch (error) {
         logger.error("Chat agent turn failed", { organizationId, threadId: thread.id, error });
-        await reply(ERROR_REPLY).catch((postError: unknown) =>
+        const apologize = async () => {
+          if (!streamedId) return reply(ERROR_REPLY);
+          await thread.adapter.editMessage(thread.id, streamedId, { markdown: ERROR_REPLY });
+          await record("assistant", ERROR_REPLY);
+        };
+        await apologize().catch((postError: unknown) =>
           logger.error("Couldn't post the chat agent apology", { threadId: thread.id, postError }),
         );
+        if (web) sendWebEvent("error", { message: ERROR_REPLY });
       }
 
       // Also after an error: a user who needs a link should still get it.

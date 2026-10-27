@@ -24,15 +24,23 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
-import { MockLanguageModelV2 } from "ai/test";
+import { MockLanguageModelV2, simulateReadableStream } from "ai/test";
 import { Actions, Button, Card, CardText, type Logger, type Message, type Thread } from "chat";
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type * as Changes from "@omniralph/db/changes";
+import { parseSseChunks, type AskStreamEvent } from "@/lib/ask/sse";
 import type { ChangeMessage } from "@/lib/live/publisher";
 import type { RateLimit } from "@/lib/rate-limit";
 import type { ChatConversationContext, ChatConversationHandler } from "./bot";
 
 vi.mock("server-only", () => ({}));
+// Called through, so a test can count the change events the web adapter records.
+vi.mock("@omniralph/db/changes", async (importOriginal) => {
+  const actual = await importOriginal<typeof Changes>();
+  return { ...actual, recordChange: vi.fn(actual.recordChange) };
+});
+const { recordChange } = await import("@omniralph/db/changes");
 
 const {
   createWebAdapter,
@@ -51,6 +59,9 @@ const { linkedMemberActor, resolveChatActor } = await import("./identity");
 const { recordChatRunEvent } = await import("./run-events");
 const { loadChatTarget } = await import("@/lib/ralph/conversation");
 const { withLiveChanges } = await import("@/lib/live/request");
+const { webEventStream, withWebStream } = await import("./web-stream");
+const { ERROR_REPLY } = await import("./agent/handler");
+const { sanitizeCapped, MAX_BODY_CHARS } = await import("@/lib/review/sanitize");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -60,6 +71,10 @@ const APP_URL = "https://omniralph.example.com";
 const ENV = { APP_URL, AUTH_SECRET: "test-auth-secret" } as unknown as NodeJS.ProcessEnv;
 const USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
 type CallOptions = Parameters<MockLanguageModelV2["doGenerate"]>[0];
+type StreamPart =
+  Awaited<ReturnType<MockLanguageModelV2["doStream"]>>["stream"] extends ReadableStream<infer P>
+    ? P
+    : never;
 
 const silent = {
   child: () => silent,
@@ -82,12 +97,40 @@ const linearDraft = {
   linearIssueUrl: null,
 };
 
-/** A model answering `text` and keeping what it was called with. */
-function mockModel(text: string) {
+/** The stream parts of a model step answering `text` in `pieces` (default: one). */
+function textParts(text: string | string[]): StreamPart[] {
+  const pieces = typeof text === "string" ? [text] : text;
+  return [
+    { type: "stream-start", warnings: [] },
+    { type: "text-start", id: "t1" },
+    ...pieces.map((delta): StreamPart => ({ type: "text-delta", id: "t1", delta })),
+    { type: "text-end", id: "t1" },
+    { type: "finish", finishReason: "stop", usage: USAGE },
+  ];
+}
+
+/** The stream parts of a model step calling `toolName` with `input`. */
+function toolCallParts(toolName: string, input: unknown): StreamPart[] {
+  return [
+    { type: "stream-start", warnings: [] },
+    { type: "tool-call", toolCallId: "call-1", toolName, input: JSON.stringify(input) },
+    { type: "finish", finishReason: "tool-calls", usage: USAGE },
+  ];
+}
+
+/**
+ * A model answering `text` (generated, or streamed as its steps' parts) and keeping what
+ * it was called with.
+ */
+function mockModel(
+  text: string,
+  options: { steps?: StreamPart[][]; chunkDelayInMs?: number } = {},
+) {
   const calls: CallOptions[] = [];
+  const steps = options.steps ?? [textParts(text)];
   const model = new MockLanguageModelV2({
-    doGenerate: async (options) => {
-      calls.push(options);
+    doGenerate: async (call) => {
+      calls.push(call);
       return {
         content: [{ type: "text", text }],
         finishReason: "stop",
@@ -95,8 +138,66 @@ function mockModel(text: string) {
         warnings: [],
       };
     },
+    doStream: async (call) => {
+      calls.push(call);
+      const chunks = steps[Math.min(calls.length - 1, steps.length - 1)]!;
+      return {
+        stream: simulateReadableStream({
+          chunks,
+          chunkDelayInMs: options.chunkDelayInMs ?? null,
+        }),
+      };
+    },
   });
   return { model, calls };
+}
+
+/** An async iterable fed by hand. */
+function feed<T>() {
+  const queue: T[] = [];
+  let ended = false;
+  let wake: (() => void) | null = null;
+  return {
+    push(value: T) {
+      queue.push(value);
+      wake?.();
+    },
+    end() {
+      ended = true;
+      wake?.();
+    },
+    async *[Symbol.asyncIterator]() {
+      for (;;) {
+        if (queue.length > 0) {
+          yield queue.shift()!;
+          continue;
+        }
+        if (ended) return;
+        await new Promise<void>((resolve) => (wake = resolve));
+        wake = null;
+      }
+    },
+  };
+}
+
+/** Every event of an event stream's body, read to its end (`onEvent` sees each as it comes). */
+async function readEvents(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: AskStreamEvent) => void = () => undefined,
+): Promise<AskStreamEvent[]> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const events: AskStreamEvent[] = [];
+  let buffer = "";
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    const parsed = parseSseChunks(buffer + decoder.decode(r.value, { stream: true }));
+    for (const event of parsed.events) {
+      events.push(event);
+      onEvent(event);
+    }
+    buffer = parsed.rest;
+  }
+  return events;
 }
 
 /** The system prompt of a model call. */
@@ -322,6 +423,100 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
         cardRef: null,
         status: "complete",
       });
+    });
+
+    it("stream writes a streaming row, sends each chunk, flushes at most once a second and at the end", async () => {
+      const thread = await newChat();
+      const chatChanges = () =>
+        vi
+          .mocked(recordChange)
+          .mock.calls.filter(
+            ([, change]) => change.resource === "chat" && change.ids[0] === thread.id,
+          ).length;
+      const sent: Array<[string, unknown]> = [];
+      const chunks = feed<string>();
+      const markdown = async () => (await rows(thread.id))[0]?.markdown;
+      // Not vi.waitFor: it advances fake timers on every check.
+      const until = async (check: () => boolean | Promise<boolean>) => {
+        for (let i = 0; i < 1000 && !(await check()); i += 1) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        expect(await check()).toBe(true);
+      };
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const { result: streamed, messages } = await published(() =>
+          withWebStream({ send: (name, data) => void sent.push([name, data]) }, async () => {
+            const streaming = adapter.stream!(thread.externalThreadId, chunks);
+            await until(() => sent.length === 1);
+            const [row] = await rows(thread.id);
+            expect(row).toMatchObject({ author: "om", markdown: "", status: "streaming" });
+            expect(sent[0]).toEqual([
+              "message",
+              { message: expect.objectContaining({ id: row!.id, status: "streaming" }) },
+            ]);
+            expect(chatChanges()).toBe(1);
+
+            chunks.push("Hello");
+            chunks.push(" world");
+            await until(() => sent.length === 3);
+            expect(sent.slice(1)).toEqual([
+              ["delta", { messageId: row!.id, text: "Hello" }],
+              ["delta", { messageId: row!.id, text: " world" }],
+            ]);
+            await vi.advanceTimersByTimeAsync(999);
+            expect(await markdown()).toBe("");
+            await vi.advanceTimersByTimeAsync(1);
+            await until(async () => (await markdown()) === "Hello world");
+
+            chunks.push("!");
+            await until(() => sent.length === 4);
+            await vi.advanceTimersByTimeAsync(500);
+            expect(await markdown()).toBe("Hello world");
+            chunks.end();
+            return streaming;
+          }),
+        );
+        expect(streamed?.id).toBe((await rows(thread.id))[0]!.id);
+        expect((await rows(thread.id))[0]).toMatchObject({
+          markdown: "Hello world!",
+          status: "streaming",
+        });
+        // Published when the row was created, never on a flush.
+        expect(chatChanges()).toBe(1);
+        expect(messages).toEqual([chatEvent(thread)]);
+
+        // The final edit completes it, and publishes.
+        sent.length = 0;
+        const { messages: completed } = await published(() =>
+          withWebStream({ send: (name, data) => void sent.push([name, data]) }, () =>
+            adapter.editMessage(thread.externalThreadId, streamed!.id, {
+              markdown: "Hello world!",
+            }),
+          ),
+        );
+        expect((await rows(thread.id))[0]).toMatchObject({ status: "complete" });
+        expect(chatChanges()).toBe(2);
+        expect(completed).toEqual([chatEvent(thread)]);
+        expect(sent).toEqual([
+          [
+            "message",
+            {
+              message: expect.objectContaining({ markdown: "Hello world!", status: "complete" }),
+            },
+          ],
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("startTyping sends a status to the open request", async () => {
+      const sent: Array<[string, unknown]> = [];
+      await withWebStream({ send: (name, data) => void sent.push([name, data]) }, () =>
+        adapter.startTyping(`web:${ORG}:${CHAT}`),
+      );
+      expect(sent).toEqual([["status", { text: "Thinking" }]]);
     });
 
     it("deleteMessage removes the row and publishes", async () => {
@@ -643,6 +838,187 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       // The user's message and Om's reply each published the chat's change.
       expect(messages).toEqual([chatEvent(thread)]);
       expect(messages[0]!.event.ids).toEqual([thread.id]);
+    });
+  });
+
+  describe("streaming a turn to the web", () => {
+    const agentBot = (model: MockLanguageModelV2) =>
+      createChatBot({
+        db,
+        slack: null,
+        discord: null,
+        state: createMockState(),
+        handler: createChatAgentHandler({ db, model, logger: silent, env: ENV }),
+        logger: createMockLogger(),
+        env: ENV,
+      });
+
+    /** Sends `text` in `thread` as the response of a web request would; returns its events. */
+    const ask = (
+      model: MockLanguageModelV2,
+      thread: ChatThread,
+      text: string,
+      onEvent?: (event: AskStreamEvent) => void,
+    ) => {
+      const built = agentBot(model);
+      const { body, finished } = webEventStream(async () => {
+        await handleWebMessage(
+          { db, bot: built },
+          { thread, user: { id: "ada", name: "Ada Lovelace" }, text },
+        );
+      });
+      return { events: readEvents(body, onEvent), finished };
+    };
+
+    const recordedOf = (threadId: string) =>
+      db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.threadId, threadId))
+        .orderBy(asc(chatMessages.createdAt));
+
+    it("streams deltas before the model finishes, then the sanitized final message", async () => {
+      const thread = await newChat();
+      const streamed = [
+        "`last()` reads ",
+        "one past the end. ",
+        '<img src="x" onerror="alert(1)">',
+      ];
+      const { model, calls } = mockModel("", {
+        steps: [textParts(streamed)],
+        chunkDelayInMs: 20,
+      });
+      const doGenerate = vi.spyOn(model, "doGenerate");
+      let doneSeen = false;
+      let deltaBeforeDone = false;
+      const { events: pending } = ask(model, thread, "Why does last() fail?", (event) => {
+        if (event.event === "delta" && !doneSeen) deltaBeforeDone = true;
+        if (event.event === "done") doneSeen = true;
+      });
+      const events = await pending;
+
+      expect(deltaBeforeDone).toBe(true);
+      expect(doGenerate).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(1);
+      const [user, om] = await rows(thread.id);
+      const final = sanitizeCapped(
+        streamed.join(""),
+        { allowedHosts: [new URL(APP_URL).host] },
+        MAX_BODY_CHARS,
+      );
+      expect(final).not.toBe(streamed.join(""));
+      expect(om).toMatchObject({ author: "om", markdown: final, status: "complete" });
+      expect(events.map((e) => e.event)).toEqual([
+        "message",
+        "status",
+        "message",
+        "delta",
+        "delta",
+        "delta",
+        "message",
+        "done",
+      ]);
+      expect(events[0]!.data).toEqual({ message: expect.objectContaining({ id: user!.id }) });
+      expect(events[1]!.data).toEqual({ text: "Thinking" });
+      expect(events[2]!.data).toEqual({
+        message: expect.objectContaining({ id: om!.id, status: "streaming" }),
+      });
+      expect(events.filter((e) => e.event === "delta").map((e) => e.data)).toEqual(
+        streamed.map((text) => ({ messageId: om!.id, text })),
+      );
+      expect(events[6]!.data).toEqual({
+        message: expect.objectContaining({ id: om!.id, markdown: final, status: "complete" }),
+      });
+      // The turn is recorded with the text that was shown.
+      expect((await recordedOf(thread.id)).map((m) => [m.role, m.content])).toEqual([
+        ["user", "Why does last() fail?"],
+        ["assistant", [{ type: "text", text: final }]],
+      ]);
+    });
+
+    it("says what Om is doing while it uses a tool", async () => {
+      const thread = await newChat();
+      const { model } = mockModel("", {
+        steps: [toolCallParts("list_repositories", {}), textParts("You have one repo: acme/app.")],
+      });
+      const events = await ask(model, thread, "Which repos do we have?").events;
+
+      expect(events.map((e) => e.event)).toEqual([
+        "message",
+        "status",
+        "status",
+        "message",
+        "delta",
+        "message",
+        "done",
+      ]);
+      expect(events[2]!.data).toEqual({ text: "Looking at the repos" });
+      expect((await rows(thread.id)).map((r) => [r.author, r.markdown, r.status])).toEqual([
+        ["user", "Which repos do we have?", "complete"],
+        ["om", "You have one repo: acme/app.", "complete"],
+      ]);
+      expect((await recordedOf(thread.id)).map((m) => m.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+      ]);
+    });
+
+    it("stores the apology and sends an error when the model fails mid-stream", async () => {
+      const thread = await newChat();
+      const { model } = mockModel("", {
+        steps: [
+          [
+            ...textParts("Half an ans").slice(0, 3),
+            { type: "error", error: new Error("The gateway hung up") },
+          ],
+        ],
+      });
+      const events = await ask(model, thread, "Why does last() fail?").events;
+
+      const [, om] = await rows(thread.id);
+      expect(om).toMatchObject({ author: "om", markdown: ERROR_REPLY, status: "complete" });
+      expect(await rows(thread.id)).toHaveLength(2);
+      expect(events.slice(-3)).toEqual([
+        {
+          event: "message",
+          data: {
+            message: expect.objectContaining({ id: om!.id, markdown: ERROR_REPLY }),
+          },
+        },
+        { event: "error", data: { message: ERROR_REPLY } },
+        { event: "done", data: {} },
+      ]);
+      expect(events.some((e) => e.event === "delta")).toBe(true);
+      expect((await recordedOf(thread.id)).map((m) => [m.role, m.content])).toEqual([
+        ["user", "Why does last() fail?"],
+        ["assistant", ERROR_REPLY],
+      ]);
+    });
+
+    it("finishes the turn and stores the final message when the client disconnects", async () => {
+      const thread = await newChat();
+      const { model } = mockModel("", {
+        steps: [textParts(["The answer ", "is ", "forty-two."])],
+        chunkDelayInMs: 20,
+      });
+      const built = agentBot(model);
+      const { body, finished } = webEventStream(async () => {
+        await handleWebMessage(
+          { db, bot: built },
+          { thread, user: { id: "ada", name: "Ada Lovelace" }, text: "What is the answer?" },
+        );
+      });
+      const reader = body.getReader();
+      expect((await reader.read()).done).toBe(false);
+      await reader.cancel();
+      await finished;
+
+      expect((await rows(thread.id)).map((r) => [r.author, r.markdown, r.status])).toEqual([
+        ["user", "What is the answer?", "complete"],
+        ["om", "The answer is forty-two.", "complete"],
+      ]);
     });
   });
 

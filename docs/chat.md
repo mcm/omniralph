@@ -226,7 +226,11 @@ of its members starts a chat; it is never listed under **Settings › Connection
 - **Private.** A web chat belongs to the member who started it: nobody else in the organization
   sees it or writes in it, and it's gone from their view when they leave the organization. The runs
   it starts appear in **Runs** like any other.
-- **Streamed and live.** Om's reply streams into the chat as it is written. Answers that arrive
+- **Streamed and live.** Om's reply streams into the chat as it is written, with a short line
+  saying what Om is doing while it uses a tool ("Looking at runs", "Asking an agent to read
+  customer-portal"); when the reply is done, it is replaced by its final, sanitized text. The
+  stream is the response of the request that sent the message (server-sent events), and the turn
+  finishes even if the page closes. Slack and Discord still get the finished reply. Answers that arrive
   later (a code question an agent read the repo for, a run's news) and card changes reach every
   open view of the chat through live updates, without a refresh; change events name the chat only,
   on the member's own channel.
