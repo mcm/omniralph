@@ -451,6 +451,27 @@ describe("createLiveInvalidator", () => {
     );
   });
 
+  it("invalidates a query with meta.liveRunIds on those runs' run and transcript events only", () => {
+    const chat = askKeys(keys).chat(ID);
+    const other = askKeys(keys).chat(OTHER_RUN);
+    client.getQueryCache().build(client, { queryKey: chat, meta: { liveRunIds: [RUN] } });
+    client.getQueryCache().build(client, { queryKey: other, meta: { liveRunIds: [OTHER_RUN] } });
+    seed(chat, other);
+    const invalidator = createLiveInvalidator(client);
+    const followed = () => invalidated().filter((key) => key[1] === "ask");
+
+    invalidator.apply(event({ resource: "pull_request", ids: [ID], runId: RUN }), scope);
+    expect(followed()).toEqual([]);
+    invalidator.apply(changeEvent(OTHER_ORG, { resource: "run", runId: RUN }), scope);
+    expect(followed()).toEqual([]);
+    invalidator.apply(event({ resource: "transcript", runId: RUN }), scope);
+    expect(followed()).toEqual([chat]);
+
+    client.setQueryData(chat, "data");
+    invalidator.apply(event({ resource: "run", ids: [RUN], runId: RUN }), scope);
+    expect(followed()).toEqual([chat]);
+  });
+
   it("ignores an event for an organization outside the scope", () => {
     seed(queryKeys(OTHER_ORG).agents.list(), keys.agents.list());
     createLiveInvalidator(client).apply(
