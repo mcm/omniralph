@@ -15,6 +15,11 @@
       "types": "./dist/changes.d.ts",
       "default": "./dist/changes.js"
     },
+    "./domains": {
+      "@omniralph/source": "./src/domains.ts",
+      "types": "./dist/domains.d.ts",
+      "default": "./dist/domains.js"
+    },
     "./testing": "./testing/index.ts"
   },
   "files": [

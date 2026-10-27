@@ -590,7 +590,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
             {
               title: "Show pending invitations on the members page",
               description:
-                "Invitations sent from onboarding don't appear under Settings › Organization.",
+                "Invitations sent from onboarding don't appear under Settings › Members.",
               manual: false,
             },
           ],

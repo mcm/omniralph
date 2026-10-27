@@ -467,7 +467,7 @@ answering [coding runs](#om-from-chat), and
 | Who                                                                                                                                                                             | Gets                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | **Linked member**: a chat user [linked](#account-linking) to an Omniralph account that is a member of the organization owning the connection                                    | `read` and `action` tools                                                   |
-| **Slack user on the organization's email domains**: not linked, but their Slack profile email's domain is one of the organization's email domains (**Settings › Organization**) | `read` tools only                                                           |
+| **Slack user on the organization's email domains**: not linked, but their Slack profile email's domain is one of the organization's email domains (**Settings › Members**) | `read` tools only                                                           |
 | **Everyone else**                                                                                                                                                               | No tools; the bot answers without organization data and posts a link prompt |
 
 - An organization without email domains grants no domain-based access, and the deployment-wide

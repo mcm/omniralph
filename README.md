@@ -38,7 +38,7 @@ of it; nobody outside it sees any of it, and its jobs only ever reach its own ag
   agents, change settings and rules, and manage members; `member`s see everything in the
   organization and can dismiss and restore findings, but not change its setup. There's no
   instance-wide admin. The last admin of an organization can't be demoted, removed or leave.
-- **Invitations.** Admins invite people by email under **Settings › Organization**, as `admin` or
+- **Invitations.** Admins invite people by email under **Settings › Members**, as `admin` or
   `member`. Invitations expire after 14 days and can be revoked. No email is sent: the invitee
   signs in and accepts it on the onboarding page (also reachable from **New organization** in the
   switcher). A pending invitation also
@@ -154,7 +154,7 @@ details.
    → [docs/deploy-control-panel.md](docs/deploy-control-panel.md)
 2. **Sign in and create an organization.** Anyone allowed by `ALLOWED_EMAIL_DOMAINS` (or invited)
    can sign in and create an organization, becoming its admin. Invite teammates and set email
-   domains under **Settings › Organization**; everything below is set up per organization.
+   domains under **Settings › Members**; everything below is set up per organization.
 3. **Connect code hosts.** Create the GitHub App from its manifest and install it under
    **Repos › Add repo › Connect GitHub** → [docs/github-app.md](docs/github-app.md). Connect GitLab
    projects with a bot token under **Repos › Add repo › Connect GitLab** → [docs/gitlab.md](docs/gitlab.md).
