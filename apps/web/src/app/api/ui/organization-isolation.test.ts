@@ -316,6 +316,7 @@ const hostTool = await import("./host-tools/[id]/route");
 const askChats = await import("./ask/chats/route");
 const askChat = await import("./ask/chats/[id]/route");
 const askChatMessages = await import("./ask/chats/[id]/messages/route");
+const askChatActions = await import("./ask/chats/[id]/actions/route");
 const askRepositories = await import("./ask/repositories/route");
 const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
 const { default: AppLayout } = await import("../../(app)/layout");
@@ -2823,6 +2824,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
   it("shows each member only their own Ask chats and their organization's repos, 404 on anything else", async () => {
     const chats = new Map<string, { id: string }>();
+    /** Each chat's card message, by organization. */
+    const cards = new Map<string, string>();
     for (const own of [a, b]) {
       const thread = await createWebChatThread(db, {
         organizationId: own.orgId,
@@ -2837,6 +2840,22 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         userId: own.memberId,
         markdown: `${own.name} question`,
       });
+      const card = (await appendWebMessage(db, {
+        threadId: thread.id,
+        author: "om",
+        markdown: "**Pick one**",
+        card: {
+          type: "card",
+          title: "Pick one",
+          children: [
+            {
+              type: "actions",
+              children: [{ type: "button", id: "pick", label: "This", value: "1" }],
+            },
+          ],
+        },
+      }))!;
+      cards.set(own.orgId, card.id);
       chats.set(own.orgId, thread);
     }
     for (const [own, other] of [
@@ -2870,6 +2889,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ]) {
         expect((await call(askChats.POST, { body })).status, JSON.stringify(body)).toBe(404);
       }
+      // A card action on the other chat, or on its card through one's own chat.
+      const otherCard = { messageId: cards.get(other.orgId)!, actionId: "pick", value: "1" };
+      expect(
+        (await call(askChatActions.POST, { params: { id: otherChat.id }, body: otherCard })).status,
+      ).toBe(404);
+      expect(
+        (await call(askChatActions.POST, { params: { id: ownChat.id }, body: otherCard })).status,
+      ).toBe(404);
       expect(await db.select().from(chatWebMessages)).toHaveLength(before.length);
 
       const repos = await call(askRepositories.GET);
@@ -2884,6 +2911,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       // A chat is private to the member who started it, even within the organization.
       state.userId = own.adminId;
       expect((await call(askChat.GET, { params: { id: ownChat.id } })).status).toBe(404);
+      expect(
+        (
+          await call(askChatActions.POST, {
+            params: { id: ownChat.id },
+            body: { messageId: cards.get(own.orgId)!, actionId: "pick", value: "1" },
+          })
+        ).status,
+      ).toBe(404);
       expect(
         ((await call(askChats.GET)).body.chats as Array<{ id: string }>).map((c) => c.id),
       ).not.toContain(ownChat.id);

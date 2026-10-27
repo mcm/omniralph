@@ -256,6 +256,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       "answer_run_permission",
       "answer_run_cleanup",
       "send_ralph_guidance",
+      "draft_request",
       "draft_linear_issue",
       "delegate_linear_issue",
     ]);
@@ -263,7 +264,12 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     expect(chatTools.start_work?.tier).toBe("action");
     expect(chatTools.start_ralph_request).toBeUndefined();
     expect(chatTools.send_to_session).toBeUndefined();
-    for (const name of ["reply_to_run", "answer_run_permission", "answer_run_cleanup"]) {
+    for (const name of [
+      "reply_to_run",
+      "answer_run_permission",
+      "answer_run_cleanup",
+      "draft_request",
+    ]) {
       expect(chatTools[name]?.tier).toBe("action");
     }
     expect(chatTools.draft_linear_issue?.tier).toBe("action");

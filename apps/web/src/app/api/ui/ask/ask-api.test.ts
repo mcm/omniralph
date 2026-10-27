@@ -7,6 +7,9 @@ import {
   closeDb,
   connectRepository,
   createChatLinearIssueDraft,
+  createChatRequestDraft,
+  getChatLinearIssueDraft,
+  getChatRequestDraft,
   createDb,
   createWebChatThread,
   disconnectRepository,
@@ -33,6 +36,7 @@ import { Actions, Button, Card, CardText, type Logger } from "chat";
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  askCardActionResponseSchema,
   askChatDetailSchema,
   askChatListSchema,
   askChatSchema,
@@ -44,8 +48,10 @@ import {
 import { parseSseChunks, type AskStreamEvent } from "@/lib/ask/sse";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Bot from "@/lib/chat/bot";
+import type { RalphDeps } from "@/lib/ralph/run";
 import type * as Adapters from "@/lib/scm/adapters";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
+import { fakeWorkItemTracker } from "@/lib/testing/work-item-tracker";
 
 vi.mock("server-only", () => ({}));
 // Called through, so a test can see the change events a route records.
@@ -96,6 +102,9 @@ const { webCardRef } = await import("@/lib/chat/web-adapter");
 const chatsRoute = await import("./chats/route");
 const chatRoute = await import("./chats/[id]/route");
 const messagesRoute = await import("./chats/[id]/messages/route");
+const actionsRoute = await import("./chats/[id]/actions/route");
+const { requestDraftCard, requestDraftContext, requestDraftView } =
+  await import("@/lib/chat/request-draft");
 const repositoriesRoute = await import("./repositories/route");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -821,6 +830,201 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
         ["Beta", "beta/api"],
       ]);
       expect((await list({ organization: strangerOrgId })).status).toBe(404);
+    });
+  });
+
+  describe("POST /chats/{id}/actions", () => {
+    let linear: ReturnType<typeof fakeWorkItemTracker>;
+
+    beforeAll(() => {
+      // The web's request cards link runs on the deployment's URL.
+      vi.stubEnv("APP_URL", APP_URL);
+    });
+
+    beforeEach(() => {
+      linear = fakeWorkItemTracker({ teams: [{ id: "team-1", key: "ENG", name: "Engineering" }] });
+      state.bot = createChatBot({
+        db,
+        slack: null,
+        discord: null,
+        state: createMockState(),
+        handler: { handle: async () => undefined },
+        logger: createMockLogger(),
+        env: ENV,
+        tracker: async () => linear.tracker,
+        ralph: async (organizationId) => ({ db, organizationId }) as unknown as RalphDeps,
+      });
+    });
+
+    const act = (chatId: string, body: unknown) =>
+      request(actionsRoute.POST, { body, params: { id: chatId } });
+
+    /** A request draft of Ada's in `thread`, its card posted as the web adapter stores it. */
+    async function requestCard(thread: ChatThread) {
+      const draft = await createChatRequestDraft(db, {
+        organizationId: orgId,
+        threadId: thread.id,
+        requestedByUserId: "ada",
+        requestedByExternalUserId: "ada",
+        repositoryId: portalId,
+        title: "Retry webhooks on 5xx",
+        request: "Retry failed webhook deliveries.",
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const view = requestDraftView(
+        draft,
+        await requestDraftContext(db, draft, { platform: "web", appUrl: APP_URL }),
+      );
+      const card = requestDraftCard(view);
+      const message = (await appendWebMessage(db, {
+        threadId: thread.id,
+        author: "om",
+        markdown: view.title,
+        card,
+        cardRef: webCardRef(card),
+      }))!;
+      return { draft, message };
+    }
+
+    /** A Linear issue draft of Ada's in `thread`, its card posted as the web adapter stores it. */
+    async function linearCard(thread: ChatThread) {
+      const draft = await createChatLinearIssueDraft(db, {
+        threadId: thread.id,
+        requestedByUserId: "ada",
+        requestedByExternalUserId: "ada",
+        teamId: "team-1",
+        teamKey: "ENG",
+        title: "Fix the login bug",
+        description: "Users can't log in.",
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const card = draftCard(draft);
+      const message = (await appendWebMessage(db, {
+        threadId: thread.id,
+        author: "om",
+        markdown: "New Linear issue",
+        card,
+        cardRef: webCardRef(card),
+      }))!;
+      return { draft, message };
+    }
+
+    const chatChanges = (thread: ChatThread) =>
+      vi
+        .mocked(recordChange)
+        .mock.calls.filter(
+          ([, change]) =>
+            (change as { resource: string }).resource === "chat" &&
+            (change as { ids: readonly string[] }).ids[0] === thread.id,
+        );
+
+    it("dismisses a drafted request with Not now and returns the updated message", async () => {
+      const thread = await chatOf("ada", orgId, portalId);
+      const { draft, message } = await requestCard(thread);
+
+      const response = await json(
+        await act(thread.id, {
+          messageId: message.id,
+          actionId: "request_draft_dismiss",
+          value: draft.id,
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const { message: updated } = askCardActionResponseSchema.parse(response.body);
+      expect(updated).toMatchObject({
+        id: message.id,
+        card: {
+          kind: "request_draft",
+          draft: {
+            id: draft.id,
+            status: "dismissed",
+            triageChoice: "inline",
+            actions: [],
+            outcome: { kind: "dismissed", text: "Not now" },
+          },
+        },
+      });
+      expect((await getChatRequestDraft(db, draft.id))!.status).toBe("dismissed");
+      expect(chatChanges(thread).length).toBeGreaterThan(0);
+    });
+
+    it("shows why Start request was refused, keeping the buttons", async () => {
+      const thread = await chatOf("ada", orgId, portalId);
+      const { draft, message } = await requestCard(thread);
+
+      const response = await json(
+        await act(thread.id, { messageId: message.id, actionId: "request_draft_start" }),
+      );
+
+      const { message: updated } = askCardActionResponseSchema.parse(response.body);
+      expect(updated.card).toMatchObject({
+        kind: "request_draft",
+        draft: {
+          status: "pending",
+          error: "Coding is off for customer-portal.",
+          actions: [
+            expect.objectContaining({ label: "Start request" }),
+            expect.objectContaining({ label: "Not now" }),
+          ],
+        },
+      });
+      expect((await getChatRequestDraft(db, draft.id))!.status).toBe("pending");
+    });
+
+    it("creates and cancels Linear issue drafts", async () => {
+      const thread = await chatOf("ada");
+      const created = await linearCard(thread);
+      const response = await json(
+        await act(thread.id, {
+          messageId: created.message.id,
+          actionId: "linear_issue_create",
+          value: created.draft.id,
+        }),
+      );
+      expect(response.status).toBe(200);
+      const [issue] = [...linear.workspace.issues.values()];
+      expect(issue).toMatchObject({ teamId: "team-1", title: "Fix the login bug" });
+      expect(askCardActionResponseSchema.parse(response.body).message.card).toMatchObject({
+        kind: "linear_issue_draft",
+        draft: { status: "created", issue: { identifier: issue!.identifier }, actions: [] },
+      });
+
+      const cancelled = await linearCard(thread);
+      const cancel = await json(
+        await act(thread.id, {
+          messageId: cancelled.message.id,
+          actionId: "linear_issue_cancel",
+          value: cancelled.draft.id,
+        }),
+      );
+      expect(askCardActionResponseSchema.parse(cancel.body).message.card).toMatchObject({
+        kind: "linear_issue_draft",
+        draft: { status: "cancelled", actions: [] },
+      });
+      expect((await getChatLinearIssueDraft(db, cancelled.draft.id))!.status).toBe("cancelled");
+      expect(linear.workspace.issues.size).toBe(1);
+    });
+
+    it("404s on another member's chat and a message of another chat; 400s on a button the card hasn't", async () => {
+      const thread = await chatOf("ada", orgId, portalId);
+      const { draft, message } = await requestCard(thread);
+      const other = await chatOf("ada", orgId, portalId);
+      const dismiss = { messageId: message.id, actionId: "request_draft_dismiss", value: draft.id };
+
+      state.user = { id: "bob", name: "Bob", email: "bob@acme.test" };
+      expect((await act(thread.id, dismiss)).status).toBe(404);
+      state.user = ada;
+      expect((await act(other.id, dismiss)).status).toBe(404);
+      const unknown = await json(
+        await act(thread.id, { messageId: message.id, actionId: "pick", value: draft.id }),
+      );
+      expect(unknown).toMatchObject({
+        status: 400,
+        body: { error: "That card has no such button anymore." },
+      });
+      expect((await act(thread.id, { messageId: "nope", actionId: "x" })).status).toBe(400);
+      expect((await getChatRequestDraft(db, draft.id))!.status).toBe("pending");
     });
   });
 });

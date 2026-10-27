@@ -16,6 +16,7 @@ import {
 import {
   Chat,
   ConsoleLogger,
+  type ActionEvent,
   type Adapter,
   type Logger,
   type Message,
@@ -26,6 +27,7 @@ import {
 import { gateway } from "ai";
 import { getAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import type { RalphDeps } from "@/lib/ralph/run";
 import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { chatAgentConfig } from "./agent/config";
 import { attachmentMetadata } from "./attachments";
@@ -35,6 +37,9 @@ import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identi
 import { createLinkUrl } from "./link";
 import { handleLinearIssueAction, LINEAR_ISSUE_ACTIONS } from "./linear-issue";
 import { CHAT_ACCOUNTS_PATH } from "./link-paths";
+import type { PlaybookLookup } from "./playbooks";
+import { REQUEST_DRAFT_ACTIONS } from "./request-draft";
+import { handleRequestDraftAction } from "./request-draft-actions";
 import { slackOAuthConfig, type SlackCredentials, type SlackOAuthConfig } from "./slack-oauth";
 import { createWebAdapter, webChatConnection } from "./web-adapter";
 
@@ -160,6 +165,10 @@ export interface ChatBotDeps {
   now?: () => Date;
   /** An organization's work item tracker, for issues drafted in chat (default: `getWorkItemTracker`). */
   tracker?: (organizationId: string) => Promise<WorkItemTracker>;
+  /** The ralph orchestrator's dependencies, for requests started from a card (default: `defaultDeps`). */
+  ralph?: (organizationId: string) => Promise<RalphDeps>;
+  /** Looks up the playbooks chat runs (default: the organization's). */
+  getPlaybook?: PlaybookLookup;
 }
 
 export interface ChatBot {
@@ -355,24 +364,45 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
   }
 
   chat.onNewMention((thread, message, context) => converse(thread, message, context, true));
-  chat.onAction(LINEAR_ISSUE_ACTIONS, async (event) => {
-    const connection = await connectionFor(
+  /** The connection that received a card click, or null. */
+  const actionConnection = (event: ActionEvent) =>
+    connectionFor(
       event.adapter,
       event.threadId,
       event.thread?.isDM ?? event.adapter.isDM?.(event.threadId) ?? false,
     );
+  const resolveActor = (c: ChatConnection, externalUserId: string) =>
+    resolveChatActor(identityDeps, {
+      organizationId: c.organizationId,
+      connection: c,
+      platform: c.platform,
+      externalUserId,
+    });
+  chat.onAction(LINEAR_ISSUE_ACTIONS, async (event) => {
+    const connection = await actionConnection(event);
     if (!connection) return;
     await handleLinearIssueAction(
       {
         db,
-        resolveActor: (c, externalUserId) =>
-          resolveChatActor(identityDeps, {
-            organizationId: c.organizationId,
-            connection: c,
-            platform: c.platform,
-            externalUserId,
-          }),
+        resolveActor,
         tracker: deps.tracker,
+        now: deps.now,
+        logger,
+      },
+      event,
+      connection,
+    );
+  });
+  chat.onAction(REQUEST_DRAFT_ACTIONS, async (event) => {
+    const connection = await actionConnection(event);
+    if (!connection) return;
+    await handleRequestDraftAction(
+      {
+        db,
+        resolveActor,
+        ralph: deps.ralph,
+        getPlaybook: deps.getPlaybook,
+        env: deps.env,
         now: deps.now,
         logger,
       },

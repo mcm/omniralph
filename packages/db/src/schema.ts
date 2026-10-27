@@ -174,6 +174,19 @@ export const chatLinearIssueDraftStatus = pgEnum("chat_linear_issue_draft_status
   "cancelled",
   "expired",
 ]);
+/**
+ * A request Om drafted in chat (`draft_request`): `starting` / `adding` while a **Start
+ * request** / **Add to backlog** click runs.
+ */
+export const chatRequestDraftStatus = pgEnum("chat_request_draft_status", [
+  "pending",
+  "starting",
+  "started",
+  "adding",
+  "added",
+  "dismissed",
+  "expired",
+]);
 export const triageRunStatus = pgEnum("triage_run_status", [
   "queued",
   "running",
@@ -799,6 +812,56 @@ export const chatLinearIssueDrafts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("chat_linear_issue_drafts_thread_id_idx").on(t.threadId)],
+);
+
+/**
+ * A request Om drafted in a chat thread (`draft_request`) when an answer needs a code
+ * change: posted as a card with **Start request** / **Add to backlog** / **Not now**, acted
+ * on only by the member who asked, before `expiresAt`.
+ */
+export const chatRequestDrafts = pgTable(
+  "chat_request_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    /** The linked member who asked: the only one whose click acts on it. */
+    requestedByUserId: text("requested_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Their chat user ID. */
+    requestedByExternalUserId: text("requested_by_external_user_id").notNull(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references((): AnyPgColumn => repositories.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    /** The self-contained description of the change (Markdown). */
+    request: text("request").notNull(),
+    status: chatRequestDraftStatus("status").notNull().default("pending"),
+    /** Add to backlog: whether Om triages the work item at once. */
+    triageNow: boolean("triage_now"),
+    /** Why the last click didn't go through (shown on the card), or null. */
+    error: text("error"),
+    /** The request run Start request started. */
+    ralphRunId: uuid("ralph_run_id").references((): AnyPgColumn => ralphRuns.id, {
+      onDelete: "set null",
+    }),
+    /** The work item Add to backlog created. */
+    workItemTracker: text("work_item_tracker"),
+    workItemExternalId: text("work_item_external_id"),
+    workItemIdentifier: text("work_item_identifier"),
+    workItemUrl: text("work_item_url"),
+    /** The chat message of the card (set once posted). */
+    messageId: text("message_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chat_request_drafts_thread_id_idx").on(t.threadId)],
 );
 
 /**

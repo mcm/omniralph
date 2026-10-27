@@ -258,6 +258,15 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
 
       let linkNeeded = actor.kind === "unlinked";
       let handedOff = false;
+      // What tools post after the turn's text (e.g. a drafted request's card).
+      const afterTurn: Array<() => Promise<void>> = [];
+      const postAfterTurn = async () => {
+        for (const post of afterTurn.splice(0)) {
+          await post().catch((error: unknown) =>
+            logger.error("Couldn't post a chat agent card", { threadId: thread.id, error }),
+          );
+        }
+      };
       const web = connection.platform === "web";
       // The web reply streamed so far (web only): what an error or the final text replaces.
       let streamedId: string | null = null;
@@ -296,6 +305,9 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             getPlaybook: deps.getPlaybook,
             handedOff: () => {
               handedOff = true;
+            },
+            afterTurn: (post) => {
+              afterTurn.push(post);
             },
           },
           () => {
@@ -349,6 +361,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           await thread.post({ markdown: text });
         }
         await recordTurn(record, result.messages, quiet ? null : text);
+        await postAfterTurn();
       } catch (error) {
         logger.error("Chat agent turn failed", { organizationId, threadId: thread.id, error });
         const apologize = async () => {
@@ -360,6 +373,8 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           logger.error("Couldn't post the chat agent apology", { threadId: thread.id, postError }),
         );
         if (web) sendWebEvent("error", { message: ERROR_REPLY });
+        // What a tool drafted before the failure still gets its card.
+        await postAfterTurn();
       }
 
       // Also after an error: a user who needs a link should still get it.

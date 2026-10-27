@@ -98,7 +98,10 @@ const REPOSITORY_NEEDED = {
  * choice may no longer be valid; an error result when it isn't.
  */
 export async function chatPlaybookOf(
-  context: ChatToolContext,
+  context: Pick<
+    ChatToolContext,
+    "db" | "connection" | "chatThread" | "organizationId" | "getPlaybook"
+  >,
   slot: ChatPlaybookSlot,
 ): Promise<{ task: TaskDefinition } | { error: "playbook_unavailable"; message: string }> {
   const playbooks = await chatPlaybooksFor(

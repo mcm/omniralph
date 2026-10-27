@@ -1,6 +1,8 @@
 import "server-only";
 import {
   createChatLinearIssueDraft,
+  createChatRequestDraft,
+  setChatRequestDraftMessage,
   getRun,
   latestThreadRun,
   lockRun,
@@ -32,7 +34,15 @@ import {
   draftCard,
   LINEAR_ISSUE_DRAFT_TTL_MS,
 } from "../linear-issue";
-import { chatPlaybookOf, findRalphRunId } from "./read-tools";
+import {
+  REQUEST_DRAFT_REQUEST_MAX,
+  REQUEST_DRAFT_TITLE_MAX,
+  REQUEST_DRAFT_TTL_MS,
+  requestDraftCard,
+  requestDraftContext,
+  requestDraftView,
+} from "../request-draft";
+import { chatPlaybookOf, findRalphRunId, findRepository } from "./read-tools";
 import {
   defineChatTool,
   LINK_REQUIRED_RESULT,
@@ -579,12 +589,95 @@ export const delegateLinearIssue = defineChatTool({
   },
 });
 
+export const draftRequest = defineChatTool({
+  tier: "action",
+  description:
+    'Drafts a request from the conversation when your answer to a question is a code change: posts a card after your reply with Start request (starts a coding run on the request), Add to backlog (files it as a work item) and Not now. Nothing starts until the user who asked clicks (within 24 hours). Use it instead of only describing the change; when a member explicitly asks you to make a change, use start_work, and when they ask to file an issue, draft_linear_issue. Introduce the card in one short line (e.g. "I drafted the request from this conversation:") and don\'t repeat its content.',
+  inputSchema: z.object({
+    repository: z
+      .string()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe(
+        "Full path (e.g. `acme/api`) or id of the organization's repository to change; defaults to the chat's repository.",
+      ),
+    title: z
+      .string()
+      .min(1)
+      .max(REQUEST_DRAFT_TITLE_MAX)
+      .describe("A short, specific title of the change."),
+    request: z
+      .string()
+      .min(1)
+      .max(REQUEST_DRAFT_REQUEST_MAX)
+      .describe(
+        "The self-contained description of the change in Markdown: what to change, where and why, with every detail from the conversation it needs (the coding session doesn't read the chat).",
+      ),
+  }),
+  async execute(input, context: ChatToolContext) {
+    const { db, actor, thread, chatThread, organizationId, appUrl } = context;
+    if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
+    const ref = input.repository?.trim() || chatThread.repositoryId;
+    if (!ref) {
+      return {
+        error: "repository_needed",
+        message:
+          "Say which of the organization's repositories the change is for (pass `repository`), or ask the user.",
+      };
+    }
+    const repository = await findRepository(db, organizationId, ref);
+    if (!repository) {
+      return {
+        error: "unknown_repository",
+        message: `\`${ref}\` isn't a connected repository of this organization. Ask the user which repository they mean.`,
+      };
+    }
+    const draft = await createChatRequestDraft(db, {
+      organizationId,
+      threadId: chatThread.id,
+      requestedByUserId: actor.userId,
+      requestedByExternalUserId: context.requesterExternalUserId,
+      repositoryId: repository.id,
+      title: input.title.trim(),
+      request: input.request.trim(),
+      expiresAt: new Date(Date.now() + REQUEST_DRAFT_TTL_MS),
+    });
+    const post = async () => {
+      const view = requestDraftView(
+        draft,
+        await requestDraftContext(db, draft, {
+          platform: context.connection.platform ?? "slack",
+          appUrl,
+        }),
+      );
+      const posted = await thread.post(requestDraftCard(view));
+      await setChatRequestDraftMessage(db, draft.id, posted.id);
+    };
+    if (context.afterTurn) context.afterTurn(post);
+    else await post();
+    context.handedOff();
+    return {
+      status: "drafted",
+      draft: {
+        id: draft.id,
+        repository: repository.fullPath,
+        title: draft.title,
+        expiresAt: draft.expiresAt.toISOString(),
+      },
+      message:
+        'The request card with Start request, Add to backlog and Not now is posted right after your reply; nothing starts until the user clicks (within 24 hours). Introduce it in one short line, e.g. "I drafted the request from this conversation:", without repeating it.',
+    };
+  },
+});
+
 export const actionTools: ChatToolRegistry = {
   start_work: startWork,
   reply_to_run: replyToRun,
   answer_run_permission: answerRunPermission,
   answer_run_cleanup: answerRunCleanup,
   send_ralph_guidance: sendRalphGuidance,
+  draft_request: draftRequest,
   draft_linear_issue: draftLinearIssue,
   delegate_linear_issue: delegateLinearIssue,
 };

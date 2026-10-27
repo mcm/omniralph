@@ -1,6 +1,7 @@
 import "server-only";
 import {
   getChatLinearIssueDraft,
+  getChatRequestDraft,
   type ChatLinearIssueDraft,
   type ChatThread,
   type ChatWebMessage,
@@ -8,7 +9,9 @@ import {
 } from "@omniralph/db";
 import { cardChildToFallbackText, isCardElement, type CardChild, type CardElement } from "chat";
 import type { AskCard, AskCardAction, AskLinearIssueDraft } from "@/lib/api/ask";
+import { getAppUrl } from "@/lib/app-url";
 import { attachmentName } from "@/lib/chat/attachments";
+import { requestDraftContext, requestDraftView } from "@/lib/chat/request-draft";
 import {
   CANCEL_LINEAR_ISSUE_ACTION,
   CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
@@ -19,8 +22,8 @@ import {
 
 /**
  * The cards of a web chat as the web shows them: a card that acts on a draft (its
- * `card_ref`) is shown from the draft's current state, any other card as its title, text
- * and buttons (the stored Chat SDK card).
+ * `card_ref`: a request or a Linear issue) is shown from the draft's current state, any other
+ * card as its title, text and buttons (the stored Chat SDK card).
  */
 
 /** Every button of a card, in sections too. */
@@ -97,6 +100,19 @@ export async function askCards(
   const cards = new Map<string, AskCard>();
   await Promise.all(
     rows.map(async (row) => {
+      if (row.cardRef?.kind === "request_draft") {
+        const draft = await getChatRequestDraft(db, row.cardRef.draftId);
+        // A draft of another chat never shows here.
+        if (draft && draft.threadId === thread.id) {
+          const context = await requestDraftContext(db, draft, {
+            platform: "web",
+            appUrl: getAppUrl(),
+            now,
+          });
+          cards.set(row.id, { kind: "request_draft", draft: requestDraftView(draft, context) });
+          return;
+        }
+      }
       if (row.cardRef?.kind === "linear_issue_draft") {
         const draft = await getChatLinearIssueDraft(db, row.cardRef.draftId);
         // A draft of another chat never shows here.

@@ -168,8 +168,58 @@ export const askLinearIssueDraftSchema = z.object({
 });
 export type AskLinearIssueDraft = z.infer<typeof askLinearIssueDraftSchema>;
 
-/** A card in a chat: a Linear issue draft, or any other card as its title, text and buttons. */
+export const REQUEST_DRAFT_STATES = [
+  "pending",
+  "starting",
+  "started",
+  "adding",
+  "added",
+  "dismissed",
+  "expired",
+] as const;
+export type RequestDraftState = (typeof REQUEST_DRAFT_STATES)[number];
+
+/** How a card's button looks on the web (none is `primary`: nothing in Ask needs you). */
+export const REQUEST_DRAFT_ACTION_STYLES = ["solid", "outline", "ghost"] as const;
+
+/**
+ * A request Om drafted (`draft_request`), in its current state: the one model its Chat SDK
+ * card (Slack, Discord) and its web card both render (`requestDraftView`).
+ */
+export const askRequestDraftSchema = z.object({
+  id: z.string(),
+  /** `expired` once its 24 hours are over, even before anyone clicked. */
+  status: z.enum(REQUEST_DRAFT_STATES),
+  title: z.string(),
+  repository: repositoryRefSchema.nullable(),
+  /**
+   * How Add to backlog asks whether to triage: `inline` (the web's Triage now checkbox,
+   * sent with the click) or `follow_up` (the card asks "Triage it now?" after the click).
+   */
+  triageChoice: z.enum(["inline", "follow_up"]),
+  /** Start request, Add to backlog (when the repo can take work items), Not now; none after. */
+  actions: z.array(askCardActionSchema.extend({ style: z.enum(REQUEST_DRAFT_ACTION_STYLES) })),
+  /** What came of it, replacing the buttons; null while it can still be acted on. */
+  outcome: z
+    .object({
+      kind: z.enum(["started", "added", "dismissed", "expired"]),
+      text: z.string(),
+      /** The request run Start request started. */
+      run: z.object({ id: z.string(), url: z.string() }).nullable(),
+      /** The work item Add to backlog created. */
+      workItem: z
+        .object({ tracker: z.literal("linear"), identifier: z.string(), url: z.string() })
+        .nullable(),
+    })
+    .nullable(),
+  /** Why the last click didn't go through (e.g. coding is off for the repo); the buttons stay. */
+  error: z.string().nullable(),
+});
+export type RequestDraftView = z.infer<typeof askRequestDraftSchema>;
+
+/** A card in a chat: a request or Linear issue draft, or any other card as its title, text and buttons. */
 export const askCardSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("request_draft"), draft: askRequestDraftSchema }),
   z.object({ kind: z.literal("linear_issue_draft"), draft: askLinearIssueDraftSchema }),
   z.object({
     kind: z.literal("generic"),
@@ -223,3 +273,15 @@ export const askRepositoryListSchema = z.object({
   repositories: z.array(askRepositoryOptionSchema),
 });
 export type AskRepositoryList = z.infer<typeof askRepositoryListSchema>;
+
+/** `POST /api/ui/ask/chats/{id}/actions`: a click on a card's button. */
+export const askCardActionRequestSchema = z.object({
+  messageId: z.uuid(),
+  actionId: z.string().min(1).max(100),
+  value: z.string().max(1_000).nullable().optional(),
+});
+export type AskCardActionRequest = z.infer<typeof askCardActionRequestSchema>;
+
+/** The clicked card's message as it stands after the action. */
+export const askCardActionResponseSchema = z.object({ message: askMessageSchema });
+export type AskCardActionResponse = z.infer<typeof askCardActionResponseSchema>;

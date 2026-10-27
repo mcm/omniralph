@@ -1,0 +1,239 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`requestDraftCard > renders a pending draft with its buttons 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_start",
+          "label": "Start request",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_add",
+          "label": "Add to backlog",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_dismiss",
+          "label": "Not now",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders a pending draft with its buttons 2`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_start",
+          "label": "Start request",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_dismiss",
+          "label": "Not now",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders a refusal above the buttons 1`] = `
+{
+  "children": [
+    {
+      "content": "Coding is off for customer-portal.",
+      "style": undefined,
+      "type": "text",
+    },
+    {
+      "children": [
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_start",
+          "label": "Start request",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_add",
+          "label": "Add to backlog",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_dismiss",
+          "label": "Not now",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders each outcome instead of the buttons 1`] = `
+{
+  "children": [
+    {
+      "content": "Request started",
+      "style": undefined,
+      "type": "text",
+    },
+    {
+      "children": [
+        {
+          "id": undefined,
+          "label": "Open run",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "link-button",
+          "url": "https://omniralph.example.com/runs/44444444-4444-4444-8444-444444444444",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders each outcome instead of the buttons 2`] = `
+{
+  "children": [
+    {
+      "content": "Added to the backlog · Om is triaging it: ENG-42",
+      "style": undefined,
+      "type": "text",
+    },
+    {
+      "children": [
+        {
+          "id": undefined,
+          "label": "Open ENG-42",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "link-button",
+          "url": "https://linear.app/acme/issue/ENG-42",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders each outcome instead of the buttons 3`] = `
+{
+  "children": [
+    {
+      "content": "Not now",
+      "style": undefined,
+      "type": "text",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
+exports[`requestDraftCard > renders each outcome instead of the buttons 4`] = `
+{
+  "children": [
+    {
+      "content": "This draft expired",
+      "style": undefined,
+      "type": "text",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
