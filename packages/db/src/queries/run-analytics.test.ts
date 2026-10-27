@@ -21,9 +21,12 @@ import {
   reviews,
   triageRuns,
 } from "../schema.js";
-import { getAnalytics } from "./analytics.js";
-import { getRalphAnalytics } from "./ralph-analytics.js";
-import { getRunAnalytics, runAnalyticsBucketStarts } from "./run-analytics.js";
+import {
+  analyticsWindow,
+  getRunAnalytics,
+  listAnalyticsRepositories,
+  runAnalyticsBucketStarts,
+} from "./run-analytics.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -39,6 +42,18 @@ const noTokens = {
   triage: zeroTokens,
   ask: zeroTokens,
 };
+
+describe("analyticsWindow", () => {
+  it("covers whole UTC days ending with today", () => {
+    expect(analyticsWindow(7, now)).toEqual({
+      from: new Date("2026-09-29T00:00:00Z"),
+      to: new Date("2026-10-06T00:00:00Z"),
+    });
+    expect(analyticsWindow(90, new Date("2026-10-05T23:59:59Z")).from).toEqual(
+      new Date("2026-07-08T00:00:00Z"),
+    );
+  });
+});
 
 describe("runAnalyticsBucketStarts", () => {
   it("lists every day, or every Monday-started week overlapping the window", () => {
@@ -471,35 +486,125 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
     expect(buckets[0]!.stories + buckets[1]!.stories).toBe(totals.stories);
   });
 
-  it("matches the existing story and token figures for the same window and repo", async () => {
+  /**
+   * The story and token figures the old Analytics queries (`getRalphAnalytics`,
+   * `getAnalytics`) returned for this seed, captured before they were deleted, so the
+   * definitions stay pinned: stories = completed stories of epic and request runs started in
+   * the window; epic + request tokens = `ralph.*` jobs' usage by the job's creation; review
+   * tokens = the reviews' tokens by the review's creation. 30 and 90 days add the run and
+   * job of 2026-09-28. Each day lists `[stories, epic + request tokens in, review tokens in]`;
+   * every other day of the window is zero.
+   */
+  const LEGACY_FIGURES: Record<
+    "all" | "repoA" | "repoB",
+    Record<
+      "week" | "month",
+      {
+        stories: number;
+        ralph: { tokensIn: number; tokensOut: number };
+        review: { tokensIn: number; tokensOut: number };
+        daily: Record<string, [number, number, number]>;
+      }
+    >
+  > = {
+    all: {
+      week: {
+        stories: 3,
+        ralph: { tokensIn: 4750, tokensOut: 475 },
+        review: { tokensIn: 1300, tokensOut: 230 },
+        daily: {
+          "2026-10-01": [0, 0, 300],
+          "2026-10-02": [1, 3000, 0],
+          "2026-10-03": [0, 50, 0],
+          "2026-10-04": [0, 400, 0],
+          "2026-10-05": [2, 1300, 1000],
+        },
+      },
+      month: {
+        stories: 4,
+        ralph: { tokensIn: 13750, tokensOut: 1375 },
+        review: { tokensIn: 1300, tokensOut: 230 },
+        daily: {
+          "2026-09-28": [1, 9000, 0],
+          "2026-10-01": [0, 0, 300],
+          "2026-10-02": [1, 3000, 0],
+          "2026-10-03": [0, 50, 0],
+          "2026-10-04": [0, 400, 0],
+          "2026-10-05": [2, 1300, 1000],
+        },
+      },
+    },
+    repoA: {
+      week: {
+        stories: 2,
+        ralph: { tokensIn: 1750, tokensOut: 175 },
+        review: { tokensIn: 1000, tokensOut: 200 },
+        daily: {
+          "2026-10-03": [0, 50, 0],
+          "2026-10-04": [0, 400, 0],
+          "2026-10-05": [2, 1300, 1000],
+        },
+      },
+      month: {
+        stories: 3,
+        ralph: { tokensIn: 10750, tokensOut: 1075 },
+        review: { tokensIn: 1000, tokensOut: 200 },
+        daily: {
+          "2026-09-28": [1, 9000, 0],
+          "2026-10-03": [0, 50, 0],
+          "2026-10-04": [0, 400, 0],
+          "2026-10-05": [2, 1300, 1000],
+        },
+      },
+    },
+    repoB: {
+      week: {
+        stories: 1,
+        ralph: { tokensIn: 3000, tokensOut: 300 },
+        review: { tokensIn: 300, tokensOut: 30 },
+        daily: { "2026-10-01": [0, 0, 300], "2026-10-02": [1, 3000, 0] },
+      },
+      month: {
+        stories: 1,
+        ralph: { tokensIn: 3000, tokensOut: 300 },
+        review: { tokensIn: 300, tokensOut: 30 },
+        daily: { "2026-10-01": [0, 0, 300], "2026-10-02": [1, 3000, 0] },
+      },
+    },
+  };
+
+  it("keeps the old Analytics page's story and token figures for each window and repo", async () => {
     for (const days of [7, 30, 90] as const) {
-      for (const repositoryId of [undefined, repoA, repoB]) {
-        const filter = { organizationId: acme, days, repositoryId, now };
-        const [runs, ralph, reviewAnalytics] = await Promise.all([
-          getRunAnalytics(db, { organizationIds: [acme], days, repositoryId, bucket: "day", now }),
-          getRalphAnalytics(db, filter),
-          getAnalytics(db, filter),
-        ]);
+      for (const [name, repositoryId] of [
+        ["all", undefined],
+        ["repoA", repoA],
+        ["repoB", repoB],
+      ] as const) {
+        const expected = LEGACY_FIGURES[name][days === 7 ? "week" : "month"];
+        const runs = await getRunAnalytics(db, {
+          organizationIds: [acme],
+          days,
+          repositoryId,
+          bucket: "day",
+          now,
+        });
         const { tokens, stories } = runs.totals;
-        expect(stories).toBe(ralph.storyOutcomes.firstAttempt + ralph.storyOutcomes.afterRetries);
-        expect(tokens.epic.tokensIn + tokens.request.tokensIn).toBe(ralph.totals.tokensIn);
-        expect(tokens.epic.tokensOut + tokens.request.tokensOut).toBe(ralph.totals.tokensOut);
-        expect(tokens.review).toEqual({
-          tokensIn: reviewAnalytics.totals.tokensIn,
-          tokensOut: reviewAnalytics.totals.tokensOut,
-        });
+        expect(stories).toBe(expected.stories);
+        expect({
+          tokensIn: tokens.epic.tokensIn + tokens.request.tokensIn,
+          tokensOut: tokens.epic.tokensOut + tokens.request.tokensOut,
+        }).toEqual(expected.ralph);
+        expect(tokens.review).toEqual(expected.review);
         // Day by day too.
-        runs.buckets.forEach((bucket, i) => {
-          const ralphDay = ralph.daily[i]!;
-          expect(bucket.start).toBe(ralphDay.date);
-          expect(bucket.stories).toBe(
-            ralphDay.stories.firstAttempt + ralphDay.stories.afterRetries,
+        expect(runs.buckets).toHaveLength(days);
+        for (const bucket of runs.buckets) {
+          const [dayStories, ralphIn, reviewIn] = expected.daily[bucket.start] ?? [0, 0, 0];
+          expect(bucket.stories, bucket.start).toBe(dayStories);
+          expect(bucket.tokens.epic.tokensIn + bucket.tokens.request.tokensIn, bucket.start).toBe(
+            ralphIn,
           );
-          expect(bucket.tokens.epic.tokensIn + bucket.tokens.request.tokensIn).toBe(
-            ralphDay.tokensIn,
-          );
-          expect(bucket.tokens.review.tokensIn).toBe(reviewAnalytics.daily[i]!.tokensIn);
-        });
+          expect(bucket.tokens.review.tokensIn, bucket.start).toBe(reviewIn);
+        }
       }
     }
   });
@@ -517,6 +622,7 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
     ]);
     expect(analytics.byRepository[0]).toMatchObject({
       repository: { id: repoA, provider: "github", fullPath: "acme/api" },
+      organization: { id: acme, name: "Acme" },
       stories: 2,
       reviewRuns: 1,
       attempts: { finished: 7, completed: 3, failed: 2, expired: 1, successRate: 0.5 },
@@ -557,10 +663,10 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       tokens: { epic: { tokensIn: 5, tokensOut: 1 } },
     });
     expect(both.totals.stories).toBe(4);
-    expect(both.byRepository.map((r) => r.repository.fullPath)).toEqual([
-      "acme/api",
-      "acme/web",
-      "beta/app",
+    expect(both.byRepository.map((r) => [r.repository.fullPath, r.organization.name])).toEqual([
+      ["acme/api", "Acme"],
+      ["acme/web", "Acme"],
+      ["beta/app", "Beta"],
     ]);
 
     const betaOnly = await getRunAnalytics(db, {
@@ -585,5 +691,35 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       attempts: { finished: 0, completed: 0, failed: 0, expired: 0, successRate: null },
       tokens: noTokens,
     });
+  });
+
+  it("lists every repository of the scope with its organization, active or not", async () => {
+    const [idle] = await db
+      .insert(organizations)
+      .values({ name: "Idle" })
+      .returning({ id: organizations.id });
+    expect(await listAnalyticsRepositories(db, [beta, acme])).toEqual([
+      {
+        id: repoA,
+        provider: "github",
+        fullPath: "acme/api",
+        organization: { id: acme, name: "Acme" },
+      },
+      {
+        id: repoB,
+        provider: "github",
+        fullPath: "acme/web",
+        organization: { id: acme, name: "Acme" },
+      },
+      {
+        id: repoC,
+        provider: "github",
+        fullPath: "beta/app",
+        organization: { id: beta, name: "Beta" },
+      },
+    ]);
+    expect((await listAnalyticsRepositories(db, [beta])).map((r) => r.id)).toEqual([repoC]);
+    expect(await listAnalyticsRepositories(db, [idle!.id])).toEqual([]);
+    expect(await listAnalyticsRepositories(db, [])).toEqual([]);
   });
 });

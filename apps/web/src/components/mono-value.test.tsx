@@ -2,8 +2,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDateTimeAfter } from "@/lib/format-date";
-import { Timestamp } from "./list-table";
 import { MonoValue, monoValueTail } from "./mono-value";
 
 const css = readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
@@ -53,41 +51,5 @@ describe("MonoValue", () => {
     expect(rule(".mono-value")).toContain("white-space: nowrap");
     expect(rule(".mono-value-head")).toContain("text-overflow: ellipsis");
     expect(rule(".mono-value-tail")).toContain("flex-shrink: 0");
-  });
-});
-
-describe("Timestamp", () => {
-  const iso = "2026-10-05T15:04:00.000Z";
-
-  it("renders mono and on one line, in a table or inline in text", () => {
-    expect(renderToStaticMarkup(<Timestamp iso={iso} />)).toMatch(
-      /^<time dateTime="2026-10-05T15:04:00.000Z" class="list-time text-numeric">/,
-    );
-    expect(renderToStaticMarkup(<Timestamp iso={iso} inline />)).toMatch(
-      /class="mono-time text-numeric"/,
-    );
-    expect(rule(".list-time")).toContain("white-space: nowrap");
-    expect(rule(".mono-time")).toContain("white-space: nowrap");
-  });
-
-  it("shows a relative time with the exact one in its title", () => {
-    const now = new Date(iso).getTime() + 5 * 60_000;
-    const html = renderToStaticMarkup(<Timestamp iso={iso} now={now} />);
-    expect(html).toContain(">5 min ago</time>");
-    expect(html).toMatch(/title="[^"]+"/);
-  });
-
-  it("drops the date parts it shares with `after`, the full value in its title", () => {
-    const sameDay = renderToStaticMarkup(
-      <Timestamp iso={iso} after={new Date(new Date(iso).getTime() - 60_000).toISOString()} />,
-    );
-    expect(sameDay).toContain(`>${formatDateTimeAfter(iso, iso)}</time>`);
-    expect(sameDay).not.toContain(">" + formatDateTime(iso) + "<");
-    expect(sameDay).toContain(`title="${formatDateTime(iso)}"`);
-    const otherYear = renderToStaticMarkup(
-      <Timestamp iso={iso} after="2024-01-01T12:00:00.000Z" />,
-    );
-    expect(otherYear).toContain(`>${formatDateTime(iso)}</time>`);
-    expect(otherYear).not.toContain("title=");
   });
 });

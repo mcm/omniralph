@@ -56,9 +56,9 @@ the button that clears a needs-you item is `primary` (lavender, with the glow); 
 every other action are outline or solid neutral. A toast is never lavender.
 
 **The State Vocabulary Rule.** Every run, story, job, review and agent state maps to exactly one
-tone, the same way everywhere (badge, dot, row tint, chart series). The map lives in one module
-(on today's screens, `src/lib/state-variants.ts` with `ralph-badges.tsx` and
-`review-badges.tsx`) and nothing chooses a state color locally.
+tone, the same way everywhere (badge, dot, row tint). The map lives in one module (for runs,
+`src/components/runs/run-status.ts`) and nothing chooses a state color locally. Charts carry no
+state: their marks are neutral (`BarChart` in `@omniralph/ui`).
 
 **The No Celebration Rule.** Routine actions (save, connect, retry, dismiss) are confirmed with
 an inline "Saved" state or a toast, never an effect.

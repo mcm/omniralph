@@ -259,7 +259,6 @@ const routingPreview = await import("./routing/preview/route");
 const liveToken = await import("./live/token/route");
 const jobCancel = await import("./jobs/[id]/cancel/route");
 const jobRerun = await import("./jobs/[id]/rerun/route");
-const analytics = await import("./analytics/route");
 const runAnalytics = await import("./analytics/runs/route");
 const settingsHistory = await import("./settings-history/route");
 const backlogList = await import("./backlog/route");
@@ -503,52 +502,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   const markers = (tenant: Tenant) =>
     Object.values(tenant).filter((value) => value !== tenant.adminId && value !== tenant.memberId);
 
-  // First: later tests add jobs, reviews and runs that these counts would include.
-  it("counts only each organization's own reviews, findings, jobs and runs in analytics", async () => {
-    for (const [own, other] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      for (const userId of [own.adminId, own.memberId]) {
-        state.userId = userId;
-        const all = await call(analytics.GET);
-        expect(all).toMatchObject({
-          status: 200,
-          body: {
-            repositories: [{ id: own.repoId, fullPath: own.repoPath }],
-            analytics: {
-              totals: { reviews: 1 },
-              findingsBySeverity: { high: 1 },
-              jobsByAgent: [{ agent: { id: own.agentId }, total: 1 }],
-            },
-            ralph: { totals: { runs: 1 } },
-            params: { days: 30, repositoryId: null },
-          },
-        });
-        const repo = await call(analytics.GET, { path: `/api/ui?days=7&repo=${own.repoId}` });
-        expect(repo).toMatchObject({
-          status: 200,
-          body: {
-            analytics: { totals: { reviews: 1 } },
-            params: { days: 7, repositoryId: own.repoId },
-          },
-        });
-        // The other's repository as the filter is ignored.
-        const theirs = await call(analytics.GET, { path: `/api/ui?repo=${other.repoId}` });
-        expect(theirs).toMatchObject({
-          status: 200,
-          body: { analytics: { totals: { reviews: 1 } }, params: { repositoryId: null } },
-        });
-        for (const { body } of [all, repo, theirs]) {
-          for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
-        }
-      }
-    }
-    state.userId = null;
-    expect((await call(analytics.GET)).status).toBe(401);
-  });
-
-  it("aggregates only each organization's own runs in run analytics, and 404s on the other's", async () => {
+  it("aggregates only each organization's own runs in run analytics, and ignores the other's repo", async () => {
     for (const [own, other] of [
       [a, b],
       [b, a],
@@ -566,14 +520,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           body: { byOrganization: [{ organization: { id: own.orgId } }] },
         });
         expect((all.body.byOrganization as unknown[]).length).toBe(1);
+        expect(all.body.repositories).toEqual([
+          expect.objectContaining({ id: own.repoId, organization: { id: own.orgId, name: own.name } }),
+        ]);
         const repo = await call(runAnalytics.GET, { path: `/api/ui?repository=${own.repoId}` });
-        expect(repo.status).toBe(200);
-        for (const { body } of [active, all, repo]) {
+        expect(repo).toMatchObject({ status: 200, body: { params: { repositoryId: own.repoId } } });
+        // The other's repository as the filter is ignored.
+        const theirs = await call(runAnalytics.GET, { path: `/api/ui?repository=${other.repoId}` });
+        expect(theirs).toMatchObject({ status: 200, body: { params: { repositoryId: null } } });
+        for (const { body } of [active, all, repo, theirs]) {
           for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
         }
-        expect(
-          await call(runAnalytics.GET, { path: `/api/ui?repository=${other.repoId}` }),
-        ).toMatchObject({ status: 404 });
         expect(
           await call(runAnalytics.GET, { path: `/api/ui?organization=${other.orgId}` }),
         ).toMatchObject({ status: 404 });

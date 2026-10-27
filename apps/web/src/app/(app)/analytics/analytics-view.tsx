@@ -1,740 +1,691 @@
 "use client";
 
-import * as React from "react";
-import { Link } from "@/components/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  AreaChart,
   BarChart,
+  Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Empty,
-  Metric,
-  Muted,
-  NativeSelect,
-  Progress,
-  Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@iamthemcmaster/ui";
-import { IconChartBar, IconRepeat, IconServer, IconThumbDown } from "@tabler/icons-react";
-import { AppHeader } from "@/components/app-header";
-import { EmptyValue } from "@/components/empty-value";
-import { useCurrentUser } from "@/components/current-user";
-import { PhoneMeta, WIDE_COLUMN } from "@/components/list-table";
-import { Freshness } from "@/components/freshness";
-import { PageHeader } from "@/components/page-header";
-import { QueryBoundary } from "@/components/query-boundary";
-import { MonoValue } from "@/components/mono-value";
-import { ReviewStatusBadge, SeverityBadge } from "@/components/review-badges";
-import { RalphRunStatusBadge } from "@/components/ralph-badges";
+  DataTable,
+  DetailsSection,
+  EmptyState,
+  InfoPopover,
+  OrgBadge,
+  RepoBadge,
+  SegmentedControl,
+  Select,
+  SummaryCells,
+  toast,
+  type BarChartDatum,
+  type DataTableColumn,
+  type SegmentedOption,
+  type SummaryCell,
+} from "@omniralph/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, type ReactNode } from "react";
+import { formatTokens } from "@/components/runs/details";
 import {
   ANALYTICS_RANGES,
   analyticsHref,
-  countTick,
-  tokenTick,
+  chartSummary,
   dayLabel,
-  falsePositivesNoun,
   formatRate,
-  depthLabel,
-  overallAverageTokens,
+  formatUsd,
+  hasCost,
   parseAnalyticsParams,
-  RALPH_RUN_OUTCOME_LABELS,
-  RALPH_RUN_OUTCOMES,
-  RALPH_STORY_OUTCOME_LABELS,
-  RALPH_STORY_OUTCOMES,
-  ralphDailyRows,
-  type AnalyticsData,
+  unpricedLabel,
+  weekLabel,
   type AnalyticsParams,
-  type RalphAnalyticsData,
 } from "@/lib/analytics/display";
-import { FINDING_SEVERITIES, formatTokens, REVIEW_STATUSES } from "@/lib/reviews/display";
-import { runListHref } from "@/lib/runs/hrefs";
-import { RALPH_RUN_STATUS_VARIANTS, RALPH_STORY_OUTCOME_VARIANTS } from "@/lib/state-variants";
-import { ProviderIcon } from "@/components/provider-icon";
-import type { AnalyticsRepository } from "@/lib/api/analytics";
-import { useAnalytics } from "./analytics-queries";
-import { agentHref } from "@/lib/runs/hrefs";
+import type {
+  RunAnalyticsFiguresResponse,
+  RunAnalyticsOrganizationRow,
+  RunAnalyticsRepositoryOption,
+  RunAnalyticsRepositoryRow,
+  RunAnalyticsResponse,
+} from "@/lib/api/analytics";
+import { RUN_KINDS } from "@/lib/api/runs";
+import { RUN_KIND_LABELS } from "@/screens/inbox/labels";
+import type { ScopeParam } from "@/screens/scope";
+import { useRunAnalytics } from "./analytics-queries";
+import "./analytics.css";
 
-/**
- * Series: the headline in accent; the comparison in neutral through
- * `--analytics-comparison`, which globals.css draws dashed with a fainter fill (plot and
- * legend), so the two never differ by hue alone.
- */
-const PRIMARY_SERIES = { variant: "accent" } as const;
-const COMPARISON_SERIES = { color: "var(--analytics-comparison)" } as const;
+export const ANALYTICS_PATH = "/analytics";
 
-/** KPI tiles: the library `Metric`, mono value, reflowing by min width. */
-function Metrics({ children }: { children: React.ReactNode }) {
-  return <div className="analytics-metrics">{children}</div>;
-}
+/** What every Cost value says it is (Epic 12 fills `costUsd`). */
+export const COST_NOTE =
+  "What these tokens would cost at Anthropic's API list prices, not what was billed.";
 
-/** A label, a bar proportional to the largest count, and the count. */
-function CountRows({ rows }: { rows: { key: string; label: React.ReactNode; count: number }[] }) {
-  const max = Math.max(1, ...rows.map((r) => r.count));
-  return (
-    <ul className="analytics-count-rows">
-      {rows.map((row) => (
-        <li key={row.key} className="analytics-count-row">
-          <span className="analytics-count-label">{row.label}</span>
-          <Progress value={(row.count / max) * 100} />
-          <span className="analytics-num text-numeric">{row.count.toLocaleString()}</span>
-        </li>
-      ))}
-    </ul>
+type RunKind = (typeof RUN_KINDS)[number];
+type Figures = RunAnalyticsFiguresResponse;
+type TokenFigures = Figures["tokens"][RunKind];
+type Bucket = RunAnalyticsResponse["buckets"][number];
+
+const WINDOW_OPTIONS: SegmentedOption<`${(typeof ANALYTICS_RANGES)[number]}`>[] =
+  ANALYTICS_RANGES.map((days) => ({ value: `${days}`, label: `${days} days` }));
+
+const count = (value: number) => value.toLocaleString("en-US");
+
+/** Tokens in and out across every run kind. */
+export function tokenTotals(figures: Pick<Figures, "tokens">): { in: number; out: number } {
+  return RUN_KINDS.reduce(
+    (sum, kind) => ({
+      in: sum.in + figures.tokens[kind].tokensIn,
+      out: sum.out + figures.tokens[kind].tokensOut,
+    }),
+    { in: 0, out: 0 },
   );
 }
 
-function RepositoryLink({ repository }: { repository: AnalyticsRepository }) {
+/** Whether nothing ran in the window: no story, review run, finished attempt or token. */
+export function isEmptyWindow(totals: Figures): boolean {
+  const tokens = tokenTotals(totals);
   return (
-    <Link
-      href={runListHref({ kind: ["review"], repositoryId: repository.id })}
-      className="analytics-repo-link"
-    >
-      <ProviderIcon provider={repository.provider} size={12} />
-      <MonoValue value={repository.fullPath} />
-    </Link>
+    totals.stories === 0 &&
+    totals.reviewRuns === 0 &&
+    totals.attempts.finished === 0 &&
+    tokens.in === 0 &&
+    tokens.out === 0
   );
 }
 
-/** Ralph's token usage, runs and story outcomes over the period. */
-function RalphSection({
-  ralph,
-  analytics,
-  period,
+/** "212 of 220 finished attempts completed" (finished: completed, failed or expired). */
+function rateTitle(attempts: Figures["attempts"]): string {
+  const rated = attempts.completed + attempts.failed + attempts.expired;
+  return `${count(attempts.completed)} of ${count(rated)} finished attempts completed`;
+}
+
+/** A Cost value's tooltip: what it is, and the attempts it leaves out. */
+export function costNote(unpricedAttempts: number | undefined): string {
+  return unpricedAttempts ? `${COST_NOTE}\n${unpricedLabel(unpricedAttempts)}` : COST_NOTE;
+}
+
+/** A figure in mono, with its exact value in `title`. */
+function Mono({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <span className="or-mono" title={title}>
+      {children}
+    </span>
+  );
+}
+
+function Tokens({ value }: { value: number }) {
+  return <Mono title={count(value)}>{formatTokens(value)}</Mono>;
+}
+
+function Rate({ attempts }: { attempts: Figures["attempts"] }) {
+  return attempts.successRate === null ? (
+    <Mono>—</Mono>
+  ) : (
+    <Mono title={rateTitle(attempts)}>{formatRate(attempts.successRate)}</Mono>
+  );
+}
+
+function Cost({ figures }: { figures: { costUsd?: number; unpricedAttempts?: number } }) {
+  return figures.costUsd === undefined ? (
+    <Mono>—</Mono>
+  ) : (
+    <Mono title={costNote(figures.unpricedAttempts)}>{formatUsd(figures.costUsd)}</Mono>
+  );
+}
+
+/** A table cell's figure; on the phone card its column header leads it. */
+function Labeled({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="or-analytics__figure">
+      <span className="or-analytics__figure-label">{label} </span>
+      {children}
+    </span>
+  );
+}
+
+/** The summary strip: the window's totals (Cost only when the response prices tokens). */
+export function analyticsSummaryCells(data: RunAnalyticsResponse): SummaryCell[] {
+  const { totals } = data;
+  const tokens = tokenTotals(totals);
+  const { attempts } = totals;
+  const rated = attempts.completed + attempts.failed + attempts.expired;
+  const cells: SummaryCell[] = [
+    {
+      id: "stories",
+      label: "Stories completed",
+      value: <Mono title={count(totals.stories)}>{count(totals.stories)}</Mono>,
+    },
+    {
+      id: "reviews",
+      label: "Reviews",
+      value: <Mono title={count(totals.reviewRuns)}>{count(totals.reviewRuns)}</Mono>,
+    },
+    {
+      id: "success",
+      label: "Success rate",
+      value: <Rate attempts={attempts} />,
+      ...(attempts.successRate === null
+        ? {}
+        : { detail: `${count(attempts.completed)} of ${count(rated)} attempts` }),
+    },
+    { id: "tokens-in", label: "Tokens in", value: <Tokens value={tokens.in} /> },
+    { id: "tokens-out", label: "Tokens out", value: <Tokens value={tokens.out} /> },
+  ];
+  if (hasCost(data)) {
+    cells.push({
+      id: "cost",
+      label: "Cost",
+      value: <Cost figures={totals} />,
+      info: <InfoPopover label="About cost">{costNote(totals.unpricedAttempts)}</InfoPopover>,
+    });
+  }
+  return cells;
+}
+
+/** The figure columns every table shares: per repo and per organization. */
+function figureColumns<T extends Figures>(withCost: boolean): DataTableColumn<T>[] {
+  const columns: DataTableColumn<T>[] = [
+    {
+      id: "stories",
+      header: "Stories",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Stories">
+          <Mono>{count(row.stories)}</Mono>
+        </Labeled>
+      ),
+    },
+    {
+      id: "reviews",
+      header: "Reviews",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Reviews">
+          <Mono>{count(row.reviewRuns)}</Mono>
+        </Labeled>
+      ),
+    },
+    {
+      id: "success",
+      header: "Success rate",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Success rate">
+          <Rate attempts={row.attempts} />
+        </Labeled>
+      ),
+    },
+    {
+      id: "tokens-in",
+      header: "Tokens in",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Tokens in">
+          <Tokens value={tokenTotals(row).in} />
+        </Labeled>
+      ),
+    },
+    {
+      id: "tokens-out",
+      header: "Tokens out",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Tokens out">
+          <Tokens value={tokenTotals(row).out} />
+        </Labeled>
+      ),
+    },
+  ];
+  if (withCost) {
+    columns.push({
+      id: "cost",
+      header: "Cost",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Cost">
+          <Cost figures={row} />
+        </Labeled>
+      ),
+    });
+  }
+  return columns;
+}
+
+/** "By repo": the repo (after its organization under "All organizations"), then the figures. */
+export function repositoryColumns(
+  showOrganization: boolean,
+  withCost: boolean,
+): DataTableColumn<RunAnalyticsRepositoryRow>[] {
+  return [
+    {
+      id: "repo",
+      header: "Repo",
+      card: "title",
+      cell: (row) => (
+        <span className="or-analytics__repo">
+          {showOrganization ? (
+            <span className="or-analytics__repo-org">
+              <OrgBadge name={row.organization.name} />
+            </span>
+          ) : null}
+          <RepoBadge host={row.repository.provider} name={row.repository.fullPath} strong />
+        </span>
+      ),
+    },
+    // On the phone card the organization leads the meta (the table shows it in Repo).
+    ...(showOrganization
+      ? [
+          {
+            id: "organization",
+            header: "Organization",
+            table: "hidden" as const,
+            cell: (row: RunAnalyticsRepositoryRow) => <OrgBadge name={row.organization.name} />,
+          },
+        ]
+      : []),
+    ...figureColumns<RunAnalyticsRepositoryRow>(withCost),
+  ];
+}
+
+/** "By organization": the organization, then the figures. */
+export function organizationColumns(
+  withCost: boolean,
+): DataTableColumn<RunAnalyticsOrganizationRow>[] {
+  return [
+    {
+      id: "organization",
+      header: "Organization",
+      card: "title",
+      cell: (row) => <OrgBadge name={row.organization.name} />,
+    },
+    ...figureColumns<RunAnalyticsOrganizationRow>(withCost),
+  ];
+}
+
+interface KindRow extends TokenFigures {
+  kind: RunKind;
+}
+
+/** "By kind": Epic, Request, Review, Triage and Ask, leaving out kinds with no tokens. */
+export function kindRows(totals: Figures): KindRow[] {
+  return RUN_KINDS.map((kind) => ({ kind, ...totals.tokens[kind] })).filter(
+    (row) => row.tokensIn + row.tokensOut > 0,
+  );
+}
+
+function kindColumns(withCost: boolean): DataTableColumn<KindRow>[] {
+  return [
+    { id: "kind", header: "Kind", card: "title", cell: (row) => RUN_KIND_LABELS[row.kind] },
+    {
+      id: "tokens-in",
+      header: "Tokens in",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Tokens in">
+          <Tokens value={row.tokensIn} />
+        </Labeled>
+      ),
+    },
+    {
+      id: "tokens-out",
+      header: "Tokens out",
+      align: "end",
+      cell: (row) => (
+        <Labeled label="Tokens out">
+          <Tokens value={row.tokensOut} />
+        </Labeled>
+      ),
+    },
+    ...(withCost
+      ? [
+          {
+            id: "cost",
+            header: "Cost",
+            align: "end" as const,
+            cell: (row: KindRow) => (
+              <Labeled label="Cost">
+                <Cost figures={row} />
+              </Labeled>
+            ),
+          },
+        ]
+      : []),
+  ];
+}
+
+/** Repos by total tokens (in + out), most first; ties by full path. */
+export function sortByTokens(rows: readonly RunAnalyticsRepositoryRow[]) {
+  const total = (row: RunAnalyticsRepositoryRow) => {
+    const tokens = tokenTotals(row);
+    return tokens.in + tokens.out;
+  };
+  return [...rows].sort(
+    (a, b) =>
+      total(b) - total(a) || a.repository.fullPath.localeCompare(b.repository.fullPath),
+  );
+}
+
+/** One chart series: each bucket's datum (its short label, its full name for weeks). */
+function series(
+  data: RunAnalyticsResponse,
+  value: (bucket: Bucket) => number | null,
+  note?: (bucket: Bucket) => string | undefined,
+): BarChartDatum[] {
+  return data.buckets.map((bucket) => ({
+    key: bucket.start,
+    label: dayLabel(bucket.start),
+    ...(data.bucket === "week" ? { title: weekLabel(bucket.start) } : {}),
+    value: value(bucket),
+    ...(note ? { note: note(bucket) } : {}),
+  }));
+}
+
+function AnalyticsChart({
+  data,
+  title,
+  valueHeader,
+  points,
+  format,
+  max,
+  emptyValueText,
+  hideTitle,
+  overallRate,
 }: {
-  ralph: RalphAnalyticsData;
-  analytics: AnalyticsData;
-  period: string;
+  data: RunAnalyticsResponse;
+  /** The chart's caption, e.g. "In". */
+  title: string;
+  /** What the summary and the table call the value, e.g. "Tokens in". */
+  valueHeader: string;
+  points: BarChartDatum[];
+  format: (value: number) => string;
+  max?: number;
+  emptyValueText?: string;
+  hideTitle?: boolean;
+  /** For a rate: the window's overall rate (null when nothing was rated). */
+  overallRate?: number | null;
 }) {
-  const daily = ralphDailyRows(ralph, analytics);
-  const tokens = ralph.totals.tokensIn + ralph.totals.tokensOut;
-  const outcomes = ralph.storyOutcomes;
-  const completed = outcomes.firstAttempt + outcomes.afterRetries;
-  const stories = completed + outcomes.exhausted + outcomes.blocked;
-  const noRuns = ralph.totals.runs === 0;
-  const noRunsEmpty = (
-    <Empty
-      size="sm"
-      icon={<IconRepeat size={20} />}
-      title="No coding tasks"
-      titleAs="h4"
-      description="No coding tasks started in this period."
+  return (
+    <BarChart
+      title={title}
+      hideTitle={hideTitle}
+      summary={chartSummary({
+        title: valueHeader,
+        bucket: data.bucket,
+        from: data.from,
+        to: data.to,
+        points: points.map((point) => ({ start: point.key, value: point.value })),
+        format,
+        measure: overallRate === undefined ? { kind: "total" } : { kind: "rate", overall: overallRate },
+      })}
+      data={points}
+      formatValue={format}
+      max={max}
+      tableHeaders={[data.bucket === "week" ? "Week of" : "Day", valueHeader]}
+      emptyValueText={emptyValueText}
     />
   );
+}
 
+function Charts({ data, withCost }: { data: RunAnalyticsResponse; withCost: boolean }) {
   return (
-    <section aria-labelledby="analytics-ralph" className="analytics-section">
-      <div>
-        <h2 id="analytics-ralph" className="analytics-section-title">
-          Coding
-        </h2>
-        <Muted>
-          Token usage of coding jobs, the tasks started in the period and their stories&apos;
-          outcomes.
-        </Muted>
-      </div>
-
-      <Metrics>
-        <Metric label="Runs started" value={ralph.totals.runs.toLocaleString()} />
-        <Metric
-          label="Coding tokens"
-          value={formatTokens(tokens)}
-          title={`${tokens.toLocaleString()} tokens`}
+    <div className="or-analytics__charts">
+      <Card title="Stories completed">
+        <AnalyticsChart
+          data={data}
+          title="Stories completed"
+          valueHeader="Stories completed"
+          hideTitle
+          points={series(data, (bucket) => bucket.stories)}
+          format={count}
         />
-        <Metric
-          label="Stories completed"
-          value={completed.toLocaleString()}
-          unit={`of ${stories.toLocaleString()}`}
-        />
-        <Metric
-          label="Attempts per story"
-          value={completed === 0 ? <EmptyValue /> : ralph.averageAttempts.toLocaleString()}
-          title="Average attempts per completed story"
-        />
-      </Metrics>
-
-      <div className="analytics-split">
-        <Card ribbon>
-          <CardHeader>
-            <CardTitle as="h3">Coding tokens per day</CardTitle>
-            <CardDescription>
-              {period}: {formatTokens(ralph.totals.tokensIn)} in,{" "}
-              {formatTokens(ralph.totals.tokensOut)} out over {ralph.totals.jobs.toLocaleString()}{" "}
-              jobs. Coding jobs next to reviews (in + out).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {noRuns && tokens === 0 ? (
-              noRunsEmpty
-            ) : (
-              <AreaChart
-                aria-label="Coding tokens per day"
-                height={240}
-                data={daily}
-                xKey="day"
-                showLegend
-                tickFormatter={formatTokens}
-                areas={[
-                  { key: "ralphTokens", label: "Coding", ...PRIMARY_SERIES },
-                  { key: "reviewTokens", label: "Reviews", ...COMPARISON_SERIES },
-                ]}
-              />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle as="h3">Runs per day</CardTitle>
-            <CardDescription>{period}, runs started by their status</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {noRuns ? (
-              noRunsEmpty
-            ) : (
-              <BarChart
-                aria-label="Runs per day"
-                height={240}
-                data={daily}
-                xKey="day"
-                stacked
-                showLegend
-                tickFormatter={countTick}
-                bars={RALPH_RUN_OUTCOMES.map((outcome) => ({
-                  key: outcome,
-                  label: RALPH_RUN_OUTCOME_LABELS[outcome],
-                  variant: RALPH_RUN_STATUS_VARIANTS[outcome],
-                }))}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle as="h3">Story outcomes per day</CardTitle>
-          <CardDescription>{period}, stories of the runs started each day</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {noRuns ? (
-            noRunsEmpty
-          ) : (
-            <BarChart
-              aria-label="Story outcomes per day"
-              height={240}
-              data={daily}
-              xKey="day"
-              stacked
-              showLegend
-              tickFormatter={countTick}
-              bars={RALPH_STORY_OUTCOMES.map((outcome) => ({
-                key: outcome,
-                label: RALPH_STORY_OUTCOME_LABELS[outcome],
-                variant: RALPH_STORY_OUTCOME_VARIANTS[outcome],
-              }))}
-            />
-          )}
-        </CardContent>
       </Card>
-
-      <div className="analytics-cards">
-        <Card>
-          <CardHeader>
-            <CardTitle as="h3">Story outcomes</CardTitle>
-            <CardDescription>Stories of the runs started in the period</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {noRuns ? (
-              noRunsEmpty
-            ) : (
-              <CountRows
-                rows={RALPH_STORY_OUTCOMES.map((outcome) => ({
-                  key: outcome,
-                  label: RALPH_STORY_OUTCOME_LABELS[outcome],
-                  count: outcomes[outcome],
-                }))}
-              />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle as="h3">Runs by status</CardTitle>
-            <CardDescription>{ralph.totals.runs.toLocaleString()} runs</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {noRuns ? (
-              noRunsEmpty
-            ) : (
-              <CountRows
-                rows={RALPH_RUN_OUTCOMES.map((outcome) => ({
-                  key: outcome,
-                  label: <RalphRunStatusBadge status={outcome} />,
-                  count: ralph.runsByOutcome[outcome],
-                }))}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
-}
-
-/**
- * The window and repository from the URL, and a setter. A chosen filter shows at once,
- * before the navigation that puts it in the URL (bookmarkable, back button) has finished.
- */
-function useAnalyticsParams(): [AnalyticsParams, (change: Partial<AnalyticsParams>) => void] {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const search = searchParams.toString();
-  // The server checks the repository (another organization's is ignored).
-  const fromUrl = parseAnalyticsParams(Object.fromEntries(searchParams));
-  const [chosen, setChosen] = React.useState<{ search: string; params: AnalyticsParams } | null>(
-    null,
-  );
-  // Once the URL moves on (the navigation landed, or Back), the choice is spent.
-  if (chosen && chosen.search !== search) setChosen(null);
-  const params = chosen?.search === search ? chosen.params : fromUrl;
-  const setFilter = (change: Partial<AnalyticsParams>) => {
-    const next = { ...params, ...change };
-    setChosen({ search, params: next });
-    router.push(analyticsHref(pathname, next), { scroll: false });
-  };
-  return [params, setFilter];
-}
-
-/** Metric tiles and chart cards shaped like the page while its first load is pending. */
-function AnalyticsSkeleton() {
-  const chartCard = (height: string) => (
-    <Card>
-      <CardHeader>
-        <Skeleton width="45%" height="1.25rem" />
-        <Skeleton width="70%" />
-      </CardHeader>
-      <CardContent>
-        <Skeleton height={height} />
-      </CardContent>
-    </Card>
-  );
-  return (
-    <div className="analytics-body">
-      <Metrics>
-        {Array.from({ length: 4 }, (_, index) => (
-          <Metric
-            key={index}
-            label={<Skeleton width={`${40 + ((index * 17) % 30)}%`} height="0.75rem" />}
-            value={<Skeleton width="4rem" height="1.75rem" />}
+      <Card title="Reviews">
+        <AnalyticsChart
+          data={data}
+          title="Reviews"
+          valueHeader="Reviews"
+          hideTitle
+          points={series(data, (bucket) => bucket.reviewRuns)}
+          format={count}
+        />
+      </Card>
+      <Card title="Success rate">
+        <AnalyticsChart
+          data={data}
+          title="Success rate"
+          valueHeader="Success rate"
+          hideTitle
+          points={series(data, (bucket) => bucket.attempts.successRate)}
+          format={formatRate}
+          max={1}
+          emptyValueText="No attempts"
+          overallRate={data.totals.attempts.successRate}
+        />
+      </Card>
+      <Card title="Tokens" className="or-analytics__tokens">
+        <div className="or-analytics__stack">
+          <AnalyticsChart
+            data={data}
+            title="In"
+            valueHeader="Tokens in"
+            points={series(data, (bucket) => tokenTotals(bucket).in)}
+            format={formatTokens}
           />
+          <AnalyticsChart
+            data={data}
+            title="Out"
+            valueHeader="Tokens out"
+            points={series(data, (bucket) => tokenTotals(bucket).out)}
+            format={formatTokens}
+          />
+          {withCost ? (
+            <AnalyticsChart
+              data={data}
+              title="Cost"
+              valueHeader="Cost"
+              points={series(
+                data,
+                (bucket) => bucket.costUsd ?? null,
+                (bucket) => costNote(bucket.unpricedAttempts),
+              )}
+              format={formatUsd}
+            />
+          ) : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/** Card-shaped placeholders while the first figures load (no spinner, no text). */
+function Placeholders() {
+  return (
+    <div className="or-analytics__placeholders" aria-hidden="true">
+      <div className="or-analytics__placeholder or-analytics__placeholder--summary" />
+      <div className="or-analytics__charts">
+        {[0, 1, 2, 3].map((index) => (
+          <div key={index} className="or-analytics__placeholder or-analytics__placeholder--chart" />
         ))}
-      </Metrics>
-      <div className="analytics-split">
-        {chartCard("15rem")}
-        {chartCard("15rem")}
-      </div>
-      <div className="analytics-cards">
-        {chartCard("10rem")}
-        {chartCard("10rem")}
-        {chartCard("10rem")}
       </div>
     </div>
   );
 }
 
-/**
- * The Analytics page, live: the window and repository from the URL poll
- * (`GET /api/ui/analytics`); a new filter keeps the previous figures, dimmed, until its own
- * arrive.
- */
-export function AnalyticsView() {
-  const isAdmin = useCurrentUser().role === "admin";
-  const [params, setFilter] = useAnalyticsParams();
-  const query = useAnalytics(params);
-  const repositories = query.data?.repositories ?? [];
-  const repository = repositories.find((r) => r.id === params.repositoryId) ?? null;
-  const scope = repository ? repository.fullPath : "all repositories";
-
-  return (
-    <>
-      <AppHeader breadcrumbs={[{ label: "Analytics" }]} />
-      <div className="detail-main analytics-main">
-        <PageHeader
-          title="Analytics"
-          description={`Token usage, review quality and coding tasks for ${scope}, last ${params.days} days by UTC day.`}
-          meta={<Freshness query={query} />}
-          actions={
-            <>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                aria-label="Time range"
-                value={String(params.days)}
-                onValueChange={(value) => {
-                  if (value) setFilter({ days: Number(value) as AnalyticsParams["days"] });
-                }}
-              >
-                {ANALYTICS_RANGES.map((days) => (
-                  <ToggleGroupItem key={days} value={String(days)} aria-label={`Last ${days} days`}>
-                    {days}d
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-              <NativeSelect
-                aria-label="Filter by repository"
-                value={repository?.id ?? ""}
-                onChange={(e) => setFilter({ repositoryId: e.target.value || null })}
-              >
-                <option value="">All repositories</option>
-                {repositories.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.fullPath}
-                  </option>
-                ))}
-              </NativeSelect>
-            </>
-          }
-        />
-
-        <QueryBoundary query={query} skeleton={<AnalyticsSkeleton />} what="analytics">
-          {(loaded) => (
-            <div className="list-pending analytics-body" aria-busy={query.isPlaceholderData}>
-              <AnalyticsContent
-                analytics={loaded.analytics}
-                ralph={loaded.ralph}
-                params={loaded.params}
-                isAdmin={isAdmin}
-              />
-            </div>
-          )}
-        </QueryBoundary>
-      </div>
-    </>
+/** The Repository filter's options: one group per organization under "All organizations". */
+function repositoryOptions(
+  repositories: readonly RunAnalyticsRepositoryOption[],
+  grouped: boolean,
+): ReactNode {
+  const option = (repository: RunAnalyticsRepositoryOption) => (
+    <option key={repository.id} value={repository.id}>
+      {repository.fullPath}
+    </option>
   );
+  if (!grouped) return repositories.map(option);
+  const groups = new Map<string, { name: string; repositories: RunAnalyticsRepositoryOption[] }>();
+  for (const repository of repositories) {
+    const group = groups.get(repository.organization.id) ?? {
+      name: repository.organization.name,
+      repositories: [],
+    };
+    group.repositories.push(repository);
+    groups.set(repository.organization.id, group);
+  }
+  return [...groups.entries()]
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+    .map(([id, group]) => (
+      <optgroup key={id} label={group.name}>
+        {group.repositories.map(option)}
+      </optgroup>
+    ));
 }
 
-/** The figures of one window and repository. */
-export function AnalyticsContent({
-  analytics,
-  ralph,
-  params,
-  isAdmin,
-}: {
-  analytics: AnalyticsData;
-  ralph: RalphAnalyticsData;
-  /** The filter `analytics` and `ralph` were computed for. */
-  params: AnalyticsParams;
-  isAdmin: boolean;
-}) {
-  const { totals } = analytics;
-  const period = `Last ${params.days} days`;
-  const daily = analytics.daily.map((d) => ({
-    day: dayLabel(d.date),
-    tokensIn: d.tokensIn,
-    tokensOut: d.tokensOut,
-    reviews: d.reviews,
-  }));
-  const depths = analytics.byDepth.map((d) => ({
-    depth: depthLabel(d.depth),
-    averageTokens: d.averageTokens,
-  }));
-  const totalFindings = Object.values(analytics.findingsBySeverity).reduce((a, b) => a + b, 0);
-  const noReviews = totals.reviews === 0;
-  const averageTokens = overallAverageTokens(analytics.byDepth);
+export interface AnalyticsViewProps {
+  /** `all` under "All organizations", else the active organization's id. */
+  scope: ScopeParam;
+}
+
+/**
+ * Analytics: the window (7, 30 or 90 days) and repository filters in the URL (`?days=`,
+ * `?repo=`, defaults left out), the summary strip, four bar charts with their tables, and
+ * the figures by repo, by organization (under "All organizations") and by kind. A live
+ * query: the figures update in place as runs, attempts and reviews finish. Changing a
+ * filter keeps the previous figures (`aria-busy`) while the new ones load; a failed refetch
+ * keeps them too and says so in a toast. Cost shows only when the response prices tokens.
+ */
+export function AnalyticsView({ scope }: AnalyticsViewProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const params = parseAnalyticsParams({
+    days: searchParams.get("days") ?? undefined,
+    repo: searchParams.get("repo") ?? undefined,
+  });
+  const showOrganization = scope === "all";
+  const query = useRunAnalytics(params, scope);
+  const data = query.data;
+
+  const navigate = (next: AnalyticsParams) =>
+    router.push(analyticsHref(ANALYTICS_PATH, next), { scroll: false });
+
+  // The server ignored a repository outside the scope: drop it from the URL.
+  const ignoredRepository =
+    !query.isPlaceholderData &&
+    data !== undefined &&
+    params.repositoryId !== null &&
+    data.params.repositoryId === null;
+  useEffect(() => {
+    if (ignoredRepository) {
+      router.replace(analyticsHref(ANALYTICS_PATH, { days: params.days, repositoryId: null }), {
+        scroll: false,
+      });
+    }
+  }, [ignoredRepository, params.days, router]);
+
+  // A refetch that fails while figures are shown keeps them, and says so once.
+  const reportedError = useRef(0);
+  const refetchFailed = query.isRefetchError ? query.errorUpdatedAt : 0;
+  useEffect(() => {
+    if (refetchFailed && refetchFailed !== reportedError.current) {
+      reportedError.current = refetchFailed;
+      toast("Couldn't refresh analytics.", { variant: "danger" });
+    }
+  }, [refetchFailed]);
+
+  const withCost = data ? hasCost(data) : false;
+  const selected = data?.repositories.find((r) => r.id === data.params.repositoryId);
+
+  let content: ReactNode;
+  if (!data && query.isError) {
+    content = (
+      <div className="or-analytics__error" role="alert">
+        <p className="or-analytics__error-text">Couldn&apos;t load analytics.</p>
+        <Button variant="outline" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
+  } else if (!data) {
+    content = <Placeholders />;
+  } else if (isEmptyWindow(data.totals)) {
+    content = (
+      <EmptyState
+        title={
+          selected
+            ? `Nothing ran in ${selected.fullPath} in the last ${data.params.days} days`
+            : `Nothing ran in the last ${data.params.days} days`
+        }
+      />
+    );
+  } else {
+    const kinds = kindRows(data.totals);
+    const kindTable = (
+      <DataTable
+        caption="By kind"
+        rows={kinds}
+        getRowId={(row) => row.kind}
+        columns={kindColumns(withCost)}
+      />
+    );
+    content = (
+      <>
+        <SummaryCells aria-label="Summary" cells={analyticsSummaryCells(data)} />
+        <Charts data={data} withCost={withCost} />
+        <Card title="By repo">
+          <DataTable
+            caption="By repo"
+            rows={sortByTokens(data.byRepository)}
+            getRowId={(row) => row.repository.id}
+            getRowHref={(row) =>
+              analyticsHref(ANALYTICS_PATH, { days: params.days, repositoryId: row.repository.id })
+            }
+            columns={repositoryColumns(showOrganization, withCost)}
+          />
+        </Card>
+        {showOrganization ? (
+          <Card title="By organization">
+            <DataTable
+              caption="By organization"
+              rows={data.byOrganization}
+              getRowId={(row) => row.organization.id}
+              columns={organizationColumns(withCost)}
+            />
+          </Card>
+        ) : null}
+        <Card title="By kind" className="or-analytics__by-kind">
+          {kindTable}
+        </Card>
+        <DetailsSection title="By kind" className="or-analytics__by-kind-phone">
+          {kindTable}
+        </DetailsSection>
+      </>
+    );
+  }
 
   return (
-    <>
-      <Metrics>
-        <Metric label="Reviews" value={totals.reviews.toLocaleString()} />
-        <Metric
-          label="Tokens in"
-          value={formatTokens(totals.tokensIn)}
-          title={`${totals.tokensIn.toLocaleString()} tokens`}
-        />
-        <Metric
-          label="Tokens out"
-          value={formatTokens(totals.tokensOut)}
-          title={`${totals.tokensOut.toLocaleString()} tokens`}
-        />
-        <Metric
-          label="Tokens per review"
-          value={formatTokens(averageTokens)}
-          title={`${averageTokens.toLocaleString()} tokens in + out on average, finished reviews`}
-        />
-      </Metrics>
-
-      <div className="analytics-split">
-        <Card ribbon>
-          <CardHeader>
-            <CardTitle as="h2">Tokens per day</CardTitle>
-            <CardDescription>
-              {period}, input and output each on its own scale (output is far smaller)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="analytics-card-stack">
-            <AreaChart
-              aria-label="Input tokens per day"
-              height={176}
-              data={daily}
-              xKey="day"
-              showLegend
-              tickFormatter={tokenTick}
-              areas={[{ key: "tokensIn", label: "Tokens in", ...PRIMARY_SERIES }]}
-            />
-            <AreaChart
-              aria-label="Output tokens per day"
-              height={128}
-              data={daily}
-              xKey="day"
-              showLegend
-              tickFormatter={tokenTick}
-              areas={[{ key: "tokensOut", label: "Tokens out", ...COMPARISON_SERIES }]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Reviews per day</CardTitle>
-            <CardDescription>{period}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BarChart
-              aria-label="Reviews per day"
-              height={240}
-              data={daily}
-              xKey="day"
-              tickFormatter={countTick}
-              bars={[{ key: "reviews", label: "Reviews", ...PRIMARY_SERIES }]}
-            />
-          </CardContent>
-        </Card>
+    <div className="or-analytics">
+      <div className="or-analytics__head">
+        <h1 className="or-analytics__title">Analytics</h1>
+        <div className="or-analytics__filters">
+          <SegmentedControl
+            aria-label="Window"
+            className="or-analytics__window"
+            options={WINDOW_OPTIONS}
+            value={`${params.days}`}
+            onValueChange={(days) =>
+              navigate({ ...params, days: Number(days) as AnalyticsParams["days"] })
+            }
+          />
+          <Select
+            aria-label="Repository"
+            className="or-analytics__repo-select"
+            value={params.repositoryId ?? ""}
+            onChange={(event) => navigate({ ...params, repositoryId: event.target.value || null })}
+          >
+            <option value="">All repos</option>
+            {data ? repositoryOptions(data.repositories, showOrganization) : null}
+          </Select>
+        </div>
       </div>
-
-      <div className="analytics-cards">
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Average tokens per review</CardTitle>
-            <CardDescription>By depth, completed and budget-exhausted reviews</CardDescription>
-          </CardHeader>
-          <CardContent className="analytics-card-stack">
-            {depths.length === 0 ? (
-              <Empty size="sm" icon={<IconChartBar size={20} />} title="No reviews" titleAs="h3" />
-            ) : (
-              <>
-                <BarChart
-                  aria-label="Average tokens per review by depth"
-                  height={160}
-                  data={depths}
-                  xKey="depth"
-                  tickFormatter={formatTokens}
-                  bars={[
-                    {
-                      key: "averageTokens",
-                      label: "Tokens per review",
-                      ...PRIMARY_SERIES,
-                    },
-                  ]}
-                />
-                <Table className="list-table">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Depth</TableHead>
-                      <TableHead className="analytics-num">Reviews</TableHead>
-                      <TableHead className="analytics-num">Average</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {analytics.byDepth.map((p) => (
-                      <TableRow key={p.depth ?? "unknown"}>
-                        <TableCell className="analytics-cell-text">{depthLabel(p.depth)}</TableCell>
-                        <TableCell className="analytics-num text-numeric">
-                          {p.reviews.toLocaleString()}
-                        </TableCell>
-                        <TableCell
-                          className="analytics-num text-numeric"
-                          title={`${p.averageTokens.toLocaleString()} tokens`}
-                        >
-                          {formatTokens(p.averageTokens)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Reviews by status</CardTitle>
-            <CardDescription>{totals.reviews.toLocaleString()} reviews</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CountRows
-              rows={REVIEW_STATUSES.map((status) => ({
-                key: status,
-                label: <ReviewStatusBadge status={status} />,
-                count: analytics.reviewsByStatus[status],
-              }))}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Findings by severity</CardTitle>
-            <CardDescription>{totalFindings.toLocaleString()} findings</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CountRows
-              rows={FINDING_SEVERITIES.map((severity) => ({
-                key: severity,
-                label: <SeverityBadge severity={severity} />,
-                count: analytics.findingsBySeverity[severity],
-              }))}
-            />
-          </CardContent>
-        </Card>
+      <div
+        className="or-analytics__content"
+        aria-busy={query.isPlaceholderData || (!data && query.isFetching) ? "true" : undefined}
+      >
+        {content}
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Dismissal rate per repository</CardTitle>
-          <CardDescription>
-            Dismissed findings out of all findings (superseded ones excluded). A high rate points to
-            a noisy repository: check its learned rules and review depth.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {analytics.dismissalsByRepository.length === 0 ? (
-            <Empty
-              size="sm"
-              icon={<IconThumbDown size={20} />}
-              title="No findings"
-              titleAs="h3"
-              description={noReviews ? "No reviews in this period." : undefined}
-            />
-          ) : (
-            <Table className="list-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="analytics-repo-col">Repository</TableHead>
-                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Findings</TableHead>
-                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Dismissed</TableHead>
-                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>False positives</TableHead>
-                  <TableHead className="analytics-rate-col">Rate</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {analytics.dismissalsByRepository.map((d) => (
-                  <TableRow key={d.repository.id}>
-                    <TableCell className="analytics-repo-col">
-                      <RepositoryLink repository={d.repository} />
-                      <PhoneMeta>
-                        <span className="analytics-phone-detail">
-                          <span className="text-numeric">{d.dismissed.toLocaleString()}</span> of{" "}
-                          <span className="text-numeric">{d.findings.toLocaleString()}</span>{" "}
-                          dismissed,{" "}
-                          <span className="text-numeric">{d.falsePositives.toLocaleString()}</span>{" "}
-                          {falsePositivesNoun(d.falsePositives)}
-                        </span>
-                      </PhoneMeta>
-                    </TableCell>
-                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                      {d.findings.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                      {d.dismissed.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                      {d.falsePositives.toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="analytics-rate">
-                        <Progress
-                          value={d.dismissalRate * 100}
-                          variant={d.dismissalRate >= 0.5 ? "warning" : "accent"}
-                        />
-                        <span className="analytics-num text-numeric">
-                          {formatRate(d.dismissalRate)}
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Jobs per agent</CardTitle>
-          <CardDescription>Jobs assigned to each agent, every job type</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {analytics.jobsByAgent.length === 0 ? (
-            <Empty size="sm" icon={<IconServer size={20} />} title="No jobs ran" titleAs="h3" />
-          ) : (
-            <Table className="list-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Agent</TableHead>
-                  <TableHead className="analytics-num">Jobs</TableHead>
-                  <TableHead className={`analytics-num ${WIDE_COLUMN}`}>Completed</TableHead>
-                  <TableHead className="analytics-num">Failed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {analytics.jobsByAgent.map((a) => (
-                  <TableRow key={a.agent.id}>
-                    <TableCell className="analytics-cell-text">
-                      {isAdmin ? (
-                        <Link href={agentHref(a.agent.id)} className="analytics-link">
-                          {a.agent.name}
-                        </Link>
-                      ) : (
-                        a.agent.name
-                      )}
-                      <PhoneMeta>
-                        <span className="analytics-phone-detail text-numeric">
-                          {a.completed.toLocaleString()} completed
-                        </span>
-                      </PhoneMeta>
-                    </TableCell>
-                    <TableCell className="analytics-num text-numeric">
-                      {a.total.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={`analytics-num text-numeric ${WIDE_COLUMN}`}>
-                      {a.completed.toLocaleString()}
-                    </TableCell>
-                    <TableCell
-                      className="analytics-num text-numeric"
-                      data-failed={a.failed > 0 || undefined}
-                    >
-                      {a.failed.toLocaleString()}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <RalphSection ralph={ralph} analytics={analytics} period={period} />
-    </>
+    </div>
   );
 }

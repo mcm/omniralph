@@ -3,9 +3,11 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
-import { DEFAULT_ANALYTICS_RANGE, type AnalyticsParams } from "@/lib/analytics/display";
-import { analyticsResponseSchema } from "@/lib/api/analytics";
+import { bucketFor, type AnalyticsParams } from "@/lib/analytics/display";
+import { runAnalyticsResponseSchema } from "@/lib/api/analytics";
 import { api } from "@/lib/api/client";
+import { analyticsKeys } from "@/lib/api/keys";
+import type { ScopeParam } from "@/screens/scope";
 
 /**
  * Analytics refetch on live run changes at most this often: aggregates over days don't
@@ -14,24 +16,32 @@ import { api } from "@/lib/api/client";
 export const ANALYTICS_LIVE_THROTTLE_MS = 10_000;
 
 /**
- * The organization's analytics for the page's window and repository: refetched on live
- * run changes (throttled, `ANALYTICS_LIVE_THROTTLE_MS`), and when the tab regains focus.
+ * The scope's run analytics for the window and repository (`GET /api/ui/analytics/runs`),
+ * by day for 7 and 30 days and by week for 90. A live query: `run` change events of the
+ * organizations it covers refetch it, at most once per `ANALYTICS_LIVE_THROTTLE_MS` with a
+ * trailing refetch; it polls only through the live layer's fallback while realtime is down.
+ * The previous window or repository stays while the next one loads.
  */
-export function useAnalytics(params: AnalyticsParams) {
+export function useRunAnalytics(params: AnalyticsParams, scope: ScopeParam) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery({
-    queryKey: keys.analytics.list({ ...params }),
+    queryKey: analyticsKeys(keys).list({
+      days: params.days,
+      repositoryId: params.repositoryId,
+      organization: scope,
+    }),
     queryFn: ({ signal }) =>
-      api.get("/api/ui/analytics", analyticsResponseSchema, {
+      api.get("/api/ui/analytics/runs", runAnalyticsResponseSchema, {
         params: {
-          days: params.days === DEFAULT_ANALYTICS_RANGE ? undefined : params.days,
-          repo: params.repositoryId ?? undefined,
+          days: params.days,
+          bucket: bucketFor(params.days),
+          repository: params.repositoryId ?? undefined,
+          organization: scope,
         },
         organizationId: organization.id,
         signal,
       }),
-    // The previous window or repository stays (dimmed) while the new one loads.
     placeholderData: keepPreviousData,
     meta: { liveThrottleMs: ANALYTICS_LIVE_THROTTLE_MS },
   });

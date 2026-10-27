@@ -158,56 +158,7 @@ body {
   }
 }
 
-/* List tables (Ralph runs, Reviews, Jobs, Repositories; components/list-table.tsx). The
-   row's title links to its in-panel page; exact values are mono and never wrap. Below
-   768px the secondary columns (`.list-col-wide`) are hidden and the first cell carries the
-   row's status and time (`.list-phone-meta`), so a row reads status-first without
-   scrolling. */
-.list-title {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: var(--space-2);
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-.list-cell-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.list-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-.list-secondary > svg {
-  flex-shrink: 0;
-}
-.list-text {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-.list-text-danger {
-  color: var(--danger-fg);
-}
-.list-table th {
-  white-space: nowrap;
-}
-.list-time {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-/* Mono values (components/mono-value.tsx, Timestamp): one line, truncated in the middle. */
+/* Mono values (components/mono-value.tsx): one line, truncated in the middle. */
 .mono-value {
   display: inline-flex;
   max-width: 100%;
@@ -223,9 +174,6 @@ body {
 .mono-value-tail {
   flex-shrink: 0;
 }
-.mono-time {
-  white-space: nowrap;
-}
 .mono-path-segment {
   display: inline-block;
   max-width: 100%;
@@ -233,40 +181,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
-}
-.list-actions {
-  text-align: right;
-  white-space: nowrap;
-}
-.list-phone-meta {
-  display: none;
-}
-@media (max-width: 767.98px) {
-  .list-col-wide,
-  .list-label-wide {
-    display: none;
-  }
-  .list-table th,
-  .list-table td {
-    padding-inline: var(--space-2);
-  }
-  .list-table th:last-child,
-  .list-table td:last-child {
-    padding-inline-end: 0;
-  }
-  .list-phone-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1) var(--space-2);
-    margin-top: var(--space-1);
-  }
-  /* The time always takes the last line, so every row wraps the same way whatever the
-     width of its badge. */
-  .list-phone-meta > time {
-    order: 1;
-    flex-basis: 100%;
-  }
 }
 
 /* Unsaved-changes bar (components/unsaved-changes.tsx): sticks to the bottom of the main
@@ -408,169 +322,6 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-/* Analytics (app/(app)/analytics): every grid reflows by a minimum width, never a fixed
-   column count, so no KPI, chart or table is clipped from 390px to 1440px. */
-.analytics-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-}
-.analytics-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.analytics-section-title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
-}
-.analytics-metrics,
-.analytics-cards,
-.analytics-split {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.analytics-metrics > *,
-.analytics-cards > *,
-.analytics-split > * {
-  min-width: 0;
-}
-/* Two KPIs a row on a phone, all four in one row from about 700px. */
-.analytics-metrics {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
-}
-/* Metric truncates its label; in a narrow tile it wraps instead. */
-.analytics-metrics .text-label {
-  white-space: normal;
-  overflow: visible;
-}
-.analytics-cards {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-}
-/* A wide chart next to a narrow one; stacked below 1024px. */
-.analytics-split {
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (min-width: 1024px) {
-  .analytics-split {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  }
-}
-.analytics-card-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.analytics-count-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.analytics-count-row {
-  display: grid;
-  grid-template-columns: minmax(0, 9rem) minmax(3rem, 1fr) minmax(3ch, auto);
-  align-items: center;
-  gap: var(--space-3);
-}
-.analytics-count-label,
-.analytics-cell-text {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-.analytics-num {
-  text-align: right;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-.analytics-num[data-failed] {
-  color: var(--danger-fg);
-}
-.analytics-repo-link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  min-width: 0;
-  color: var(--text-primary);
-  text-decoration: none;
-}
-.analytics-link {
-  color: inherit;
-  text-decoration: none;
-}
-.analytics-repo-link:hover,
-.analytics-link:hover {
-  text-decoration: underline;
-}
-/* Phone: the repository takes the free width without widening it, so a long path truncates
-   in the middle and the Rate column (bar and %) stays in the card. */
-@media (max-width: 767.98px) {
-  .analytics-repo-col {
-    width: 100%;
-    max-width: 0;
-  }
-}
-@media (min-width: 768px) {
-  .analytics-rate-col {
-    width: 12rem;
-  }
-}
-.analytics-rate {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 5rem;
-}
-.analytics-phone-detail {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.analytics-rate > :first-child {
-  flex: 1;
-}
-/* The comparison series of a two-series chart (tokens out, reviews next to ralph):
-   neutral like a baseline, and dashed with a fainter fill in the plot and the legend, so it
-   never differs from the accent series by hue alone. It is also a step away in lightness:
-   lighter than the accent in light, darker in dark (the dark accent is pale; chart-6 there
-   is as light, border-strong still clears 3:1 on the surface). The view passes this token
-   as the series colour; the selectors key on it because recharts writes it into
-   `stroke`/`fill`. */
-:root {
-  --analytics-comparison: var(--chart-6);
-}
-[data-theme="dark"] {
-  --analytics-comparison: var(--border-strong);
-}
-.analytics-main .recharts-area-curve[stroke="var(--analytics-comparison)"] {
-  stroke-dasharray: 6 4;
-}
-.analytics-main .recharts-area-area[fill="var(--analytics-comparison)"] {
-  fill-opacity: 0.05;
-}
-.analytics-main .recharts-legend-icon[stroke="var(--analytics-comparison)"] {
-  stroke-dasharray: 3 2;
-  stroke-width: 3;
-}
-
-/* Recharts measures tick labels in a hidden span to space them out, but the library
-   renders ticks in mono (`.text-numeric`): measure in the same face, or the measured
-   labels come out narrower than drawn and the x-axis ticks overlap. The padding (it has to
-   beat recharts' inline `padding: 0`) keeps a visible gap between neighbouring ticks. */
-#recharts_measurement_span {
-  padding-inline: var(--space-1) !important;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 
 /* agent: agent detail. */
@@ -975,9 +726,6 @@ body {
   align-items: center;
   gap: var(--space-3);
 }
-.empty-value {
-  color: var(--text-secondary);
-}
 /* A link inside running text: underlined, in the text's own color. */
 .inline-link {
   color: inherit;
@@ -988,36 +736,12 @@ body {
   text-decoration-thickness: 2px;
 }
 
-/* Live data (components/query-boundary.tsx, components/freshness.tsx): a failed load in place
-   of its content, and the page header's "Updated 3s ago". */
+/* A failed load in place of its content (app/(app)/error.tsx). */
 .query-error-body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
-}
-.freshness {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-.freshness-warning {
-  color: var(--warning-fg);
-}
-/* A paginated or filtered list while its next page loads: the previous one stays, dimmed. */
-.list-pending {
-  transition: opacity 150ms ease-out;
-}
-.list-pending[aria-busy="true"] {
-  opacity: 0.55;
-}
-@media (prefers-reduced-motion: reduce) {
-  .list-pending {
-    transition: none;
-  }
 }
 
 /* Navigation feedback (components/link.tsx): a link whose

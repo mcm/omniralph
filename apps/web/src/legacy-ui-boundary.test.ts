@@ -22,18 +22,10 @@ const LIBRARY = /["']@iamthemcmaster\/ui(?:\/[^"']*)?["']/;
  */
 const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/app-header.tsx",
-  "src/components/freshness.tsx",
-  "src/components/list-table.tsx",
   "src/components/mono-value.tsx",
   "src/components/page-header.tsx",
-  "src/components/query-boundary.tsx",
-  "src/components/ralph-badges.tsx",
-  // Uses `Timestamp` from list-table.
-  "src/components/relative-time.tsx",
-  "src/components/review-badges.tsx",
   // Measures globals.css's severity chips against the library's tokens.
   "src/components/severity-ramp.test.ts",
-  "src/lib/state-variants.ts",
 ];
 
 /**
@@ -48,6 +40,7 @@ const SCREENS_2_0 = [
   /^src\/app\/\(app\)\/repos\//,
   /^src\/app\/\(app\)\/fleet\//,
   /^src\/app\/\(app\)\/settings\//,
+  /^src\/app\/\(app\)\/analytics\//,
 ];
 
 /** Files that must not reference the library at all. */
@@ -216,6 +209,8 @@ describe("@iamthemcmaster/ui boundary", () => {
     expect(screens).toContain("src/app/(app)/repos/[id]/page.tsx");
     expect(screens).toContain("src/app/(app)/settings/layout.tsx");
     expect(screens).toContain("src/screens/settings/settings-layout-view.tsx");
+    expect(screens).toContain("src/app/(app)/analytics/analytics-view.tsx");
+    expect(screens).toContain("src/app/(app)/analytics/page.tsx");
     expect(screens.filter((file) => LIBRARY.test(source.get(file)!))).toEqual([]);
     // Nor through a module only today's screens may use.
     const throughLegacy = screens.flatMap((file) =>

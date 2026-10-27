@@ -21,7 +21,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { runAnalyticsSchema, type RunAnalyticsResponse } from "@/lib/api/analytics";
+import { runAnalyticsResponseSchema, type RunAnalyticsResponse } from "@/lib/api/analytics";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 vi.mock("server-only", () => ({}));
@@ -67,6 +67,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
   let beta: string;
   let other: string;
   let acmeRepo: string;
+  let betaRepo: string;
   let otherRepo: string;
 
   beforeAll(async () => {
@@ -106,7 +107,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       ).id;
     };
     acmeRepo = await connect(acme, "acme");
-    const betaRepo = await connect(beta, "beta");
+    betaRepo = await connect(beta, "beta");
     otherRepo = await connect(other, "other");
 
     // A run with one built story in each organization.
@@ -170,7 +171,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     state.user = member;
     const { status, body } = await get({ days: "7" });
     expect(status).toBe(200);
-    const analytics = runAnalyticsSchema.parse(body);
+    const analytics = runAnalyticsResponseSchema.parse(body);
     expect(analytics.bucket).toBe("day");
     expect(analytics.buckets).toHaveLength(7);
     expect(analytics.buckets.slice(0, 6).every((b) => b.stories === 0)).toBe(true);
@@ -187,15 +188,31 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       },
     });
     expect(analytics.byRepository).toMatchObject([
-      { repository: { id: acmeRepo, fullPath: "acme/app" }, stories: 1 },
+      {
+        repository: { id: acmeRepo, provider: "github", fullPath: "acme/app" },
+        organization: { id: acme, name: "Acme" },
+        stories: 1,
+      },
     ]);
     expect(analytics.byOrganization).toMatchObject([{ organization: { id: acme, name: "Acme" } }]);
+    expect(analytics.repositories).toEqual([
+      {
+        id: acmeRepo,
+        provider: "github",
+        fullPath: "acme/app",
+        organization: { id: acme, name: "Acme" },
+      },
+    ]);
+    expect(analytics.params).toEqual({ days: 7, bucket: "day", repositoryId: null });
+    // The route doesn't price tokens (Epic 12 will): no cost anywhere.
+    expect(JSON.stringify(body)).not.toMatch(/costUsd|unpricedAttempts/);
 
     // Defaults: 30 days by day; weeks on request.
     expect((await get()).body.buckets).toHaveLength(30);
     const weeks = await get({ days: "90", bucket: "week" });
     expect(weeks.status).toBe(200);
     expect(weeks.body.bucket).toBe("week");
+    expect(weeks.body.params).toEqual({ days: 90, bucket: "week", repositoryId: null });
     expect(weeks.body.buckets.length).toBeGreaterThanOrEqual(13);
     expect(
       weeks.body.buckets.every((b) => new Date(`${b.start}T00:00:00Z`).getUTCDay() === 1),
@@ -211,21 +228,50 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       { organization: { id: beta, name: "Beta" }, stories: 1 },
     ]);
     expect(body.totals.stories).toBe(2);
-    expect(body.byRepository.map((r) => r.repository.fullPath)).toEqual(["acme/app", "beta/app"]);
+    expect(body.byRepository.map((r) => [r.repository.fullPath, r.organization.name])).toEqual([
+      ["acme/app", "Acme"],
+      ["beta/app", "Beta"],
+    ]);
+    // Every repository of the scope, for the filter.
+    expect(body.repositories.map((r) => [r.id, r.organization.name])).toEqual([
+      [acmeRepo, "Acme"],
+      [betaRepo, "Beta"],
+    ]);
+    expect(runAnalyticsResponseSchema.safeParse(body).success).toBe(true);
     expect(JSON.stringify(body)).not.toContain(other);
 
     const one = await get({ organization: beta });
     expect(one.body.byOrganization).toMatchObject([{ organization: { id: beta } }]);
   });
 
-  it("filters by one repository of the scope, and 404s on another organization's", async () => {
+  it("filters by one repository of the scope, and ignores any other", async () => {
     state.user = member;
     const own = await get({ repository: acmeRepo });
     expect(own.status).toBe(200);
+    expect(own.body.params.repositoryId).toBe(acmeRepo);
     // The triage attempt has no repository.
     expect(own.body.totals.attempts).toMatchObject({ finished: 1, completed: 1 });
     expect(own.body.totals.tokens.triage).toEqual({ tokensIn: 0, tokensOut: 0 });
-    expect(await get({ repository: otherRepo })).toMatchObject({ status: 404 });
+    // The filter still lists every repository of the scope.
+    expect(own.body.repositories.map((r) => r.id)).toEqual([acmeRepo]);
+
+    // Another organization's repository, one outside the scope, or not an ID: all repos.
+    for (const search of [
+      { repository: otherRepo },
+      { repository: betaRepo },
+      { repository: "not-a-uuid" },
+    ]) {
+      const ignored = await get(search);
+      expect(ignored.status).toBe(200);
+      expect(ignored.body.params.repositoryId).toBeNull();
+      expect(ignored.body.totals.attempts).toMatchObject({ finished: 2 });
+      expect(JSON.stringify(ignored.body)).not.toContain(other);
+    }
+    // Under all organizations, Beta's repository is in scope.
+    const beta = await get({ organization: "all", repository: betaRepo });
+    expect(beta.body.params.repositoryId).toBe(betaRepo);
+    expect(beta.body.byRepository.map((r) => r.repository.id)).toEqual([betaRepo]);
+
     expect(await get({ organization: other })).toMatchObject({ status: 404 });
   });
 
@@ -235,7 +281,6 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       { days: "14" },
       { days: "seven" },
       { bucket: "month" },
-      { repository: "not-a-uuid" },
     ]) {
       const { status, body } = await get(search);
       expect(status).toBe(400);

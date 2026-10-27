@@ -10,6 +10,7 @@
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import {
+  analyticsKeys,
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
@@ -123,7 +124,9 @@ function repositoryViews(keys: QueryKeys): QueryKey[] {
 
 /**
  * Every resource's invalidations. A run is shown by Runs (`runs`), the Inbox, Analytics and
- * its repository's status on Repos.
+ * its repository's status on Repos. Analytics is invalidated by `run` events only (they
+ * cover runs, stories, reviews and attempts, every figure it shows), and only its queries
+ * whose scope covers the event's organization (`analyticsKeys(…).covering`).
  */
 export const LIVE_INVALIDATIONS = {
   run: (event, keys) =>
@@ -132,14 +135,14 @@ export const LIVE_INVALIDATIONS = {
           keys.runs.lists,
           keys.runs.detail(event.runId),
           keys.inbox.all,
-          keys.analytics.all,
+          ...analyticsKeys(keys).covering(event.organizationId),
           ...repositoryViews(keys),
           // A work item's detail shows its run (whether its PRD can be edited).
           backlogKeys(keys).details,
         ]
-      : // System work (a repository sync, a cleanup) belongs to no run: Analytics counts it,
-        // and a failed repository sync is a problem of its repository.
-        [keys.analytics.all, ...repositoryViews(keys)],
+      : // System work (a repository sync, a cleanup) belongs to no run: its attempts count
+        // in Analytics, and a failed repository sync is a problem of its repository.
+        [...analyticsKeys(keys).covering(event.organizationId), ...repositoryViews(keys)],
   transcript: (event, keys) =>
     event.runId
       ? [keys.transcripts.detail(event.runId)]
@@ -252,6 +255,8 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "agents",
   // The Fleet dot counts every organization's agents under "All organizations".
   "navIndicators",
+  // Analytics under "All organizations" counts every organization's runs (`organization=all`).
+  "analytics",
 ];
 
 /**

@@ -15,6 +15,11 @@ export interface DataTableColumn<T> {
   cell: (row: T) => ReactNode;
   /** The column's place on the phone card. Defaults to `meta`. */
   card?: CardSlot;
+  /**
+   * `hidden` leaves the column out of the table, so it shows on the phone card only (e.g. a
+   * badge the table draws inside another column's cell).
+   */
+  table?: "hidden";
   align?: "start" | "center" | "end";
   /** Machine facts (IDs, SHAs, durations, timestamps) in Geist Mono. */
   mono?: boolean;
@@ -64,6 +69,9 @@ export function DataTable<T>({
   const inSlot = (name: CardSlot) => columns.filter((column) => slot(column) === name);
   const topColumns = columns.filter((column) => ["status", "time"].includes(slot(column)));
   const metaColumns = inSlot("meta");
+  const tableColumns = columns.filter(
+    (column) => column === titleColumn || column.table !== "hidden",
+  );
 
   const rowState = (row: T) => {
     const id = getRowId(row);
@@ -91,7 +99,7 @@ export function DataTable<T>({
           <caption className="or-sr-only">{caption}</caption>
           <thead>
             <tr>
-              {columns.map((column) => (
+              {tableColumns.map((column) => (
                 <th
                   key={column.id}
                   scope="col"
@@ -115,7 +123,7 @@ export function DataTable<T>({
                   )}
                   aria-current={selected ? "true" : undefined}
                 >
-                  {columns.map((column) => (
+                  {tableColumns.map((column) => (
                     <td
                       key={column.id}
                       className={cx(

@@ -135,6 +135,23 @@ describe("DataTable", () => {
     expect(within(card).queryByRole("button", { name: "Delete Add billing" })).toBeNull();
   });
 
+  it("shows a table-hidden column on the card only", () => {
+    const withOrg: DataTableColumn<Run>[] = [
+      { id: "title", header: "Run", cell: (run) => run.title, card: "title" },
+      { id: "org", header: "Org", cell: () => "Acme", table: "hidden" },
+      { id: "repo", header: "Repository", cell: (run) => run.repo },
+    ];
+    renderTable({ columns: withOrg });
+    const table = screen.getByRole("table", { name: "Runs" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Run",
+      "Repository",
+    ]);
+    expect(within(table).queryByText("Acme")).toBeNull();
+    const card = within(screen.getByRole("list", { name: "Runs" })).getAllByRole("listitem")[0]!;
+    expect(card.querySelector(".or-cardrow__meta")!.textContent).toBe("Acmeacme/web");
+  });
+
   it("uses the first column as the title when none is marked", () => {
     render(
       <DataTable

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isNavActive } from "@omniralph/ui";
+import { IconChartBar } from "@tabler/icons-react";
 import { describe, expect, it } from "vitest";
 import { navItems, withNavIndicators } from "@/lib/navigation";
 
@@ -26,8 +27,8 @@ const pages = appPages();
 /** Entries whose 2.0 page doesn't exist yet. */
 const PAGES_TO_COME: string[] = [];
 
-/** Pages no entry lights up: Analytics, which gets its own entry in Epic 10. */
-const UNLISTED_PAGES = ["/analytics"];
+/** Pages no entry lights up. */
+const UNLISTED_PAGES: string[] = [];
 
 /** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
 function pageFor(href: string): string | undefined {
@@ -69,7 +70,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Settings at the bottom", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Analytics and Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -84,6 +85,13 @@ describe("navItems", () => {
       { id: "backlog", label: "Backlog", href: "/backlog", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repos", placement: "main", phone: "drawer" },
       { id: "fleet", label: "Fleet", href: "/fleet", placement: "main", phone: "drawer" },
+      {
+        id: "analytics",
+        label: "Analytics",
+        href: "/analytics",
+        placement: "bottom",
+        phone: "drawer",
+      },
       {
         id: "settings",
         label: "Settings",
@@ -135,18 +143,43 @@ describe("navItems", () => {
     ["/settings/connections/gitlab/abc", "settings"],
     ["/settings/organization", "settings"],
     ["/settings/routing", "settings"],
+    ["/analytics", "analytics"],
   ])("makes %s active for %s alone", (pathname, id) => {
     expect(navItems.filter((item) => isNavActive(pathname, item)).map((item) => item.id)).toEqual([
       id,
     ]);
   });
 
-  it.each(["/analytics", "/runsx", "/reposx", "/backlogx", "/fleetx", "/repositories"])(
+  it.each(["/analyticsx", "/runsx", "/reposx", "/backlogx", "/fleetx", "/repositories"])(
     "makes no entry active on %s",
     (pathname) => {
       expect(navItems.filter((item) => isNavActive(pathname, item))).toEqual([]);
     },
   );
+
+  it("points Analytics at /analytics with the chart icon, before Settings in the bottom group and the phone drawer", () => {
+    expect(navItems.find((item) => item.id === "analytics")).toEqual({
+      id: "analytics",
+      label: "Analytics",
+      href: "/analytics",
+      icon: IconChartBar,
+      placement: "bottom",
+      phone: "drawer",
+      activeFor: ["/analytics"],
+    });
+    const bottom = navItems.filter((item) => item.placement === "bottom").map((item) => item.id);
+    expect(bottom).toEqual(["analytics", "settings"]);
+    expect(navItems.filter((item) => item.phone === "drawer").map((item) => item.label)).toEqual([
+      "Repos",
+      "Fleet",
+      "Analytics",
+      "Settings",
+    ]);
+    // Only Analytics lights up on it: Runs is lit for /runs alone.
+    expect(navItems.filter((item) => isNavActive("/analytics", item)).map((i) => i.id)).toEqual([
+      "analytics",
+    ]);
+  });
 
   it("points Runs at /runs, lit for /runs alone, as a phone tab", () => {
     expect(navItems.find((item) => item.id === "runs")).toMatchObject({

@@ -56,11 +56,6 @@ const RALPH_ALLOWED: Allowed[] = [
     reason: "job types (`ralph.story`, the `ralph.` prefix) stored with every job",
   },
   {
-    text: /^analytics-ralph$/g,
-    files: ["apps/web/src/app/(app)/analytics/analytics-view.tsx"],
-    reason: "element id of the analytics Coding section; never shown",
-  },
-  {
     text: /^ralph-run$/g,
     files: [
       "apps/web/src/lib/ralph/coding.ts",
