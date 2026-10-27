@@ -14,6 +14,7 @@ import {
   reviews,
   scmConnections,
   workItemMatches,
+  type GitHubAccountType,
   type ScmConnectionHealth,
 } from "./schema.js";
 
@@ -84,11 +85,13 @@ export interface ScmConnectionInput {
   credentials: Record<string, unknown>;
   /** GitLab: the token user's username (the bot's `@` handle). */
   botUsername?: string | null;
+  /** GitHub: the kind of account the installation is on. */
+  accountType?: GitHubAccountType | null;
   createdBy?: string | null;
 }
 
 /**
- * Creates the connection, or updates name, credentials and bot username of the one with the same
+ * Creates the connection, or updates name, credentials, bot username and account type of the one with the same
  * provider, base URL and external ID. A connection belongs to one organization:
  * returns null (and changes nothing) when that one belongs to another organization.
  */
@@ -108,11 +111,17 @@ export async function upsertScmConnection(
       externalId: input.externalId,
       encryptedCredentials,
       botUsername: input.botUsername ?? null,
+      accountType: input.accountType ?? null,
       createdBy: input.createdBy ?? null,
     })
     .onConflictDoUpdate({
       target: [scmConnections.provider, scmConnections.baseUrl, scmConnections.externalId],
-      set: { name: input.name, encryptedCredentials, botUsername: input.botUsername ?? null },
+      set: {
+        name: input.name,
+        encryptedCredentials,
+        botUsername: input.botUsername ?? null,
+        accountType: input.accountType ?? null,
+      },
       setWhere: eq(scmConnections.organizationId, input.organizationId),
     })
     .returning();
@@ -260,6 +269,30 @@ export async function setScmConnectionHealth(
     .where(eq(scmConnections.id, id))
     .returning({ id: scmConnections.id, organizationId: scmConnections.organizationId });
   for (const row of rows) recordConnectionChange(db, row);
+}
+
+/**
+ * Records the kind of GitHub account installation connection `id` is on. Changes (and
+ * publishes) nothing when it's already recorded; returns whether it changed.
+ */
+export async function setScmConnectionAccountType(
+  db: Database,
+  id: string,
+  accountType: GitHubAccountType,
+): Promise<boolean> {
+  const rows = await db
+    .update(scmConnections)
+    .set({ accountType })
+    .where(
+      and(
+        eq(scmConnections.id, id),
+        eq(scmConnections.provider, "github"),
+        sql`${scmConnections.accountType} is distinct from ${accountType}`,
+      ),
+    )
+    .returning({ id: scmConnections.id, organizationId: scmConnections.organizationId });
+  for (const row of rows) recordConnectionChange(db, row);
+  return rows.length > 0;
 }
 
 /**

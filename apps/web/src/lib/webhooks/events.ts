@@ -610,6 +610,31 @@ export function githubInstallationId(body: unknown): string | null {
   return parsed.success ? String(parsed.data.installation.id) : null;
 }
 
+const GitHubInstallationAccountEvent = z.object({
+  installation: z.object({
+    id: z.number().int(),
+    account: z.object({ type: z.string() }),
+  }),
+});
+
+/**
+ * The installation and its account's type (`User`, `Organization`) of a GitHub App
+ * installation event other than an uninstall (`X-GitHub-Event: installation` or
+ * `installation_repositories`), or null.
+ */
+export function parseGitHubInstallationAccount(
+  eventName: string | null,
+  body: unknown,
+): { installationId: string; accountType: string } | null {
+  if (eventName !== "installation" && eventName !== "installation_repositories") return null;
+  const parsed = GitHubInstallationAccountEvent.safeParse(body);
+  if (!parsed.success) return null;
+  return {
+    installationId: String(parsed.data.installation.id),
+    accountType: parsed.data.installation.account.type,
+  };
+}
+
 const GitHubInstallationDeletedEvent = z.object({
   action: z.literal("deleted"),
   installation: z.object({ id: z.number().int() }),

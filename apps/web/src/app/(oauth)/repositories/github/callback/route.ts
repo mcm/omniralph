@@ -2,6 +2,7 @@ import { consumeOAuthState, findScmConnection, upsertScmConnection } from "@omni
 import { getInstallation } from "@omniralph/scm";
 import { NextResponse, type NextRequest } from "next/server";
 import { membership } from "@/lib/api/scope";
+import { githubAccountType } from "@/lib/connections/github-installation";
 import { AuthorizationError, hasRole } from "@/lib/auth/roles";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { requireUser, type OrgUser } from "@/lib/auth/session";
@@ -117,6 +118,7 @@ async function get(request: NextRequest) {
         name: installation.account,
         baseUrl: githubApiUrl(),
         externalId: String(installation.id),
+        accountType: githubAccountType(installation.accountType),
         credentials: {},
         createdBy: admin.id,
       }),

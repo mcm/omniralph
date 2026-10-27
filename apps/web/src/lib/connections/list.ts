@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/connections";
 import type { ConnectionHealthRow } from "@/lib/api/repositories";
 import type { ScopedOrganization } from "@/lib/api/scope";
+import { githubInstallationUrl } from "@/lib/connections/github-installation";
 import { connectionHealth } from "@/lib/connections/health";
 import { connectionWebHost } from "@/lib/repositories/web-url";
 import { loadSettingsHistory } from "@/lib/settings-history/history";
@@ -67,7 +68,12 @@ export async function listConnections(
           instanceUrl: connection.provider === "gitlab" ? connection.baseUrl : null,
           installationUrl:
             connection.provider === "github" && connection.externalId
-              ? `https://${host}/settings/installations/${encodeURIComponent(connection.externalId)}`
+              ? githubInstallationUrl({
+                  host,
+                  account: connection.name,
+                  accountType: connection.accountType,
+                  installationId: connection.externalId,
+                })
               : null,
         },
         connection.health,

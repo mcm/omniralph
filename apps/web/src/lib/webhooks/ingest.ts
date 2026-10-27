@@ -7,6 +7,7 @@ import {
   findRepositoriesByExternalId,
   findScmConnectionsByExternalId,
   releaseWebhookDelivery,
+  setScmConnectionAccountType,
   setWebhookDeliveryJob,
   updatePullRequestState,
   type Database,
@@ -20,6 +21,7 @@ import {
 import type { ChangeRequest, ScmAdapter } from "@omniralph/scm";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
+import { githubAccountType } from "@/lib/connections/github-installation";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand, type BotCommandOutcome } from "@/lib/mentions/handle";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
@@ -35,6 +37,7 @@ import {
   parseGitHubCiEvent,
   parseGitHubCommentEvent,
   parseGitHubEvent,
+  parseGitHubInstallationAccount,
   parseGitHubInstallationDeleted,
   parseGitHubClosedEvent,
   parseGitHubPullRequestStateEvent,
@@ -112,6 +115,7 @@ type Outcome =
   | { status: "accepted"; command: string }
   | { status: "accepted"; event: "ci_failure" | "merged" | "closed" | "pull_request_state" }
   | { status: "removed"; connections: number }
+  | { status: "updated"; connections: number }
   | { status: "ignored"; reason: WebhookIgnoreReason };
 
 const reply = (outcome: Outcome) => Response.json(outcome);
@@ -188,6 +192,34 @@ async function handleInstallationDeleted(
 }
 
 /**
+ * Any other GitHub App installation event (created, permissions accepted, suspended,
+ * repositories added or removed): verifies the delivery and records the kind of account
+ * the installation is on on its connections, which fills it in for installations saved
+ * before it was recorded. Repositories are never connected from here (the picker does).
+ */
+async function handleInstallationAccount(
+  deps: WebhookDeps,
+  req: Request,
+  rawBody: string,
+  event: { installationId: string; accountType: string },
+): Promise<Response> {
+  const { db, adapterFor = scmAdapterFor } = deps;
+  const connections = await findScmConnectionsByExternalId(db, "github", event.installationId);
+  if (connections.length === 0) return ignored("unknown_installation");
+  if (!(await adapterFor(db, connections[0]!).verifyWebhook(req.headers, rawBody))) {
+    return Response.json({ error: "invalid_signature" }, { status: 401 });
+  }
+  const accountType = githubAccountType(event.accountType);
+  let updated = 0;
+  if (accountType) {
+    for (const connection of connections) {
+      if (await setScmConnectionAccountType(db, connection.id, accountType)) updated += 1;
+    }
+  }
+  return reply({ status: "updated", connections: updated });
+}
+
+/**
  * Handles a GitHub/GitLab webhook delivery: finds the connected repository,
  * verifies the signature with its connection's adapter (401 if invalid), which
  * resolves the organization (the connection's), hands it to
@@ -196,7 +228,8 @@ async function handleInstallationDeleted(
  * publishes (no review work), so it answers well within the code host's
  * timeout. Unknown, disabled or disconnected repos and irrelevant events get
  * 200 without side effects; a delivery ID that was already acted on is a no-op.
- * A GitHub App uninstall removes the installation's connection. Draft and
+ * A GitHub App uninstall removes the installation's connection; its other installation
+ * events record the installation's account type. Draft and
  * review state changes of a ralph PR/MR are recorded on its lane.
  */
 export async function handleWebhook(
@@ -217,6 +250,8 @@ export async function handleWebhook(
   if (provider === "github") {
     const installationId = parseGitHubInstallationDeleted(req.headers.get(spec.eventHeader), body);
     if (installationId) return handleInstallationDeleted(deps, req, rawBody, installationId);
+    const installation = parseGitHubInstallationAccount(req.headers.get(spec.eventHeader), body);
+    if (installation) return handleInstallationAccount(deps, req, rawBody, installation);
   }
 
   const externalId = webhookRepositoryId(provider, body);
