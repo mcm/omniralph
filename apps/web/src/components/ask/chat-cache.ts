@@ -104,16 +104,31 @@ export interface AskTurnOverlay {
   pending: AskMessageView | null;
   /** The text each streaming Om message has received so far, by message ID. */
   streamed: ReadonlyMap<string, string>;
+  /** Each message the turn's events delivered, as last sent, in order. */
+  messages: ReadonlyMap<string, AskMessageView>;
+}
+
+/** `data` with each of `messages` it doesn't hold yet appended (newest). */
+export function withMissingMessages(
+  data: AskChatData,
+  messages: Iterable<AskMessageView>,
+): AskChatData {
+  let next = data;
+  for (const message of messages) {
+    if (!contains(next, message.id)) next = withMessage(next, message);
+  }
+  return next;
 }
 
 /**
  * The chat's data with a turn in flight laid over it: a refetch while the turn streams
- * (another view's change event) returns the database's copy, flushed at most once a
- * second, so the text already received wins, and the pending message stays.
+ * (another view's change event, or a new chat's first load) returns the database's copy,
+ * flushed at most once a second and maybe from before the turn's messages, so the turn's
+ * messages stay, the text already received wins, and the pending message stays.
  */
 export function withTurn(data: AskChatData, turn: AskTurnOverlay | null): AskChatData {
   if (!turn) return data;
-  let next = data;
+  let next = withMissingMessages(data, turn.messages.values());
   if (turn.streamed.size > 0) {
     next = mapPages(next, (messages) =>
       messages.some((m) => m.status === "streaming" && turn.streamed.has(m.id))

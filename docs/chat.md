@@ -237,6 +237,13 @@ of its members starts a chat; it is never listed under **Settings › Connection
   so its "Om is reading" line counts the files as the agent reads them. Your message shows as soon
   as you send it, a card shows the outcome of your click at once, and a half-written message stays
   in the composer when you close the chat and come back.
+- **Your chats.** Ask lists your own chats, most recently active first, each with its repo (or
+  "All repos") and, under "All organizations", its organization; the list keeps itself up to date
+  as chats get messages or start in another tab. New chat starts on the repo of the page you're
+  on (a repo, or a run's or work item's repo) when Ask is on for it, else on "All repos"; the Repo
+  picker lists the repos with Ask on, grouped per organization under "All organizations". Your
+  first message starts the chat, which opens with Om's reply streaming in; from then on its repo
+  is fixed.
 - **Code answers as written.** A [code question](#code-questions) asked in a web chat runs on the
   chat's repo (unless Om names another) and the branch the chat stored when it started. Its answer
   is posted exactly as the agent wrote it, without a model turn in between, and shows how long the

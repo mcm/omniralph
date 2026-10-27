@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, type MouseEventHandler, type ReactNode } from "react";
 import { Checkbox } from "../controls/checkbox.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { StatusDot, type StatusTone } from "../status/status.js";
@@ -31,6 +31,11 @@ interface ListRowMark {
 export type ListRowProps = (ListRowStatus | ListRowMark) & {
   /** Where the row leads; the whole row is clickable. */
   href: string;
+  /**
+   * Called on a click on the row link, e.g. to open the row in a panel instead
+   * (`event.preventDefault()` keeps the link from navigating).
+   */
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
   /** The row's name; it names the row link. Clamped to two lines. */
   title: ReactNode;
   /** A short time ("4m", "2h") in a fixed-width mono slot. */
@@ -53,6 +58,7 @@ export type ListRowProps = (ListRowStatus | ListRowMark) & {
  */
 export function ListRow({
   href,
+  onClick,
   title,
   kindLabel,
   tone,
@@ -79,7 +85,7 @@ export function ListRow({
           onCheckedChange={select.onChange}
         />
       ) : null}
-      <Link href={href} className="or-row__link" aria-labelledby={titleId} />
+      <Link href={href} onClick={onClick} className="or-row__link" aria-labelledby={titleId} />
       {kindLabel !== undefined ? (
         <StatusDot className="or-row__dot" tone={tone} label={kindLabel} />
       ) : (
