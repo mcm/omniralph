@@ -35,6 +35,10 @@ export const workItemRowSchema = z.object({
   group: z.enum(WORK_ITEM_GROUPS),
   /** Open work items block it. */
   blocked: z.boolean(),
+  /** The identifiers of its open blockers ("Starts when SOC-398 and SOC-401 are done"). */
+  blockers: z.array(z.string()).default([]),
+  /** Om is triaging it (a triage queued or running): Triage now is disabled. */
+  triageRunning: z.boolean().default(false),
   source: workItemSourceSchema,
 });
 export type WorkItemRow = z.infer<typeof workItemRowSchema>;

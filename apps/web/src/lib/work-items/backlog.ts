@@ -1,6 +1,7 @@
 import "server-only";
 import {
   latestTriageSizes,
+  listActiveTriageIssueIds,
   listLatestIssueRuns,
   listRoutingRepositories,
   listRoutingRules,
@@ -214,10 +215,11 @@ export async function loadOrganizationBacklog(deps: {
     return [{ item, group }];
   });
   const ids = listed.map(({ item }) => item.id);
-  const [runs, choices, sizes] = await Promise.all([
+  const [runs, choices, sizes, triaging] = await Promise.all([
     listLatestIssueRuns(db, organizationId, ids),
     listWorkItemOverrides(db, organizationId, "linear", ids),
     latestTriageSizes(db, organizationId, ids),
+    listActiveTriageIssueIds(db, organizationId, ids),
   ]);
   const unstarted = listed.filter(({ item }) => !runs.has(item.id));
 
@@ -261,6 +263,8 @@ export async function loadOrganizationBacklog(deps: {
             size: sizes.get(item.id) ?? null,
             group,
             blocked: item.blocked,
+            blockers: item.blockedBy.map((blocker) => blocker.identifier),
+            triageRunning: triaging.has(item.id),
             source: item.project
               ? {
                   kind: "project",

@@ -23,6 +23,7 @@ import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import { BlockedBadge } from "@/components/work-items/blocked";
 import type { Backlog } from "@/lib/api/backlog";
 import type { WorkItemRow } from "@/lib/api/work-items";
+import { joinNames } from "@/lib/work-items/join-names";
 import { useBacklog } from "./queries";
 import {
   backlogHref,
@@ -50,11 +51,7 @@ const GROUPS = [
   { key: "needsRefining", label: "Needs refining" },
 ] as const;
 
-/** "NETbuilder", "Acme and NETbuilder", "Acme, Beta and NETbuilder". */
-export function joinNames(names: readonly string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-}
+export { joinNames };
 
 /** Whether the user administers an organization in scope (admin-only empty-state actions). */
 function administers(user: SessionUser): boolean {

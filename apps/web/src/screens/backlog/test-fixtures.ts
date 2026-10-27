@@ -20,6 +20,8 @@ export function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     size: "M",
     group: "ready",
     blocked: false,
+    blockers: [],
+    triageRunning: false,
     source: { kind: "project", id: "project-portal", name: "Portal" },
     ...overrides,
   };
@@ -35,6 +37,7 @@ export const blockedRow = () =>
     repository: { id: REPO_WEB, provider: "github", fullPath: "acme/web" },
     size: null,
     blocked: true,
+    blockers: ["SOC-398", "SOC-401"],
     source: { kind: "team", id: "team-soc", name: "SOC" },
   });
 

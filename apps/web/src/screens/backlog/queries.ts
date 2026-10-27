@@ -6,8 +6,10 @@ import { useQueryKeys } from "@/components/query-provider";
 import {
   backlogCountsSchema,
   backlogSchema,
+  backlogUpNextSchema,
   type Backlog,
   type BacklogCounts,
+  type BacklogUpNext,
 } from "@/lib/api/backlog";
 import { api } from "@/lib/api/client";
 import { backlogKeys } from "@/lib/api/keys";
@@ -49,6 +51,26 @@ export function useBacklogCounts() {
     queryKey: backlogKeys(keys).counts(scope),
     queryFn: ({ signal }) =>
       api.get("/api/ui/backlog/counts", backlogCountsSchema, {
+        params: { organization: scope },
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/**
+ * Up next in the empty Inbox (`GET /api/ui/backlog/up-next`): the first Ready to start and
+ * Needs refining items of the user's scope. A live query: a `work_item` change event (and
+ * the Backlog's other triggers) refetches it.
+ */
+export function useBacklogUpNext() {
+  const keys = useQueryKeys();
+  const scope = useScopeParam();
+  const { organization } = useCurrentUser();
+  return useQuery<BacklogUpNext>({
+    queryKey: backlogKeys(keys).upNext(scope),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/backlog/up-next", backlogUpNextSchema, {
         params: { organization: scope },
         organizationId: organization.id,
         signal,

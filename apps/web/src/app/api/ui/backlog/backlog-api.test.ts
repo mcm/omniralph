@@ -24,6 +24,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   backlogCountsSchema,
@@ -379,6 +380,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       size: "XS",
       group: "ready",
       blocked: false,
+      blockers: [],
+      triageRunning: false,
       source: { kind: "team", id: "team-1", name: "ENG" },
     });
     // Two matches tie: no repo yet.
@@ -388,10 +391,36 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     });
     // A member's choice (Change repo…) wins over the match.
     expect(byIdentifier.get("ENG-4")!.repository).toMatchObject({ id: repos["acme/web"] });
-    expect(byIdentifier.get("ENG-8")).toMatchObject({ group: "refine", blocked: true });
+    expect(byIdentifier.get("ENG-8")).toMatchObject({
+      group: "refine",
+      blocked: true,
+      blockers: ["ENG-9"],
+    });
     expect(byIdentifier.get("ENG-7")).toMatchObject({ group: "refine", blocked: false });
     expect(backlog.unavailable).toEqual([]);
     expect(backlog.truncated).toBe(false);
+  });
+
+  it("marks the items Om is triaging (a triage queued or running)", async () => {
+    const [run] = await db
+      .insert(triageRuns)
+      .values({
+        organizationId: orgs.Acme!,
+        linearIssueId: items.refine!.id,
+        linearAgentSessionId: `triage-${randomUUID()}`,
+        trigger: "label",
+        status: "running",
+      })
+      .returning();
+    try {
+      const { groups } = await getBacklog();
+      const triaging = [...groups.readyToStart, ...groups.needsRefining]
+        .filter((row) => row.triageRunning)
+        .map((row) => row.identifier);
+      expect(triaging).toEqual(["ENG-7"]);
+    } finally {
+      await db.delete(triageRuns).where(eq(triageRuns.id, run!.id));
+    }
   });
 
   it("returns sizes as triage gave them, from one query per fill", async () => {

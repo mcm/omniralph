@@ -22,6 +22,11 @@ interface IconButtonOwnProps {
    * on hover and keyboard focus.
    */
   disabledReason?: string;
+  /**
+   * The tooltip, when it should say more than `label` (e.g. "Starts when SOC-398 is done"):
+   * `label` still names the button.
+   */
+  tooltip?: string;
   /** Which side the tooltip sits on. Defaults to `top`. */
   tooltipSide?: "top" | "right" | "bottom" | "left";
   className?: string;
@@ -53,6 +58,7 @@ export function IconButton(props: IconButtonProps) {
     tooltipSide,
     className,
     disabledReason,
+    tooltip = label,
     ...rest
   } = props;
   const classes = ["or-icon-btn", `or-icon-btn--${variant}`, `or-icon-btn--${size}`, className]
@@ -65,7 +71,7 @@ export function IconButton(props: IconButtonProps) {
       disabled?: boolean;
     };
     return (
-      <Tooltip content={label} side={tooltipSide}>
+      <Tooltip content={tooltip} side={tooltipSide}>
         <LinkComponent {...linkProps} aria-label={label} className={classes}>
           {icon}
         </LinkComponent>
@@ -96,7 +102,7 @@ export function IconButton(props: IconButtonProps) {
     );
   }
   return (
-    <Tooltip content={label} side={tooltipSide}>
+    <Tooltip content={tooltip} side={tooltipSide}>
       <button {...buttonProps} type={type} aria-label={label} className={classes}>
         {icon}
       </button>

@@ -8,6 +8,7 @@ import {
   createTriageRun,
   finishTriageRunJob,
   getActiveTriageRun,
+  listActiveTriageIssueIds,
   listIssueTriageRuns,
   getTriageRun,
   getTriageRunBySession,
@@ -131,6 +132,23 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
       await setTriageRunStatus(db, run.id, status);
       expect(await getActiveTriageRun(db, orgId, "issue-1")).toBeNull();
     }
+  });
+
+  it("tells which of the organization's issues have an active run, in one query", async () => {
+    const { run } = await createTriageRun(db, runInput());
+    const { run: done } = await createTriageRun(db, runInput({ linearIssueId: "issue-2" }));
+    await setTriageRunStatus(db, done.id, "completed");
+    await createTriageRun(db, runInput({ organizationId: otherOrgId, linearIssueId: "issue-3" }));
+
+    const ids = ["issue-1", "issue-2", "issue-3", "issue-4"];
+    expect(await listActiveTriageIssueIds(db, orgId, ids)).toEqual(new Set(["issue-1"]));
+    expect(await listActiveTriageIssueIds(db, otherOrgId, ids)).toEqual(new Set(["issue-3"]));
+    expect(await listActiveTriageIssueIds(db, orgId, [])).toEqual(new Set());
+
+    await setTriageRunStatus(db, run.id, "running");
+    expect(await listActiveTriageIssueIds(db, orgId, ids)).toEqual(new Set(["issue-1"]));
+    await setTriageRunStatus(db, run.id, "stopped");
+    expect(await listActiveTriageIssueIds(db, orgId, ids)).toEqual(new Set());
   });
 
   it("lists the issue's runs in its organization, newest first", async () => {

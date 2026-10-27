@@ -183,6 +183,7 @@ export async function loadWorkItemDetail(
     size: sizes.get(item.id) ?? null,
     group,
     blocked: item.blocked,
+    blockers: item.blockedBy.map((blocker) => blocker.identifier),
     source: workItemSource(item),
     state: item.state,
     description: item.description,
