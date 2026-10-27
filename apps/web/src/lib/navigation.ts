@@ -14,14 +14,13 @@ import type { NavIndicators } from "@/lib/api/nav-indicators";
 /**
  * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at its 2.0 URL,
  * never an old one kept for compatibility: Runs points at `/runs` (every run of every
- * kind), Repos at `/repos` (every repo's settings), the other entries at today's pages
- * until their epics replace them (TOOL-575, "Coexistence with today's pages"); every entry
- * is visible to members and admins. Runs lights up for `/runs/**` only, Repos for
- * `/repos/**` only, Fleet for `/fleet/**`. Analytics (its own entry in Epic 10) has no entry and
- * stays reachable by URL; the other Settings pages light up Settings.
+ * kind), Repos at `/repos` (every repo's settings), Fleet at `/fleet` (every agent);
+ * every entry is visible to members and admins. Runs lights up for `/runs/**` only, Repos
+ * for `/repos/**` only, Fleet for `/fleet/**`. Analytics (its own entry in Epic 10) has no
+ * entry and stays reachable by URL.
  *
  * Settings points at `/settings` (its section list on phone, General beside the section nav
- * when wide) and lights up for every `/settings/**` page, today's included.
+ * when wide) and lights up for every `/settings/**` page.
  *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
  * started; phone tabs); Ask (bottom, a phone tab) is added by Epic 9 with its page. The

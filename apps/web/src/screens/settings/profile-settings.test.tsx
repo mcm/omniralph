@@ -4,15 +4,18 @@ import path from "node:path";
 import type * as OmniralphUi from "@omniralph/ui";
 import { UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProfileSettingsPage from "@/app/(app)/settings/profile/page";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
+import { LiveProvider } from "@/components/live/live-provider";
+import { changeEvent, fakeAbly, fakeToken } from "@/components/live/live-test-utils";
 import {
   createTestQueryClient,
   jsonResponse,
   mockFetch,
+  TEST_ORGANIZATION_ID,
   testUser,
 } from "@/components/query-test-utils";
 import { SavedThemeProvider } from "@/components/saved-theme";
@@ -33,10 +36,13 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
   toast: actions.toast,
 }));
 
-const nav = vi.hoisted(() => ({ pathname: "/settings/profile" }));
+const nav = vi.hoisted(() => ({
+  pathname: "/settings/profile",
+  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => nav.router,
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -56,6 +62,7 @@ function installMatchMedia() {
 
 beforeEach(() => {
   nav.pathname = "/settings/profile";
+  nav.router.refresh.mockReset();
   actions.saveThemePreference.mockReset().mockResolvedValue({ ok: true });
   actions.saveShowAdvancedPreference.mockReset().mockResolvedValue({ ok: true });
   actions.toast.mockReset();
@@ -82,23 +89,48 @@ const member: SessionUser = {
   organizations: [{ ...testUser.organization, role: "member" }],
 };
 
-/** Profile & theme in Settings, inside the shell's saved theme and preferences. */
-function renderProfile(options: { user?: SessionUser; showAdvanced?: boolean } = {}) {
-  render(
-    <SavedThemeProvider preference="system">
-      <CurrentUserProvider user={options.user ?? member}>
-        <ShowAdvancedProvider initial={options.showAdvanced ?? false}>
-          <QueryClientProvider client={createTestQueryClient()}>
-            <UiProvider linkComponent={TestLink}>
-              <SettingsLayoutView>
-                <ProfileSettingsPage />
-              </SettingsLayoutView>
-            </UiProvider>
-          </QueryClientProvider>
-        </ShowAdvancedProvider>
-      </CurrentUserProvider>
-    </SavedThemeProvider>,
-  );
+/** The shell's saved preferences, as the `(app)` layout renders them from the user row. */
+interface Preferences {
+  theme: "system" | "dark" | "light";
+  showAdvanced: boolean;
+}
+
+/**
+ * Profile & theme in Settings, inside the shell's saved theme and preferences (and the
+ * live layer, given `live`). `rerender` renders it again as a fresh server render would.
+ */
+function renderProfile(
+  options: { user?: SessionUser; showAdvanced?: boolean; live?: ReturnType<typeof fakeAbly> } = {},
+) {
+  const client = createTestQueryClient();
+  const tree = ({ theme, showAdvanced }: Preferences) => {
+    const page = (
+      <SettingsLayoutView>
+        <ProfileSettingsPage />
+      </SettingsLayoutView>
+    );
+    return (
+      <SavedThemeProvider preference={theme}>
+        <CurrentUserProvider user={options.user ?? member}>
+          <ShowAdvancedProvider initial={showAdvanced}>
+            <QueryClientProvider client={client}>
+              <UiProvider linkComponent={TestLink}>
+                {options.live ? (
+                  <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                    {page}
+                  </LiveProvider>
+                ) : (
+                  page
+                )}
+              </UiProvider>
+            </QueryClientProvider>
+          </ShowAdvancedProvider>
+        </CurrentUserProvider>
+      </SavedThemeProvider>
+    );
+  };
+  const utils = render(tree({ theme: "system", showAdvanced: options.showAdvanced ?? false }));
+  return { rerender: (preferences: Preferences) => utils.rerender(tree(preferences)) };
 }
 
 const profileCard = () => screen.getByRole("region", { name: "Profile" });
@@ -209,6 +241,53 @@ describe("Show advanced settings", () => {
     );
     expect(advancedSwitch().getAttribute("aria-checked")).toBe("false");
     expect(advancedGroup()).toBeNull();
+  });
+});
+
+describe("live", () => {
+  it("follows a theme and Show advanced settings change from another device, without a reload", async () => {
+    const live = fakeAbly();
+    const { rerender } = renderProfile({ live });
+    await waitFor(() => expect(live.current().subscribed()).toContain("user:user-1:changes"));
+    expect(theme()).toBe("dark");
+    expect(advancedSwitch().getAttribute("aria-checked")).toBe("false");
+    expect(advancedGroup()).toBeNull();
+
+    // The shell re-renders from the server on a change to the user's own record.
+    nav.router.refresh.mockImplementation(() => rerender({ theme: "light", showAdvanced: true }));
+    act(() =>
+      live
+        .current()
+        .deliver(
+          "user:user-1:changes",
+          changeEvent(TEST_ORGANIZATION_ID, { resource: "settings", section: "profile" }),
+        ),
+    );
+    expect(nav.router.refresh).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(theme()).toBe("light"));
+    expect(advancedSwitch().getAttribute("aria-checked")).toBe("true");
+    expect(advancedGroup()).not.toBeNull();
+    expect(actions.saveThemePreference).not.toHaveBeenCalled();
+    expect(actions.saveShowAdvancedPreference).not.toHaveBeenCalled();
+  });
+
+  it("ignores another organization's settings change", async () => {
+    const live = fakeAbly();
+    renderProfile({ live });
+    await waitFor(() =>
+      expect(live.current().subscribed()).toContain(`org:${TEST_ORGANIZATION_ID}:changes`),
+    );
+    act(() =>
+      live.current().deliver(
+        `org:${TEST_ORGANIZATION_ID}:changes`,
+        changeEvent("22222222-2222-4222-8222-222222222222", {
+          resource: "settings",
+          section: "profile",
+        }),
+      ),
+    );
+    expect(nav.router.refresh).not.toHaveBeenCalled();
+    expect(advancedSwitch().getAttribute("aria-checked")).toBe("false");
   });
 });
 
