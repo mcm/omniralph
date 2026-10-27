@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import { BlockedBadge } from "@/components/work-items/blocked";
+import { ShareLinkSheet } from "@/components/work-items/share-link-sheet";
 import type { Backlog } from "@/lib/api/backlog";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
@@ -103,7 +104,7 @@ export interface BacklogViewProps {
    * item); `NewWorkItemSheet` by default.
    */
   renderNewWorkItem?: (close: () => void, context: NewWorkItemContext) => ReactNode;
-  /** The detail's Share review link flow, shown while open (`close` ends it). */
+  /** The detail's Share review link flow, shown while open (`close` ends it); `ShareLinkSheet` by default. */
   renderShareLink?: (item: WorkItemDetail, close: () => void) => ReactNode;
 }
 
@@ -130,6 +131,10 @@ const defaultNewWorkItem = (close: () => void, context: NewWorkItemContext) => (
   />
 );
 
+const defaultShareLink = (item: WorkItemDetail, close: () => void) => (
+  <ShareLinkSheet item={item} onClose={close} />
+);
+
 const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
   <WorkItemDetailView
     key={workItemId}
@@ -150,7 +155,7 @@ export function BacklogView({
   workItemId = null,
   renderDetail = defaultDetail,
   renderNewWorkItem = defaultNewWorkItem,
-  renderShareLink,
+  renderShareLink = defaultShareLink,
 }: BacklogViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();

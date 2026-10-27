@@ -1,14 +1,9 @@
 import { EmptyState, IssueBadge, Markdown, MetaBadge } from "@omniralph/ui";
 import { IconLinkOff } from "@tabler/icons-react";
+import { formatShareExpiry } from "@/lib/work-items/share-expiry";
 import { SHARE_LINK_GONE_MESSAGE } from "@/lib/work-items/share-links";
 import type { SharedWorkItemPage } from "@/lib/work-items/share-page";
 import { SharePasswordForm } from "./share-password-form";
-
-const expiry = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-});
 
 /** The review page for each state of its link. Links only to the PRD's own external links. */
 export function ShareView({ token, page }: { token: string; page: SharedWorkItemPage }) {
@@ -64,7 +59,7 @@ export function ShareView({ token, page }: { token: string; page: SharedWorkItem
           ) : null}
           <p className="share-footer">
             {page.sharedBy ? `Shared by ${page.sharedBy} · ` : ""}expires{" "}
-            {expiry.format(page.expiresAt)}
+            {formatShareExpiry(page.expiresAt)}
           </p>
         </article>
       );

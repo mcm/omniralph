@@ -1,0 +1,78 @@
+/* Share review link (ShareLinkSheet): create, the new link, the active links. Only `--or-` tokens. */
+.or-wi-share {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.or-wi-share__create,
+.or-wi-share__created,
+.or-wi-share__links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-wi-share__url {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.or-wi-share__url > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.or-wi-share__heading {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.or-wi-share__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-wi-share__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-wi-share__link {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+  border-bottom: 1px solid var(--or-line);
+  font-size: 13px;
+}
+
+.or-wi-share__lock {
+  flex: none;
+  color: var(--or-sec);
+}
+
+.or-wi-share__expiry {
+  color: var(--or-text);
+}
+
+.or-wi-share__by {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--or-sec);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-wi-share__link > :last-child {
+  margin-left: auto;
+}
