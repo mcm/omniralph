@@ -22,7 +22,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import { BlockedBadge } from "@/components/work-items/blocked";
 import type { Backlog } from "@/lib/api/backlog";
-import type { WorkItemRow } from "@/lib/api/work-items";
+import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
 import { useBacklog } from "./queries";
 import {
@@ -92,14 +92,31 @@ function sourceLabel(source: Backlog["filters"]["sources"][number]): string {
 export interface BacklogViewProps {
   /** The open work item (`/backlog/{id}`), whose row is selected; none on `/backlog`. */
   workItemId?: string | null;
-  /** The detail beside the list; `WorkItemDetailView` by default. */
-  renderDetail?: (workItemId: string) => ReactNode;
+  /**
+   * The detail beside the list; `WorkItemDetailView` by default. `onLeave` selects the next
+   * listed item (an action took this one out of the Backlog).
+   */
+  renderDetail?: (workItemId: string, context: BacklogDetailContext) => ReactNode;
   /** The New work item flow, shown while open (`close` ends it). */
   renderNewWorkItem?: (close: () => void) => ReactNode;
+  /** The detail's Share review link flow, shown while open (`close` ends it). */
+  renderShareLink?: (item: WorkItemDetail, close: () => void) => ReactNode;
 }
 
-const defaultDetail = (workItemId: string) => (
-  <WorkItemDetailView key={workItemId} workItemId={workItemId} />
+/** What the Backlog gives its detail pane. */
+export interface BacklogDetailContext {
+  /** Selects the item after this one in the list (else the one before, else none). */
+  onLeave: () => void;
+  renderShareLink?: BacklogViewProps["renderShareLink"];
+}
+
+const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
+  <WorkItemDetailView
+    key={workItemId}
+    workItemId={workItemId}
+    onLeave={context.onLeave}
+    renderShareLink={context.renderShareLink}
+  />
 );
 
 /**
@@ -113,6 +130,7 @@ export function BacklogView({
   workItemId = null,
   renderDetail = defaultDetail,
   renderNewWorkItem,
+  renderShareLink,
 }: BacklogViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -130,6 +148,7 @@ export function BacklogView({
       )
     : [];
   const firstRow = groups[0]?.rows[0];
+  const rows = groups.flatMap((group) => group.rows);
 
   const splitRef = useRef<HTMLDivElement>(null);
   const wide = useSplitWide(splitRef);
@@ -153,6 +172,15 @@ export function BacklogView({
   }));
 
   const newWorkItem = () => setCreating(true);
+
+  // An action took the shown item out of the Backlog: select the next one, as listed now.
+  const leave = (leavingId: string) => {
+    const index = rows.findIndex((row) => row.id === leavingId);
+    const next = index === -1 ? undefined : (rows[index + 1] ?? rows[index - 1]);
+    router.replace(next ? backlogItemHref(next.id, filters) : backlogHref(filters), {
+      scroll: false,
+    });
+  };
 
   const empty = (): ReactNode => {
     if (hasBacklogFilters(filters)) {
@@ -304,7 +332,9 @@ export function BacklogView({
         ref={splitRef}
         className="or-backlog"
         list={list}
-        detail={shownId ? renderDetail(shownId) : null}
+        detail={
+          shownId ? renderDetail(shownId, { onLeave: () => leave(shownId), renderShareLink }) : null
+        }
         view={workItemId ? "detail" : "list"}
         backLink={{ label: "Backlog", href: backlogHref(filters) }}
         listLabel="Backlog"

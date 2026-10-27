@@ -124,10 +124,52 @@ describe("Toolbar", () => {
     expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
   });
 
-  it("accepts at most two primary actions (typecheck)", () => {
+  it("accepts at most three primary actions (typecheck)", () => {
     const action = { label: "Rerun", icon: IconRefresh, onSelect: noop };
-    // @ts-expect-error -- a third primary action belongs in the ⋯ menu
-    const element = <Toolbar label="Run actions" actions={[action, action, action]} />;
+    // @ts-expect-error -- a fourth primary action belongs in the ⋯ menu
+    const element = <Toolbar label="Run actions" actions={[action, action, action, action]} />;
     expect(element).toBeTruthy();
+  });
+
+  it("draws a solid action, a tooltip and a disabled reason that stays focusable", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    render(
+      <Toolbar
+        label="Work item actions"
+        actions={[
+          {
+            label: "Start epic",
+            icon: IconRefresh,
+            onSelect: onStart,
+            solid: true,
+            tooltip: "Starts when SOC-398 is done",
+          },
+          {
+            label: "Triage now",
+            icon: IconCopy,
+            onSelect: noop,
+            disabled: true,
+            disabledReason: "Om is triaging SOC-412",
+          },
+          { label: "Share review link", icon: IconCopy, onSelect: noop },
+        ]}
+      />,
+    );
+    const start = screen.getByRole("button", { name: "Start epic" });
+    expect(start.className).toContain("or-icon-btn--solid");
+    expect(start.className).toContain("or-toolbar__button--solid");
+    await user.hover(start);
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "Starts when SOC-398 is done",
+    );
+    await user.click(start);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    const triage = screen.getByRole("button", { name: "Triage now" });
+    expect(triage.getAttribute("aria-disabled")).toBe("true");
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(triage);
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share review link" }));
   });
 });

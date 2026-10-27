@@ -5,8 +5,11 @@ import { useLinkComponent } from "../provider/index.js";
 import type { ButtonIcon, ButtonSize } from "./button.js";
 import { Tooltip } from "./tooltip.js";
 
-/** Icon buttons are quiet by default (`ghost`); `outline` draws the control border. */
-export type IconButtonVariant = "ghost" | "outline";
+/**
+ * Icon buttons are quiet by default (`ghost`); `outline` draws the control border; `solid`
+ * is a group's one solid neutral action (never the accent, Design rule 6).
+ */
+export type IconButtonVariant = "ghost" | "outline" | "solid";
 
 interface IconButtonOwnProps {
   /** Required: the button's accessible name and its tooltip text. */

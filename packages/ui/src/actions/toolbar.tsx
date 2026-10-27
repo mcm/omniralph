@@ -11,13 +11,26 @@ export type ToolbarAction = {
   label: string;
   icon: ButtonIcon;
   disabled?: boolean;
+  /** Why it's disabled, as its tooltip (the button stays focusable). */
+  disabledReason?: string;
+  /** A tooltip that says more than `label` (e.g. "Starts when SOC-398 is done"). */
+  tooltip?: string;
+  /** The group's one solid action (e.g. Start epic on the Backlog). */
+  solid?: boolean;
 } & ({ onSelect: () => void; href?: undefined } | { href: string; onSelect?: () => void });
 
 export interface ToolbarProps {
   /** Names the toolbar for assistive tech (e.g. "Run actions"). */
   label: string;
-  /** Up to two primary icon actions, drawn in one bordered group. */
-  actions?: readonly [] | readonly [ToolbarAction] | readonly [ToolbarAction, ToolbarAction];
+  /**
+   * Up to three primary icon actions, drawn in one bordered group (two on most screens; the
+   * Backlog's work item has Start epic or Triage now, Edit PRD and Share review link).
+   */
+  actions?:
+    | readonly []
+    | readonly [ToolbarAction]
+    | readonly [ToolbarAction, ToolbarAction]
+    | readonly [ToolbarAction, ToolbarAction, ToolbarAction];
   /** Everything else, behind a ⋯ "More actions" button. Destructive items go last. */
   menu?: readonly MenuItem[];
   className?: string;
@@ -25,8 +38,12 @@ export interface ToolbarProps {
 
 const FOCUSABLE = "button:not(:disabled), a[href]";
 
+/** Focusable in the toolbar: enabled, or disabled with a reason (it stays focusable). */
+const focusable = (action: ToolbarAction) =>
+  !action.disabled || action.disabledReason !== undefined;
+
 /**
- * Detail actions (Design rule 5): up to two icon buttons in a bordered group plus a ⋯ menu.
+ * Detail actions (Design rule 5): up to three icon buttons in a bordered group plus a ⋯ menu.
  * The toolbar is one tab stop; Left/Right (and Home/End) move focus between its buttons.
  */
 export function Toolbar({ label, actions = [], menu = [], className }: ToolbarProps) {
@@ -34,7 +51,7 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
   const [active, setActive] = useState(0);
 
   const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
-  const enabledActions = actions.filter((action) => !action.disabled);
+  const enabledActions = actions.filter(focusable);
   const hasMenu = menu.length > 0;
   // The roving tab stop, as an index into the enabled buttons (actions, then ⋯).
   const stops = enabledActions.length + (hasMenu ? 1 : 0);
@@ -86,8 +103,21 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
     >
       {actions.length > 0 ? (
         <div className="or-toolbar__group">
-          {actions.map(({ label: actionLabel, icon, disabled, href, onSelect }) => {
-            const tabIndex = tabIndexFor(disabled);
+          {actions.map((action) => {
+            const {
+              label: actionLabel,
+              icon,
+              disabled,
+              disabledReason,
+              tooltip,
+              href,
+              onSelect,
+            } = action;
+            const tabIndex = tabIndexFor(!focusable(action));
+            const className = action.solid
+              ? "or-toolbar__button or-toolbar__button--solid"
+              : "or-toolbar__button";
+            const variant = action.solid ? ("solid" as const) : undefined;
             return href !== undefined ? (
               <IconButton
                 key={actionLabel}
@@ -95,9 +125,12 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
                 icon={icon}
                 href={href}
                 disabled={disabled}
+                disabledReason={disabledReason}
+                tooltip={tooltip}
+                variant={variant}
                 onClick={onSelect}
                 tabIndex={tabIndex}
-                className="or-toolbar__button"
+                className={className}
               />
             ) : (
               <IconButton
@@ -105,9 +138,12 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
                 label={actionLabel}
                 icon={icon}
                 disabled={disabled}
+                disabledReason={disabledReason}
+                tooltip={tooltip}
+                variant={variant}
                 onClick={onSelect}
                 tabIndex={tabIndex}
-                className="or-toolbar__button"
+                className={className}
               />
             );
           })}

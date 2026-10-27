@@ -88,4 +88,31 @@ describe("Tabs", () => {
     expect(onValueChange).toHaveBeenCalledWith("failed");
     expect(screen.getByRole("tabpanel").textContent).toBe("Failed panel");
   });
+
+  it("keeps a keepMounted panel's state while another tab is selected, hidden", async () => {
+    const user = userEvent.setup();
+    render(
+      <Tabs
+        aria-label="Item views"
+        tabs={[
+          { value: "prd", label: "PRD" },
+          { value: "activity", label: "Activity" },
+        ]}
+      >
+        <TabPanel value="prd" keepMounted>
+          <input aria-label="Draft" defaultValue="" />
+        </TabPanel>
+        <TabPanel value="activity">Activity panel</TabPanel>
+      </Tabs>,
+    );
+    await user.type(screen.getByRole("textbox", { name: "Draft" }), "half a PRD");
+    await user.click(screen.getByRole("tab", { name: "Activity" }));
+    const draft = screen.getByRole("textbox", { name: "Draft", hidden: true }) as HTMLInputElement;
+    expect(draft.closest("[role=tabpanel]")!.hasAttribute("hidden")).toBe(true);
+    await user.click(screen.getByRole("tab", { name: "PRD" }));
+    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe(
+      "half a PRD",
+    );
+    expect(draft.closest("[role=tabpanel]")!.hasAttribute("hidden")).toBe(false);
+  });
 });

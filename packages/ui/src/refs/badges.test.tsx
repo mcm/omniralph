@@ -14,6 +14,7 @@ import {
   RepoBadge,
   SizeBadge,
 } from "./badges.js";
+import { BrandMark } from "./brand-mark.js";
 
 /**
  * The text assistive tech reads for an element's content: images contribute their
@@ -198,6 +199,18 @@ describe("reference badges", () => {
     const icon = badgeOf(container).querySelector("svg")!;
     expect(icon.getAttribute("aria-hidden")).toBe("true");
     expect(within(badgeOf(container)).queryByRole("img")).toBeNull();
+  });
+
+  it("takes a brand mark in place of the icon", () => {
+    const { container } = render(
+      <MetaBadge
+        text="Portal project"
+        mark={<BrandMark brand="linear" className="or-ref__icon" />}
+      />,
+    );
+    const badge = badgeOf(container);
+    expect(within(badge).getByRole("img", { name: "Linear" })).toBeTruthy();
+    expect(badge.textContent).toContain("Portal project");
   });
 });
 

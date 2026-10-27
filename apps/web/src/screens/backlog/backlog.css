@@ -84,26 +84,3 @@
 .or-backlog--stale {
   opacity: 0.6;
 }
-
-.or-backlog-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px 24px 32px;
-}
-
-.or-backlog-detail__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.or-backlog-detail__title {
-  margin: 0;
-  color: var(--or-text);
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.3;
-}

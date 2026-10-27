@@ -2,7 +2,7 @@
 
 import { Button, EmptyState, Markdown, Textarea } from "@omniralph/ui";
 import { IconPencil } from "@tabler/icons-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import type { WorkItemDetail } from "@/lib/api/work-items";
 import { useSavePrd } from "./use-save-prd";
@@ -24,6 +24,14 @@ export interface PrdViewProps {
    * (`actions.editPrd`; else it renders read-only). `read-only`: no edit control.
    */
   mode: "editable" | "read-only";
+  /**
+   * Opens the editor (editable mode, when the item allows it): the detail toolbar's Edit
+   * PRD. `onEditStarted` is called once it's open, to clear the request.
+   */
+  editRequested?: boolean;
+  onEditStarted?: () => void;
+  /** Shows the pane's own Edit PRD button. Off where a toolbar has one. Defaults to true. */
+  showEditButton?: boolean;
 }
 
 /** The edit in progress: the text and the `updatedAt` it started from. */
@@ -36,6 +44,11 @@ interface Draft {
   error: string | null;
 }
 
+/** A new edit of the item's current PRD. */
+function startEditingDraft(item: WorkItemDetail): Draft {
+  return { text: item.description, original: item.description, base: item.updatedAt, error: null };
+}
+
 /**
  * A work item's PRD (its description), rendered by `Markdown` in a 68ch column, loaded
  * live through `GET /api/ui/work-items/{id}`. In editable mode Edit PRD swaps it for a
@@ -43,7 +56,13 @@ interface Draft {
  * refuses it (the item changed in the tracker, or Om is working on it) the editor comes
  * back with the user's text and the reason. Live refetches never touch a draft.
  */
-export function PrdView({ workItemId, mode }: PrdViewProps) {
+export function PrdView({
+  workItemId,
+  mode,
+  editRequested = false,
+  onEditStarted,
+  showEditButton = true,
+}: PrdViewProps) {
   const detail = useWorkItemDetail(workItemId);
   if (detail.isPending) {
     return (
@@ -71,15 +90,46 @@ export function PrdView({ workItemId, mode }: PrdViewProps) {
       </div>
     );
   }
-  return <PrdContent key={workItemId} item={detail.data} mode={mode} />;
+  return (
+    <PrdContent
+      key={workItemId}
+      item={detail.data}
+      mode={mode}
+      editRequested={editRequested}
+      onEditStarted={onEditStarted}
+      showEditButton={showEditButton}
+    />
+  );
 }
 
-function PrdContent({ item, mode }: { item: WorkItemDetail; mode: PrdViewProps["mode"] }) {
+function PrdContent({
+  item,
+  mode,
+  editRequested,
+  onEditStarted,
+  showEditButton,
+}: {
+  item: WorkItemDetail;
+  mode: PrdViewProps["mode"];
+  editRequested: boolean;
+  onEditStarted?: () => void;
+  showEditButton: boolean;
+}) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const save = useSavePrd(item.id);
   const editorId = useId();
   const alertId = useId();
   const canEdit = mode === "editable" && item.actions.editPrd;
+  const startEditing = () => setDraft(startEditingDraft(item));
+
+  // The toolbar's Edit PRD: open the editor (unless one is open already), then clear the
+  // request.
+  if (editRequested && draft === null && canEdit && !save.isPending) {
+    setDraft(startEditingDraft(item));
+  }
+  useEffect(() => {
+    if (editRequested) onEditStarted?.();
+  }, [editRequested, onEditStarted]);
 
   // An edit in progress stays open even if the item stops being editable meanwhile (a run
   // started): Save then says why, and the text is never lost.
@@ -139,21 +189,14 @@ function PrdContent({ item, mode }: { item: WorkItemDetail; mode: PrdViewProps["
 
   return (
     <div className="or-prd">
-      {canEdit ? (
+      {canEdit && showEditButton ? (
         <div className="or-prd__actions">
           <Button
             variant="outline"
             size="sm"
             icon={IconPencil}
             disabled={save.isPending}
-            onClick={() =>
-              setDraft({
-                text: item.description,
-                original: item.description,
-                base: item.updatedAt,
-                error: null,
-              })
-            }
+            onClick={startEditing}
           >
             Edit PRD
           </Button>

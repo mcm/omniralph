@@ -7,6 +7,7 @@ import {
   IconServer,
   type TablerIcon,
 } from "@tabler/icons-react";
+import type { ReactNode } from "react";
 import { Tooltip } from "../actions/tooltip.js";
 import { Glyph } from "../brand/glyph.js";
 import { RefBadge, type BadgeLinkProps } from "./badge.js";
@@ -153,19 +154,26 @@ export function AgentBadge({ name, ...rest }: AgentBadgeProps) {
 export interface MetaBadgeProps extends BadgeLinkProps {
   /** An optional decorative Tabler icon. */
   icon?: TablerIcon;
+  /**
+   * A leading mark in place of `icon`, e.g. the tracker's
+   * `<BrandMark brand="linear" className="or-ref__icon" />`.
+   */
+  mark?: ReactNode;
   text: string;
   mono?: boolean;
 }
 
 /** Any other fact shown as a badge (a model, a duration, a count). */
-export function MetaBadge({ icon: Icon, text, mono, ...rest }: MetaBadgeProps) {
+export function MetaBadge({ icon: Icon, mark, text, mono, ...rest }: MetaBadgeProps) {
   return (
     <RefBadge
       {...rest}
       kind="meta"
       mono={mono}
       icon={
-        Icon ? (
+        mark ? (
+          mark
+        ) : Icon ? (
           <Icon className="or-ref__icon" size={ICON_SIZE} stroke={1.75} aria-hidden="true" />
         ) : undefined
       }
