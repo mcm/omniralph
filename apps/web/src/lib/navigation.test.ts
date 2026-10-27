@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isNavActive } from "@omniralph/ui";
-import { IconChartBar } from "@tabler/icons-react";
+import { IconChartBar, IconMessage } from "@tabler/icons-react";
 import { describe, expect, it } from "vitest";
 import { navItems, withNavIndicators } from "@/lib/navigation";
 
@@ -70,7 +70,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Analytics and Settings at the bottom", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Ask, Analytics and Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -85,6 +85,7 @@ describe("navItems", () => {
       { id: "backlog", label: "Backlog", href: "/backlog", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repos", placement: "main", phone: "drawer" },
       { id: "fleet", label: "Fleet", href: "/fleet", placement: "main", phone: "drawer" },
+      { id: "ask", label: "Ask", href: "/ask", placement: "bottom", phone: "tab" },
       {
         id: "analytics",
         label: "Analytics",
@@ -102,12 +103,34 @@ describe("navItems", () => {
     ]);
   });
 
-  it("orders the phone tab bar Inbox, Runs, Backlog (Ask joins it with Epic 9)", () => {
+  it("orders the phone tab bar Inbox, Runs, Backlog, Ask", () => {
     expect(navItems.filter((item) => item.phone === "tab").map((item) => item.label)).toEqual([
       "Inbox",
       "Runs",
       "Backlog",
+      "Ask",
     ]);
+  });
+
+  it("points Ask at /ask, first in the bottom group, lit for /ask, with the message icon and no indicator", () => {
+    const bottom = navItems.filter((item) => item.placement === "bottom").map((item) => item.id);
+    expect(bottom[0]).toBe("ask");
+    const ask = navItems.find((item) => item.id === "ask")!;
+    expect(ask).toMatchObject({ href: "/ask", activeFor: ["/ask"], placement: "bottom" });
+    expect(ask.icon).toBe(IconMessage);
+    expect(ask.indicator).toBeUndefined();
+    expect(pages.get("/ask")).toBeDefined();
+    // Nothing in Ask needs you: the live indicators never mark it.
+    const marked = withNavIndicators(
+      navItems,
+      { needsYou: 3, problems: 1, running: 2 },
+      { readyToStart: 1, needsRefining: 1, total: 2 },
+      {
+        fleet: { offline: 1, updateFailed: 1 },
+        settings: { failedDeliveries: 1, byConnection: [] },
+      },
+    );
+    expect(marked.find((item) => item.id === "ask")!.indicator).toBeUndefined();
   });
 
   it("points Backlog at /backlog, after Runs, lit for /backlog alone, with a page for it and its items", () => {
@@ -144,13 +167,16 @@ describe("navItems", () => {
     ["/settings/organization", "settings"],
     ["/settings/routing", "settings"],
     ["/analytics", "analytics"],
+    ["/ask", "ask"],
+    ["/ask/new", "ask"],
+    ["/ask/abc", "ask"],
   ])("makes %s active for %s alone", (pathname, id) => {
     expect(navItems.filter((item) => isNavActive(pathname, item)).map((item) => item.id)).toEqual([
       id,
     ]);
   });
 
-  it.each(["/analyticsx", "/runsx", "/reposx", "/backlogx", "/fleetx", "/repositories"])(
+  it.each(["/analyticsx", "/runsx", "/reposx", "/backlogx", "/fleetx", "/askx", "/repositories"])(
     "makes no entry active on %s",
     (pathname) => {
       expect(navItems.filter((item) => isNavActive(pathname, item))).toEqual([]);
@@ -168,7 +194,7 @@ describe("navItems", () => {
       activeFor: ["/analytics"],
     });
     const bottom = navItems.filter((item) => item.placement === "bottom").map((item) => item.id);
-    expect(bottom).toEqual(["analytics", "settings"]);
+    expect(bottom).toEqual(["ask", "analytics", "settings"]);
     expect(navItems.filter((item) => item.phone === "drawer").map((item) => item.label)).toEqual([
       "Repos",
       "Fleet",

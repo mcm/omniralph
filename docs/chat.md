@@ -244,6 +244,12 @@ of its members starts a chat; it is never listed under **Settings › Connection
   picker lists the repos with Ask on, grouped per organization under "All organizations". Your
   first message starts the chat, which opens with Om's reply streaming in; from then on its repo
   is fixed.
+- **Ask beside any page.** On a laptop or desktop, the sidebar's Ask entry (above Settings) opens
+  Ask as a panel beside the page, 480 px wide (360 px next to the icon rail), which pushes the page
+  aside instead of covering it. It stays open on the same chat as you move between pages, comes
+  back after a reload in the same tab, and closes with Close Ask, the Ask entry or Esc (unless a
+  menu or dialog is open, which Esc closes first). On a phone, Ask is the fourth tab and opens
+  `/ask`.
 - **Code answers as written.** A [code question](#code-questions) asked in a web chat runs on the
   chat's repo (unless Om names another) and the branch the chat stored when it started. Its answer
   is posted exactly as the agent wrote it, without a model turn in between, and shows how long the

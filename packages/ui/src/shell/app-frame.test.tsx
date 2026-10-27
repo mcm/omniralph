@@ -8,10 +8,10 @@ import {
 } from "@tabler/icons-react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Menu } from "../actions/menu.js";
 import { UiProvider, type LinkProps } from "../provider/ui-provider.js";
-import { AppFrame, type AppFrameProps } from "./app-frame.js";
+import { AppFrame, NAV_SELECT_QUERY, type AppFrameProps } from "./app-frame.js";
 import type { NavItem } from "./nav.js";
 
 const NAV: NavItem[] = [
@@ -431,6 +431,162 @@ describe("AppFrame", () => {
       } finally {
         vi.unstubAllGlobals();
       }
+    });
+  });
+
+  describe("aside", () => {
+    const panel = (
+      <aside aria-label="Ask">
+        <button type="button">Send</button>
+      </aside>
+    );
+
+    it("renders the panel as a column after main, the landmark its content names", () => {
+      const { container } = renderFrame({ aside: panel });
+      const frame = container.querySelector(".or-frame")!;
+      expect(frame.classList.contains("or-frame--aside")).toBe(true);
+      const column = frame.querySelector(":scope > .or-frame__aside")!;
+      expect(column).toBeTruthy();
+      expect(column.previousElementSibling).toBe(screen.getByRole("main"));
+      const landmark = screen.getByRole("complementary", { name: "Ask" });
+      expect(column.contains(landmark)).toBe(true);
+    });
+
+    it("is non-modal: no dialog, no scrim, no focus trap, and the page stays reachable", async () => {
+      const user = userEvent.setup();
+      renderFrame({
+        aside: panel,
+        children: <button type="button">Page button</button>,
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.querySelector("[aria-modal]")).toBeNull();
+      expect(document.querySelector(".or-drawer__scrim")).toBeNull();
+      const send = within(screen.getByRole("complementary", { name: "Ask" })).getByRole("button", {
+        name: "Send",
+      });
+      screen.getByRole("button", { name: "Page button" }).focus();
+      await user.tab();
+      expect(document.activeElement).toBe(send);
+      // Tabbing on leaves the panel (nothing traps focus in it).
+      await user.tab();
+      expect(document.activeElement).not.toBe(send);
+      await user.tab({ shift: true });
+      await user.tab({ shift: true });
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Page button" }));
+      expect(screen.getByRole("main").getAttribute("aria-hidden")).toBeNull();
+    });
+
+    it("renders no column without an aside", () => {
+      const { container } = renderFrame();
+      expect(container.querySelector(".or-frame__aside")).toBeNull();
+      expect(container.querySelector(".or-frame--aside")).toBeNull();
+    });
+  });
+
+  describe("onSelect", () => {
+    function stubWidth(desktop: boolean) {
+      const matchMedia = vi.fn((query: string) => ({
+        matches: desktop && query === NAV_SELECT_QUERY,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      vi.stubGlobal("matchMedia", matchMedia);
+      return matchMedia;
+    }
+
+    /** A router link that records the navigations it makes (none when the click was prevented). */
+    function recordingLink(navigations: string[]) {
+      return function RecordingLink({ onClick, ...props }: LinkProps) {
+        return (
+          <a
+            {...props}
+            onClick={(event) => {
+              onClick?.(event);
+              if (!event.defaultPrevented) navigations.push(props.href);
+              event.preventDefault();
+            }}
+          />
+        );
+      };
+    }
+
+    function renderSelectable(expanded?: boolean) {
+      const onSelect = vi.fn();
+      const navigations: string[] = [];
+      const nav = NAV.map((item) => (item.id === "ask" ? { ...item, onSelect, expanded } : item));
+      const Link = recordingLink(navigations);
+      render(
+        <UiProvider linkComponent={Link}>
+          <AppFrame
+            currentPath="/inbox"
+            brandHref="/"
+            nav={nav}
+            user={{ name: "Ada Lovelace", initials: "AL" }}
+            userMenu={(trigger) => trigger}
+          />
+        </UiProvider>,
+      );
+      return { onSelect, navigations };
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("calls onSelect instead of navigating above 768 px", async () => {
+      const matchMedia = stubWidth(true);
+      const user = userEvent.setup();
+      const { onSelect, navigations } = renderSelectable(false);
+      await user.click(within(sidebar()).getByRole("link", { name: "Ask" }));
+      expect(matchMedia).toHaveBeenCalledWith("(min-width: 769px)");
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      expect(onSelect.mock.calls[0]![0].type).toBe("click");
+      expect(navigations).toEqual([]);
+      // Entries without onSelect still navigate.
+      await user.click(within(sidebar()).getByRole("link", { name: "Runs" }));
+      expect(navigations).toEqual(["/coding"]);
+    });
+
+    it("navigates at phone widths", async () => {
+      stubWidth(false);
+      const user = userEvent.setup();
+      const { onSelect, navigations } = renderSelectable(false);
+      await user.click(within(tabBar()).getByRole("link", { name: "Ask" }));
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(navigations).toEqual(["/ask"]);
+    });
+
+    it("navigates without matchMedia, and on a modified click", async () => {
+      const user = userEvent.setup();
+      const { onSelect, navigations } = renderSelectable(false);
+      await user.click(within(sidebar()).getByRole("link", { name: "Ask" }));
+      expect(navigations).toEqual(["/ask"]);
+      stubWidth(true);
+      await user.keyboard("{Control>}");
+      await user.click(within(sidebar()).getByRole("link", { name: "Ask" }));
+      await user.keyboard("{/Control}");
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(navigations).toEqual(["/ask", "/ask"]);
+    });
+
+    it("shows aria-expanded on the sidebar entry only", () => {
+      renderSelectable(true);
+      expect(
+        within(sidebar()).getByRole("link", { name: "Ask" }).getAttribute("aria-expanded"),
+      ).toBe("true");
+      expect(
+        within(tabBar()).getByRole("link", { name: "Ask" }).getAttribute("aria-expanded"),
+      ).toBeNull();
+      expect(
+        within(sidebar()).getByRole("link", { name: "Runs" }).getAttribute("aria-expanded"),
+      ).toBeNull();
+    });
+
+    it("names each entry's link with data-nav-id", () => {
+      renderSelectable(false);
+      expect(within(sidebar()).getByRole("link", { name: "Ask" }).getAttribute("data-nav-id")).toBe(
+        "ask",
+      );
     });
   });
 

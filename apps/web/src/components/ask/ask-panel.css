@@ -1,0 +1,13 @@
+/* The desktop Ask panel: the frame's aside column (its width, line and surface come from AppFrame); the view fills it. Only `--or-` tokens. */
+.or-ask-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--or-surf);
+}
+
+.or-ask-panel > * {
+  flex: 1;
+  min-height: 0;
+}

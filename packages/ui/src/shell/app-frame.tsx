@@ -34,6 +34,13 @@ export interface AppFrameProps {
   userMenu: (trigger: ReactElement) => ReactNode;
   /** The page, rendered in the `main` landmark. */
   children?: ReactNode;
+  /**
+   * A panel beside the page (e.g. Ask), rendered as a grid column after `main` above 768 px:
+   * 480 px wide from 1200 px, 360 px from 769 to 1199 px, hidden at phone widths. The page
+   * narrows instead of being covered: no scrim, no focus trap. The node is its own landmark
+   * (e.g. `<aside aria-label="Ask">`).
+   */
+  aside?: ReactNode;
 }
 
 type EntryVariant = "side" | "tab" | "drawer";
@@ -78,12 +85,24 @@ function NavEntries({
       {items.map((item) => {
         const Icon = item.icon;
         const active = isNavActive(currentPath, item);
+        const { onSelect } = item;
         const link = (
           <Link
             href={item.href}
             className={`or-nav__item or-nav__item--${variant}`}
             aria-label={navAccessibleName(item)}
             aria-current={active ? "page" : undefined}
+            aria-expanded={onSelect && variant === "side" ? item.expanded : undefined}
+            data-nav-id={item.id}
+            onClick={
+              onSelect
+                ? (event: MouseEvent<HTMLAnchorElement>) => {
+                    if (!wantsSameTab(event) || !matchesMedia(NAV_SELECT_QUERY)) return;
+                    event.preventDefault();
+                    onSelect(event);
+                  }
+                : undefined
+            }
           >
             <span className="or-nav__icon">
               <Icon size={variant === "tab" ? 22 : 18} stroke={1.75} aria-hidden="true" />
@@ -125,6 +144,15 @@ function UserFooter({ user, userMenu }: Pick<AppFrameProps, "user" | "userMenu">
 /** Wider than this, the drawer's hamburger is gone, so an open drawer closes. */
 export const DRAWER_CLOSE_QUERY = "(min-width: 769px)";
 
+/** While this matches, a click on an entry with `onSelect` calls it instead of navigating. */
+export const NAV_SELECT_QUERY = "(min-width: 769px)";
+
+function matchesMedia(query: string): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(query).matches
+    : false;
+}
+
 function wantsSameTab(event: MouseEvent): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
@@ -142,6 +170,7 @@ export function AppFrame({
   user,
   userMenu,
   children,
+  aside,
 }: AppFrameProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Any navigation closes the drawer, including ones its link click didn't make (a route
@@ -178,7 +207,15 @@ export function AppFrame({
   }
 
   return (
-    <div className={tabs.length > 0 ? "or-root or-frame or-frame--tabs" : "or-root or-frame"}>
+    <div
+      className={[
+        "or-root or-frame",
+        tabs.length > 0 ? "or-frame--tabs" : null,
+        aside != null ? "or-frame--aside" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
         <header className="or-topbar">
           <Dialog.Trigger asChild>
@@ -211,6 +248,8 @@ export function AppFrame({
         </nav>
 
         <main className="or-frame__main">{children}</main>
+
+        {aside != null ? <div className="or-frame__aside">{aside}</div> : null}
 
         {tabs.length > 0 ? (
           <nav className="or-tabbar" aria-label="Primary">

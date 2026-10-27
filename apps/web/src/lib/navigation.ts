@@ -4,6 +4,7 @@ import {
   IconGitFork,
   IconInbox,
   IconLayoutList,
+  IconMessage,
   IconPlayerPlay,
   IconServer2,
   IconSettings,
@@ -19,13 +20,15 @@ import type { NavIndicators } from "@/lib/api/nav-indicators";
  * every entry is visible to members and admins. Runs lights up for `/runs/**` only, Repos
  * for `/repos/**` only, Fleet for `/fleet/**`.
  *
- * The bottom group holds Analytics (`/analytics`, in the phone drawer, no indicator) and then
- * Settings, which points at `/settings` (its section list on phone, General beside the
- * section nav when wide) and lights up for every `/settings/**` page.
+ * The bottom group holds Ask, then Analytics (`/analytics`, in the phone drawer, no
+ * indicator), then Settings, which points at `/settings` (its section list on phone,
+ * General beside the section nav when wide) and lights up for every `/settings/**` page.
  *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
- * started; phone tabs); Ask (bottom, before Analytics, a phone tab) is added by Epic 9 with
- * its page. The live indicators come from `withNavIndicators`.
+ * started; phone tabs). Ask (`/ask/**`) sits at the top of the bottom group and is the fourth
+ * phone tab; on desktop the app shell gives it an `onSelect` that opens the Ask panel
+ * instead (`components/ask/ask-panel.tsx`). It never has an indicator: nothing in Ask needs
+ * you. The live indicators come from `withNavIndicators`.
  */
 export const navItems: readonly NavItem[] = [
   {
@@ -71,6 +74,15 @@ export const navItems: readonly NavItem[] = [
     placement: "main",
     phone: "drawer",
     activeFor: ["/fleet"],
+  },
+  {
+    id: "ask",
+    label: "Ask",
+    href: "/ask",
+    icon: IconMessage,
+    placement: "bottom",
+    phone: "tab",
+    activeFor: ["/ask"],
   },
   {
     id: "analytics",

@@ -1,6 +1,8 @@
 /*
  * Shell layout: the 232 px sidebar (1200 px and wider), the 64 px icon rail (769–1199 px)
- * and, at 768 px and narrower, the sticky top bar, the bottom tab bar and the drawer.
+ * and, at 768 px and narrower, the sticky top bar, the bottom tab bar and the drawer. A
+ * panel beside the page (`aside`, e.g. Ask) is a third column above 768 px: 480 px from
+ * 1200 px, 360 px from 769 to 1199 px; the page narrows (no overlay). Hidden on phones.
  */
 .or-frame {
   display: grid;
@@ -10,6 +12,24 @@
 
 .or-frame__main {
   min-width: 0;
+}
+
+/* The panel beside the page: full height, on the surface, a line on its left. */
+.or-frame__aside {
+  position: sticky;
+  top: 0;
+  box-sizing: border-box;
+  height: 100vh;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--or-border);
+  background: var(--or-surf);
+}
+
+@media (min-width: 1200px) {
+  .or-frame--aside {
+    grid-template-columns: var(--or-side-w) minmax(0, 1fr) 480px;
+  }
 }
 
 /* Sidebar */
@@ -362,6 +382,10 @@
     grid-template-columns: var(--or-rail-w) minmax(0, 1fr);
   }
 
+  .or-frame--aside {
+    grid-template-columns: var(--or-rail-w) minmax(0, 1fr) 360px;
+  }
+
   .or-sidebar {
     width: var(--or-rail-w);
     padding: 16px 10px 12px;
@@ -430,6 +454,10 @@
   }
 
   .or-sidebar {
+    display: none;
+  }
+
+  .or-frame__aside {
     display: none;
   }
 

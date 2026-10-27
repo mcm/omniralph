@@ -2,9 +2,11 @@
 
 import { Toaster, UiProvider, type ThemePreference } from "@omniralph/ui";
 import { usePathname } from "next/navigation";
+import * as React from "react";
 import { navItems } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { AskContextProvider } from "./ask/ask-context";
+import { AskPanel, AskPanelProvider, useAskPanel, withAskEntry } from "./ask/ask-panel";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
 import { LiveAppFrame } from "./live-app-frame";
@@ -22,6 +24,8 @@ import { UserMenu } from "./user-menu";
  * The signed-in app: the 2.0 frame from `@omniralph/ui` (sidebar, icon rail, phone top bar,
  * tab bar and drawer) around the page, with the session, live data, the saved theme and
  * toasts. One `OrganizationPicker` and one `UserMenu` serve every place the frame shows them.
+ * On desktop the Ask entry opens the Ask panel beside the page (`AskPanelProvider`); this
+ * layout persists across client-side navigation, so the panel does too.
  */
 export function AppShell({
   user,
@@ -71,21 +75,23 @@ export function AppShell({
                 >
                   <UiProvider linkComponent={Link}>
                     <AskContextProvider>
-                      <LiveAppFrame
-                        currentPath={pathname}
-                        brandHref="/"
-                        nav={navItems}
-                        orgPicker={<OrganizationPicker />}
-                        user={{
-                          name,
-                          image: user.image ?? undefined,
-                          initials: userInitials(user),
-                        }}
-                        userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                      >
-                        <LiveNoticeSlot />
-                        {children}
-                      </LiveAppFrame>
+                      <AskPanelProvider>
+                        <AskFrame
+                          currentPath={pathname}
+                          brandHref="/"
+                          nav={navItems}
+                          orgPicker={<OrganizationPicker />}
+                          user={{
+                            name,
+                            image: user.image ?? undefined,
+                            initials: userInitials(user),
+                          }}
+                          userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                        >
+                          <LiveNoticeSlot />
+                          {children}
+                        </AskFrame>
+                      </AskPanelProvider>
                     </AskContextProvider>
                     <Toaster />
                   </UiProvider>
@@ -97,4 +103,12 @@ export function AppShell({
       </CurrentUserProvider>
     </SavedThemeProvider>
   );
+}
+
+/** The live frame with the Ask entry wired to the panel, and the panel beside the page while open. */
+function AskFrame({ nav, ...props }: React.ComponentProps<typeof LiveAppFrame>) {
+  const panel = useAskPanel();
+  const { open, toggle } = panel;
+  const items = React.useMemo(() => withAskEntry(nav, { open, toggle }), [nav, open, toggle]);
+  return <LiveAppFrame {...props} nav={items} aside={open ? <AskPanel /> : undefined} />;
 }
