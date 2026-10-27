@@ -92,6 +92,7 @@ export function fleet(): AgentList {
       }),
     ],
     summary: summary({ total: 2, online: 1, offline: 1, busy: 1 }),
+    versionHistory: null,
   };
 }
 

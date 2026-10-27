@@ -38,7 +38,8 @@ import { agentRow } from "@/lib/agents/rows";
 import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
 import { attemptLabelBase } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
-import type { VersionPolicy } from "./status";
+import { loadSettingsHistory } from "@/lib/settings-history/history";
+import { versionCounts, type VersionPolicy } from "./status";
 
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a read for long. */
 const NPM_TIMEOUT_MS = 2_000;
@@ -78,14 +79,6 @@ export function fleetSummary(
 ): FleetSummary {
   const active = rows.filter((row) => !row.revoked);
   const online = active.filter((row) => row.online);
-  const versions = { onTarget: 0, behind: 0, updateFailed: 0 };
-  for (const row of active) {
-    if (row.updateStatus === "failed") versions.updateFailed += 1;
-    else if (!row.online) continue;
-    else if (row.desiredVersion === null || row.version === row.desiredVersion) {
-      versions.onTarget += 1;
-    } else versions.behind += 1;
-  }
   const [first] = policies;
   const same =
     first !== undefined &&
@@ -98,7 +91,7 @@ export function fleetSummary(
     offline: active.length - online.length,
     busy: active.filter((row) => row.runningCount > 0).length,
     versionPolicy: same ? first : null,
-    versions,
+    versions: versionCounts(active),
     acceptedKinds: {
       limited: active.filter((row) => row.acceptedTaskTypes.length < TASK_TYPES.length).length,
       total: active.length,
@@ -128,12 +121,19 @@ export async function loadFleet(
     }),
   );
   const rows = perOrganization.flatMap((o) => o.rows);
+  // The Version policy cell's ⓘ: one organization's history only.
+  const versionHistory =
+    organizations.length === 1
+      ? (await loadSettingsHistory(db, organizations, { section: "agent_defaults", limit: 1 }))
+          .latest
+      : null;
   return {
     agents: rows,
     summary: fleetSummary(
       rows,
       perOrganization.map((o) => o.policy),
     ),
+    versionHistory,
   };
 }
 

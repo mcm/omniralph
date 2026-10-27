@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { versionPolicySchema } from "./agents";
 import { isoDate } from "./schemas";
 
 /** Settings › Agent defaults (`/api/ui/agent-defaults`, `/api/ui/host-tools/**`, admins). */
@@ -42,6 +43,16 @@ export const agentDefaultsSaveSchema = z.strictObject({
   version: z.string().max(200).optional(),
 });
 export type AgentDefaultsSave = z.infer<typeof agentDefaultsSaveSchema>;
+
+/**
+ * The answer to `PUT /api/ui/agent-defaults`: with a version sent, the version policy it set
+ * (Fleet's Version policy cell writes it into its cache).
+ */
+export const agentDefaultsSavedSchema = z.object({
+  ok: z.literal(true),
+  versionPolicy: versionPolicySchema.optional(),
+});
+export type AgentDefaultsSaved = z.infer<typeof agentDefaultsSavedSchema>;
 
 /** A host tool of the organization's catalog. */
 export const hostToolCatalogRowSchema = z.object({

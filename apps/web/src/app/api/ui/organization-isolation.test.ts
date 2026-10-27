@@ -3783,7 +3783,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           method: "PUT",
           body: { defaults: { maxConcurrency: 3 }, version: "2.4.0" },
         }),
-      ).toEqual({ status: 200, body: { ok: true } });
+      ).toEqual({
+        status: 200,
+        body: { ok: true, versionPolicy: { mode: "pinned", version: "2.4.0", target: "2.4.0" } },
+      });
       const added = await call(hostToolCatalog.POST, { body: { name: "beta-tool" } });
       // The other organization's tool name is no duplicate here.
       expect(added).toMatchObject({ status: 200, body: { ok: true } });

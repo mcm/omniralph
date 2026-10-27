@@ -213,6 +213,18 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   {
+    // The version policy sheet, pinning a version.
+    name: "fleet-version-policy",
+    path: "/fleet",
+    page: "(app)/fleet/page.tsx",
+    auth: "signed-in",
+    steps: [
+      { action: "click", selector: ".or-fleet__edit" },
+      { action: "click", selector: '[role="radio"]:nth-child(2)' },
+    ],
+    viewportOnly: true,
+  },
+  {
     name: "fleet-agent-updating",
     path: `/fleet/${ids.agents.updating}`,
     page: "(app)/fleet/[id]/page.tsx",
@@ -253,31 +265,6 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     name: "settings-connection-linear",
     path: `/settings/connections/linear/${ids.integrations.linear}`,
     page: "(app)/settings/connections/[provider]/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "settings-agent-defaults",
-    path: "/settings/agent-defaults",
-    page: "(app)/(legacy-settings)/settings/agent-defaults/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    // Defaults and the agent version save together, confirmed with the change list.
-    name: "settings-agent-defaults-confirm",
-    path: "/settings/agent-defaults",
-    page: "(app)/(legacy-settings)/settings/agent-defaults/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#default-max-concurrency", value: "4" },
-      { action: "fill", selector: "#desired-version", value: "1.4.0" },
-      { action: "click", selector: '#agent-defaults [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
-  {
-    name: "settings-agent-defaults-host-tools",
-    path: "/settings/agent-defaults/host-tools",
-    page: "(app)/(legacy-settings)/settings/agent-defaults/host-tools/page.tsx",
     auth: "signed-in",
   },
   {

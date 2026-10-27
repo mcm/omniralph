@@ -97,6 +97,32 @@ export interface VersionCounts {
   updateFailed: number;
 }
 
+/** What `versionCounts` reads of an agent row. */
+export interface VersionCountInput {
+  revoked: boolean;
+  online: boolean;
+  version: string | null;
+  desiredVersion: string | null;
+  updateStatus: string;
+}
+
+/**
+ * The Version policy cell's counts over non-revoked agents: any whose update failed, then
+ * the online ones on their desired version (or with none) and behind it.
+ */
+export function versionCounts(rows: readonly VersionCountInput[]): VersionCounts {
+  const counts = { onTarget: 0, behind: 0, updateFailed: 0 };
+  for (const row of rows) {
+    if (row.revoked) continue;
+    if (row.updateStatus === "failed") counts.updateFailed += 1;
+    else if (!row.online) continue;
+    else if (row.desiredVersion === null || row.version === row.desiredVersion) {
+      counts.onTarget += 1;
+    } else counts.behind += 1;
+  }
+  return counts;
+}
+
 /** "Track latest", "Pinned to 2.0.3", or "Varies by organization" (null under all organizations). */
 export function versionPolicyLabel(policy: VersionPolicy | null): string {
   if (!policy) return "Varies by organization";

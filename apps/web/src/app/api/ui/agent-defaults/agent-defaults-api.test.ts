@@ -191,14 +191,20 @@ describe("Settings › Agent defaults API", () => {
   });
 
   it("sets the organization's version, which must be semver", async () => {
-    expect(await setGlobalAgentVersion(" 2.4.0 ")).toEqual({ ok: true });
+    expect(await setGlobalAgentVersion(" 2.4.0 ")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "pinned", version: "2.4.0", target: "2.4.0" },
+    });
     // The active organization's version.
     expect(state).toMatchObject({
       organizationId: "org-1",
       version: "2.4.0",
       updatedBy: "admin-1",
     });
-    expect(await setGlobalAgentVersion("v2.5.0-beta.1")).toEqual({ ok: true });
+    expect(await setGlobalAgentVersion("v2.5.0-beta.1")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "pinned", version: "2.5.0-beta.1", target: "2.5.0-beta.1" },
+    });
     expect(state.version).toBe("2.5.0-beta.1");
 
     for (const bad of ["1.4", "01.2.3", "2.2.3; rm -rf /", "next"]) {
@@ -206,7 +212,11 @@ describe("Settings › Agent defaults API", () => {
     }
     expect(state.version).toBe("2.5.0-beta.1");
 
-    expect(await setGlobalAgentVersion("")).toEqual({ ok: true });
+    // Blank: versions aren't managed.
+    expect(await setGlobalAgentVersion("")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "unset", version: null, target: null },
+    });
     expect(state.version).toBeNull();
   });
 
@@ -221,7 +231,10 @@ describe("Settings › Agent defaults API", () => {
       });
     }
     expect(state.version).toBe("2.4.0");
-    expect(await setGlobalAgentVersion("2.0.0")).toEqual({ ok: true });
+    expect(await setGlobalAgentVersion("2.0.0")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "pinned", version: "2.0.0", target: "2.0.0" },
+    });
     expect(state.version).toBe("2.0.0");
   });
 
@@ -234,7 +247,10 @@ describe("Settings › Agent defaults API", () => {
     expect(state.version).toBeNull();
     expect(state.latest).toBeNull();
     registry = () => HttpResponse.json({ "dist-tags": { latest: "2.0.0" } });
-    expect(await trackLatestAgentVersion()).toEqual({ ok: true });
+    expect(await trackLatestAgentVersion()).toEqual({
+      ok: true,
+      versionPolicy: { mode: "latest", version: null, target: "2.0.0" },
+    });
     expect(state.latest).toEqual({ version: "2.0.0", error: null });
   });
 
@@ -256,7 +272,10 @@ describe("Settings › Agent defaults API", () => {
   it("tracks the latest version on npm, read at once without a token", async () => {
     process.env.NPM_TOKEN = "npm_secret";
     try {
-      expect(await trackLatestAgentVersion()).toEqual({ ok: true });
+      expect(await trackLatestAgentVersion()).toEqual({
+        ok: true,
+        versionPolicy: { mode: "latest", version: null, target: "2.4.2" },
+      });
     } finally {
       delete process.env.NPM_TOKEN;
     }
@@ -270,7 +289,10 @@ describe("Settings › Agent defaults API", () => {
     // Typing it works too.
     state.version = null;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "2.5.0" } });
-    expect(await setGlobalAgentVersion(" Latest ")).toEqual({ ok: true });
+    expect(await setGlobalAgentVersion(" Latest ")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "latest", version: null, target: "2.5.0" },
+    });
     expect(state.version).toBe("latest");
     expect(state.latest).toEqual({ version: "2.5.0", error: null });
   });
@@ -338,8 +360,10 @@ describe("Settings › Agent defaults API", () => {
     });
 
     it("saves the defaults, then the version, in one request; a failure names what isn't saved", async () => {
+      // The answer carries the version policy the save set (Fleet's cell).
       expect(await saveDefaults({ defaults: { maxConcurrency: 4 }, version: "2.6.0" })).toEqual({
         ok: true,
+        versionPolicy: { mode: "pinned", version: "2.6.0", target: "2.6.0" },
       });
       expect(state).toMatchObject({ maxConcurrency: 4, version: "2.6.0" });
 

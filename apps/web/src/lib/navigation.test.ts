@@ -135,7 +135,6 @@ describe("navItems", () => {
     ["/settings/connections/gitlab/abc", "settings"],
     ["/settings/organization", "settings"],
     ["/settings/routing", "settings"],
-    ["/settings/agent-defaults", "settings"],
   ])("makes %s active for %s alone", (pathname, id) => {
     expect(navItems.filter((item) => isNavActive(pathname, item)).map((item) => item.id)).toEqual([
       id,

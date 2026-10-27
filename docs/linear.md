@@ -121,8 +121,8 @@ saved with its card on the Repos page: `reviewsEnabled` of `PUT /api/ui/reposito
 Coding off. Coding needs a work item match: turning it on for a repository without one answers 409
 "Add a work item match before turning on Coding.", and clearing the match of a repository whose
 Coding is on answers 409 "Turn off Coding before removing the work item match." A repository that
-already had Coding on before work item matches keeps it until it's switched off. The organization's
-**Task types** under **Settings › Agent defaults** only set what agents accept; they don't change any
+already had Coding on before work item matches keeps it until it's switched off. Each agent's
+accepted task types only set what it accepts; they don't change any
 repository's switches.
 
 A repository's coding policy is six settings: on/off, the work item match and the four below.

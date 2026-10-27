@@ -167,7 +167,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of agents", () => {
 
   it("keeps the desired agent version per organization", async () => {
     state.userId = a.userId;
-    expect(await setGlobalAgentVersion("2.4.0")).toEqual({ ok: true });
+    expect(await setGlobalAgentVersion("2.4.0")).toEqual({
+      ok: true,
+      versionPolicy: { mode: "pinned", version: "2.4.0", target: "2.4.0" },
+    });
     expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
     expect(await getDesiredAgentVersion(db, b.orgId)).toBeNull();
     expect((await agentDefaults()).desiredVersion).toBe("2.4.0");

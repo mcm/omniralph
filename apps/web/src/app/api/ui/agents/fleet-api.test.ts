@@ -81,6 +81,7 @@ vi.mock("@/lib/agents/npm", () => ({
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const listRoute = await import("@/app/api/ui/agents/route");
+const defaultsRoute = await import("@/app/api/ui/agent-defaults/route");
 const detailRoute = await import("@/app/api/ui/agents/[id]/route");
 
 async function list(organization?: string) {
@@ -641,5 +642,50 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     state.userId = alpha.adminId;
     await db.update(agents).set({ deletedAt: new Date() }).where(eq(agents.id, ids["e-revoked"]!));
     expect((await detail(ids["e-revoked"]!)).status).toBe(404);
+  });
+
+  it("carries the version policy's latest change with one organization in scope", async () => {
+    const putVersion = async (version: string) => {
+      const response = await defaultsRoute.PUT(
+        new Request("http://localhost/api/ui/agent-defaults", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version }),
+        }),
+        { params: Promise.resolve({}) },
+      );
+      return { status: response.status, body: (await response.json()) as unknown };
+    };
+    state.userId = alpha.adminId;
+    expect((await list(alpha.id)).body.versionHistory).toBeNull();
+
+    // An admin pins Alpha to 2.0.4 from Fleet: the answer carries the policy it set.
+    expect(await putVersion("2.0.4")).toEqual({
+      status: 200,
+      body: { ok: true, versionPolicy: { mode: "pinned", version: "2.0.4", target: "2.0.4" } },
+    });
+    try {
+      for (const userId of [alpha.adminId, alpha.memberId]) {
+        state.userId = userId;
+        const { body } = await list(alpha.id);
+        expect(body.summary.versionPolicy).toEqual({
+          mode: "pinned",
+          version: "2.0.4",
+          target: "2.0.4",
+        });
+        expect(body.versionHistory).toMatchObject({
+          organization: { id: alpha.id },
+          section: "agent_defaults",
+          actor: { id: alpha.adminId },
+          changes: [{ before: "2.0.3", after: "2.0.4" }],
+        });
+      }
+      // Several organizations: no single history.
+      state.userId = bothId;
+      expect((await list("all")).body.versionHistory).toBeNull();
+    } finally {
+      state.userId = alpha.adminId;
+      await putVersion("2.0.3");
+    }
   });
 });

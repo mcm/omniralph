@@ -25,7 +25,7 @@ orchestrates runs).
   directory. Omniralph keeps runs, stories, lanes, requests and messages in Postgres (shown under
   **Coding tasks**); agents keep only branch worktrees and caches.
 - **Configuration.** cyralph's `config.json` becomes control-panel settings: env vars on Vercel,
-  **Settings › Integrations** (Linear), **Settings › Agent defaults** (agent version), **Agents › <agent>**
+  **Settings › Integrations** (Linear), **Fleet › Version policy** (agent version), **Agents › <agent>**
   (concurrency, pool limits), each agent's local config (accepted task types), each repository's coding policy and its story
   and request playbooks.
   Changes apply from a run's next decision, without restarts.
@@ -98,7 +98,7 @@ always behaves like cyralph's default and has no setting for it.
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
-| `enabled` | **Settings › Agent defaults** desired version | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#self-update-pm2)). Blank: versions aren't managed. Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
+| `enabled` | **Fleet › Version policy** | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#self-update-pm2)). Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
 | `intervalMinutes` | Not needed | The desired version arrives with every heartbeat (20s). |
 | `remote`, `branch` | Not needed | Agents install published npm versions of `@omniralph/agent`, not a git branch. `latest` (**Track latest on npm**) follows the `latest` dist-tag; a per-agent override pins or tries a version on one host. |
 | `buildCommands` | Not needed | Releases are built and tested by CI before they're published. A version that fails to stay up is rolled back automatically and never retried. |
@@ -209,7 +209,7 @@ is delegated to Omniralph yet, so nothing runs.
    types), or lists `coding` (restart it after editing). On **Agents › <agent>**, set **Max
    concurrency** (cyralph's `maxConcurrentSessions` is a good start) and, if needed, the `long`
    limit under **Concurrency per pool**.
-3. For pm2 agents, choose the version on **Settings › Agent defaults** (replaces cyralph's `autoUpdate`).
+3. For pm2 agents, choose the version with **Fleet › Version policy › Edit** (replaces cyralph's `autoUpdate`).
 4. If a repository is pinned to agents, at least one of them needs to accept `coding`.
 
 **Verify:** the agent's page shows `ralph` enabled, the limits and a recent heartbeat;
