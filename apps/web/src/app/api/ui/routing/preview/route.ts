@@ -10,7 +10,7 @@ import { hitRoutingTestLimit, routeIssues, routingLinearGateway } from "@/lib/ro
  * its coding switch, the rule matched, the route's chain and, when Om already started one,
  * the work item's latest run and its `routed_by`. An issue Linear doesn't know is a
  * `not_found` result. 409 without a Linear workspace; one request counts once against the
- * "Test an issue" rate limit (429).
+ * "Test where an issue would go" rate limit (429).
  */
 export const POST = apiHandler(
   { body: routingPreviewRequestSchema },

@@ -83,7 +83,7 @@ const pins = await import("@/lib/agents/pins");
 const { bumpAgentHeartbeat } = await import("@/lib/agents/heartbeat-cache");
 const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
 const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
-// Settings › Agent defaults › Host tools requests, under the server actions' old names.
+// Host tool catalog (`/api/ui/host-tools`) requests, under the server actions' old names.
 const addHostTool = async (input: { name: string; description?: string }) =>
   (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
     hostToolId?: string;

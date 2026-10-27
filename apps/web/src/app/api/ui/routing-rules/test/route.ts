@@ -25,7 +25,7 @@ const bodySchema = linearRoutingRulesSchema.extend({
 });
 
 /**
- * Settings › Routing's "Test an issue" (every member): where `{ identifier }` routes under
+ * Settings › Advanced › Routing rules' "Test where an issue would go" (every member): where `{ identifier }` routes under
  * `{ rules }`, the unsaved list (validated as on save; left out, the saved rules), and the
  * work item matches with `{ workItemMatch }` (one repository's unsaved match) applied,
  * without saving anything.

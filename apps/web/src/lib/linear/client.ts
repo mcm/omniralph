@@ -17,7 +17,9 @@ export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
 export class LinearNotConnectedError extends Error {
   constructor() {
-    super("The organization has no Linear workspace connected (Settings › Integrations)");
+    super(
+      "The organization has no Linear workspace connected (Settings › Connections › Add connection)",
+    );
     this.name = "LinearNotConnectedError";
   }
 }

@@ -3,8 +3,8 @@ import { isoDate } from "./schemas";
 import { settingsHistoryEntrySchema } from "./settings-history";
 
 /**
- * Settings › Organization and the organization switcher (`/api/ui/organization/**`,
- * `/api/ui/organizations/switch`) and Settings › Chat accounts (`/api/ui/chat-accounts/**`).
+ * Settings › General and Members and the organization switcher (`/api/ui/organization/**`,
+ * `/api/ui/organizations/switch`) and Settings › Linked chat accounts (`/api/ui/chat-accounts/**`).
  */
 
 const roleSchema = z.enum(["admin", "member"]);

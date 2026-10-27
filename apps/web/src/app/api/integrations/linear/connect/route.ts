@@ -14,7 +14,7 @@ import {
 } from "@/lib/linear/oauth";
 
 /**
- * Settings › Add connection › Linear › Connect: sends an admin to Linear's consent
+ * Settings › Connections › Add connection › Linear › Connect: sends an admin to Linear's consent
  * screen (`actor=app`) with a signed `state` naming their active organization,
  * bound to them and to this browser.
  */

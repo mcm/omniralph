@@ -54,7 +54,7 @@ export const ENTER_ORGANIZATION = "enter_organization";
 
 /**
  * The connected Linear workspace's values the settings pickers offer (`LinearSettingsOptions`):
- * a repository's Coding tab and Settings › Routing.
+ * a repository's Coding tab and Settings › Advanced › Routing rules.
  */
 export const linearSettingsOptionsSchema = z.object({
   teams: z.array(z.object({ key: z.string(), name: z.string() })),

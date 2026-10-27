@@ -46,7 +46,7 @@ export interface AgentRow {
   maxConcurrency: number;
   /** The agent's own max concurrency; null inherits `defaults`. */
   overrides: { maxConcurrency: number | null };
-  /** The organization's defaults (Settings › Agents). */
+  /** The organization's agent defaults (`/api/ui/agent-defaults`). */
   defaults: { maxConcurrency: number };
   /** Per-pool limits as stored (unset ones use the default). */
   poolLimits: Record<string, number>;
@@ -73,7 +73,7 @@ export interface AgentRow {
 }
 
 /**
- * `globalDesiredVersion` is the Settings › Agent defaults version, used by agents
+ * `globalDesiredVersion` is the version policy's version (Fleet › Version policy), used by agents
  * without their own override (`globalTracksLatest`: it's the latest on npm).
  */
 export function agentRow(

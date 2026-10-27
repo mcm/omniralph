@@ -67,7 +67,7 @@ export const PRIORITY_NAMES = ["No priority", "Urgent", "High", "Medium", "Low"]
 export const NOT_REQUESTER_REPLY =
   "Only the person who asked for this issue can create or cancel it. Mention me to draft your own.";
 export const LINEAR_NOT_CONNECTED_REPLY =
-  "This organization has no Linear workspace connected anymore, so I can't create the issue. An admin can connect one under Settings › Integrations in the control panel.";
+  "This organization has no Linear workspace connected anymore, so I can't create the issue. An admin can connect one under Settings › Connections › Add connection in the control panel.";
 
 type Draft = Pick<
   ChatLinearIssueDraft,

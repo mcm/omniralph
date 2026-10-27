@@ -176,7 +176,7 @@ const user = (role: Role) => ({
   image: null,
 });
 
-describe("Settings › Agent defaults API", () => {
+describe("Agent defaults API", () => {
   beforeEach(() => {
     state.user = user("admin");
     state.organizationId = null;

@@ -272,7 +272,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing/preview", () => {
     });
   });
 
-  it(`shares the "Test an issue" limit of ${ROUTING_TEST_LIMIT} a minute per user`, async () => {
+  it(`shares the "Test where an issue would go" limit of ${ROUTING_TEST_LIMIT} a minute per user`, async () => {
     // Mid-window, so the loop doesn't straddle two.
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-18T12:00:20Z") });
     try {

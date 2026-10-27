@@ -18,7 +18,10 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
 import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
 
-/** Most "Test an issue" and routing preview requests one user may make a minute (shared). */
+/**
+ * Most "Test where an issue would go" and routing preview requests one user may make a minute
+ * (shared).
+ */
 export const ROUTING_TEST_LIMIT = 30;
 
 export const unknownIssueMessage = (identifier: string) =>
@@ -48,10 +51,10 @@ async function matchesWith(
 }
 
 /**
- * Where each of `identifiers` routes under `rules` (the saved list, or Settings › Routing's
- * unsaved one, already validated) and the work item matches, with `unsaved` applied when
- * given, by the same router delegation, triage, story lanes and follow-ups use, in the order
- * sent. An issue Linear doesn't know is a `not_found` result.
+ * Where each of `identifiers` routes under `rules` (the saved list, or Settings › Advanced ›
+ * Routing rules' unsaved one, already validated) and the work item matches, with `unsaved`
+ * applied when given, by the same router delegation, triage, story lanes and follow-ups use, in
+ * the order sent. An issue Linear doesn't know is a `not_found` result.
  *
  * Linear is asked once per issue in the request: the issues sent are loaded first, and
  * every later lookup (a parent, a follow-up's source, an issue sent twice) reuses them.
@@ -144,9 +147,9 @@ export async function routeIssues(
 }
 
 /**
- * Settings › Routing's "Test an issue": where `identifier` routes under `rules` (the unsaved
- * list, already validated; undefined: the saved rules) and the work item matches, with
- * `unsaved` applied when given, by `routeIssues`. An issue Linear doesn't know answers 404.
+ * Settings › Advanced › Routing rules' "Test where an issue would go": where `identifier` routes
+ * under `rules` (the unsaved list, already validated; undefined: the saved rules) and the work
+ * item matches, with `unsaved` applied when given, by `routeIssues`. An issue Linear doesn't know answers 404.
  */
 export async function testRoutingRules(
   deps: Omit<RouteDeps, "rules" | "matches">,
@@ -214,7 +217,10 @@ function dedupedRoutingFields(linear: RouteDeps["linear"]): RouteDeps["linear"] 
   };
 }
 
-/** Counts a "Test an issue" or preview request; 429 past `ROUTING_TEST_LIMIT` a minute per user. */
+/**
+ * Counts a "Test where an issue would go" or preview request; 429 past `ROUTING_TEST_LIMIT` a
+ * minute per user.
+ */
 export async function hitRoutingTestLimit(db: Database, userId: string): Promise<void> {
   const limit = await hitRateLimit(db, {
     key: `routing_test:user:${userId}`,

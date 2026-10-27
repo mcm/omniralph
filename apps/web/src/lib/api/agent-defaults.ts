@@ -2,7 +2,7 @@ import { z } from "zod";
 import { versionPolicySchema } from "./agents";
 import { isoDate } from "./schemas";
 
-/** Settings › Agent defaults (`/api/ui/agent-defaults`, `/api/ui/host-tools/**`, admins). */
+/** The organization's agent defaults (`/api/ui/agent-defaults`, `/api/ui/host-tools/**`, admins); Fleet edits the version policy. */
 
 /** An organization's max concurrency, saved or built in. */
 export const organizationDefaultsSchema = z.object({

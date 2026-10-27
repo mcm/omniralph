@@ -1,5 +1,5 @@
 // Two organizations, each with an agent: an admin of one only changes their own agent
-// defaults, version and host tool catalog (Settings › Agent defaults, through its
+// defaults, version and host tool catalog (through their
 // `/api/ui` handlers). The agent pages
 // moved to `/api/ui`: see src/app/api/ui/organization-isolation.test.ts.
 import {
@@ -78,7 +78,7 @@ const defaultsRoute = await import("@/app/api/ui/agent-defaults/route");
 const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
 const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
 
-// Settings › Agent defaults' requests, under the names of the server actions they replace.
+// Agent defaults (`/api/ui/agent-defaults`) requests, under the names of the server actions they replace.
 const setGlobalAgentVersion = (version: string) =>
   callAction(defaultsRoute.PUT, "PUT", {}, { version });
 const setOrganizationDefaults = (defaults: unknown) =>
