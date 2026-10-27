@@ -39,6 +39,10 @@ import {
   createReviewRun,
   createRun,
   createTriageRun,
+  createWebChatThread,
+  appendWebMessage,
+  chatThreads,
+  chatWebMessages,
   insertJob,
   enrollAgent,
   ensureChatThread,
@@ -309,6 +313,10 @@ const playbookFormOptions = await import("./playbooks/form-options/route");
 const agentDefaults = await import("./agent-defaults/route");
 const hostToolCatalog = await import("./host-tools/route");
 const hostTool = await import("./host-tools/[id]/route");
+const askChats = await import("./ask/chats/route");
+const askChat = await import("./ask/chats/[id]/route");
+const askChatMessages = await import("./ask/chats/[id]/messages/route");
+const askRepositories = await import("./ask/repositories/route");
 const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
 const { default: AppLayout } = await import("../../(app)/layout");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
@@ -2811,6 +2819,81 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       await db.delete(reviewRuns).where(inArray(reviewRuns.id, reviewRunIds));
       await db.delete(chatConnections).where(inArray(chatConnections.id, chatConnectionIds));
     }
+  });
+
+  it("shows each member only their own Ask chats and their organization's repos, 404 on anything else", async () => {
+    const chats = new Map<string, { id: string }>();
+    for (const own of [a, b]) {
+      const thread = await createWebChatThread(db, {
+        organizationId: own.orgId,
+        userId: own.memberId,
+        repositoryId: own.repoId,
+        branch: "main",
+        title: `${own.name} chat`,
+      });
+      await appendWebMessage(db, {
+        threadId: thread.id,
+        author: "user",
+        userId: own.memberId,
+        markdown: `${own.name} question`,
+      });
+      chats.set(own.orgId, thread);
+    }
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      const ownChat = chats.get(own.orgId)!;
+      const otherChat = chats.get(other.orgId)!;
+      state.userId = own.memberId;
+      const listed = await call(askChats.GET);
+      expect(listed.status).toBe(200);
+      expect((listed.body.chats as Array<{ id: string }>).map((c) => c.id)).toEqual([ownChat.id]);
+      expect(JSON.stringify(listed.body)).not.toContain(other.name);
+      expect(
+        (await call(askChats.GET, { path: `/api/ui?organization=${other.orgId}` })).status,
+      ).toBe(404);
+
+      const shown = await call(askChat.GET, { params: { id: ownChat.id } });
+      expect(shown.status).toBe(200);
+      expect(JSON.stringify(shown.body)).not.toContain(other.name);
+      expect((await call(askChat.GET, { params: { id: otherChat.id } })).status).toBe(404);
+      const before = await db.select().from(chatWebMessages);
+      expect(
+        (await call(askChatMessages.POST, { params: { id: otherChat.id }, body: { text: "Hi" } }))
+          .status,
+      ).toBe(404);
+      for (const body of [
+        { organizationId: other.orgId, repositoryId: null, text: "Hi" },
+        { organizationId: other.orgId, repositoryId: other.repoId, text: "Hi" },
+        { organizationId: own.orgId, repositoryId: other.repoId, text: "Hi" },
+      ]) {
+        expect((await call(askChats.POST, { body })).status, JSON.stringify(body)).toBe(404);
+      }
+      expect(await db.select().from(chatWebMessages)).toHaveLength(before.length);
+
+      const repos = await call(askRepositories.GET);
+      expect(repos.status).toBe(200);
+      const repoIds = (repos.body.repositories as Array<{ id: string }>).map((r) => r.id);
+      expect(repoIds).not.toContain(other.repoId);
+      expect(JSON.stringify(repos.body)).not.toContain(other.name);
+      expect(
+        (await call(askRepositories.GET, { path: `/api/ui?organization=${other.orgId}` })).status,
+      ).toBe(404);
+
+      // A chat is private to the member who started it, even within the organization.
+      state.userId = own.adminId;
+      expect((await call(askChat.GET, { params: { id: ownChat.id } })).status).toBe(404);
+      expect(
+        ((await call(askChats.GET)).body.chats as Array<{ id: string }>).map((c) => c.id),
+      ).not.toContain(ownChat.id);
+    }
+    await db.delete(chatThreads).where(
+      inArray(
+        chatThreads.id,
+        [...chats.values()].map((c) => c.id),
+      ),
+    );
   });
 
   it("refuses to stop the other organization's run, and lets its own members stop it", async () => {

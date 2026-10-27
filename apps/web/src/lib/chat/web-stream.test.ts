@@ -93,4 +93,32 @@ describe("webEventStream", () => {
     await finished;
     expect(done).toHaveBeenCalled();
   });
+
+  it("prepares events in the order they were sent, and writes a failed one as sent", async () => {
+    const onError = vi.fn();
+    const { body } = webEventStream(
+      async () => {
+        sendWebEvent("message", { message: { id: "slow" } });
+        sendWebEvent("delta", { messageId: "slow", text: "Hi" });
+        sendWebEvent("message", { message: { id: "broken" } });
+      },
+      {
+        onError,
+        prepare: async (name, data) => {
+          if (name !== "message") return data;
+          const { id } = (data as { message: { id: string } }).message;
+          if (id === "broken") throw new Error("lookup failed");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return { message: { id, full: true } } as typeof data;
+        },
+      },
+    );
+    expect(await readAll(body)).toEqual([
+      { event: "message", data: { message: { id: "slow", full: true } } },
+      { event: "delta", data: { messageId: "slow", text: "Hi" } },
+      { event: "message", data: { message: { id: "broken" } } },
+      { event: "done", data: {} },
+    ]);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
 });

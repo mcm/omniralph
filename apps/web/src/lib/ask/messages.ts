@@ -17,7 +17,9 @@ import {
 } from "@omniralph/db";
 import { QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import { fileWebUrl, repositoryWebUrl } from "@/lib/repositories/web-url";
+import type { AskCard } from "@/lib/api/ask";
 import { ChatThreadContext } from "@/lib/sinks/chat-thread";
+import { askCards } from "./cards";
 import { workItemIdentifiers, type AskWorkItem, type WorkItemResolver } from "./work-items";
 
 /**
@@ -57,6 +59,8 @@ export interface AskMessage {
   run: AskMessageRun | null;
   files: AskFile[];
   workItems: AskWorkItem[];
+  /** The card it shows, in its current state (`lib/ask/cards.ts`); null for text. */
+  card: AskCard | null;
 }
 
 /** The repository an ask reads. */
@@ -80,6 +84,7 @@ export interface AskActivity {
 export interface AskMessagesDeps {
   db: Database;
   workItems: WorkItemResolver;
+  now?: () => Date;
 }
 
 /** A job's run duration: the agent's reported `durationMs`, else finished minus started. */
@@ -174,6 +179,7 @@ export async function askMessages(
     db,
     [...jobs.values()].flatMap((job) => (job ? [job.id] : [])),
   );
+  const cards = await askCards(db, thread, rows, deps.now?.());
   const facts = new Map<string, AskRunFacts>();
   for (const run of runs) {
     const fact = await askRunFacts(db, thread, run, filesRead, jobs.get(run.id) ?? null);
@@ -199,6 +205,7 @@ export async function askMessages(
         run: om ? (fact?.run ?? null) : null,
         files: om ? (fact?.files ?? []) : [],
         workItems: om && row.status === "complete" ? await workItemsOf(row.markdown) : [],
+        card: cards.get(row.id) ?? null,
       };
     }),
   );
