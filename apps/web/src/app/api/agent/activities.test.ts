@@ -20,6 +20,7 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as RalphActivities from "@/lib/ralph/activities";
 
 const RALPH_SCOPES: JobTokenScope[] = [
   "credentials:read",
@@ -35,6 +36,12 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/linear/client", () => ({ getLinearGateway: async () => state.linear }));
+const relayActivity = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/ralph/activities", async (importOriginal) => {
+  const actual = await importOriginal<typeof RalphActivities>();
+  relayActivity.mockImplementation(actual.relayActivity);
+  return { ...actual, relayActivity };
+});
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 delete process.env.KMS_AGENT_ISSUER_ID;
@@ -44,6 +51,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
+const { runTokenScopes } = await import("@/lib/agent-api/jobs");
 const { POST: activities } = await import("./jobs/[id]/activities/route");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -114,6 +122,7 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
 
   beforeEach(() => {
     state.linear = new FakeLinearGateway();
+    relayActivity.mockClear();
   });
 
   async function newRun() {
@@ -194,31 +203,35 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
     expect((await listRunActivities(db, jobId))[0]!.organizationId).toBe(orgId);
   });
 
-  it("stores a query run's activities without relaying them", async () => {
+  it("stores a chat.ask run's activities without relaying them", async () => {
     const jobId = await newJob({
       type: "chat.ask",
       taskType: "query",
       taskId: "builtin:chat-ask",
     });
+    // The session token a query job is claimed with.
     const session = await getTokenSigner().signJobToken({
       jobId,
       agentId,
       kind: "session",
-      scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+      scopes: runTokenScopes("session", "query"),
     });
+    const action = await activityRequest(jobId, session, {
+      type: "action",
+      body: "Read",
+      parameter: "src/list.ts",
+      ephemeral: true,
+    });
+    expect(action.status).toBe(200);
+    expect(await action.json()).toEqual({ forwarded: false });
     const res = await activityRequest(jobId, session, THOUGHT);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ forwarded: false });
-    const action = await activityRequest(jobId, session, {
-      type: "action",
-      body: "Grep",
-      parameter: "TODO",
-    });
-    expect(action.status).toBe(200);
     expect(await stored(jobId)).toEqual([
+      { type: "action", body: "Read", parameter: "src/list.ts" },
       { type: "thought", body: "Reading the PRD.", parameter: null },
-      { type: "action", body: "Grep", parameter: "TODO" },
     ]);
+    expect(relayActivity).not.toHaveBeenCalled();
     expect(state.linear.activities).toEqual([]);
 
     // A session token without the scope.
