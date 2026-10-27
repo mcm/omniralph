@@ -1,7 +1,10 @@
 "use client";
 
 import * as RadixTabs from "@radix-ui/react-tabs";
-import type { ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
+
+/** The selected tab's value, for panels kept mounted while hidden. */
+const SelectedTab = createContext<string | undefined>(undefined);
 
 /** `need` draws the count in the accent (needs you), `fail` in coral, otherwise tertiary. */
 export type TabCountTone = "default" | "need" | "fail";
@@ -51,11 +54,18 @@ export function Tabs<Value extends string = string>({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
 }: TabsProps<Value>) {
+  const initial = defaultValue ?? tabs.find((tab) => !tab.disabled)?.value;
+  // The uncontrolled selection, mirrored for `TabPanel keepMounted`.
+  const [uncontrolled, setUncontrolled] = useState<string | undefined>(initial);
+  const selected = value ?? uncontrolled;
   return (
     <RadixTabs.Root
       value={value}
-      defaultValue={defaultValue ?? tabs.find((tab) => !tab.disabled)?.value}
-      onValueChange={onValueChange as ((value: string) => void) | undefined}
+      defaultValue={initial}
+      onValueChange={(next: string) => {
+        setUncontrolled(next);
+        onValueChange?.(next as Value);
+      }}
       activationMode="automatic"
       className={["or-tabs-root", className].filter(Boolean).join(" ")}
     >
@@ -85,7 +95,7 @@ export function Tabs<Value extends string = string>({
           </RadixTabs.Trigger>
         ))}
       </RadixTabs.List>
-      {children}
+      <SelectedTab.Provider value={selected}>{children}</SelectedTab.Provider>
     </RadixTabs.Root>
   );
 }
@@ -95,13 +105,20 @@ export interface TabPanelProps {
   value: string;
   children?: ReactNode;
   className?: string;
+  /**
+   * Keeps the panel mounted (hidden) while another tab is selected, so its state (an edit
+   * in progress) survives switching tabs.
+   */
+  keepMounted?: boolean;
 }
 
 /** The content shown while its tab is selected (`role="tabpanel"`, labeled by the tab). */
-export function TabPanel({ value, children, className }: TabPanelProps) {
+export function TabPanel({ value, children, className, keepMounted }: TabPanelProps) {
+  const selected = useContext(SelectedTab);
   return (
     <RadixTabs.Content
       value={value}
+      {...(keepMounted ? { forceMount: true as const, hidden: selected !== value } : {})}
       className={["or-tab-panel", className].filter(Boolean).join(" ")}
     >
       {children}

@@ -1,0 +1,128 @@
+/*
+ * The open work item on the Backlog (Design board Backlog): the bar (badges, then the
+ * toolbar), title, "Blocked by", the routes line and the tabs PRD, Stories and Activity. On
+ * phone (Design rule 16) the bar keeps only the toolbar and the badges move under the
+ * title. Only `--or-` tokens.
+ */
+.or-backlog-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 24px 32px;
+}
+
+.or-backlog-detail__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-backlog-detail__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-backlog-detail__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.or-backlog-detail__routes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-backlog-detail__routes-icon {
+  flex: none;
+  color: var(--or-ter);
+}
+
+.or-backlog-detail__choose {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--or-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.or-backlog-detail__choose:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-backlog-detail__tabs {
+  margin-top: 4px;
+}
+
+.or-backlog-detail__tabs .or-tab-panel {
+  padding-top: 16px;
+}
+
+.or-backlog-detail__stories {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-backlog-detail__story {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--or-line);
+  font-size: 13px;
+}
+
+.or-backlog-detail__story-title {
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--or-text);
+}
+
+@media (max-width: 768px) {
+  .or-backlog-detail {
+    padding: 12px 16px 24px;
+  }
+
+  /* The bar keeps only the toolbar; the badges move under the title. */
+  .or-backlog-detail__bar {
+    display: contents;
+  }
+
+  .or-backlog-detail > * {
+    order: 3;
+  }
+
+  .or-backlog-detail__bar .or-toolbar {
+    order: 0;
+    align-self: flex-end;
+  }
+
+  .or-backlog-detail__title {
+    order: 1;
+  }
+
+  .or-backlog-detail__bar .or-backlog-detail__badges {
+    order: 2;
+  }
+}

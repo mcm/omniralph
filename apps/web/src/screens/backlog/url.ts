@@ -21,10 +21,21 @@ export function hasBacklogFilters(filters: BacklogFilters): boolean {
   return filters.source !== null || filters.repo !== null;
 }
 
-function search(filters: BacklogFilters): string {
+/** The work item detail's tabs (`?tab=`); PRD, the first, is the default and not in the URL. */
+export const WORK_ITEM_TABS = ["prd", "stories", "activity"] as const;
+export type WorkItemTab = (typeof WORK_ITEM_TABS)[number];
+
+/** The detail's tab from search params: PRD unless `?tab=` names another one. */
+export function parseWorkItemTab(params: Pick<URLSearchParams, "get">): WorkItemTab {
+  const tab = params.get("tab");
+  return WORK_ITEM_TABS.find((value) => value === tab) ?? "prd";
+}
+
+function search(filters: BacklogFilters, tab: WorkItemTab = "prd"): string {
   const params = new URLSearchParams();
   if (filters.source) params.set("source", filters.source);
   if (filters.repo) params.set("repo", filters.repo);
+  if (tab !== "prd") params.set("tab", tab);
   const text = params.toString();
   return text ? `?${text}` : "";
 }
@@ -34,10 +45,14 @@ export function backlogHref(filters: BacklogFilters = NO_BACKLOG_FILTERS): strin
   return `/backlog${search(filters)}`;
 }
 
-/** A work item's URL on the Backlog, keeping the list's filters: `/backlog/{id}?source=&repo=`. */
+/**
+ * A work item's URL on the Backlog, keeping the list's filters, with its tab (other than
+ * PRD): `/backlog/{id}?source=&repo=&tab=`.
+ */
 export function backlogItemHref(
   workItemId: string,
   filters: BacklogFilters = NO_BACKLOG_FILTERS,
+  tab: WorkItemTab = "prd",
 ): string {
-  return `/backlog/${encodeURIComponent(workItemId)}${search(filters)}`;
+  return `/backlog/${encodeURIComponent(workItemId)}${search(filters, tab)}`;
 }

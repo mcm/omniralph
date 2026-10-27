@@ -148,7 +148,18 @@
   color: var(--or-text);
 }
 
-/* Toolbar: one bordered group of up to two icon actions, then the ⋯ button */
+/* A group's one solid neutral action (never the accent, Design rule 6) */
+.or-icon-btn--solid {
+  background: var(--or-solid);
+  color: var(--or-solid-ink);
+}
+
+.or-icon-btn--solid:hover:not(:disabled, [aria-disabled="true"]) {
+  background: var(--or-solid-hover);
+  color: var(--or-solid-ink);
+}
+
+/* Toolbar: one bordered group of up to three icon actions, then the ⋯ button */
 .or-toolbar {
   display: inline-flex;
   align-items: center;
