@@ -177,7 +177,7 @@ agent only receives, and only gets credentials for, that organization's jobs, an
 see it. To serve several organizations from one host, enroll one agent per organization (each with
 its own `--config` and `--workspace-root`, or as its own user).
 
-As an admin of that organization, open **Agents › Enroll agent** in the control panel. It shows a one-time command with
+As an admin of that organization, open **Fleet › Enroll** in the control panel. It shows a one-time command with
 an enrollment token (single use, valid for 1 hour). Run it as the agent's user:
 
 ```sh
@@ -648,7 +648,7 @@ What to do:
    reused token came from), whether another host or process uses a copy of `agent.json`, and
    delete any copies. If you can't explain it, treat the host as compromised: rotate the Claude
    credentials on it and check the agent user's files.
-3. Enroll again with a new enrollment token from **Agents › Enroll agent** (in the same
+3. Enroll again with a new enrollment token from **Fleet › Enroll** (in the same
    organization), as the agent's user. This
    creates a **new agent** (new ID) and overwrites `agent.json`; the revoked agent stays in the list
    for its history.

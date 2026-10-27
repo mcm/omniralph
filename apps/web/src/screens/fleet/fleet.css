@@ -81,6 +81,98 @@
   gap: 6px;
 }
 
+.or-fleet-agent__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.or-fleet-agent__host {
+  display: inline-flex;
+  border-radius: var(--or-radius-sm);
+}
+
+.or-fleet-agent__host:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-fleet-agent__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+  padding-top: 14px;
+  border-top: 1px solid var(--or-line);
+}
+
+.or-fleet-agent__section:first-of-type {
+  margin-top: 6px;
+}
+
+.or-fleet-agent__heading {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.or-fleet-agent__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-fleet-agent__running {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-fleet-agent__work {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-fleet-agent__duration {
+  flex: none;
+  color: var(--or-sec);
+  font-size: 12px;
+}
+
+.or-fleet-agent__install,
+.or-fleet-agent__line,
+.or-fleet-agent__none {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.or-fleet-agent__none {
+  color: var(--or-sec);
+}
+
+.or-fleet-agent__work--fail,
+.or-fleet-agent__work--fail .or-link,
+.or-fleet-agent__install--fail,
+.or-fleet-agent__line--fail {
+  color: var(--or-fail);
+}
+
 /* The enroll sheet */
 .or-enroll {
   display: flex;

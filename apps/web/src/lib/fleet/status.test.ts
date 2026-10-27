@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   acceptedKindsSummary,
   agentStatus,
+  agentStatusLine,
   compactSince,
   pinBadges,
+  relativeAgo,
+  securityLine,
+  versionsBehind,
   versionPolicyLabel,
   versionSummary,
   type AgentStatusInput,
+  type AgentStatusLineInput,
 } from "./status";
 
 const NOW = new Date("2026-10-26T12:00:00.000Z");
@@ -158,5 +163,114 @@ describe("pinBadges", () => {
     expect(pinBadges(pins.slice(0, 1))).toEqual({ shown: ["a"], more: 0 });
     expect(pinBadges(pins.slice(0, 2))).toEqual({ shown: ["a", "b"], more: 0 });
     expect(pinBadges(pins)).toEqual({ shown: ["a"], more: 4 });
+  });
+});
+
+describe("agentStatusLine", () => {
+  const line = (overrides: Partial<AgentStatusLineInput>) => {
+    const input = {
+      ...idle,
+      version: "2.0.3",
+      desiredVersion: "2.0.3",
+      revokedAt: null,
+      ...overrides,
+    };
+    return agentStatusLine({ ...input, status: agentStatus(input, NOW) });
+  };
+
+  it("says what the agent does and where its version stands", () => {
+    expect(line({ runningCount: 2 })).toEqual({ label: "Running · up to date", tone: "run" });
+    expect(line({})).toEqual({ label: "Idle · up to date", tone: "neutral" });
+    expect(line({ desiredVersion: null })).toEqual({ label: "Idle · up to date", tone: "neutral" });
+    expect(
+      line({
+        online: false,
+        lastHeartbeatAt: ago(3 * DAY),
+        version: "2.0.2",
+        updateStatus: "manual",
+      }),
+    ).toEqual({ label: "Offline 3d · 1 version behind", tone: "fail" });
+    expect(line({ version: "1.9.0", updateStatus: "manual" })).toEqual({
+      label: "Idle · behind 2.0.3",
+      tone: "neutral",
+    });
+  });
+
+  it("names a failed update's version, an update in progress, revocation and no connection", () => {
+    expect(line({ version: "2.0.2", desiredVersion: "2.0.4", updateStatus: "failed" })).toEqual({
+      label: "Update failed: 2.0.4",
+      tone: "fail",
+    });
+    expect(
+      line({ online: false, lastHeartbeatAt: ago(DAY), version: "2.0.2", updateStatus: "failed" }),
+    ).toEqual({ label: "Offline 1d · update failed", tone: "fail" });
+    expect(line({ version: "2.0.2", updateStatus: "updating" })).toEqual({
+      label: "Updating to 2.0.3",
+      tone: "neutral",
+    });
+    expect(line({ revoked: true, online: false, revokedAt: "2026-10-20T12:00:00.000Z" })).toEqual({
+      label: "Revoked Oct 20",
+      tone: "neutral",
+    });
+    expect(line({ online: false, lastHeartbeatAt: null })).toEqual({
+      label: "Never connected",
+      tone: "neutral",
+    });
+  });
+});
+
+describe("versionsBehind", () => {
+  it("counts patches on one minor line, else names the target", () => {
+    expect(versionsBehind("2.0.1", "2.0.3")).toBe("2 versions behind");
+    expect(versionsBehind("2.0.2", "2.0.3")).toBe("1 version behind");
+    expect(versionsBehind("1.9.9", "2.0.3")).toBe("behind 2.0.3");
+    expect(versionsBehind(null, "2.0.3")).toBe("behind 2.0.3");
+    expect(versionsBehind("2.0.3-beta.1", "2.0.3")).toBe("behind 2.0.3");
+  });
+});
+
+describe("relativeAgo", () => {
+  it("rounds down to the largest unit", () => {
+    expect(relativeAgo(ago(10_000), NOW)).toBe("just now");
+    expect(relativeAgo(ago(MINUTE), NOW)).toBe("1 minute ago");
+    expect(relativeAgo(ago(2 * MINUTE + 5_000), NOW)).toBe("2 minutes ago");
+    expect(relativeAgo(ago(3 * HOUR), NOW)).toBe("3 hours ago");
+    expect(relativeAgo(ago(DAY), NOW)).toBe("1 day ago");
+  });
+});
+
+describe("securityLine", () => {
+  const security = {
+    lastTokenRefreshAt: ago(2 * MINUTE),
+    reuseAlerts30d: 0,
+    lastReuseAt: null,
+    connected: true,
+  };
+
+  it("says when the token was refreshed, with no reuse alerts", () => {
+    expect(securityLine(security, NOW)).toEqual({
+      label: "Token refreshed 2 minutes ago · no reuse alerts",
+      tone: "neutral",
+    });
+    expect(securityLine({ ...security, lastTokenRefreshAt: null }, NOW)).toEqual({
+      label: "Token not refreshed yet · no reuse alerts",
+      tone: "neutral",
+    });
+  });
+
+  it("reports token reuse in the fail tone", () => {
+    expect(
+      securityLine(
+        { ...security, reuseAlerts30d: 2, lastReuseAt: "2026-10-20T12:00:00.000Z" },
+        NOW,
+      ),
+    ).toEqual({ label: "Token reuse detected Oct 20", tone: "fail" });
+  });
+
+  it("says Never connected before the first heartbeat", () => {
+    expect(securityLine({ ...security, lastTokenRefreshAt: null, connected: false }, NOW)).toEqual({
+      label: "Never connected",
+      tone: "neutral",
+    });
   });
 });

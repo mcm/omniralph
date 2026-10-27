@@ -10,13 +10,6 @@ import type { AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
  */
 export type AgentUpdateStatus = "up_to_date" | "updating" | "failed" | "manual";
 
-export const UPDATE_STATUS_LABELS: Record<AgentUpdateStatus, string> = {
-  up_to_date: "Up to date",
-  updating: "Updating",
-  failed: "Failed",
-  manual: "Update manually",
-};
-
 export function agentUpdateStatus(agent: {
   version: string | null;
   desiredVersion: string | null;

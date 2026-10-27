@@ -3146,7 +3146,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
     // A page of the other organization's resource gets the signed path that switches to
     // its organization and comes back to the page.
-    const page = `/agents/${b.agentId}`;
+    const page = `/fleet/${b.agentId}`;
     const enterPath = await createEnterOrganizationPath({
       userId: user!.id,
       organizationId: b.orgId,

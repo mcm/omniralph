@@ -213,71 +213,16 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   {
-    name: "agent-online",
-    path: `/agents/${ids.agents.online}`,
-    page: "(app)/agents/[id]/page.tsx",
+    name: "fleet-agent-updating",
+    path: `/fleet/${ids.agents.updating}`,
+    page: "(app)/fleet/[id]/page.tsx",
     auth: "signed-in",
   },
   {
-    name: "agent-updating",
-    path: `/agents/${ids.agents.updating}`,
-    page: "(app)/agents/[id]/page.tsx",
+    name: "fleet-agent-revoked",
+    path: `/fleet/${ids.agents.revoked}`,
+    page: "(app)/fleet/[id]/page.tsx",
     auth: "signed-in",
-  },
-  {
-    name: "agent-revoked",
-    path: `/agents/${ids.agents.revoked}`,
-    page: "(app)/agents/[id]/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "agent-settings",
-    path: `/agents/${ids.agents.online}/settings`,
-    page: "(app)/agents/[id]/settings/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    // One save for every setting of the agent, confirmed with the change list.
-    name: "agent-settings-confirm",
-    path: `/agents/${ids.agents.online}/settings`,
-    page: "(app)/agents/[id]/settings/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: "#limit-short", value: "2" },
-      { action: "click", selector: "#desired-version-source-override" },
-      { action: "fill", selector: "#desired-version", value: "1.4.0" },
-      { action: "click", selector: '#agent-settings [type="submit"]' },
-    ],
-    viewportOnly: true,
-  },
-  {
-    name: "agent-settings-revoked",
-    path: `/agents/${ids.agents.revoked}/settings`,
-    page: "(app)/agents/[id]/settings/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "agent-installables",
-    path: `/agents/${ids.agents.online}/installables`,
-    page: "(app)/agents/[id]/installables/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    name: "agent-host-tools",
-    path: `/agents/${ids.agents.online}/host-tools`,
-    page: "(app)/agents/[id]/host-tools/page.tsx",
-    auth: "signed-in",
-  },
-  {
-    // The save footer counts the changed paths.
-    name: "agent-host-tools-unsaved",
-    path: `/agents/${ids.agents.online}/host-tools`,
-    page: "(app)/agents/[id]/host-tools/page.tsx",
-    auth: "signed-in",
-    steps: [
-      { action: "fill", selector: '[id^="host-tool-path-"]', value: "/opt/semgrep/bin/semgrep" },
-    ],
-    viewportOnly: true,
   },
   // Settings (2.0): the section nav beside each page.
   { name: "settings", path: "/settings", page: "(app)/settings/page.tsx", auth: "signed-in" },

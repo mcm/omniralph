@@ -123,8 +123,3 @@ export function auditDetailSummary(event: AuditEventName, detail: Record<string,
       return "";
   }
 }
-
-/** Whether the audit log shows signs of a stolen refresh token. */
-export function hasRefreshReuse(events: readonly { event: string }[]): boolean {
-  return events.some((e) => e.event === "refresh_reuse");
-}

@@ -129,7 +129,6 @@ describe("navItems", () => {
     ["/repos/abc", "repos"],
     ["/fleet", "fleet"],
     ["/fleet/abc", "fleet"],
-    ["/agents/abc", "fleet"],
     ["/settings", "settings"],
     ["/settings/general", "settings"],
     ["/settings/advanced/routing", "settings"],
@@ -166,14 +165,15 @@ describe("navItems", () => {
     });
   });
 
-  it("points Fleet at /fleet, lit for /fleet and today's agent pages, in the phone drawer", () => {
+  it("points Fleet at /fleet, lit for /fleet, in the phone drawer", () => {
     expect(navItems.find((item) => item.id === "fleet")).toMatchObject({
       href: "/fleet",
-      activeFor: ["/fleet", "/agents"],
+      activeFor: ["/fleet"],
       phone: "drawer",
     });
     expect(pageFor("/fleet/abc")).toBe(pages.get("/fleet/[id]"));
     expect(pages.get("/agents")).toBeUndefined();
+    expect(pages.get("/agents/[id]")).toBeUndefined();
   });
 
   it("makes every page reachable from an entry", () => {

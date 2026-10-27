@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentConnectionState,
   integrationState,
   INTEGRATION_STATE_VARIANTS,
-  AGENT_CONNECTION_VARIANTS,
-  AGENT_UPDATE_STATUS_VARIANTS,
   JOB_STATUS_VARIANTS,
   RALPH_RUN_STATUS_VARIANTS,
   RALPH_STORY_STATUS_VARIANTS,
@@ -43,8 +40,6 @@ const MAPS = {
   story: RALPH_STORY_STATUS_VARIANTS,
   job: JOB_STATUS_VARIANTS,
   review: REVIEW_STATUS_VARIANTS,
-  agent: AGENT_CONNECTION_VARIANTS,
-  agentUpdate: AGENT_UPDATE_STATUS_VARIANTS,
 };
 
 describe("state variants", () => {
@@ -91,12 +86,6 @@ describe("state variants", () => {
     expect(integrationState(true, false)).toBe("unconfigured");
     expect(integrationState(false, false)).toBe("disconnected");
     expect(INTEGRATION_STATE_VARIANTS.unconfigured).toBe("warning");
-  });
-
-  it("treats a revoked agent as revoked even when it is online", () => {
-    expect(agentConnectionState({ online: true, revoked: true })).toBe("revoked");
-    expect(agentConnectionState({ online: true, revoked: false })).toBe("online");
-    expect(agentConnectionState({ online: false, revoked: false })).toBe("offline");
   });
 });
 

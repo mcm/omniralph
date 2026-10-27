@@ -25,6 +25,7 @@ import {
   versionSummary,
 } from "@/lib/fleet/status";
 import { agentHref } from "@/lib/runs/hrefs";
+import { AgentPanel } from "./agent-panel";
 import { EnrollSheet } from "./enroll-sheet";
 import { useFleet } from "./queries";
 import "./fleet.css";
@@ -145,48 +146,15 @@ export function fleetColumns(showOrganization: boolean): DataTableColumn<FleetAg
   ];
 }
 
-/** The open agent beside the table: its organization, status, name and host. */
-export function FleetAgentPanel({
-  agent,
-  showOrganization,
-}: {
-  agent: FleetAgentRow;
-  showOrganization: boolean;
-}) {
-  const host = agent.host?.coder ? "Coder workspace" : agent.host?.hostname;
-  const enrolled = new Date(agent.createdAt).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-  return (
-    <article className="or-fleet-agent" aria-labelledby={`agent-${agent.id}`}>
-      {showOrganization ? <OrgBadge name={agent.organization.name} /> : null}
-      <AgentStatus agent={agent} />
-      <h2 id={`agent-${agent.id}`} className="or-fleet-agent__name or-mono">
-        {agent.name}
-      </h2>
-      <div className="or-fleet-agent__badges">
-        {host ? <MetaBadge text={host} mono /> : null}
-        <MetaBadge text={`Enrolled ${enrolled}`} />
-      </div>
-      {agent.organization.role === "admin" ? (
-        <Button href={`/agents/${agent.id}`} variant="outline" size="sm">
-          Agent settings
-        </Button>
-      ) : null}
-    </article>
-  );
-}
-
 export interface FleetViewProps {
   /** The open agent (`/fleet/{id}`), whose row is current; none on `/fleet`. */
   agentId?: string | null;
-  /** The detail beside the table; `FleetAgentPanel` by default. */
-  renderDetail?: (agent: FleetAgentRow, showOrganization: boolean) => ReactNode;
+  /** The detail beside the table; `AgentPanel` by default. */
+  renderDetail?: (agentId: string, showOrganization: boolean) => ReactNode;
 }
 
-const defaultDetail = (agent: FleetAgentRow, showOrganization: boolean) => (
-  <FleetAgentPanel key={agent.id} agent={agent} showOrganization={showOrganization} />
+const defaultDetail = (agentId: string, showOrganization: boolean) => (
+  <AgentPanel key={agentId} agentId={agentId} showOrganization={showOrganization} />
 );
 
 /**
@@ -207,7 +175,6 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
   const [enrolling, setEnrolling] = useState(false);
   // Without an agent in the URL, a wide container shows the first agent beside the table.
   const shownId = agentId ?? (wide ? (agents?.[0]?.id ?? null) : null);
-  const shown = agents?.find((agent) => agent.id === shownId);
 
   const enroll = (
     <Button variant="outline" size="sm" icon={IconPlus} onClick={() => setEnrolling(true)}>
@@ -261,20 +228,13 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
     </div>
   );
 
-  const detail =
-    agentId && agents && !shown ? (
-      <EmptyState title="Agent not found" />
-    ) : shown ? (
-      renderDetail(shown, showOrganization)
-    ) : null;
-
   return (
     <>
       <SplitView
         ref={splitRef}
         className="or-fleet"
         list={list}
-        detail={detail}
+        detail={shownId ? renderDetail(shownId, showOrganization) : null}
         view={agentId ? "detail" : "list"}
         backLink={{ label: "Fleet", href: FLEET_PATH }}
         listLabel="Fleet"
