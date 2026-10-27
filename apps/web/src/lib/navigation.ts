@@ -9,6 +9,7 @@ import {
 } from "@tabler/icons-react";
 import type { BacklogCounts } from "@/lib/api/backlog";
 import type { InboxCountsResponse } from "@/lib/api/inbox";
+import type { NavIndicators } from "@/lib/api/nav-indicators";
 
 /**
  * The 2.0 navigation (`AppFrame` from `@omniralph/ui`). Each entry points at its 2.0 URL,
@@ -82,27 +83,41 @@ export const navItems: readonly NavItem[] = [
   },
 ];
 
+/** "1 agent needs attention", "3 agents need attention". */
+export function agentsNeedAttentionLabel(count: number): string {
+  return count === 1 ? "1 agent needs attention" : `${count} agents need attention`;
+}
+
+/** "1 failed delivery", "3 failed deliveries". */
+export function failedDeliveriesLabel(count: number): string {
+  return count === 1 ? "1 failed delivery" : `${count} failed deliveries`;
+}
+
 /**
- * The entries with their live indicators: from the Inbox counts (`useInboxCounts`), Inbox
- * counts what needs the user ("{n} need you") and Runs shows a mint dot while runs run
- * ("{n} running"); from the Backlog counts (`useBacklogCounts`), Backlog shows its items as
- * a neutral count ("{n} items", never lavender, Design rule 15; full sidebar only). None
- * shows at 0, nor before its counts load.
+ * The entries with their live indicators. From the Inbox counts (`useInboxCounts`): Inbox
+ * counts what needs the user ("{n} need you"), Runs shows a mint dot while runs run
+ * ("{n} running"). From the Backlog counts (`useBacklogCounts`): Backlog shows its items as
+ * a neutral count ("{n} items", never lavender, Design rule 15; full sidebar only). From the
+ * nav indicators (`useNavIndicators`): Fleet shows a coral dot while agents of the scope are
+ * offline or failed their update ("{n} agents need attention"), Settings while the active
+ * organization has failed deliveries not yet replayed ("{n} failed deliveries"). None shows
+ * at 0, nor before its counts load.
  */
 export function withNavIndicators(
   items: readonly NavItem[],
   counts: InboxCountsResponse | undefined,
   backlog?: BacklogCounts,
+  indicators?: NavIndicators,
 ): readonly NavItem[] {
-  if (!counts && !backlog) return items;
-  return items.map((item) => {
-    if (item.id === "inbox" && counts && counts.needsYou > 0) {
+  if (!counts && !backlog && !indicators) return items;
+  return items.map((item): NavItem => {
+    if (counts && item.id === "inbox" && counts.needsYou > 0) {
       return {
         ...item,
         indicator: { kind: "count", value: counts.needsYou, label: `${counts.needsYou} need you` },
       };
     }
-    if (item.id === "runs" && counts && counts.running > 0) {
+    if (counts && item.id === "runs" && counts.running > 0) {
       return {
         ...item,
         indicator: { kind: "dot", tone: "run", label: `${counts.running} running` },
@@ -116,6 +131,25 @@ export function withNavIndicators(
           tone: "neutral",
           value: backlog.total,
           label: `${backlog.total} ${backlog.total === 1 ? "item" : "items"}`,
+        },
+      };
+    }
+    if (indicators && item.id === "fleet") {
+      const attention = indicators.fleet.offline + indicators.fleet.updateFailed;
+      if (attention > 0) {
+        return {
+          ...item,
+          indicator: { kind: "dot", tone: "fail", label: agentsNeedAttentionLabel(attention) },
+        };
+      }
+    }
+    if (indicators && item.id === "settings" && indicators.settings.failedDeliveries > 0) {
+      return {
+        ...item,
+        indicator: {
+          kind: "dot",
+          tone: "fail",
+          label: failedDeliveriesLabel(indicators.settings.failedDeliveries),
         },
       };
     }

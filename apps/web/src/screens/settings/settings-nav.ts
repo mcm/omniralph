@@ -4,6 +4,8 @@ import {
   type Connection,
   type ConnectionProvider,
 } from "@/lib/api/connections";
+import type { NavIndicators } from "@/lib/api/nav-indicators";
+import { failedDeliveriesLabel } from "@/lib/navigation";
 
 /** Settings' section list (narrow), or General beside the nav (wide). */
 export const SETTINGS_PATH = "/settings";
@@ -46,20 +48,29 @@ export function connectionLabels(connections: readonly Connection[]): Map<string
 /**
  * The Settings section nav (Design board Settings): Organization, Connections (one entry
  * per connection, then "Add connection"), You and, only when the user shows advanced
- * settings, Advanced. The Advanced pages open by URL either way.
+ * settings, Advanced. The Advanced pages open by URL either way. A connection with failed
+ * deliveries not yet replayed (`failedDeliveries`, the nav indicators) has a coral dot
+ * labeled "{n} failed deliveries".
  */
 export function settingsNavGroups({
   connections,
   showAdvanced,
+  failedDeliveries = [],
 }: {
   connections: readonly Connection[];
   showAdvanced: boolean;
+  failedDeliveries?: NavIndicators["settings"]["byConnection"];
 }): SectionNavGroup[] {
   const labels = connectionLabels(connections);
-  const connectionItems: SectionNavItem[] = connections.map((connection) => ({
-    label: labels.get(connection.id)!,
-    href: connectionHref(connection),
-  }));
+  const failed = new Map(failedDeliveries.map((entry) => [entry.id, entry.failed]));
+  const connectionItems: SectionNavItem[] = connections.map((connection) => {
+    const count = failed.get(connection.id) ?? 0;
+    return {
+      label: labels.get(connection.id)!,
+      href: connectionHref(connection),
+      ...(count > 0 && { indicator: { tone: "fail", label: failedDeliveriesLabel(count) } }),
+    };
+  });
   return [
     {
       label: "Organization",

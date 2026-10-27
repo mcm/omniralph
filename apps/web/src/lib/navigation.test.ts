@@ -245,4 +245,55 @@ describe("withNavIndicators", () => {
     );
     expect(indicator(zero, "backlog")).toBeUndefined();
   });
+
+  const indicators = (
+    fleet: { offline: number; updateFailed: number },
+    byConnection: { id: string; failed: number }[] = [],
+  ) => ({
+    fleet,
+    settings: { failedDeliveries: byConnection.reduce((n, c) => n + c.failed, 0), byConnection },
+  });
+
+  it("dots Fleet while agents are offline or failed their update, and Settings while deliveries failed", () => {
+    const items = withNavIndicators(
+      navItems,
+      undefined,
+      undefined,
+      indicators({ offline: 2, updateFailed: 1 }, [
+        { id: "a", failed: 2 },
+        { id: "b", failed: 1 },
+      ]),
+    );
+    expect(indicator(items, "fleet")).toEqual({
+      kind: "dot",
+      tone: "fail",
+      label: "3 agents need attention",
+    });
+    expect(indicator(items, "settings")).toEqual({
+      kind: "dot",
+      tone: "fail",
+      label: "3 failed deliveries",
+    });
+    expect(indicator(items, "inbox")).toBeUndefined();
+    const one = withNavIndicators(
+      navItems,
+      undefined,
+      undefined,
+      indicators({ offline: 0, updateFailed: 1 }, [{ id: "a", failed: 1 }]),
+    );
+    expect(indicator(one, "fleet")!.label).toBe("1 agent needs attention");
+    expect(indicator(one, "settings")!.label).toBe("1 failed delivery");
+  });
+
+  it("shows no Fleet or Settings dot at 0, and keeps the Inbox counts beside them", () => {
+    const items = withNavIndicators(
+      navItems,
+      { needsYou: 1, problems: 0, running: 0 },
+      undefined,
+      indicators({ offline: 0, updateFailed: 0 }),
+    );
+    expect(indicator(items, "fleet")).toBeUndefined();
+    expect(indicator(items, "settings")).toBeUndefined();
+    expect(indicator(items, "inbox")).toEqual({ kind: "count", value: 1, label: "1 need you" });
+  });
 });
