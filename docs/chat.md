@@ -1,6 +1,7 @@
-# Chat (Slack and Discord)
+# Chat (Slack, Discord and the web)
 
-The chat front door lets people ask Omniralph about their organization from Slack or Discord.
+The chat front door lets people ask Omniralph about their organization from Slack or Discord, and
+from the control panel itself ([Ask](#web-ask)).
 Mention the bot in a channel of a connected workspace or server and it answers in a thread; reply
 in that thread to continue the conversation. The answers come from **Om**, Omniralph's AI, an
 LLM that runs in the control panel through the [Vercel AI SDK](https://ai-sdk.dev) and the
@@ -208,6 +209,27 @@ You can attach screenshots and text files (e.g. a log) to your messages: the bot
 
 Turns are rate-limited to 10 per minute per chat user and 60 per 10 minutes per organization; the
 bot says so once when a limit is reached.
+
+## Web (Ask)
+
+**Ask** is a chat with Om in the control panel, about one repo or all of the organization's repos.
+It needs no setup beyond [the AI Gateway](#3-set-up-the-ai-gateway): no app to create, no env var
+and nothing to connect. Every organization gets a hidden `web` chat connection the first time one
+of its members starts a chat; it is never listed under **Settings › Connections**.
+
+- **The same Om.** A web chat is a Chat SDK thread like a Slack or Discord one: its adapter
+  (`apps/web/src/lib/chat/web-adapter.ts`) stores messages in Omniralph's own database. Om answers
+  it with the same agent, tools, [access levels](#access-levels) and rate limits (per member and per
+  organization), and code questions and work requests start the same runs, whose answers and
+  questions come back to the chat as run events. The member is always signed in, so they are a
+  linked member with their organization role; nobody needs to [link an account](#account-linking).
+- **Private.** A web chat belongs to the member who started it: nobody else in the organization
+  sees it or writes in it, and it's gone from their view when they leave the organization. The runs
+  it starts appear in **Runs** like any other.
+- **Streamed and live.** Om's reply streams into the chat as it is written. Answers that arrive
+  later (a code question an agent read the repo for, a run's news) and card changes reach every
+  open view of the chat through live updates, without a refresh; change events name the chat only,
+  on the member's own channel.
 
 ## Om from chat
 

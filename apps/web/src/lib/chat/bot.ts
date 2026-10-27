@@ -36,10 +36,12 @@ import { createLinkUrl } from "./link";
 import { handleLinearIssueAction, LINEAR_ISSUE_ACTIONS } from "./linear-issue";
 import { CHAT_ACCOUNTS_PATH } from "./link-paths";
 import { slackOAuthConfig, type SlackCredentials, type SlackOAuthConfig } from "./slack-oauth";
+import { createWebAdapter, webChatConnection } from "./web-adapter";
 
 /**
- * The Chat SDK bot behind the Slack and Discord webhooks. Mentioning it in a
- * connected workspace or server starts a thread it subscribes to; every
+ * The Chat SDK bot behind the Slack and Discord webhooks and the web's Ask
+ * (`./web-adapter`). Mentioning it in a connected workspace or server, or
+ * starting a web chat, starts a thread it subscribes to; every
  * message of that thread is recorded in `chat_messages` and handed to the
  * {@link ChatConversationHandler}, together with the organization of the
  * connection that received it.
@@ -162,7 +164,7 @@ export interface ChatBotDeps {
 
 export interface ChatBot {
   chat: Chat;
-  /** The adapter of each configured platform. */
+  /** The adapter of each configured platform (`web` always). */
   adapters: Partial<Record<ChatPlatform, Adapter>>;
   /** The Chat SDK state (subscriptions, locks, thread state). */
   state: StateAdapter;
@@ -200,7 +202,7 @@ function discordGuildId(threadId: string): string | null {
   return prefix === "discord" && guildId && guildId !== "@me" ? guildId : null;
 }
 
-/** Builds the bot with the configured platforms' adapters. */
+/** Builds the bot with the configured platforms' adapters, and the web's (it needs no config). */
 export function createChatBot(deps: ChatBotDeps): ChatBot {
   const { db, handler } = deps;
   const logger = deps.logger ?? new ConsoleLogger("info", "chat");
@@ -246,6 +248,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
       ...(deps.discordApiUrl && { apiUrl: deps.discordApiUrl }),
     });
   }
+  adapters.web = createWebAdapter({ db });
 
   const chat = new Chat({
     userName: "omniralph",
@@ -268,6 +271,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
       const guildId = discordGuildId(threadId);
       return guildId ? getChatConnectionByExternalId(db, "discord", guildId) : null;
     }
+    if (adapter.name === "web") return webChatConnection(db, threadId);
     return null;
   }
 

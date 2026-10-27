@@ -42,7 +42,7 @@ import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { withChatConnection } from "../bot";
 import { linkedMemberActor, type ChatActor } from "../identity";
 import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
-import { recordTurn, type ChatAgentDeps } from "./handler";
+import { recordTurn, webChatScope, type ChatAgentDeps } from "./handler";
 import { historyMessages, systemPrompt } from "./prompt";
 import { chatTools } from "./registry";
 import { toAiTools } from "./tools";
@@ -378,6 +378,7 @@ async function relayGroup(
           working: !!(await chatRunSession(db, chatThread.id)),
         },
         wakeUp: true,
+        webChat: await webChatScope(db, connection, chatThread),
       }),
       messages,
       tools,
