@@ -233,7 +233,10 @@ of its members starts a chat; it is never listed under **Settings › Connection
   finishes even if the page closes. Slack and Discord still get the finished reply. Answers that arrive
   later (a code question an agent read the repo for, a run's news) and card changes reach every
   open view of the chat through live updates, without a refresh; change events name the chat only,
-  on the member's own channel.
+  on the member's own channel. While a code question runs, the chat also follows that run's events,
+  so its "Om is reading" line counts the files as the agent reads them. Your message shows as soon
+  as you send it, a card shows the outcome of your click at once, and a half-written message stays
+  in the composer when you close the chat and come back.
 - **Code answers as written.** A [code question](#code-questions) asked in a web chat runs on the
   chat's repo (unless Om names another) and the branch the chat stored when it started. Its answer
   is posted exactly as the agent wrote it, without a model turn in between, and shows how long the

@@ -8,7 +8,7 @@
  * (or section) is mapped here; the map is exhaustive, so an unmapped resource fails
  * typecheck. Safe to import in the browser.
  */
-import type { QueryClient, QueryKey } from "@tanstack/react-query";
+import type { Query, QueryClient, QueryKey } from "@tanstack/react-query";
 import {
   analyticsKeys,
   askKeys,
@@ -40,6 +40,11 @@ declare module "@tanstack/react-query" {
        * event of a burst delivered when its window ends (Analytics: 10 000).
        */
       liveThrottleMs?: number;
+      /**
+       * Runs whose `run` and `transcript` events (by `runId`) also invalidate the query, for
+       * a view that follows runs outside its own keys (an Ask chat's asks in flight).
+       */
+      liveRunIds?: readonly string[];
     };
   }
 }
@@ -317,6 +322,13 @@ export function changesUserRecord(event: ChangeEvent): boolean {
   );
 }
 
+/** The run a `run` or `transcript` event of the scope is about, for `meta.liveRunIds`. */
+function followedRunId(event: ChangeEvent, scope: ReadonlySet<string>): string | undefined {
+  if (!scope.has(event.organizationId)) return undefined;
+  if (event.resource !== "run" && event.resource !== "transcript") return undefined;
+  return event.runId;
+}
+
 export interface LiveInvalidator {
   /** Invalidates the queries `event` affects, if its organization is in `scope`. */
   apply(event: ChangeEvent, scope: ReadonlySet<string>): void;
@@ -328,7 +340,8 @@ export interface LiveInvalidator {
  * Applies change events to `client`'s cache: each matching query is invalidated (active
  * ones refetch). A query with `meta.liveThrottleMs` is invalidated at most once per that
  * window: the first event at once, later ones in the window by one trailing invalidation
- * when it ends, so the last event of a burst is never lost.
+ * when it ends, so the last event of a burst is never lost. A query with `meta.liveRunIds`
+ * is also invalidated by those runs' `run` and `transcript` events.
  */
 export function createLiveInvalidator(
   client: QueryClient,
@@ -369,13 +382,20 @@ export function createLiveInvalidator(
         : userWideInvalidations(event, scope);
       const cache = client.getQueryCache();
       const seen = new Set<string>();
+      const visit = (query: Query) => {
+        if (seen.has(query.queryHash)) return;
+        seen.add(query.queryHash);
+        const windowMs = query.meta?.liveThrottleMs;
+        if (windowMs && windowMs > 0) throttle(query.queryHash, query.queryKey, windowMs);
+        else invalidate(query.queryKey);
+      };
       for (const prefix of prefixes) {
-        for (const query of cache.findAll({ queryKey: prefix })) {
-          if (seen.has(query.queryHash)) continue;
-          seen.add(query.queryHash);
-          const windowMs = query.meta?.liveThrottleMs;
-          if (windowMs && windowMs > 0) throttle(query.queryHash, query.queryKey, windowMs);
-          else invalidate(query.queryKey);
+        for (const query of cache.findAll({ queryKey: prefix })) visit(query);
+      }
+      const runId = followedRunId(event, scope);
+      if (runId) {
+        for (const query of cache.getAll()) {
+          if (query.meta?.liveRunIds?.includes(runId)) visit(query);
         }
       }
     },

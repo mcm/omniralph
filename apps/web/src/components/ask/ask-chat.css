@@ -1,0 +1,121 @@
+/* Ask's chat: header on top, the messages scrolling between, the composer pinned at the bottom. Only `--or-` tokens. */
+.or-ask-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--or-surf);
+}
+
+.or-ask-chat__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-ask-chat__back {
+  flex: none;
+}
+
+.or-ask-chat__heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-ask-chat__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-ask-chat__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-ask-chat__tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.or-ask-chat__messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.or-ask-chat__status {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-ask-chat__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--or-sec);
+}
+
+.or-ask-chat__error p {
+  margin: 0;
+}
+
+.or-ask-chat__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-ask-chat__skeleton-line {
+  height: 14px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-ask-chat__skeleton-line--short {
+  width: 60%;
+}
+
+.or-ask-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-ask-composer__input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+}
+
+.or-ask-composer__send {
+  flex: none;
+}
