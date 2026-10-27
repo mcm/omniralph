@@ -57,6 +57,9 @@ const github: Connection = {
   usedAs: "code_host",
   failedDeliveries: 0,
   linkedAccounts: null,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 const gitlab: Connection = {
   provider: "gitlab",
@@ -69,6 +72,9 @@ const gitlab: Connection = {
   usedAs: "code_host",
   failedDeliveries: 0,
   linkedAccounts: null,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 const otherGitLab: Connection = {
   provider: "gitlab",
@@ -81,6 +87,9 @@ const otherGitLab: Connection = {
   usedAs: "code_host",
   failedDeliveries: 0,
   linkedAccounts: null,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 const linear: Connection = {
   provider: "linear",
@@ -93,6 +102,9 @@ const linear: Connection = {
   usedAs: "tracker",
   failedDeliveries: 0,
   linkedAccounts: null,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 const slack: Connection = {
   provider: "slack",
@@ -105,6 +117,9 @@ const slack: Connection = {
   usedAs: "chat",
   failedDeliveries: 0,
   linkedAccounts: 0,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 
 let connections: Connection[];

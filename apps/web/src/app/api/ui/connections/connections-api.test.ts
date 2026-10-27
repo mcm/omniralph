@@ -9,6 +9,7 @@ import {
   organizationMembers,
   chatIdentities,
   organizations,
+  recordSettingsChange,
   recordWebhookEvent,
   repositories,
   saveChatConnection,
@@ -196,7 +197,13 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
       const { status, body } = await getList();
       expect(status).toBe(200);
       expect(connectionListSchema.parse(body)).toEqual(body);
-      const unused = { failedDeliveries: 0, linkedAccounts: null };
+      const unused = {
+        failedDeliveries: 0,
+        linkedAccounts: null,
+        instanceUrl: null,
+        installationUrl: null,
+        history: null,
+      };
       const connected = { state: "connected", problems: [] };
       expect(body.connections).toEqual([
         {
@@ -209,6 +216,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           reposUsing: 0,
           usedAs: "code_host",
           ...unused,
+          installationUrl: "https://github.com/settings/installations/acme-corp-installation",
         },
         {
           provider: "gitlab",
@@ -220,6 +228,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           reposUsing: 0,
           usedAs: "code_host",
           ...unused,
+          instanceUrl: "https://gitlab.example.com",
         },
         {
           provider: "gitlab",
@@ -231,6 +240,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           reposUsing: 0,
           usedAs: "code_host",
           ...unused,
+          instanceUrl: "https://gitlab.example.com",
         },
         {
           provider: "linear",
@@ -252,7 +262,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           health: connected,
           reposUsing: null,
           usedAs: "chat",
-          failedDeliveries: 0,
+          ...unused,
           linkedAccounts: 0,
         },
         {
@@ -264,7 +274,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
           health: connected,
           reposUsing: null,
           usedAs: "chat",
-          failedDeliveries: 0,
+          ...unused,
           linkedAccounts: 0,
         },
       ]);
@@ -288,6 +298,49 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/connections", () => {
       }
       await disconnect("github", beta, betaGitHub);
       await disconnect("slack", beta, betaSlack);
+    }
+  });
+
+  it("carries each connection's latest recorded change", async () => {
+    const gitlab = await connect("gitlab", acme, "hist");
+    const linear = await connect("linear", acme, "Hist workspace");
+    try {
+      const change = (subjectId: string, after: string) =>
+        recordSettingsChange(db, {
+          organizationId: acme,
+          section: "connection",
+          subjectId,
+          actor: { userId: member.id, name: "Mia" },
+          fields: { name: { label: "Name" } },
+          before: { name: "before" },
+          after: { name: after },
+        });
+      await change(gitlab, "first");
+      await change(gitlab, "second");
+      // Another section about the same subject isn't the connection's history.
+      await recordSettingsChange(db, {
+        organizationId: acme,
+        section: "organization",
+        actor: { userId: member.id, name: "Mia" },
+        fields: { name: { label: "Name" } },
+        before: { name: "Acme" },
+        after: { name: "Acme Co" },
+      });
+      const { body } = await getList();
+      expect(connectionListSchema.parse(body)).toEqual(body);
+      const byId = new Map(body.connections.map((row) => [row.id, row]));
+      expect(byId.get(gitlab)!.history).toMatchObject({
+        organization: { id: acme, name: "Acme", role: "member" },
+        section: "connection",
+        subjectId: gitlab,
+        actor: { id: member.id, name: "Mia" },
+        changes: [{ field: "name", label: "Name", before: "before", after: "second" }],
+        runsSince: 0,
+      });
+      expect(byId.get(linear)!.history).toBeNull();
+    } finally {
+      await disconnect("gitlab", acme, gitlab);
+      await disconnect("linear", acme, linear);
     }
   });
 

@@ -95,4 +95,54 @@ describe("ConnectGitLabForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  describe("replacing a connection's token", () => {
+    const health = { state: "healthy", problems: [] } as const;
+
+    function renderReplace(onReplaced = vi.fn()) {
+      render(
+        <ConnectGitLabForm
+          organizationId={ORG}
+          defaultGitLabUrl="https://gitlab.example.com"
+          replaceConnectionId={connection.id}
+          onReplaced={onReplaced}
+        />,
+        { wrapper: queryWrapper(createTestQueryClient()) },
+      );
+      return onReplaced;
+    }
+
+    it("shows the instance read-only and puts only the token to the connection", async () => {
+      const seen = mockFetch({
+        [`PUT /api/ui/connections/gitlab/${connection.id}`]: () => jsonResponse({ health }),
+      });
+      const onReplaced = renderReplace();
+      expect(screen.getByRole("form", { name: "Replace the GitLab token" })).toBeTruthy();
+      const url = screen.getByLabelText("GitLab URL") as HTMLInputElement;
+      expect(url.value).toBe("https://gitlab.example.com");
+      expect(url.readOnly).toBe(true);
+      await userEvent.type(screen.getByLabelText("Access token"), "glpat-new");
+      await userEvent.click(screen.getByRole("button", { name: "Replace token" }));
+
+      await waitFor(() => expect(onReplaced).toHaveBeenCalledWith({ health }));
+      expect(seen.map((request) => [request.method, request.path, request.body])).toEqual([
+        ["PUT", `/api/ui/connections/gitlab/${connection.id}`, { token: "glpat-new" }],
+      ]);
+      expect(ui.toast).toHaveBeenCalledWith("Token replaced");
+      expect((screen.getByLabelText("Access token") as HTMLInputElement).value).toBe("");
+    });
+
+    it("shows a refusal under the form", async () => {
+      const refusal = "This token belongs to a different GitLab user. Add it as a new connection.";
+      mockFetch({
+        [`PUT /api/ui/connections/gitlab/${connection.id}`]: () =>
+          jsonResponse({ error: refusal, code: "different_user" }, 400),
+      });
+      const onReplaced = renderReplace();
+      await userEvent.type(screen.getByLabelText("Access token"), "glpat-other");
+      await userEvent.click(screen.getByRole("button", { name: "Replace token" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(refusal);
+      expect(onReplaced).not.toHaveBeenCalled();
+    });
+  });
 });

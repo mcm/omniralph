@@ -187,6 +187,14 @@ export function backlogKeys(keys: QueryKeys) {
 export function connectionKeys(keys: QueryKeys) {
   return {
     list: keys.settings.detail("connections"),
+    /**
+     * Every tracker connection's work item state mapping (Linear's connection page), apart
+     * from the list so a delivery or repository event (which refetch the list) doesn't call
+     * the tracker for its workflow states.
+     */
+    stateMappings: keys.settings.detail("tracker-state-mapping"),
+    stateMapping: (integrationId: string) =>
+      keys.settings.part("tracker-state-mapping", integrationId),
   };
 }
 

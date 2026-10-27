@@ -15,6 +15,37 @@
   padding: 20px 24px 32px;
 }
 
+.or-settings-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-settings-page__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-settings-page__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The toolbar keeps the top right at every width (board Settings-390). */
+.or-settings-page__actions {
+  flex: none;
+}
+
+.or-settings-page__mark {
+  display: inline-flex;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
 .or-settings-page__title {
   margin: 0;
   color: var(--or-text);
@@ -145,4 +176,23 @@
   margin: 0;
   color: var(--or-sec);
   font-size: 13px;
+}
+
+/* Connections › one connection */
+.or-connection__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-connection__states {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .or-connection__states {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
