@@ -53,9 +53,10 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 /**
  * Organization settings sections a `settings` event names that keep no change history (not
  * part of `SETTINGS_SECTIONS` or the settings history API): the organization's playbooks
- * (`subjectId` = the playbook).
+ * (`subjectId` = the playbook) and the playbooks chat runs, organization-wide (`ids` = the
+ * organization) or for a connection's channel (`subjectId` = the chat connection).
  */
-export const UNTRACKED_SETTINGS_SECTIONS = ["playbooks"] as const;
+export const UNTRACKED_SETTINGS_SECTIONS = ["playbooks", "chat_playbooks"] as const;
 export type UntrackedSettingsSection = (typeof UNTRACKED_SETTINGS_SECTIONS)[number];
 
 /**
@@ -94,7 +95,8 @@ const base = {
  * - `webhook_event`: a delivery was recorded or replayed (`ids` = webhook event IDs).
  * - `settings`: a settings `section` was saved, for `subjectId` (e.g. the repository) when
  *   the section has one (`ids` = the subject, else the organization). A playbook's save or
- *   delete is section `playbooks` with the playbook as its subject.
+ *   delete is section `playbooks` with the playbook as its subject; a save of the playbooks
+ *   chat runs is section `chat_playbooks` (a channel override's: its connection the subject).
  *   Section `profile` is the user's own record and `linked_accounts` their linked chat
  *   accounts (`ids` = the user), on the user's channel.
  * - `agent`: an agent enrolled, was revoked or deleted, went online or offline, or its

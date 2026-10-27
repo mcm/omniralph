@@ -57,10 +57,10 @@ export async function setAppSetting(
 }
 
 /** The settings section a key's save changes (live `settings` changes); others are internal. */
-const SETTING_SECTIONS: Record<string, "agent_defaults" | "connection" | undefined> = {
+const SETTING_SECTIONS: Record<string, "agent_defaults" | "chat_playbooks" | undefined> = {
   "agent.desiredVersion": "agent_defaults",
   "agent.maxConcurrency": "agent_defaults",
-  "chat.playbooks": "connection",
+  "chat.playbooks": "chat_playbooks",
 };
 
 /** The organization's desired agent version (possibly `latest`), or null when none is chosen. */

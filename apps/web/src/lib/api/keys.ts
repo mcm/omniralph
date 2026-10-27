@@ -199,6 +199,16 @@ export function connectionKeys(keys: QueryKeys) {
 }
 
 /**
+ * The query key of Advanced › Chat channel overrides (`GET /api/ui/integrations/chat-tasks`):
+ * the active organization's chat playbooks and channel overrides, in the `settings` area (not
+ * scope-wide). A `chat_playbooks` settings event refetches it, and so do playbook saves (the
+ * names it shows) and `connection` events (the chat connections it lists).
+ */
+export function chatPlaybooksKey(keys: QueryKeys) {
+  return keys.settings.detail("chat-playbooks");
+}
+
+/**
  * Query keys of the active organization's settings (`GET /api/ui/organization`): its name,
  * members, invitations and domains. An `organization` event of the organization refetches
  * them; the shell's organization name follows their cached answer (`LiveCurrentUser`).

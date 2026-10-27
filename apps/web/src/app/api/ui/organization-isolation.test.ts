@@ -3499,6 +3499,29 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       }
     });
 
+    it("shows each organization's members its own chat playbooks and channel overrides only", async () => {
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.memberId, own.adminId]) {
+          state.userId = userId;
+          const { status, body } = await call(chatPlaybooks.GET);
+          expect(status).toBe(200);
+          const connections = (body as { connections: { id: string; channels: unknown[] }[] })
+            .connections;
+          expect(connections.map((c) => [c.id, c.channels.length]).sort()).toEqual(
+            [
+              [extra(own).slackId, 1],
+              [extra(own).discordId, 1],
+            ].sort(),
+          );
+          const json = JSON.stringify(body);
+          for (const marker of markersOf(other)) expect(json).not.toContain(marker);
+        }
+      }
+    });
+
     it("refuses every integration change on the other organization's connections, and to members", async () => {
       const valid = { ask: "builtin:ask-about-code", startWork: "builtin:handle-request" };
       state.userId = a.adminId;
@@ -3577,7 +3600,18 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           params: { id: extra(a).slackId },
           body: { channel: "C0123ABCD", ask: null, startWork: "builtin:handle-request" },
         }),
-      ).toEqual({ status: 200, body: { ok: true } });
+      ).toEqual({
+        status: 200,
+        body: {
+          ok: true,
+          channel: {
+            channelId: "slack:C0123ABCD",
+            channel: "C0123ABCD",
+            ask: null,
+            startWork: "builtin:handle-request",
+          },
+        },
+      });
       expect(
         await call(channelPlaybooks.DELETE, {
           method: "DELETE",

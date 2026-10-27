@@ -774,12 +774,21 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([connectionEvent(integrationId)]);
     });
 
-    it("chat connections and their channel playbook settings publish the connection", async () => {
+    it("chat connections publish the connection, their channel playbook settings chat_playbooks", async () => {
       const connectionEvent = (id: string) => ({
         channel: orgChannel,
         v: 1,
         resource: "connection",
         ids: [id],
+        organizationId: orgId,
+      });
+      const chatPlaybooksEvent = (id: string) => ({
+        channel: orgChannel,
+        v: 1,
+        resource: "settings",
+        section: "chat_playbooks",
+        ids: [id],
+        subjectId: id,
         organizationId: orgId,
       });
       let chatId = "";
@@ -808,10 +817,10 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
             updatedBy: userId,
           }),
         ),
-      ).toEqual([connectionEvent(chatId)]);
+      ).toEqual([chatPlaybooksEvent(chatId)]);
       expect(
         await published(() => deleteChatChannelPlaybookSetting(db, orgId, chatId, "slack:C1")),
-      ).toEqual([connectionEvent(chatId)]);
+      ).toEqual([chatPlaybooksEvent(chatId)]);
       expect(await published(() => deleteChatConnection(db, orgId, chatId))).toEqual([
         connectionEvent(chatId),
       ]);

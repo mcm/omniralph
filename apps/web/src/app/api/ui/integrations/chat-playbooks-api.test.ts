@@ -1,7 +1,8 @@
-// The chat playbook endpoints against a real database: the organization's choice
+// The chat playbook endpoints against a real database: any member reads them
+// (`GET /api/ui/integrations/chat-tasks`); the organization's choice
 // (`PUT /api/ui/integrations/chat-tasks`) and a channel's overrides
 // (`PUT`/`DELETE /api/ui/integrations/chat-connections/[id]/channels`) are admin-only,
-// check each playbook's role, and publish their change events.
+// check each playbook's role, and publish one `chat_playbooks` settings event each.
 import { randomBytes } from "node:crypto";
 import {
   closeDb,
@@ -24,7 +25,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { getBuiltinPlaybook, playbookRequirements } from "@omniralph/tasks";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -127,13 +128,66 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
     await setChatPlaybookDefaults(db, acme, null, null);
   });
 
+  const readSettings = () => callAction(chatPlaybooks.GET, "GET", {});
   const saveDefaults = (body: unknown) => callAction(chatPlaybooks.PUT, "PUT", {}, body);
+  const chatPlaybooksChanges = (changes: { resource: string; section?: string }[]) =>
+    changes.filter(
+      (change) => change.resource === "settings" && change.section === "chat_playbooks",
+    );
   const saveChannel = (body: unknown) => callAction(channels.PUT, "PUT", { id: slack }, body);
   const removeChannel = (channelId: string) =>
     callAction(channels.DELETE, "DELETE", { id: slack }, { channelId });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("GET /api/ui/integrations/chat-tasks", () => {
+    it("shows any member the defaults, the choices and each connection's overrides, without secrets", async () => {
+      await setChatPlaybookDefaults(
+        db,
+        acme,
+        { ask: ownAsk, startWork: "builtin:handle-request" },
+        null,
+      );
+      await saveChannel({ channel: "C0READ01", ask: null, startWork: "builtin:handle-request" });
+      state.user = member;
+      const result = (await readSettings()) as Record<string, unknown>;
+      expect(result).toMatchObject({
+        defaults: { ask: ownAsk, startWork: "builtin:handle-request" },
+        builtinDefaults: DEFAULT_CHAT_PLAYBOOKS,
+        choices: {
+          ask: expect.arrayContaining([
+            { id: "builtin:ask-about-code", name: "Ask about code", builtin: true },
+            { id: ownAsk, name: "Security Q&A", builtin: false },
+          ]),
+        },
+        connections: [
+          {
+            id: slack,
+            name: "Acme Slack",
+            platform: "slack",
+            channels: [
+              {
+                channelId: "slack:C0READ01",
+                channel: "C0READ01",
+                ask: null,
+                startWork: "builtin:handle-request",
+              },
+            ],
+          },
+        ],
+      });
+      const json = JSON.stringify(result);
+      expect(json).not.toContain("xoxb");
+      expect(json).not.toContain(foreignAsk);
+      state.user = admin;
+      await removeChannel("slack:C0READ01");
+    });
+  });
+
   describe("PUT /api/ui/integrations/chat-tasks", () => {
-    it("saves the organization's chat playbooks and publishes the connection settings change", async () => {
+    it("saves the organization's chat playbooks and publishes one chat_playbooks change", async () => {
       const { result, changes } = await captureChanges(() =>
         saveDefaults({ ask: ownAsk, startWork: "builtin:handle-request" }),
       );
@@ -146,12 +200,13 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
         expect.arrayContaining([
           expect.objectContaining({
             resource: "settings",
-            section: "connection",
+            section: "chat_playbooks",
             ids: [acme],
             organizationId: acme,
           }),
         ]),
       );
+      expect(chatPlaybooksChanges(changes)).toHaveLength(1);
       expect(changes.every((change) => change.organizationId === acme)).toBe(true);
     });
 
@@ -193,14 +248,30 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
   });
 
   describe("PUT and DELETE /api/ui/integrations/chat-connections/[id]/channels", () => {
-    const connectionChange = () =>
-      expect.objectContaining({ resource: "connection", ids: [slack], organizationId: acme });
+    const overrideChange = () =>
+      expect.objectContaining({
+        resource: "settings",
+        section: "chat_playbooks",
+        ids: [slack],
+        subjectId: slack,
+        organizationId: acme,
+      });
+    const connectionChange = overrideChange;
 
-    it("saves and removes a channel's overrides, publishing the connection's change each time", async () => {
+    it("saves and removes a channel's overrides, publishing one chat_playbooks change each time", async () => {
       const saved = await captureChanges(() =>
         saveChannel({ channel: "C0123ABCD", ask: ownAsk, startWork: null }),
       );
-      expect(saved.result).toEqual({ ok: true });
+      expect(saved.result).toEqual({
+        ok: true,
+        channel: {
+          channelId: "slack:C0123ABCD",
+          channel: "C0123ABCD",
+          ask: ownAsk,
+          startWork: null,
+        },
+      });
+      expect(chatPlaybooksChanges(saved.changes)).toHaveLength(1);
       expect(await getChatChannelPlaybookSetting(db, acme, slack, "slack:C0123ABCD")).toMatchObject(
         { askPlaybookId: ownAsk, startWorkPlaybookId: null, updatedBy: admin.id },
       );
@@ -211,10 +282,90 @@ describe.skipIf(!databaseAvailable)("chat playbook endpoints", () => {
       expect(removed.result).toEqual({ ok: true });
       expect(await getChatChannelPlaybookSetting(db, acme, slack, "slack:C0123ABCD")).toBeNull();
       expect(removed.changes).toEqual(expect.arrayContaining([connectionChange()]));
+      expect(chatPlaybooksChanges(removed.changes)).toHaveLength(1);
 
       const again = await captureChanges(() => removeChannel("slack:C0123ABCD"));
       expect(again.result).toEqual({ ok: false, error: "That channel has no playbook overrides." });
       expect(again.changes).toEqual([]);
+    });
+
+    it("looks a channel up by its name in the Slack workspace", async () => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = new URL(String(input));
+        expect(url.origin + url.pathname).toBe("https://slack.com/api/conversations.list");
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xoxb-1");
+        const page = url.searchParams.get("cursor") === "next";
+        return Response.json({
+          ok: true,
+          channels: page
+            ? [{ id: "C0RELEASE", name: "release-train" }]
+            : [{ id: "C0GEN", name: "general" }],
+          response_metadata: { next_cursor: page ? "" : "next" },
+        });
+      });
+      const saved = await captureChanges(() =>
+        saveChannel({ channel: "#Release-Train", ask: null, startWork: "builtin:handle-request" }),
+      );
+      expect(saved.result).toEqual({
+        ok: true,
+        channel: {
+          channelId: "slack:C0RELEASE",
+          channel: "C0RELEASE",
+          ask: null,
+          startWork: "builtin:handle-request",
+        },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(chatPlaybooksChanges(saved.changes)).toHaveLength(1);
+      await removeChannel("slack:C0RELEASE");
+    });
+
+    it("refuses a channel name the workspace doesn't have, or can't be looked up, and publishes nothing", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        Response.json({ ok: true, channels: [{ id: "C0GEN", name: "general" }] }),
+      );
+      const missing = await captureChanges(() =>
+        saveChannel({ channel: "nowhere", ask: ownAsk, startWork: null }),
+      );
+      expect(missing.result).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          channel: "Om can't find #nowhere in Acme Slack. Enter its channel ID instead.",
+        },
+      });
+      expect(missing.changes).toEqual([]);
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        Response.json({ ok: false, error: "missing_scope" }),
+      );
+      const unavailable = await captureChanges(() =>
+        saveChannel({ channel: "general", ask: ownAsk, startWork: null }),
+      );
+      expect(unavailable.result).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          channel: "Couldn't look up #general in Acme Slack. Enter its channel ID instead.",
+        },
+      });
+      expect(unavailable.changes).toEqual([]);
+
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      fetchMock.mockClear();
+      const malformed = await saveChannel({
+        channel: "not a channel!",
+        ask: ownAsk,
+        startWork: null,
+      });
+      expect(malformed).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          channel:
+            "Enter a Slack channel ID like C0123ABCD (in the channel's details), or its name.",
+        },
+      });
+      // A bad playbook is refused before any lookup.
+      await saveChannel({ channel: "general", ask: "builtin:handle-request", startWork: null });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("refuses members, and publishes nothing", async () => {

@@ -5,7 +5,8 @@ import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import { connectionListSchema, type ConnectionList } from "@/lib/api/connections";
-import { connectionKeys, organizationKeys, type QueryKeys } from "@/lib/api/keys";
+import { chatPlaybooksSettingsSchema, type ChatPlaybooksSettings } from "@/lib/api/integrations";
+import { chatPlaybooksKey, connectionKeys, organizationKeys, type QueryKeys } from "@/lib/api/keys";
 import {
   chatAccountsSchema,
   organizationSettingsSchema,
@@ -116,5 +117,23 @@ export function useTrackerStateMapping(integrationId: string) {
         trackerStateMappingSchema,
         { organizationId: organization.id, signal },
       ),
+  });
+}
+
+/**
+ * The playbooks chat runs (`GET /api/ui/integrations/chat-tasks`, any member), for Advanced ›
+ * Chat channel overrides. A live query: a `chat_playbooks` settings event (another admin's
+ * save), a playbook save and a `connection` event refetch it.
+ */
+export function useChatPlaybooks() {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<ChatPlaybooksSettings>({
+    queryKey: chatPlaybooksKey(keys),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/integrations/chat-tasks", chatPlaybooksSettingsSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
   });
 }

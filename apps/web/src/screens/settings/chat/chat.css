@@ -1,0 +1,44 @@
+/*
+ * Advanced › Chat channel overrides: the overrides table's workspace and actions, and the
+ * override sheet's form. Only `--or-` tokens.
+ */
+.or-chat__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-chat__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-chat__default {
+  color: var(--or-sec);
+}
+
+.or-chat__workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-chat__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.or-chat-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.or-chat-sheet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
