@@ -26,15 +26,12 @@ import {
   versionPolicyLabel,
   versionSummary,
 } from "@/lib/fleet/status";
-import { agentHref } from "@/lib/runs/hrefs";
+import { agentHref, FLEET_PATH } from "@/lib/runs/hrefs";
 import { AgentPanel } from "./agent-panel";
 import { EnrollSheet } from "./enroll-sheet";
 import { useFleet } from "./queries";
 import { VersionPolicySheet } from "./version-policy-sheet";
 import "./fleet.css";
-
-/** Fleet's list. */
-export const FLEET_PATH = "/fleet";
 
 /** The side panel's width: the table fills the rest. */
 const PANEL_WIDTH = { wide: 420, narrow: 360 };

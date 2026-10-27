@@ -9,12 +9,8 @@ import {
   RepoBadge,
   StatusText,
   TextLink,
-  toast,
-  Toolbar,
   Tooltip,
-  type MenuItem,
 } from "@omniralph/ui";
-import { IconCopy } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { formatDuration } from "@/components/runs/progress";
 import { ApiError } from "@/lib/api/client";
@@ -22,6 +18,7 @@ import type { AgentDetail, FleetAgentRow, RecentAttempt } from "@/lib/api/agents
 import { agentStatusLine, securityLine, shortDate } from "@/lib/fleet/status";
 import { runHref } from "@/lib/runs/hrefs";
 import { useClock } from "../clock";
+import { AgentActions } from "./agent-actions";
 import { useAgentDetail } from "./queries";
 
 /** `/fleet/{id}` for an agent that isn't there (or not in the user's organizations). */
@@ -33,20 +30,6 @@ const FAILED_STATUSES: ReadonlySet<RecentAttempt["status"]> = new Set([
   "canceled",
   "expired",
 ]);
-
-/** The ⋯ menu's items (TOOL-715 adds Install package…, Audit log, Revoke and Remove). */
-export function agentMenuItems(agentId: string): MenuItem[] {
-  return [{ label: "Copy agent ID", icon: IconCopy, onSelect: () => void copyAgentId(agentId) }];
-}
-
-async function copyAgentId(agentId: string) {
-  try {
-    await navigator.clipboard.writeText(agentId);
-    toast("Agent ID copied");
-  } catch {
-    toast("Couldn't copy the agent ID.", { variant: "danger" });
-  }
-}
 
 /** "Coder workspace" (the workspace in its tooltip) or the hostname; none before a report. */
 function HostBadge({ host }: { host: FleetAgentRow["host"] }) {
@@ -237,7 +220,7 @@ export function AgentPanelContent({
     <article className="or-fleet-agent" aria-labelledby={`agent-${agent.id}`}>
       <div className="or-fleet-agent__top">
         {showOrganization ? <OrgBadge name={agent.organization.name} /> : <span />}
-        <Toolbar label="Agent actions" menu={agentMenuItems(agent.id)} />
+        <AgentActions detail={detail} />
       </div>
       <StatusText tone={status.tone}>{status.label}</StatusText>
       <h2 id={`agent-${agent.id}`} className="or-fleet-agent__name or-mono">

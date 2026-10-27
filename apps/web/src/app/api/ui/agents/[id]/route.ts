@@ -23,13 +23,18 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
   },
 );
 
-/** Deletes the agent (revoking it first if it isn't), removing it from the Agents pages. */
-export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
-  { access: "admin" },
-  async ({ user, params, request }) =>
-    deleteAgent(params.id, {
-      organizationId: user.organization.id,
+/**
+ * Deletes the agent (revoking it first if it isn't), removing it from Fleet; its history
+ * stays on its runs. For admins of the agent's own organization (any of the user's).
+ */
+export const DELETE = apiHandler<"member", undefined, undefined, Params>(
+  {},
+  async ({ user, params, request }) => {
+    const organization = await requireAgentAccess(user, params.id, "admin");
+    return deleteAgent(params.id, {
+      organizationId: organization.id,
       userId: user.id,
       ip: clientIp(request.headers),
-    }),
+    });
+  },
 );

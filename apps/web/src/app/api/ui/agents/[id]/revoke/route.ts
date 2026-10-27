@@ -1,14 +1,20 @@
 import { apiHandler } from "@/lib/api/handler";
+import { requireAgentAccess } from "@/lib/api/scope";
 import { clientIp } from "@/lib/agents/request";
 import { revokeAgent } from "@/lib/agents/manage";
 
-/** Revokes the agent: its tokens stop working, its running jobs are redelivered, its pins removed. */
-export const POST = apiHandler<"admin", undefined, undefined, { id: string }>(
-  { access: "admin" },
-  async ({ user, params, request }) =>
-    revokeAgent(params.id, {
-      organizationId: user.organization.id,
+/**
+ * Revokes the agent: its tokens stop working, its running jobs are redelivered, its pins
+ * removed. For admins of the agent's own organization (any of the user's).
+ */
+export const POST = apiHandler<"member", undefined, undefined, { id: string }>(
+  {},
+  async ({ user, params, request }) => {
+    const organization = await requireAgentAccess(user, params.id, "admin");
+    return revokeAgent(params.id, {
+      organizationId: organization.id,
       userId: user.id,
       ip: clientIp(request.headers),
-    }),
+    });
+  },
 );

@@ -102,7 +102,7 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   "A, B +n" on screen); its `Menu` has "All", a checkable item per option (grouped by
   `group`), and with `multiple` toggles that keep the menu open plus a "Clear" item.
 - `ConfirmDialog`: controlled (`open`, `onOpenChange`) `role="alertdialog"` with `title`,
-  `description`, `confirmLabel`, `destructive?` and `typedConfirmation?` (confirm stays
+  `description`, `confirmLabel`, `destructive?`, `typedConfirmation?` and `typedConfirmationAction?` (confirm stays
   disabled until it is typed exactly). `onConfirm` runs once, then the dialog closes.
 
 ## Controls

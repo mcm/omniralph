@@ -16,7 +16,8 @@ import { agentHref } from "@/lib/runs/hrefs";
 import { useClock } from "../clock";
 import { useEnrollmentStatus } from "./queries";
 
-async function copy(text: string, what: string) {
+/** Copies `text`: "{what} copied", or the danger toast "Couldn't copy to the clipboard". */
+export async function copyToClipboard(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
     toast(`${what} copied`);
@@ -39,7 +40,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           icon={IconCopy}
           variant="ghost"
           size="sm"
-          onClick={() => void copy(value, label)}
+          onClick={() => void copyToClipboard(value, label)}
         />
       </div>
     </div>

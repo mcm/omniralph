@@ -181,6 +181,7 @@ export {
   listAgentAttempts,
   getAgentSecuritySummary,
   type AgentAttempt,
+  type AgentAuditListEntry,
   type AgentSecuritySummary,
   type EffectiveAgentConfig,
   type AgentConfigInput,

@@ -83,6 +83,8 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const listRoute = await import("@/app/api/ui/agents/route");
 const defaultsRoute = await import("@/app/api/ui/agent-defaults/route");
 const detailRoute = await import("@/app/api/ui/agents/[id]/route");
+const revokeRoute = await import("@/app/api/ui/agents/[id]/revoke/route");
+const installsRoute = await import("@/app/api/ui/agents/[id]/installs/route");
 
 async function list(organization?: string) {
   const query = organization ? `?organization=${organization}` : "";
@@ -101,6 +103,26 @@ async function detail(id: string) {
   const body = (await response.json()) as AgentDetail;
   if (response.ok) agentDetailSchema.parse(body);
   return { status: response.status, body };
+}
+
+/** The ⋯ menu's actions on one agent: install a package, revoke, remove. */
+async function act(action: "install" | "revoke" | "remove", id: string) {
+  const params = { params: Promise.resolve({ id }) };
+  const url = `http://localhost/api/ui/agents/${id}`;
+  const response =
+    action === "install"
+      ? await installsRoute.POST(
+          new Request(`${url}/installs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: "ripgrep" }),
+          }),
+          params,
+        )
+      : action === "revoke"
+        ? await revokeRoute.POST(new Request(`${url}/revoke`, { method: "POST" }), params)
+        : await detailRoute.DELETE(new Request(url, { method: "DELETE" }), params);
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 
 /** The paths of every field named `type` in a schema (`[]` for an array's element). */
@@ -595,6 +617,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       "auth_failed",
     ]);
     expect(idle.body.audit).toHaveLength(5);
+    expect(idle.body.audit.every((entry) => entry.actor === null)).toBe(true);
 
     const never = await detail(ids["d-never"]!);
     expect(never.body).toMatchObject({
@@ -687,5 +710,43 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       state.userId = alpha.adminId;
       await putVersion("2.0.3");
     }
+  });
+
+  it("lets only admins of the agent's own organization install, revoke and remove it", async () => {
+    const before = async (id: string) =>
+      (await db.select().from(agents).where(eq(agents.id, id)))[0]!;
+
+    // A member of Alpha who is an admin of Beta (working in Alpha): forbidden on Alpha's agents.
+    state.userId = bothId;
+    for (const action of ["install", "revoke", "remove"] as const) {
+      expect((await act(action, ids["c-offline"]!)).status).toBe(403);
+    }
+    // Beta's admin isn't a member of Alpha: not found, for Alpha's agents and unknown ones.
+    state.userId = beta.adminId;
+    for (const action of ["install", "revoke", "remove"] as const) {
+      for (const id of [ids["c-offline"]!, randomUUID(), "not-an-id"]) {
+        expect((await act(action, id)).status).toBe(404);
+      }
+    }
+    expect(await before(ids["c-offline"]!)).toMatchObject({ revokedAt: null, deletedAt: null });
+
+    // An admin of Beta acts on Beta's agent without switching organizations.
+    state.userId = bothId;
+    const zBeta = ids["z-beta"]!;
+    expect(await act("install", zBeta)).toEqual({
+      status: 200,
+      body: { ok: true, jobId: expect.any(String) },
+    });
+    expect(await act("revoke", zBeta)).toEqual({ status: 200, body: { ok: true } });
+    expect((await before(zBeta)).revokedAt).not.toBeNull();
+    const revoked = await detail(zBeta);
+    expect(revoked.body.agent.status.label).toBe("Revoked");
+    // The audit log names who revoked it (their email: they have no name).
+    expect(revoked.body.audit.find((entry) => entry.event === "revoke")).toMatchObject({
+      actor: "both@alpha.io",
+    });
+    expect(await act("remove", zBeta)).toEqual({ status: 200, body: { ok: true } });
+    expect((await before(zBeta)).deletedAt).not.toBeNull();
+    expect((await detail(zBeta)).status).toBe(404);
   });
 });

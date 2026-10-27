@@ -105,7 +105,7 @@
   gap: 8px;
   align-self: stretch;
   padding-top: 14px;
-  border-top: 1px solid var(--or-line);
+  border-top: 1px solid var(--or-border);
 }
 
 .or-fleet-agent__section:first-of-type {
@@ -193,7 +193,7 @@
 
 .or-enroll__warning {
   padding: 10px 12px;
-  border: 1px solid var(--or-line);
+  border: 1px solid var(--or-border);
   border-radius: var(--or-radius-sm);
   color: var(--or-text);
 }
@@ -215,7 +215,7 @@
   align-items: center;
   gap: 6px;
   padding: 6px 6px 6px 10px;
-  border: 1px solid var(--or-line);
+  border: 1px solid var(--or-border);
   border-radius: var(--or-radius-sm);
   background: var(--or-raised);
 }
@@ -293,4 +293,63 @@
   .or-fleet-agent {
     padding: 16px;
   }
+}
+
+/* The agent's ⋯ flows: the install sheet and the audit log */
+.or-agent-install {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.or-agent-install .or-field {
+  align-self: stretch;
+}
+
+.or-agent-install__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-agent-install__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-agent-audit {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-agent-audit__event {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--or-border);
+}
+
+.or-agent-audit__label {
+  font-size: 13px;
+}
+
+.or-agent-audit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--or-sec);
+  font-size: 12px;
+}
+
+.or-agent-audit__none {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
 }

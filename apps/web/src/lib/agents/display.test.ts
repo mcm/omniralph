@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  auditDetailSummary,
   enrollCommand,
   AGENT_INSTALL_COMMAND,
   isAgentOnline,
@@ -73,28 +72,5 @@ describe("jobTarget", () => {
       label: "acme/web",
       url: "https://github.com/acme/web",
     });
-  });
-});
-
-describe("auditDetailSummary", () => {
-  it("says whether an issued credential was read-only or write", () => {
-    expect(
-      auditDetailSummary("credential_issued", { repository: "acme/api", jobId: "abcdef12-0" }),
-    ).toBe("Read-only token for acme/api, job abcdef12");
-    expect(
-      auditDetailSummary("credential_issued", {
-        repository: "acme/api",
-        jobId: "abcdef12-0",
-        access: "write",
-      }),
-    ).toBe("Write token for acme/api, job abcdef12");
-    expect(
-      auditDetailSummary("credential_issued", {
-        repository: "acme/api",
-        jobId: "abcdef12-0",
-        access: "read",
-        tokenKind: "session",
-      }),
-    ).toBe("Read-only token for acme/api, job abcdef12 (session token)");
   });
 });
