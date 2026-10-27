@@ -147,10 +147,10 @@ or `npm:` alias), so publish the package to try it on an agent.
 
 ## Installing an installable
 
-Admins install or update an installable on one agent at a time: **Agents › _agent_ ›
-Installables**, enter the package name and a version (an exact version such as `1.2.0` or a
+Admins install or update an installable on one agent at a time: **Fleet › _agent_ › ⋯ › Install
+package…**, enter the package name and a version (an exact version such as `1.2.0` or a
 dist-tag; default `latest`) and **Install**. This queues an `install` system RPC targeted at that
-agent; the form isn't shown for a revoked agent. Installing the same name and version again
+agent; a revoked agent has no **Install package…**. Installing the same name and version again
 while the first one is queued or running doesn't queue a second job.
 
 On the agent, the RPC:
@@ -163,8 +163,8 @@ On the agent, the RPC:
    again, or the version installed before is put back, and the job fails with the manifest's
    problems.
 
-The card lists the installables the agent reported in its last heartbeat (name and version) and
-the install jobs of the last 24 hours with their status, the version installed, or the error. A
+The agent's **Packages** section on Fleet lists the installables it reported in its last
+heartbeat (`name@version`) and its installs in progress or failed, with the error. A
 new installable shows up with the next heartbeat after the install, and the agent can claim
 runs that require it from then on.
 
@@ -185,8 +185,8 @@ description, or delete one. Tasks require host tools by these names.
 
 Every agent heartbeat negotiates where each host tool is:
 
-1. The control panel answers a heartbeat with the catalog and, per tool, the path an admin
-   configured for this agent, if any.
+1. The control panel answers a heartbeat with the catalog and, per tool, the path configured for
+   this agent, if any.
 2. On its next heartbeat the agent reports, per tool, whether the configured path is an
    executable file it may run (**Exists**/**Missing**) and the first executable of that name it
    discovered on its own `PATH` (the agent process's `PATH`, never a run's; relative entries are
@@ -196,9 +196,9 @@ Every agent heartbeat negotiates where each host tool is:
    with none configured, the discovered path. A configured path that is missing makes the tool
    unavailable rather than falling back to whatever is on `PATH`.
 
-**Agents › _agent_ › Host tools** shows each tool's configured path (admins edit it; blank
-clears it), whether it exists, the discovered path and the effective path, or that the tool is
-unavailable. A new path reaches the agent with its next heartbeat and is checked with the one
+A host tool's path belongs to the agent machine: it moves to the agent's local config, and the
+control panel has no page for it. Until then an agent runs each tool from the path it discovers
+on its `PATH`. A new path reaches the agent with its next heartbeat and is checked with the one
 after, so allow about 40 seconds; after a restart the agent has no paths until its second
 heartbeat, and runs needing a host tool are retried meanwhile.
 
@@ -233,8 +233,8 @@ the file.
   The allowlist only gates new installs: an installable installed before you narrowed it stays
   installed and usable until you remove it.
 - **`blockedExecPaths`** (default `[]`): absolute path prefixes the agent never runs a host tool,
-  installable command or installable MCP server from, whether an admin configured a host tool's
-  path or the agent discovered it on `PATH`. Prefixes match
+  installable command or installable MCP server from, whether a host tool's path was configured
+  or the agent discovered it on `PATH`. Prefixes match
   whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`), after resolving
   symlinks on both sides, so a link into a blocked directory is blocked too. A blocked configured
   path is reported **Missing** (and logged once as a warning), which makes the tool unavailable; a
@@ -258,6 +258,5 @@ Changes to the local config apply when the agent restarts.
 | Install job fails with "isn't allowed on this agent" | The agent's `installables.allow` doesn't match the package name. |
 | Install job fails with "isn't a valid installable" | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`). |
 | Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`. |
-| A task's runs stay queued | No agent has every requirement: check the task's **Requirements** against each agent's **Installables** and **Host tools** cards. |
-| Host tool shows **Missing** | The configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one). |
-| Host tool shows "Not found on PATH" | Nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`; configure a path, or fix the `PATH` of the service that starts the agent (pm2, systemd). |
+| A task's runs stay queued | No agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |
+| A host tool is unavailable on an agent | Its configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one); or, with no path configured, nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`: fix the `PATH` of the service that starts the agent (pm2, systemd). |

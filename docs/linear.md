@@ -647,8 +647,8 @@ questions. It never writes code, branches, commits or PRs/MRs.
 
 **Setup** (once, on top of steps 1–3 above):
 
-- Let an agent accept `query` tasks under **Agents › <agent>** (it applies with the next
-  heartbeat). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until an agent
+- Let an agent accept `query` tasks: its `agent.json` has no `acceptedTaskTypes` (all types) or
+  lists `query` (restart it after editing; [deploy-agent.md](deploy-agent.md#4-enroll)). Triage jobs (`triage.run`, in the `short` pool) wait in the queue until an agent
   that accepts them, at version 0.9.0 or later, claims them.
 - For the label trigger, create a label named `coding:triage` in the Linear workspace (a
   workspace label, or one on each team that should use it). A `ralph:triage` label, its name
@@ -821,8 +821,9 @@ any agent that accepts `coding`. Lanes of an epic in repositories pinned to diff
 each run on theirs; the run's agent shown on its page is the main lane's. A lane's worktree
 cleanup goes only to its sticky agent, which holds the worktree.
 Triage jobs run in the `short` pool on agents that accept `query` tasks; like reviews, they may
-take every slot by default, so lower the pool's limit to keep slots free for other work. Agents
-under pm2 update themselves to the version chosen on **Settings › Agent defaults**
+take every slot by default. Pool limits belong to the agent machine's local config; until they
+move there, every agent runs with the defaults ([deploy-agent.md](deploy-agent.md#central-config)).
+Agents under pm2 update themselves to the version chosen on **Fleet › Version policy**
 ([deploy-agent.md](deploy-agent.md#self-update-pm2)).
 
 ## Troubleshooting
