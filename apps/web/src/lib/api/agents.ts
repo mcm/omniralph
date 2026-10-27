@@ -1,6 +1,6 @@
 import { AgentHostReport, AgentUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
 import { z } from "zod";
-import type { AuditEventName } from "@/lib/agents/display";
+import { AUDIT_EVENTS } from "@/lib/agents/display";
 import type { AgentRow } from "@/lib/agents/rows";
 import { AGENT_STATUS_KINDS } from "@/lib/fleet/status";
 import { organizationRefSchema, repositoryRefSchema, RUN_KINDS, workItemRefSchema } from "./runs";
@@ -153,16 +153,6 @@ export const JOB_STATUSES = [
 ] as const;
 const jobStatus = z.enum(JOB_STATUSES);
 
-const AUDIT_EVENTS = [
-  "enroll",
-  "token_refresh",
-  "refresh_reuse",
-  "revoke",
-  "delete",
-  "credential_issued",
-  "result_submitted",
-  "auth_failed",
-] as const satisfies readonly AuditEventName[];
 
 /** A `agent_audit` row. */
 export const auditRowSchema = z.object({
@@ -170,6 +160,8 @@ export const auditRowSchema = z.object({
   event: z.enum(AUDIT_EVENTS),
   ip: z.string().nullable(),
   detail: z.record(z.string(), z.unknown()),
+  /** The name (else email) of the user who revoked or removed the agent; null otherwise. */
+  actor: z.string().nullable(),
   createdAt: isoDate,
 });
 export type AuditRow = z.infer<typeof auditRowSchema>;

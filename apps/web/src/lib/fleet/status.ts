@@ -5,6 +5,8 @@
  * never from a client clock.
  */
 
+import type { AuditEventName } from "@/lib/agents/display";
+
 /** Fleet's tones (Design rule 15): mint for running, coral for trouble, neutral otherwise. */
 export type FleetTone = "run" | "fail" | "neutral";
 
@@ -287,4 +289,36 @@ export function securityLine(
     label: `Token refreshed ${relativeAgo(security.lastTokenRefreshAt, now)} · no reuse alerts`,
     tone: "neutral",
   };
+}
+
+/** An audit event as the audit log shows it: what happened, in a sentence. */
+export interface AuditEventInput {
+  event: AuditEventName;
+  /** Who revoked or removed the agent (their name, else email); null when unknown. */
+  actor: string | null;
+}
+
+/**
+ * The audit log's sentence for an event (Design rule 4): "Enrolled", "Refreshed its token",
+ * "Revoked by Steve McMaster", … never the raw event name.
+ */
+export function auditEventLabel({ event, actor }: AuditEventInput): string {
+  switch (event) {
+    case "enroll":
+      return "Enrolled";
+    case "token_refresh":
+      return "Refreshed its token";
+    case "refresh_reuse":
+      return "Token reuse detected; agent revoked";
+    case "revoke":
+      return actor ? `Revoked by ${actor}` : "Revoked";
+    case "delete":
+      return actor ? `Removed by ${actor}` : "Removed";
+    case "credential_issued":
+      return "Issued a git credential";
+    case "result_submitted":
+      return "Submitted a result";
+    case "auth_failed":
+      return "Failed to authenticate";
+  }
 }

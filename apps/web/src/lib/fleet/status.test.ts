@@ -1,8 +1,11 @@
+import { agentAuditEvent } from "@omniralph/db";
 import { describe, expect, it } from "vitest";
+import { AUDIT_EVENTS } from "@/lib/agents/display";
 import {
   acceptedKindsSummary,
   agentStatus,
   agentStatusLine,
+  auditEventLabel,
   compactSince,
   pinBadges,
   relativeAgo,
@@ -272,5 +275,39 @@ describe("securityLine", () => {
       label: "Never connected",
       tone: "neutral",
     });
+  });
+});
+
+describe("auditEventLabel", () => {
+  it("lists every agent_audit_event value", () => {
+    expect([...AUDIT_EVENTS].sort()).toEqual([...agentAuditEvent.enumValues].sort());
+  });
+
+  it("says what happened, in a sentence, for every event", () => {
+    const labels = Object.fromEntries(
+      agentAuditEvent.enumValues.map((event) => [
+        event,
+        auditEventLabel({ event, actor: "Steve McMaster" }),
+      ]),
+    );
+    expect(labels).toEqual({
+      enroll: "Enrolled",
+      token_refresh: "Refreshed its token",
+      refresh_reuse: "Token reuse detected; agent revoked",
+      revoke: "Revoked by Steve McMaster",
+      delete: "Removed by Steve McMaster",
+      credential_issued: "Issued a git credential",
+      result_submitted: "Submitted a result",
+      auth_failed: "Failed to authenticate",
+    });
+    for (const [event, label] of Object.entries(labels)) {
+      expect(label).not.toContain(event);
+      expect(label).not.toMatch(/_/);
+    }
+  });
+
+  it("leaves out who revoked or removed the agent when nobody is known", () => {
+    expect(auditEventLabel({ event: "revoke", actor: null })).toBe("Revoked");
+    expect(auditEventLabel({ event: "delete", actor: null })).toBe("Removed");
   });
 });

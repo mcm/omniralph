@@ -22,6 +22,11 @@ export interface ConfirmDialogProps {
   destructive?: boolean;
   /** Text the user must type exactly before confirm enables (e.g. the repository name). */
   typedConfirmation?: string;
+  /**
+   * What confirming does, ending the typed confirmation's prompt "Type {name} to …." (e.g.
+   * "revoke it"). Defaults to "Type {name} to confirm".
+   */
+  typedConfirmationAction?: string;
   /** Called once when the user confirms; the dialog then closes. */
   onConfirm: () => void;
   /** An optional element that opens the dialog. */
@@ -41,6 +46,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   destructive = false,
   typedConfirmation,
+  typedConfirmationAction,
   onConfirm,
   trigger,
 }: ConfirmDialogProps) {
@@ -100,7 +106,8 @@ export function ConfirmDialog({
             {typedConfirmation !== undefined ? (
               <div className="or-dialog__typed">
                 <label htmlFor={inputId} className="or-dialog__typed-label">
-                  Type <span className="or-mono">{typedConfirmation}</span> to confirm
+                  Type <span className="or-mono">{typedConfirmation}</span> to{" "}
+                  {typedConfirmationAction ? `${typedConfirmationAction}.` : "confirm"}
                 </label>
                 <input
                   ref={inputRef}

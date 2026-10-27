@@ -97,6 +97,19 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).toHaveBeenCalledTimes(2);
   });
 
+  it("ends the typed confirmation's prompt with what confirming does", async () => {
+    const user = userEvent.setup();
+    render(
+      <Subject
+        onConfirm={vi.fn()}
+        typedConfirmation="coder-1"
+        typedConfirmationAction="revoke it"
+      />,
+    );
+    await openDialog(user);
+    expect(screen.getByRole("textbox", { name: "Type coder-1 to revoke it." })).toBeTruthy();
+  });
+
   it("keeps confirm disabled until the typed text matches exactly", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

@@ -265,6 +265,7 @@ export async function loadAgentDetail(
       event: entry.event,
       ip: entry.ip,
       detail: entry.detail,
+      actor: entry.actorName,
       createdAt: entry.createdAt.toISOString(),
     })),
     pinSyncJobs: pinSyncJobs.map((job) => ({

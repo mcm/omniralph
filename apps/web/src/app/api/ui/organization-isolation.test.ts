@@ -1727,7 +1727,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         body: { version: "9.9.9" },
       }),
       await call(agentUpdate.POST, { method: "POST", params: theirs }),
-      await call(agentInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
       // The other's agent, the other's tool, or both.
       ...(await Promise.all(
         [
@@ -1742,10 +1741,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           }),
         ),
       )),
+    ];
+    for (const response of refused) expect(response.status).toBe(400);
+    // Fleet's ⋯ actions check the agent's own organization: not a member there, not found.
+    const notFound = [
+      await call(agentInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
       await call(agentRevoke.POST, { method: "POST", params: theirs }),
       await call(agentDetail.DELETE, { method: "DELETE", params: theirs }),
     ];
-    for (const response of refused) expect(response.status).toBe(400);
+    for (const response of notFound) expect(response.status).toBe(404);
 
     const other = (await getAgentOverview(db, b.orgId, b.agentId))!;
     expect(other).toMatchObject({

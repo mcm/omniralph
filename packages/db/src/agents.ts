@@ -30,6 +30,7 @@ import {
   ralphStories,
   repositories,
   scmConnections,
+  users,
 } from "./schema.js";
 
 type AgentRow = typeof agents.$inferSelect;
@@ -521,18 +522,27 @@ export async function markAgentDeleted(
   return rows.length > 0;
 }
 
+/** An audit event with the name (else email) of the user who revoked or deleted the agent. */
+export interface AgentAuditListEntry extends AgentAuditEntry {
+  actorName: string | null;
+}
+
 /** An agent's most recent audit events, newest first. */
 export async function listRecentAgentAudit(
   db: Database,
   agentId: string,
   limit = 50,
-): Promise<AgentAuditEntry[]> {
-  return db
-    .select()
+): Promise<AgentAuditListEntry[]> {
+  // A revoke or delete names the user who did it; their name, while they still exist.
+  const actorId = sql<string>`coalesce(${agentAudit.detail}->>'revokedBy', ${agentAudit.detail}->>'deletedBy')`;
+  const rows = await db
+    .select({ entry: agentAudit, actorName: sql<string | null>`coalesce(${users.name}, ${users.email})` })
     .from(agentAudit)
+    .leftJoin(users, eq(users.id, actorId))
     .where(eq(agentAudit.agentId, agentId))
     .orderBy(desc(agentAudit.createdAt), desc(agentAudit.id))
     .limit(limit);
+  return rows.map(({ entry, actorName }) => ({ ...entry, actorName }));
 }
 
 /** An `install` job targeted at an agent, for its detail page. */
