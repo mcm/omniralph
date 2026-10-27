@@ -127,6 +127,35 @@ describe("shell.css", () => {
     });
   });
 
+  describe("aside", () => {
+    it("draws the panel full height on the surface with a left border line", () => {
+      const aside = declarations(parseRules(topLevel), ".or-frame__aside");
+      expect(aside.background).toBe("var(--or-surf)");
+      expect(aside["border-left"]).toBe("1px solid var(--or-border)");
+      expect(aside.position).toBe("sticky");
+      expect(aside.height).toBe("100vh");
+      // A column of the frame, never an overlay.
+      expect(aside["z-index"]).toBeUndefined();
+      expect(declarations(parseRules(topLevel), ".or-frame--aside")).toEqual({});
+    });
+
+    it("is a 480 px column at 1200 px and wider", () => {
+      expect(declarations(media("(min-width: 1200px)"), ".or-frame--aside")).toEqual({
+        "grid-template-columns": "var(--or-side-w) minmax(0, 1fr) 480px",
+      });
+    });
+
+    it("is a 360 px column beside the rail from 769 to 1199 px", () => {
+      expect(declarations(media(RAIL), ".or-frame--aside")["grid-template-columns"]).toBe(
+        "var(--or-rail-w) minmax(0, 1fr) 360px",
+      );
+    });
+
+    it("is hidden at 768 px and narrower", () => {
+      expect(declarations(media(PHONE), ".or-frame__aside").display).toBe("none");
+    });
+  });
+
   describe("phone", () => {
     const phone = media(PHONE);
 

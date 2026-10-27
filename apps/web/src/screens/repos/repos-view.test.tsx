@@ -17,6 +17,11 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import {
+  expectAskRepo,
+  serveAskRepositories,
+  WithAskNewChat,
+} from "@/components/ask/ask-context-test-utils";
 import { ShowAdvancedProvider } from "@/components/show-advanced";
 import { queryKeys } from "@/lib/api/keys";
 import type { RepositoryDetail, RepositoryListItem } from "@/lib/api/repositories";
@@ -131,12 +136,15 @@ function renderRepos(
     user?: SessionUser;
     client?: QueryClient;
     live?: ReturnType<typeof fakeAbly>;
+    /** Renders New chat beside the screen, under one Ask context. */
+    askNewChat?: boolean;
   } = {},
 ) {
   nav.search = new URLSearchParams(options.search ?? "");
   const client = options.client ?? createTestQueryClient();
   const user = options.user ?? testUser;
-  const view = <ReposView repositoryId={options.repositoryId} />;
+  const repos = <ReposView repositoryId={options.repositoryId} />;
+  const view = options.askNewChat ? <WithAskNewChat>{repos}</WithAskNewChat> : repos;
   const utils = render(
     <CurrentUserProvider user={user}>
       <ShowAdvancedProvider initial={false}>
@@ -426,6 +434,16 @@ describe("the detail header", () => {
     [...menu.querySelectorAll(".or-menu__item, .or-menu__separator")].map((item) =>
       item.classList.contains("or-menu__separator") ? "—" : item.textContent!.trim(),
     );
+
+  it("makes the repo New chat's default (useAskContextRepository)", async () => {
+    serveAskRepositories([
+      { id: REPO_WEB, provider: "github", fullPath: "acme/web" },
+      { id: REPO_PORTAL, provider: "gitlab", fullPath: "managed-services/customer-portal" },
+    ]);
+    renderRepos({ repositoryId: REPO_PORTAL, askNewChat: true });
+    await loadedDetail();
+    await expectAskRepo("managed-services/customer-portal");
+  });
 
   it("shows the repo's full path and its default branch, without the organization in one organization", async () => {
     renderRepos({ repositoryId: REPO_PORTAL });

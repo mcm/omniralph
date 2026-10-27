@@ -80,7 +80,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Analytics and Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Ask, Analytics and Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -92,6 +92,7 @@ describe("AppShell", () => {
       ["Backlog", "/backlog"],
       ["Repos", "/repos"],
       ["Fleet", "/fleet"],
+      ["Ask", "/ask"],
       ["Analytics", "/analytics"],
       ["Settings", "/settings"],
     ]);
@@ -109,6 +110,8 @@ describe("AppShell", () => {
     ["/settings", "Settings"],
     ["/settings/advanced/routing", "Settings"],
     ["/settings/routing", "Settings"],
+    ["/ask", "Ask"],
+    ["/ask/abc", "Ask"],
   ])("marks the entry for %s as the current page: %s", (pathname, label) => {
     renderShell(pathname);
     expect(current(sidebar())).toEqual([label]);
@@ -134,13 +137,13 @@ describe("AppShell", () => {
     expect(current(drawer)).toEqual(["Analytics"]);
   });
 
-  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Fleet, Analytics and Settings in the drawer", async () => {
+  it("puts Inbox, Runs, Backlog and Ask in the tab bar and Repos, Fleet, Analytics and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Inbox", "Runs", "Backlog"]);
+    ).toEqual(["Inbox", "Runs", "Backlog", "Ask"]);
     const { drawer } = await openDrawer();
     const entries = within(drawer)
       .getAllByRole("link")

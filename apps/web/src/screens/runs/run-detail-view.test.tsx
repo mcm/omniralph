@@ -17,6 +17,11 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import {
+  expectAskRepo,
+  serveAskRepositories,
+  WithAskNewChat,
+} from "@/components/ask/ask-context-test-utils";
 import { useRunDetailOverlay } from "@/components/runs/run-detail-overlay";
 import {
   attempt,
@@ -146,12 +151,18 @@ function renderRun(
     live?: ReturnType<typeof fakeAbly>;
     menuItems?: RunMenuExtension;
     rail?: boolean;
+    /** Renders New chat beside the screen, under one Ask context. */
+    askNewChat?: boolean;
   } = {},
 ) {
   nav.search = new URLSearchParams(options.search ?? "");
   const client = options.client ?? createTestQueryClient();
   const view = () =>
-    options.rail === false ? (
+    options.askNewChat ? (
+      <WithAskNewChat>
+        <RunDetailView runId={RUN_ID} menuItems={options.menuItems} />
+      </WithAskNewChat>
+    ) : options.rail === false ? (
       <RunDetailView runId={RUN_ID} menuItems={options.menuItems} />
     ) : (
       <RunsView
@@ -301,6 +312,16 @@ describe("the run detail", () => {
     });
     navigate("kind=epic&step=1");
     expect(selected()?.textContent).toContain("Story 1");
+  });
+
+  it("makes the run's repo New chat's default (useAskContextRepository)", async () => {
+    serveAskRepositories([
+      { id: "repo-0", provider: "github", fullPath: "acme/web" },
+      { id: "repo-1", provider: "gitlab", fullPath: "acme/portal" },
+    ]);
+    renderRun({ askNewChat: true });
+    await screen.findByRole("heading", { level: 2, name: detail.title });
+    await expectAskRepo("acme/portal");
   });
 
   it("lists the details in a collapsed section", async () => {

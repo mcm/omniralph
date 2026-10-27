@@ -1,4 +1,5 @@
 import type { TablerIcon } from "@tabler/icons-react";
+import type { MouseEvent } from "react";
 
 /**
  * A live mark on a nav entry: a count or a dot in its tone. A count is the accent pill
@@ -22,6 +23,14 @@ export interface NavItem {
   /** Further path prefixes the entry is active for (e.g. `/reviews` for Runs). */
   activeFor?: readonly string[];
   indicator?: NavIndicator;
+  /**
+   * Called instead of navigating when the entry is clicked above 768 px (the sidebar and the
+   * rail; e.g. Ask opens its panel). At phone widths, and for modified clicks, the link
+   * navigates to `href` as usual.
+   */
+  onSelect?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  /** For an entry with `onSelect` that opens something: whether it's open (`aria-expanded`). */
+  expanded?: boolean;
 }
 
 function matchesPrefix(path: string, prefix: string): boolean {

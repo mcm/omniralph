@@ -8,6 +8,11 @@ import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  expectAskRepo,
+  serveAskRepositories,
+  WithAskNewChat,
+} from "@/components/ask/ask-context-test-utils";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
 import { changeEvent, fakeAbly, fakeToken } from "@/components/live/live-test-utils";
@@ -206,12 +211,14 @@ function renderBacklog(
     client?: QueryClient;
     live?: ReturnType<typeof fakeAbly>;
     renderShareLink?: (item: WorkItemDetail, close: () => void) => React.ReactNode;
+    /** Renders New chat beside the screen, under one Ask context. */
+    askNewChat?: boolean;
   } = {},
 ) {
   nav.search = new URLSearchParams(options.search ?? "");
   const client = options.client ?? createTestQueryClient();
   const tree = () => {
-    const content = (
+    const screenContent = (
       <>
         <BacklogView
           workItemId={options.workItemId ?? "linear-issue-412"}
@@ -219,6 +226,11 @@ function renderBacklog(
         />
         <Observers />
       </>
+    );
+    const content = options.askNewChat ? (
+      <WithAskNewChat>{screenContent}</WithAskNewChat>
+    ) : (
+      screenContent
     );
     return (
       <CurrentUserProvider user={options.user ?? testUser}>
@@ -363,6 +375,16 @@ describe("the bar", () => {
     expect(wide).toMatch(/\.or-backlog-detail__bar\s*\{[^}]*display:\s*flex/);
     expect(wide).not.toMatch(/(?:^|[\s;{])order:/);
     expect(read("work-item-detail-view.tsx")).toMatch(/import\s+"\.\/work-item-detail\.css";/);
+  });
+
+  it("makes the item's repo New chat's default (useAskContextRepository)", async () => {
+    serveAskRepositories([
+      { id: REPO_WEB, provider: "github", fullPath: "acme/web" },
+      { id: REPO_PORTAL, provider: "gitlab", fullPath: "acme/portal" },
+    ]);
+    renderBacklog({ askNewChat: true });
+    await loaded();
+    await expectAskRepo("acme/portal");
   });
 
   it("says when the item doesn't exist", async () => {
