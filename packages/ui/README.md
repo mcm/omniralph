@@ -196,6 +196,10 @@ truncated with an ellipsis and keeps the full text in `title`.
   `MetaBadge` (optional decorative Tabler icon + text, optional `mono`). Icons that carry
   meaning are `role="img"` named after the kind ("Organization", "Branch", "Merge
   request", "Pull request", "Agent"), so a badge reads e.g. "GitLab acme/api".
+- `FileBadge` (`path`, optional `startLine`/`endLine`, optional `href` to the file on the
+  code host): decorative file icon + the file name in mono; the full path and lines
+  (`fileBadgeLabel`, e.g. "src/app/page.tsx · lines 12–20") are its tooltip and what it
+  reads as.
 - `SizeBadge` (`XS` | `S` | `M` | `L` | `XL`, `T_SHIRT_SIZES`): the mono letters, named and
   tooltipped "Size S", "Size XL" etc.
 - `RefBadge`: the shared badge shape, for screen epics that need another kind.

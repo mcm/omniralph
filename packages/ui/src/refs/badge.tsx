@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 import { useLinkComponent } from "../provider/index.js";
 
 export interface BadgeLinkProps {
@@ -9,7 +9,8 @@ export interface BadgeLinkProps {
   className?: string;
 }
 
-interface RefBadgeProps extends BadgeLinkProps {
+interface RefBadgeProps
+  extends BadgeLinkProps, Omit<HTMLAttributes<HTMLElement>, "title" | "className"> {
   /** Modifier for the badge kind, e.g. `repo` → `.or-ref--repo`. */
   kind: string;
   /** The leading icon or mark. */
@@ -18,8 +19,15 @@ interface RefBadgeProps extends BadgeLinkProps {
   text: string;
   mono?: boolean;
   strong?: boolean;
+  /**
+   * What assistive tech reads in place of `text` (and the icon), when the visible text is
+   * only part of it (e.g. a file's name for its full path).
+   */
+  srText?: string;
   /** A tooltip for the whole badge (the text keeps its own `title`). */
   title?: string;
+  /** Lets a `Tooltip` wrap the badge. */
+  ref?: Ref<HTMLElement>;
 }
 
 /**
@@ -32,9 +40,12 @@ export function RefBadge({
   text,
   mono = false,
   strong = false,
+  srText,
   title,
   href,
   className,
+  ref,
+  ...dom
 }: RefBadgeProps) {
   const LinkComponent = useLinkComponent();
   const classes = [
@@ -46,7 +57,7 @@ export function RefBadge({
   ]
     .filter(Boolean)
     .join(" ");
-  const content = (
+  const visible = (
     <>
       {icon}
       {/* Whitespace-only text is dropped in the flex row but separates the names. */}
@@ -56,15 +67,32 @@ export function RefBadge({
       </span>
     </>
   );
+  const content =
+    srText === undefined ? (
+      visible
+    ) : (
+      <>
+        <span className="or-ref__visible" aria-hidden="true">
+          {visible}
+        </span>
+        <span className="or-sr-only">{srText}</span>
+      </>
+    );
   if (href !== undefined) {
     return (
-      <LinkComponent href={href} className={classes} title={title}>
+      <LinkComponent
+        {...dom}
+        ref={ref as Ref<HTMLAnchorElement>}
+        href={href}
+        className={classes}
+        title={title}
+      >
         {content}
       </LinkComponent>
     );
   }
   return (
-    <span className={classes} title={title}>
+    <span {...dom} ref={ref as Ref<HTMLSpanElement>} className={classes} title={title}>
       {content}
     </span>
   );

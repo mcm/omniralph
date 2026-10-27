@@ -1,0 +1,65 @@
+/* Ask's messages: the member's bubble, Om's answer and the "Om is reading" line. Only `--or-` tokens. */
+.or-ask-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.or-ask-user__bubble {
+  max-width: 84%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--or-radius-lg);
+  background: var(--or-sel);
+  color: var(--or-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-ask-om {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-ask-om__who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-ask-om__glyph {
+  flex: none;
+}
+
+.or-ask-om__meta {
+  color: var(--or-ter);
+  font-weight: 500;
+  white-space: pre;
+}
+
+.or-ask-om__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.or-ask-om__status {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-ask-om__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.or-ask-activity {
+  margin: 0;
+}
