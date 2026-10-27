@@ -2,6 +2,7 @@
 
 import {
   IconBuilding,
+  IconFile,
   IconGitBranch,
   IconGitMerge,
   IconServer,
@@ -204,6 +205,56 @@ export function SizeBadge({ size, className }: SizeBadgeProps) {
       >
         {size}
       </span>
+    </Tooltip>
+  );
+}
+
+export interface FileBadgeProps extends BadgeLinkProps {
+  /** The file's path in its repo, e.g. `src/app/page.tsx`. */
+  path: string;
+  /** The first and last line cited, when the reference names lines. */
+  startLine?: number | null;
+  endLine?: number | null;
+}
+
+/** The last segment of a path: what a file badge shows. */
+function fileName(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1) || path;
+}
+
+/**
+ * A file's full path and lines, as its badge's tooltip and accessible name:
+ * "src/app/page.tsx · lines 12–20", "src/app/page.tsx · line 12", "src/app/page.tsx".
+ */
+export function fileBadgeLabel(
+  path: string,
+  startLine?: number | null,
+  endLine?: number | null,
+): string {
+  if (startLine == null) return path;
+  if (endLine == null || endLine === startLine) return `${path} · line ${startLine}`;
+  return `${path} · lines ${startLine}–${endLine}`;
+}
+
+/**
+ * A file in a repo: file icon + its name in mono. The full path and lines are its tooltip
+ * and what assistive tech reads; with `href` it links to the file on the code host.
+ */
+export function FileBadge({ path, startLine, endLine, ...rest }: FileBadgeProps) {
+  const label = fileBadgeLabel(path, startLine, endLine);
+  return (
+    <Tooltip content={label}>
+      <RefBadge
+        {...rest}
+        kind="file"
+        mono
+        icon={
+          <IconFile className="or-ref__icon" size={ICON_SIZE} stroke={1.75} aria-hidden="true" />
+        }
+        text={fileName(path)}
+        srText={label}
+      />
     </Tooltip>
   );
 }

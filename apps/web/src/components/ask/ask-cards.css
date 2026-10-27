@@ -1,0 +1,76 @@
+/* Ask's cards: a drafted request, a Linear issue draft, any other card. Only `--or-` tokens. */
+.or-ask-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-ask-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.or-ask-card__card .or-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.or-ask-card__question {
+  margin: 0;
+  color: var(--or-text);
+}
+
+.or-ask-card__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.or-ask-card__fact {
+  display: contents;
+}
+
+.or-ask-card__fact dt {
+  color: var(--or-sec);
+}
+
+.or-ask-card__fact dd {
+  margin: 0;
+  color: var(--or-text);
+}
+
+.or-ask-card__preview {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.or-ask-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-ask-card__outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-text);
+}
+
+.or-ask-card__outcome--quiet {
+  color: var(--or-ter);
+}
+
+.or-ask-card__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 13px;
+}

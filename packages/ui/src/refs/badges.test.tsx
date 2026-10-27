@@ -8,6 +8,8 @@ import {
   AgentBadge,
   BranchBadge,
   ChangeBadge,
+  FileBadge,
+  fileBadgeLabel,
   IssueBadge,
   MetaBadge,
   OrgBadge,
@@ -234,5 +236,63 @@ describe("SizeBadge", () => {
     render(<SizeBadge size="M" />);
     await user.hover(screen.getByRole("img", { name: "Size M" }));
     expect((await screen.findByRole("tooltip")).textContent).toBe("Size M");
+  });
+});
+
+describe("FileBadge", () => {
+  it("shows the file name in mono after a decorative file icon", () => {
+    const { container } = render(<FileBadge path="src/app/page.tsx" startLine={12} endLine={20} />);
+    const badge = badgeOf(container);
+    expect(badge.tagName).toBe("SPAN");
+    expect(badge.className).toMatch(/^or-ref or-ref--file/);
+    const text = badge.querySelector(".or-ref__text")!;
+    expect(text.textContent).toBe("page.tsx");
+    expect(text.className).toContain("or-mono");
+    const icon = badge.querySelector("svg")!;
+    expect(icon.getAttribute("class")).toContain("tabler-icon-file");
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("reads the full path and lines", () => {
+    const { container, rerender } = render(
+      <FileBadge path="src/app/page.tsx" startLine={12} endLine={20} />,
+    );
+    expect(accessibleText(badgeOf(container))).toBe("src/app/page.tsx · lines 12–20");
+    rerender(<FileBadge path="src/app/page.tsx" startLine={7} endLine={7} />);
+    expect(accessibleText(badgeOf(container))).toBe("src/app/page.tsx · line 7");
+    rerender(<FileBadge path="README.md" />);
+    expect(accessibleText(badgeOf(container))).toBe("README.md");
+  });
+
+  it("labels paths and lines", () => {
+    expect(fileBadgeLabel("a/b.ts", 3, 9)).toBe("a/b.ts · lines 3–9");
+    expect(fileBadgeLabel("a/b.ts", 3, null)).toBe("a/b.ts · line 3");
+    expect(fileBadgeLabel("a/b.ts", null, null)).toBe("a/b.ts");
+  });
+
+  it("shows the path and lines as a tooltip on hover", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<FileBadge path="lib/x/y.ts" startLine={1} endLine={4} />);
+    await user.hover(badgeOf(container));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("lib/x/y.ts · lines 1–4");
+  });
+
+  it("links through the UiProvider link component with href, named by its path", async () => {
+    function RouterLink(props: LinkProps) {
+      return <a data-router="yes" {...props} />;
+    }
+    const href = "https://github.com/acme/web/blob/main/src/app/page.tsx#L12-L20";
+    render(
+      <UiProvider linkComponent={RouterLink}>
+        <FileBadge path="src/app/page.tsx" startLine={12} endLine={20} href={href} />
+      </UiProvider>,
+    );
+    const link = screen.getByRole("link", { name: "src/app/page.tsx · lines 12–20" });
+    expect(link.getAttribute("href")).toBe(href);
+    expect(link.getAttribute("data-router")).toBe("yes");
+    expect(link.className).toContain("or-ref--link");
+    const user = userEvent.setup();
+    await user.hover(link);
+    expect((await screen.findByRole("tooltip")).textContent).toBe("src/app/page.tsx · lines 12–20");
   });
 });

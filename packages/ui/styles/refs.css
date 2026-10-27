@@ -91,3 +91,11 @@
   vertical-align: middle;
   cursor: default;
 }
+
+/* A badge whose visible text is only part of its name (FileBadge): the row stays one line. */
+.or-ref__visible {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
