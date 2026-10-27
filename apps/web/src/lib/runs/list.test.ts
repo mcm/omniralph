@@ -1,7 +1,15 @@
 import * as db from "@omniralph/db";
 import { describe, expect, it } from "vitest";
 import { RUN_KINDS, RUN_ORIGINS, RUN_STATUSES } from "@/lib/api/runs";
-import { decodeRunCursor, encodeRunCursor, runListQuerySchema, runListSearch } from "./list";
+import {
+  ASK_RUN_TITLE_MAX_LENGTH,
+  decodeRunCursor,
+  encodeRunCursor,
+  RUN_TITLE_MAX_LENGTH,
+  runListQuerySchema,
+  runListSearch,
+  runRow,
+} from "./list";
 
 describe("run list values", () => {
   it("copies the read model's kinds, statuses and origins", () => {
@@ -62,5 +70,52 @@ describe("runListQuerySchema", () => {
     for (const search of ["kind=coding", "status=pending", "limit=0", "limit=1.5", "agent=x"]) {
       expect(parse(search).success).toBe(false);
     }
+  });
+});
+
+describe("runRow titles", () => {
+  const organization = { id: "org", name: "Acme", role: "member" as const };
+  const entry = (kind: db.RunKind, title: string | null): db.RunListEntry => ({
+    id: "6f1c1c1e-3c2b-4c4e-9a52-0f1d7c1e2a3b",
+    kind,
+    organizationId: "org",
+    status: "completed",
+    origin: "chat",
+    repositoryId: null,
+    agentId: null,
+    createdAt: new Date("2026-10-01T12:00:00Z"),
+    updatedAt: new Date("2026-10-01T12:00:00Z"),
+    createdAtKey: "2026-10-01T12:00:00.000000Z",
+    title,
+    workItem: null,
+    repository: null,
+    branch: null,
+    pullRequest: null,
+    agent: null,
+    progress: null,
+    tokens: { in: 0, out: 0 },
+    startedAt: null,
+    finishedAt: null,
+  });
+
+  it("titles an ask with its question, on one line of at most 120 characters", () => {
+    expect(runRow(entry("ask", "  How does\n  billing\tretry work?\n\n"), organization).title).toBe(
+      "How does billing retry work?",
+    );
+    const long = `Why ${"does the invoice job ".repeat(10)}fail?\nSecond line`;
+    const title = runRow(entry("ask", long), organization).title;
+    expect(ASK_RUN_TITLE_MAX_LENGTH).toBe(120);
+    expect(title).toHaveLength(120);
+    expect(title).not.toMatch(/\n/);
+    expect(title.endsWith("…")).toBe(true);
+    expect(title.startsWith("Why does the invoice job does")).toBe(true);
+  });
+
+  it("keeps longer titles for other runs, and names a run without one", () => {
+    const request = "Add retries ".repeat(30);
+    expect(runRow(entry("request", request), organization).title).toHaveLength(
+      RUN_TITLE_MAX_LENGTH,
+    );
+    expect(runRow(entry("ask", "   "), organization).title).toBe("Question");
   });
 });

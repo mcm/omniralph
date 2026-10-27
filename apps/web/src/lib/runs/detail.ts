@@ -5,6 +5,7 @@ import "server-only";
  */
 import {
   getRalphRunDetailFacts,
+  getRunChatThread,
   getReviewRunDetailFacts,
   listRunAttempts,
   loadRunListEntries,
@@ -15,7 +16,15 @@ import {
   type RunIndexEntry,
   type RunLaneEntry,
 } from "@omniralph/db";
-import type { RunAttempt, RunDetail, RunDetails, RunLane, RunRow, RunStep } from "@/lib/api/runs";
+import type {
+  RunAttempt,
+  RunChat,
+  RunDetail,
+  RunDetails,
+  RunLane,
+  RunRow,
+  RunStep,
+} from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { reviewTaskNames } from "@/lib/review/post";
@@ -326,15 +335,39 @@ export function attemptLabelBase(row: RunRow): AttemptLabelContext {
   };
 }
 
-/** The run's detail for a user who is `organization.role` in its organization. */
+/**
+ * The chat an ask run, or an epic or request started from a chat, came from. Only the member
+ * who started a web chat gets its Ask link: a web chat is private to them.
+ */
+export async function loadRunChat(
+  db: Database,
+  run: Pick<RunIndexEntry, "kind" | "id">,
+  viewerId: string,
+): Promise<RunChat | null> {
+  if (run.kind !== "ask" && run.kind !== "epic" && run.kind !== "request") return null;
+  const thread = await getRunChatThread(db, { kind: run.kind, id: run.id });
+  if (!thread) return null;
+  const own = thread.platform === "web" && thread.startedByUserId === viewerId;
+  return {
+    threadId: thread.threadId,
+    platform: thread.platform,
+    href: own ? `/ask/${thread.threadId}` : null,
+  };
+}
+
+/**
+ * The run's detail for the user `viewerId`, who is `organization.role` in its organization.
+ */
 export async function loadRunDetail(
   db: Database,
   run: RunIndexEntry,
   organization: ScopedOrganization,
+  viewerId: string,
 ): Promise<RunDetail | null> {
-  const [[entry], attempts] = await Promise.all([
+  const [[entry], attempts, chat] = await Promise.all([
     loadRunListEntries(db, [run]),
     listRunAttempts(db, run),
+    loadRunChat(db, run, viewerId),
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
@@ -407,5 +440,6 @@ export async function loadRunDetail(
         attempts: attemptViews,
       }),
     },
+    chat,
   };
 }

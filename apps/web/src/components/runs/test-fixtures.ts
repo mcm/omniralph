@@ -115,6 +115,7 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
       question,
       actions: { stop: true, retry: { run: false, storyIds: [], attemptIds: [] } },
     },
+    chat: null,
     ...overrides,
   };
   return detail;

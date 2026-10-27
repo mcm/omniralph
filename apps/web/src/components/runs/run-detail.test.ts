@@ -271,4 +271,33 @@ describe("runMenuItems", () => {
     });
     expect(labels(items)).toEqual(["View PRD", "Open in Linear", "Stop run (destructive)"]);
   });
+
+  it("opens the caller's own Ask chat the run came from, before the divider", () => {
+    const ask = {
+      ...runDetail(null, { kind: "ask", status: "running", workItem: null }),
+      chat: { threadId: "t1", platform: "web" as const, href: "/ask/t1" },
+    };
+    const items = runMenuItems(ask, {
+      ...handlers(),
+      leading: [{ label: "View PRD", onSelect: () => {} }],
+    });
+    expect(labels(items)).toEqual(["View PRD", "Open chat", "Stop run (destructive)"]);
+    const open = items[1] as Exclude<MenuItem, "separator">;
+    expect(open.href).toBe("/ask/t1");
+    expect(open.onSelect).toBeUndefined();
+  });
+
+  it("has no Open chat for another member's web chat or a Slack or Discord thread", () => {
+    for (const chat of [
+      { threadId: "t1", platform: "web" as const, href: null },
+      { threadId: "t2", platform: "slack" as const, href: null },
+      { threadId: "t3", platform: "discord" as const, href: null },
+    ]) {
+      const request = withActions(
+        { ...runDetail(null, { kind: "request", status: "failed" }), branch: "b", chat },
+        {},
+      );
+      expect(labels(runMenuItems(request, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+    }
+  });
 });

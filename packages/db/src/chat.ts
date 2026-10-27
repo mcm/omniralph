@@ -1708,3 +1708,41 @@ export async function listWebMessages(
     nextBefore: rows.length > limit && oldest ? oldest.id : null,
   };
 }
+
+// ── A run's chat ─────────────────────────────────────────────────────────────
+
+/** The chat thread a run came from: its ID, platform and (web chats) who started it. */
+export interface RunChatThread {
+  threadId: string;
+  platform: ChatPlatform;
+  /** The member who started a web chat; null for Slack and Discord threads. */
+  startedByUserId: string | null;
+}
+
+/**
+ * The chat thread an ask run (`chat_thread_runs.id`) or a chat-started Ralph run
+ * (`ralph_runs.chat_thread_id`) came from; null when the run has none.
+ */
+export async function getRunChatThread(
+  db: Database,
+  run: { kind: "ask" | "epic" | "request"; id: string },
+): Promise<RunChatThread | null> {
+  const threadId =
+    run.kind === "ask"
+      ? db
+          .select({ id: chatThreadRuns.chatThreadId })
+          .from(chatThreadRuns)
+          .where(eq(chatThreadRuns.id, run.id))
+      : db.select({ id: ralphRuns.chatThreadId }).from(ralphRuns).where(eq(ralphRuns.id, run.id));
+  const [row] = await db
+    .select({
+      threadId: chatThreads.id,
+      platform: chatConnections.platform,
+      startedByUserId: chatThreads.startedByUserId,
+    })
+    .from(chatThreads)
+    .innerJoin(chatConnections, eq(chatConnections.id, chatThreads.connectionId))
+    .where(inArray(chatThreads.id, threadId))
+    .limit(1);
+  return row ?? null;
+}

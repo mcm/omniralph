@@ -6,6 +6,8 @@ import {
   CANCELED_REVIEW_ERROR,
   connectRepository,
   closeDb,
+  createWebChatThread,
+  users,
   createReview,
   createReviewRun,
   createTriageRun,
@@ -581,6 +583,74 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
     expect((await detailPage(triage.id)).workItem).toMatchObject({ id: "linear-issue-triage" });
     expect((await detailPage(chat.id)).workItem).toBeNull();
+  });
+
+  it("links an ask run, and a request started from a chat, to the chat it came from", async () => {
+    const { request, ask, chat } = await runOfEachKind();
+    // Slack threads: the chat is named, with no link.
+    expect((await detailPage(ask.id)).chat).toMatchObject({ platform: "slack", href: null });
+    expect((await detailPage(chat.id)).chat).toMatchObject({ platform: "slack", href: null });
+    // A run that didn't come from a chat.
+    expect((await detailPage(request.id)).chat).toBeNull();
+
+    // A web chat Ada started, with an ask run and a request run.
+    await db
+      .insert(users)
+      .values([
+        { id: admin.id, email: "ada@acme.test" },
+        { id: member.id, email: "mo@acme.test" },
+      ])
+      .onConflictDoNothing();
+    const web = await createWebChatThread(db, {
+      organizationId: orgId,
+      userId: admin.id,
+      title: "Where is auth handled?",
+      repositoryId: repoA,
+      branch: "main",
+    });
+    const { job: webJob } = await insertJob(db, {
+      organizationId: orgId,
+      type: "chat.ask",
+      taskType: "query",
+      repositoryId: repoA,
+      payload: {
+        trigger: {
+          kind: "chat.request",
+          context: {
+            question: `Where is auth handled?\n\n${"Explain the session flow. ".repeat(8)}`,
+          },
+        },
+      },
+    });
+    const webAsk = (await mapThreadRun(db, {
+      organizationId: orgId,
+      chatThreadId: web.id,
+      jobId: webJob.id,
+    }))!;
+    const { run: webRequest } = await createRun(db, {
+      origin: "chat",
+      organizationId: orgId,
+      chatThreadId: web.id,
+      repositoryId: repoA,
+      branch: "omniralph/auth",
+      baseBranch: "main",
+    });
+
+    const own = { threadId: web.id, platform: "web", href: `/ask/${web.id}` };
+    const askDetail = await detailPage(webAsk.id);
+    expect(askDetail.chat).toEqual(own);
+    expect((await detailPage(webRequest.id)).chat).toEqual(own);
+    // Its title is the question, on one line of at most 120 characters.
+    expect(askDetail.title).toHaveLength(120);
+    expect(askDetail.title).toMatch(/^Where is auth handled\? Explain the session flow\. /);
+    expect(askDetail.title).not.toMatch(/\n/);
+    expect(askDetail.title.endsWith("…")).toBe(true);
+
+    // Another member sees the runs, and that they came from a web chat, with no link.
+    state.user = member;
+    const other = { threadId: web.id, platform: "web", href: null };
+    expect((await detailPage(webAsk.id)).chat).toEqual(other);
+    expect((await detailPage(webRequest.id)).chat).toEqual(other);
   });
 
   it("offers the organization's repositories as filter options, by full path", async () => {
