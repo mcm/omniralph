@@ -156,6 +156,10 @@
   text-align: start;
 }
 
+.or-inbox-empty__up-next:empty {
+  display: none;
+}
+
 /*
  * The selected row's inline decisions (Design board MobileInbox, rule 16): only at phone
  * width, on a line of their own under the row's title, lined up with it (8 px dot + gap).

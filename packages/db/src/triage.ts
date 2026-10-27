@@ -104,6 +104,26 @@ export async function getActiveTriageRun(
   return row ?? null;
 }
 
+/** Which of the organization's Linear issues (by ID) have an unfinished triage run, in one query. */
+export async function listActiveTriageIssueIds(
+  db: Executor,
+  organizationId: string,
+  linearIssueIds: readonly string[],
+): Promise<Set<string>> {
+  if (linearIssueIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ linearIssueId: triageRuns.linearIssueId })
+    .from(triageRuns)
+    .where(
+      and(
+        eq(triageRuns.organizationId, organizationId),
+        inArray(triageRuns.linearIssueId, [...new Set(linearIssueIds)]),
+        inArray(triageRuns.status, ACTIVE_TRIAGE_RUN_STATUSES),
+      ),
+    );
+  return new Set(rows.map((row) => row.linearIssueId));
+}
+
 /** The organization's triage runs of a Linear issue, newest first (at most `limit`, default 50). */
 export async function listIssueTriageRuns(
   db: Executor,

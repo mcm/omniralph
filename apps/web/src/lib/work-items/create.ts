@@ -206,6 +206,8 @@ export async function createWorkItem(
       // A new item in a state of neither readiness (e.g. Triage) shows in Needs refining.
       group: groupFor(item) ?? "refine",
       blocked: item.blocked,
+      blockers: item.blockedBy.map((blocker) => blocker.identifier),
+      triageRunning: triage === "started",
       source: item.project
         ? { kind: "project", id: item.project.id ?? item.project.name, name: item.project.name }
         : { kind: "team", id: item.team.id, name: item.team.key },

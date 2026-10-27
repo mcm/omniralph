@@ -267,6 +267,8 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
           size: null,
           group: "ready",
           blocked: false,
+          blockers: [],
+          triageRunning: false,
           source: { kind: "project", id: "project-portal", name: "Portal" },
         },
         triage: null,
@@ -319,7 +321,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
 
     it("starts triage with triageNow and records it", async () => {
       const result = await createWorkItem({ db }, input(repos.api!, { triageNow: true }));
-      expect(result).toMatchObject({ ok: true, triage: "started" });
+      expect(result).toMatchObject({ ok: true, triage: "started", item: { triageRunning: true } });
       const [issue] = [...acme.issues.values()];
       expect(issue!.labels).toContain(TRIAGE_LABEL);
       expect((await events(issue!.id)).map((event) => event.kind)).toEqual([

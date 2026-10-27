@@ -68,6 +68,20 @@ describe("IconButton", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("shows its tooltip in place of the label, still named by the label", async () => {
+    const user = userEvent.setup();
+    render(
+      <IconButton
+        label="Start epic SOC-412"
+        icon={IconRefresh}
+        tooltip="Starts when SOC-398 is done"
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Start epic SOC-412" });
+    await user.hover(button);
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Starts when SOC-398 is done");
+  });
+
   it("renders a link named by its label when href is given", () => {
     render(
       <IconButton label="Open pull request" icon={IconRefresh} href="https://example.com/pr/1" />,
