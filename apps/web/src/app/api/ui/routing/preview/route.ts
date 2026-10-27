@@ -21,7 +21,7 @@ export const POST = apiHandler(
     const linear = await routingLinearGateway(
       db,
       organizationId,
-      "Connect Linear in Integrations to preview where work items route.",
+      "Connect Linear to preview where work items route.",
     );
     const rules = await listRoutingRules(db, organizationId);
     return { results: await routeIssues({ db, organizationId, linear }, body.identifiers, rules) };

@@ -178,6 +178,8 @@ export interface IssueRun {
   id: string;
   /** How the run was routed; null when it has none (e.g. the repository was selected). */
   routedBy: string | null;
+  /** The repository it builds in; null before one was chosen. */
+  repository: Pick<Repository, "id" | "fullPath" | "provider"> | null;
 }
 
 /** The latest run (by creation) of each of `linearIssueIds` that has one, by issue ID. */
@@ -188,8 +190,16 @@ export async function listLatestIssueRuns(
 ): Promise<Map<string, IssueRun>> {
   if (linearIssueIds.length === 0) return new Map();
   const rows = await db
-    .select({ issueId: ralphRuns.linearIssueId, id: ralphRuns.id, routedBy: ralphRuns.routedBy })
+    .select({
+      issueId: ralphRuns.linearIssueId,
+      id: ralphRuns.id,
+      routedBy: ralphRuns.routedBy,
+      repositoryId: repositories.id,
+      fullPath: repositories.fullPath,
+      provider: repositories.provider,
+    })
     .from(ralphRuns)
+    .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
@@ -198,8 +208,11 @@ export async function listLatestIssueRuns(
     )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
   const latest = new Map<string, IssueRun>();
-  for (const { issueId, id, routedBy } of rows) {
-    if (issueId && !latest.has(issueId)) latest.set(issueId, { id, routedBy });
+  for (const { issueId, id, routedBy, repositoryId, fullPath, provider } of rows) {
+    if (!issueId || latest.has(issueId)) continue;
+    const repository =
+      repositoryId && fullPath && provider ? { id: repositoryId, fullPath, provider } : null;
+    latest.set(issueId, { id, routedBy, repository });
   }
   return latest;
 }

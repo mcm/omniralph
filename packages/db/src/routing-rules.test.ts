@@ -195,6 +195,7 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
       issueId: string,
       createdAt: string,
       by: string | null,
+      repositoryId?: string,
     ) => {
       const [row] = await db
         .insert(ralphRuns)
@@ -207,20 +208,31 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
           // Finished, so one issue can have several.
           status: "completed",
           routedBy: by,
+          repositoryId,
           createdAt: new Date(createdAt),
         })
         .returning();
       return row!.id;
     };
+    const {
+      ids: [web],
+    } = await repos(orgId, "acme/web");
     await run(orgId, "issue-1", "2026-10-01T00:00:00Z", "rule 1 (Team is ENG)");
-    const latest = await run(orgId, "issue-1", "2026-10-02T00:00:00Z", "your selection");
+    const latest = await run(orgId, "issue-1", "2026-10-02T00:00:00Z", "your selection", web);
     const unrouted = await run(orgId, "issue-2", "2026-10-01T00:00:00Z", null);
     await run(otherId, "issue-3", "2026-10-01T00:00:00Z", "rule 1 (Team is ENG)");
 
     expect(await listLatestIssueRuns(db, orgId, ["issue-1", "issue-2", "issue-3"])).toEqual(
       new Map([
-        ["issue-1", { id: latest, routedBy: "your selection" }],
-        ["issue-2", { id: unrouted, routedBy: null }],
+        [
+          "issue-1",
+          {
+            id: latest,
+            routedBy: "your selection",
+            repository: { id: web, fullPath: "acme/web", provider: "github" },
+          },
+        ],
+        ["issue-2", { id: unrouted, routedBy: null, repository: null }],
       ]),
     );
     expect(await listLatestIssueRuns(db, orgId, [])).toEqual(new Map());

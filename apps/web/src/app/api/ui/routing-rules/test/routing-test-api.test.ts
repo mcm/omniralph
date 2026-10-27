@@ -3,6 +3,7 @@ import {
   closeDb,
   connectRepository,
   createDb,
+  createRun,
   followUpSources,
   getRunBySession,
   jobs,
@@ -165,13 +166,40 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     expect(body).toEqual({
       issue: { identifier: "ENG-1", title: "UI" },
       outcome: "repository",
-      repository: { id: web, fullPath: "acme/web" },
+      repository: { id: web, fullPath: "acme/web", provider: "github" },
       matched: "rule",
       rule: { kind: "custom", number: 2, summary: "Labels contains any of frontend" },
       by: "rule 2 (Labels contains any of frontend)",
+      run: null,
     } satisfies RoutingTestResult);
     // The issue was loaded once.
     expect(linear.routingLoads).toHaveLength(1);
+  });
+
+  it("answers the work item's latest run and the repo it builds in", async () => {
+    const ui = linear.add({ identifier: "ENG-1", title: "UI", labels: ["Frontend"] });
+    const { run } = await createRun(state.db, {
+      organizationId: state.orgId,
+      linearIssueId: ui.id,
+      linearIdentifier: "ENG-1",
+      linearTitle: "UI",
+      linearUrl: null,
+      linearAgentSessionId: "session-run-answer",
+      kind: "single",
+      repositoryId: api,
+      routedBy: "your selection",
+      branch: "branch-run-answer",
+      baseBranch: "main",
+    });
+    const { body } = await test("ENG-1", [[web, labelsInclude("frontend")]]);
+    expect(body).toMatchObject({
+      repository: { id: web },
+      run: {
+        id: run.id,
+        routedBy: "your selection",
+        repository: { id: api, fullPath: "acme/api", provider: "github" },
+      },
+    });
   });
 
   it("routes by the saved rules when the body leaves them out", async () => {
@@ -196,10 +224,11 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     expect((await test("ENG-11", rules)).body).toEqual({
       issue: { identifier: "ENG-11", title: "Story" },
       outcome: "manual",
-      repository: { id: docs, fullPath: "acme/docs" },
+      repository: { id: docs, fullPath: "acme/docs", provider: "github" },
       matched: "default",
       rule: { kind: "default", number: 2 },
       by: "sub-issue of ENG-10 → rule 1 (Labels contains any of docs)",
+      run: null,
     } satisfies RoutingTestResult);
     expect((await test("OPS-1", rules)).body).toEqual({
       issue: { identifier: "OPS-1", title: "Infra" },
@@ -208,6 +237,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       matched: "default",
       rule: { kind: "default", number: 3 },
       by: null,
+      run: null,
     } satisfies RoutingTestResult);
   });
 
@@ -234,10 +264,11 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       expect((await test("ENG-1", [])).body).toEqual({
         issue: { identifier: "ENG-1", title: "API" },
         outcome: "repository",
-        repository: { id: api, fullPath: "acme/api" },
+        repository: { id: api, fullPath: "acme/api", provider: "github" },
         matched: "match",
         rule: null,
         by: "work item match (Team is ENG, label backend)",
+        run: null,
       } satisfies RoutingTestResult);
       // A rule that matches comes first.
       expect((await test("ENG-1", [[web, labelsInclude("backend")]])).body).toMatchObject({
@@ -319,6 +350,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
         matched: "match",
         rule: null,
         by: "work item matches of acme/api, acme/docs tie",
+        run: null,
       } satisfies RoutingTestResult);
     });
 
