@@ -32,10 +32,15 @@ export const REQUEST_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 export const START_REQUEST_DRAFT_ACTION = "request_draft_start";
 export const ADD_REQUEST_DRAFT_ACTION = "request_draft_add";
 export const DISMISS_REQUEST_DRAFT_ACTION = "request_draft_dismiss";
+/** Slack and Discord: the answers to "Triage it now?" after Add to backlog. */
+export const ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION = "request_draft_add_triage";
+export const ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION = "request_draft_add_no_triage";
 export const REQUEST_DRAFT_ACTIONS = [
   START_REQUEST_DRAFT_ACTION,
   ADD_REQUEST_DRAFT_ACTION,
   DISMISS_REQUEST_DRAFT_ACTION,
+  ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION,
+  ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION,
 ];
 
 /** Longest title and request a draft takes. */
@@ -47,6 +52,7 @@ export const ADDED_TO_BACKLOG_TEXT = "Added to the backlog";
 export const TRIAGING_TEXT = "Om is triaging it";
 export const NOT_NOW_TEXT = "Not now";
 export const DRAFT_EXPIRED_TEXT = "This draft expired";
+export const TRIAGE_QUESTION_TEXT = "Triage it now?";
 export const NOT_REQUESTER_TEXT = "Only the person who asked can do this.";
 
 /** What a draft's view depends on besides the draft. */
@@ -71,6 +77,7 @@ type Draft = Pick<
   | "triageNow"
   | "error"
   | "ralphRunId"
+  | "workItemTracker"
   | "workItemIdentifier"
   | "workItemUrl"
 >;
@@ -103,7 +110,7 @@ function outcomeOf(
           : ADDED_TO_BACKLOG_TEXT,
         run: null,
         workItem:
-          draft.workItemIdentifier && draft.workItemUrl
+          draft.workItemTracker === "linear" && draft.workItemIdentifier && draft.workItemUrl
             ? { tracker: "linear", identifier: draft.workItemIdentifier, url: draft.workItemUrl }
             : null,
       };
@@ -121,14 +128,34 @@ function outcomeOf(
 /**
  * What a draft's card shows in its current state: the buttons while it's pending (Add to
  * backlog only when the repo can take work items), the outcome after a choice, nothing
- * while a click runs. A pending draft past `expiresAt` shows as expired.
+ * while a click runs. A pending draft past `expiresAt` shows as expired. With `askTriage`
+ * (Slack and Discord, after Add to backlog), a pending draft asks "Triage it now?" instead.
  */
-export function requestDraftView(draft: Draft, context: RequestDraftContext): RequestDraftView {
+export function requestDraftView(
+  draft: Draft,
+  context: RequestDraftContext,
+  options: { askTriage?: boolean } = {},
+): RequestDraftView {
   const expired =
     draft.status === "expired" || (draft.status === "pending" && draft.expiresAt <= context.now);
   const status = expired ? "expired" : draft.status;
-  const actions: RequestDraftView["actions"] =
-    status === "pending"
+  const askTriage = status === "pending" && context.backlog && !!options.askTriage;
+  const actions: RequestDraftView["actions"] = askTriage
+    ? [
+        {
+          id: ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION,
+          label: "Triage now",
+          value: draft.id,
+          style: "solid",
+        },
+        {
+          id: ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION,
+          label: "Add without triage",
+          value: draft.id,
+          style: "outline",
+        },
+      ]
+    : status === "pending"
       ? [
           {
             id: START_REQUEST_DRAFT_ACTION,
@@ -155,6 +182,7 @@ export function requestDraftView(draft: Draft, context: RequestDraftContext): Re
     title: shownTitle(draft),
     repository: context.repository,
     triageChoice: context.platform === "web" ? "inline" : "follow_up",
+    question: askTriage ? TRIAGE_QUESTION_TEXT : null,
     actions,
     outcome: outcomeOf(draft, status, context.appUrl),
     error: status === "pending" ? draft.error : null,
@@ -165,6 +193,7 @@ export function requestDraftView(draft: Draft, context: RequestDraftContext): Re
 export function requestDraftCard(view: RequestDraftView): CardElement {
   const children: CardChild[] = [];
   if (view.error) children.push(CardText(view.error));
+  if (view.question) children.push(CardText(view.question));
   if (view.actions.length > 0) {
     children.push(
       Actions(view.actions.map((a) => Button({ id: a.id, label: a.label, value: a.value ?? "" }))),

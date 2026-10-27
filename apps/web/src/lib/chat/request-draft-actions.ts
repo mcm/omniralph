@@ -2,6 +2,7 @@ import "server-only";
 import {
   appendChatMessage,
   claimChatRequestDraft,
+  completeChatRequestDraftAdd,
   completeChatRequestDraftStart,
   dismissChatRequestDraft,
   expireChatRequestDraft,
@@ -15,6 +16,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import type { ActionEvent, Logger } from "chat";
+import { parseRequestDraftValue } from "@/lib/api/ask";
 import { getAppUrl } from "@/lib/app-url";
 import {
   startChatRequest,
@@ -23,11 +25,15 @@ import {
 } from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { runHref } from "@/lib/runs/links";
-import { codingOffMessage } from "@/lib/work-items/create";
+import { codingOffMessage, createWorkItem } from "@/lib/work-items/create";
+import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { chatPlaybookOf } from "./agent/read-tools";
 import type { ChatActor } from "./identity";
 import type { PlaybookLookup } from "./playbooks";
 import {
+  ADD_REQUEST_DRAFT_ACTION,
+  ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION,
+  ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION,
   DISMISS_REQUEST_DRAFT_ACTION,
   NOT_REQUESTER_TEXT,
   requestDraftCard,
@@ -39,7 +45,10 @@ import { recordWebChatChange } from "./web-adapter";
 
 /**
  * Clicks on a drafted request's card (`./request-draft`), on every platform: **Start
- * request** starts the request run of the thread, **Not now** dismisses the draft. Only the
+ * request** starts the request run of the thread, **Add to backlog** creates a work item
+ * through the Backlog's `createWorkItem` (triaged now or later: the web sends its Triage now
+ * choice with the click, Slack and Discord ask "Triage it now?" first), **Not now** dismisses
+ * the draft. Only the
  * member who asked can act, once, before the draft expires; the card then shows the outcome.
  * In a web chat, every status change publishes the chat's change.
  */
@@ -50,6 +59,7 @@ export const REQUEST_DRAFT_QUOTED_MESSAGES = 5;
 export const RUN_ACTIVE_TEXT =
   "A request is already running in this chat. Wait for it to finish, or tell Om what to change.";
 export const START_FAILED_TEXT = "Om couldn't start the request. Try again in a moment.";
+export const ADD_FAILED_TEXT = "Om couldn't add it to the backlog. Try again in a moment.";
 
 export interface RequestDraftActionDeps {
   db: Database;
@@ -59,6 +69,8 @@ export interface RequestDraftActionDeps {
   ralph?: (organizationId: string) => Promise<RalphDeps>;
   /** Looks up the playbooks chat runs (default: the organization's). */
   getPlaybook?: PlaybookLookup;
+  /** An organization's work item tracker, for Add to backlog (default: `getWorkItemTracker`). */
+  tracker?: (organizationId: string) => Promise<WorkItemTracker>;
   /** `APP_URL` (tests). */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
@@ -106,8 +118,9 @@ export async function handleRequestDraftAction(
   const logger = deps.logger ?? console;
   const now = deps.now?.() ?? new Date();
   const appUrl = getAppUrl(deps.env);
-  const draftId = event.value;
-  if (!draftId || !/^[0-9a-f-]{36}$/i.test(draftId)) return;
+  const parsed = event.value ? parseRequestDraftValue(event.value) : null;
+  if (!parsed) return;
+  const { draftId } = parsed;
   const draft = await getChatRequestDraft(db, draftId);
   if (!draft) return;
   const chatThread = await getChatThread(db, draft.threadId);
@@ -123,7 +136,7 @@ export async function handleRequestDraftAction(
     return;
   }
 
-  const show = async (current: ChatRequestDraft) => {
+  const show = async (current: ChatRequestDraft, options: { askTriage?: boolean } = {}) => {
     const context = await requestDraftContext(db, current, {
       platform: connection.platform,
       appUrl,
@@ -132,7 +145,7 @@ export async function handleRequestDraftAction(
     await event.adapter.editMessage(
       event.threadId,
       event.messageId,
-      requestDraftCard(requestDraftView(current, context)),
+      requestDraftCard(requestDraftView(current, context, options)),
     );
   };
   /** The draft's status changed: a web chat's views reload it. */
@@ -180,7 +193,101 @@ export async function handleRequestDraftAction(
 
   if (event.actionId === START_REQUEST_DRAFT_ACTION) {
     await startRequest(deps, { draft, chatThread, connection, actor, now, show, changed, record });
+    return;
   }
+
+  const triageNow =
+    event.actionId === ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION
+      ? true
+      : event.actionId === ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION
+        ? false
+        : event.actionId === ADD_REQUEST_DRAFT_ACTION
+          ? // The web's card sends its Triage now checkbox (on by default).
+            (parsed.triageNow ?? (connection.platform === "web" ? true : null))
+          : undefined;
+  if (triageNow === undefined) return;
+  if (triageNow === null) {
+    // Slack and Discord can't show a checkbox: the card asks first.
+    await show(draft, { askTriage: draft.status === "pending" });
+    return;
+  }
+  await addToBacklog(deps, { draft, actor, now, triageNow, show, changed, record });
+}
+
+/** The asker's name as the work item's Activity shows it. */
+const actorName = (actor: Extract<ChatActor, { kind: "member" }>) => actor.name ?? "Om in chat";
+
+async function addToBacklog(
+  deps: RequestDraftActionDeps,
+  input: {
+    draft: ChatRequestDraft;
+    actor: Extract<ChatActor, { kind: "member" }>;
+    now: Date;
+    triageNow: boolean;
+    show(draft: ChatRequestDraft): Promise<void>;
+    changed(): void;
+    record(content: string): Promise<unknown>;
+  },
+): Promise<void> {
+  const { db } = deps;
+  const logger = deps.logger ?? console;
+  const { draft, show, changed } = input;
+  const claimed = await claimChatRequestDraft(db, draft.id, "adding", input.now, {
+    triageNow: input.triageNow,
+  });
+  if (!claimed) {
+    // A click already running shows its outcome when it's done.
+    if (draft.status !== "starting" && draft.status !== "adding") await show(draft);
+    return;
+  }
+  changed();
+
+  let result: Awaited<ReturnType<typeof createWorkItem>>;
+  try {
+    result = await createWorkItem(
+      { db, ...(deps.tracker && { getTracker: deps.tracker }) },
+      {
+        organizationId: claimed.organizationId,
+        repositoryId: claimed.repositoryId,
+        title: claimed.title,
+        description: claimed.request,
+        triageNow: input.triageNow,
+        actor: { userId: input.actor.userId, name: actorName(input.actor) },
+        origin: "ask",
+      },
+    );
+  } catch (error) {
+    logger.error("Adding a drafted request to the backlog failed", { draftId: draft.id, error });
+    result = { ok: false, code: "tracker_failed", message: ADD_FAILED_TEXT };
+  }
+
+  if (!result.ok) {
+    const released = await releaseChatRequestDraft(db, claimed.id, result.message);
+    changed();
+    await show(released ?? claimed);
+    return;
+  }
+  const { item } = result;
+  const triaging = result.triage === "started";
+  const added = await completeChatRequestDraftAdd(db, claimed.id, {
+    tracker: item.tracker,
+    // The row's ID is the work item's URL ID (`{tracker}-{external ID}`).
+    externalId: item.id.slice(item.tracker.length + 1),
+    identifier: item.identifier,
+    url: item.url,
+    triageNow: triaging,
+  });
+  changed();
+  await show(added ?? claimed);
+  await input.record(
+    [
+      `Added the request "${claimed.title}" to the backlog as ${item.identifier} (${item.url}).`,
+      triaging ? "Om is triaging it." : null,
+      result.triage === "failed" ? result.triageError : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 async function startRequest(

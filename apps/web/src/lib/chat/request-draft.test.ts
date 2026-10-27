@@ -22,6 +22,8 @@ import {
   saveWorkItemMatch,
   upsertScmConnection,
   users,
+  workItemEvents,
+  workItemMatches,
   type ChatConnection,
   type ChatRequestDraft,
   type ChatThread,
@@ -38,7 +40,8 @@ import { MockLanguageModelV2, simulateReadableStream } from "ai/test";
 import type { ActionEvent, Adapter, CardElement, Logger, Message, Thread } from "chat";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RequestDraftView } from "@/lib/api/ask";
+import { parseRequestDraftValue, requestDraftAddValue, type RequestDraftView } from "@/lib/api/ask";
+import { fakeWorkItemTracker, type FakeWorkItemTracker } from "@/lib/testing/work-item-tracker";
 import type * as ChatStart from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
 import type { ChatConversationContext } from "./bot";
@@ -64,6 +67,8 @@ const { startChatRequest } = await import("@/lib/ralph/chat-start");
 
 const {
   ADD_REQUEST_DRAFT_ACTION,
+  ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION,
+  ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION,
   DISMISS_REQUEST_DRAFT_ACTION,
   NOT_REQUESTER_TEXT,
   REQUEST_DRAFT_TTL_MS,
@@ -108,6 +113,7 @@ const draftOf = (overrides: Partial<ChatRequestDraft> = {}) => ({
   triageNow: null,
   error: null,
   ralphRunId: null,
+  workItemTracker: null,
   workItemIdentifier: null,
   workItemUrl: null,
   ...overrides,
@@ -132,6 +138,7 @@ describe("requestDraftView", () => {
       title: "Retry webhooks on 5xx",
       repository,
       triageChoice: "follow_up",
+      question: null,
       actions: [
         { id: START_REQUEST_DRAFT_ACTION, label: "Start request", value: DRAFT_ID, style: "solid" },
         {
@@ -157,6 +164,40 @@ describe("requestDraftView", () => {
   it("asks about triage inline on the web, after the click elsewhere", () => {
     expect(requestDraftView(draftOf(), contextOf({ platform: "web" })).triageChoice).toBe("inline");
     expect(requestDraftView(draftOf(), contextOf()).triageChoice).toBe("follow_up");
+  });
+
+  it("asks Triage it now? on Slack and Discord after Add to backlog", () => {
+    const view = requestDraftView(draftOf(), contextOf(), { askTriage: true });
+    expect(view).toMatchObject({
+      status: "pending",
+      triageChoice: "follow_up",
+      question: "Triage it now?",
+      actions: [
+        {
+          id: ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION,
+          label: "Triage now",
+          value: DRAFT_ID,
+          style: "solid",
+        },
+        {
+          id: ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION,
+          label: "Add without triage",
+          value: DRAFT_ID,
+          style: "outline",
+        },
+      ],
+      outcome: null,
+    });
+    // Not once the repo can't take work items, nor for a draft that can't be acted on.
+    expect(
+      requestDraftView(draftOf(), contextOf({ backlog: false }), { askTriage: true }),
+    ).toMatchObject({
+      question: null,
+      actions: [{ label: "Start request" }, { label: "Not now" }],
+    });
+    expect(
+      requestDraftView(draftOf({ status: "dismissed" }), contextOf(), { askTriage: true }),
+    ).toMatchObject({ question: null, actions: [] });
   });
 
   it("keeps the buttons and shows why the last click didn't go through", () => {
@@ -187,6 +228,7 @@ describe("requestDraftView", () => {
   it("shows the work item once added, and that Om triages it when triaged now", () => {
     const added = draftOf({
       status: "added",
+      workItemTracker: "linear",
       workItemIdentifier: "ENG-42",
       workItemUrl: "https://linear.app/acme/issue/ENG-42",
     });
@@ -232,6 +274,23 @@ describe("requestDraftView", () => {
   });
 });
 
+describe("request draft button values", () => {
+  it("carry the draft's ID, and on the web's Add to backlog the Triage now choice", () => {
+    expect(parseRequestDraftValue(DRAFT_ID)).toEqual({ draftId: DRAFT_ID, triageNow: null });
+    expect(parseRequestDraftValue(requestDraftAddValue(DRAFT_ID, true))).toEqual({
+      draftId: DRAFT_ID,
+      triageNow: true,
+    });
+    expect(parseRequestDraftValue(requestDraftAddValue(DRAFT_ID, false))).toEqual({
+      draftId: DRAFT_ID,
+      triageNow: false,
+    });
+    for (const value of ["", "nope", `${DRAFT_ID}:maybe`, `${DRAFT_ID}:triage:x`]) {
+      expect(parseRequestDraftValue(value)).toBeNull();
+    }
+  });
+});
+
 describe("requestDraftCard", () => {
   const card = (draft: Partial<ChatRequestDraft>, context = contextOf()) =>
     requestDraftCard(requestDraftView(draftOf(draft), context));
@@ -239,6 +298,12 @@ describe("requestDraftCard", () => {
   it("renders a pending draft with its buttons", () => {
     expect(card({})).toMatchSnapshot();
     expect(card({}, contextOf({ backlog: false }))).toMatchSnapshot();
+  });
+
+  it("asks Triage it now? with Triage now and Add without triage", () => {
+    expect(
+      requestDraftCard(requestDraftView(draftOf(), contextOf(), { askTriage: true })),
+    ).toMatchSnapshot();
   });
 
   it("renders a refusal above the buttons", () => {
@@ -251,6 +316,7 @@ describe("requestDraftCard", () => {
       card({
         status: "added",
         triageNow: true,
+        workItemTracker: "linear",
         workItemIdentifier: "ENG-42",
         workItemUrl: "https://linear.app/acme/issue/ENG-42",
       }),
@@ -265,6 +331,9 @@ describe("requestDraftCard", () => {
       kind: "request_draft",
       draftId: DRAFT_ID,
     });
+    expect(
+      webCardRef(requestDraftCard(requestDraftView(draftOf(), contextOf(), { askTriage: true }))),
+    ).toEqual({ kind: "request_draft", draftId: DRAFT_ID });
     expect(webCardRef(card({ status: "dismissed" }))).toBeNull();
   });
 });
@@ -280,6 +349,9 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
   let otherRepoId: string;
   let slack: ChatConnection;
   let slackThread: ChatThread;
+  /** The organization's tracker: a fake Linear workspace with team ENG and project Portal. */
+  let fake: FakeWorkItemTracker;
+  const tracker = async () => fake.tracker;
 
   const SLACK_THREAD_ID = "slack:C0123ABCD:1700000000.000100";
   const CARD_ID = "card-1";
@@ -368,10 +440,38 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
     await db.delete(ralphRuns);
     await db.delete(chatMessages);
     await db.delete(integrations);
+    await db.delete(workItemMatches);
+    await db.delete(workItemEvents);
     await setCodingEnabled(db, repoId, true);
+    fake = fakeWorkItemTracker();
+    fake.workspace.projects = [{ id: "project-portal", name: "Portal" }];
     vi.mocked(startChatRequest).mockClear();
     vi.mocked(recordChange).mockClear();
   });
+
+  /** The repo takes work items: a work item match (ENG, Portal, two labels) and Linear connected. */
+  async function backlogReady() {
+    await saveWorkItemMatch(db, {
+      organizationId: orgId,
+      repositoryId: repoId,
+      userId: null,
+      match: {
+        tracker: "linear",
+        team: "ENG",
+        project: "Portal",
+        withoutProject: false,
+        labels: ["backend", "webhooks"],
+      },
+    });
+    await saveIntegration(db, {
+      organizationId: orgId,
+      provider: "linear",
+      externalId: "linear-org",
+      name: "Acme",
+      credentials: { accessToken: "t" },
+      installedByUserId: null,
+    });
+  }
 
   /** A tool context in `chatThread` for `actor`; `afterTurn` collects what posts after the text. */
   function toolContext(
@@ -541,6 +641,7 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
           resolveActor: async (_c, externalUserId) =>
             actors[externalUserId] ?? { kind: "unlinked" },
           ralph: async () => ({ db, organizationId: orgId }) as unknown as RalphDeps,
+          tracker,
           env: ENV,
           now: now && (() => now),
           logger: silent,
@@ -758,6 +859,171 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
       for (const post of connected.later) await post();
       expect(JSON.stringify(connected.posted[0])).toContain("Add to backlog");
     });
+
+    describe("Add to backlog", () => {
+      const created = () => fake.workspace.created;
+      const issues = () => [...fake.workspace.issues.values()];
+
+      it("asks Triage it now? first, then adds the work item in the match's team, project and labels", async () => {
+        await backlogReady();
+        const id = await drafted();
+        const first = click(id, ADD_REQUEST_DRAFT_ACTION, "U-ADA");
+
+        await handle(first.event);
+
+        expect(created()).toEqual([]);
+        expect((await getChatRequestDraft(db, id))!.status).toBe("pending");
+        const asked = shown(first.adapter)[0]!.text;
+        expect(asked).toContain("Triage it now?");
+        expect(asked).toContain(ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION);
+        expect(asked).toContain(ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION);
+        expect(asked).not.toContain(START_REQUEST_DRAFT_ACTION);
+
+        const choice = click(id, ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION, "U-ADA");
+        await handle(choice.event);
+
+        expect(created()).toEqual([
+          expect.objectContaining({
+            teamId: "team-1",
+            projectId: "project-portal",
+            labels: ["backend", "webhooks"],
+            title: "Retry webhooks on 5xx",
+            description: "Retry webhook deliveries that fail with a 5xx, three times with backoff.",
+          }),
+        ]);
+        const [issue] = issues();
+        expect(issue!.labels).toEqual(["backend", "webhooks"]);
+        expect(await getChatRequestDraft(db, id)).toMatchObject({
+          status: "added",
+          triageNow: false,
+          error: null,
+          workItemTracker: "linear",
+          workItemExternalId: issue!.id,
+          workItemIdentifier: issue!.identifier,
+          workItemUrl: issue!.url,
+        });
+        const [event] = await db
+          .select()
+          .from(workItemEvents)
+          .where(eq(workItemEvents.externalId, issue!.id));
+        expect(event).toMatchObject({
+          organizationId: orgId,
+          kind: "created",
+          actorUserId: "ada",
+          actorName: "Ada",
+          detail: { origin: "ask", repositoryId: repoId, repository: "acme/customer-portal" },
+        });
+        const text = shown(choice.adapter)[0]!.text;
+        expect(text).toContain(`Added to the backlog: ${issue!.identifier}`);
+        expect(text).not.toContain("Om is triaging it");
+        expect(text).toContain(issue!.url);
+        expect((await recorded()).at(-1)!.content).toContain(issue!.identifier);
+      });
+
+      it("Triage now starts triage on the new work item", async () => {
+        await backlogReady();
+        const id = await drafted();
+        const { event, adapter } = click(id, ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION, "U-ADA");
+
+        await handle(event);
+
+        const [issue] = issues();
+        // The tracker's triage label asks Om to triage it.
+        expect(issue!.labels).toEqual(["backend", "webhooks", "coding:triage"]);
+        expect(
+          (
+            await db.select().from(workItemEvents).where(eq(workItemEvents.externalId, issue!.id))
+          ).map((e) => e.kind),
+        ).toEqual(expect.arrayContaining(["created", "triage_requested"]));
+        expect(await getChatRequestDraft(db, id)).toMatchObject({
+          status: "added",
+          triageNow: true,
+        });
+        expect(shown(adapter)[0]!.text).toContain(
+          `Added to the backlog · Om is triaging it: ${issue!.identifier}`,
+        );
+      });
+
+      it("adds the work item, not triaging it, when triage can't start", async () => {
+        await backlogReady();
+        const id = await drafted();
+        fake.workspace.failures.set("addIssueLabels", new Error("Linear is down"));
+        const { event, adapter } = click(id, ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION, "U-ADA");
+
+        await handle(event);
+
+        expect(issues()).toHaveLength(1);
+        expect(await getChatRequestDraft(db, id)).toMatchObject({
+          status: "added",
+          triageNow: false,
+        });
+        expect(shown(adapter)[0]!.text).not.toContain("Om is triaging it");
+        expect((await recorded()).at(-1)!.content).toContain("Om couldn't start triage");
+      });
+
+      it("keeps the draft pending and shows why when the tracker fails, then adds it once", async () => {
+        await backlogReady();
+        const id = await drafted();
+        fake.workspace.failures.set("createIssue", new Error("Linear is down"));
+        const failed = click(id, ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION, "U-ADA");
+
+        await handle(failed.event);
+
+        expect(await getChatRequestDraft(db, id)).toMatchObject({
+          status: "pending",
+          error: "Linear didn't answer. Try again in a moment.",
+          workItemIdentifier: null,
+        });
+        const text = shown(failed.adapter)[0]!.text;
+        expect(text).toContain("Linear didn't answer. Try again in a moment.");
+        expect(text).toContain(ADD_REQUEST_DRAFT_ACTION);
+
+        fake.workspace.failures.delete("createIssue");
+        // Two clicks at once still create one work item.
+        await Promise.all([
+          handle(click(id, ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION, "U-ADA").event),
+          handle(click(id, ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION, "U-ADA").event),
+        ]);
+        await handle(click(id, ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION, "U-ADA").event);
+        expect(issues()).toHaveLength(1);
+        expect(await getChatRequestDraft(db, id)).toMatchObject({ status: "added", error: null });
+      });
+
+      it("keeps the draft pending and shows why when the repo has no work item match anymore", async () => {
+        await backlogReady();
+        const id = await drafted();
+        await db.delete(workItemMatches);
+        const { event, adapter } = click(id, ADD_WITHOUT_TRIAGE_REQUEST_DRAFT_ACTION, "U-ADA");
+
+        await handle(event);
+
+        expect(created()).toEqual([]);
+        expect(await getChatRequestDraft(db, id)).toMatchObject({
+          status: "pending",
+          error: "customer-portal doesn't pick up work items yet.",
+        });
+        const text = shown(adapter)[0]!.text;
+        expect(text).toContain("customer-portal doesn't pick up work items yet.");
+        // The repo can't take work items now: no Add to backlog.
+        expect(text).not.toContain(ADD_REQUEST_DRAFT_ACTION);
+      });
+
+      it("lets only the member who asked add it", async () => {
+        await backlogReady();
+        const id = await drafted();
+        for (const action of [ADD_REQUEST_DRAFT_ACTION, ADD_TRIAGE_NOW_REQUEST_DRAFT_ACTION]) {
+          const { event, postEphemeral } = click(id, action, "U-BOB");
+          await handle(event);
+          expect(postEphemeral).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "U-BOB" }),
+            NOT_REQUESTER_TEXT,
+            { fallbackToDM: true },
+          );
+        }
+        expect(created()).toEqual([]);
+        expect((await getChatRequestDraft(db, id))!.status).toBe("pending");
+      });
+    });
   });
 
   describe("on the web", () => {
@@ -771,6 +1037,7 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
         logger: createMockLogger(),
         env: ENV,
         ralph: async () => ({ db, organizationId: orgId }) as unknown as RalphDeps,
+        tracker,
       });
 
     /** A web chat of Ada's with a drafted request's card posted by the web adapter. */
@@ -875,6 +1142,79 @@ describe.skipIf(!databaseAvailable)("request drafts in chat", () => {
       });
       expect(chatChanges(chat)).toHaveLength(2);
       expect((await getChatRequestDraft(db, draftId))!.status).toBe("dismissed");
+    });
+
+    it("Add to backlog sends the Triage now choice and adds the work item at once", async () => {
+      await backlogReady();
+      const { chat, draftId, messageId } = await webDraft();
+      vi.mocked(recordChange).mockClear();
+      const add = (value: string | null) =>
+        askCardAction(
+          { db, bot: bot(), workItems: { resolve: async () => [] } },
+          chat,
+          { id: "ada", name: "Ada", email: "ada@acme.test" },
+          { messageId, actionId: ADD_REQUEST_DRAFT_ACTION, value },
+        );
+
+      const message = await add(requestDraftAddValue(draftId, true));
+
+      const [issue] = [...fake.workspace.issues.values()];
+      expect(fake.workspace.created).toEqual([
+        expect.objectContaining({
+          teamId: "team-1",
+          projectId: "project-portal",
+          labels: ["backend", "webhooks"],
+          title: "Retry webhooks on 5xx",
+        }),
+      ]);
+      expect(message.card).toMatchObject({
+        kind: "request_draft",
+        draft: {
+          status: "added",
+          triageChoice: "inline",
+          question: null,
+          actions: [],
+          outcome: {
+            kind: "added",
+            text: "Added to the backlog · Om is triaging it",
+            workItem: { tracker: "linear", identifier: issue!.identifier, url: issue!.url },
+          },
+        },
+      });
+      // `adding`, then `added`, then the card's edit.
+      expect(chatChanges(chat)).toHaveLength(3);
+
+      // A second click adds nothing more: the card has no buttons anymore.
+      await expect(add(requestDraftAddValue(draftId, false))).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(fake.workspace.issues.size).toBe(1);
+      expect(await getChatRequestDraft(db, draftId)).toMatchObject({
+        status: "added",
+        triageNow: true,
+      });
+    });
+
+    it("Add to backlog without triage, as the unchecked box sends it", async () => {
+      await backlogReady();
+      const { chat, draftId, messageId } = await webDraft();
+
+      const message = await askCardAction(
+        { db, bot: bot(), workItems: { resolve: async () => [] } },
+        chat,
+        { id: "ada", name: "Ada", email: "ada@acme.test" },
+        {
+          messageId,
+          actionId: ADD_REQUEST_DRAFT_ACTION,
+          value: requestDraftAddValue(draftId, false),
+        },
+      );
+
+      expect(message.card).toMatchObject({
+        draft: { status: "added", outcome: { text: "Added to the backlog" } },
+      });
+      const [issue] = [...fake.workspace.issues.values()];
+      expect(issue!.labels).toEqual(["backend", "webhooks"]);
     });
 
     it("ignores another member's click, posting nothing in the chat", async () => {

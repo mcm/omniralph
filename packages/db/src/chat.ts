@@ -1431,16 +1431,26 @@ export async function completeChatRequestDraftStart(
   return row ?? null;
 }
 
-/** Marks an `adding` draft `added` with its work item. */
+/**
+ * Marks an `adding` draft `added` with its work item; `triageNow` says whether Om is
+ * triaging it (false when its triage couldn't start), else it's left as claimed.
+ */
 export async function completeChatRequestDraftAdd(
   db: Database,
   id: string,
-  item: { tracker: string; externalId: string; identifier: string; url: string },
+  item: {
+    tracker: string;
+    externalId: string;
+    identifier: string;
+    url: string;
+    triageNow?: boolean;
+  },
 ): Promise<ChatRequestDraft | null> {
   const [row] = await db
     .update(chatRequestDrafts)
     .set({
       status: "added",
+      ...(item.triageNow !== undefined && { triageNow: item.triageNow }),
       workItemTracker: item.tracker,
       workItemExternalId: item.externalId,
       workItemIdentifier: item.identifier,

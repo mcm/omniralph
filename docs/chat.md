@@ -301,8 +301,14 @@ buttons:
   started** with a link to the run, whose news comes back to the thread as run events. When the run
   can't start (coding is off for the repo, or the thread already has a run), the card says why and
   keeps its buttons.
-- **Add to backlog** (only when the repo has a work item match and its tracker is connected) files
-  it as a work item.
+- **Add to backlog** (only when the repo has a work item match and its tracker is connected) adds
+  it to the Backlog exactly as the Backlog's + does (the same `createWorkItem`): a work item in the
+  team, project and labels of the repo's work item match, with the draft's title and the request as
+  its description. In the web, the card's **Triage now** checkbox (on by default) goes with the
+  click; Slack and Discord can't show a checkbox, so the card first asks **Triage it now?** with
+  **Triage now** and **Add without triage**. The card then says **Added to the backlog** (plus
+  **· Om is triaging it** when triaged now) with the work item. When it can't be added (no work
+  item match anymore, the tracker failed), the card says why and keeps its buttons.
 - **Not now** dismisses it.
 
 Only the member who asked can click them (anyone else is told so privately), each choice counts

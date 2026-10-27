@@ -1,5 +1,49 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`requestDraftCard > asks Triage it now? with Triage now and Add without triage 1`] = `
+{
+  "children": [
+    {
+      "content": "Triage it now?",
+      "style": undefined,
+      "type": "text",
+    },
+    {
+      "children": [
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_add_triage",
+          "label": "Triage now",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+        {
+          "actionType": undefined,
+          "callbackUrl": undefined,
+          "disabled": undefined,
+          "id": "request_draft_add_no_triage",
+          "label": "Add without triage",
+          "style": undefined,
+          "tooltip": undefined,
+          "type": "button",
+          "value": "33333333-3333-4333-8333-333333333333",
+        },
+      ],
+      "type": "actions",
+    },
+  ],
+  "imageUrl": undefined,
+  "subtitle": "Request · acme/customer-portal",
+  "title": "Retry webhooks on 5xx",
+  "type": "card",
+  "width": undefined,
+}
+`;
+
 exports[`requestDraftCard > renders a pending draft with its buttons 1`] = `
 {
   "children": [
