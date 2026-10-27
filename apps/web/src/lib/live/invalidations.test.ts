@@ -86,17 +86,19 @@ describe("LIVE_INVALIDATIONS", () => {
     ).toEqual([keys.inbox.all]);
   });
 
-  it("webhook_event: deliveries, connection health, Settings' failed counts and the run it started", () => {
+  it("webhook_event: deliveries, connection health, Settings' failed counts and dots and the run it started", () => {
     expect(liveInvalidations(event({ resource: "webhook_event" }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
       connectionKeys(keys).list,
+      keys.navIndicators.all,
       ...repositoryViews,
     ]);
     expect(liveInvalidations(event({ resource: "webhook_event", runId: RUN }))).toEqual([
       keys.deliveries.all,
       keys.connections.all,
       connectionKeys(keys).list,
+      keys.navIndicators.all,
       ...repositoryViews,
       keys.runs.detail(RUN),
     ]);
@@ -159,8 +161,10 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.organization.all,
       history.section("organization", undefined),
     ]);
+    // The version policy decides which agents failed their update (the Fleet dot).
     expect(settings("agent_defaults")).toEqual([
       keys.settings.detail("agent-defaults"),
+      keys.navIndicators.all,
       keys.settings.detail("host-tools"),
       keys.agents.all,
       keys.repositories.all,
@@ -189,12 +193,13 @@ describe("LIVE_INVALIDATIONS", () => {
     }
   });
 
-  it("agent: the agents list, each agent, the Inbox (offline agents), the repositories' agents and the playbook editor's options", () => {
+  it("agent: the agents list, each agent, the Inbox (offline agents), the Fleet dot, the repositories' agents and the playbook editor's options", () => {
     expect(liveInvalidations(event({ resource: "agent", ids: [ID, RUN] }))).toEqual([
       keys.agents.lists,
       keys.agents.detail(ID),
       keys.agents.detail(RUN),
       keys.inbox.all,
+      keys.navIndicators.all,
       ...repositoryViews,
       playbookKeys(keys).formOptions,
     ]);
@@ -213,10 +218,11 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("connection: connections, Settings' connections and state mappings, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
+  it("connection: connections, Settings' connections, dots and state mappings, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
       connectionKeys(keys).list,
+      keys.navIndicators.all,
       connectionKeys(keys).stateMappings,
       chatPlaybooksKey(keys),
       ...repositoryViews,
@@ -371,6 +377,8 @@ describe("createLiveInvalidator", () => {
       keys.agents.lists,
       keys.agents.detail(ID),
       keys.inbox.all,
+      // Under "All organizations" the Fleet dot counts the other organization's agents.
+      keys.navIndicators.all,
       ...repositoryViews,
     ]);
     // The add-repo sheet keys another organization's connections by the active one.

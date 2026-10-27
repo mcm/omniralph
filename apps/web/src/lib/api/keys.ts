@@ -16,6 +16,7 @@ export const QUERY_AREAS = [
   "diffs",
   "agents",
   "inbox",
+  "navIndicators",
   "organization",
   "repositories",
   "runs",
@@ -83,6 +84,16 @@ export function inboxKeys(keys: QueryKeys) {
     feed: (tab: string, scope: string) => keys.inbox.list({ tab, organization: scope }),
     counts: (scope: string) => [...keys.inbox.all, "counts", { organization: scope }] as QueryKey,
   };
+}
+
+/**
+ * The query key of the Fleet and Settings nav dots (`GET /api/ui/nav-indicators`), keyed by
+ * organization scope: Fleet counts the scope's agents, Settings the active organization's
+ * deliveries. Its own scope-wide area, which `agent`, `webhook_event`, `connection` and the
+ * version policy's events invalidate.
+ */
+export function navIndicatorsKey(keys: QueryKeys, scope: string): QueryKey {
+  return keys.navIndicators.detail(scope);
 }
 
 /**

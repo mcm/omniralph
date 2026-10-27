@@ -76,6 +76,8 @@ const SETTINGS_INVALIDATIONS: Record<
   // Agents and repositories show the defaults they inherit.
   agent_defaults: (keys) => [
     keys.settings.detail("agent-defaults"),
+    // The version agents should run decides which failed their update (the Fleet dot).
+    keys.navIndicators.all,
     keys.settings.detail("host-tools"),
     keys.agents.all,
     keys.repositories.all,
@@ -153,6 +155,8 @@ export const LIVE_INVALIDATIONS = {
     keys.connections.all,
     // Settings' connections count each connection's failed deliveries not yet replayed.
     connectionKeys(keys).list,
+    // The Settings and connection dots.
+    keys.navIndicators.all,
     ...repositoryViews(keys),
     ...(event.runId ? [keys.runs.detail(event.runId)] : []),
   ],
@@ -166,8 +170,9 @@ export const LIVE_INVALIDATIONS = {
   agent: (event, keys) => [
     keys.agents.lists,
     ...event.ids.map((agentId) => keys.agents.detail(agentId)),
-    // Agents offline or failing to update are Inbox problems.
+    // Agents offline or failing to update are Inbox problems, and the Fleet dot.
     keys.inbox.all,
+    keys.navIndicators.all,
     // Repositories show their pinned agents' state and "No agent online".
     ...repositoryViews(keys),
     // The playbook editor offers the models and MCP servers agents report.
@@ -193,6 +198,8 @@ export const LIVE_INVALIDATIONS = {
     keys.connections.all,
     // Settings' connections (its section nav and connection pages).
     connectionKeys(keys).list,
+    // A disconnected connection's failed deliveries leave the Settings dot.
+    keys.navIndicators.all,
     // A tracker connection's work item states (a save by another admin, a disconnect).
     connectionKeys(keys).stateMappings,
     // The chat connections whose channels Advanced › Chat channel overrides lists.
@@ -241,6 +248,8 @@ export const SCOPE_WIDE_AREAS: readonly QueryArea[] = [
   "workItems",
   // Fleet lists every organization's agents, and opens any of them, under the active one's keys.
   "agents",
+  // The Fleet dot counts every organization's agents under "All organizations".
+  "navIndicators",
 ];
 
 /**

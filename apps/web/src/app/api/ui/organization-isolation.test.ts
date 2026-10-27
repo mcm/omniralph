@@ -54,6 +54,7 @@ import {
   listAgentHostTools,
   mapThreadRun,
   recordWebhookEvent,
+  webhookEvents,
   organizationMembers,
   organizations,
   ralphRuns,
@@ -280,6 +281,7 @@ const inboxFeed = await import("./inbox/route");
 const inboxCounts = await import("./inbox/counts/route");
 const inboxItem = await import("./inbox/items/[key]/route");
 const connectionList = await import("./connections/route");
+const navIndicators = await import("./nav-indicators/route");
 const connectionDeliveries = await import("./connections/[kind]/[id]/deliveries/route");
 const gitlabRotate = await import("./connections/gitlab/[id]/rotate/route");
 const gitlabToken = await import("./connections/gitlab/[id]/route");
@@ -966,6 +968,71 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     } finally {
       await db.delete(chatConnections).where(inArray(chatConnections.id, [...discord.values()]));
     }
+  });
+
+  it("counts only each organization's own agents and failed deliveries in the nav dots, and 404s on the other's", async () => {
+    type Indicators = {
+      fleet: { offline: number; updateFailed: number };
+      settings: { failedDeliveries: number; byConnection: { id: string; failed: number }[] };
+    };
+    const read = async (organization?: string) =>
+      call(navIndicators.GET, {
+        path: organization ? `/api/ui?organization=${organization}` : "/api/ui",
+      }) as Promise<{ status: number; body: Indicators }>;
+    const added: string[] = [];
+    const deliveries: string[] = [];
+    try {
+      for (const own of [a, b]) {
+        deliveries.push(
+          await recordWebhookEvent(db, {
+            organizationId: own.orgId,
+            provider: "github",
+            source: { scmConnectionId: own.connectionId },
+            event: "pull_request.opened",
+            rawBody: "{}",
+            outcome: "failed",
+          }),
+        );
+      }
+      for (const [own, other] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        for (const userId of [own.adminId, own.memberId]) {
+          state.userId = userId;
+          const before = await read();
+          expect(before.status).toBe(200);
+          expect((await read(own.orgId)).body).toEqual(before.body);
+          expect((await read("all")).body).toEqual(before.body);
+          const ids = before.body.settings.byConnection.map((c) => c.id);
+          expect(ids).toContain(own.connectionId);
+          expect(ids).not.toContain(other.connectionId);
+          expect(await read(other.orgId)).toMatchObject({ status: 404 });
+          // The other organization's offline agent and failed delivery change nothing here.
+          const [extra] = await db
+            .insert(agents)
+            .values({ organizationId: other.orgId, name: `${other.name}-dark`, liveOnline: false })
+            .returning();
+          added.push(extra!.id);
+          deliveries.push(
+            await recordWebhookEvent(db, {
+              organizationId: other.orgId,
+              provider: "github",
+              source: { scmConnectionId: other.connectionId },
+              event: "pull_request.opened",
+              rawBody: "{}",
+              outcome: "failed",
+            }),
+          );
+          expect((await read()).body).toEqual(before.body);
+        }
+      }
+    } finally {
+      await db.delete(agents).where(inArray(agents.id, added));
+      await db.delete(webhookEvents).where(inArray(webhookEvents.id, deliveries));
+    }
+    state.userId = null;
+    expect((await read()).status).toBe(401);
   });
 
   it("rotates and replaces only its own organization's GitLab bot tokens, as admins", async () => {
