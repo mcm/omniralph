@@ -177,8 +177,7 @@ whatever is installed globally. There's no uninstall RPC. To remove one, stop th
 
 ### The catalog
 
-An organization's host tools are listed under **Settings › Agent defaults › Host tools**, where admins
-add one with a name (the executable's name, e.g. `opengrep`: up to 64 lowercase letters, digits,
+An organization's host tool catalog is kept through `/api/ui/host-tools` (admins), which adds one with a name (the executable's name, e.g. `opengrep`: up to 64 lowercase letters, digits,
 `.`, `_` and `-`, starting with a letter or digit, unique in the organization) and an optional
 description, or delete one. Tasks require host tools by these names.
 

@@ -256,7 +256,7 @@ curl -s http://127.0.0.1:9310/healthz      # {"status":"ok","connected":true,…
 - pm2 captures the environment when the process is first started. After changing
   `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` or `OMNIRALPH_LOG_LEVEL`, run
   `pm2 restart omniralph-agent --update-env`.
-- To upgrade: choose a version on **Settings › Agent defaults** and the agent updates itself (see below),
+- To upgrade: choose a version with **Fleet › Version policy › Edit** and the agent updates itself (see below),
   or trigger an update with **Update now** on the agent's page or `omniralph-agent update` on the
   host ([Triggering an update](#triggering-an-update)). By hand: `npm install -g @omniralph/agent@latest && pm2 restart omniralph-agent`.
 - Don't pass `--stop-exit-codes 0` or `--no-autorestart`: the agent exits with code 0 after a
@@ -375,14 +375,15 @@ needs.
 
 **Choosing the version.**
 
-- **Settings › Agent defaults** (admins) holds the organization's desired version (it applies to the
-  organization's agents only), e.g. `2.0.0` (semver; nothing below 2.0.0), or `latest`. Blank means
-  versions aren't managed: agents keep whatever they run.
-- `latest` (**Track latest on npm**) follows the package's `latest` dist-tag, so agents update with
+- **Fleet › Version policy** holds the organization's desired version (it applies to the
+  organization's agents only); admins change it with **Edit**: **Pin a version**, e.g. `2.0.0`
+  (semver; nothing below 2.0.0), or **Track latest**. Until one is chosen, versions aren't managed:
+  agents keep whatever they run. Each change shows behind the cell's ⓘ.
+- **Track latest** follows the package's `latest` dist-tag, so agents update with
   each release. The control panel reads it from the npm registry without a token (the package is
   public) and keeps it in the database, reading it again once it's 5 minutes old; every heartbeat
   then hands out that version. If the registry can't be read, agents get the last version read
-  (none before the first read: they stay where they are) and the error shows on Settings › Agent defaults.
+  (none before the first read: they stay where they are) and agents stay behind it on Fleet.
   **Update now** reads npm at once and records that version too.
 - **Agents › <agent> › Version** overrides it for one agent, e.g. to try a release on one host first
   or to pin a host to an older version. Clear the override to follow the organization's version again.
@@ -425,7 +426,7 @@ types the agent runs) is configured centrally and delivered in every heartbeat r
 | Max concurrency (parallel jobs)                                     | **Agents › <agent>**                                                                  | 1                                                                  |
 | Concurrency per pool (1 to max concurrency)                         | **Agents › <agent>**                                                                  | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
 | Pinned repositories                                                 | **Repos › Agents** (the agent's overview lists them, read-only) | none (every agent is eligible for every repo)                    |
-| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Settings › Agent defaults**; per-agent override on **Agents › <agent>**                | none (not managed)                                                 |
+| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**; per-agent override on **Agents › <agent>**                | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
 Accepted task types decide what a host may run (trust), so the host itself decides them: the

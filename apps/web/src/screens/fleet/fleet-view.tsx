@@ -16,8 +16,10 @@ import {
 } from "@omniralph/ui";
 import { IconPlus } from "@tabler/icons-react";
 import { useRef, useState, type ReactNode } from "react";
+import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useCurrentUser } from "@/components/current-user";
 import type { FleetAgentRow, FleetSummary } from "@/lib/api/agents";
+import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import {
   acceptedKindsSummary,
   pinBadges,
@@ -28,6 +30,7 @@ import { agentHref } from "@/lib/runs/hrefs";
 import { AgentPanel } from "./agent-panel";
 import { EnrollSheet } from "./enroll-sheet";
 import { useFleet } from "./queries";
+import { VersionPolicySheet } from "./version-policy-sheet";
 import "./fleet.css";
 
 /** Fleet's list. */
@@ -72,8 +75,21 @@ function VersionDetail({ summary }: { summary: FleetSummary }) {
   );
 }
 
-/** Health, Version policy and Org defaults (Design board Fleet). */
-export function fleetSummaryCells(summary: FleetSummary): SummaryCell[] {
+export interface FleetSummaryOptions {
+  /** The version policy's latest change, for the cell's ⓘ; undefined: no ⓘ (all organizations). */
+  versionHistory?: SettingsHistoryEntry | null;
+  /** Opens the version policy sheet; undefined: no "Edit" (members, all organizations). */
+  onEditVersion?: () => void;
+}
+
+/**
+ * Health, Version policy and Org defaults (Design board Fleet). Only the Version policy cell
+ * has an ⓘ and an "Edit": accepted kinds and concurrency are each agent's own (Epic 11).
+ */
+export function fleetSummaryCells(
+  summary: FleetSummary,
+  { versionHistory, onEditVersion }: FleetSummaryOptions = {},
+): SummaryCell[] {
   return [
     {
       id: "health",
@@ -85,7 +101,21 @@ export function fleetSummaryCells(summary: FleetSummary): SummaryCell[] {
       id: "version",
       label: "Version policy",
       value: versionPolicyLabel(summary.versionPolicy),
-      detail: <VersionDetail summary={summary} />,
+      detail: (
+        <span className="or-fleet__version">
+          <VersionDetail summary={summary} />
+          {onEditVersion ? (
+            <button type="button" className="or-link or-fleet__edit" onClick={onEditVersion}>
+              Edit
+            </button>
+          ) : null}
+        </span>
+      ),
+      ...(versionHistory !== undefined
+        ? {
+            info: <ChangeHistoryPopover section="agent_defaults" latest={versionHistory} />,
+          }
+        : {}),
     },
     {
       id: "defaults",
@@ -173,6 +203,9 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
   const splitRef = useRef<HTMLDivElement>(null);
   const wide = useSplitWide(splitRef);
   const [enrolling, setEnrolling] = useState(false);
+  const [editingVersion, setEditingVersion] = useState(false);
+  // The version policy is one organization's: its ⓘ and Edit show only with one selected.
+  const versionPolicy = showOrganization ? null : (fleet.data?.summary.versionPolicy ?? null);
   // Without an agent in the URL, a wide container shows the first agent beside the table.
   const shownId = agentId ?? (wide ? (agents?.[0]?.id ?? null) : null);
 
@@ -212,7 +245,13 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
           />
         ) : (
           <>
-            <SummaryCells aria-label="Summary" cells={fleetSummaryCells(fleet.data!.summary)} />
+            <SummaryCells
+              aria-label="Summary"
+              cells={fleetSummaryCells(fleet.data!.summary, {
+                versionHistory: showOrganization ? undefined : fleet.data!.versionHistory,
+                onEditVersion: admin && versionPolicy ? () => setEditingVersion(true) : undefined,
+              })}
+            />
             <DataTable
               className="or-fleet__table"
               caption="Agents"
@@ -243,6 +282,13 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
         listWidth={PANEL_WIDTH}
       />
       {admin ? <EnrollSheet open={enrolling} onOpenChange={setEnrolling} /> : null}
+      {admin && versionPolicy ? (
+        <VersionPolicySheet
+          open={editingVersion}
+          onOpenChange={setEditingVersion}
+          policy={versionPolicy}
+        />
+      ) : null}
     </>
   );
 }

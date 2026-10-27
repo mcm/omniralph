@@ -26,14 +26,11 @@ const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/list-table.tsx",
   "src/components/mono-value.tsx",
   "src/components/page-header.tsx",
-  "src/components/page-tabs.tsx",
   "src/components/query-boundary.tsx",
   "src/components/ralph-badges.tsx",
   // Uses `Timestamp` from list-table.
   "src/components/relative-time.tsx",
   "src/components/review-badges.tsx",
-  "src/components/settings-card.tsx",
-  "src/components/settings-section.tsx",
   // Measures globals.css's severity chips against the library's tokens.
   "src/components/severity-ramp.test.ts",
   "src/lib/state-variants.ts",
@@ -62,7 +59,6 @@ const LIBRARY_FREE = [
   /^src\/components\/legal-shell\.tsx$/,
   /^src\/components\/app-shell\.tsx$/,
   /^src\/components\/use-api-mutation\.ts$/,
-  /^src\/components\/use-settings-save\.ts$/,
 ];
 
 const ROOT_LAYOUT = "src/app/layout.tsx";

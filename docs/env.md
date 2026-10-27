@@ -17,7 +17,7 @@ put them in `apps/web/.env.local`.
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Settings › Agent defaults** reads (to track `latest`) the public `@omniralph/agent` package without a token. |
+| `NPM_TOKEN` | yes (GitHub Actions) | — | GitHub Actions secret: `ci.yml` and `deploy-web.yml` write it to `.npmrc` before installing. The deploy workflow's other secrets and variables are in [deploy-control-panel.md](deploy-control-panel.md#2-deploying-from-github-actions). Never commit an `.npmrc` with a token. The control panel doesn't need it at runtime: **Fleet**'s version policy reads (to track `latest`) the public `@omniralph/agent` package without a token. |
 | `NODE_ENV` | no | set by Next.js / the process manager | `production` in builds and on Vercel. Don't set it by hand. |
 
 ### Database

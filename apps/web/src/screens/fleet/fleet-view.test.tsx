@@ -364,7 +364,11 @@ describe("the phone cards", () => {
 
 describe("with no agents", () => {
   beforeEach(() => {
-    data = { agents: [], summary: summary({ total: 0, online: 0, offline: 0, busy: 0 }) };
+    data = {
+      agents: [],
+      summary: summary({ total: 0, online: 0, offline: 0, busy: 0 }),
+      versionHistory: null,
+    };
   });
 
   it("shows No agents yet with Enroll for admins", async () => {
@@ -460,8 +464,16 @@ describe("the Enroll sheet", () => {
       "GET /api/ui/agents": () =>
         jsonResponse(
           state.enrolled
-            ? { agents: [agentRow({ name: "build-box" })], summary: summary() }
-            : { agents: [], summary: summary({ total: 0, online: 0, offline: 0, busy: 0 }) },
+            ? {
+                agents: [agentRow({ name: "build-box" })],
+                summary: summary(),
+                versionHistory: null,
+              }
+            : {
+                agents: [],
+                summary: summary({ total: 0, online: 0, offline: 0, busy: 0 }),
+                versionHistory: null,
+              },
         ),
       "POST /api/ui/agent-enrollments": () =>
         jsonResponse({

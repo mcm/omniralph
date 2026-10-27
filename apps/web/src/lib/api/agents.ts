@@ -5,6 +5,7 @@ import type { AgentRow } from "@/lib/agents/rows";
 import { AGENT_STATUS_KINDS } from "@/lib/fleet/status";
 import { organizationRefSchema, repositoryRefSchema, RUN_KINDS, workItemRefSchema } from "./runs";
 import { isoDate, mutationResultSchema } from "./schemas";
+import { settingsHistoryEntrySchema } from "./settings-history";
 
 /** Wire formats of the agent endpoints under `/api/ui`. */
 
@@ -96,6 +97,11 @@ export type FleetSummary = z.infer<typeof fleetSummarySchema>;
 export const agentListSchema = z.object({
   agents: z.array(fleetAgentRowSchema),
   summary: fleetSummarySchema,
+  /**
+   * The version policy's latest change (section `agent_defaults`, the cell's ⓘ) with one
+   * organization in scope; null before any change, or with several organizations.
+   */
+  versionHistory: settingsHistoryEntrySchema.nullable(),
 });
 export type AgentList = z.infer<typeof agentListSchema>;
 

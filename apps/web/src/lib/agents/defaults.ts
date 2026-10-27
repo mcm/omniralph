@@ -24,6 +24,7 @@ import type {
   AgentDefaultsSave,
   HostToolCatalogRow,
 } from "@/lib/api/agent-defaults";
+import type { VersionPolicy } from "@/lib/fleet/status";
 import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sections";
 import { organizationAgentVersion, recordLatestAgentVersion } from "./desired-version";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
@@ -79,6 +80,35 @@ export type AgentVersionResult = ActionResult & {
   version?: string;
 };
 
+/** A desired version as typed: `latest`, blank (unset), a version, or why it isn't one. */
+export type ParsedDesiredVersion =
+  | { kind: "latest" }
+  | { kind: "unset" }
+  | { kind: "pinned"; version: string }
+  | { kind: "invalid"; result: ActionResult & { ok: false } };
+
+/** Reads a typed desired version (a leading `v` and surrounding blanks are dropped). */
+export function parseDesiredVersion(version: string): ParsedDesiredVersion {
+  const trimmed = version.trim().replace(/^v(?=\d)/, "");
+  if (trimmed.toLowerCase() === TRACK_LATEST_AGENT_VERSION) return { kind: "latest" };
+  if (!trimmed) return { kind: "unset" };
+  const parsed = AgentVersion.safeParse(trimmed);
+  if (!parsed.success) {
+    return {
+      kind: "invalid",
+      result: { ok: false, error: "Enter a version like 2.0.0 or latest, or leave it blank." },
+    };
+  }
+  const tooOld = agentVersionTooOld(parsed.data);
+  if (tooOld) {
+    return {
+      kind: "invalid",
+      result: { ok: false, error: tooOld, fieldErrors: { version: tooOld } },
+    };
+  }
+  return { kind: "pinned", version: parsed.data };
+}
+
 /**
  * Sets the version every agent of the organization should run (agents with their own
  * override keep it); blank clears it, `latest` tracks the latest on npm. Agents under pm2
@@ -89,17 +119,11 @@ export async function setGlobalAgentVersion(
   admin: DefaultsActor,
   version: string,
 ): Promise<AgentVersionResult> {
-  const trimmed = version.trim().replace(/^v(?=\d)/, "");
-  if (trimmed.toLowerCase() === TRACK_LATEST_AGENT_VERSION) {
-    return trackLatestAgentVersion(db, admin);
-  }
-  const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
-  if (parsed && !parsed.success) {
-    return { ok: false, error: "Enter a version like 2.0.0 or latest, or leave it blank." };
-  }
-  const tooOld = parsed && agentVersionTooOld(parsed.data);
-  if (tooOld) return { ok: false, error: tooOld, fieldErrors: { version: tooOld } };
-  await setDesiredAgentVersion(db, admin.organization.id, parsed?.data ?? null, admin.id);
+  const parsed = parseDesiredVersion(version);
+  if (parsed.kind === "latest") return trackLatestAgentVersion(db, admin);
+  if (parsed.kind === "invalid") return parsed.result;
+  const pinned = parsed.kind === "pinned" ? parsed.version : null;
+  await setDesiredAgentVersion(db, admin.organization.id, pinned, admin.id);
   await bumpOrganizationHeartbeat(admin.organization.id);
   return { ok: true };
 }
@@ -152,16 +176,20 @@ export async function setOrganizationDefaults(
   return { ok: true };
 }
 
+/** The answer to a save: with a version sent, the version policy it set (Fleet's cell). */
+export type AgentDefaultsSaveResult = ActionResult & { versionPolicy?: VersionPolicy };
+
 /**
- * The Defaults tab's save, as one request: the concurrency default, then the
- * desired version, each only when sent. It stops at the first that fails; the error names
- * what it didn't save. What it saved is recorded in the change history.
+ * The agent defaults' save, as one request: the concurrency default, then the desired
+ * version, each only when sent. It stops at the first that fails; the error names what it
+ * didn't save. What it saved is recorded in the change history. With a version saved, the
+ * answer carries the policy it set, so Fleet shows it without a refetch.
  */
 export async function saveAgentDefaults(
   db: Database,
   admin: DefaultsActor & { name: string | null; email: string | null },
   save: AgentDefaultsSave,
-): Promise<ActionResult> {
+): Promise<AgentDefaultsSaveResult> {
   const result = await withSettingsChanges(
     db,
     settingsActor(admin),
@@ -173,12 +201,23 @@ export async function saveAgentDefaults(
   return result;
 }
 
-function saveDefaultsInOrder(
+/** The policy a saved version sets; `latest`: the version just read from npm. */
+function savedPolicy(version: string, latest: string | undefined): VersionPolicy {
+  const parsed = parseDesiredVersion(version);
+  if (parsed.kind === "latest") return { mode: "latest", version: null, target: latest ?? null };
+  if (parsed.kind === "pinned") {
+    return { mode: "pinned", version: parsed.version, target: parsed.version };
+  }
+  return { mode: "unset", version: null, target: null };
+}
+
+async function saveDefaultsInOrder(
   db: Database,
   admin: DefaultsActor,
   save: AgentDefaultsSave,
-): Promise<ActionResult> {
-  return saveInOrder([
+): Promise<AgentDefaultsSaveResult> {
+  let versionPolicy: VersionPolicy | undefined;
+  const result = await saveInOrder([
     ...(save.defaults !== undefined
       ? [
           {
@@ -191,11 +230,16 @@ function saveDefaultsInOrder(
       ? [
           {
             label: "the desired version",
-            run: () => setGlobalAgentVersion(db, admin, save.version!),
+            run: async () => {
+              const saved = await setGlobalAgentVersion(db, admin, save.version!);
+              if (saved.ok) versionPolicy = savedPolicy(save.version!, saved.version);
+              return saved;
+            },
           },
         ]
       : []),
   ]);
+  return result.ok && versionPolicy ? { ...result, versionPolicy } : result;
 }
 
 /** The organization's host tool catalog, by name. */
