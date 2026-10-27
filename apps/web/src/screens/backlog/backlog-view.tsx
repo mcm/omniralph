@@ -1,0 +1,319 @@
+"use client";
+
+import {
+  BrandMark,
+  Button,
+  EmptyState,
+  FilterMenu,
+  IconButton,
+  IssueBadge,
+  ListRow,
+  OrgBadge,
+  RepoBadge,
+  RowList,
+  SizeBadge,
+  SplitView,
+  useSplitWide,
+  type FilterOption,
+} from "@omniralph/ui";
+import { IconPlus } from "@tabler/icons-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useRef, useState, type ReactNode } from "react";
+import { useCurrentUser, type SessionUser } from "@/components/current-user";
+import { BlockedBadge } from "@/components/work-items/blocked";
+import type { Backlog } from "@/lib/api/backlog";
+import type { WorkItemRow } from "@/lib/api/work-items";
+import { useBacklog } from "./queries";
+import {
+  backlogHref,
+  backlogItemHref,
+  hasBacklogFilters,
+  NO_BACKLOG_FILTERS,
+  parseBacklogFilters,
+  type BacklogFilters,
+} from "./url";
+import { WorkItemDetailView } from "./work-item-detail-view";
+import "./backlog.css";
+
+export const NEW_WORK_ITEM = "New work item";
+export const NOTHING_IN_BACKLOG = "Nothing in the backlog";
+export const NO_MATCHING_WORK_ITEMS = "No work items match these filters";
+export const NO_REPO_PICKS_UP = "No repo picks up work items yet";
+export const CONNECT_LINEAR = "Connect Linear to see its work items";
+
+/** Where an admin connects Linear (Settings → Integrations). */
+const INTEGRATIONS_PATH = "/settings/integrations";
+
+/** The groups, in list order, with their headers. */
+const GROUPS = [
+  { key: "readyToStart", label: "Ready to start" },
+  { key: "needsRefining", label: "Needs refining" },
+] as const;
+
+/** "NETbuilder", "Acme and NETbuilder", "Acme, Beta and NETbuilder". */
+export function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** Whether the user administers an organization in scope (admin-only empty-state actions). */
+function administers(user: SessionUser): boolean {
+  if (user.scope === "all") return user.organizations.some((org) => org.role === "admin");
+  return user.role === "admin";
+}
+
+/**
+ * A Backlog row's badges, in order (Design rules 1, 2 and 13): the organization (only under
+ * "All organizations"), the identifier, the repo, the size (when known) and "Blocked" (when
+ * blocked). Plain badges: the row link covers the row.
+ */
+export function BacklogRowBadges({
+  row,
+  showOrganization,
+}: {
+  row: WorkItemRow;
+  showOrganization: boolean;
+}) {
+  return (
+    <>
+      {showOrganization ? <OrgBadge name={row.organization.name} /> : null}
+      <IssueBadge tracker={row.tracker} id={row.identifier} />
+      {row.repository ? (
+        <RepoBadge host={row.repository.provider} name={row.repository.fullPath} />
+      ) : null}
+      {row.size ? <SizeBadge size={row.size} /> : null}
+      {row.blocked ? <BlockedBadge /> : null}
+    </>
+  );
+}
+
+/** A Source option's label: the same words as the detail's "via" badge. */
+function sourceLabel(source: Backlog["filters"]["sources"][number]): string {
+  return `${source.name} ${source.kind === "project" ? "project" : "team"}`;
+}
+
+export interface BacklogViewProps {
+  /** The open work item (`/backlog/{id}`), whose row is selected; none on `/backlog`. */
+  workItemId?: string | null;
+  /** The detail beside the list; `WorkItemDetailView` by default. */
+  renderDetail?: (workItemId: string) => ReactNode;
+  /** The New work item flow, shown while open (`close` ends it). */
+  renderNewWorkItem?: (close: () => void) => ReactNode;
+}
+
+const defaultDetail = (workItemId: string) => (
+  <WorkItemDetailView key={workItemId} workItemId={workItemId} />
+);
+
+/**
+ * The Backlog screen (Design board Backlog): the list pane of a `SplitView` with "Backlog",
+ * the + (New work item), the Source and Repo filters (`?source=&repo=`, kept when an item
+ * opens) and the Ready to start and Needs refining groups, beside the open item's detail (on
+ * `/backlog`, the first listed item's, when both panes fit). The list is a live query; the
+ * pane has no live indicator of its own (the shell's `LiveNotice` covers stopped updates).
+ */
+export function BacklogView({
+  workItemId = null,
+  renderDetail = defaultDetail,
+  renderNewWorkItem,
+}: BacklogViewProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filters = parseBacklogFilters(searchParams);
+  const user = useCurrentUser();
+  const showOrganization = user.scope === "all";
+  const admin = administers(user);
+  const [creating, setCreating] = useState(false);
+
+  const backlog = useBacklog(filters);
+  const data = backlog.data;
+  const groups = data
+    ? GROUPS.map((group) => ({ ...group, rows: data.groups[group.key] })).filter(
+        (group) => group.rows.length > 0,
+      )
+    : [];
+  const firstRow = groups[0]?.rows[0];
+
+  const splitRef = useRef<HTMLDivElement>(null);
+  const wide = useSplitWide(splitRef);
+  // Without an item in the URL, a wide container shows the first listed item beside the list.
+  const shownId = workItemId ?? (wide ? (firstRow?.id ?? null) : null);
+
+  const hrefWith = (next: BacklogFilters) =>
+    workItemId ? backlogItemHref(workItemId, next) : backlogHref(next);
+  const setFilters = (next: BacklogFilters) => router.push(hrefWith(next), { scroll: false });
+
+  const sourceOptions: FilterOption[] = (data?.filters.sources ?? []).map((source) => ({
+    value: source.value,
+    label: sourceLabel(source),
+    icon: <BrandMark brand={source.tracker} />,
+    group: "Linear",
+  }));
+  const repoOptions: FilterOption[] = (data?.filters.repos ?? []).map((repo) => ({
+    value: repo.value,
+    label: repo.fullPath,
+    icon: <BrandMark brand={repo.provider} />,
+  }));
+
+  const newWorkItem = () => setCreating(true);
+
+  const empty = (): ReactNode => {
+    if (hasBacklogFilters(filters)) {
+      return (
+        <EmptyState
+          headingLevel={2}
+          title={NO_MATCHING_WORK_ITEMS}
+          action={
+            <Button variant="outline" onClick={() => setFilters(NO_BACKLOG_FILTERS)}>
+              Clear filters
+            </Button>
+          }
+        />
+      );
+    }
+    if (data?.setup === "no_tracker") {
+      return (
+        <EmptyState
+          headingLevel={2}
+          title={CONNECT_LINEAR}
+          action={
+            admin ? (
+              <Button variant="outline" href={INTEGRATIONS_PATH}>
+                Open Settings
+              </Button>
+            ) : undefined
+          }
+        />
+      );
+    }
+    if (data?.setup === "no_work_item_match") {
+      return (
+        <EmptyState
+          headingLevel={2}
+          title={NO_REPO_PICKS_UP}
+          action={
+            admin ? (
+              <Button variant="outline" href="/repos">
+                Open Repos
+              </Button>
+            ) : undefined
+          }
+        />
+      );
+    }
+    return (
+      <EmptyState
+        headingLevel={2}
+        title={NOTHING_IN_BACKLOG}
+        action={
+          <Button variant="outline" onClick={newWorkItem}>
+            {NEW_WORK_ITEM}
+          </Button>
+        }
+      />
+    );
+  };
+
+  const list = (
+    <div className="or-backlog__pane">
+      <div className="or-backlog__header">
+        <h1 className="or-backlog__title">Backlog</h1>
+        <IconButton icon={IconPlus} label={NEW_WORK_ITEM} onClick={newWorkItem} />
+      </div>
+      <div className="or-backlog__filters" role="group" aria-label="Filters">
+        <FilterMenu
+          label="Source"
+          options={sourceOptions}
+          selected={filters.source ? [filters.source] : []}
+          onChange={([source]) => setFilters({ ...filters, source: source ?? null })}
+        />
+        <FilterMenu
+          label="Repo"
+          options={repoOptions}
+          selected={filters.repo ? [filters.repo] : []}
+          onChange={([repo]) => setFilters({ ...filters, repo: repo ?? null })}
+        />
+      </div>
+      <div className="or-backlog__list">
+        {data && data.unavailable.length > 0 ? (
+          <div className="or-backlog__notice" role="alert">
+            <p>
+              Couldn&apos;t load work items from Linear for{" "}
+              {joinNames(data.unavailable.map((entry) => entry.organization.name))}.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={backlog.isFetching}
+              onClick={() => void backlog.refetch()}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : null}
+        {backlog.isError && !data ? (
+          <EmptyState
+            headingLevel={2}
+            title="Couldn't load the backlog"
+            description={backlog.error.message}
+            action={
+              <Button variant="outline" onClick={() => void backlog.refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : !data ? null : groups.length === 0 ? (
+          empty()
+        ) : (
+          <div className={backlog.isPlaceholderData ? "or-backlog--stale" : undefined}>
+            {groups.map((group) => (
+              <section
+                key={group.key}
+                className="or-backlog__group"
+                aria-labelledby={`backlog-${group.key}`}
+              >
+                <h2 id={`backlog-${group.key}`} className="or-backlog__group-title">
+                  {group.label} · {group.rows.length}
+                </h2>
+                <RowList aria-label={group.label}>
+                  {group.rows.map((row) => (
+                    <ListRow
+                      key={row.id}
+                      href={backlogItemHref(row.id, filters)}
+                      mark={<BrandMark brand={row.tracker} />}
+                      title={row.title}
+                      meta={<BacklogRowBadges row={row} showOrganization={showOrganization} />}
+                      selected={row.id === shownId}
+                    />
+                  ))}
+                </RowList>
+              </section>
+            ))}
+            {data.truncatedOrganizations.length > 0 ? (
+              <p className="or-backlog__truncated">
+                Showing the first 500 work items from{" "}
+                {joinNames(data.truncatedOrganizations.map((org) => org.name))}.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <SplitView
+        ref={splitRef}
+        className="or-backlog"
+        list={list}
+        detail={shownId ? renderDetail(shownId) : null}
+        view={workItemId ? "detail" : "list"}
+        backLink={{ label: "Backlog", href: backlogHref(filters) }}
+        listLabel="Backlog"
+        detailLabel="Work item"
+      />
+      {creating && renderNewWorkItem ? renderNewWorkItem(() => setCreating(false)) : null}
+    </>
+  );
+}

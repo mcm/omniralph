@@ -520,6 +520,24 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     state.linear.get(orgs.Broken!)!.failures.set("listIssues", new Error("down"));
   });
 
+  it("says why a list may be empty: no Linear, nothing picks up work items, or ready", async () => {
+    expect((await getBacklog()).setup).toBe("ready");
+    expect((await getBacklog({ organization: orgs.Bare! })).setup).toBe("no_tracker");
+    // A failed tracker is connected: its notice explains the gap, not an empty state.
+    expect((await getBacklog({ organization: orgs.Broken! })).setup).toBe("ready");
+    expect((await getBacklog({ organization: "all" })).setup).toBe("ready");
+
+    const orgId = await organization("Unmatched");
+    await repo(orgId, "unmatched/api", {}, false);
+    const unmatched = new FakeLinearGateway();
+    unmatched.add({ identifier: "UNM-1", title: "Nobody picks this up" });
+    await connectLinear(orgId, unmatched);
+    const backlog = await getBacklog({ organization: orgId });
+    expect(backlog.setup).toBe("no_work_item_match");
+    expect(backlog.groups).toEqual({ readyToStart: [], needsRefining: [] });
+    expect(unmatched.issueLists).toEqual([]);
+  });
+
   it("answers 404 for an organization the user isn't a member of", async () => {
     for (const handler of [list.GET, counts.GET, upNext.GET]) {
       expect((await call(handler, { organization: orgs.Foreign! })).status).toBe(404);

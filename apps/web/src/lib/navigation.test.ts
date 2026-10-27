@@ -69,7 +69,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Inbox, Runs, Repos and Agents, then Settings at the bottom", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Agents, then Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -81,6 +81,7 @@ describe("navItems", () => {
     ).toEqual([
       { id: "inbox", label: "Inbox", href: "/", placement: "main", phone: "tab" },
       { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
+      { id: "backlog", label: "Backlog", href: "/backlog", placement: "main", phone: "tab" },
       { id: "repos", label: "Repos", href: "/repos", placement: "main", phone: "drawer" },
       { id: "agents", label: "Agents", href: "/agents", placement: "main", phone: "drawer" },
       {
@@ -93,6 +94,27 @@ describe("navItems", () => {
     ]);
   });
 
+  it("orders the phone tab bar Inbox, Runs, Backlog (Ask joins it with Epic 9)", () => {
+    expect(navItems.filter((item) => item.phone === "tab").map((item) => item.label)).toEqual([
+      "Inbox",
+      "Runs",
+      "Backlog",
+    ]);
+  });
+
+  it("points Backlog at /backlog, after Runs, lit for /backlog alone, with a page for it and its items", () => {
+    const ids = navItems.map((item) => item.id);
+    expect(ids.indexOf("backlog")).toBe(ids.indexOf("runs") + 1);
+    expect(navItems.find((item) => item.id === "backlog")).toMatchObject({
+      href: "/backlog",
+      activeFor: ["/backlog"],
+      placement: "main",
+      phone: "tab",
+    });
+    expect(pages.get("/backlog")).toBeDefined();
+    expect(pageFor("/backlog/linear-1")).toBe(pages.get("/backlog/[id]"));
+  });
+
   it("gives every entry its own icon", () => {
     expect(new Set(navItems.map((item) => item.icon)).size).toBe(navItems.length);
   });
@@ -101,6 +123,8 @@ describe("navItems", () => {
     ["/", "inbox"],
     ["/runs", "runs"],
     ["/runs/abc", "runs"],
+    ["/backlog", "backlog"],
+    ["/backlog/linear-1", "backlog"],
     ["/repos", "repos"],
     ["/repos/abc", "repos"],
     ["/agents", "agents"],
@@ -114,7 +138,7 @@ describe("navItems", () => {
     ]);
   });
 
-  it.each(["/analytics", "/runsx", "/reposx", "/repositories"])(
+  it.each(["/analytics", "/runsx", "/reposx", "/backlogx", "/repositories"])(
     "makes no entry active on %s",
     (pathname) => {
       expect(navItems.filter((item) => isNavActive(pathname, item))).toEqual([]);
@@ -178,5 +202,33 @@ describe("withNavIndicators", () => {
     const zero = withNavIndicators(navItems, { needsYou: 0, problems: 4, running: 0 });
     expect(zero.every((item) => item.indicator === undefined)).toBe(true);
     expect(withNavIndicators(navItems, undefined)).toBe(navItems);
+    expect(withNavIndicators(navItems, undefined, undefined)).toBe(navItems);
+  });
+
+  it("gives Backlog a neutral count of its items from the Backlog counts, never at 0", () => {
+    const items = withNavIndicators(navItems, undefined, {
+      readyToStart: 2,
+      needsRefining: 1,
+      total: 3,
+    });
+    expect(indicator(items, "backlog")).toEqual({
+      kind: "count",
+      tone: "neutral",
+      value: 3,
+      label: "3 items",
+    });
+    expect(indicator(items, "inbox")).toBeUndefined();
+    const one = withNavIndicators(navItems, undefined, {
+      readyToStart: 0,
+      needsRefining: 1,
+      total: 1,
+    });
+    expect(indicator(one, "backlog")).toMatchObject({ value: 1, label: "1 item" });
+    const zero = withNavIndicators(
+      navItems,
+      { needsYou: 0, problems: 0, running: 0 },
+      { readyToStart: 0, needsRefining: 0, total: 0 },
+    );
+    expect(indicator(zero, "backlog")).toBeUndefined();
   });
 });

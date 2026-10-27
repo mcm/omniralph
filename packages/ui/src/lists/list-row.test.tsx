@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { IconButton } from "../actions/icon-button.js";
 import { UiProvider, type LinkProps } from "../provider/ui-provider.js";
 import { RepoBadge } from "../refs/badges.js";
+import { BrandMark } from "../refs/brand-mark.js";
 import { ListRow, RowList, type ListRowProps } from "./list-row.js";
 import { nestedInteractiveElements } from "./nesting.js";
 
@@ -24,7 +25,7 @@ function RouterLink({ onClick, ...props }: LinkProps) {
   );
 }
 
-function Row(props: Partial<ListRowProps>) {
+function Row(props: Partial<Omit<ListRowProps, "mark">>) {
   const [checked, setChecked] = useState(false);
   return (
     <UiProvider linkComponent={RouterLink}>
@@ -141,5 +142,26 @@ describe("ListRow", () => {
   it("keeps the time slot when there is no time", () => {
     render(<Row time={undefined} />);
     expect(screen.getByRole("listitem").querySelector(".or-row__time")).toBeTruthy();
+  });
+
+  it("leads with a mark instead of the dot and kind line when given one", () => {
+    render(
+      <UiProvider linkComponent={RouterLink}>
+        <RowList aria-label="Ready to start">
+          <ListRow
+            href="/backlog/linear-1"
+            title="Export invoices"
+            mark={<BrandMark brand="linear" />}
+            meta={<RepoBadge host="github" name="acme/web" />}
+          />
+        </RowList>
+      </UiProvider>,
+    );
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByRole("link", { name: "Export invoices" })).toBeTruthy();
+    const mark = within(row).getByRole("img", { name: "Linear" });
+    expect(mark.parentElement?.className).toBe("or-row__mark");
+    expect(row.querySelector(".or-row__dot")).toBeNull();
+    expect(row.querySelector(".or-row__kind")).toBeNull();
   });
 });

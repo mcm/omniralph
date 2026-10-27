@@ -63,6 +63,7 @@ export const workItemBlockerSchema = z.object({
   /** Its URL ID when the Backlog lists it (links to `/backlog/{id}`), else null. */
   backlogId: z.string().nullable(),
 });
+export type WorkItemBlocker = z.infer<typeof workItemBlockerSchema>;
 
 /** How the work item routes: "Routes to <repo> via <project, team, label…>". */
 export const workItemRouteSchema = z.object({

@@ -1,0 +1,23 @@
+/*
+ * The blocked badge and the "Blocked by" line of work items (BlockedBadge, BlockedByLine).
+ * Only `--or-` tokens.
+ */
+.or-wi-blocked {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.or-wi-blocked-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-wi-blocked-by__label {
+  margin-right: 2px;
+}

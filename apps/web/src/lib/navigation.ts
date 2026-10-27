@@ -2,10 +2,12 @@ import type { NavItem } from "@omniralph/ui";
 import {
   IconGitFork,
   IconInbox,
+  IconLayoutList,
   IconPlayerPlay,
   IconServer2,
   IconSettings,
 } from "@tabler/icons-react";
+import type { BacklogCounts } from "@/lib/api/backlog";
 import type { InboxCountsResponse } from "@/lib/api/inbox";
 
 /**
@@ -17,9 +19,9 @@ import type { InboxCountsResponse } from "@/lib/api/inbox";
  * `/repos/**` only. Analytics (its own entry in Epic 10) has no entry and
  * stays reachable by URL; the other Settings pages light up Settings.
  *
- * Inbox comes first (a phone tab); Backlog (after Runs, a phone tab) and Ask (bottom, a
- * phone tab) are added by Epics 8 and 9 with their pages. The live indicators come from
- * `withNavIndicators`.
+ * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
+ * started; phone tabs); Ask (bottom, a phone tab) is added by Epic 9 with its page. The
+ * live indicators come from `withNavIndicators`.
  */
 export const navItems: readonly NavItem[] = [
   {
@@ -38,6 +40,15 @@ export const navItems: readonly NavItem[] = [
     placement: "main",
     phone: "tab",
     activeFor: ["/runs"],
+  },
+  {
+    id: "backlog",
+    label: "Backlog",
+    href: "/backlog",
+    icon: IconLayoutList,
+    placement: "main",
+    phone: "tab",
+    activeFor: ["/backlog"],
   },
   {
     id: "repos",
@@ -68,26 +79,40 @@ export const navItems: readonly NavItem[] = [
 ];
 
 /**
- * The entries with their live indicators from the Inbox counts (`useInboxCounts`): Inbox
- * counts what needs the user ("{n} need you"), Runs shows a mint dot while runs run
- * ("{n} running"). Neither shows at 0, nor before the counts load.
+ * The entries with their live indicators: from the Inbox counts (`useInboxCounts`), Inbox
+ * counts what needs the user ("{n} need you") and Runs shows a mint dot while runs run
+ * ("{n} running"); from the Backlog counts (`useBacklogCounts`), Backlog shows its items as
+ * a neutral count ("{n} items", never lavender, Design rule 15; full sidebar only). None
+ * shows at 0, nor before its counts load.
  */
 export function withNavIndicators(
   items: readonly NavItem[],
   counts: InboxCountsResponse | undefined,
+  backlog?: BacklogCounts,
 ): readonly NavItem[] {
-  if (!counts) return items;
+  if (!counts && !backlog) return items;
   return items.map((item) => {
-    if (item.id === "inbox" && counts.needsYou > 0) {
+    if (item.id === "inbox" && counts && counts.needsYou > 0) {
       return {
         ...item,
         indicator: { kind: "count", value: counts.needsYou, label: `${counts.needsYou} need you` },
       };
     }
-    if (item.id === "runs" && counts.running > 0) {
+    if (item.id === "runs" && counts && counts.running > 0) {
       return {
         ...item,
         indicator: { kind: "dot", tone: "run", label: `${counts.running} running` },
+      };
+    }
+    if (item.id === "backlog" && backlog && backlog.total > 0) {
+      return {
+        ...item,
+        indicator: {
+          kind: "count",
+          tone: "neutral",
+          value: backlog.total,
+          label: `${backlog.total} ${backlog.total === 1 ? "item" : "items"}`,
+        },
       };
     }
     return item;
