@@ -172,9 +172,21 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
       expect(result.fields).toEqual(JSON.parse(JSON.stringify(LINEAR_ROUTING_FIELDS)));
       expect(result.linear).toEqual({ status: "connected", options: workspace });
       expect(result.repositories).toEqual([
-        { id: api, fullPath: "acme/api", codingEnabled: false },
-        { id: web, fullPath: "acme/web", codingEnabled: true },
+        { id: api, provider: "github", fullPath: "acme/api", codingEnabled: false },
+        { id: web, provider: "github", fullPath: "acme/web", codingEnabled: true },
       ]);
+    });
+
+    it("answers the rules' latest change, by the admin who saved them (members too)", async () => {
+      await put({ rules: [{ repositoryId: api, query: labels("history") }] });
+      state.role = "member";
+      const { body } = await get();
+      const { history } = body as unknown as RoutingRules;
+      expect(history).toMatchObject({
+        section: "routing_rules",
+        actor: { id: "user-1" },
+        organization: { id: state.orgId, name: "Acme" },
+      });
     });
 
     it("says when Linear isn't connected or can't be read", async () => {

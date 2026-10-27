@@ -1,7 +1,7 @@
 /**
- * Settings › Routing's draft: the rules being edited, how a condition's value is shaped for
- * its operator, the pickers' options and where `PUT` errors belong. Pure, so it's tested
- * without the page.
+ * Advanced › Routing rules' draft: the rules being edited, their changes as the save bar
+ * lists them, how a condition's value is shaped for its operator, the value suggestions and
+ * where `PUT` errors belong. Pure, so it's tested without the page.
  */
 import {
   fieldErrors,
@@ -13,7 +13,7 @@ import {
 } from "@omniralph/shared";
 import { prepareRuleGroup, type RuleGroupType } from "react-querybuilder";
 import type { RoutingRules } from "@/lib/api/routing-rules";
-import type { SettingChange } from "@/lib/settings/changes";
+import type { StagedChange } from "@/components/use-staged-card";
 import { describeQuery } from "@/lib/routing/describe";
 
 export type RoutingFieldData = RoutingRules["fields"][number];
@@ -102,43 +102,128 @@ export function toRuleInputs(rules: readonly DraftRule[]): unknown[] {
   return rules.map((rule) => ({ repositoryId: rule.repositoryId, query: rule.query }));
 }
 
+/** A rule's condition in words, as a sentence ("Team is ENG and Labels contains any of api"). */
+export function ruleDescription(query: RuleGroupType, fields: readonly RoutingFieldData[]): string {
+  let condition: string;
+  try {
+    condition = describeQuery(query as RoutingQuery, fields);
+  } catch {
+    condition = "an incomplete condition";
+  }
+  return condition.charAt(0).toUpperCase() + condition.slice(1);
+}
+
+/** The repository a rule targets, by path, or what stands in for it. */
+export function targetName(
+  repositoryId: string,
+  repositories: readonly RoutingRepository[],
+): string {
+  if (!repositoryId) return "no repo";
+  return repositories.find((repo) => repo.id === repositoryId)?.fullPath ?? "an unknown repo";
+}
+
 /** A rule in words: its condition and target ("Labels contains any of api → `mcm/api`"). */
 export function ruleSummary(
   rule: { repositoryId: string; query: RuleGroupType },
   fields: readonly RoutingFieldData[],
   repositories: readonly RoutingRepository[],
 ): string {
-  const repository =
-    repositories.find((repo) => repo.id === rule.repositoryId)?.fullPath ?? "no repository";
-  let condition: string;
-  try {
-    condition = describeQuery(rule.query as RoutingQuery, fields);
-  } catch {
-    condition = "an incomplete condition";
-  }
-  return `${condition} → ${repository}`;
+  return `${ruleDescription(rule.query, fields)} → ${targetName(rule.repositoryId, repositories)}`;
 }
 
-/** The list's unsaved changes, rule by rule, for the card's change list. */
+/**
+ * The saved positions (`order`, in draft order) that keep their relative order: the longest
+ * increasing run, preferring the earliest positions, so a swap of rules 1 and 2 reads as
+ * rule 2 moving up.
+ */
+function unmoved(order: readonly number[]): Set<number> {
+  // Patience sorting: `tails[k]` ends the best run of length k + 1 found so far.
+  const tails: number[] = [];
+  const previous = new Map<number, number | undefined>();
+  for (const value of order) {
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (tails[mid]! < value) low = mid + 1;
+      else high = mid;
+    }
+    previous.set(value, low > 0 ? tails[low - 1] : undefined);
+    tails[low] = value;
+  }
+  const kept = new Set<number>();
+  for (let value = tails.at(-1); value !== undefined; value = previous.get(value)) {
+    kept.add(value);
+  }
+  return kept;
+}
+
+/**
+ * The list's unsaved changes for the save bar, rule by rule, each with its effect: "Rule 3:
+ * added", "Rule 2: moved to 1", "Rule 1: edited" (old → new) and "Rule 4: deleted". Numbers
+ * are the saved positions, an added rule's its new one. Rules that only shift because
+ * another moved, came or went aren't listed.
+ */
 export function ruleChanges(
   draft: readonly DraftRule[],
   saved: readonly DraftRule[],
   fields: readonly RoutingFieldData[],
   repositories: readonly RoutingRepository[],
-): SettingChange[] {
+): StagedChange[] {
   if (!rulesDiffer(draft, saved)) return [];
-  const changes: SettingChange[] = [];
-  for (let i = 0; i < Math.max(draft.length, saved.length); i++) {
-    const from = saved[i];
-    const to = draft[i];
-    if (from && to && !rulesDiffer([from], [to])) continue;
+  const savedIndex = new Map(saved.map((rule, index) => [rule.key, index]));
+  const draftKeys = new Set(draft.map((rule) => rule.key));
+  const stay = unmoved(
+    draft.flatMap((rule) => {
+      const index = savedIndex.get(rule.key);
+      return index === undefined ? [] : [index];
+    }),
+  );
+  const summary = (rule: DraftRule) => ruleSummary(rule, fields, repositories);
+  const goesTo = (rule: DraftRule) =>
+    `Work items it matches go to ${targetName(rule.repositoryId, repositories)}.`;
+  const changes: StagedChange[] = [];
+  draft.forEach((rule, to) => {
+    const from = savedIndex.get(rule.key);
+    if (from === undefined) {
+      changes.push({
+        id: `add-${rule.key}`,
+        label: `Rule ${to + 1}: added`,
+        to: summary(rule),
+        effect: goesTo(rule),
+      });
+      return;
+    }
+    if (!stay.has(from)) {
+      changes.push({
+        id: `move-${rule.key}`,
+        label: `Rule ${from + 1}: moved to ${to + 1}`,
+        effect:
+          to < from
+            ? "It's checked before the rules it moved above."
+            : "It's checked after the rules it moved below.",
+      });
+    }
+    const before = saved[from]!;
+    if (rulesDiffer([rule], [before])) {
+      changes.push({
+        id: `edit-${rule.key}`,
+        label: `Rule ${from + 1}: edited`,
+        from: summary(before),
+        to: summary(rule),
+        effect: goesTo(rule),
+      });
+    }
+  });
+  saved.forEach((rule, from) => {
+    if (draftKeys.has(rule.key)) return;
     changes.push({
-      key: `rule-${i}`,
-      label: `Rule ${i + 1}`,
-      from: from ? ruleSummary(from, fields, repositories) : "Not set",
-      to: to ? ruleSummary(to, fields, repositories) : "Removed",
+      id: `delete-${rule.key}`,
+      label: `Rule ${from + 1}: deleted`,
+      from: summary(rule),
+      effect: "Work items it matched go on to the next rule.",
     });
-  }
+  });
   return changes;
 }
 

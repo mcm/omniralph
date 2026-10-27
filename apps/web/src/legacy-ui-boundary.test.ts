@@ -27,11 +27,6 @@ const LEGACY_SCREEN_MODULES: readonly string[] = [
   "src/components/mono-value.tsx",
   "src/components/page-header.tsx",
   "src/components/page-tabs.tsx",
-  "src/components/pickers/index.ts",
-  "src/components/pickers/model-picker.tsx",
-  "src/components/pickers/multi-select.tsx",
-  "src/components/pickers/picker-parts.tsx",
-  "src/components/pickers/tag-input.tsx",
   "src/components/query-boundary.tsx",
   "src/components/ralph-badges.tsx",
   // Uses `Timestamp` from list-table.

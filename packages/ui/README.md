@@ -261,7 +261,9 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   `saving?`, `error?`. Renders nothing without changes; otherwise a sticky `region` named
   "Unsaved changes" listing each change (label, from → to, effect sentence), a ghost
   Discard and a solid Save (never `primary`, rule 6). Both are disabled while `saving`;
-  `error` shows in an `alert`.
+  `error` shows in an `alert`. `conflict?` (`{ message, onKeepEditing }`) shows `message` in
+  an `alert` and swaps Save for "Keep editing", so another admin's save is never
+  overwritten silently.
 - `InfoPopover` (ⓘ, `label` default "About this card", children) and `DetailsPopover`
   (ID card, `label` default "Details", `items: { term, detail }[]` as a `<dl>`, rule 17):
   icon buttons that open a Radix popover named by the label. Click, Enter and Space open

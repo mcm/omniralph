@@ -22,7 +22,8 @@ export interface ScopedOrganization {
   role: Role;
 }
 
-function activeOrganization(user: OrgUser): ScopedOrganization {
+/** The active organization as a request scope. */
+export function activeOrganization(user: OrgUser): ScopedOrganization {
   return { id: user.organization.id, name: user.organization.name, role: user.role };
 }
 

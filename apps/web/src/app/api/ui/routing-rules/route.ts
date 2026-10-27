@@ -1,17 +1,18 @@
 import { apiHandler } from "@/lib/api/handler";
 import type { RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
+import { activeOrganization } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { loadRoutingRules, saveRoutingRules } from "@/lib/routing/rules";
 import { settingsActor } from "@/lib/settings-history/sections";
 
 /**
- * Settings › Routing (every member): the organization's rules in evaluation order, the fields
- * they can test, the Linear values the pickers offer (calls Linear) and the repositories they
- * can target.
+ * Settings › Advanced › Routing rules (every member): the organization's rules in evaluation
+ * order, the fields they can test, the Linear values the pickers offer (calls Linear), the
+ * repositories they can target and the rules' latest change.
  */
 export const GET = apiHandler({}, async ({ user }): Promise<RoutingRules> =>
-  loadRoutingRules(getDb(), user.organization.id),
+  loadRoutingRules(getDb(), activeOrganization(user)),
 );
 
 /**

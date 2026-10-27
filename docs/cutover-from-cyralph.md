@@ -117,7 +117,7 @@ match, extra instructions, open PR early, history rewrite and responding to revi
 | `repositoryPath` | Not needed | Agents clone into their own cache (`workspaceRoot`) with brokered credentials. |
 | `baseBranch` | The repository's default branch on the code host | Read when a run starts. There's no override; a PR/MR always targets the default branch. |
 | `workspaceBaseDir` | Not needed | Branch worktrees live under `<workspaceRoot>/.branches/` on the agent. |
-| `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Routing** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
+| `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Advanced › Routing rules** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
 | `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead. |
 | `isActive` | The repository's **Coding** switch | Off for a new repository, and it needs a work item match to turn on: only repositories with Coding on are routed to, offered in the repository question or pushed to. |
 | `verifyCommands` | The story and request playbooks' `verifyCommands` | |
@@ -225,7 +225,7 @@ cyralph's OAuth app: its webhook points at cyralph.
 
 **Verify:** **Settings › Integrations** shows the workspace. In Linear, the Omniralph app can be
 picked as an issue's delegate and @mentioned. Delegate a throwaway issue that a routing rule (**Settings ›
-Routing**) sends to a ralph-enabled repository: its
+Advanced › Routing rules**) sends to a ralph-enabled repository: its
 session acknowledges within seconds, the run shows up under **Coding tasks**, a job runs on a
 agent that accepts `coding`, and the run ends with a PR/MR. Close that PR/MR afterwards. Also @mention the
 app on an issue with a small request and check that it answers in request mode.
@@ -237,7 +237,7 @@ For each Linear team (and each project or label cyralph routes on its own):
 1. **Stop routing it in cyralph first:** remove the team key, label or project from cyralph's
    `config.json` (`teamKeys`, `routingLabels`, `projectKeys`/`projectNames`). cyralph applies the
    edit without a restart; check its log for the reload (an invalid file is ignored and logged).
-2. **Then route it in Omniralph:** add a rule on **Settings › Routing** (**Team is**, **Labels
+2. **Then route it in Omniralph:** add a rule on **Settings › Advanced › Routing rules** (**Team is**, **Labels
    contains any of** or **Project is**) that targets the repository.
 3. Tell the team to delegate (and @mention) the **Omniralph** app from now on.
 

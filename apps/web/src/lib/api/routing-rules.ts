@@ -1,9 +1,10 @@
 import type { RoutingQuery } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, linearSettingsOptionsSchema } from "./schemas";
+import { settingsHistoryEntrySchema } from "./settings-history";
 import type { WorkItemMatchInput } from "./work-item-matches";
 
-/** Settings › Routing (`/api/ui/routing-rules`: members read, admins save). */
+/** Settings › Advanced › Routing rules (`/api/ui/routing-rules`: members read, admins save). */
 
 /** A saved rule: its condition and target, in evaluation order (`position`, from 0). */
 export const routingRuleRowSchema = z.object({
@@ -59,11 +60,15 @@ export const routingRulesSchema = z.object({
   repositories: z.array(
     z.object({
       id: z.string(),
+      /** Its code host, for its `RepoBadge`. */
+      provider: z.enum(["github", "gitlab"]),
       fullPath: z.string(),
       /** Off: issues routed here are manual. */
       codingEnabled: z.boolean(),
     }),
   ),
+  /** The rules' latest recorded change (section `routing_rules`); null before any. */
+  history: settingsHistoryEntrySchema.nullable(),
 });
 export type RoutingRules = z.infer<typeof routingRulesSchema>;
 

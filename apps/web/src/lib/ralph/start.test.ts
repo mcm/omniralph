@@ -568,7 +568,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         "Which repository should I work in for this issue?",
       );
       expect(linear.bodies(event.sessionId, "elicitation")[0]).not.toContain("[repo=");
-      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain("Settings › Routing");
+      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
+        "Settings › Advanced › Routing rules",
+      );
 
       // Advancing again (e.g. the reconcile cron) waits without asking twice.
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });

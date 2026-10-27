@@ -1,5 +1,7 @@
 "use client";
 
+import { Button, IconButton, Select, TextInput, TokenInput } from "@omniralph/ui";
+import { IconFolderPlus, IconPlus, IconX } from "@tabler/icons-react";
 import * as React from "react";
 import {
   QueryBuilder,
@@ -19,10 +21,7 @@ import {
   type RuleType,
   type ValueEditorProps,
 } from "react-querybuilder";
-import { Button, Input, NativeSelect, Toggle } from "@iamthemcmaster/ui";
-import { IconFolderPlus, IconPlus, IconX } from "@tabler/icons-react";
 import { MAX_ROUTING_DEPTH } from "@omniralph/shared";
-import { MultiSelect, NOT_AVAILABLE, StaleNote, TagInput } from "@/components/pickers";
 import {
   coerceValue,
   defaultValue,
@@ -32,12 +31,15 @@ import {
   valueOptions,
   type RoutingFieldData,
   type RoutingLinear,
+  type ValueOption,
 } from "./rule-editor";
 
 /**
- * A rule's condition: react-querybuilder with every control drawn by `@iamthemcmaster/ui`
- * (and the panel's pickers), fields and operators from the tracker's catalog, value pickers
- * fed by the connected workspace's values.
+ * A rule's condition: react-querybuilder with every control drawn by `@omniralph/ui`. An
+ * AND/OR group of conditions (field, operator per field, value), nested groups up to
+ * `MAX_ROUTING_DEPTH` and NOT on any group. Values are a `TextInput`, a `Select` of a
+ * field's fixed or workspace values, or a `TokenInput` for sets (labels, Design rule 18)
+ * that suggests the workspace's values.
  */
 
 /** What the controls read beyond react-querybuilder's own props. */
@@ -48,8 +50,11 @@ interface BuilderContext {
   errors: ReadonlyMap<string, string>;
 }
 
-const STALE_MESSAGE =
-  "It isn't in your Linear workspace any more (renamed or deleted). It's kept, and still saves.";
+/** A value that isn't in the connected workspace any more: what it says under the control. */
+export function staleMessage(values: readonly string[]): string {
+  const names = values.map((value) => `“${value}”`).join(", ");
+  return `${names} ${values.length === 1 ? "is" : "are"} not available. It isn't in your Linear workspace any more (renamed or deleted). It's kept, and still saves.`;
+}
 
 function useBuilder(context: unknown): BuilderContext {
   return context as BuilderContext;
@@ -62,10 +67,15 @@ function pathKey(path: readonly number[]): string {
 function NodeError({ message }: { message: string | undefined }) {
   if (!message) return null;
   return (
-    <p role="alert" className="routing-node-error">
+    <p role="alert" className="or-routing-builder__error">
       {message}
     </p>
   );
+}
+
+function StaleNote({ values }: { values: readonly string[] }) {
+  if (values.length === 0) return null;
+  return <p className="or-routing-builder__stale">{staleMessage(values)}</p>;
 }
 
 // ── Selectors ─────────────────────────────────────────────────────────────────
@@ -87,26 +97,27 @@ function FieldSelector({ value, handleOnChange, disabled, context }: FieldSelect
   const { fields } = useBuilder(context);
   const known = value !== undefined && fields.has(value);
   return (
-    <NativeSelect
-      aria-label="Field"
-      className="routing-field"
-      value={value ?? ""}
-      disabled={disabled}
-      onChange={(e) => handleOnChange(e.target.value)}
-    >
-      {!known && (
-        <option value={value ?? ""}>{value ? `${value} (unknown)` : "Pick a field"}</option>
-      )}
-      {fieldGroups(fields).map((group) => (
-        <optgroup key={group.label} label={group.label}>
-          {group.fields.map((field) => (
-            <option key={field.id} value={field.id}>
-              {field.label}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </NativeSelect>
+    <span className="or-routing-builder__field">
+      <Select
+        aria-label="Field"
+        value={value ?? ""}
+        disabled={disabled}
+        onChange={(event) => handleOnChange(event.target.value)}
+      >
+        {!known && (
+          <option value={value ?? ""}>{value ? `${value} (unknown)` : "Pick a field"}</option>
+        )}
+        {fieldGroups(fields).map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.fields.map((field) => (
+              <option key={field.id} value={field.id}>
+                {field.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </Select>
+    </span>
   );
 }
 
@@ -119,53 +130,55 @@ function OperatorSelector({
 }: OperatorSelectorProps) {
   const operators = useBuilder(context).fields.get(field)?.operators ?? [];
   return (
-    <NativeSelect
-      aria-label="Operator"
-      className="routing-operator"
-      value={value ?? ""}
-      disabled={disabled}
-      onChange={(e) => handleOnChange(e.target.value)}
-    >
-      {!operators.some((o) => o.name === value) && (
-        <option value={value ?? ""}>Pick an operator</option>
-      )}
-      {operators.map((operator) => (
-        <option key={operator.name} value={operator.name}>
-          {operator.label}
-        </option>
-      ))}
-    </NativeSelect>
+    <span className="or-routing-builder__operator">
+      <Select
+        aria-label="Operator"
+        value={value ?? ""}
+        disabled={disabled}
+        onChange={(event) => handleOnChange(event.target.value)}
+      >
+        {!operators.some((operator) => operator.name === value) && (
+          <option value={value ?? ""}>Pick an operator</option>
+        )}
+        {operators.map((operator) => (
+          <option key={operator.name} value={operator.name}>
+            {operator.label}
+          </option>
+        ))}
+      </Select>
+    </span>
   );
 }
 
 function CombinatorSelector({ value, handleOnChange, disabled }: CombinatorSelectorProps) {
   return (
-    <NativeSelect
-      aria-label="Match"
-      className="routing-combinator"
-      value={value ?? "and"}
-      disabled={disabled}
-      onChange={(e) => handleOnChange(e.target.value)}
-    >
-      <option value="and">All of (AND)</option>
-      <option value="or">Any of (OR)</option>
-    </NativeSelect>
+    <span className="or-routing-builder__combinator">
+      <Select
+        aria-label="Match"
+        value={value ?? "and"}
+        disabled={disabled}
+        onChange={(event) => handleOnChange(event.target.value)}
+      >
+        <option value="and">All of (AND)</option>
+        <option value="or">Any of (OR)</option>
+      </Select>
+    </span>
   );
 }
 
 function NotToggle({ checked, handleOnChange, disabled }: NotToggleProps) {
+  const pressed = checked === true;
   return (
-    <Toggle
-      variant="outline"
+    <Button
+      variant={pressed ? "solid" : "outline"}
       size="sm"
-      aria-label="NOT"
+      aria-pressed={pressed}
       title="Matches when the group doesn't"
-      pressed={checked === true}
       disabled={disabled}
-      onPressedChange={handleOnChange}
+      onClick={() => handleOnChange(!pressed)}
     >
       NOT
-    </Toggle>
+    </Button>
   );
 }
 
@@ -175,13 +188,12 @@ function AddRuleAction({ handleOnClick, disabled }: ActionProps) {
   if (disabled) return null;
   return (
     <Button
-      type="button"
       variant="ghost"
       size="sm"
-      className="routing-add-condition"
-      onClick={(e) => handleOnClick(e)}
+      icon={IconPlus}
+      className="or-routing-builder__add-condition"
+      onClick={(event) => handleOnClick(event)}
     >
-      <IconPlus size={14} />
       Condition
     </Button>
   );
@@ -192,13 +204,12 @@ function AddGroupAction({ handleOnClick, disabled, level }: ActionProps) {
   if (disabled || level >= MAX_ROUTING_DEPTH - 1) return null;
   return (
     <Button
-      type="button"
       variant="ghost"
       size="sm"
-      className="routing-add-group"
-      onClick={(e) => handleOnClick(e)}
+      icon={IconFolderPlus}
+      className="or-routing-builder__add-group"
+      onClick={(event) => handleOnClick(event)}
     >
-      <IconFolderPlus size={14} />
       Group
     </Button>
   );
@@ -206,18 +217,13 @@ function AddGroupAction({ handleOnClick, disabled, level }: ActionProps) {
 
 function RemoveAction({ handleOnClick, disabled, ruleOrGroup }: ActionProps) {
   if (disabled) return null;
-  const label = "rules" in ruleOrGroup ? "Remove group" : "Remove condition";
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      aria-label={label}
-      title={label}
-      onClick={(e) => handleOnClick(e)}
-    >
-      <IconX size={14} />
-    </Button>
+    <IconButton
+      size="sm"
+      icon={IconX}
+      label={"rules" in ruleOrGroup ? "Remove group" : "Remove condition"}
+      onClick={(event: React.MouseEvent) => handleOnClick(event)}
+    />
   );
 }
 
@@ -239,14 +245,16 @@ function TextValue({
   label?: string;
 }) {
   return (
-    <Input
-      aria-label={label}
-      type={type}
-      className={mono ? "routing-value settings-mono" : "routing-value"}
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <span className="or-routing-builder__value">
+      <TextInput
+        aria-label={label}
+        type={type}
+        mono={mono}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </span>
   );
 }
 
@@ -260,20 +268,20 @@ function OneOfValue({
   disabled,
 }: {
   value: string;
-  options: readonly { value: string; label: string }[];
+  options: readonly ValueOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
   const match = value ? findOption(options, value) : undefined;
   const stale = value !== "" && !match;
   return (
-    <div className="routing-value">
-      <NativeSelect
+    <span className="or-routing-builder__value">
+      <Select
         aria-label="Value"
         value={match?.value ?? value}
         disabled={disabled}
-        error={stale}
-        onChange={(e) => onChange(e.target.value)}
+        invalid={stale}
+        onChange={(event) => onChange(event.target.value)}
       >
         {value === "" && <option value="">Pick a value</option>}
         {stale && <option value={value}>{value}</option>}
@@ -282,13 +290,48 @@ function OneOfValue({
             {option.label}
           </option>
         ))}
-      </NativeSelect>
-      {stale && (
-        <StaleNote>
-          “{value}” is {NOT_AVAILABLE}. {STALE_MESSAGE}
-        </StaleNote>
-      )}
-    </div>
+      </Select>
+      <StaleNote values={stale ? [value] : []} />
+    </span>
+  );
+}
+
+function ManyOfValue({
+  values,
+  options,
+  onChange,
+  disabled,
+}: {
+  values: string[];
+  options: readonly ValueOption[] | null;
+  onChange: (values: string[]) => void;
+  disabled?: boolean;
+}) {
+  const listId = React.useId();
+  // Names match ignoring case: a typed "backend" is the workspace's "Backend".
+  const canonical = (value: string) =>
+    options ? (findOption(options, value)?.value ?? value) : value;
+  const stale = options ? values.filter((value) => !findOption(options, value)) : [];
+  return (
+    <span className="or-routing-builder__value">
+      <TokenInput
+        aria-label="Values"
+        mono={false}
+        values={values}
+        list={options ? listId : undefined}
+        disabled={disabled}
+        placeholder="Type a value, then Enter"
+        onChange={(next) => onChange([...new Set(next.map(canonical))])}
+      />
+      {options ? (
+        <datalist id={listId}>
+          {options.map((option) => (
+            <option key={option.value} value={option.value} label={option.label} />
+          ))}
+        </datalist>
+      ) : null}
+      <StaleNote values={stale} />
+    </span>
   );
 }
 
@@ -344,7 +387,7 @@ function ValueEditor({
       const text = (v: unknown) => (type === "date" ? String(v ?? "") : numberText(v));
       const parse = (t: string) => (type === "date" ? t : parseNumber(t));
       return (
-        <span className="routing-range">
+        <span className="or-routing-builder__range">
           <TextValue
             type={type}
             label="From"
@@ -352,7 +395,7 @@ function ValueEditor({
             onChange={(t) => handleOnChange([parse(t), to])}
             disabled={disabled}
           />
-          <span className="routing-range-and">and</span>
+          <span className="or-routing-builder__and">and</span>
           <TextValue
             type={type}
             label="To"
@@ -374,33 +417,15 @@ function ValueEditor({
       ) : (
         <TextValue value={current as string} onChange={handleOnChange} disabled={disabled} />
       );
-    case "options": {
-      const values = current as string[];
-      return options ? (
-        <MultiSelect
-          aria-label="Values"
-          className="routing-value"
-          // Names match ignoring case: a saved "backend" is the workspace's "Backend".
-          value={values.map((v) => findOption(options, v)?.value ?? v)}
+    case "options":
+      return (
+        <ManyOfValue
+          values={current as string[]}
           options={options}
           onChange={handleOnChange}
           disabled={disabled}
-          placeholder="Pick values"
-          staleMessage={STALE_MESSAGE}
-        />
-      ) : (
-        <TagInput
-          aria-label="Values"
-          className="routing-value"
-          value={values}
-          options={[]}
-          allowCustom
-          onChange={handleOnChange}
-          disabled={disabled}
-          placeholder="Type a value, then Enter"
         />
       );
-    }
   }
 }
 
@@ -442,7 +467,7 @@ const controlElements: ControlElementsProp<FullField, string> = {
   ruleGroup: GroupWithError,
 };
 
-export interface RoutingQueryBuilderProps {
+export interface ConditionBuilderProps {
   query: RuleGroupType;
   onChange: (query: RuleGroupType) => void;
   fields: ReadonlyMap<string, RoutingFieldData>;
@@ -452,14 +477,14 @@ export interface RoutingQueryBuilderProps {
 }
 
 /** One rule's condition builder. */
-export function RoutingQueryBuilder({
+export function ConditionBuilder({
   query,
   onChange,
   fields,
   linear,
   errors,
   disabled = false,
-}: RoutingQueryBuilderProps) {
+}: ConditionBuilderProps) {
   const builderFields = React.useMemo<Field[]>(
     () =>
       [...fields.values()].map((field) => ({
@@ -482,7 +507,7 @@ export function RoutingQueryBuilder({
     [fields],
   );
   return (
-    <div className="routing-builder">
+    <div className="or-routing-builder">
       <QueryBuilder
         fields={builderFields}
         query={query}

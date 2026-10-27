@@ -1,0 +1,205 @@
+/*
+ * Advanced › Routing rules: the ordered rules (number, description and target, the admin's
+ * icon buttons), the built-in rules, and the rule sheet's condition builder. Only `--or-`
+ * tokens.
+ */
+.or-routing__lead,
+.or-routing__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-routing__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 13px;
+}
+
+.or-routing__subheading {
+  margin: 4px 0 0;
+  color: var(--or-sec);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.or-routing__rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-routing__rule {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-surf);
+}
+
+.or-routing__rule[data-invalid] {
+  border-color: var(--or-fail);
+}
+
+.or-routing__rule--default {
+  align-items: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--or-sec);
+}
+
+.or-routing__number {
+  padding-top: 2px;
+  color: var(--or-ter);
+  font-family: var(--or-font-mono);
+  font-size: 13px;
+  text-align: end;
+}
+
+.or-routing__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.or-routing__description {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.or-routing__rule--default .or-routing__description {
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-routing__target {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.or-routing__actions {
+  display: flex;
+  gap: 2px;
+}
+
+.or-routing__announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .or-routing__rule {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .or-routing__actions {
+    grid-column: 2;
+  }
+}
+
+/* The rule sheet. */
+.or-routing-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-routing-sheet__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-routing-sheet__heading {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* react-querybuilder's own markup (its standard class names), laid out without its stylesheet. */
+.or-routing-builder .ruleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-routing-builder .ruleGroup .ruleGroup {
+  padding: 8px 0 8px 12px;
+  border-inline-start: 2px solid var(--or-border);
+}
+
+.or-routing-builder .ruleGroup-header,
+.or-routing-builder .rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.or-routing-builder .ruleGroup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-routing-builder .ruleGroup-body:empty {
+  display: none;
+}
+
+.or-routing-builder__field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.or-routing-builder__operator,
+.or-routing-builder__combinator {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.or-routing-builder__value {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-routing-builder__range {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-routing-builder__and {
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-routing-builder__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 12px;
+}
+
+.or-routing-builder__stale {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 12px;
+}

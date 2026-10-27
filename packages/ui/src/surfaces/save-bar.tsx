@@ -27,6 +27,12 @@ export interface SaveBarProps {
   error?: ReactNode;
   /** The Save button's label, e.g. "Save 2 changes". Defaults to "Save". */
   saveLabel?: string;
+  /**
+   * Someone else saved what these changes edit: `message` shows in an alert, and the bar
+   * offers Discard (take their version) or "Keep editing" (`onKeepEditing`: keep these
+   * changes on top of theirs) instead of Save, so nothing is overwritten silently.
+   */
+  conflict?: { message: ReactNode; onKeepEditing: () => void };
   className?: string;
 }
 
@@ -41,6 +47,7 @@ export function SaveBar({
   saving = false,
   error,
   saveLabel = "Save",
+  conflict,
   className,
 }: SaveBarProps) {
   if (changes.length === 0) return null;
@@ -85,6 +92,11 @@ export function SaveBar({
             </li>
           ))}
         </ul>
+        {conflict ? (
+          <p role="alert" className="or-savebar__conflict">
+            {conflict.message}
+          </p>
+        ) : null}
         {error !== undefined && error !== null && error !== false ? (
           <p role="alert" className="or-savebar__error">
             {error}
@@ -95,9 +107,20 @@ export function SaveBar({
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>
           Discard
         </Button>
-        <Button variant="solid" onClick={onSave} disabled={saving} aria-busy={saving || undefined}>
-          {saving ? "Saving…" : saveLabel}
-        </Button>
+        {conflict ? (
+          <Button variant="solid" onClick={conflict.onKeepEditing} disabled={saving}>
+            Keep editing
+          </Button>
+        ) : (
+          <Button
+            variant="solid"
+            onClick={onSave}
+            disabled={saving}
+            aria-busy={saving || undefined}
+          >
+            {saving ? "Saving…" : saveLabel}
+          </Button>
+        )}
       </div>
     </div>
   );

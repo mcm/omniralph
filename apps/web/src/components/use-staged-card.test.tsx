@@ -39,7 +39,12 @@ const toChanges = (saved: Thing, draft: Thing): StagedChange[] => [
 let request: ReturnType<typeof vi.fn<(draft: Thing) => Promise<{ card: Thing }>>>;
 let fetches: number;
 
-function Thing({ confirm }: { confirm: boolean }) {
+interface Options {
+  confirm?: boolean;
+  conflict?: boolean;
+}
+
+function Thing(options: Options) {
   const saved = useQuery<Thing>({
     queryKey: KEY,
     queryFn: async () => {
@@ -49,10 +54,10 @@ function Thing({ confirm }: { confirm: boolean }) {
     staleTime: Infinity,
   });
   if (!saved.data) return null;
-  return <ThingCard saved={saved.data} confirm={confirm} />;
+  return <ThingCard saved={saved.data} {...options} />;
 }
 
-function ThingCard({ saved, confirm }: { saved: Thing; confirm: boolean }) {
+function ThingCard({ saved, confirm, conflict }: Options & { saved: Thing }) {
   const card = useStagedCard<Thing, { card: Thing }>({
     label: "Thing",
     anchorId: "thing",
@@ -65,6 +70,7 @@ function ThingCard({ saved, confirm }: { saved: Thing; confirm: boolean }) {
     needsConfirm: confirm
       ? (changes) => changes.filter((change) => change.id === "enabled")
       : undefined,
+    conflictMessage: conflict ? "Someone else changed this thing." : undefined,
   });
   return (
     <section id="thing">
@@ -88,6 +94,14 @@ function ThingCard({ saved, confirm }: { saved: Thing; confirm: boolean }) {
         ))}
       </ul>
       {card.error ? <p role="alert">{card.error}</p> : null}
+      {card.conflict ? (
+        <p>
+          Conflict: {card.conflict.message}
+          <button type="button" onClick={card.conflict.onKeepEditing}>
+            Keep editing
+          </button>
+        </p>
+      ) : null}
       {card.fieldErrors.name ? <p>Name error: {card.fieldErrors.name}</p> : null}
       <button type="button" onClick={card.submit}>
         Save
@@ -101,13 +115,13 @@ function ThingCard({ saved, confirm }: { saved: Thing; confirm: boolean }) {
   );
 }
 
-function renderThing({ confirm = false }: { confirm?: boolean } = {}) {
+function renderThing(options: Options = {}) {
   const client: QueryClient = createTestQueryClient();
   render(
     <CurrentUserProvider user={testUser}>
       <QueryClientProvider client={client}>
         <UnsavedChangesProvider>
-          <Thing confirm={confirm} />
+          <Thing {...options} />
         </UnsavedChangesProvider>
       </QueryClientProvider>
     </CurrentUserProvider>,
@@ -167,6 +181,53 @@ describe("useStagedCard", () => {
     await waitFor(() => expect(enabledBox().checked).toBe(false));
     expect(nameInput().value).toBe("mine");
     expect(changeItems()).toEqual(["Name: Renames it."]);
+  });
+
+  it("flags another save under the draft as a conflict, when asked to", async () => {
+    const client = renderThing({ conflict: true });
+    const user = userEvent.setup();
+    await screen.findByRole("textbox", { name: "Name" });
+    await user.clear(nameInput());
+    await user.type(nameInput(), "mine");
+    expect(screen.queryByText(/Conflict:/)).toBeNull();
+
+    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: false }));
+    expect(await screen.findByText(/Conflict: Someone else changed this thing\./)).toBeTruthy();
+    // Save is refused until the user chooses.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(request).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.queryByText(/Conflict:/)).toBeNull();
+    expect(nameInput().value).toBe("mine");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ name: "mine", enabled: false }));
+    // Saved: a later update is no conflict.
+    act(() => client.setQueryData<Thing>(KEY, { name: "later", enabled: true }));
+    await waitFor(() => expect(nameInput().value).toBe("later"));
+    expect(screen.queryByText(/Conflict:/)).toBeNull();
+  });
+
+  it("drops the conflict and the edits on Discard", async () => {
+    const client = renderThing({ conflict: true });
+    const user = userEvent.setup();
+    await screen.findByRole("textbox", { name: "Name" });
+    await user.type(nameInput(), "2");
+    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: true }));
+    expect(await screen.findByText(/Conflict:/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByText(/Conflict:/)).toBeNull();
+    expect(nameInput().value).toBe("theirs");
+  });
+
+  it("never flags a conflict without a conflict message", async () => {
+    const client = renderThing();
+    const user = userEvent.setup();
+    await screen.findByRole("textbox", { name: "Name" });
+    await user.type(nameInput(), "2");
+    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: true }));
+    await waitFor(() => expect(nameInput().value).toBe("alpha2"));
+    expect(screen.queryByText(/Conflict:/)).toBeNull();
   });
 
   it("discards every edit", async () => {

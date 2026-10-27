@@ -12,6 +12,7 @@ import {
   type ChatAccounts,
   type OrganizationSettings,
 } from "@/lib/api/organization";
+import { routingRulesSchema, type RoutingRules } from "@/lib/api/routing-rules";
 
 /**
  * The active organization's connections (`GET /api/ui/connections`), for Settings' nav and
@@ -68,6 +69,29 @@ export function useChatAccounts() {
     queryKey: chatAccountsKey(keys),
     queryFn: ({ signal }) =>
       api.get("/api/ui/chat-accounts", chatAccountsSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/** The organization's routing rules' query key. */
+export function routingRulesKey(keys: QueryKeys) {
+  return keys.settings.detail("routing");
+}
+
+/**
+ * The organization's routing rules and what editing them needs (`GET /api/ui/routing-rules`),
+ * for Advanced › Routing rules. A live query: a save by any admin (`settings` section
+ * `routing_rules`) refetches it.
+ */
+export function useRoutingRules() {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<RoutingRules>({
+    queryKey: routingRulesKey(keys),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/routing-rules", routingRulesSchema, {
         organizationId: organization.id,
         signal,
       }),

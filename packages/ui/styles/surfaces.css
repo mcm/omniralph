@@ -333,6 +333,12 @@
   color: var(--or-sec);
 }
 
+.or-savebar__conflict {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .or-savebar__error {
   margin: 8px 0 0;
   color: var(--or-fail);
