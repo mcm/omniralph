@@ -4,6 +4,7 @@ import type { Thread } from "chat";
 import type { z } from "zod";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import type { RalphDeps } from "@/lib/ralph/run";
+import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import type { ThreadAttachment } from "../attachments";
 import type { ChatActor } from "../identity";
 import type { PlaybookLookup } from "../playbooks";
@@ -36,6 +37,8 @@ export interface ChatToolContext {
   turnMessages: readonly QuotedMessage[];
   /** The ralph orchestrator's dependencies for the organization (built on first use). */
   ralph(): Promise<RalphDeps>;
+  /** The organization's work item tracker (default: `getWorkItemTracker`). */
+  tracker?(): Promise<WorkItemTracker>;
   /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
   attachments?: ReadonlyMap<string, ThreadAttachment>;
   /** Looks up the playbooks chat runs (default: the organization's, `organizationPlaybooks`). */

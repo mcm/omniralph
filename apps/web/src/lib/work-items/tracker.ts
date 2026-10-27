@@ -177,9 +177,28 @@ export interface WorkItemPage {
   nextCursor: string | null;
 }
 
+/** An image to embed in a new work item (e.g. a screenshot), uploaded to the tracker. */
+export interface WorkItemImage {
+  filename: string;
+  /** e.g. `image/png`. */
+  contentType: string;
+  data: Uint8Array;
+}
+
 export interface CreateWorkItemInput {
-  teamId: string;
+  /** The team's ID. One of `teamId` and `team` is required (`teamId` wins). */
+  teamId?: string;
+  /**
+   * The team by its key, name or ID, ignoring case (instead of a work item match's team).
+   * Throws `WorkItemTeamNotFoundError`, creating nothing, when the tracker has no such team.
+   */
+  team?: string;
   projectId?: string;
+  /**
+   * The project by its ID or name, ignoring case (`projectId` wins when both are given).
+   * Throws `WorkItemProjectNotFoundError`, creating nothing, when the tracker has none.
+   */
+  project?: string;
   /**
    * The project by its name, ignoring case (`projectId` wins when both are given). Throws
    * `WorkItemProjectNotFoundError`, creating nothing, when the tracker has no such project.
@@ -190,8 +209,18 @@ export interface CreateWorkItemInput {
   description: string;
   /** Label names; a label the team doesn't have yet is created. */
   labels?: string[];
+  /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
   priority?: number;
+  /**
+   * Images uploaded to the tracker and embedded at the end of the description, under a
+   * "Screenshots" heading. One that fails to upload is left out, and named in the created
+   * item's `failedImages`.
+   */
+  images?: WorkItemImage[];
 }
+
+/** A created work item, with the names of the `images` that couldn't be embedded. */
+export type CreatedWorkItem = WorkItem & { failedImages?: string[] };
 
 export interface UpdateWorkItemInput {
   title?: string;
@@ -240,7 +269,12 @@ export interface WorkItemTracker {
   findByIdentifiers(identifiers: readonly string[]): Promise<WorkItem[]>;
   /** A page of work items matching every given condition. */
   listCandidates(input: ListCandidatesInput): Promise<WorkItemPage>;
-  create(input: CreateWorkItemInput): Promise<WorkItem>;
+  /**
+   * Creates a work item in the team (`teamId`, or `team` by key, name or ID). Throws
+   * `WorkItemTeamNotFoundError` or `WorkItemProjectNotFoundError`, creating nothing, for a
+   * team or project the tracker doesn't have.
+   */
+  create(input: CreateWorkItemInput): Promise<CreatedWorkItem>;
   /** Throws `WorkItemConflictError`, writing nothing, when `ifUpdatedAt` is stale. */
   update(
     ref: WorkItemRef,
@@ -277,7 +311,7 @@ export interface WorkItemTracker {
    */
   routingFields(ref: WorkItemRef): Promise<WorkItemRouting>;
   /** Every team of the tracker. */
-  listTeams(): Promise<TrackerTeam[]>;
+  teams(): Promise<TrackerTeam[]>;
   /** A team's workflow states, in order. */
   listWorkflowStates(teamId: string): Promise<TrackerWorkflowState[]>;
   /** Which states mean "Ready to start" and "Needs refining". */
@@ -311,6 +345,22 @@ export class WorkItemProjectNotFoundError extends Error {
     super(`The tracker has no project named ${projectName}.`);
     this.name = "WorkItemProjectNotFoundError";
   }
+}
+
+/** A `create` refused because the tracker has no team of that key, name or ID. */
+export class WorkItemTeamNotFoundError extends Error {
+  constructor(readonly team: string) {
+    super(`The tracker has no team ${team}.`);
+    this.name = "WorkItemTeamNotFoundError";
+  }
+}
+
+/** The team `ref` names (its key, name or ID, ignoring case), or undefined. */
+export function findTeam<T extends TrackerTeam>(teams: readonly T[], ref: string): T | undefined {
+  const wanted = ref.trim().toLowerCase();
+  return teams.find(
+    (t) => t.key.toLowerCase() === wanted || t.name.toLowerCase() === wanted || t.id === ref.trim(),
+  );
 }
 
 export class TrackerNotConnectedError extends Error {

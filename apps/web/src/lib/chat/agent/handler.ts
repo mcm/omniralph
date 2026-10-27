@@ -24,6 +24,7 @@ import { getAppUrl } from "@/lib/app-url";
 import { CHAT_AGENT_RATE_LIMITS, hitRateLimit, type RateLimit } from "@/lib/rate-limit";
 import { chatRunSession } from "@/lib/ralph/chat-reply";
 import type { RalphDeps } from "@/lib/ralph/run";
+import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { MAX_BODY_CHARS, sanitizeCapped } from "@/lib/review/sanitize";
 import { requireMember, type ChatConversationHandler } from "../bot";
 import { adapterFetcher, threadAttachments } from "../attachments";
@@ -66,6 +67,8 @@ export interface ChatAgentDeps {
   now?: () => Date;
   /** The ralph orchestrator's dependencies for an organization (default: `defaultDeps`). */
   ralph?: (organizationId: string) => Promise<RalphDeps>;
+  /** An organization's work item tracker (default: `getWorkItemTracker`). */
+  tracker?: (organizationId: string) => Promise<WorkItemTracker>;
   /** Looks up the playbooks chat runs (default: the organization's, `organizationPlaybooks`). */
   getPlaybook?: PlaybookLookup;
   /** Limits on the attachments a turn reads (default: `CHAT_ATTACHMENT_LIMITS`). */
@@ -216,6 +219,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
   const rateLimits = deps.rateLimits ?? CHAT_AGENT_RATE_LIMITS;
   const registry = deps.tools ?? chatTools;
   const now = () => deps.now?.() ?? new Date();
+  const trackerFor = deps.tracker;
   const ralphDeps = (organizationId: string) =>
     (deps.ralph ?? ((id) => defaultRalphDeps(db, id)))(organizationId);
 
@@ -287,6 +291,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             chatThread,
             turnMessages,
             ralph: () => ralphDeps(organizationId),
+            ...(trackerFor && { tracker: () => trackerFor(organizationId) }),
             attachments,
             getPlaybook: deps.getPlaybook,
             handedOff: () => {

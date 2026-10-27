@@ -164,7 +164,9 @@ export class FakeLinearGateway implements LinearGateway {
   }
 
   private teamKeyOf(teamId: string): { teamKey?: string } {
-    const teamKey = [...this.issues.values()].find((i) => i.teamId === teamId)?.teamKey;
+    const teamKey =
+      [...this.issues.values()].find((i) => i.teamId === teamId)?.teamKey ??
+      this.teams.find((t) => t.id === teamId)?.key;
     return teamKey ? { teamKey } : {};
   }
 
@@ -434,7 +436,7 @@ export class FakeLinearGateway implements LinearGateway {
       description: input.description,
       parentId: input.parentId,
       teamId: input.teamId,
-      // The team's key, as on its other issues (else the default).
+      // The team's key, as on its other issues (else its team's, else the default).
       ...this.teamKeyOf(input.teamId),
       priority: input.priority ?? 0,
       subIssueSortOrder: input.subIssueSortOrder,

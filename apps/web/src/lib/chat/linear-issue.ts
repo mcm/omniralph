@@ -27,8 +27,6 @@ import {
   type Logger,
 } from "chat";
 import { eq } from "drizzle-orm";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
-import type { LinearGateway } from "@/lib/linear/gateway";
 import { sanitizeCapped, sanitizeTitle } from "@/lib/review/sanitize";
 import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentLimits } from "./agent/config";
 import {
@@ -37,15 +35,21 @@ import {
   loadAttachment,
   type FetchAttachment,
 } from "./attachments";
+import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
+import {
+  TrackerNotConnectedError,
+  type WorkItemImage,
+  type WorkItemTracker,
+} from "@/lib/work-items/tracker";
 import type { ChatActor } from "./identity";
 
 /**
  * Linear issues drafted by the control-panel agent (`draft_linear_issue`): a
  * card with the preview and **Create** / **Create and delegate** / **Cancel**
  * buttons. Only the linked member who asked can click them; **Create** creates
- * the issue in the organization's Linear workspace and turns the card into a
- * link to it, and **Create and delegate** also delegates it to the Omniralph
- * app ({@link delegateToRalph}), so ralph builds it. A draft expires after
+ * the issue through the organization's work item tracker (`WorkItemTracker`)
+ * and turns the card into a link to it, and **Create and delegate** also
+ * delegates it to Omniralph ({@link delegateToRalph}). A draft expires after
  * {@link LINEAR_ISSUE_DRAFT_TTL_MS}.
  */
 
@@ -66,8 +70,9 @@ export const PRIORITY_NAMES = ["No priority", "Urgent", "High", "Medium", "Low"]
 
 export const NOT_REQUESTER_REPLY =
   "Only the person who asked for this issue can create or cancel it. Mention me to draft your own.";
-export const LINEAR_NOT_CONNECTED_REPLY =
-  "This organization has no Linear workspace connected anymore, so I can't create the issue. An admin can connect one under Settings › Connections › Add connection in the control panel.";
+/** What a tracker-less organization is told, by the tools and the card. */
+export const CONNECT_TRACKER_TEXT = "Connect a tracker to file work items.";
+export const TRACKER_NOT_CONNECTED_REPLY = `This organization has no work item tracker connected anymore, so I can't create the issue. ${CONNECT_TRACKER_TEXT} An admin can connect one under Settings › Connections › Add connection in the control panel.`;
 
 type Draft = Pick<
   ChatLinearIssueDraft,
@@ -203,14 +208,14 @@ export function createdMessage(draft: Draft, delegated = false): string {
 }
 
 /**
- * Delegates a Linear issue to the Omniralph app for a chat thread: first
- * records the delegation (so the run Linear's agent session starts is tied to
- * the thread, see `startRun`), then delegates the issue to the app user
- * (`getViewer`). Throws when Linear fails.
+ * Delegates a work item to Omniralph for a chat thread: first records the
+ * delegation (so the run the tracker's delegation starts is tied to the
+ * thread, see `startRun`), then hands it over with
+ * `WorkItemTracker.delegateToOmniralph`. Throws when the tracker fails.
  */
 export async function delegateToRalph(
   db: Database,
-  linear: LinearGateway,
+  tracker: WorkItemTracker,
   input: { organizationId: string; chatThreadId: string; linearIssueId: string },
 ): Promise<void> {
   await createChatLinearDelegation(db, {
@@ -218,62 +223,47 @@ export async function delegateToRalph(
     threadId: input.chatThreadId,
     linearIssueId: input.linearIssueId,
   });
-  const app = await linear.getViewer();
-  await linear.delegateIssue(input.linearIssueId, app.id);
+  await tracker.delegateToOmniralph(input.linearIssueId);
 }
 
 /**
- * Uploads a draft's screenshots to Linear (fetched again from the chat
- * platform): the Markdown that embeds them at the end of the description, and
- * the names of those that couldn't be fetched or uploaded.
+ * Fetches a draft's screenshots again from the chat platform, for
+ * `WorkItemTracker.create`'s `images` (which embeds them at the end of the
+ * description), and the names of those that couldn't be fetched.
  */
-export async function embedScreenshots(
-  linear: LinearGateway,
+export async function loadScreenshots(
   fetchData: FetchAttachment,
   attachments: ChatLinearIssueDraft["attachments"],
   limits: ChatAttachmentLimits = CHAT_ATTACHMENT_LIMITS,
   logger: Pick<Logger, "warn"> = console,
-): Promise<{ markdown: string; failed: string[] }> {
-  const images: string[] = [];
+): Promise<{ images: WorkItemImage[]; failed: string[] }> {
+  const images: WorkItemImage[] = [];
   const failed: string[] = [];
   for (const attachment of attachments) {
     const name = attachmentName(attachment);
     const content = await loadAttachment(attachment, fetchData, limits);
     if (content.status !== "loaded" || content.kind !== "image") {
-      logger.warn("Couldn't load a screenshot for a Linear issue", {
+      logger.warn("Couldn't load a screenshot for a work item", {
         ref: attachment.ref,
         reason: content.status === "skipped" ? content.reason : "not an image",
       });
       failed.push(name);
       continue;
     }
-    try {
-      const url = await linear.uploadFile({
-        filename: name,
-        contentType: content.mediaType,
-        data: content.data,
-      });
-      images.push(`![${name}](${url})`);
-    } catch (error) {
-      logger.warn("Couldn't upload a screenshot to Linear", { ref: attachment.ref, error });
-      failed.push(name);
-    }
+    images.push({ filename: name, contentType: content.mediaType, data: content.data });
   }
-  return {
-    markdown: images.length > 0 ? `\n\n## Screenshots\n\n${images.join("\n\n")}` : "",
-    failed,
-  };
+  return { images, failed };
 }
 
 export const DELEGATION_FAILED_REPLY =
-  "The issue was created, but Linear didn't delegate it to Omniralph. Ask me to delegate it again, or delegate it to Omniralph in Linear.";
+  "The issue was created, but the tracker didn't delegate it to Omniralph. Ask me to delegate it again, or delegate it to Omniralph in the tracker.";
 
 export interface LinearIssueActionDeps {
   db: Database;
   /** Who clicked, in the connection's organization. */
   resolveActor(connection: ChatConnection, externalUserId: string): Promise<ChatActor>;
-  /** The organization's Linear workspace (default: `getLinearGateway`). */
-  linear?: (organizationId: string) => Promise<LinearGateway>;
+  /** The organization's work item tracker (default: `getWorkItemTracker`). */
+  tracker?: (organizationId: string) => Promise<WorkItemTracker>;
   /** Fetches the draft's screenshots (default: through the clicked card's adapter). */
   fetchAttachment?: FetchAttachment;
   attachmentLimits?: ChatAttachmentLimits;
@@ -362,51 +352,51 @@ export async function handleLinearIssueAction(
     return;
   }
   let created: ChatLinearIssueDraft | null;
-  let linear: LinearGateway;
+  let tracker: WorkItemTracker;
   let failedScreenshots: string[] = [];
   try {
-    linear = await (deps.linear ?? ((organizationId) => getLinearGateway({ db, organizationId })))(
-      chatThread.organizationId,
-    );
-    const screenshots = await embedScreenshots(
-      linear,
+    tracker = await (
+      deps.tracker ?? ((organizationId) => getWorkItemTracker({ db, organizationId }))
+    )(chatThread.organizationId);
+    const screenshots = await loadScreenshots(
       deps.fetchAttachment ?? adapterFetcher(event.adapter),
       claimed.attachments,
       deps.attachmentLimits,
       logger,
     );
-    failedScreenshots = screenshots.failed;
-    const issue = await linear.createIssue({
+    const item = await tracker.create({
       teamId: claimed.teamId,
       title: claimed.title,
-      description: `${claimed.description}${screenshots.markdown}`,
+      description: claimed.description,
       ...(claimed.projectName && { projectName: claimed.projectName }),
       ...(claimed.labels.length > 0 && { labels: claimed.labels }),
       ...(claimed.priority !== null && { priority: claimed.priority }),
+      ...(screenshots.images.length > 0 && { images: screenshots.images }),
     });
-    created = await completeChatLinearIssueDraft(db, claimed.id, issue);
+    failedScreenshots = [...screenshots.failed, ...(item.failedImages ?? [])];
+    created = await completeChatLinearIssueDraft(db, claimed.id, item);
   } catch (error) {
     await releaseChatLinearIssueDraft(db, claimed.id);
-    if (error instanceof LinearNotConnectedError) {
-      await tell(LINEAR_NOT_CONNECTED_REPLY);
+    if (error instanceof TrackerNotConnectedError) {
+      await tell(TRACKER_NOT_CONNECTED_REPLY);
       return;
     }
-    logger.error("Creating a Linear issue from chat failed", { draftId, error });
-    await tell("Linear didn't create the issue. Please try again in a moment.");
+    logger.error("Creating a work item from chat failed", { draftId, error });
+    await tell("The tracker didn't create the issue. Please try again in a moment.");
     return;
   }
   if (!created) return;
   let delegated = false;
   if (delegate && created.linearIssueId) {
     try {
-      await delegateToRalph(db, linear, {
+      await delegateToRalph(db, tracker, {
         organizationId: chatThread.organizationId,
         chatThreadId: chatThread.id,
         linearIssueId: created.linearIssueId,
       });
       delegated = true;
     } catch (error) {
-      logger.error("Delegating a Linear issue created from chat failed", { draftId, error });
+      logger.error("Delegating a work item created from chat failed", { draftId, error });
       await tell(DELEGATION_FAILED_REPLY);
     }
   }

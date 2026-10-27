@@ -26,12 +26,12 @@ import {
 import { gateway } from "ai";
 import { getAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
+import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { chatAgentConfig } from "./agent/config";
 import { attachmentMetadata } from "./attachments";
 import { createChatAgentHandler } from "./agent/handler";
 import { discordOAuthConfig, type DiscordOAuthConfig } from "./discord-oauth";
 import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identity";
-import type { LinearGateway } from "@/lib/linear/gateway";
 import { createLinkUrl } from "./link";
 import { handleLinearIssueAction, LINEAR_ISSUE_ACTIONS } from "./linear-issue";
 import { CHAT_ACCOUNTS_PATH } from "./link-paths";
@@ -158,8 +158,8 @@ export interface ChatBotDeps {
   /** `APP_URL` and `AUTH_SECRET` for link URLs (tests). */
   env?: NodeJS.ProcessEnv;
   now?: () => Date;
-  /** An organization's Linear workspace, for issues drafted in chat (default: `getLinearGateway`). */
-  linear?: (organizationId: string) => Promise<LinearGateway>;
+  /** An organization's work item tracker, for issues drafted in chat (default: `getWorkItemTracker`). */
+  tracker?: (organizationId: string) => Promise<WorkItemTracker>;
 }
 
 export interface ChatBot {
@@ -372,7 +372,7 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
             platform: c.platform,
             externalUserId,
           }),
-        linear: deps.linear,
+        tracker: deps.tracker,
         now: deps.now,
         logger,
       },

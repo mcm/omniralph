@@ -46,7 +46,7 @@ async function view(
   tracker: WorkItemTracker,
   organization: ScopedOrganization,
 ): Promise<TrackerStateMappingView> {
-  const [mapping, teams] = await Promise.all([tracker.getStateMapping(), tracker.listTeams()]);
+  const [mapping, teams] = await Promise.all([tracker.getStateMapping(), tracker.teams()]);
   return {
     integrationId: tracker.integrationId,
     tracker: tracker.kind,

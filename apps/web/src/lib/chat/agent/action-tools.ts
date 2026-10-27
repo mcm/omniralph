@@ -10,8 +10,6 @@ import {
 } from "@omniralph/db";
 import { PERMISSION_ALLOW, PERMISSION_DENY } from "@omniralph/ralph";
 import { z } from "zod";
-import { LinearNotConnectedError } from "@/lib/linear/client";
-import type { IssueSummary, Team } from "@/lib/linear/gateway";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
 import { answerCleanup } from "@/lib/ralph/cleanup";
@@ -20,7 +18,20 @@ import { postActivity } from "@/lib/ralph/notify";
 import { answerPermission } from "@/lib/ralph/permissions";
 import { runHref } from "@/lib/runs/links";
 import { attachmentName, sessionAttachmentNote, type ThreadAttachment } from "../attachments";
-import { delegateToRalph, draftCard, LINEAR_ISSUE_DRAFT_TTL_MS } from "../linear-issue";
+import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
+import {
+  findTeam,
+  TrackerNotConnectedError,
+  type TrackerTeam,
+  type WorkItem,
+  type WorkItemTracker,
+} from "@/lib/work-items/tracker";
+import {
+  CONNECT_TRACKER_TEXT,
+  delegateToRalph,
+  draftCard,
+  LINEAR_ISSUE_DRAFT_TTL_MS,
+} from "../linear-issue";
 import { chatPlaybookOf, findRalphRunId } from "./read-tools";
 import {
   defineChatTool,
@@ -386,19 +397,20 @@ export const sendRalphGuidance = defineChatTool({
   },
 });
 
-export const LINEAR_NOT_CONNECTED_RESULT = {
-  error: "linear_not_connected",
-  message:
-    "This organization has no Linear workspace connected, so you can't create Linear issues. Tell the user an admin can connect one under Settings › Connections › Add connection in the control panel.",
+export const TRACKER_NOT_CONNECTED_RESULT = {
+  error: "tracker_not_connected",
+  message: `This organization has no work item tracker connected, so you can't file or delegate work items. Tell the user: "${CONNECT_TRACKER_TEXT}" An admin can connect one under Settings › Connections › Add connection in the control panel.`,
 } as const;
 
-/** The team `ref` names (key, name or ID, ignoring case), or undefined. */
-export function findTeam(teams: readonly Team[], ref: string): Team | undefined {
-  const wanted = ref.trim().toLowerCase();
-  return teams.find(
-    (t) => t.key.toLowerCase() === wanted || t.name.toLowerCase() === wanted || t.id === ref.trim(),
+/** The organization's work item tracker (throws `TrackerNotConnectedError` without one). */
+function workItemTracker(context: ChatToolContext): Promise<WorkItemTracker> {
+  return (
+    context.tracker?.() ??
+    getWorkItemTracker({ db: context.db, organizationId: context.organizationId })
   );
 }
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** Most screenshots an issue drafted in chat embeds. */
 export const MAX_ISSUE_SCREENSHOTS = 5;
@@ -467,14 +479,14 @@ export const draftLinearIssue = defineChatTool({
     if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
     const screenshots = issueScreenshots(context, input.attachments ?? []);
     if ("error" in screenshots) return screenshots;
-    let teams: Team[];
+    let teams: TrackerTeam[];
     try {
-      teams = await (await context.ralph()).linear.listTeams();
+      teams = await (await workItemTracker(context)).teams();
     } catch (error) {
-      if (error instanceof LinearNotConnectedError) return LINEAR_NOT_CONNECTED_RESULT;
+      if (error instanceof TrackerNotConnectedError) return TRACKER_NOT_CONNECTED_RESULT;
       return {
-        error: "linear_error",
-        message: `Linear couldn't list the workspace's teams: ${error instanceof Error ? error.message : String(error)}. Tell the user to try again later.`,
+        error: "tracker_error",
+        message: `The tracker couldn't list its teams: ${errorText(error)}. Tell the user to try again later.`,
       };
     }
     const team = findTeam(teams, input.team);
@@ -519,9 +531,6 @@ export const draftLinearIssue = defineChatTool({
   },
 });
 
-const linearErrorText = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
-
 export const delegateLinearIssue = defineChatTool({
   tier: "action",
   description:
@@ -537,28 +546,28 @@ export const delegateLinearIssue = defineChatTool({
     const { db, actor, chatThread, organizationId } = context;
     if (actor.kind !== "member") return LINK_REQUIRED_RESULT;
     const ref = input.issue.trim();
-    let issue: IssueSummary;
+    let issue: WorkItem;
     try {
-      const { linear } = await context.ralph();
+      const tracker = await workItemTracker(context);
       try {
-        issue = await linear.getIssue(ref);
+        issue = await tracker.get(ref);
       } catch (error) {
-        if (error instanceof LinearNotConnectedError) throw error;
+        if (error instanceof TrackerNotConnectedError) throw error;
         return {
           error: "unknown_issue",
-          message: `Linear couldn't find the issue "${ref}" (${linearErrorText(error)}). Ask the user for the issue's identifier, e.g. ENG-42.`,
+          message: `The tracker couldn't find the issue "${ref}" (${errorText(error)}). Ask the user for the issue's identifier, e.g. ENG-42.`,
         };
       }
-      await delegateToRalph(db, linear, {
+      await delegateToRalph(db, tracker, {
         organizationId,
         chatThreadId: chatThread.id,
         linearIssueId: issue.id,
       });
     } catch (error) {
-      if (error instanceof LinearNotConnectedError) return LINEAR_NOT_CONNECTED_RESULT;
+      if (error instanceof TrackerNotConnectedError) return TRACKER_NOT_CONNECTED_RESULT;
       return {
-        error: "linear_error",
-        message: `Linear didn't delegate the issue: ${linearErrorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in Linear.`,
+        error: "tracker_error",
+        message: `The tracker didn't delegate the issue: ${errorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in the tracker.`,
       };
     }
     return {
