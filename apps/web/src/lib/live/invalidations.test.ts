@@ -198,10 +198,11 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("connection: connections, Settings' connections, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
+  it("connection: connections, Settings' connections and state mappings, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
       connectionKeys(keys).list,
+      connectionKeys(keys).stateMappings,
       ...repositoryViews,
       runsKeys(keys).filterOptionsAll,
       keys.backlog.all,

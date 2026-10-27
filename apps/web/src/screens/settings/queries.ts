@@ -13,6 +13,7 @@ import {
   type OrganizationSettings,
 } from "@/lib/api/organization";
 import { routingRulesSchema, type RoutingRules } from "@/lib/api/routing-rules";
+import { trackerStateMappingSchema, type TrackerStateMappingView } from "@/lib/api/trackers";
 
 /**
  * The active organization's connections (`GET /api/ui/connections`), for Settings' nav and
@@ -95,5 +96,25 @@ export function useRoutingRules() {
         organizationId: organization.id,
         signal,
       }),
+  });
+}
+
+/**
+ * A tracker connection's work item state mapping and the workspace's workflow states
+ * (`GET /api/ui/trackers/{id}/state-mapping`), for the Linear connection page's "Work item
+ * states" card. A live query: the connection's `connection` events (another admin's save, a
+ * disconnect) refetch it.
+ */
+export function useTrackerStateMapping(integrationId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<TrackerStateMappingView>({
+    queryKey: connectionKeys(keys).stateMapping(integrationId),
+    queryFn: ({ signal }) =>
+      api.get(
+        `/api/ui/trackers/${encodeURIComponent(integrationId)}/state-mapping`,
+        trackerStateMappingSchema,
+        { organizationId: organization.id, signal },
+      ),
   });
 }

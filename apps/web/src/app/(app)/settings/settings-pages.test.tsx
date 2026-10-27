@@ -25,7 +25,10 @@ const navigation = vi.hoisted(() => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
 }));
-vi.mock("next/navigation", () => ({ notFound: navigation.notFound }));
+vi.mock("next/navigation", () => ({
+  notFound: navigation.notFound,
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
 
 const SETTINGS_DIR = __dirname;
 
@@ -54,6 +57,9 @@ const gitlab: Connection = {
   usedAs: "code_host",
   failedDeliveries: 0,
   linkedAccounts: null,
+  instanceUrl: null,
+  installationUrl: null,
+  history: null,
 };
 
 beforeEach(() => {
@@ -115,7 +121,7 @@ describe("a connection's page", () => {
     );
   }
 
-  it("is titled as its nav entry", async () => {
+  it("is titled with its provider", async () => {
     renderConnection("gitlab", gitlab.id);
     expect(await screen.findByRole("heading", { level: 2, name: "GitLab" })).toBeTruthy();
   });
@@ -123,7 +129,7 @@ describe("a connection's page", () => {
   it("says a connection the organization doesn't have doesn't exist", async () => {
     renderConnection("github", gitlab.id);
     expect(
-      await screen.findByRole("heading", { name: "That connection doesn't exist" }),
+      await screen.findByRole("heading", { name: "This connection doesn't exist." }),
     ).toBeTruthy();
   });
 });

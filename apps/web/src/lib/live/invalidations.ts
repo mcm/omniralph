@@ -183,6 +183,8 @@ export const LIVE_INVALIDATIONS = {
     keys.connections.all,
     // Settings' connections (its section nav and connection pages).
     connectionKeys(keys).list,
+    // A tracker connection's work item states (a save by another admin, a disconnect).
+    connectionKeys(keys).stateMappings,
     // Connection health problems are repositories' problems.
     ...repositoryViews(keys),
     runsKeys(keys).filterOptionsAll,

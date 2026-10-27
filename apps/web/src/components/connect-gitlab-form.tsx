@@ -3,50 +3,92 @@
 import { Button, Field, TextInput } from "@omniralph/ui";
 import { IconPlugConnected } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
-import type { z } from "zod";
 import { useApiMutation } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
+import { gitLabTokenResultSchema, type GitLabTokenResult } from "@/lib/api/connections";
 import { connectedGitLabSchema, type ScmConnectionListRow } from "@/lib/api/repositories";
 import "./connect-gitlab-form.css";
 
-export interface ConnectGitLabFormProps {
+interface ConnectGitLabFormBase {
   /** The organization the connection is for (the user must be an admin there). */
   organizationId: string;
-  /** The GitLab URL prefilled (`defaultGitLabUrl` from `GET /api/ui/repositories/setup`). */
+  /**
+   * The GitLab URL prefilled (`defaultGitLabUrl` from `GET /api/ui/repositories/setup`), or
+   * the connection's instance when replacing its token.
+   */
   defaultGitLabUrl: string;
-  /** After GitLab is connected: the connection, as `GET /api/ui/scm-connections` lists it. */
-  onConnected: (connection: ScmConnectionListRow) => void;
   /** Shows "Cancel", which calls it. */
   onCancel?: () => void;
 }
 
+export type ConnectGitLabFormProps = ConnectGitLabFormBase &
+  (
+    | {
+        replaceConnectionId?: undefined;
+        /** After GitLab is connected: the connection, as `GET /api/ui/scm-connections` lists it. */
+        onConnected: (connection: ScmConnectionListRow) => void;
+        onReplaced?: undefined;
+      }
+    | {
+        /**
+         * Replaces this connection's bot token instead (`PUT /api/ui/connections/gitlab/{id}`):
+         * the instance URL is read-only, and the token must belong to the same GitLab user.
+         */
+        replaceConnectionId: string;
+        onConnected?: undefined;
+        /** After the token was replaced: the connection's re-checked health. */
+        onReplaced: (result: GitLabTokenResult) => void;
+      }
+  );
+
+type Submitted =
+  | { kind: "connected"; connection: ScmConnectionListRow }
+  | { kind: "replaced"; result: GitLabTokenResult };
+
 /**
  * Connects GitLab with a bot's access token (`POST /api/ui/gitlab-connections`): the GitLab
  * URL and token, validated by the server, whose message shows under the form when it refuses
- * them. Built once for every place that connects GitLab.
+ * them. With `replaceConnectionId`, replaces that connection's token on its instance instead.
+ * Built once for every place that connects GitLab.
  */
 export function ConnectGitLabForm({
   organizationId,
   defaultGitLabUrl,
-  onConnected,
   onCancel,
+  ...mode
 }: ConnectGitLabFormProps) {
+  const replacing = mode.replaceConnectionId !== undefined;
   const [baseUrl, setBaseUrl] = useState(defaultGitLabUrl);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const connect = useApiMutation<z.infer<typeof connectedGitLabSchema>, void>({
+  const connect = useApiMutation<Submitted, void>({
     // No organization header: the organization may not be the active one.
-    mutationFn: () =>
-      api.post("/api/ui/gitlab-connections", connectedGitLabSchema, {
-        body: { baseUrl, token, organizationId },
-      }),
+    mutationFn: async () =>
+      mode.replaceConnectionId !== undefined
+        ? {
+            kind: "replaced",
+            result: await api.put(
+              `/api/ui/connections/gitlab/${encodeURIComponent(mode.replaceConnectionId)}`,
+              gitLabTokenResultSchema,
+              { body: { token } },
+            ),
+          }
+        : {
+            kind: "connected",
+            connection: (
+              await api.post("/api/ui/gitlab-connections", connectedGitLabSchema, {
+                body: { baseUrl, token, organizationId },
+              })
+            ).connection,
+          },
     // The caller shows the connection from the response; its change event reconciles.
     applyResult: () => undefined,
     invalidate: () => [],
-    success: "GitLab connected",
-    onSuccess: (result) => {
+    success: replacing ? "Token replaced" : "GitLab connected",
+    onSuccess: (submitted) => {
       setToken("");
-      onConnected(result.connection);
+      if (submitted.kind === "replaced") mode.onReplaced?.(submitted.result);
+      else mode.onConnected?.(submitted.connection);
     },
     onError: (failure) => setError(failure.message),
   });
@@ -59,11 +101,21 @@ export function ConnectGitLabForm({
   };
 
   return (
-    <form className="or-connect-gitlab" aria-label="Connect GitLab" onSubmit={submit} noValidate>
-      <Field label="GitLab URL" description="gitlab.com or your self-managed instance." stacked>
+    <form
+      className="or-connect-gitlab"
+      aria-label={replacing ? "Replace the GitLab token" : "Connect GitLab"}
+      onSubmit={submit}
+      noValidate
+    >
+      <Field
+        label="GitLab URL"
+        description={replacing ? undefined : "gitlab.com or your self-managed instance."}
+        stacked
+      >
         <TextInput
           type="url"
           value={baseUrl}
+          readOnly={replacing}
           onChange={(event) => setBaseUrl(event.target.value)}
           placeholder="https://gitlab.com"
           autoComplete="url"
@@ -96,7 +148,13 @@ export function ConnectGitLabForm({
           </Button>
         ) : null}
         <Button type="submit" variant="solid" icon={IconPlugConnected} disabled={pending}>
-          {pending ? "Connecting…" : "Connect"}
+          {replacing
+            ? pending
+              ? "Replacing…"
+              : "Replace token"
+            : pending
+              ? "Connecting…"
+              : "Connect"}
         </Button>
       </div>
     </form>

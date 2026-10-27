@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { connectionHealthSummarySchema } from "./repositories";
+import { settingsHistoryEntrySchema } from "./settings-history";
 
 /**
  * Wire format of `GET /api/ui/connections`: every connection of the active organization
@@ -60,6 +61,12 @@ export const connectionSchema = z.object({
   failedDeliveries: z.number().int().nonnegative(),
   /** Chat: the identities linked on the connection's platform; null for the others. */
   linkedAccounts: z.number().int().nonnegative().nullable(),
+  /** GitLab: the instance's URL, which its token form shows; null for the others. */
+  instanceUrl: z.string().nullable(),
+  /** GitHub: the App installation's settings page on GitHub; null for the others. */
+  installationUrl: z.string().nullable(),
+  /** The connection's latest recorded change (section `connection`); null before any. */
+  history: settingsHistoryEntrySchema.nullable(),
 });
 export type Connection = z.infer<typeof connectionSchema>;
 

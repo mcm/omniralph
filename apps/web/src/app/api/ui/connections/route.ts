@@ -1,4 +1,5 @@
 import { apiHandler } from "@/lib/api/handler";
+import { activeOrganization } from "@/lib/api/scope";
 import type { ConnectionList } from "@/lib/api/connections";
 import { getDb } from "@/lib/db";
 import { listConnections } from "@/lib/connections/list";
@@ -8,5 +9,5 @@ import { listConnections } from "@/lib/connections/list";
  * active organization, without any token or secret. Any member may read it.
  */
 export const GET = apiHandler({}, async ({ user }): Promise<ConnectionList> => ({
-  connections: await listConnections(getDb(), user.organization.id),
+  connections: await listConnections(getDb(), activeOrganization(user)),
 }));
