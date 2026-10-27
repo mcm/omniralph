@@ -23,7 +23,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkItemResultSchema } from "@/lib/api/work-items";
+import { createWorkItemResultSchema, workItemTargetListSchema } from "@/lib/api/work-items";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as LinearClient from "@/lib/linear/client";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
@@ -68,6 +68,7 @@ vi.mock("@/lib/linear/client", async (importOriginal) => {
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
 const createRoute = await import("./route");
+const targetsRoute = await import("./targets/route");
 const backlogRoute = await import("../backlog/route");
 const {
   CREATE_FAILED_MESSAGE,
@@ -500,6 +501,41 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
         body: { code: "tracker_failed", error: CREATE_FAILED_MESSAGE },
       });
       expect(await post({ title: "No repo" })).toMatchObject({ status: 400 });
+    });
+  });
+
+  describe("GET /api/ui/work-items/targets", () => {
+    const targets = async (query = "") => {
+      const response = await targetsRoute.GET(
+        new Request(`http://localhost/api/ui/work-items/targets${query}`),
+        { params: Promise.resolve({}) },
+      );
+      return { status: response.status, body: (await response.json()) as unknown };
+    };
+
+    it("lists the repos with Coding on and a work item match, with their team and project", async () => {
+      for (const query of ["", "?organization=all", `?organization=${state.orgId}`]) {
+        const { status, body } = await targets(query);
+        expect(status).toBe(200);
+        const { targets: list } = workItemTargetListSchema.parse(body);
+        expect(
+          list.map((target) => [target.repository.fullPath, target.team, target.project]),
+        ).toEqual([
+          ["acme/api", "ENG", null],
+          ["acme/customer-portal", "eng", "portal"],
+          ["acme/ghost", "GHO", null],
+          ["acme/lost", "ENG", "Archived"],
+        ]);
+        expect(list[1]).toMatchObject({
+          repository: { id: repos.portal, provider: "github", name: "customer-portal" },
+          organization: { id: state.orgId, name: "Acme", role: "member" },
+          tracker: "linear",
+        });
+      }
+    });
+
+    it("answers 404 for an organization the user isn't a member of", async () => {
+      expect((await targets(`?organization=${otherOrgId}`)).status).toBe(404);
     });
   });
 });

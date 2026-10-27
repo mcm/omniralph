@@ -10,6 +10,7 @@ import {
   getWorkItemMatch,
   listOtherWorkItemMatches,
   listWorkItemMatches,
+  listWorkItemTargets,
   saveWorkItemMatch,
   type WorkItemMatchFields,
 } from "./work-item-matches.js";
@@ -145,6 +146,43 @@ describe.skipIf(!databaseAvailable)("work item matches", () => {
     expect(await listOtherWorkItemMatches(db, orgId, api!)).toEqual([
       expect.objectContaining({ repositoryId: web, fullPath: "acme/web" }),
     ]);
+  });
+
+  it("lists New work item's targets: connected repos with Coding on and a match", async () => {
+    const orgId = await organization("Targets");
+    const [web, api, docs, bare] = await repos(
+      orgId,
+      "acme/web",
+      "acme/api",
+      "acme/docs",
+      "acme/bare",
+    );
+    for (const repositoryId of [web!, api!, docs!]) {
+      await saveWorkItemMatch(db, {
+        organizationId: orgId,
+        repositoryId,
+        userId: null,
+        match: match({ project: repositoryId === web ? "Portal" : null }),
+      });
+    }
+    await db
+      .update(repositories)
+      .set({ codingEnabled: true })
+      .where(eq(repositories.organizationId, orgId));
+    await db.update(repositories).set({ codingEnabled: false }).where(eq(repositories.id, api!));
+    await db
+      .update(repositories)
+      .set({ disconnectedAt: new Date() })
+      .where(eq(repositories.id, docs!));
+    // `bare` has Coding on but no match.
+    expect(bare).toBeDefined();
+    expect(await listWorkItemTargets(db, orgId)).toEqual([
+      {
+        repository: { id: web, provider: "github", fullPath: "acme/web" },
+        match: expect.objectContaining({ team: "ENG", project: "Portal" }),
+      },
+    ]);
+    expect(await listWorkItemTargets(db, await organization("Empty"))).toEqual([]);
   });
 
   it('refuses a project name with "no project", and deletes with the repository', async () => {

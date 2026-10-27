@@ -272,6 +272,7 @@ const workItemRepository = await import("./work-items/[id]/repository/route");
 const workItemMove = await import("./work-items/[id]/move/route");
 const workItemCancel = await import("./work-items/[id]/cancel/route");
 const workItemCreate = await import("./work-items/route");
+const workItemTargets = await import("./work-items/targets/route");
 const workItemShareLinks = await import("./work-items/[id]/share-links/route");
 const shareLinkRevoke = await import("./share-links/[linkId]/route");
 const inboxFeed = await import("./inbox/route");
@@ -1181,13 +1182,27 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             const upNext = await call(backlogUpNext.GET, { path: `/api/ui/backlog${query}` });
             expect(upNext.status).toBe(200);
             expect(titles(upNext.body)).toEqual([`${own.name} backlog item`]);
-            for (const { body } of [listed, counts, upNext]) {
+            const targets = await call(workItemTargets.GET, {
+              path: `/api/ui/work-items/targets${query}`,
+            });
+            expect(targets.status).toBe(200);
+            expect(
+              (targets.body.targets as Array<{ repository: { id: string } }>).map(
+                (target) => target.repository.id,
+              ),
+            ).toEqual([own.repoId]);
+            for (const { body } of [listed, counts, upNext, targets]) {
               for (const marker of markers(other)) {
                 expect(JSON.stringify(body)).not.toContain(marker);
               }
             }
           }
-          for (const handler of [backlogList.GET, backlogCounts.GET, backlogUpNext.GET]) {
+          for (const handler of [
+            backlogList.GET,
+            backlogCounts.GET,
+            backlogUpNext.GET,
+            workItemTargets.GET,
+          ]) {
             expect(
               await call(handler, { path: `/api/ui/backlog?organization=${other.orgId}` }),
             ).toMatchObject({ status: 404 });
@@ -1215,7 +1230,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         await db.delete(users).where(eq(users.id, both!.id));
       }
       state.userId = null;
-      for (const handler of [backlogList.GET, backlogCounts.GET, backlogUpNext.GET]) {
+      for (const handler of [
+        backlogList.GET,
+        backlogCounts.GET,
+        backlogUpNext.GET,
+        workItemTargets.GET,
+      ]) {
         expect((await call(handler)).status).toBe(401);
       }
     } finally {

@@ -226,10 +226,12 @@ export {
   getWorkItemMatch,
   listOtherWorkItemMatches,
   listWorkItemMatches,
+  listWorkItemTargets,
   saveWorkItemMatch,
   type SaveWorkItemMatchInput,
   type WorkItemMatch,
   type WorkItemMatchFields,
+  type WorkItemTarget,
   type WorkItemTracker,
 } from "./work-item-matches.js";
 export {

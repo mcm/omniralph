@@ -37,6 +37,44 @@ export async function listWorkItemMatches(
   return rows.map((r) => r.match);
 }
 
+/** A repository new work items can be created for: Coding on, connected, with a match. */
+export interface WorkItemTarget {
+  repository: Pick<Repository, "id" | "provider" | "fullPath">;
+  match: WorkItemMatch;
+}
+
+/**
+ * The organization's connected repositories with Coding on and a work item match (New work
+ * item's choices), by full path.
+ */
+export async function listWorkItemTargets(
+  db: Pick<Database, "select">,
+  organizationId: string,
+): Promise<WorkItemTarget[]> {
+  const rows = await db
+    .select({
+      match: workItemMatches,
+      id: repositories.id,
+      provider: repositories.provider,
+      fullPath: repositories.fullPath,
+    })
+    .from(workItemMatches)
+    .innerJoin(repositories, eq(repositories.id, workItemMatches.repositoryId))
+    .where(
+      and(
+        eq(workItemMatches.organizationId, organizationId),
+        eq(repositories.organizationId, organizationId),
+        eq(repositories.codingEnabled, true),
+        isNull(repositories.disconnectedAt),
+      ),
+    )
+    .orderBy(asc(repositories.fullPath), asc(repositories.id));
+  return rows.map(({ match, id, provider, fullPath }) => ({
+    repository: { id, provider, fullPath },
+    match,
+  }));
+}
+
 /** The repository's match, or null when it has none. */
 export async function getWorkItemMatch(
   db: Pick<Database, "select">,

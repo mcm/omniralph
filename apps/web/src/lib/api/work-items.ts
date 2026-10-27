@@ -195,6 +195,33 @@ export const createWorkItemResultSchema = z.object({
 });
 export type CreateWorkItemResponse = z.infer<typeof createWorkItemResultSchema>;
 
+/** `GET /api/ui/work-items/targets`'s query: the organization scope (`all` or an ID). */
+export const workItemTargetsQuerySchema = z.object({
+  organization: z
+    .union([z.literal("all"), z.uuid()], { error: "Unknown organization." })
+    .optional(),
+});
+
+/**
+ * A repo New work item can create for (Coding on, a work item match), and where its match
+ * creates the item: the tracker team's key and project (null: none).
+ */
+export const workItemTargetSchema = z.object({
+  repository: repositoryRefSchema.extend({
+    /** The last path segment (`customer-portal`). */
+    name: z.string(),
+  }),
+  organization: organizationRefSchema,
+  tracker: z.literal("linear"),
+  team: z.string(),
+  project: z.string().nullable(),
+});
+export type WorkItemTarget = z.infer<typeof workItemTargetSchema>;
+
+/** `GET /api/ui/work-items/targets`: the scope's targets, by organization name, then path. */
+export const workItemTargetListSchema = z.object({ targets: z.array(workItemTargetSchema) });
+export type WorkItemTargetList = z.infer<typeof workItemTargetListSchema>;
+
 // ── Review links (`/api/ui/work-items/{id}/share-links`, `/api/ui/share-links/{id}`) ───────
 
 /** An active review link of a work item. Its token is never listed (shown once, on create). */

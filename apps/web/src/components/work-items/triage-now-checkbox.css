@@ -1,0 +1,13 @@
+/* TriageNowCheckbox: the box and its description, indented under the label. Only `--or-` tokens. */
+.or-wi-triage-now {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.or-wi-triage-now__description {
+  margin: 0 0 0 24px;
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.4;
+}
