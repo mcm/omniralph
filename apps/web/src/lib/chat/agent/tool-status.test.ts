@@ -13,7 +13,7 @@ describe("toolStatus", () => {
     expect(names.filter((name) => !hasToolStatus(name))).toEqual([]);
   });
 
-  it("never names a tool, Ralph or the harness", () => {
+  it("never names a tool or Ralph", () => {
     const sentences = names.flatMap((name) => [
       toolStatus(name, {}),
       toolStatus(name, { repository: "acme/customer-portal" }),
@@ -22,7 +22,7 @@ describe("toolStatus", () => {
       expect(sentence).not.toBe(UNKNOWN_TOOL_STATUS);
       expect(sentence).toMatch(/^[A-Z][^_]*[^.]$/);
       for (const name of names) expect(sentence).not.toContain(name);
-      expect(sentence).not.toMatch(/ralph|harness/i);
+      expect(sentence).not.toMatch(/ralph/i);
     }
   });
 

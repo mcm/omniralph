@@ -172,7 +172,7 @@ export interface EnqueueChatAskDeps {
  * Hands a question about one of the organization's connected repositories
  * (`repositoryId`, already matched by the caller) to an agent as a run of
  * `task` (a query task taking `chat.request`, validated by the caller)
- * answered from its default branch, and maps the run to the thread. The same
+ * answered from `branch` (default: its default branch), and maps the run to the thread. The same
  * question asked again in the thread while the first one runs is not
  * enqueued twice.
  */
@@ -188,6 +188,11 @@ export async function enqueueChatAsk(
     messages: readonly QuotedMessage[];
     /** Files from the thread to include in the context. */
     attachments?: readonly ChatAskAttachment[];
+    /**
+     * The branch to answer from: a web chat's stored branch (its repo's default branch when
+     * the chat started). Without it, the default branch is read from the code host.
+     */
+    branch?: string | null;
     now?: Date;
   },
 ): Promise<EnqueueChatAskOutcome> {
@@ -228,14 +233,18 @@ export async function enqueueChatAsk(
     return { status: "no_capable_agent", agents, requirements };
   }
 
-  let defaultBranch: string;
-  try {
-    defaultBranch = await fetchDefaultBranch(deps, connection, repository);
-  } catch (error) {
-    return {
-      status: "failed",
-      error: `I couldn't read the default branch of ${repository.fullPath}: ${errorMessage(error)}`,
-    };
+  let branch: string;
+  if (input.branch) {
+    branch = input.branch;
+  } else {
+    try {
+      branch = await fetchDefaultBranch(deps, connection, repository);
+    } catch (error) {
+      return {
+        status: "failed",
+        error: `I couldn't read the default branch of ${repository.fullPath}: ${errorMessage(error)}`,
+      };
+    }
   }
 
   const question = clip(input.question.trim(), MAX_CHAT_ASK_QUESTION_LENGTH);
@@ -246,7 +255,7 @@ export async function enqueueChatAsk(
   });
   const trigger = {
     repository: repository.fullPath,
-    branch: defaultBranch,
+    branch,
     provider: repository.provider,
     question,
     chatThreadId: input.chatThreadId,
@@ -262,8 +271,8 @@ export async function enqueueChatAsk(
       {
         trigger: { kind: "chat.request", context: trigger },
         repositoryId: repository.id,
-        // A missing default branch (e.g. an empty repository) finishes with `no_checkout`.
-        ref: defaultBranch,
+        // A missing branch (e.g. an empty repository) finishes with `no_checkout`.
+        ref: branch,
         requireCheckout: true,
       },
       taskRequirements,

@@ -9,8 +9,12 @@ import {
   createRun,
   createWebChatThread,
   ensureWebChatConnection,
+  getJob,
   getWebMessage,
+  insertJob,
+  jobs,
   listRunEvents,
+  mapThreadRun,
   organizationMembers,
   organizations,
   upsertScmConnection,
@@ -18,7 +22,9 @@ import {
   type ChatThread,
   type ChatWebMessage,
   type Database,
+  type Job,
 } from "@omniralph/db";
+import type { QueryRunResult, RunSpecJobPayload } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -62,6 +68,11 @@ const { withLiveChanges } = await import("@/lib/live/request");
 const { webEventStream, withWebStream } = await import("./web-stream");
 const { ERROR_REPLY } = await import("./agent/handler");
 const { sanitizeCapped, MAX_BODY_CHARS } = await import("@/lib/review/sanitize");
+const { applyChatAnswer, chatThreadSink, onChatAnswerFailed } =
+  await import("@/lib/sinks/chat-thread");
+const { parseSinkResult } = await import("@/lib/sinks");
+const { retryChatAsk } = await import("./ask");
+const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -1092,6 +1103,228 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       const system = systemOf(calls[0]!);
       expect(system).toContain("a linked member of the organization (role: admin)");
       expect(system).toContain("about the repository acme/app (branch main)");
+    });
+
+    /** A bot channel over the web adapter, and wake-up deps answering with `model`. */
+    function wakeUp(model: MockLanguageModelV2 | null) {
+      const state = createMockState();
+      const built = createChatBot({
+        db,
+        slack: null,
+        discord: null,
+        state,
+        handler: { handle: async () => undefined },
+        logger: createMockLogger(),
+        env: ENV,
+      });
+      const channel = { db, adapters: built.adapters, state, appUrl: APP_URL, encryptionKey: key };
+      const deps = {
+        db,
+        model,
+        channel,
+        logger: silent,
+        rateLimits: {
+          wakePerOrganization: (): RateLimit => ({
+            key: `test:wake:${randomUUID()}`,
+            limit: 100,
+            windowSeconds: 60,
+          }),
+        },
+      };
+      return { channel, deps };
+    }
+
+    const answered = (answer: string): QueryRunResult => ({
+      outcome: "answered",
+      answer,
+      structured: null,
+      references: [{ path: "src/list.ts", startLine: 2 }],
+      usage: { inputTokens: 10, outputTokens: 5 },
+      durationMs: 41_000,
+    });
+
+    /** A code question of the chat, as `enqueueChatAsk` stores and maps it, finished with `result`. */
+    async function askRun(thread: ChatThread, result: QueryRunResult | null): Promise<Job> {
+      const payload: RunSpecJobPayload = {
+        trigger: {
+          kind: "chat.request",
+          context: {
+            repository: "acme/app",
+            branch: "main",
+            provider: "github",
+            question: "Why does last() fail?",
+            chatThreadId: thread.id,
+            chat: { context: null },
+            budgetTokens: 12_000,
+          },
+        },
+        repositoryId,
+        ref: "main",
+        requireCheckout: true,
+      };
+      const { job } = await insertJob(db, {
+        organizationId: orgId,
+        type: "chat.ask",
+        taskType: "query",
+        taskId: "builtin:ask-about-code",
+        payload,
+        repositoryId,
+      });
+      await mapThreadRun(db, { organizationId: orgId, chatThreadId: thread.id, jobId: job.id });
+      return finish(job.id, result);
+    }
+
+    /** Marks a job completed with `result` (failed without one). */
+    async function finish(jobId: string, result: QueryRunResult | null): Promise<Job> {
+      await db
+        .update(jobs)
+        .set({ status: result ? "completed" : "failed", result, finishedAt: new Date() })
+        .where(eq(jobs.id, jobId));
+      return (await getJob(db, jobId))!;
+    }
+
+    const history = (threadId: string) =>
+      db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.threadId, threadId))
+        .orderBy(asc(chatMessages.createdAt));
+
+    it("relays an answered code question as the agent wrote it, with no model turn", async () => {
+      const thread = await newChat();
+      const { model, calls } = mockModel("Never said.");
+      const doGenerate = vi.spyOn(model, "doGenerate");
+      const { channel, deps } = wakeUp(model);
+      const job = await askRun(thread, answered("`last()` reads one past the end. See ENG-12."));
+      expect(
+        await applyChatAnswer(db, job, parseSinkResult(chatThreadSink, job.result)!, channel),
+      ).toBe(true);
+      const [event] = await listRunEvents(db, orgId, thread.id, { pending: true });
+      const answer = (event!.body as { answer: string }).answer;
+      expect(answer).toBe("`last()` reads one past the end. See ENG-12.");
+
+      const { result, messages } = await published(() => processThreadRunEvents(deps, thread.id));
+
+      expect(result).toEqual({ status: "processed", events: 1, posted: 1 });
+      expect(calls).toEqual([]);
+      expect(doGenerate).not.toHaveBeenCalled();
+      const [threadRun] = await db.query.chatThreadRuns.findMany({
+        where: (t, { eq }) => eq(t.jobId, job.id),
+      });
+      expect((await rows(thread.id)).map((r) => [r.author, r.markdown, r.threadRunId])).toEqual([
+        ["om", answer, threadRun!.id],
+      ]);
+      // The answer, without the "Files:" line, is the model's history for follow-ups.
+      expect((await history(thread.id)).map((m) => [m.role, m.content])).toEqual([
+        ["assistant", answer],
+      ]);
+      expect(await listRunEvents(db, orgId, thread.id, { pending: true })).toEqual([]);
+      expect(messages).toEqual([chatEvent(thread)]);
+    });
+
+    it("relays answers even when the chat agent isn't configured", async () => {
+      const thread = await newChat();
+      const { channel, deps } = wakeUp(null);
+      const job = await askRun(thread, answered("It's in `src/list.ts`."));
+      await applyChatAnswer(db, job, parseSinkResult(chatThreadSink, job.result)!, channel);
+
+      expect(await processThreadRunEvents(deps, thread.id)).toEqual({
+        status: "processed",
+        events: 1,
+        posted: 1,
+      });
+      expect((await rows(thread.id)).map((r) => r.markdown)).toEqual(["It's in `src/list.ts`."]);
+
+      // Anything else needs the model.
+      const failed = await askRun(thread, null);
+      await onChatAnswerFailed(db, failed, channel, "boom");
+      expect(await processThreadRunEvents(deps, thread.id)).toEqual({ status: "not_configured" });
+    });
+
+    it("takes a model turn for failed and budget-exhausted asks and coding-run events", async () => {
+      const thread = await newChat();
+      const { model, calls } = mockModel(
+        "Sorry: that question failed and another ran out of budget.",
+      );
+      const { channel, deps } = wakeUp(model);
+      const budget = await askRun(thread, {
+        ...answered("x"),
+        outcome: "budget_exhausted",
+        answer: null,
+        references: [],
+      });
+      await applyChatAnswer(db, budget, parseSinkResult(chatThreadSink, budget.result)!, channel);
+      const failed = await askRun(thread, null);
+      await onChatAnswerFailed(db, failed, channel, "boom");
+      const { run } = await createRun(db, {
+        origin: "chat",
+        organizationId: orgId,
+        chatThreadId: thread.id,
+        repositoryId,
+        branch: "omniralph/chat-web-relay",
+        baseBranch: "main",
+      });
+      const target = (await loadChatTarget(channel, {
+        chatThreadId: thread.id,
+        organizationId: orgId,
+        repositoryId,
+      }))!;
+      // A coding run's response, even one shaped like an answer, isn't relayed as is.
+      await recordChatRunEvent(target, {
+        organizationId: orgId,
+        run: { ralphRunId: run.id },
+        kind: "response",
+        body: { outcome: "answered", answer: "Shaped like an answer.", text: "Done." },
+        key: "response",
+      });
+      const ok = await askRun(thread, answered("The answer."));
+      await applyChatAnswer(db, ok, parseSinkResult(chatThreadSink, ok.result)!, channel);
+
+      const result = await processThreadRunEvents(deps, thread.id);
+
+      expect(result).toEqual({ status: "processed", events: 4, posted: 2 });
+      // One turn for the three events before the answer, then the answer as is.
+      expect(calls).toHaveLength(1);
+      const prompt = JSON.stringify(calls[0]!.prompt);
+      expect(prompt).toContain("budget_exhausted");
+      expect(prompt).toContain("the job failed");
+      expect(prompt).toContain("Shaped like an answer.");
+      expect((await rows(thread.id)).map((r) => [r.markdown, r.threadRunId !== null])).toEqual([
+        ["Sorry: that question failed and another ran out of budget.", false],
+        ["The answer.", true],
+      ]);
+      expect(await listRunEvents(db, orgId, thread.id, { pending: true })).toEqual([]);
+    });
+
+    it("relays a retried ask's answer into the same chat", async () => {
+      const thread = await newChat();
+      const { model, calls } = mockModel("Never said.");
+      const { channel, deps } = wakeUp(model);
+      const first = await askRun(thread, null);
+      const threadRunId = first.chatThreadRunId!;
+      expect(threadRunId).toBeTruthy();
+
+      const retried = await retryChatAsk(
+        { db, dispatcher: new PostgresDispatcher({ db }) },
+        { organizationId: orgId, chatThreadRunId: threadRunId, jobId: first.id },
+      );
+      expect(retried).toMatchObject({ status: "enqueued" });
+      const copy = await finish(
+        (retried as { jobId: string }).jobId,
+        answered("Found it on the second try."),
+      );
+      expect(
+        await applyChatAnswer(db, copy, parseSinkResult(chatThreadSink, copy.result)!, channel),
+      ).toBe(true);
+
+      expect(await processThreadRunEvents(deps, thread.id)).toMatchObject({
+        status: "processed",
+        posted: 1,
+      });
+      expect(calls).toEqual([]);
+      expect((await rows(thread.id)).map((r) => [r.markdown, r.threadRunId])).toEqual([
+        ["Found it on the second try.", threadRunId],
+      ]);
     });
 
     it("leaves the events pending while a turn holds the thread's lock", async () => {

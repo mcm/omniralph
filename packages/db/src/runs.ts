@@ -2,7 +2,7 @@
  * What a run's session reported (`run_activities`) and the tool calls it asked
  * a person to approve (`run_permission_requests`), stored with the run's job.
  */
-import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { jobChangeColumns, jobRunId, recordJobChanges, type JobChangeFields } from "./jobs.js";
@@ -69,6 +69,32 @@ export async function listRunActivities(db: Queryable, jobId: string): Promise<R
     .from(runActivities)
     .where(eq(runActivities.jobId, jobId))
     .orderBy(asc(runActivities.createdAt), asc(runActivities.id));
+}
+
+/**
+ * How many distinct files each job's session read: the distinct `parameter` values of its
+ * `Read` actions (`run_activities`). Jobs without any are left out.
+ */
+export async function countFilesRead(
+  db: Queryable,
+  jobIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (jobIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      jobId: runActivities.jobId,
+      files: sql<number>`count(distinct ${runActivities.parameter})::int`,
+    })
+    .from(runActivities)
+    .where(
+      and(
+        inArray(runActivities.jobId, [...new Set(jobIds)]),
+        eq(runActivities.type, "action"),
+        eq(runActivities.body, "Read"),
+      ),
+    )
+    .groupBy(runActivities.jobId);
+  return new Map(rows.map((r) => [r.jobId, r.files]));
 }
 
 export interface NewRunPermissionRequestInput {

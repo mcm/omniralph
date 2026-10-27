@@ -11,6 +11,7 @@ import type {
   RoutingIssue,
   Viewer,
 } from "@/lib/linear/gateway";
+import { parseIssueIdentifier } from "@/lib/linear/gateway";
 import { isTriageLabel, TRIAGE_LABEL } from "@/lib/linear/webhook";
 import {
   readinessOf,
@@ -209,6 +210,26 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       this.appUserIdFor([issue]),
     ]);
     return this.workItem(issue, blockers, appUserId);
+  }
+
+  async findByIdentifiers(identifiers: readonly string[]): Promise<WorkItem[]> {
+    const wanted = [
+      ...new Set(
+        identifiers.flatMap((identifier) => {
+          const parsed = parseIssueIdentifier(identifier);
+          return parsed ? [`${parsed.teamKey}-${parsed.number}`] : [];
+        }),
+      ),
+    ];
+    const items: WorkItem[] = [];
+    // One request per page of identifiers (a message names a handful).
+    for (let i = 0; i < wanted.length; i += LIST_CANDIDATES_MAX_LIMIT) {
+      const chunk = wanted.slice(i, i + LIST_CANDIDATES_MAX_LIMIT);
+      const page = await this.gateway.listIssues({ identifiers: chunk, first: chunk.length });
+      const appUserId = await this.appUserIdFor(page.issues);
+      items.push(...page.issues.map((issue) => this.workItem(issue, issue.blockers, appUserId)));
+    }
+    return items;
   }
 
   async listCandidates(input: ListCandidatesInput): Promise<WorkItemPage> {

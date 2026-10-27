@@ -3,7 +3,7 @@
  * ("Change repo…", which routing tries first, `apps/web/src/lib/routing/resolve.ts`) and the
  * actions taken on the item in Omniralph (its Activity).
  */
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { repositories, workItemEvents, workItemOverrides } from "./schema.js";
@@ -195,4 +195,32 @@ export async function listWorkItemEvents(
     )
     .orderBy(desc(workItemEvents.createdAt), desc(workItemEvents.id))
     .limit(limit);
+}
+
+/**
+ * The newest run (by `created_at`) of each of the organization's Linear work items with
+ * these IDs: a coding (epic or request) run or a triage run, by its run ID (`/runs/{id}`).
+ * Items without a run are left out.
+ */
+export async function latestWorkItemRuns(
+  db: Database,
+  organizationId: string,
+  externalIds: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = [...new Set(externalIds)];
+  if (ids.length === 0) return new Map();
+  const list = sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const result = await db.execute<{ issue_id: string; run_id: string }>(sql`
+    select distinct on (issue_id) issue_id, run_id from (
+      select linear_issue_id as issue_id, id as run_id, created_at from ralph_runs
+        where organization_id = ${organizationId} and linear_issue_id in (${list})
+      union all
+      select linear_issue_id, id, created_at from triage_runs
+        where organization_id = ${organizationId} and linear_issue_id in (${list})
+    ) runs
+    order by issue_id, created_at desc, run_id desc`);
+  return new Map(result.rows.map((r) => [r.issue_id, r.run_id]));
 }

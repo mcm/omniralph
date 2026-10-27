@@ -243,6 +243,7 @@ export {
 export {
   clearWorkItemRepository,
   getWorkItemOverride,
+  latestWorkItemRuns,
   listWorkItemEvents,
   listWorkItemOverrides,
   recordWorkItemChange,
@@ -737,6 +738,7 @@ export {
 } from "./triage.js";
 export {
   answerRunPermissionRequest,
+  countFilesRead,
   createRunPermissionRequest,
   getRunPermissionRequest,
   insertRunActivity,

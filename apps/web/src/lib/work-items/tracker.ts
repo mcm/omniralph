@@ -233,6 +233,11 @@ export interface WorkItemTracker {
   readonly integrationId: string;
   /** Throws `WorkItemNotFoundError` for an unknown ref. */
   get(ref: WorkItemRef): Promise<WorkItem>;
+  /**
+   * The work items with these identifiers (`ENG-12`, ignoring case), in no particular order:
+   * one lookup for the whole list. Identifiers the tracker doesn't know are left out.
+   */
+  findByIdentifiers(identifiers: readonly string[]): Promise<WorkItem[]>;
   /** A page of work items matching every given condition. */
   listCandidates(input: ListCandidatesInput): Promise<WorkItemPage>;
   create(input: CreateWorkItemInput): Promise<WorkItem>;

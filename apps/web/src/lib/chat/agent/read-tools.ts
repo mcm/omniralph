@@ -87,6 +87,11 @@ export const UNKNOWN_REPOSITORY = {
     "No connected repository of this organization matches. Use list_repositories to see their names.",
 } as const;
 
+const REPOSITORY_NEEDED = {
+  error: "repository_needed",
+  message: "Say which repository the question is about. Use list_repositories to see their names.",
+} as const;
+
 /**
  * The playbook chat runs for `slot` in this thread's channel
  * (`chatPlaybooksFor`) as its run spec task, checked again since a stored
@@ -708,14 +713,15 @@ async function chatAskAttachments(
 export const askAboutCodeTool = defineChatTool({
   tier: "read",
   description:
-    "Asks a question about the code of one of the organization's connected repositories (any, not only ones with coding on): starts a run of this channel's \"ask about code\" task, which Om answers on one of the organization's agents from a read-only checkout of the default branch. It returns the run's id right away; the answer follows in this thread a little later. A follow-up's context includes the thread's previous code question and its answer.",
+    "Asks a question about the code of one of the organization's connected repositories (any, not only ones with coding on): starts a run of this channel's \"ask about code\" task, which Om answers on one of the organization's agents from a read-only checkout of the default branch (in a web chat about one repository: that repository, on the chat's branch, unless you name another). It returns the run's id right away; the answer follows in this thread a little later. A follow-up's context includes the thread's previous code question and its answer.",
   inputSchema: z.object({
     repository: z
       .string()
       .min(1)
       .max(300)
+      .optional()
       .describe(
-        "Full path of a connected repository of the organization, e.g. `acme/api`, or its id.",
+        "Full path of a connected repository of the organization, e.g. `acme/api`, or its id. In a web chat about one repository, leave it out to ask about that repository.",
       ),
     question: z
       .string()
@@ -736,8 +742,14 @@ export const askAboutCodeTool = defineChatTool({
     const { db, organizationId, chatThread, appUrl } = context;
     const attachments = await chatAskAttachments(context, input.attachments ?? []);
     if ("error" in attachments) return attachments;
-    const repository = await findRepository(db, organizationId, input.repository);
-    if (!repository) return UNKNOWN_REPOSITORY;
+    // A web chat about one repo asks about it by default, from the branch the chat stored.
+    const chatRepositoryId = chatThread.platform === "web" ? chatThread.repositoryId : null;
+    const ref = input.repository ?? chatRepositoryId;
+    const repository = ref ? await findRepository(db, organizationId, ref) : null;
+    if (!repository) {
+      return ref ? UNKNOWN_REPOSITORY : REPOSITORY_NEEDED;
+    }
+    const branch = repository.id === chatRepositoryId ? chatThread.branch : null;
     const task = await chatPlaybookOf(context, "ask");
     if ("error" in task) return task;
     const { dispatcher, adapterFor } = await context.ralph();
@@ -751,6 +763,7 @@ export const askAboutCodeTool = defineChatTool({
         question: input.question,
         messages: context.turnMessages,
         attachments: attachments.files,
+        branch,
       },
     );
     switch (outcome.status) {

@@ -618,6 +618,27 @@ describe("SdkLinearGateway reads", () => {
     });
   });
 
+  it("lists issues by identifier, one team key and number each, in one request", async () => {
+    resolvers.ListIssues = () => ({
+      issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+    });
+    await gateway().listIssues({ identifiers: ["eng-12", "OPS-3", "nope"], first: 3 });
+    await gateway().listIssues({ identifiers: ["nope"], first: 1 });
+    expect(calls.map((c) => c.variables.filter)).toEqual([
+      {
+        and: [
+          {
+            or: [
+              { team: { key: { eqIgnoreCase: "ENG" } }, number: { eq: 12 } },
+              { team: { key: { eqIgnoreCase: "OPS" } }, number: { eq: 3 } },
+            ],
+          },
+        ],
+      },
+      { and: [{ id: { in: [] } }] },
+    ]);
+  });
+
   it("lists issues in no project with their routing fields and update times, in one request", async () => {
     resolvers.ListIssues = () => ({
       issues: {

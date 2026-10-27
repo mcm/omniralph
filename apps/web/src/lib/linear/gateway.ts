@@ -100,6 +100,8 @@ export interface ListIssuesFilter {
   withoutProject?: boolean;
   /** Each issue also carries its `routing` fields (selected in the same query). */
   withRoutingFields?: boolean;
+  /** Issues with one of these identifiers (`ENG-12`, the team key ignoring case). */
+  identifiers?: string[];
   first: number;
   after?: string | null;
 }
@@ -604,6 +606,14 @@ function blockersOf(nodes: RelationNode[]): Blocker[] {
 const BLOCKERS_PER_ISSUE = 25;
 
 /** `ListIssuesFilter` as a Linear `IssueFilter` (every condition must hold). */
+/** The team key and number of an issue identifier (`ENG-12`), or null. */
+export function parseIssueIdentifier(
+  identifier: string,
+): { teamKey: string; number: number } | null {
+  const match = /^([A-Za-z][A-Za-z0-9_]*)-(\d{1,9})$/.exec(identifier.trim());
+  return match ? { teamKey: match[1]!.toUpperCase(), number: Number(match[2]) } : null;
+}
+
 export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
   const and: Array<Record<string, unknown>> = [];
   if (filter.teamId) and.push({ team: { id: { eq: filter.teamId } } });
@@ -624,6 +634,16 @@ export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
     });
   }
   if (filter.stateTypes) and.push({ state: { type: { in: filter.stateTypes } } });
+  if (filter.identifiers) {
+    const or = filter.identifiers.flatMap((identifier) => {
+      const parsed = parseIssueIdentifier(identifier);
+      return parsed
+        ? [{ team: { key: { eqIgnoreCase: parsed.teamKey } }, number: { eq: parsed.number } }]
+        : [];
+    });
+    // No valid identifier matches nothing, not everything.
+    and.push(or.length ? { or } : { id: { in: [] } });
+  }
   if (filter.stateMatch) {
     const { types, typesExceptTeamIds, ids } = filter.stateMatch;
     const or: Array<Record<string, unknown>> = [];

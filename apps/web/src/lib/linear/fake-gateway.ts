@@ -345,6 +345,12 @@ export class FakeLinearGateway implements LinearGateway {
       if (filter.delegateId && delegate !== filter.delegateId) return false;
       if (filter.notDelegateId && delegate === filter.notDelegateId) return false;
       if (filter.stateTypes && !filter.stateTypes.includes(issue.stateType)) return false;
+      if (
+        filter.identifiers &&
+        !filter.identifiers.some((identifier) => same(identifier.trim(), issue.identifier))
+      ) {
+        return false;
+      }
       if (filter.stateMatch) {
         const { types, typesExceptTeamIds, ids } = filter.stateMatch;
         const stateId = this.stateIdOf(issue);

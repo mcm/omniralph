@@ -246,6 +246,28 @@ describe.skipIf(!databaseAvailable)("chat-thread sink", () => {
     );
   });
 
+  it("carries the answer alone and its references for a web chat, and the same text for Slack", async () => {
+    const thread = await slackThread();
+    const job = await askJob(thread.id, answered);
+    const { adapter } = slackAdapter();
+
+    await applyChatAnswer(db, job, sinkResult(answered), channel(adapter));
+
+    const [event] = await events(thread.id);
+    // What Slack and Discord relay: the answer, then the "Files:" line.
+    expect((event!.body as { text: string }).text).toMatchInlineSnapshot(`
+      "\`last()\` reads one past the end in \`src/list.ts:2\`. See the docs (\`https://evil.example.com/x\`) and .
+
+      Files: [\`src/list.ts:2\`](<https://github.com/acme/app/blob/main/src/list.ts#L2>), [\`src/util.ts:4-9\`](<https://github.com/acme/app/blob/main/src/util.ts#L4-L9>)"
+    `);
+    expect(event!.body).toMatchObject({
+      answer:
+        "`last()` reads one past the end in `src/list.ts:2`. See the docs (`https://evil.example.com/x`) and .",
+      references: answered.references,
+    });
+    expect((event!.body as { answer: string }).answer).not.toContain("Files:");
+  });
+
   it("explains an answer without a result", async () => {
     const thread = await slackThread();
     const { adapter } = slackAdapter();
