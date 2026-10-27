@@ -227,7 +227,7 @@ are, no match is created, and they keep routing first, as before.
 ### Routing rules
 
 Routing rules are the organization's ordered list,
-**Settings › Routing** (`/api/ui/routing-rules`). Each rule is a condition over the issue's Linear
+**Settings › Advanced › Routing rules** (`/api/ui/routing-rules`). Each rule is a condition over the issue's Linear
 fields (identifier, title, description, team, project, milestone, cycle, state, state type,
 priority, assignee, creator, parent, labels, estimate, due date), its parent's fields
 (**Parent › …**) and, for a follow-up, its source issue's fields (**Source › …**), combined with
@@ -835,7 +835,7 @@ under pm2 update themselves to the version chosen on **Settings › Agent defaul
   worktree (remove `<workspaceRoot>/.branches/...` by hand). Otherwise the cron retries a cleanup
   that failed every 10 minutes (the run's page shows why it failed).
 - **"Which repository should I work in for this issue?" on every delegation.** Nothing routes the
-  issue: add a rule that matches it under **Settings › Routing**.
+  issue: add a rule that matches it under **Settings › Advanced › Routing rules**.
 - **"No repository has coding on".** Give a repository a work item match, then turn its Coding
   switch on (`PUT /api/ui/repositories/{id}/coding`).
 - **Stories fail to push.** The code host credentials lack write access: see

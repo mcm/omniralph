@@ -95,4 +95,18 @@ describe("SaveBar", () => {
     expect(screen.getByRole("alert").textContent).toBe("The repository is read-only.");
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
+
+  it("offers Discard or Keep editing instead of Save on a conflict", async () => {
+    const onKeepEditing = vi.fn();
+    const { onSave, onDiscard } = setup({
+      conflict: { message: "Someone else changed these rules.", onKeepEditing },
+    });
+    expect(screen.getByRole("alert").textContent).toBe("Someone else changed these rules.");
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(onKeepEditing).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(onDiscard).toHaveBeenCalledOnce();
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });

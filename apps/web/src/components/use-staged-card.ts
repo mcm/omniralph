@@ -48,6 +48,12 @@ export interface UseStagedCardOptions<T extends object, R> {
   needsConfirm?: (changes: StagedChange[]) => StagedChange[];
   /** The confirm dialog's title. Defaults to "Save <label> changes?". */
   confirmTitle?: string;
+  /**
+   * When set, a live update of the saved values while the card has changes (another admin's
+   * save) is a conflict: `conflict` holds this message for the `SaveBar`, which then offers
+   * Discard or `keepEditing` instead of Save. Without it, the draft stays on top silently.
+   */
+  conflictMessage?: string;
 }
 
 export interface StagedCard<T> {
@@ -72,6 +78,11 @@ export interface StagedCard<T> {
   fieldErrors: Readonly<Record<string, string>>;
   /** The confirm dialog: render it with the card. */
   dialog: React.ReactElement | null;
+  /**
+   * The `SaveBar`'s `conflict` while someone else's save changed the saved values under the
+   * draft (only with `conflictMessage`); undefined otherwise.
+   */
+  conflict: { message: string; onKeepEditing: () => void } | undefined;
 }
 
 function same(a: unknown, b: unknown): boolean {
@@ -97,8 +108,12 @@ export function useStagedCard<T extends object, R>({
   save,
   needsConfirm,
   confirmTitle,
+  conflictMessage,
 }: UseStagedCardOptions<T, R>): StagedCard<T> {
   const [edits, setEdits] = React.useState<Partial<T>>({});
+  // The saved values the draft was started from (or last kept on top of), to tell another
+  // admin's save from the user's own edits.
+  const [base, setBase] = React.useState<T | null>(null);
   const [error, setError] = React.useState<string | undefined>();
   const [errorCode, setErrorCode] = React.useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = React.useState(NO_FIELD_ERRORS);
@@ -115,6 +130,15 @@ export function useStagedCard<T extends object, R>({
   // Dirty means something to save: an edit that `toChanges` sees as no change (a list put
   // back in another order, say) neither shows a save bar nor asks before leaving.
   const dirty = changes.length > 0;
+  const conflicted = React.useMemo(
+    () =>
+      conflictMessage !== undefined &&
+      dirty &&
+      base !== null &&
+      base !== saved &&
+      toChanges(base, saved).length > 0,
+    [conflictMessage, dirty, base, saved, toChanges],
+  );
 
   useUnsavedChanges(label, anchorId, dirty);
 
@@ -130,6 +154,7 @@ export function useStagedCard<T extends object, R>({
     invalidate: (keys) => save.invalidate?.(keys) ?? [],
     success: save.success ?? "Saved",
     onSuccess: (_result, values) => {
+      setBase(null);
       // Edits made while the save was in flight stay staged.
       setEdits((current) => {
         const next: Partial<T> = {};
@@ -149,6 +174,7 @@ export function useStagedCard<T extends object, R>({
   const set = React.useCallback(
     <K extends keyof T>(field: K, value: T[K]) => {
       clearErrors();
+      setBase((current) => current ?? saved);
       setEdits((current) => {
         const next = { ...current };
         if (same(value, saved[field])) delete next[field];
@@ -161,8 +187,11 @@ export function useStagedCard<T extends object, R>({
 
   const discard = React.useCallback(() => {
     clearErrors();
+    setBase(null);
     setEdits({});
   }, []);
+
+  const keepEditing = React.useCallback(() => setBase(saved), [saved]);
 
   const run = (values: T) => {
     clearErrors();
@@ -170,7 +199,7 @@ export function useStagedCard<T extends object, R>({
   };
 
   const submit = () => {
-    if (changes.length === 0 || mutation.isPending) return;
+    if (changes.length === 0 || mutation.isPending || conflicted) return;
     const toConfirm = needsConfirm?.(changes) ?? [];
     if (toConfirm.length > 0) setConfirming(toConfirm);
     else run(draft);
@@ -212,5 +241,9 @@ export function useStagedCard<T extends object, R>({
     errorCode,
     fieldErrors,
     dialog,
+    conflict:
+      conflicted && conflictMessage !== undefined
+        ? { message: conflictMessage, onKeepEditing: keepEditing }
+        : undefined,
   };
 }

@@ -20,6 +20,7 @@ import {
 const fields = LINEAR_ROUTING_FIELDS as unknown as RoutingFieldData[];
 const byId = new Map(fields.map((field) => [field.id, field]));
 const API = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const WEB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const connected: RoutingLinear = {
   status: "connected",
@@ -71,14 +72,74 @@ describe("rulesDiffer", () => {
     ).toBe(true);
   });
 
-  it("lists the changed rules", () => {
-    const a = draft({ combinator: "and", rules: [] });
-    const b = draft({ combinator: "and", rules: [{ field: "title", operator: "=", value: "x" }] });
-    const repositories = [{ id: API, fullPath: "mcm/api", codingEnabled: true }];
-    expect(ruleChanges([a, b], [a], fields, repositories)).toEqual([
-      { key: "rule-1", label: "Rule 2", from: "Not set", to: "Title equals x → mcm/api" },
-    ]);
+  it("doesn't list anything without a difference", () => {
+    const a = draft({ combinator: "and", rules: [] }, API, "a");
     expect(ruleChanges([a], [a], fields, repositories)).toEqual([]);
+  });
+});
+
+const repositories = [
+  { id: API, provider: "github" as const, fullPath: "mcm/api", codingEnabled: true },
+  { id: WEB, provider: "gitlab" as const, fullPath: "mcm/web", codingEnabled: true },
+];
+
+describe("ruleChanges", () => {
+  const title = (value: string, key: string, repositoryId = API) =>
+    draft(
+      { combinator: "and", rules: [{ field: "title", operator: "=", value }] },
+      repositoryId,
+      key,
+    );
+  const a = title("a", "a");
+  const b = title("b", "b");
+  const c = title("c", "c");
+  const labels = (list: ReturnType<typeof ruleChanges>) => list.map((change) => change.label);
+
+  it("lists an added rule by its new number, with what it does", () => {
+    const added = title("docs", "new-1", WEB);
+    expect(ruleChanges([a, b, added], [a, b], fields, repositories)).toEqual([
+      {
+        id: "add-new-1",
+        label: "Rule 3: added",
+        to: "Title equals docs → mcm/web",
+        effect: "Work items it matches go to mcm/web.",
+      },
+    ]);
+  });
+
+  it("lists only the rule that moved, not the ones it shifted", () => {
+    expect(labels(ruleChanges([b, a, c], [a, b, c], fields, repositories))).toEqual([
+      "Rule 2: moved to 1",
+    ]);
+    expect(labels(ruleChanges([b, c, a], [a, b, c], fields, repositories))).toEqual([
+      "Rule 1: moved to 3",
+    ]);
+    const [moved] = ruleChanges([b, a, c], [a, b, c], fields, repositories);
+    expect(moved!.effect).toBe("It's checked before the rules it moved above.");
+  });
+
+  it("lists an edited rule from its old to its new summary, and a deleted one", () => {
+    const edited = { ...b, repositoryId: WEB };
+    expect(ruleChanges([edited, c], [a, b, c], fields, repositories)).toEqual([
+      {
+        id: "edit-b",
+        label: "Rule 2: edited",
+        from: "Title equals b → mcm/api",
+        to: "Title equals b → mcm/web",
+        effect: "Work items it matches go to mcm/web.",
+      },
+      {
+        id: "delete-a",
+        label: "Rule 1: deleted",
+        from: "Title equals a → mcm/api",
+        effect: "Work items it matched go on to the next rule.",
+      },
+    ]);
+  });
+
+  it("describes a rule without conditions or a repository", () => {
+    const empty = draft({ combinator: "and", rules: [] }, "", "new-2");
+    expect(ruleChanges([empty], [], fields, repositories)[0]!.to).toBe("Every issue → no repo");
   });
 });
 

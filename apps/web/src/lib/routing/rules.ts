@@ -10,9 +10,11 @@ import {
 } from "@omniralph/db";
 import type { RoutingRuleInput } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
+import type { ScopedOrganization } from "@/lib/api/scope";
 import type { RoutingRuleRow, RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { loadSettingsHistory } from "@/lib/settings-history/history";
 import { trackedRoutingRules } from "@/lib/settings-history/sections";
 
 /** Shown on a rule whose repository isn't one of the organization's. */
@@ -38,15 +40,20 @@ async function loadLinear(organizationId: string): Promise<RoutingRules["linear"
   }
 }
 
-/** Settings › Routing: the rules in order, the field catalog, the pickers' values and the targets. */
+/**
+ * Settings › Advanced › Routing rules: the rules in order, the field catalog, the pickers'
+ * values, the targets and the rules' latest change.
+ */
 export async function loadRoutingRules(
   db: Database,
-  organizationId: string,
+  organization: ScopedOrganization,
 ): Promise<RoutingRules> {
-  const [rules, linear, repositories] = await Promise.all([
+  const organizationId = organization.id;
+  const [rules, linear, repositories, history] = await Promise.all([
     listRoutingRules(db, organizationId),
     loadLinear(organizationId),
     listRepositoryOverview(db, organizationId),
+    loadSettingsHistory(db, [organization], { section: "routing_rules", limit: 1 }),
   ]);
   return {
     rules: rules.map(toRow),
@@ -61,9 +68,11 @@ export async function loadRoutingRules(
     linear,
     repositories: repositories.map((repo) => ({
       id: repo.id,
+      provider: repo.provider,
       fullPath: repo.fullPath,
       codingEnabled: repo.codingEnabled,
     })),
+    history: history.latest,
   };
 }
 

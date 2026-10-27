@@ -51,7 +51,7 @@ describe("navItems", () => {
     // Repos replaced the old repository pages.
     expect(pageFor("/repositories")).toBeUndefined();
     expect(pages.get("/repos")).toBeDefined();
-    expect(pages.get("/settings/routing")).toBeDefined();
+    expect(pages.get("/settings/advanced/routing")).toBeDefined();
     expect(pages.get("/repos/[id]")).toBeDefined();
     expect(pageFor("/repos/abc")).toBe(pages.get("/repos/[id]"));
     expect(pageFor("/nowhere")).toBeUndefined();
