@@ -80,7 +80,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Repos and Agents, then Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Repos and Agents, then Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -89,6 +89,7 @@ describe("AppShell", () => {
     expect(links).toEqual([
       ["Inbox", "/"],
       ["Runs", "/runs"],
+      ["Backlog", "/backlog"],
       ["Repos", "/repos"],
       ["Agents", "/agents"],
       ["Settings", "/settings/organization"],
@@ -99,6 +100,8 @@ describe("AppShell", () => {
     ["/", "Inbox"],
     ["/runs", "Runs"],
     ["/runs/123", "Runs"],
+    ["/backlog", "Backlog"],
+    ["/backlog/linear-1", "Backlog"],
     ["/repos", "Repos"],
     ["/repos/abc", "Repos"],
     ["/agents/abc", "Agents"],
@@ -126,13 +129,13 @@ describe("AppShell", () => {
     expect(current(tabBar())).toEqual([]);
   });
 
-  it("puts Inbox and Runs in the tab bar and Repos, Agents and Settings in the drawer", async () => {
+  it("puts Inbox, Runs and Backlog in the tab bar and Repos, Agents and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Inbox", "Runs"]);
+    ).toEqual(["Inbox", "Runs", "Backlog"]);
     const { drawer } = await openDrawer();
     const entries = within(drawer)
       .getAllByRole("link")
@@ -238,6 +241,7 @@ describe("AppShell nav indicators", () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },
       "GET /api/ui/inbox/counts": { needsYou: 4, problems: 1, running: 2 },
+      "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/analytics");
     const inbox = await within(sidebar()).findByRole("link", { name: "Inbox, 4 need you" });
@@ -258,10 +262,34 @@ describe("AppShell nav indicators", () => {
     ]);
   });
 
+  it("shows the Backlog's items as a neutral count, named, never as the accent pill", async () => {
+    const seen = mockFetch({
+      "GET /api/ui/live/token": { token: null },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+      "GET /api/ui/backlog/counts": { readyToStart: 2, needsRefining: 1, total: 3 },
+    });
+    renderShell("/analytics");
+    const backlog = await within(sidebar()).findByRole("link", { name: "Backlog, 3 items" });
+    expect(backlog.getAttribute("href")).toBe("/backlog");
+    expect(backlog.querySelector(".or-nav__n2")!.textContent).toBe("3");
+    expect(backlog.querySelector(".or-nav__count")).toBeNull();
+    // Only the full sidebar shows it: CSS hides it on the rail and in the tab bar, and it's
+    // no alert on the hamburger.
+    const tab = within(tabBar()).getByRole("link", { name: "Backlog, 3 items" });
+    expect(tab.querySelector(".or-nav__count")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open menu" })).toBeTruthy();
+    expect(
+      seen
+        .filter((request) => request.path === "/api/ui/backlog/counts")
+        .map((request) => request.query.get("organization")),
+    ).toEqual([TEST_ORGANIZATION_ID]);
+  });
+
   it("puts the running dot on the phone tab bar's Runs tab, on a run's page too", async () => {
     mockFetch({
       "GET /api/ui/live/token": { token: null },
       "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 3 },
+      "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/runs/123/steps/456");
     const runsTab = await within(tabBar()).findByRole("link", { name: "Runs, 3 running" });
@@ -273,6 +301,7 @@ describe("AppShell nav indicators", () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },
       "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+      "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/analytics", { ...twoOrganizations, scope: "all" });
     await waitFor(() =>

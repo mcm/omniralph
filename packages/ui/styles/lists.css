@@ -212,6 +212,13 @@
   margin-top: 6px;
 }
 
+.or-row__mark {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
+  color: var(--or-sec);
+}
+
 .or-row__main {
   display: flex;
   flex: 1;

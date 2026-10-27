@@ -12,14 +12,27 @@ export interface ListRowSelect {
   label: string;
 }
 
-export interface ListRowProps {
+/** A row led by a status dot and its kind and state above the title. */
+interface ListRowStatus {
+  /** The kind and state, e.g. "Request · failed"; it also names the status dot. */
+  kindLabel: string;
+  tone: StatusTone;
+  mark?: never;
+}
+
+/** A row led by a mark (e.g. a work item's tracker `BrandMark`), with no dot and no kind line. */
+interface ListRowMark {
+  /** Replaces the status dot; it names itself (a `BrandMark` is `role="img"`). */
+  mark: ReactNode;
+  kindLabel?: never;
+  tone?: never;
+}
+
+export type ListRowProps = (ListRowStatus | ListRowMark) & {
   /** Where the row leads; the whole row is clickable. */
   href: string;
   /** The row's name; it names the row link. Clamped to two lines. */
   title: ReactNode;
-  /** The kind and state, e.g. "Request · failed"; it also names the status dot. */
-  kindLabel: string;
-  tone: StatusTone;
   /** A short time ("4m", "2h") in a fixed-width mono slot. */
   time?: ReactNode;
   /** Reference badges under the title. */
@@ -31,7 +44,7 @@ export interface ListRowProps {
   /** Buttons after the row link (e.g. an `IconButton`). */
   actions?: ReactNode;
   className?: string;
-}
+};
 
 /**
  * One row of a `RowList`. A row link stretched over the whole row (named by the title)
@@ -43,6 +56,7 @@ export function ListRow({
   title,
   kindLabel,
   tone,
+  mark,
   time,
   meta,
   selected = false,
@@ -66,11 +80,17 @@ export function ListRow({
         />
       ) : null}
       <Link href={href} className="or-row__link" aria-labelledby={titleId} />
-      <StatusDot className="or-row__dot" tone={tone} label={kindLabel} />
+      {kindLabel !== undefined ? (
+        <StatusDot className="or-row__dot" tone={tone} label={kindLabel} />
+      ) : (
+        <span className="or-row__mark">{mark}</span>
+      )}
       <div className="or-row__main">
-        <span className="or-row__kind" aria-hidden="true">
-          {kindLabel}
-        </span>
+        {kindLabel !== undefined ? (
+          <span className="or-row__kind" aria-hidden="true">
+            {kindLabel}
+          </span>
+        ) : null}
         <span id={titleId} className="or-row__title">
           {title}
         </span>

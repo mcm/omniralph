@@ -64,6 +64,11 @@ export interface OrganizationBacklog {
   entries: BacklogEntry[];
   /** More than `BACKLOG_CANDIDATE_CAP` candidates: the list is cut. */
   truncated: boolean;
+  /**
+   * False when nothing picks up work items (no work item match or routing rule of a
+   * connected repo with Coding on), so the tracker wasn't asked; absent means something does.
+   */
+  picksUp?: boolean;
 }
 
 /**
@@ -199,7 +204,7 @@ export async function loadOrganizationBacklog(deps: {
     listRoutingRules(db, organizationId),
   ]);
   const filters = candidateFilters({ repositories, matches, rules });
-  if (filters.length === 0) return { entries: [], truncated: false };
+  if (filters.length === 0) return { entries: [], truncated: false, picksUp: false };
 
   const { items: candidates, truncated } = await readCandidates(tracker, filters);
   const listed = candidates.flatMap((item) => {
@@ -296,6 +301,7 @@ interface ScopedBacklog {
   rows: WorkItemRow[];
   unavailable: Backlog["unavailable"];
   truncatedOrganizations: Backlog["truncatedOrganizations"];
+  setup: Backlog["setup"];
 }
 
 export interface BacklogDeps {
@@ -332,7 +338,12 @@ async function loadScope(
       }
     }),
   );
-  const scoped: ScopedBacklog = { rows: [], unavailable: [], truncatedOrganizations: [] };
+  const scoped: ScopedBacklog = {
+    rows: [],
+    unavailable: [],
+    truncatedOrganizations: [],
+    setup: backlogSetup(results),
+  };
   const entries: Array<{ entry: BacklogEntry; organization: WorkItemRow["organization"] }> = [];
   for (const result of results) {
     const organization = {
@@ -355,6 +366,20 @@ async function loadScope(
     .sort((a, b) => compareBacklogEntries(a.entry, b.entry))
     .map(({ entry, organization }) => ({ ...entry.row, organization }));
   return scoped;
+}
+
+/**
+ * Why a list may be empty: no organization in scope has a tracker connected
+ * (`no_tracker`); else none picks up work items and none failed to load
+ * (`no_work_item_match`); else `ready`.
+ */
+function backlogSetup(
+  results: ReadonlyArray<{ backlog: OrganizationBacklog | null; failed?: boolean }>,
+): Backlog["setup"] {
+  const connected = results.filter((result) => result.backlog !== null || result.failed);
+  if (connected.length === 0) return "no_tracker";
+  if (connected.every((result) => result.backlog?.picksUp === false)) return "no_work_item_match";
+  return "ready";
 }
 
 /** `GET /api/ui/backlog`: the groups (filtered), the filters' options and what didn't load. */
@@ -396,6 +421,7 @@ export async function loadBacklog(
     unavailable: scope.unavailable,
     truncated: scope.truncatedOrganizations.length > 0,
     truncatedOrganizations: scope.truncatedOrganizations,
+    setup: scope.setup,
   };
 }
 

@@ -76,6 +76,14 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   // The app.
   { name: "home", path: "/", page: "(app)/page.tsx", auth: "signed-in" },
   { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in" },
+  // The Backlog (the fixture Linear workspace's FIX items), and one item open beside it.
+  { name: "backlog", path: "/backlog", page: "(app)/backlog/page.tsx", auth: "signed-in" },
+  {
+    name: "backlog-item",
+    path: "/backlog/linear-fixture-issue-fix-101",
+    page: "(app)/backlog/[id]/page.tsx",
+    auth: "signed-in",
+  },
   {
     name: "run-epic-running",
     path: `/runs/${ids.ralphRuns.running}`,

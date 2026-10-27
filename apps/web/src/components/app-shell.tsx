@@ -4,6 +4,7 @@ import { AppFrame, Toaster, UiProvider, type ThemePreference } from "@omniralph/
 import type { ComponentProps } from "react";
 import { usePathname } from "next/navigation";
 import { navItems, withNavIndicators } from "@/lib/navigation";
+import { useBacklogCounts } from "@/screens/backlog/queries";
 import { useInboxCounts } from "@/screens/inbox/queries";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
@@ -92,9 +93,11 @@ export function AppShell({
 
 /**
  * `AppFrame` with the nav's live indicators: the Inbox's needs-you count and the Runs dot,
- * from the Inbox counts (a live query the Inbox's tabs share through the cache).
+ * from the Inbox counts (a live query the Inbox's tabs share through the cache), and the
+ * Backlog's neutral count, from the Backlog counts (a live query too).
  */
 function LiveAppFrame({ nav, ...props }: ComponentProps<typeof AppFrame>) {
   const counts = useInboxCounts();
-  return <AppFrame {...props} nav={withNavIndicators(nav, counts.data)} />;
+  const backlog = useBacklogCounts();
+  return <AppFrame {...props} nav={withNavIndicators(nav, counts.data, backlog.data)} />;
 }
