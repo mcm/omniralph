@@ -62,7 +62,8 @@ const SETTINGS_INVALIDATIONS: Record<
   // Pins show on the repository and on the agents it's pinned to.
   "repository.agents": (keys, id) => [...repositoryKeys(keys, id), keys.agents.all],
   "repository.ask": (keys, id) => repositoryKeys(keys, id),
-  "repository.playbooks": (keys, id) => repositoryKeys(keys, id),
+  // Advanced › Playbooks shows the repos each playbook is bound to.
+  "repository.playbooks": (keys, id) => [...repositoryKeys(keys, id), playbookKeys(keys).all],
   // The routing rules, and the tracker labels routing applies; the Backlog routes by them.
   routing_rules: (keys) => [
     keys.settings.detail("routing"),
@@ -175,6 +176,8 @@ export const LIVE_INVALIDATIONS = {
     ...event.ids.map((repositoryId) => settingsHistoryKeys(keys).subject(repositoryId)),
     // The Backlog lists work items that route to connected repos with Coding on.
     keys.backlog.all,
+    // Advanced › Playbooks lists the repos bound to each playbook.
+    playbookKeys(keys).all,
   ],
   connection: (_event, keys) => [
     keys.connections.all,

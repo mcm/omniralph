@@ -148,6 +148,8 @@ export async function deletePlaybook(
 export interface RepositoryPlaybookBindings {
   id: string;
   fullPath: string;
+  /** Its code host. */
+  provider: "github" | "gitlab";
   reviewPlaybookIds: string[];
   correlationPlaybookId: string;
   storyPlaybookId: string;
@@ -163,6 +165,7 @@ export async function listRepositoryPlaybookBindings(
     .select({
       id: repositories.id,
       fullPath: repositories.fullPath,
+      provider: repositories.provider,
       reviewPlaybookIds: repositories.reviewPlaybookIds,
       correlationPlaybookId: repositories.correlationPlaybookId,
       storyPlaybookId: repositories.storyPlaybookId,

@@ -27,6 +27,7 @@ export const playbookUsedBySchema = z.object({
     z.object({
       id: z.string(),
       fullPath: z.string(),
+      provider: z.enum(["github", "gitlab"]),
       roles: z.array(z.enum(["review", "correlation", "story", "request"])),
     }),
   ),

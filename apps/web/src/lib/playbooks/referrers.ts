@@ -13,6 +13,8 @@ import { listPlaybooks, type RepositoryBinding } from "./index";
 export interface RepositoryPlaybookReference {
   id: string;
   fullPath: string;
+  /** Its code host. */
+  provider: "github" | "gitlab";
   /** The repository roles bound to it, in `REPOSITORY_BINDING_ROLES` order. */
   roles: RepositoryBinding[];
 }
@@ -109,6 +111,7 @@ export async function loadPlaybookUsage(
       of(id).repositories.push({
         id: repository.id,
         fullPath: repository.fullPath,
+        provider: repository.provider,
         roles: bound.filter(([, bindingId]) => bindingId === id).map(([role]) => role),
       });
     }
