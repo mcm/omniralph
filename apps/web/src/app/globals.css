@@ -316,14 +316,6 @@ body {
   }
 }
 
-/* A legacy settings card's title with its badges. */
-.settings-card-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 /* A detail page's main column. */
 .detail-main {
   flex: 1;
@@ -994,15 +986,6 @@ body {
 }
 .inline-link:hover {
   text-decoration-thickness: 2px;
-}
-/* Environment variables named in an alert, one per line so none breaks mid-sentence. */
-.env-var-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: var(--space-2) 0;
-  padding: 0;
-  list-style: none;
 }
 
 /* Live data (components/query-boundary.tsx, components/freshness.tsx): a failed load in place

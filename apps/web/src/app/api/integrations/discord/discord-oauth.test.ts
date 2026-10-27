@@ -164,7 +164,7 @@ describe("GET /api/integrations/discord/connect", () => {
       `code=code-1&guild_id=G01&permissions=309237713984&state=${signedState}`,
       cookie!.value,
     );
-    expect(location(done)).toBe("/settings/integrations?discord=connected");
+    expect(location(done)).toBe("/settings/connections/discord/connection-1?discord=connected");
   });
 
   it("refuses members and signed-out users", async () => {
@@ -177,7 +177,7 @@ describe("GET /api/integrations/discord/connect", () => {
   it("reports an unconfigured Discord app", async () => {
     delete process.env.DISCORD_PUBLIC_KEY;
     expect(location(await connect(connectRequest()))).toBe(
-      "/settings/integrations?discord=not_configured",
+      "/settings/connections/new?discord=not_configured",
     );
   });
 });
@@ -186,7 +186,7 @@ describe("GET /api/integrations/discord/callback", () => {
   it("exchanges the code and stores the token response's guild without credentials", async () => {
     const { s, nonce } = await fresh();
     const res = await callbackWith(`code=code-1&guild_id=G01&state=${s}`, nonce);
-    expect(location(res)).toBe("/settings/integrations?discord=connected");
+    expect(location(res)).toBe("/settings/connections/discord/connection-1?discord=connected");
     expect(tokenRequests).toHaveLength(1);
     expect(tokenRequests[0]!.url).toBe("https://discord.com/api/oauth2/token");
     expect(Object.fromEntries(tokenRequests[0]!.body)).toEqual({
@@ -214,7 +214,7 @@ describe("GET /api/integrations/discord/callback", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { s, nonce } = await fresh();
     expect(location(await callbackWith(`code=code-1&guild_id=G99&state=${s}`, nonce))).toBe(
-      "/settings/integrations?discord=error",
+      "/settings/connections/new?discord=error",
     );
     expect(state.saved).toEqual([]);
   });
@@ -223,10 +223,10 @@ describe("GET /api/integrations/discord/callback", () => {
     const { s, nonce } = await fresh();
     const query = `code=code-1&guild_id=G01&state=${s}`;
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?discord=connected",
+      "/settings/connections/discord/connection-1?discord=connected",
     );
     expect(location(await callbackWith(query, nonce))).toBe(
-      "/settings/integrations?discord=invalid_state",
+      "/settings/connections/new?discord=invalid_state",
     );
     expect(tokenRequests).toHaveLength(1);
     expect(state.saved).toHaveLength(1);
@@ -254,7 +254,7 @@ describe("GET /api/integrations/discord/callback", () => {
     ];
     for (const [query, cookie] of cases) {
       expect(location(await callbackWith(query, cookie))).toBe(
-        "/settings/integrations?discord=invalid_state",
+        "/settings/connections/new?discord=invalid_state",
       );
     }
     expect(tokenRequests).toEqual([]);
@@ -265,7 +265,7 @@ describe("GET /api/integrations/discord/callback", () => {
     state.takenGuilds.add("G01");
     const { s, nonce } = await fresh();
     expect(location(await callbackWith(`code=c&guild_id=G01&state=${s}`, nonce))).toBe(
-      "/settings/integrations?discord=other_organization",
+      "/settings/connections/new?discord=other_organization",
     );
     expect(state.saved).toEqual([]);
   });
@@ -279,7 +279,7 @@ describe("GET /api/integrations/discord/callback", () => {
           nonce,
         ),
       ),
-    ).toBe("/settings/integrations?discord=denied");
+    ).toBe("/settings/connections/new?discord=denied");
     expect(tokenRequests).toEqual([]);
   });
 
@@ -287,7 +287,7 @@ describe("GET /api/integrations/discord/callback", () => {
     const { s, nonce } = await fresh();
     delete process.env.DISCORD_BOT_TOKEN;
     expect(location(await callbackWith(`code=c&guild_id=G01&state=${s}`, nonce))).toBe(
-      "/settings/integrations?discord=not_configured",
+      "/settings/connections/new?discord=not_configured",
     );
     expect(tokenRequests).toEqual([]);
   });
@@ -295,7 +295,7 @@ describe("GET /api/integrations/discord/callback", () => {
   it("handles a missing code and token endpoint errors", async () => {
     let { s, nonce } = await fresh();
     expect(location(await callbackWith(`state=${s}`, nonce))).toBe(
-      "/settings/integrations?discord=invalid",
+      "/settings/connections/new?discord=invalid",
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
     const failures: Array<() => Response> = [
@@ -309,7 +309,7 @@ describe("GET /api/integrations/discord/callback", () => {
       tokenResponse = failure;
       ({ s, nonce } = await fresh());
       expect(location(await callbackWith(`code=bad&guild_id=G01&state=${s}`, nonce))).toBe(
-        "/settings/integrations?discord=error",
+        "/settings/connections/new?discord=error",
       );
     }
     expect(state.saved).toEqual([]);

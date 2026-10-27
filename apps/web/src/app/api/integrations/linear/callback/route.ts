@@ -16,13 +16,19 @@ import {
   STATE_COOKIE,
 } from "@/lib/linear/oauth";
 import { liveRoute } from "@/lib/live/request";
+import {
+  connectedPath,
+  connectNoticePath,
+  type ConnectNotice,
+} from "@/lib/connections/connect-notices";
 
 /**
  * Linear's OAuth redirect: checks the signed `state` (same admin, same
  * browser, the admin's active organization, not expired, not used before) and
  * consumes it, exchanges the code and stores the workspace and its tokens as
- * the organization's Linear integration. A workspace already connected to
- * another organization is refused (`?linear=other_organization`).
+ * the organization's Linear integration, then lands on its connection page. A workspace
+ * already connected to another organization is refused (`?linear=other_organization` on Add
+ * connection).
  */
 async function get(request: NextRequest) {
   const to = (path: string) => {
@@ -39,6 +45,7 @@ async function get(request: NextRequest) {
       error.reason === "unauthenticated" ? SIGN_IN_PATH : `${ACCESS_DENIED_PATH}?reason=forbidden`,
     );
   }
+  const notice = (value: ConnectNotice) => to(connectNoticePath("linear", value));
 
   const params = request.nextUrl.searchParams;
   const db = getDb();
@@ -54,14 +61,14 @@ async function get(request: NextRequest) {
     signed.organizationId !== organizationId ||
     !(await consumeOAuthState(db, signed.nonce, signed.expiresAt))
   ) {
-    return to("/settings/integrations?linear=invalid_state");
+    return notice("invalid_state");
   }
   // The admin declined on Linear's consent screen.
-  if (params.get("error")) return to("/settings/integrations?linear=denied");
+  if (params.get("error")) return notice("denied");
   const code = params.get("code");
-  if (!code) return to("/settings/integrations?linear=invalid");
+  if (!code) return notice("invalid");
   const config = linearOAuthConfig();
-  if (!config) return to("/settings/integrations?linear=not_configured");
+  if (!config) return notice("not_configured");
 
   let saved;
   try {
@@ -89,10 +96,10 @@ async function get(request: NextRequest) {
       name: error instanceof Error ? error.name : typeof error,
       message: error instanceof Error ? error.message : String(error),
     });
-    return to("/settings/integrations?linear=error");
+    return notice("error");
   }
-  if (saved === "other_organization") return to("/settings/integrations?linear=other_organization");
-  return to("/settings/integrations?linear=connected");
+  if (saved === "other_organization") return notice("other_organization");
+  return to(connectedPath("linear", saved.id));
 }
 
 export const GET = liveRoute(get);

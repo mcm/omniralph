@@ -12,6 +12,8 @@ export interface ConnectGitHubButtonProps {
    * undefined while it loads.
    */
   installPath: string | null | undefined;
+  /** The button's text; defaults to "Connect GitHub". */
+  label?: string;
   className?: string;
 }
 
@@ -20,13 +22,17 @@ export interface ConnectGitHubButtonProps {
  * callback with the new connection. Disabled, with the reason as its tooltip, when the
  * server has no GitHub App. Built once for every place that connects GitHub.
  */
-export function ConnectGitHubButton({ installPath, className }: ConnectGitHubButtonProps) {
+export function ConnectGitHubButton({
+  installPath,
+  label: text = "Connect GitHub",
+  className,
+}: ConnectGitHubButtonProps) {
   const label = (
     <>
       <span className="or-btn__icon" aria-hidden="true">
         <BrandMark brand="github" />
       </span>
-      Connect GitHub
+      {text}
     </>
   );
   if (installPath) {

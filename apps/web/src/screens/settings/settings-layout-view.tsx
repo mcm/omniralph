@@ -6,6 +6,7 @@ import { useRef, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { useShowAdvanced } from "@/components/show-advanced";
 import { useNavIndicators } from "../nav-indicators";
+import { useConnectNotice } from "./connect-notice";
 import { useConnections } from "./queries";
 import { SETTINGS_PATH, SETTINGS_PATHS, settingsNavGroups } from "./settings-nav";
 import "./settings.css";
@@ -21,10 +22,12 @@ const NAV_WIDTH = { wide: 260, narrow: 240 };
  * replayed has a coral dot (the nav indicators, shared with the shell's Settings dot). The
  * connections are a live query and the
  * Advanced group follows the user's "Show advanced settings" at once; it only hides the
- * entries, the Advanced pages open by URL either way.
+ * entries, the Advanced pages open by URL either way. A connect flow's outcome it landed
+ * with (`?linear=connected`, …) shows as a toast.
  */
 export function SettingsLayoutView({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? SETTINGS_PATH;
+  useConnectNotice();
   const { organization } = useCurrentUser();
   const [showAdvanced] = useShowAdvanced();
   const connections = useConnections().data?.connections ?? [];
