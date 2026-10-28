@@ -1261,7 +1261,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       const body = (await res.json()) as HeartbeatResponse;
       expect(body).toMatchObject({
         acceptedTaskTypes: ["query", "review", "coding"],
-        pinnedRepoIds: [repositoryId],
+        pinnedRepositories: [{ id: repositoryId, provider: "github", fullPath: "acme/app" }],
         organizationId: orgId,
       });
       // Its slots and pool limits are its own: none are sent.

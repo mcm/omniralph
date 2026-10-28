@@ -409,6 +409,12 @@ export type JobMessageDelivery = z.infer<typeof JobMessageDelivery>;
 /** `pollIntervalSeconds` sent to old (Vercel Queues) agents, which require it. */
 export const LEGACY_POLL_INTERVAL_SECONDS = 5;
 
+/** A repository pinned to an agent: its agent page shows it as pinned in the repo cache. */
+export const PinnedRepository = JobRepository.pick({ provider: true, fullPath: true }).extend({
+  id: z.uuid(),
+});
+export type PinnedRepository = z.infer<typeof PinnedRepository>;
+
 /** Central configuration, returned on every heartbeat. */
 export const HeartbeatResponse = z.object({
   /**
@@ -422,8 +428,8 @@ export const HeartbeatResponse = z.object({
    * report theirs: the task types the control panel last had for them.
    */
   acceptedTaskTypes: z.array(JobTaskType).optional(),
-  /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
-  pinnedRepoIds: z.array(z.uuid()),
+  /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs), by full path. */
+  pinnedRepositories: z.array(PinnedRepository),
   /** The agent's organization: it only claims that organization's jobs. */
   organizationId: z.uuid(),
   /**

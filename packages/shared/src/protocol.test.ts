@@ -162,7 +162,7 @@ describe("protocol", () => {
   });
 
   it("defaults a response's required host tools to none and validates their names", () => {
-    const base = { pinnedRepoIds: [], organizationId: ID, cancelJobIds: [], jobTokens: [] };
+    const base = { pinnedRepositories: [], organizationId: ID, cancelJobIds: [], jobTokens: [] };
     expect(HeartbeatResponse.parse(base).requiredHostTools).toEqual([]);
     expect(
       HeartbeatResponse.parse({ ...base, requiredHostTools: ["gh", "opengrep"] }).requiredHostTools,
@@ -170,6 +170,27 @@ describe("protocol", () => {
     expect(HeartbeatResponse.safeParse({ ...base, requiredHostTools: ["Bad Name"] }).success).toBe(
       false,
     );
+  });
+
+  it("carries the pinned repositories with their provider and full path", () => {
+    const base = { organizationId: ID, cancelJobIds: [], jobTokens: [] };
+    const pin = { id: ID, provider: "gitlab", fullPath: "acme/platform/api" };
+    expect(
+      HeartbeatResponse.parse({ ...base, pinnedRepositories: [pin] }).pinnedRepositories,
+    ).toEqual([pin]);
+    // The old list of IDs is gone.
+    expect(HeartbeatResponse.safeParse({ ...base, pinnedRepoIds: [ID] }).success).toBe(false);
+    for (const bad of [
+      { ...pin, id: "nope" },
+      { ...pin, provider: "bitbucket" },
+      { ...pin, fullPath: "no-owner" },
+      { ...pin, fullPath: "acme/../api" },
+      { id: ID, provider: "github" },
+    ]) {
+      expect(HeartbeatResponse.safeParse({ ...base, pinnedRepositories: [bad] }).success).toBe(
+        false,
+      );
+    }
   });
 
   it("accepts host tool names of lowercase letters, digits, dots, dashes and underscores", () => {
@@ -283,7 +304,7 @@ describe("protocol", () => {
     const response = {
       pollIntervalSeconds: 5,
       acceptedTaskTypes: [],
-      pinnedRepoIds: [],
+      pinnedRepositories: [],
       topics: [],
       queueRegion: "iad1",
       cancelJobIds: [],
@@ -317,7 +338,7 @@ describe("self-update protocol", () => {
     const response = HeartbeatResponse.parse({
       pollIntervalSeconds: 5,
       acceptedTaskTypes: [],
-      pinnedRepoIds: [],
+      pinnedRepositories: [],
       organizationId: ID,
       topics: [],
       queueRegion: "iad1",
@@ -340,7 +361,7 @@ describe("self-update protocol", () => {
     const response = HeartbeatResponse.parse({
       pollIntervalSeconds: 5,
       acceptedTaskTypes: [],
-      pinnedRepoIds: [],
+      pinnedRepositories: [],
       organizationId: ID,
       topics: [],
       queueRegion: "iad1",
@@ -383,7 +404,7 @@ describe("self-update protocol", () => {
 
     const base = {
       acceptedTaskTypes: [],
-      pinnedRepoIds: [],
+      pinnedRepositories: [],
       organizationId: ID,
       cancelJobIds: [],
       jobTokens: [],
@@ -408,7 +429,7 @@ describe("self-update protocol", () => {
 
     const base = {
       acceptedTaskTypes: [],
-      pinnedRepoIds: [],
+      pinnedRepositories: [],
       organizationId: ID,
       cancelJobIds: [],
       jobTokens: [],
