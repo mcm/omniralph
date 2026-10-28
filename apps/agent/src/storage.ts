@@ -284,7 +284,8 @@ export class AgentStorage extends EventEmitter<{ change: [] }> {
     return bytes;
   }
 
-  private async filesystems(): Promise<StorageFilesystem[]> {
+  /** Free and total space now, one entry per distinct filesystem of `workspaceRoot` and `dataDir` (no walk). */
+  async filesystems(): Promise<StorageFilesystem[]> {
     const device = this.options.device ?? (async (p: string) => (await stat(p)).dev);
     const readStatfs = this.options.statfs ?? statfs;
     const byDevice = new Map<string, StorageFilesystem>();

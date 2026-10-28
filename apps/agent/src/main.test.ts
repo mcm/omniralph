@@ -1,4 +1,6 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
@@ -104,6 +106,11 @@ describe("omniralph-agent CLI", () => {
     }
     expect(keys).not.toMatch(/acceptedTaskTypes|installables\.allow/);
     expect(keys).toContain("settings.json");
+  });
+
+  it("lists ui and its option in its usage", () => {
+    expect(USAGE).toMatch(/^ {2}ui {2,}Print the link to the running agent's page/m);
+    expect(USAGE).toContain("--open");
   });
 
   it("lists import and its options in its usage", () => {
@@ -295,6 +302,8 @@ describe("omniralph-agent CLI", () => {
         homeDir: dir,
         logger: silentLogger(),
         onShutdownSignal: () => {},
+        // Never the machine's real 7410.
+        uiPort: 0,
         readClaude: async () => ({
           models: [{ value: "opus", displayName: "Opus", description: "" }],
           account: { email: "agent@example.com", apiProvider: "firstParty" as const },
@@ -538,6 +547,225 @@ describe("omniralph-agent CLI", () => {
         pending: null,
         failed: ["9.9.9"],
       });
+    });
+  });
+  describe("agent page", () => {
+    const config: AgentConfig = {
+      server: "https://omniralph.example",
+      agentId: AGENT_ID,
+      refreshToken: "refresh-0",
+      workspaceRoot: "/tmp/repos",
+    };
+    const NOT_RUNNING = "The agent isn't running. Start it with 'omniralph-agent start'.\n";
+
+    function controlPanel() {
+      return fakeServer({
+        "/api/agent/token": () =>
+          Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
+        "/api/agent/heartbeat": () => Response.json(HEARTBEAT),
+        "/api/agent/claim": holdClaim,
+      });
+    }
+
+    /** Starts the agent; resolves once ui.json is there. */
+    async function startAgent(extra: Partial<MainDeps> = {}) {
+      let signal!: () => void;
+      const server = controlPanel();
+      const exit = main(["start", "--config", configPath], {
+        io: capture().io,
+        fetch: server.fetch,
+        env: {},
+        homeDir: dir,
+        logger: silentLogger(),
+        onShutdownSignal: (handler) => (signal = handler),
+        readClaude: async () => ({ models: [], account: {} }),
+        uiPort: 0,
+        uiBundleDir: path.join(dir, "no-bundle"),
+        ...extra,
+      });
+      await vi.waitFor(async () => expect((await stat(uiJson())).isFile()).toBe(true));
+      return { exit, stop: () => signal(), server };
+    }
+
+    const uiJson = () => path.join(path.dirname(configPath), "ui.json");
+
+    it("serves on 127.0.0.1, writes a 0600 ui.json and removes it on shutdown", async () => {
+      await writeConfig(configPath, config);
+      const agent = await startAgent();
+      expect((await stat(uiJson())).mode & 0o777).toBe(0o600);
+      const link = JSON.parse(await readFile(uiJson(), "utf8"));
+      expect(link).toEqual({
+        pid: process.pid,
+        port: expect.any(Number),
+        url: `http://127.0.0.1:${link.port}`,
+        startedAt: expect.any(String),
+        token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      });
+      expect(Buffer.from(link.token, "base64url")).toHaveLength(32);
+
+      // The page's API answers with the cookie; without the bundle, HTML is 503.
+      const headers = { cookie: `omniralph_agent_${link.port}=${link.token}` };
+      const ping = await fetch(`${link.url}/api/ping`, { headers });
+      expect(await ping.json()).toEqual({ agentId: AGENT_ID, version: AGENT_VERSION });
+      const state = await (await fetch(`${link.url}/api/state`, { headers })).json();
+      expect(state).toMatchObject({
+        agent: { agentId: AGENT_ID, server: "https://omniralph.example" },
+        settings: { revision: "none", lastError: null, effective: { maxConcurrency: 5 } },
+        connection: { revoked: false },
+        problems: expect.any(Array),
+      });
+      expect((await fetch(`${link.url}/`, { headers })).status).toBe(503);
+      expect((await fetch(`${link.url}/api/ping`)).status).toBe(401);
+
+      agent.stop();
+      expect(await agent.exit).toBe(0);
+      await expect(stat(uiJson())).rejects.toThrow();
+      await expect(fetch(`${link.url}/api/ping`, { headers })).rejects.toThrow();
+    });
+
+    it("serves on ui.port and makes a new token at every start", async () => {
+      const free = await new Promise<number>((resolve) => {
+        const probe = createServer();
+        probe.listen(0, "127.0.0.1", () => {
+          const { port } = probe.address() as AddressInfo;
+          probe.close(() => resolve(port));
+        });
+      });
+      await writeConfig(configPath, { ...config, ui: { port: free } });
+      const first = await startAgent({ uiPort: undefined });
+      const firstLink = JSON.parse(await readFile(uiJson(), "utf8"));
+      expect(firstLink.port).toBe(free);
+      first.stop();
+      await first.exit;
+
+      const second = await startAgent({ uiPort: undefined });
+      const secondLink = JSON.parse(await readFile(uiJson(), "utf8"));
+      expect(secondLink.port).toBe(free);
+      expect(secondLink.token).not.toBe(firstLink.token);
+      second.stop();
+      await second.exit;
+    });
+
+    it("serves nothing with ui.enabled false", async () => {
+      await writeConfig(configPath, { ...config, ui: { enabled: false } });
+      let signal!: () => void;
+      const server = controlPanel();
+      const exit = main(["start", "--config", configPath], {
+        io: capture().io,
+        fetch: server.fetch,
+        env: {},
+        homeDir: dir,
+        logger: silentLogger(),
+        onShutdownSignal: (handler) => (signal = handler),
+        readClaude: async () => ({ models: [], account: {} }),
+        uiPort: 0,
+      });
+      await vi.waitFor(() =>
+        expect(server.calls.map((c) => c.path)).toContain("/api/agent/heartbeat"),
+      );
+      await expect(stat(uiJson())).rejects.toThrow();
+      signal();
+      expect(await exit).toBe(0);
+    });
+
+    it("ui prints the running agent's link, and opens it with --open", async () => {
+      await writeConfig(configPath, config);
+      const agent = await startAgent();
+      const link = JSON.parse(await readFile(uiJson(), "utf8"));
+
+      const { out, io } = capture();
+      expect(await main(["ui", "--config", configPath], { io })).toBe(0);
+      expect(out.stdout).toBe(`Agent page: ${link.url}/?token=${link.token}\n`);
+
+      const opened: string[] = [];
+      const opening = capture();
+      expect(
+        await main(["ui", "--open", "--config", configPath], {
+          io: opening.io,
+          openUrl: async (url) => void opened.push(url),
+        }),
+      ).toBe(0);
+      expect(opened).toEqual([`${link.url}/?token=${link.token}`]);
+      expect(opening.out.stdout).toBe(out.stdout);
+
+      // The link works: it trades the token for the cookie.
+      const reply = await fetch(`${link.url}/?token=${link.token}`, { redirect: "manual" });
+      expect(reply.status).toBe(303);
+      expect(reply.headers.get("set-cookie")).toContain(`omniralph_agent_${link.port}=`);
+
+      // A failing opener still prints the link.
+      const failing = capture();
+      expect(
+        await main(["ui", "--open", "--config", configPath], {
+          io: failing.io,
+          openUrl: async () => {
+            throw new Error("spawn xdg-open ENOENT");
+          },
+        }),
+      ).toBe(0);
+      expect(failing.out.stdout).toContain("Agent page: ");
+      expect(failing.out.stderr).toContain("couldn't open a browser (spawn xdg-open ENOENT)");
+
+      agent.stop();
+      await agent.exit;
+    });
+
+    it("ui says the agent isn't running without ui.json", async () => {
+      await writeConfig(configPath, config);
+      const { out, io } = capture();
+      const opened: string[] = [];
+      expect(
+        await main(["ui", "--open", "--config", configPath], {
+          io,
+          openUrl: async (url) => void opened.push(url),
+        }),
+      ).toBe(1);
+      expect(out.stderr).toBe(NOT_RUNNING);
+      expect(out.stdout).toBe("");
+      expect(opened).toEqual([]);
+    });
+
+    it("ui says the agent isn't running when ui.json's process is gone", async () => {
+      await writeConfig(configPath, config);
+      const agent = await startAgent();
+      const { out, io } = capture();
+      expect(await main(["ui", "--config", configPath], { io, processAlive: () => false })).toBe(1);
+      expect(out.stderr).toBe(NOT_RUNNING);
+      agent.stop();
+      await agent.exit;
+    });
+
+    it("ui says the agent isn't running when nothing, or another agent, answers there", async () => {
+      await writeConfig(configPath, config);
+      const agent = await startAgent();
+      const link = JSON.parse(await readFile(uiJson(), "utf8"));
+      agent.stop();
+      await agent.exit;
+
+      // A stale ui.json (the agent was killed): nothing listens on its port any more.
+      await writeFile(uiJson(), JSON.stringify(link), { mode: 0o600 });
+      const stale = capture();
+      expect(await main(["ui", "--config", configPath], { io: stale.io })).toBe(1);
+      expect(stale.out.stderr).toBe(NOT_RUNNING);
+
+      // Another agent's page.
+      await rm(uiJson());
+      await writeConfig(configPath, { ...config, agentId: "another-agent" });
+      const other = await startAgent();
+      const otherLink = JSON.parse(await readFile(uiJson(), "utf8"));
+      await writeConfig(configPath, config);
+      const mismatch = capture();
+      expect(await main(["ui", "--config", configPath], { io: mismatch.io })).toBe(1);
+      expect(mismatch.out.stderr).toBe(NOT_RUNNING);
+      expect(otherLink.pid).toBe(process.pid);
+      other.stop();
+      await other.exit;
+
+      // An unreadable ui.json.
+      await writeFile(uiJson(), "{not json", { mode: 0o600 });
+      const broken = capture();
+      expect(await main(["ui", "--config", configPath], { io: broken.io })).toBe(1);
+      expect(broken.out.stderr).toBe(NOT_RUNNING);
     });
   });
 });

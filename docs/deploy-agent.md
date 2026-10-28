@@ -400,6 +400,50 @@ Notes on the unit:
   home and `/tmp` (private).
 - `StartLimit*` stops the restart loop when the agent exits because it has to be re-enrolled.
 
+### The agent page
+
+While it runs, the agent serves its own page: what it's working on, its log, and its machine
+settings (slots, kinds, packages, host tools, the version pin), its Claude login and its disk. Get
+the link on the machine:
+
+```sh
+omniralph-agent ui          # prints: Agent page: http://127.0.0.1:7410/?token=…
+omniralph-agent ui --open   # also opens it in the default browser
+```
+
+The token in the link is new at every start, so run `omniralph-agent ui` again after a restart.
+Opening the link trades the token for a cookie, and the page drops the token from the address. When
+no agent is running, the command prints "The agent isn't running." and exits 1.
+
+The page is served on **127.0.0.1 only**, and no setting changes that address. It controls what
+the machine installs and runs, so nobody else on the network may reach it. It answers only to
+`Host: 127.0.0.1:<port>`, `localhost:<port>` and the names in `ui.allowedHosts`, so a website
+can't reach it by pointing its own name at 127.0.0.1 (DNS rebinding). Every request needs the
+cookie, and changes must come from the page itself (same `Origin`, JSON bodies). The agent writes
+the link to `ui.json` next to `agent.json` (mode 0600) and deletes it when it stops.
+
+`agent.json` keys (see [Enroll](#4-enroll)):
+
+- `ui.port` (default `7410`): the port. When it's taken (a second agent on the host, say), the
+  agent uses a free port, logs a warning, and `omniralph-agent ui` prints the right one.
+- `ui.allowedHosts` (default `[]`): extra host names the page answers to, exact names without a
+  scheme or port, for a forwarding proxy that keeps its own `Host` (Coder's dashboard port
+  forwarding).
+- `ui.enabled: false`: no page.
+
+From another computer, forward the port and open the printed link there:
+
+```sh
+# Coder: forward the workspace's port 7410 to this computer's.
+coder port-forward <workspace> --tcp 7410:7410
+
+# SSH
+ssh -L 7410:127.0.0.1:7410 <user>@<host>
+```
+
+With a different local port (`-L 8410:127.0.0.1:7410`), the page refuses the `Host`
+`127.0.0.1:8410`: forward to the same port number.
+
 ### Logs
 
 Whichever way it runs, the agent writes the same pino JSON lines to three places:

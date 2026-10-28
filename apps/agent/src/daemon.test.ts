@@ -27,6 +27,7 @@ import {
   type JobContext,
 } from "./capabilities/index.js";
 import { AttemptHistory } from "./attempts/history.js";
+import { ReenrollmentRequiredError } from "./auth.js";
 import type { ClaudeStatus } from "./claude-status.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
@@ -323,6 +324,7 @@ function setup(options: {
   claude?: DaemonOptions["claude"];
   host?: DaemonOptions["host"];
   history?: DaemonOptions["history"];
+  onHeartbeat?: DaemonOptions["onHeartbeat"];
   /** Opens fake wake subscriptions (into `wakes`); without it the daemon has no wake transport. */
   wake?: boolean;
 }) {
@@ -365,6 +367,7 @@ function setup(options: {
     claude: options.claude,
     host: options.host ?? (() => ({ hostname: "agent-host", coder: null })),
     history: options.history,
+    onHeartbeat: options.onHeartbeat,
     wakeSubscription,
   });
   return { api, state, claims, tokens, daemon, wakes, local };
@@ -512,6 +515,8 @@ describe("AgentDaemon", () => {
       expect(daemon.hostToolPath("nowhere")).toBeNull();
       expect(daemon.hostToolPath("blocked")).toBeNull();
       expect(daemon.hostToolPath("hidden")).toBeNull();
+      // Only what the playbooks require counts as missing.
+      expect(daemon.missingRequiredHostTools()).toEqual(["hidden", "nowhere"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -704,6 +709,63 @@ describe("AgentDaemon", () => {
     await settle();
     expect(tokens.refresh).toHaveBeenCalledTimes(1);
     await daemon.shutdown();
+  });
+
+  it("tells since when the control panel is unreachable, and when a heartbeat gets through again", async () => {
+    vi.setSystemTime(new Date("2026-10-28T10:42:00.000Z"));
+    const onHeartbeat = vi.fn();
+    const { api, daemon } = setup({ onHeartbeat });
+    expect(daemon.status()).toMatchObject({
+      connected: false,
+      unreachableSince: null,
+      revoked: false,
+    });
+    api.heartbeat.mockRejectedValueOnce(new ApiError(503, undefined, "down"));
+    api.heartbeat.mockRejectedValueOnce(new TypeError("fetch failed"));
+    await daemon.heartbeat();
+    expect(daemon.status().unreachableSince).toBe("2026-10-28T10:42:00.000Z");
+    vi.setSystemTime(new Date("2026-10-28T10:43:00.000Z"));
+    await daemon.heartbeat();
+    // Still since the first failure.
+    expect(daemon.status().unreachableSince).toBe("2026-10-28T10:42:00.000Z");
+    expect(onHeartbeat).toHaveBeenCalledTimes(2);
+
+    await daemon.heartbeat();
+    expect(daemon.status()).toMatchObject({
+      connected: true,
+      lastHeartbeatAt: "2026-10-28T10:43:00.000Z",
+      unreachableSince: null,
+    });
+    expect(onHeartbeat).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps heartbeating when the heartbeat listener throws", async () => {
+    const { api, daemon } = setup({
+      onHeartbeat: () => {
+        throw new Error("broken listener");
+      },
+    });
+    await daemon.heartbeat();
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
+  });
+
+  it("says it was revoked when it has to be enrolled again", async () => {
+    const { daemon } = setup({});
+    const exit = daemon.run();
+    await settle();
+    daemon.fail(new ReenrollmentRequiredError("re-enrollment required (refresh_token_reused)"));
+    expect(await exit).toBe(1);
+    expect(daemon.status().revoked).toBe(true);
+  });
+
+  it("isn't revoked when it stops for another reason", async () => {
+    const { daemon } = setup({});
+    const exit = daemon.run();
+    await settle();
+    daemon.fail(new Error("something else"));
+    expect(await exit).toBe(1);
+    expect(daemon.status().revoked).toBe(false);
   });
 
   it("runs a claimed job with the job token, reports the result and claims again at once", async () => {
