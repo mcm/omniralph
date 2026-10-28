@@ -27,6 +27,9 @@ const KINDS = {
   playbook: 0x104,
   triageRun: 0x106,
   runActivity: 0x107,
+  chatConnection: 0x108,
+  chatThread: 0x109,
+  chatWebMessage: 0x10a,
 } as const;
 
 /** The fixture UUID `n` of a kind of row. */
@@ -87,6 +90,11 @@ export const FIXTURE_IDS = {
   reviews: {
     /** Completed, with findings in every severity and status (open, dismissed, restored, …). */
     featured: fixtureId("review", 1),
+  },
+  /** The admin's web chats (Ask). */
+  askChats: {
+    /** About the control panel, with a question and Om's answer. */
+    controlPanel: fixtureId("chatThread", 1),
   },
 } as const;
 

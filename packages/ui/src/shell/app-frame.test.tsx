@@ -314,6 +314,24 @@ describe("AppFrame", () => {
       expect(tabs[0]!.hasAttribute("aria-current")).toBe(false);
       expect(tabs[0]!.querySelector(".or-nav__count")!.textContent).toBe("4");
     });
+
+    it("is left out with hideTabBar, keeping the sidebar, the top bar and the drawer", () => {
+      const { container } = renderFrame({ hideTabBar: true });
+      expect(container.querySelector(".or-tabbar")).toBeNull();
+      const frame = container.querySelector(".or-frame")!;
+      expect(frame.classList.contains("or-frame--no-tabbar")).toBe(true);
+      // No room is kept for it at the bottom of the page.
+      expect(frame.classList.contains("or-frame--tabs")).toBe(false);
+      expect(screen.getAllByRole("navigation", { name: "Primary" })).toHaveLength(1);
+      expect(container.querySelector(".or-sidebar")).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Open menu, 2 alerts" })).toBeDefined();
+    });
+
+    it("shows by default", () => {
+      const { container } = renderFrame();
+      expect(container.querySelector(".or-tabbar")).not.toBeNull();
+      expect(container.querySelector(".or-frame--no-tabbar")).toBeNull();
+    });
   });
 
   describe("drawer", () => {

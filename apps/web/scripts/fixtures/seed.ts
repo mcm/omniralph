@@ -17,6 +17,9 @@ import {
   agents,
   agentHostTools,
   agentRepoPins,
+  chatConnections,
+  chatThreads,
+  chatWebMessages,
   hostTools,
   integrations,
   jobs,
@@ -38,6 +41,9 @@ import {
   runActivities,
   triageRuns,
   users,
+  WEB_CHAT_CONNECTION_NAME,
+  webChatChannelId,
+  webChatExternalThreadId,
   workItemShareLinks,
   type Database,
 } from "@omniralph/db";
@@ -458,6 +464,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await seedReviews(tx, now);
     await seedOtherJobs(tx, now);
     await seedTriage(tx, now);
+    await seedAsk(tx, now);
   });
 }
 
@@ -494,6 +501,62 @@ async function clearFixtures(tx: Tx): Promise<void> {
     .where(sql`${agentAudit.id}::text like ${`${fixtureId("agentAudit", 0).slice(0, 8)}-%`}`);
   await tx.delete(organizations).where(inArray(organizations.id, Object.values(O)));
   await tx.delete(users).where(inArray(users.id, Object.values(U)));
+}
+
+// ── Ask ─────────────────────────────────────────────────────────────────────
+
+/** The admin's web chat about the control panel: a question and Om's answer. */
+async function seedAsk(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const chatId = FIXTURE_IDS.askChats.controlPanel;
+  const connectionId = fixtureId("chatConnection", 1);
+  await tx.insert(chatConnections).values({
+    id: connectionId,
+    organizationId: O.main,
+    platform: "web",
+    externalId: O.main,
+    name: WEB_CHAT_CONNECTION_NAME,
+    encryptedCredentials: null,
+    createdAt: ago(10 * DAY),
+  });
+  await tx.insert(chatThreads).values({
+    id: chatId,
+    organizationId: O.main,
+    connectionId,
+    platform: "web",
+    externalThreadId: webChatExternalThreadId(O.main, chatId),
+    channelId: webChatChannelId(O.main),
+    startedByExternalUserId: U.admin,
+    startedByUserId: U.admin,
+    title: "Where does the sign-in form post to?",
+    repositoryId: R.controlPanel,
+    branch: "main",
+    createdAt: ago(2 * HOUR),
+    updatedAt: ago(2 * HOUR - MINUTE),
+  });
+  await tx.insert(chatWebMessages).values([
+    {
+      id: fixtureId("chatWebMessage", 1),
+      organizationId: O.main,
+      threadId: chatId,
+      author: "user",
+      userId: U.admin,
+      markdown: "Where does the sign-in form post to?",
+      createdAt: ago(2 * HOUR),
+      updatedAt: ago(2 * HOUR),
+    },
+    {
+      id: fixtureId("chatWebMessage", 2),
+      organizationId: O.main,
+      threadId: chatId,
+      author: "om",
+      markdown:
+        "The sign-in form posts to `/api/auth/signin/email`, which sends the magic link. " +
+        "The dev sign-in (`/sign-in/dev`) skips the email in development.",
+      createdAt: ago(2 * HOUR - MINUTE),
+      updatedAt: ago(2 * HOUR - MINUTE),
+    },
+  ]);
 }
 
 // ── Ralph ───────────────────────────────────────────────────────────────────

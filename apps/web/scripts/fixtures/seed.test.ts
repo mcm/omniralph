@@ -9,6 +9,8 @@ import {
   integrations,
   jobs,
   listRoutingRules,
+  listWebChats,
+  listWebMessages,
   listTriageRuns,
   organizationMembers,
   playbooks,
@@ -58,6 +60,22 @@ describe("seedFixtures", () => {
       .from(reviews)
       .where(eq(reviews.id, FIXTURE_IDS.reviews.featured));
     expect(review?.status).toBe("completed");
+  });
+
+  it("has a web chat for the admin, with a question and Om's answer", async () => {
+    const page = await listWebChats(db, {
+      userId: FIXTURE_IDS.users.admin,
+      organizationIds: [FIXTURE_IDS.organizations.main],
+    });
+    expect(page.chats.map((chat) => chat.id)).toEqual([FIXTURE_IDS.askChats.controlPanel]);
+    expect(page.chats[0]).toMatchObject({
+      repositoryId: FIXTURE_IDS.repositories.controlPanel,
+      branch: "main",
+    });
+    const { messages } = await listWebMessages(db, FIXTURE_IDS.askChats.controlPanel, {
+      limit: 100,
+    });
+    expect(messages.map((message) => message.author)).toEqual(["user", "om"]);
   });
 
   it("has an admin and a member", async () => {

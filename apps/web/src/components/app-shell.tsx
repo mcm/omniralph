@@ -6,6 +6,7 @@ import * as React from "react";
 import { navItems } from "@/lib/navigation";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 import { AskContextProvider } from "./ask/ask-context";
+import { isAskFullScreenPath } from "./ask/ask-pages";
 import { AskPanel, AskPanelProvider, useAskPanel, withAskEntry } from "./ask/ask-panel";
 import { CurrentUserProvider, type SessionUser } from "./current-user";
 import { Link } from "./link";
@@ -25,7 +26,8 @@ import { UserMenu } from "./user-menu";
  * tab bar and drawer) around the page, with the session, live data, the saved theme and
  * toasts. One `OrganizationPicker` and one `UserMenu` serve every place the frame shows them.
  * On desktop the Ask entry opens the Ask panel beside the page (`AskPanelProvider`); this
- * layout persists across client-side navigation, so the panel does too.
+ * layout persists across client-side navigation, so the panel does too. On a phone, New chat
+ * and a chat (`/ask/new`, `/ask/{id}`) open full screen, without the tab bar.
  */
 export function AppShell({
   user,
@@ -78,6 +80,7 @@ export function AppShell({
                       <AskPanelProvider>
                         <AskFrame
                           currentPath={pathname}
+                          hideTabBar={isAskFullScreenPath(pathname)}
                           brandHref="/"
                           nav={navItems}
                           orgPicker={<OrganizationPicker />}
