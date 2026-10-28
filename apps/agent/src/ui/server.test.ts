@@ -391,6 +391,19 @@ describe("agent page server", () => {
       expect((await send(server, { method: "HEAD", path: "/" })).body).toBe("");
     });
 
+    it("serves the bundle's relative asset URLs from a nested page", async () => {
+      const server = await start();
+      const asset = await send(server, { path: "/attempts/assets/index-abc123.js" });
+      expect(asset.status).toBe(200);
+      expect(asset.body).toBe("console.log(1)");
+      expect(asset.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+      expect((await send(server, { path: "/attempts/assets/missing.js" })).status).toBe(404);
+      // An attempt whose ID is "assets" is still a page.
+      expect((await send(server, { path: "/attempts/assets" })).headers["content-type"]).toMatch(
+        /^text\/html/,
+      );
+    });
+
     it.each([
       "/../secret.txt",
       "/assets/../../secret.txt",

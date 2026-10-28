@@ -444,6 +444,13 @@ ssh -L 7410:127.0.0.1:7410 <user>@<host>
 With a different local port (`-L 8410:127.0.0.1:7410`), the page refuses the `Host`
 `127.0.0.1:8410`: forward to the same port number.
 
+The page keeps itself current: the agent streams every change to it (server-sent events), so
+attempts, log lines, installs, updates and saves show without a reload. When the stream drops,
+the page polls every 10 seconds and says "Live updates stopped. Retrying…" after 5 seconds. When
+the agent restarts, the page's link stops working and the page says "Open this page again": run
+`omniralph-agent ui` for a new link. The theme you pick under the section list is remembered by
+the browser.
+
 ### Logs
 
 Whichever way it runs, the agent writes the same pino JSON lines to three places:

@@ -1,0 +1,117 @@
+/*
+ * The agent page's own layout: the top bar above the section nav and the open page. Only
+ * `--or-` tokens; every component's style comes from @omniralph/ui.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.agent-root {
+  height: 100%;
+}
+
+.agent-page,
+.agent-reopen {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.agent-reopen {
+  justify-content: center;
+}
+
+.agent-topbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-side);
+}
+
+.agent-topbar__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-page__notice {
+  flex: none;
+}
+
+.agent-split {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.agent-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding-bottom: 16px;
+  overflow-y: auto;
+}
+
+.agent-nav__theme {
+  align-self: flex-start;
+  margin: 0 22px;
+}
+
+.agent-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.agent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+  padding: 20px 24px 32px;
+}
+
+.agent-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-section__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* The toolbar keeps the top right at every width (board Settings-390). */
+.agent-section__actions {
+  flex: none;
+}
+
+@media (max-width: 768px) {
+  .agent-topbar {
+    padding: 10px 16px;
+  }
+
+  .agent-section {
+    padding: 16px;
+  }
+
+  .agent-nav__theme {
+    margin: 0 16px;
+  }
+}

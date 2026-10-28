@@ -36,6 +36,8 @@ const SCANNED = [
   "packages/ralph/src",
   // Built-in playbooks: their descriptions and prompts are served by the Playbooks API.
   "packages/tasks/src/builtin",
+  // The agent's local page.
+  "apps/agent/ui/src",
 ];
 
 interface Allowed {
@@ -255,6 +257,8 @@ describe("user-facing wording", () => {
     expect(files).toContain("apps/web/src/screens/repos/agents-card.tsx");
     expect(files).toContain("apps/web/src/components/connection-health.tsx");
     expect(files).toContain("apps/web/src/lib/linear/webhook.ts");
+    expect(files).toContain("apps/agent/ui/src/shell.tsx");
+    expect(files).toContain("apps/agent/ui/src/app.tsx");
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);
   });
 

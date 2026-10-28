@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  agentPackageDirs,
   changesetReleases,
   checkAgentChangeset,
   isChangesetPath,
@@ -166,6 +167,46 @@ describe("checkAgentChangeset", () => {
       changesets: [{ path: ".changeset/notes.md", content: "Just notes\n" }],
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("agentPackageDirs", () => {
+  const dirs = agentPackageDirs(REPO_ROOT);
+
+  it("lists the agent and every workspace package it bundles, packages/ui among them", () => {
+    expect(dirs).toEqual([
+      "apps/agent",
+      "packages/engine",
+      "packages/ralph",
+      "packages/shared",
+      "packages/tasks",
+      "packages/ui",
+    ]);
+  });
+
+  it("fails a change only under packages/ui without an agent changeset", () => {
+    const result = checkAgentChangeset({
+      changedFiles: ["packages/ui/src/x.tsx"],
+      packageDirs: dirs,
+      changesets: [],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("changes packages/ui, which @omniralph/agent bundles");
+    expect(result.message).toContain(
+      "@omniralph/agent bundles apps/agent, packages/engine, packages/ralph, packages/shared, packages/tasks, packages/ui.",
+    );
+  });
+
+  it.each([
+    ["an @omniralph/agent changeset", agentPatch],
+    ["an empty changeset", empty],
+  ])("passes a change only under packages/ui with %s", (_name, changeset) => {
+    const result = checkAgentChangeset({
+      changedFiles: ["packages/ui/src/x.tsx", changeset.path],
+      packageDirs: dirs,
+      changesets: [changeset],
+    });
+    expect(result.ok).toBe(true);
   });
 });
 

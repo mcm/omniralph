@@ -21,10 +21,10 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && vite build --config ui/vite.config.ts",
     "dev": "tsx watch --conditions=@omniralph/source src/cli.ts",
     "start": "node dist/cli.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
     "lint": "eslint .",
     "test": "vitest run"
   },
@@ -42,8 +42,19 @@
     "@omniralph/ralph": "workspace:*",
     "@omniralph/shared": "workspace:*",
     "@omniralph/tasks": "workspace:*",
+    "@omniralph/ui": "workspace:*",
+    "@tanstack/react-query": "^5.104.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/proper-lockfile": "^4.1.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "jsdom": "^30.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "tsup": "^8.5.1",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "vite": "^8.3.2"
   }
 }

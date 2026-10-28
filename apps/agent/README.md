@@ -112,9 +112,11 @@ pnpm changeset
 ```
 
 The agent bundles the workspace packages `@omniralph/engine`, `@omniralph/ralph`,
-`@omniralph/shared` and `@omniralph/tasks` (its `workspace:*` devDependencies). Changesets doesn't
-release those private packages, and it doesn't bump the agent when only they change. A pull
-request that changes one of them must add a changeset for `@omniralph/agent` itself.
+`@omniralph/shared`, `@omniralph/tasks` and `@omniralph/ui` (its `workspace:*` devDependencies):
+`packages/engine`, `packages/ralph`, `packages/shared`, `packages/tasks` and `packages/ui`.
+Changesets doesn't release those private packages, and it doesn't bump the agent when only they
+change. A pull request that changes one of them must add a changeset for `@omniralph/agent`
+itself. That includes a change made only under `packages/ui`: the agent's page is built from it.
 
 CI (`ci.yml`, `scripts/check-agent-changeset.ts`) fails a pull request that changes
 `apps/agent/`, or any workspace package the agent depends on, and adds no
@@ -208,7 +210,25 @@ always use the default token.
 
 ### Bundling
 
-The build (`tsup`) inlines the workspace packages (`@omniralph/engine`, `@omniralph/shared`) into
+The build runs `tsup`, then `vite build --config ui/vite.config.ts`.
+
+`tsup` inlines the workspace packages (`@omniralph/engine`, `@omniralph/shared` …) into
 `dist/cli.js`. Third-party packages stay external. A third-party package that the bundle imports
 must be listed in this package's `dependencies`, or the installed binary won't start. The smoke
 script catches this.
+
+Vite builds the agent's page (`ui/`) into `dist/ui/`: static files with hashed names, served by
+the daemon. React, TanStack Query and `@omniralph/ui` are bundled into them, so they are
+devDependencies and the published package gains no runtime dependency. `index.html` loads one
+module script and has no inline script or style, so the page's Content Security Policy holds.
+The smoke script checks that the tarball has `dist/ui/index.html` and every asset it loads, that
+`dist/ui` stays under 3 MB and that no source map of it ships.
+
+The page's code is in `ui/src`: `main.tsx` (providers), `router.tsx` (a small history router),
+`shell.tsx` (the top bar, the section nav and the open page), `pages/` and `live/`. `live/` holds
+the query keys, the change event map (`invalidations.ts`: each resource the daemon publishes
+either appends to the cache, for `logs` and `transcript`, or invalidates queries; an unmapped
+resource fails typecheck), the event stream with its polling fallback, and `useLocalMutation`
+for changes (`optimistic` and `applyResult`, as `apps/web`'s `useApiMutation`). `typecheck` runs
+`tsc -p ui` too, and the page's tests (`ui/src/**/*.test.tsx`, under jsdom) run with the
+package's Vitest run.

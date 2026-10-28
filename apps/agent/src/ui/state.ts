@@ -20,7 +20,10 @@ export const NAV_PROBLEM_SECTIONS = [
 ] as const;
 export type NavProblemSection = (typeof NAV_PROBLEM_SECTIONS)[number];
 
-/** Something wrong, shown as a dot on its nav item with `reason` in its accessible name. */
+/**
+ * Something wrong, shown as a dot on its nav item with `reason` in its accessible name
+ * ("Claude, not signed in"), so `reason` continues the item's label in lowercase.
+ */
 export interface NavProblem {
   section: NavProblemSection;
   reason: string;
@@ -36,7 +39,8 @@ export interface AgentUiConnection {
 }
 
 export interface AgentUiState {
-  agent: { agentId: string; server: string; version: string };
+  /** `name` is the machine's hostname, the name enrolling gives an agent by default. */
+  agent: { agentId: string; name: string; server: string; version: string };
   status: DaemonStatus;
   connection: AgentUiConnection;
   settings: LocalSettingsState;
@@ -70,9 +74,9 @@ export function navProblems(
   const problems: NavProblem[] = [];
   const { connection, update, claude } = state;
   if (connection.revoked) {
-    problems.push({ section: "overview", reason: "This agent was revoked" });
+    problems.push({ section: "overview", reason: "revoked" });
   } else if (connection.unreachableSince !== null) {
-    problems.push({ section: "overview", reason: "Can't reach the control panel" });
+    problems.push({ section: "overview", reason: "can't reach the control panel" });
   }
   if (state.missingRequiredHostTools.length > 0) {
     problems.push({
@@ -81,13 +85,13 @@ export function navProblems(
     });
   }
   if (update.update?.state === "idle" && update.update.error !== null) {
-    problems.push({ section: "version", reason: "The last update failed" });
+    problems.push({ section: "version", reason: "the last update failed" });
   }
   if (claude?.status === "signed_out") {
-    problems.push({ section: "claude", reason: "Claude isn't signed in" });
+    problems.push({ section: "claude", reason: "not signed in" });
   }
   if (state.filesystems.some((fs) => fs.low)) {
-    problems.push({ section: "storage", reason: "Low disk space" });
+    problems.push({ section: "storage", reason: "low disk" });
   }
   return problems;
 }

@@ -1,3 +1,9 @@
+import { defineConfig, mergeConfig } from "vitest/config";
 import sharedConfig from "../../vitest.shared.js";
 
-export default sharedConfig;
+// The agent page's tests (`ui/src`) run here too, each under jsdom
+// (`// @vitest-environment jsdom`); the daemon's stay on node.
+export default mergeConfig(
+  sharedConfig,
+  defineConfig({ test: { include: ["ui/src/**/*.test.{ts,tsx}"] } }),
+);
