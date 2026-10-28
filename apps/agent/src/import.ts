@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { chmod, readFile, readdir, rename, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { AgentLocalSettings } from "@omniralph/shared";
 import {
   AgentConfig,
   ConfigError,
@@ -11,6 +12,7 @@ import {
   writePrivateJson,
 } from "./config.js";
 import type { Io } from "./main.js";
+import { localSettingsPath } from "./settings.js";
 import { UPDATE_REQUEST_FILE, UPDATE_STATE_FILE } from "./update.js";
 
 /**
@@ -204,14 +206,10 @@ export interface ImportOptions {
 }
 
 const REQUIRED_KEYS = ["server", "agentId", "refreshToken", "workspaceRoot"] as const;
-const OPTIONAL_KEYS = ["dataDir", "blockedExecPaths", "acceptedTaskTypes"] as const;
-const CONTROL_PANEL_SETTINGS = [
-  "concurrency",
-  "pool limits",
-  "pins",
-  "host tool paths",
-  "desired version",
-];
+const OPTIONAL_KEYS = ["dataDir", "blockedExecPaths"] as const;
+/** Settings the old control panel held for the agent that now start at their defaults. */
+const LOCAL_DEFAULTS = ["slots", "pool limits", "host tool paths", "version pin"];
+const CONTROL_PANEL_SETTINGS = ["pins", "desired version"];
 
 function errnoCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | null)?.code;
@@ -330,6 +328,7 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
     else throw error;
   }
   const next: Record<string, unknown> = {};
+  const nextSettings: Record<string, unknown> = { v: 1 };
   if (old) {
     for (const key of REQUIRED_KEYS) {
       const value = old[key];
@@ -351,14 +350,19 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
     for (const key of OPTIONAL_KEYS) {
       if (old[key] !== undefined) next[key] = old[key];
     }
+    // The machine settings it had go to settings.json.
+    if (old.acceptedTaskTypes !== undefined) nextSettings.acceptedTaskTypes = old.acceptedTaskTypes;
     const installables = old.installables;
     if (installables !== undefined) {
       if (!isRecord(installables)) problems.push("installables must be an object");
-      else if (installables.allow !== undefined) next.installables = { allow: installables.allow };
+      else if (installables.allow !== undefined) {
+        nextSettings.installables = { allow: installables.allow };
+      }
     }
     if (problems.length === 0) {
-      const parsed = AgentConfig.safeParse(next);
-      if (!parsed.success) {
+      for (const schema of [AgentConfig, AgentLocalSettings]) {
+        const parsed = schema.safeParse(schema === AgentConfig ? next : nextSettings);
+        if (parsed.success) continue;
         for (const issue of parsed.error.issues) {
           problems.push(
             issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
@@ -376,6 +380,29 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
   }
   const config = AgentConfig.parse(next);
   const source = old!;
+  const dataDir = config.dataDir ?? defaultDataDir(home);
+  const settingsPath = localSettingsPath(dataDir);
+  const imported = AgentLocalSettings.parse(nextSettings);
+  // Merged into a settings.json already there; written only when there is something to import.
+  let settings: AgentLocalSettings | undefined;
+  if (imported.acceptedTaskTypes !== undefined || imported.installables !== undefined) {
+    let existing: AgentLocalSettings = { v: 1 };
+    try {
+      const parsed = AgentLocalSettings.safeParse(JSON.parse(await fs.readFile(settingsPath)));
+      if (!parsed.success) throw new SyntaxError("invalid");
+      existing = parsed.data;
+    } catch (error) {
+      if (errnoCode(error) !== "ENOENT") {
+        if (!(error instanceof SyntaxError)) throw error;
+        io.stderr(
+          `omniralph-agent: can't import ${from}: ${settingsPath} exists and isn't valid.\n` +
+            `Fix or remove it, then run the import again. Nothing was written.\n`,
+        );
+        return 1;
+      }
+    }
+    settings = { ...existing, ...imported };
+  }
 
   // The summary: one line per setting.
   const rows: [string, string][] = [];
@@ -390,21 +417,25 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
     );
   }
   rows.push(["dataDir", config.dataDir === undefined ? "default" : `imported (${config.dataDir})`]);
-  const dataDir = config.dataDir ?? defaultDataDir(home);
   if (!(await isDirectory(fs, dataDir))) {
     warnings.push(`dataDir ${dataDir} doesn't exist: installables will be reinstalled.`);
   }
   rows.push([
-    "installables.allow",
-    config.installables?.allow === undefined
+    "blockedExecPaths",
+    config.blockedExecPaths === undefined
       ? "default"
-      : `imported (${describeValue(config.installables.allow)})`,
+      : `imported (${describeValue(config.blockedExecPaths)})`,
   ]);
-  for (const key of ["blockedExecPaths", "acceptedTaskTypes"] as const) {
-    const value = config[key];
-    rows.push([key, value === undefined ? "default" : `imported (${describeValue(value)})`]);
-  }
-  const known = new Set<string>([...REQUIRED_KEYS, ...OPTIONAL_KEYS, "installables"]);
+  const toSettings = (value: unknown) =>
+    value === undefined ? "default" : `imported into settings.json (${describeValue(value)})`;
+  rows.push(["installables.allow", toSettings(imported.installables?.allow)]);
+  rows.push(["acceptedTaskTypes", toSettings(imported.acceptedTaskTypes)]);
+  const known = new Set<string>([
+    ...REQUIRED_KEYS,
+    ...OPTIONAL_KEYS,
+    "acceptedTaskTypes",
+    "installables",
+  ]);
   for (const key of Object.keys(source)) {
     if (!known.has(key)) rows.push([key, "not imported: unknown key"]);
   }
@@ -418,11 +449,16 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
       rows.push([file, `not imported: versions of ${LEGACY_PACKAGE}`]);
     }
   }
+  for (const setting of LOCAL_DEFAULTS) {
+    rows.push([setting, "default (set them on the agent's page)"]);
+  }
   for (const setting of CONTROL_PANEL_SETTINGS) rows.push([setting, "kept by the control panel"]);
 
   const width = Math.max(...rows.map(([name]) => name.length));
   let summary =
-    `Importing ${from}\n     into ${configPath}\n\n` +
+    `Importing ${from}\n     into ${configPath}\n` +
+    (settings ? `      and ${settingsPath}\n` : "") +
+    "\n" +
     rows.map(([name, outcome]) => `  ${name.padEnd(width)}  ${outcome}\n`).join("");
 
   const detected = await detectOldDaemon(deps, home);
@@ -493,9 +529,11 @@ export async function runImport(options: ImportOptions, deps: ImportDeps): Promi
     await fs.chmod(backup, 0o600);
   }
   await fs.writePrivateJson(configPath, config);
+  if (settings) await fs.writePrivateJson(settingsPath, settings);
   io.stdout(
     `\n${backup ? `Backed up the existing config to ${backup}.\n` : ""}` +
-      `Wrote ${configPath}. ${from} and its install are unchanged.\n` +
+      `Wrote ${configPath}${settings ? ` and ${settingsPath}` : ""}. ` +
+      `${from} and its install are unchanged.\n` +
       (replace || `Run 'omniralph-agent start' to start the agent.\n`),
   );
   return 0;

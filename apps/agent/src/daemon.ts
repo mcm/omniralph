@@ -1,5 +1,7 @@
 import {
+  EMPTY_LOCAL_SETTINGS,
   HEARTBEAT_INTERVAL_SECONDS,
+  effectiveLocalSettings,
   effectivePoolLimit,
   poolForTaskType,
   type AgentHostReport,
@@ -11,6 +13,7 @@ import {
   type JobStartResponse,
   type RunSpec,
 } from "@omniralph/shared";
+import type { TaskType } from "@omniralph/tasks";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import {
   RetryableJobError,
@@ -18,7 +21,7 @@ import {
   type JobContext,
   type JobOutput,
 } from "./capabilities/index.js";
-import { acceptedTaskTypes, execPathBlocked, type AgentConfig } from "./config.js";
+import { execPathBlocked, type AgentConfig } from "./config.js";
 import { agentHost } from "./host.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
@@ -30,6 +33,7 @@ import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./r
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
 import { SessionTokenFile } from "./session-token-file.js";
+import type { LocalSettingsStore } from "./settings.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
@@ -90,10 +94,15 @@ export interface DaemonOptions {
   /**
    * The local config: paths it blocks (`blockedExecPaths`) are never reported
    * as host tools, and no run executes a host tool, installable command or
-   * installable MCP server under them. Its `acceptedTaskTypes` (default all) go
-   * in every heartbeat and claim: only their jobs (and `system` jobs) are claimed.
+   * installable MCP server under them.
    */
-  localConfig?: Pick<AgentConfig, "blockedExecPaths" | "acceptedTaskTypes">;
+  localConfig?: Pick<AgentConfig, "blockedExecPaths">;
+  /**
+   * The machine settings (`settings.json`), read whenever they're needed: the
+   * accepted task types go in every heartbeat and claim, and only their jobs
+   * (and `system` jobs) are claimed. Default: every default.
+   */
+  settings?: Pick<LocalSettingsStore, "effective">;
   /** The `PATH` host tools are discovered on (default: the agent process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
   /** The Claude models reported in every heartbeat (none when unset). */
@@ -604,9 +613,10 @@ export class AgentDaemon implements DrainableDaemon {
     return Object.keys(this.config.poolLimits).filter((pool) => accepted.has(pool));
   }
 
-  /** The task types the agent runs: its local `acceptedTaskTypes`, default all. */
-  acceptedTaskTypes(): ReturnType<typeof acceptedTaskTypes> {
-    return acceptedTaskTypes(this.options.localConfig ?? {});
+  /** The task types the agent runs: `acceptedTaskTypes` of its settings, default all. */
+  acceptedTaskTypes(): TaskType[] {
+    return (this.options.settings?.effective() ?? effectiveLocalSettings(EMPTY_LOCAL_SETTINGS))
+      .acceptedTaskTypes;
   }
 
   /**

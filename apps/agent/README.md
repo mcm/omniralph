@@ -29,7 +29,12 @@ omniralph-agent enroll --server https://omniralph.example.com --token <enrollmen
 ```
 
 This writes `~/.config/omniralph/agent.json` (`--config` or `OMNIRALPH_AGENT_CONFIG` choose
-another path). Run `omniralph-agent --help` to see all the options.
+another path), which holds the agent's identity. Its machine settings (slots, accepted task types,
+host tool paths, the installables allow-list, the version pin) are in `settings.json` in its data
+directory (`~/.omniralph/settings.json`), which the agent applies as soon as it changes. Run
+`omniralph-agent --help` to see all the options, and
+[docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md#machine-settings-settingsjson)
+for every key of both files.
 
 ## Start
 
@@ -61,7 +66,8 @@ the config file `~/.config/omniralph/harness.json`. Self-update can't cross the 
 1. Stop the old daemon (`pm2 delete omniralph-harness`, or however you run it).
 2. `npm install -g @omniralph/agent`.
 3. `omniralph-agent import`: it reads the old install's config and writes
-   `~/.config/omniralph/agent.json`, so the machine comes back as the same agent without enrolling
+   `~/.config/omniralph/agent.json` (and its `acceptedTaskTypes` and `installables.allow` into
+   `~/.omniralph/settings.json`), so the machine comes back as the same agent without enrolling
    again. It makes no network call, leaves the old install untouched and prints one line per
    setting. `--dry-run` prints the same summary without writing anything; `--force` backs up and
    replaces an existing `agent.json`. When pm2 runs the old daemon, it prints the commands that

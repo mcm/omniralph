@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readConfig } from "./config.js";
+import { silentLogger } from "./logger.js";
+import { LocalSettingsStore } from "./settings.js";
 import { parsePm2List, procCmdlines, type Pm2Runner, type ProcessLister } from "./import.js";
 import { main, type MainDeps } from "./main.js";
 
@@ -83,11 +85,17 @@ describe("omniralph-agent import", () => {
 
   const oldConfig = (home: string) => path.join(home, ".config", "omniralph", OLD_FILE);
   const newConfig = (home: string) => path.join(home, ".config", "omniralph", "agent.json");
-  // The new config (and its backup), and the directory it shares with the old one.
-  const isNewConfig = (home: string) => (file: string) =>
-    file === newConfig(home) ||
-    file.startsWith(`${newConfig(home)}.bak-`) ||
-    file === path.dirname(newConfig(home));
+  const settingsFile = (dataDir: string) => path.join(dataDir, "settings.json");
+  // The new config (and its backup), and the directory it shares with the old one; settings.json
+  // in the data directory, and that directory.
+  const isNewConfig =
+    (home: string, dataDir = path.join(home, ".omniralph")) =>
+    (file: string) =>
+      file === newConfig(home) ||
+      file.startsWith(`${newConfig(home)}.bak-`) ||
+      file === path.dirname(newConfig(home)) ||
+      file === settingsFile(dataDir) ||
+      file === dataDir;
 
   async function run(args: string[], home: string, overrides: Partial<MainDeps> = {}) {
     const { out, io } = capture();
@@ -120,31 +128,43 @@ describe("omniralph-agent import", () => {
       refreshToken: REFRESH_TOKEN,
       workspaceRoot: path.join(home, ".omniralph", "repos"),
       dataDir: path.join(home, ".omniralph"),
-      installables: { allow: [] },
       blockedExecPaths: ["/opt/secret-tools"],
-      acceptedTaskTypes: ["review", "coding"],
     });
     expect((await stat(newConfig(home))).mode & 0o777).toBe(0o600);
+    // The machine settings it had go to settings.json in the data directory.
+    const settings = settingsFile(path.join(home, ".omniralph"));
+    expect(JSON.parse(await readFile(settings, "utf8"))).toEqual({
+      v: 1,
+      acceptedTaskTypes: ["review", "coding"],
+      installables: { allow: [] },
+    });
+    expect((await stat(settings)).mode & 0o777).toBe(0o600);
+    await expect(
+      LocalSettingsStore.open({ file: settings, logger: silentLogger() }),
+    ).resolves.toBeDefined();
     // What `start` reads.
     await expect(readConfig(newConfig(home))).resolves.toMatchObject({ agentId: AGENT_ID });
 
     expect(result.output).not.toContain(REFRESH_TOKEN);
     expect(result.stdout).toMatch(/refreshToken\s+imported \(hidden\)/);
     expect(result.stdout).toMatch(/server\s+imported \(https:\/\/omniralph\.example\)/);
-    expect(result.stdout).toMatch(/installables\.allow\s+imported \(\[\]\)/);
+    expect(result.stdout).toMatch(/installables\.allow\s+imported into settings\.json \(\[\]\)/);
+    expect(result.stdout).toMatch(
+      /acceptedTaskTypes\s+imported into settings\.json \(\["review","coding"\]\)/,
+    );
+    expect(result.stdout).toContain(`and ${settings}\n`);
     expect(result.stdout).toMatch(/update-state\.json\s+not imported: versions of @omniralph\/har/);
     expect(result.stdout).toMatch(/update-request\.json\s+not imported: versions of @omniralph/);
-    for (const setting of [
-      "concurrency",
-      "pool limits",
-      "pins",
-      "host tool paths",
-      "desired version",
-    ]) {
+    for (const setting of ["slots", "pool limits", "host tool paths", "version pin"]) {
+      expect(result.stdout).toMatch(
+        new RegExp(`${setting}\\s+default \\(set them on the agent's page\\)`),
+      );
+    }
+    for (const setting of ["pins", "desired version"]) {
       expect(result.stdout).toMatch(new RegExp(`${setting}\\s+kept by the control panel`));
     }
     expect(result.stdout).not.toContain("Warnings");
-    expect(result.stdout).toContain(`Wrote ${newConfig(home)}`);
+    expect(result.stdout).toContain(`Wrote ${newConfig(home)} and ${settings}.`);
     expect(result.stdout).toContain("omniralph-agent start");
 
     expect(await snapshot(home, isNewConfig(home))).toEqual(before);
@@ -166,6 +186,9 @@ describe("omniralph-agent import", () => {
     for (const key of ["dataDir", "installables.allow", "blockedExecPaths", "acceptedTaskTypes"]) {
       expect(result.stdout).toMatch(new RegExp(`${key.replace(".", "\\.")}\\s+default\\n`));
     }
+    // Nothing to put in settings.json: none is written.
+    await expect(stat(settingsFile(path.join(home, ".omniralph")))).rejects.toThrow(/ENOENT/);
+    expect(result.stdout).toContain(`Wrote ${newConfig(home)}. `);
     expect(result.stdout).not.toContain("update-state.json");
     expect(result.output).not.toContain(REFRESH_TOKEN);
   });
@@ -180,8 +203,11 @@ describe("omniralph-agent import", () => {
       refreshToken: REFRESH_TOKEN,
       workspaceRoot: path.join(home, "missing", "repos"),
       dataDir: path.join(home, "missing", "data"),
-      installables: { allow: ["@omniralph/*", "@acme/*"] },
     });
+    // Its data directory doesn't exist yet: settings.json creates it.
+    expect(
+      JSON.parse(await readFile(settingsFile(path.join(home, "missing", "data")), "utf8")),
+    ).toEqual({ v: 1, installables: { allow: ["@omniralph/*", "@acme/*"] } });
     expect(result.stdout).toMatch(/blockedExecPaths\s+default/);
     expect(result.stdout).toMatch(/acceptedTaskTypes\s+default/);
     expect(result.stdout).toMatch(/maxConcurrency\s+not imported: unknown key/);
@@ -421,6 +447,70 @@ describe("omniralph-agent import", () => {
         },
       ]);
       expect(parsePm2List("")).toEqual([]);
+    });
+  });
+
+  describe("settings.json", () => {
+    const settingsOf = (home: string) => settingsFile(path.join(home, ".omniralph"));
+
+    it("merges the imported keys into a settings.json already there", async () => {
+      const home = await install("full");
+      await writeFile(
+        settingsOf(home),
+        JSON.stringify({ v: 1, maxConcurrency: 3, installables: { allow: ["@acme/*"] } }),
+        { mode: 0o600 },
+      );
+      const result = await run([], home);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(await readFile(settingsOf(home), "utf8"))).toEqual({
+        v: 1,
+        maxConcurrency: 3,
+        installables: { allow: [] },
+        acceptedTaskTypes: ["review", "coding"],
+      });
+    });
+
+    it("refuses, writing nothing, when the settings.json there isn't valid", async () => {
+      const home = await install("full");
+      await writeFile(settingsOf(home), `{"v":1,"maxConcurrency":99}`, { mode: 0o600 });
+      const result = await run([], home);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain(`${settingsOf(home)} exists and isn't valid`);
+      expect(result.stderr).toContain("Nothing was written.");
+      await expect(stat(newConfig(home))).rejects.toThrow(/ENOENT/);
+      expect(await readFile(settingsOf(home), "utf8")).toBe(`{"v":1,"maxConcurrency":99}`);
+    });
+
+    it("refuses accepted task types or an allow-list settings.json wouldn't accept", async () => {
+      const home = path.join(tmp, "bad-settings");
+      const from = path.join(home, "old.json");
+      await cp(path.join(FIXTURES, "minimal"), home, { recursive: true });
+      await writeFile(
+        from,
+        JSON.stringify({
+          server: "https://omniralph.example",
+          agentId: AGENT_ID,
+          refreshToken: REFRESH_TOKEN,
+          workspaceRoot: "/srv/repos",
+          acceptedTaskTypes: [],
+          installables: { allow: ["@a/b/c"] },
+        }),
+        { mode: 0o600 },
+      );
+      const result = await run(["--from", from], home);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/acceptedTaskTypes: /);
+      expect(result.stderr).toMatch(/installables\.allow\.0: must be an npm package name/);
+      await expect(stat(newConfig(home))).rejects.toThrow(/ENOENT/);
+      await expect(stat(settingsOf(home))).rejects.toThrow(/ENOENT/);
+    });
+
+    it("writes no settings.json on a dry run", async () => {
+      const home = await install("full");
+      const result = await run(["--dry-run"], home);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(`and ${settingsOf(home)}\n`);
+      await expect(stat(settingsOf(home))).rejects.toThrow(/ENOENT/);
     });
   });
 

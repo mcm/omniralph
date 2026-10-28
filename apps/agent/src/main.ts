@@ -38,6 +38,7 @@ import {
 import { createLogger, type Logger } from "./logger.js";
 import { ModelReporter, sdkListModels, type ListModels } from "./models.js";
 import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
+import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
 import {
   SelfUpdater,
   npmInstaller,
@@ -80,14 +81,18 @@ Options:
   -h, --help      Show this help
   -v, --version   Print the agent version
 
-Local config keys (set by hand in the config file; enroll writes only the first four):
+Local config keys (agent.json, set by hand; enroll writes only the first four):
   server, agentId, refreshToken, workspaceRoot
-  installables.allow  npm package patterns the install RPC accepts (default: ["@omniralph/*"];
-                      [] allows none; * matches anything but /)
+  dataDir             Installables, caches and settings.json (default: ~/.omniralph)
   blockedExecPaths    Absolute path prefixes never executed, symlinks resolved (default: [])
-  dataDir             Installables and caches directory (default: ~/.omniralph)
-  acceptedTaskTypes   Task types this agent runs: a non-empty subset of "query", "review" and
-                      "coding" (default: all; system jobs always run)
+  ui.enabled          Serve the agent page (default: true)
+  ui.port             The agent page's port on 127.0.0.1 (default: 7410)
+  ui.allowedHosts     Extra host names the agent page answers to, e.g. behind port
+                      forwarding (default: [])
+
+Machine settings (slots, pool limits, accepted task types, host tool paths, the installables
+allow-list and the version pin) are in settings.json in the data directory. Edit them on the
+agent's page; a valid hand edit of the file applies at once too.
 `;
 
 export interface Io {
@@ -113,6 +118,8 @@ export interface MainDeps {
   installableInstaller?: InstallableInstaller;
   /** Reads the models Claude can run, for the heartbeat (default: the Agent SDK's `supportedModels()`). */
   listModels?: ListModels;
+  /** Filesystem for `settings.json` (default: `node:fs`). */
+  settingsFs?: SettingsFs;
   /** Clock for self-update confirmation (ms since epoch). */
   now?: () => number;
   /** The running agent version (default: this package's). */
@@ -311,6 +318,13 @@ async function runStart(
   const config = await readConfig(configPath);
   const logger = deps.logger ?? createLogger(deps.env.OMNIRALPH_LOG_LEVEL);
   const version = deps.version ?? AGENT_VERSION;
+  // Before anything starts: an invalid settings.json stops the agent here.
+  const agentDataDir = dataDir(config, deps.homeDir);
+  const settings = await LocalSettingsStore.open({
+    file: localSettingsPath(agentDataDir),
+    logger,
+    fs: deps.settingsFs,
+  });
 
   const updater = new SelfUpdater({
     statePath: updateStatePath(configPath),
@@ -359,7 +373,7 @@ async function runStart(
   // No job runs yet: whatever is left in .worktrees is from a crash.
   await repos.pruneStaleWorktrees();
 
-  const agentDataDir = dataDir(config, deps.homeDir);
+  await settings.watch();
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
@@ -371,7 +385,7 @@ async function runStart(
     registry,
     rpcs: new SystemRpcRegistry(
       defaultSystemRpcs({
-        config,
+        allowList: () => settings.effective().installablesAllow,
         prefix: installablesPrefix(agentDataDir),
         installer: deps.installableInstaller ?? npmInstallableInstaller(deps.env),
       }),
@@ -380,6 +394,7 @@ async function runStart(
     dataDir: agentDataDir,
     models: new ModelReporter({ list: deps.listModels ?? sdkListModels(), logger }),
     localConfig: config,
+    settings,
     updater,
     wakeSubscription: (organizationId) =>
       createWakeSubscription({ agentId: config.agentId, organizationId, logger }),
@@ -405,6 +420,7 @@ async function runStart(
   );
   const code = await daemon.run();
   tokens.stop();
+  await settings.close();
   health?.close();
   if (fatal) {
     deps.io.stderr(`omniralph-agent: ${fatal.message}; run 'omniralph-agent enroll' again\n`);

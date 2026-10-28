@@ -2,33 +2,31 @@ import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { AcceptedTaskTypes } from "@omniralph/shared";
-import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { z } from "zod";
-
-/** Installables an agent accepts when its config doesn't say. */
-export const DEFAULT_INSTALLABLE_ALLOW = ["@omniralph/*"] as const;
-
-/**
- * An npm package name, optionally with `*` wildcards (each matching any run of
- * characters except `/`): `@scope/name`, `@scope/*` or `name`.
- */
-const PackagePattern = z
-  .string()
-  .refine((value) => value !== "" && !/\s/.test(value) && value.split("/").length <= 2, {
-    message: "must be an npm package name or a pattern like '@scope/*'",
-  });
 
 const AbsolutePath = z
   .string()
   .refine((value) => path.isAbsolute(value), { message: "must be an absolute path" });
 
+/** The agent page's port when `ui.port` isn't set. */
+export const DEFAULT_UI_PORT = 7410;
+
+/** A host name the agent page answers to (`ui.allowedHosts`): no scheme, path or port. */
+const UiHostName = z
+  .string()
+  .regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i, {
+    message: "must be a host name",
+  });
+
+/** Keys of older configs that now live in `settings.json`, refused with a pointer there. */
+export const MOVED_TO_SETTINGS = ["acceptedTaskTypes", "installables"] as const;
+
 /**
- * The agent's only local configuration. Everything else (concurrency, pool
- * limits, pinned repos) comes from the control panel
- * in every heartbeat response. The optional keys are left out when unset, so
- * rewriting the file (token rotation) never adds them; use the accessors below
- * for their defaults.
+ * The agent's identity and bootstrap (`agent.json`). Its machine settings
+ * (slots, kinds, host tools, the installables allow-list, the version pin)
+ * are in `<dataDir>/settings.json` (`LocalSettingsStore`). The optional keys
+ * are left out when unset, so rewriting the file (token rotation) never adds
+ * them; use the accessors below for their defaults.
  */
 export const AgentConfig = z.object({
   server: z.string(),
@@ -38,19 +36,19 @@ export const AgentConfig = z.object({
   workspaceRoot: z.string(),
   /** Agent data (installables prefix, caches); default `~/.omniralph`. */
   dataDir: AbsolutePath.optional(),
-  installables: z
-    .object({
-      /** Package-name patterns the `install` RPC accepts; default `["@omniralph/*"]`, `[]` allows none. */
-      allow: z.array(PackagePattern).optional(),
-    })
-    .optional(),
   /** Absolute path prefixes the agent never executes, configured or discovered. */
   blockedExecPaths: z.array(AbsolutePath).optional(),
-  /**
-   * The task types the agent runs jobs of (`query`, `review`, `coding`; `system` jobs always
-   * run): reported in every heartbeat and claim. Default: all of them.
-   */
-  acceptedTaskTypes: AcceptedTaskTypes.optional(),
+  /** The agent page (`omniralph-agent ui`), served on 127.0.0.1 only. */
+  ui: z
+    .object({
+      /** Default true. */
+      enabled: z.boolean().optional(),
+      /** Default `DEFAULT_UI_PORT`. */
+      port: z.int().min(1).max(65535).optional(),
+      /** Extra `Host` names the page answers to (e.g. a port-forwarding proxy); default none. */
+      allowedHosts: z.array(UiHostName).max(20).optional(),
+    })
+    .optional(),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
@@ -69,26 +67,6 @@ export function defaultDataDir(home = homedir()): string {
 
 export function dataDir(config: AgentConfig, home = homedir()): string {
   return config.dataDir ?? defaultDataDir(home);
-}
-
-/** The task types the agent runs (`acceptedTaskTypes`, default all), in `TASK_TYPES` order. */
-export function acceptedTaskTypes(config: Pick<AgentConfig, "acceptedTaskTypes">): TaskType[] {
-  const accepted = config.acceptedTaskTypes;
-  return accepted ? TASK_TYPES.filter((type) => accepted.includes(type)) : [...TASK_TYPES];
-}
-
-function packagePatternRegExp(pattern: string): RegExp {
-  const source = pattern
-    .split("*")
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("[^/]*");
-  return new RegExp(`^${source}$`);
-}
-
-/** Whether `installables.allow` (default `["@omniralph/*"]`) accepts the package. */
-export function installableAllowed(config: AgentConfig, packageName: string): boolean {
-  const allow = config.installables?.allow ?? DEFAULT_INSTALLABLE_ALLOW;
-  return allow.some((pattern) => packagePatternRegExp(pattern).test(packageName));
 }
 
 /**
@@ -195,13 +173,18 @@ export async function readConfig(file: string): Promise<AgentConfig> {
   } catch {
     throw new ConfigError(`${file} is not valid JSON`);
   }
+  const moved =
+    typeof json === "object" && json !== null
+      ? MOVED_TO_SETTINGS.filter((key) => key in json).map((key) => `${key} moved to settings.json`)
+      : [];
   const parsed = AgentConfig.safeParse(json);
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((issue) =>
+  if (!parsed.success || moved.length > 0) {
+    const issues = [
+      ...moved,
+      ...(parsed.error?.issues ?? []).map((issue) =>
         issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
-      )
-      .join("; ");
+      ),
+    ].join("; ");
     throw new ConfigError(`${file} is not a valid agent config (${issues})`);
   }
   return { ...parsed.data, server: validateServerUrl(parsed.data.server) };
@@ -216,6 +199,11 @@ export async function writeConfig(file: string, config: AgentConfig): Promise<vo
   await writePrivateJson(file, config);
 }
 
+/** The exact text `writePrivateJson` writes for `value`. */
+export function privateJsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 /**
  * Writes a JSON file only the owner can read (0600), atomically (see
  * `writeConfig`).
@@ -227,7 +215,7 @@ export async function writePrivateJson(file: string, value: unknown): Promise<vo
   try {
     const handle = await open(tmp, "wx", 0o600);
     try {
-      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+      await handle.writeFile(privateJsonText(value));
       await handle.sync();
     } finally {
       await handle.close();

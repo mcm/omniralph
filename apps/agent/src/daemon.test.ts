@@ -3,15 +3,16 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-  ClaimRequest,
-  Heartbeat,
-  HeartbeatResponse,
-  JobFailure,
-  JobOutcomeResponse,
-  JobPayload,
-  JobStartResponse,
-  RunSpec,
+import {
+  effectiveLocalSettings,
+  type ClaimRequest,
+  type Heartbeat,
+  type HeartbeatResponse,
+  type JobFailure,
+  type JobOutcomeResponse,
+  type JobPayload,
+  type JobStartResponse,
+  type RunSpec,
 } from "@omniralph/shared";
 import { RunSpecAgent, TaskDefinition } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +27,8 @@ import {
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
+import { LocalSettingsStore } from "./settings.js";
+import { memorySettingsFs } from "./test/settings-fs.js";
 import type { WakeEvent, WakeSubscription } from "./wake.js";
 import type { RepoCache } from "./workspace/repoCache.js";
 import { SelfUpdater, readUpdateState } from "./update.js";
@@ -278,6 +281,7 @@ function setup(options: {
   updater?: SelfUpdater;
   dataDir?: string;
   localConfig?: DaemonOptions["localConfig"];
+  settings?: DaemonOptions["settings"];
   hostToolSearchPath?: string;
   models?: DaemonOptions["models"];
   host?: DaemonOptions["host"];
@@ -316,6 +320,7 @@ function setup(options: {
     reportRetryDelayMs: 10,
     dataDir: options.dataDir,
     localConfig: options.localConfig,
+    settings: options.settings,
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
     models: options.models,
@@ -530,7 +535,7 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("claims only the task types of its local config, reporting them in heartbeats and claims", async () => {
+  it("claims only the task types of its settings, reporting them in heartbeats and claims", async () => {
     const codingId = randomUUID();
     const reviewId = randomUUID();
     const runReviewTask = vi.fn(async (spec: RunSpec) => ({ review: spec.jobId }));
@@ -538,7 +543,9 @@ describe("AgentDaemon", () => {
     const { api, claims, daemon } = setup({
       runReviewTask,
       runCodingTask,
-      localConfig: { acceptedTaskTypes: ["review"] },
+      settings: {
+        effective: () => effectiveLocalSettings({ v: 1, acceptedTaskTypes: ["review"] }),
+      },
       config: centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
     });
     claims.push(
@@ -562,6 +569,35 @@ describe("AgentDaemon", () => {
     expect(runReviewTask).toHaveBeenCalledTimes(1);
     expect(api.submitResult).toHaveBeenCalledWith(reviewId, { result: { review: reviewId } });
     expect(runCodingTask).not.toHaveBeenCalled();
+    await daemon.shutdown();
+  });
+
+  it("sends the accepted task types of settings.json current at each heartbeat and claim", async () => {
+    const memory = memorySettingsFs();
+    const store = await LocalSettingsStore.open({
+      file: "/data/settings.json",
+      logger: silentLogger(),
+      fs: memory.fs,
+    });
+    const { api, claims, daemon } = setup({
+      settings: store,
+      config: centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
+    });
+    void daemon.run();
+    await settle();
+    expect(claims.accepted).toEqual([ALL_TYPES]);
+    expect(claims.calls).toEqual([["short", "long"]]);
+
+    // Saved mid-run: the next heartbeat and the next claim (after the long poll) use them.
+    const saved = await store.update("kinds", { acceptedTaskTypes: ["coding"] }, "none");
+    expect(saved.status).toBe("saved");
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ acceptedTaskTypes: ["coding"] }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(claims.accepted.at(-1)).toEqual(["coding"]);
+    expect(claims.calls.at(-1)).toEqual(["long"]);
     await daemon.shutdown();
   });
 

@@ -1,4 +1,9 @@
 /** Per-organization settings (`app_settings`): one JSON value per organization and key. */
+import {
+  DEFAULT_MAX_CONCURRENCY,
+  MAX_MAX_CONCURRENCY,
+  MIN_MAX_CONCURRENCY,
+} from "@omniralph/shared";
 import { and, eq } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
@@ -175,10 +180,8 @@ export async function setChatPlaybookDefaults(
  */
 export const DEFAULT_MAX_CONCURRENCY_KEY = "agent.maxConcurrency";
 
-export const MIN_MAX_CONCURRENCY = 1;
-export const MAX_MAX_CONCURRENCY = 32;
-/** The agent max concurrency when the organization hasn't chosen one. */
-export const DEFAULT_MAX_CONCURRENCY = 5;
+// The agent's slot bounds and default live in `@omniralph/shared` (an agent's `settings.json`).
+export { DEFAULT_MAX_CONCURRENCY, MAX_MAX_CONCURRENCY, MIN_MAX_CONCURRENCY };
 
 function isMaxConcurrency(value: unknown): value is number {
   return (
