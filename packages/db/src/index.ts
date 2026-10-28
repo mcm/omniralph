@@ -609,6 +609,22 @@ export {
   type RuleKind,
 } from "./rules.js";
 export {
+  attemptModelUsageRows,
+  replaceAttemptModelUsage,
+  type AttemptModelUsageRow,
+} from "./attempt-usage.js";
+export {
+  attemptCostOf,
+  costForJobs,
+  ONE_HOUR_CACHE_WRITE_MULTIPLIER,
+} from "./queries/attempt-costs.js";
+export {
+  applyModelPrices,
+  canonicalDecimal,
+  type ApplyModelPricesResult,
+  type ModelPriceInput,
+} from "./model-prices.js";
+export {
   ANALYTICS_RANGES,
   analyticsWindow,
   getRunAnalytics,
@@ -625,6 +641,7 @@ export {
   type RunAnalyticsFigures,
   type RunAnalyticsFilter,
   type RunAttempts,
+  type RunCost,
   type RunTokens,
 } from "./queries/run-analytics.js";
 export {

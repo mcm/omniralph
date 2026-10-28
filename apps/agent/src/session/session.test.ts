@@ -1,4 +1,9 @@
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  USAGE_SEQUENCE_TOTALS,
+  usageSequence,
+  usageSequenceByModel,
+} from "@omniralph/shared/testing";
 import { describe, expect, it } from "vitest";
 import { RALPH_TOOL_POLICY } from "../capabilities/ralph/policy.js";
 import {
@@ -143,7 +148,23 @@ describe("session runner streaming input", () => {
     const r = start("separate-turns");
     const result = await r.done;
     expect(result).toMatchObject({ stop: "completed", output: "answered story" });
-    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
+    expect(result.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 2,
+      byModel: [
+        {
+          model: "opus",
+          canonicalModel: null,
+          inputTokens: 10,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheWrite1hInputTokens: 0,
+          outputTokens: 2,
+          largestRequestInputTokens: null,
+          fastMode: false,
+        },
+      ],
+    });
     expect(r.hasInjector()).toBe(false);
   });
 
@@ -555,5 +576,90 @@ describe("session runner token budget", () => {
       usage: { inputTokens: 500, outputTokens: 60 },
     });
     expect(await runWith(messages)).toMatchObject({ stop: "completed" });
+  });
+});
+
+describe("session runner usage per model", () => {
+  const runWith = (messages: unknown[], extra: Partial<SessionRequest> = {}) =>
+    createSessionRunner(scriptedSession(() => messages as SDKMessage[]).query)({
+      prompt: "question",
+      cwd: process.cwd(),
+      policy: RALPH_TOOL_POLICY,
+      systemAppend: "",
+      env: {},
+      signal: new AbortController().signal,
+      ...extra,
+    });
+
+  it("reports each model of the shared recorded session", async () => {
+    const result = await runWith(usageSequence());
+    expect(result.stop).toBe("completed");
+    expect(result.usage).toEqual({ ...USAGE_SEQUENCE_TOTALS, byModel: usageSequenceByModel() });
+    expect(JSON.parse(JSON.stringify(result.usage))).toEqual(result.usage);
+  });
+
+  it("marks fast mode when a result reports it", async () => {
+    const result = await runWith(usageSequence({ fastMode: "on" }));
+    expect(result.usage.byModel).toEqual(usageSequenceByModel({ fastMode: true }));
+  });
+
+  it("takes a follow-up turn's cumulative result, not the sum of both", async () => {
+    const first = usageSequence();
+    const result1 = first.at(-1) as Record<string, unknown> & {
+      modelUsage: Record<string, Record<string, unknown>>;
+    };
+    const messages = [
+      ...first.slice(0, -1),
+      { ...result1, structured_output: { status: "waiting" } },
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        uuid: "00000000-0000-4000-8000-000000000006",
+        session_id: "usage-session",
+        message: {
+          id: "msg_main_3",
+          model: "claude-opus-5-5",
+          content: [{ type: "text", text: "Done." }],
+          usage: {
+            input_tokens: 5,
+            cache_read_input_tokens: 5300,
+            cache_creation_input_tokens: 0,
+            output_tokens: 40,
+          },
+        },
+      },
+      {
+        ...result1,
+        uuid: "00000000-0000-4000-8000-000000000007",
+        structured_output: { status: "done" },
+        modelUsage: {
+          ...result1.modelUsage,
+          "claude-opus-5-5": {
+            ...result1.modelUsage["claude-opus-5-5"],
+            inputTokens: 35,
+            cacheReadInputTokens: 10_300,
+            outputTokens: 240,
+          },
+        },
+      },
+    ];
+    const result = await runWith(messages, {
+      isWaiting: (structured) => (structured as { status?: string })?.status === "waiting",
+    });
+    expect(result).toMatchObject({ stop: "completed", structured: { status: "done" } });
+    const [opus, ...rest] = usageSequenceByModel();
+    expect(result.usage.byModel).toEqual([
+      { ...opus, inputTokens: 35, cacheReadInputTokens: 10_300, outputTokens: 240 },
+      ...rest,
+    ]);
+  });
+
+  it("reports the streamed models of a session stopped by its budget", async () => {
+    const result = await runWith(usageSequence().slice(0, 3), { tokenBudget: 6000 });
+    expect(result.stop).toBe("budget_exhausted");
+    expect(result.usage.byModel?.map((m) => [m.model, m.inputTokens, m.canonicalModel])).toEqual([
+      ["claude-opus-5-5", 10, null],
+      ["claude-sonnet-5-5", 200, null],
+    ]);
   });
 });

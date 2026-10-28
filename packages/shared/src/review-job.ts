@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { Finding, FindingCategory } from "./finding.js";
 import { RunSpecJobPayload } from "./run-spec.js";
+import { TokenUsage } from "./usage.js";
 
 /** Job type of a review task's run (one per task of a review run). */
 export const REVIEW_TASK_JOB_TYPE = "review.task";
@@ -138,7 +139,7 @@ export const MAX_REVIEW_SKIPPED = 10_000;
  */
 export const ReviewJobResult = z.object({
   findings: z.array(Finding).max(MAX_REVIEW_FINDINGS),
-  usage: z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) }),
+  usage: TokenUsage,
   skipped: z
     .array(z.object({ path: z.string().min(1), reason: z.enum(REVIEW_SKIP_REASONS) }))
     .max(MAX_REVIEW_SKIPPED),

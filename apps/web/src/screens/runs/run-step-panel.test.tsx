@@ -364,6 +364,40 @@ describe("StepPanel in the run detail", () => {
     ).toBe("/fleet/agent-2");
   });
 
+  it("shows each priced attempt's list price after its tokens, and nothing for the others", async () => {
+    detail = epic({
+      attempts: epic().attempts.map((a) =>
+        a.id === "a2" ? { ...a, costUsd: 4.1 } : a.id === "a3" ? { ...a, costUsd: null } : a,
+      ),
+    });
+    renderRun({ search: "step=2&tab=attempts" });
+    await loaded();
+    const rows = within(within(panel()).getByRole("list", { name: "Attempts" })).getAllByRole(
+      "listitem",
+    );
+    const [running, failed] = rows.map(text);
+    expect(running).toContain("8.4k in · 950 out");
+    expect(running).not.toContain("$");
+    expect(failed).toContain("45.2M in · 225k out · $4.10");
+    const figure = within(rows[1]!).getByText("$4.10");
+    expect(figure.getAttribute("title")).toBe(
+      "What these tokens would cost at Anthropic's API list prices, not what was billed.",
+    );
+    expect(figure.className).not.toMatch(/accent|mint|coral/);
+  });
+
+  it("shows a list price under a cent as <$0.01", async () => {
+    detail = epic({
+      attempts: epic().attempts.map((a) => (a.id === "a2" ? { ...a, costUsd: 0.004 } : a)),
+    });
+    renderRun({ search: "step=2&tab=attempts" });
+    await loaded();
+    const rows = within(within(panel()).getByRole("list", { name: "Attempts" })).getAllByRole(
+      "listitem",
+    );
+    expect(text(rows[1]!)).toContain("225k out · <$0.01");
+  });
+
   it("shows an attempt's transcript when it is chosen", async () => {
     const { navigate } = renderRun({ search: "step=2&tab=attempts" });
     await loaded();
@@ -624,6 +658,31 @@ describe("the live transcript", () => {
   const changes = `org:${TEST_ORGANIZATION_ID}:changes`;
   const transcriptEvent = () =>
     changeEvent(TEST_ORGANIZATION_ID, { resource: "transcript", runId: RUN_ID });
+
+  it("refetches the run's list prices when model prices change", async () => {
+    detail = epic({
+      attempts: epic().attempts.map((a) => (a.id === "a2" ? { ...a, costUsd: null } : a)),
+    });
+    const live = fakeAbly();
+    renderRun({ live, search: "step=2&tab=attempts" });
+    await loaded();
+    await waitFor(() => expect(live.current().subscribed()).toContain(changes));
+    expect(within(panel()).queryByText("$4.10")).toBeNull();
+
+    detail = epic({
+      attempts: epic().attempts.map((a) => (a.id === "a2" ? { ...a, costUsd: 4.1 } : a)),
+    });
+    act(() =>
+      live.current().deliver(
+        changes,
+        changeEvent(TEST_ORGANIZATION_ID, {
+          resource: "model_prices",
+          ids: [TEST_ORGANIZATION_ID],
+        }),
+      ),
+    );
+    await waitFor(() => expect(within(panel()).getByText("$4.10")).toBeTruthy());
+  });
 
   it("refetches a running attempt's latest page on its run's transcript events and appends the new events", async () => {
     let events = transcriptEvents(3);

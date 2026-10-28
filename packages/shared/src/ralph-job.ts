@@ -26,6 +26,7 @@ import { RalphRunInvoker } from "./correlation.js";
 import { JobRepository } from "./protocol.js";
 import { CommitSha } from "./review-job.js";
 import { RALPH_HISTORY_REWRITE_POLICIES } from "./settings.js";
+import { TokenUsage } from "./usage.js";
 
 export const RALPH_STORY_JOB_TYPE = "ralph.story";
 export const RALPH_DESCRIBE_PR_JOB_TYPE = "ralph.describe-pr";
@@ -73,8 +74,6 @@ export const GitBranch = z
       b.split("/").every((segment) => !segment.startsWith(".")),
     { message: "invalid branch name" },
   );
-
-const TokenUsage = z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) });
 
 /**
  * What a ralph job runs with besides its run spec: the repo's coding instructions, and (for

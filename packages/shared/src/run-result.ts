@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { ChatAskFileReference } from "./chat-ask.js";
+import { TokenUsage } from "./usage.js";
 
 /** Longest answer a query run may report (sinks cap it further). */
 export const MAX_QUERY_ANSWER_LENGTH = 64_000;
@@ -30,7 +31,7 @@ export const QueryRunResult = z
     structured: z.unknown().nullable(),
     /** Files of the checkout the answer cites. */
     references: z.array(ChatAskFileReference).max(MAX_QUERY_REFERENCES),
-    usage: z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) }),
+    usage: TokenUsage,
     durationMs: z.int().min(0),
   })
   .refine(

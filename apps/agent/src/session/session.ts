@@ -8,6 +8,7 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { SessionPermissions, TokenUsage } from "@omniralph/engine";
+import { UsageByModelTracker } from "@omniralph/shared";
 import type { ToolPolicy } from "../capabilities/index.js";
 import { withInstallableSkills, type InstallableSkills } from "../installable-skills.js";
 import {
@@ -365,7 +366,16 @@ async function runQuery(
 ): Promise<SessionResult> {
   const controller = new AbortController();
   const onAbort = () => controller.abort(request.signal.reason);
+  /** Usage per model (the shared tracker); `usage.byModel` reads it, so every result carries it. */
+  const models = new UsageByModelTracker();
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  Object.defineProperty(usage, "byModel", {
+    enumerable: true,
+    get: () => {
+      const byModel = models.byModel;
+      return byModel.length > 0 ? byModel : undefined;
+    },
+  });
   if (request.signal.aborted) return { stop: "aborted", output: "", usage };
   request.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -549,6 +559,7 @@ async function runQuery(
       }
       if ("session_id" in message && message.session_id) seen.sessionId = message.session_id;
       const turn = message.type === "assistant" ? recordUsage(message) : undefined;
+      if (message.type === "assistant") models.recordMessage(message.message, message.uuid);
       switch (message.type) {
         case "assistant": {
           if (message.parent_tool_use_id !== null) break;
@@ -580,6 +591,7 @@ async function runQuery(
           break;
         case "result": {
           const final = resultUsage(message);
+          models.recordResult(message);
           usage.inputTokens = Math.max(usage.inputTokens, final.inputTokens);
           usage.outputTokens = Math.max(usage.outputTokens, final.outputTokens);
           if (message.subtype === "success" && !message.is_error) {

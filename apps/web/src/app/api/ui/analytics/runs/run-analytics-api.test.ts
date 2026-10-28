@@ -6,7 +6,10 @@ import {
   createRun,
   createTriageRun,
   jobs,
+  modelPrices,
   organizationMembers,
+  ralphRuns,
+  replaceAttemptModelUsage,
   organizations,
   upsertScmConnection,
   upsertStories,
@@ -20,6 +23,7 @@ import {
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { runAnalyticsResponseSchema, type RunAnalyticsResponse } from "@/lib/api/analytics";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -179,12 +183,13 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       stories: 1,
       reviewRuns: 0,
       attempts: { finished: 2, completed: 1, failed: 1, expired: 0, successRate: 0.5 },
+      // Attempts from before usage per model: tokens unpriced, so no cost (0 without tokens).
       tokens: {
         epic: { tokensIn: 100, tokensOut: 10 },
-        request: { tokensIn: 0, tokensOut: 0 },
-        review: { tokensIn: 0, tokensOut: 0 },
+        request: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+        review: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
         triage: { tokensIn: 70, tokensOut: 7 },
-        ask: { tokensIn: 0, tokensOut: 0 },
+        ask: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
       },
     });
     expect(analytics.byRepository).toMatchObject([
@@ -204,8 +209,10 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       },
     ]);
     expect(analytics.params).toEqual({ days: 7, bucket: "day", repositoryId: null });
-    // The route doesn't price tokens (Epic 12 will): no cost anywhere.
-    expect(JSON.stringify(body)).not.toMatch(/costUsd|unpricedAttempts/);
+    // No priced attempt in the window: the totals carry no cost, and nothing counts as left
+    // out of a sum.
+    expect(analytics.totals.costUsd).toBeUndefined();
+    expect(JSON.stringify(body)).not.toMatch(/unpricedAttempts/);
 
     // Defaults: 30 days by day; weeks on request.
     expect((await get()).body.buckets).toHaveLength(30);
@@ -251,7 +258,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     expect(own.body.params.repositoryId).toBe(acmeRepo);
     // The triage attempt has no repository.
     expect(own.body.totals.attempts).toMatchObject({ finished: 1, completed: 1 });
-    expect(own.body.totals.tokens.triage).toEqual({ tokensIn: 0, tokensOut: 0 });
+    expect(own.body.totals.tokens.triage).toEqual({ tokensIn: 0, tokensOut: 0, costUsd: 0 });
     // The filter still lists every repository of the scope.
     expect(own.body.repositories.map((r) => r.id)).toEqual([acmeRepo]);
 
@@ -288,6 +295,69 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     }
     expect((await get({ days: "14" })).body.error).toBe("days must be 7, 30 or 90.");
     expect((await get({ bucket: "month" })).body.error).toBe("bucket must be day or week.");
+  });
+
+  it("prices the priced attempts, counting the token-bearing ones it leaves out", async () => {
+    state.user = member;
+    const opus = {
+      model: "claude-opus-5-5",
+      canonicalModel: "claude-opus-5-5",
+      inputTokens: 1_000_000,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheWrite1hInputTokens: 0,
+      outputTokens: 100_000,
+      largestRequestInputTokens: 1_000_000,
+      fastMode: false,
+    };
+    const [run] = await db
+      .select({ id: ralphRuns.id })
+      .from(ralphRuns)
+      .where(eq(ralphRuns.organizationId, beta));
+    const result = { usage: { inputTokens: 1_000_000, outputTokens: 100_000, byModel: [opus] } };
+    const [job] = await db
+      .insert(jobs)
+      .values({
+        organizationId: beta,
+        type: "ralph.story",
+        taskType: "coding",
+        repositoryId: betaRepo,
+        ralphRunId: run!.id,
+        status: "completed",
+        result,
+        finishedAt: new Date(),
+      })
+      .returning();
+    await replaceAttemptModelUsage(db, job!.id, result);
+    await db.insert(modelPrices).values({
+      modelId: "anthropic/claude-opus-5.5",
+      name: "Claude Opus 5.5",
+      inputUsd: "0.000004",
+      outputUsd: "0.00002",
+      cacheReadUsd: "0.0000002",
+      cacheWriteUsd: "0.000005",
+      validFrom: new Date("2026-01-01T00:00:00Z"),
+      checkedAt: new Date(),
+    });
+    try {
+      const { status, body } = await get({ organization: beta, days: "7" });
+      expect(status).toBe(200);
+      const analytics = runAnalyticsResponseSchema.parse(body);
+      // $4 input + $2 output; Beta's earlier story attempt has tokens but no list price.
+      expect(analytics.totals).toMatchObject({
+        costUsd: 6,
+        unpricedAttempts: 1,
+        tokens: { epic: { tokensIn: 1_000_100, costUsd: 6, unpricedAttempts: 1 } },
+      });
+      expect(analytics.byRepository[0]).toMatchObject({ costUsd: 6, unpricedAttempts: 1 });
+      expect(analytics.byOrganization[0]).toMatchObject({ costUsd: 6, unpricedAttempts: 1 });
+      expect(analytics.buckets.at(-1)).toMatchObject({ costUsd: 6, unpricedAttempts: 1 });
+      expect(analytics.buckets[0]).toMatchObject({ costUsd: 0 });
+      expect(analytics.buckets[0]!.unpricedAttempts).toBeUndefined();
+    } finally {
+      await db.delete(modelPrices);
+      await db.delete(jobs).where(eq(jobs.id, job!.id));
+    }
   });
 
   it("requires a signed-in user", async () => {

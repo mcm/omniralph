@@ -107,17 +107,8 @@ export function formatRate(rate: number): string {
   return `${percent > 0 && percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-/** US dollars with two decimals, e.g. "$1,234.50". */
-export function formatUsd(amount: number): string {
-  return usd.format(amount);
-}
+/** US dollars (`@/lib/cost/format`, shared with Runs). */
+export { formatUsd } from "@/lib/cost/format";
 
 /**
  * Whether the response prices its tokens (`totals.costUsd`, set by Epic 12): only then does

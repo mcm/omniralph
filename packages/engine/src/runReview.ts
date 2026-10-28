@@ -1,4 +1,4 @@
-import type { Finding } from "@omniralph/shared";
+import { addTokenUsage, type Finding } from "@omniralph/shared";
 import { dedupeFindings } from "./dedupe.js";
 import { parseDiff, type DiffFile } from "./diff.js";
 import { diff, isAncestor, showFile } from "./git.js";
@@ -259,8 +259,7 @@ export function addTaskResult(
   result: TaskReviewResult,
   openFindings: number,
 ): void {
-  sessions.usage.inputTokens += result.usage.inputTokens;
-  sessions.usage.outputTokens += result.usage.outputTokens;
+  sessions.usage = addTokenUsage(sessions.usage, result.usage);
   sessions.discarded.invalid += result.discarded.invalid;
   sessions.discarded.outsideDiff += result.discarded.outsideDiff;
   sessions.findings.push(...result.findings);

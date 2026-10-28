@@ -27,6 +27,7 @@ import {
   poolForTaskType,
   type AgentHostReport,
 } from "@omniralph/shared";
+import { replaceAttemptModelUsage } from "./attempt-usage.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { effectiveHostToolPath } from "./host-tools.js";
@@ -641,7 +642,8 @@ async function lockRunningJob(
 
 /**
  * Stores an agent's result. Only the job's current agent may report it;
- * a job canceled while running ends `canceled` (its result is kept).
+ * a job canceled while running ends `canceled` (its result is kept). Its usage per model
+ * (`usage.byModel`) replaces the job's `attempt_model_usage` rows in the same transaction.
  */
 export async function completeJob(
   db: Database,
@@ -656,6 +658,7 @@ export async function completeJob(
       .update(jobs)
       .set({ status, result: input.result, error: null, finishedAt: now })
       .where(eq(jobs.id, input.jobId));
+    await replaceAttemptModelUsage(tx, input.jobId, input.result);
     recordJobChanges(tx, [locked.job]);
     recordAgentRunningChange(tx, locked.job.organizationId, [input.agentId]);
     return { status };

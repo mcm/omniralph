@@ -31,6 +31,8 @@ import {
   integrations,
   jobs,
   listStories,
+  modelPrices,
+  replaceAttemptModelUsage,
   ralphRuns,
   saveChatConnection,
   saveIntegration,
@@ -970,6 +972,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       startedAt: at(9).toISOString(),
       finishedAt: at(9, 30).toISOString(),
       tokens: { in: 100, out: 10 },
+      // Its result has no usage per model (as before agents reported it): unpriced.
+      costUsd: null,
       error: null,
       step: built!.id,
       transcriptEvents: 2,
@@ -992,6 +996,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       routedBy: null,
       agent: { id: agentId, name: "agent-a" },
       tokens: { in: 100, out: 10 },
+      costUsd: null,
       attemptCount: 5,
       pullRequest: {
         provider: "github",
@@ -1064,6 +1069,79 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     state.user = member;
     state.orgId = orgId;
     expect((await detailPage(run.id)).details.actions.stop).toBe(true);
+  });
+
+  it("prices each attempt, and the run when every token-bearing attempt is priced", async () => {
+    const run = await newRun({ mode: "request", kind: "single" });
+    const byModel = (model: string, canonicalModel: string | null) => [
+      {
+        model,
+        canonicalModel,
+        inputTokens: 1_000_000,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheWrite1hInputTokens: 0,
+        outputTokens: 100_000,
+        largestRequestInputTokens: 1_000_000,
+        fastMode: false,
+      },
+    ];
+    const finished = async (usage: Record<string, unknown> | null, hour: number) => {
+      const job = await attempt(
+        { type: "ralph.request", ralphRunId: run.id },
+        {
+          status: "completed",
+          createdAt: at(hour),
+          startedAt: at(hour),
+          finishedAt: at(hour, 5),
+          result: usage ? { usage } : {},
+        },
+      );
+      await replaceAttemptModelUsage(db, job.id, usage ? { usage } : null);
+      return job;
+    };
+    const tokens = { inputTokens: 1_000_000, outputTokens: 100_000 };
+    const priced = await finished(
+      { ...tokens, byModel: byModel("claude-opus-5-5", "claude-opus-5-5") },
+      9,
+    );
+    const tiny = await finished(
+      {
+        ...tokens,
+        byModel: [
+          { ...byModel("claude-opus-5-5", "claude-opus-5-5")[0]!, inputTokens: 1, outputTokens: 0 },
+        ],
+      },
+      10,
+    );
+    // No tokens (e.g. a request answered without a session): it doesn't hold the run's figure up.
+    await finished(null, 11);
+    await db.insert(modelPrices).values({
+      modelId: "anthropic/claude-opus-5.5",
+      name: "Claude Opus 5.5",
+      inputUsd: "0.000004",
+      outputUsd: "0.00002",
+      cacheReadUsd: "0.0000002",
+      cacheWriteUsd: "0.000005",
+      validFrom: new Date("2026-01-01T00:00:00Z"),
+      checkedAt: new Date(),
+    });
+    try {
+      const view = await detailPage(run.id);
+      const costOf = (id: string) => view.attempts.find((a) => a.id === id)!.costUsd;
+      expect(costOf(priced.id)).toBeCloseTo(6, 10);
+      expect(costOf(tiny.id)).toBeCloseTo(0.000004, 10);
+      expect(view.details.costUsd).toBeCloseTo(6.000004, 6);
+
+      // One token-bearing attempt the agent reported only an alias for: no run figure.
+      const alias = await finished({ ...tokens, byModel: byModel("opus", null) }, 12);
+      const partial = await detailPage(run.id);
+      expect(partial.attempts.find((a) => a.id === alias.id)!.costUsd).toBeNull();
+      expect(partial.attempts.find((a) => a.id === priced.id)!.costUsd).toBeCloseTo(6, 10);
+      expect(partial.details.costUsd).toBeNull();
+    } finally {
+      await db.delete(modelPrices);
+    }
   });
 
   it("shows what a waiting epic waits for", async () => {

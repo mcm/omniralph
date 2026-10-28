@@ -2,7 +2,7 @@
 // (Testcontainers, see testing/global-setup.ts). Skipped when no container runtime (Docker) is available.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -14,9 +14,17 @@ import { getChatThreadWithConnection, listChatMessages, listThreadRuns } from ".
 import { closeDb, createDb, type Database } from "./client.js";
 import { encrypt } from "./crypto.js";
 import { migrationsFolder, runMigrations } from "./migrate.js";
+import { getRunAnalytics } from "./queries/run-analytics.js";
+import { costForJobs } from "./queries/attempt-costs.js";
 import {
   appSettings,
+  attemptModelUsage,
   jobs,
+  modelPrices,
+  ralphRuns,
+  reviewRuns,
+  reviews,
+  triageRuns,
   organizationEmailDomains,
   organizations,
   repositories,
@@ -4099,5 +4107,183 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       `select indexdef from pg_indexes where indexname = 'chat_request_drafts_thread_id_idx'`,
     );
     expect(indexes[0]?.indexdef).toContain("(thread_id)");
+  });
+  it("adds usage per model and prices, leaving production's attempts unpriced (0112)", async () => {
+    await db.execute(sql.raw(`create database dollar_cost_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/dollar_cost_before");
+    await migrateBefore(uri, "0112_");
+    const before = createDb(uri);
+    try {
+      // Production (Oct 24): attempts of every session job type with `usage` totals only
+      // (no cache split, no resolved model), and system jobs without usage.
+      const [org] = await before.insert(organizations).values({ name: "Acme" }).returning();
+      const [connection] = await before
+        .insert(scmConnections)
+        .values({
+          organizationId: org!.id,
+          provider: "github",
+          name: "GitHub",
+          baseUrl: "https://api.github.com",
+          encryptedCredentials: "x",
+        })
+        .returning();
+      const [repo] = await before
+        .insert(repositories)
+        .values({
+          organizationId: org!.id,
+          connectionId: connection!.id,
+          provider: "github",
+          externalId: "1",
+          fullPath: "acme/api",
+        })
+        .returning();
+      const createdAt = new Date(Date.now() - 2 * 86_400_000);
+      const run = (mode: "epic" | "request") => {
+        const id = randomUUID();
+        return {
+          id,
+          organizationId: org!.id,
+          linearIssueId: id,
+          linearIdentifier: "ENG-1",
+          linearAgentSessionId: id,
+          kind: "children" as const,
+          mode,
+          repositoryId: repo!.id,
+          status: "completed" as const,
+          createdAt,
+        };
+      };
+      const epic = run("epic");
+      const request = run("request");
+      await before.insert(ralphRuns).values([epic, request]);
+      const [reviewRun] = await before
+        .insert(reviewRuns)
+        .values({
+          organizationId: org!.id,
+          repositoryId: repo!.id,
+          prNumber: 1,
+          headSha: "a".repeat(40),
+          baseSha: "b".repeat(40),
+          trigger: "webhook",
+          mode: "incremental",
+          status: "completed",
+          createdAt,
+        })
+        .returning();
+      const [review] = await before
+        .insert(reviews)
+        .values({
+          repositoryId: repo!.id,
+          reviewRunId: reviewRun!.id,
+          prNumber: 1,
+          headSha: "a".repeat(40),
+          baseSha: "b".repeat(40),
+          trigger: "webhook",
+          status: "completed",
+          budget: 200_000,
+          tokensIn: 3_000,
+          tokensOut: 300,
+          model: "opus",
+          createdAt,
+        })
+        .returning();
+      const [triage] = await before
+        .insert(triageRuns)
+        .values({
+          organizationId: org!.id,
+          linearIssueId: "triage-issue",
+          linearAgentSessionId: "triage-session",
+          trigger: "mention",
+          status: "completed",
+          createdAt,
+        })
+        .returning();
+      const job = (
+        type: string,
+        taskType: "coding" | "query" | "review" | "system",
+        link: Partial<typeof jobs.$inferInsert>,
+        usage: [number, number] | null,
+      ) => ({
+        id: randomUUID(),
+        organizationId: org!.id,
+        repositoryId: repo!.id,
+        type,
+        taskType,
+        status: "completed" as const,
+        payload: { model: "opus" },
+        result: usage ? { usage: { inputTokens: usage[0], outputTokens: usage[1] } } : {},
+        createdAt,
+        finishedAt: createdAt,
+        ...link,
+      });
+      const attempts = [
+        job("ralph.story", "coding", { ralphRunId: epic.id }, [10_000, 1_000]),
+        job("ralph.describe-pr", "query", { ralphRunId: epic.id }, [2_000, 200]),
+        job("ralph.request", "coding", { ralphRunId: request.id }, [5_000, 500]),
+        job(
+          "review.task",
+          "review",
+          {
+            reviewRunId: reviewRun!.id,
+            payload: { trigger: { context: { reviewId: review!.id } } },
+          },
+          [3_000, 300],
+        ),
+        job("triage.run", "query", { triageRunId: triage!.id, repositoryId: null }, [700, 70]),
+        // A query result outside any run (Analytics counts asks by their chat run).
+        job("chat.ask", "query", { repositoryId: null }, [400, 40]),
+      ];
+      const system = [job("repo.sync", "system", {}, null), job("install", "system", {}, null)];
+      await before.insert(jobs).values([...attempts, ...system]);
+
+      await runMigrations(uri);
+
+      expect(await before.select().from(attemptModelUsage)).toEqual([]);
+      expect(await before.select().from(modelPrices)).toEqual([]);
+      const costs = await costForJobs(
+        before,
+        [...attempts, ...system].map((j) => j.id),
+      );
+      expect([...costs.values()].every((cost) => cost === null)).toBe(true);
+      // Prices arriving later still leave them unpriced: they have no usage per model.
+      await before.insert(modelPrices).values({
+        modelId: "anthropic/claude-opus-5.5",
+        name: "Claude Opus 5.5",
+        inputUsd: "0.000004",
+        outputUsd: "0.00002",
+        cacheReadUsd: "0.0000002",
+        cacheWriteUsd: "0.000005",
+        validFrom: new Date("2000-01-01T00:00:00Z"),
+        checkedAt: new Date(),
+      });
+      const later = await costForJobs(
+        before,
+        attempts.map((j) => j.id),
+      );
+      expect([...later.values()].every((cost) => cost === null)).toBe(true);
+
+      const analytics = await getRunAnalytics(before, {
+        organizationIds: [org!.id],
+        days: 7,
+        bucket: "day",
+      });
+      expect(analytics.totals.costUsd).toBeUndefined();
+      expect(analytics.totals.unpricedAttempts).toBeUndefined();
+      // The token figures are the usage totals, as before.
+      expect(analytics.totals.tokens).toEqual({
+        epic: { tokensIn: 12_000, tokensOut: 1_200 },
+        request: { tokensIn: 5_000, tokensOut: 500 },
+        review: { tokensIn: 3_000, tokensOut: 300 },
+        triage: { tokensIn: 700, tokensOut: 70 },
+        ask: { tokensIn: 0, tokensOut: 0, costUsd: 0 },
+      });
+      const { rows: views } = await before.$client.query<{ viewname: string }>(
+        `select viewname from pg_views where viewname = 'attempt_costs'`,
+      );
+      expect(views).toHaveLength(1);
+    } finally {
+      await closeDb(before);
+      await db.execute(sql.raw(`drop database dollar_cost_before with (force)`));
+    }
   });
 });

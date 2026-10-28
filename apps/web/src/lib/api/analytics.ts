@@ -27,8 +27,9 @@ export const runAnalyticsQuerySchema = z.object({
 
 /**
  * The dollar cost of a sum of tokens, at Anthropic's API list prices (not what was billed),
- * with the attempts it leaves out. Epic 12 sets both server-side; until then the route sends
- * neither, and the screen shows nothing about cost.
+ * with the attempts it leaves out (Epic 12, server-side: `RunCost` in `@omniralph/db`). The
+ * totals carry no cost when the window has no priced attempt, and the screen shows nothing
+ * about cost then.
  */
 const cost = {
   /**

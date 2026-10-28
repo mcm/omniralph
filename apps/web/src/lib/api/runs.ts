@@ -127,6 +127,12 @@ export const ATTEMPT_STATUSES = [
 
 const tokens = z.object({ in: z.number(), out: z.number() });
 
+/**
+ * What tokens would cost at Anthropic's API list prices (not what was billed), in US dollars;
+ * null when they can't all be priced exactly.
+ */
+const costUsd = z.number().nonnegative().nullable();
+
 /** One attempt (job) of a run. `type` is the raw job type, for filtering only. */
 export const runAttemptSchema = z.object({
   id: z.string(),
@@ -143,6 +149,8 @@ export const runAttemptSchema = z.object({
   startedAt: isoDate.nullable(),
   finishedAt: isoDate.nullable(),
   tokens,
+  /** Its tokens' list price; null without one (every model it used must be priced). */
+  costUsd,
   error: z.string().nullable(),
   /** The `id` of the step it belongs to; null for work outside the steps (e.g. the PR step). */
   step: z.string().nullable(),
@@ -324,6 +332,8 @@ export const runDetailsSchema = z.object({
   routedBy: z.string().nullable(),
   agent: agentRefSchema.nullable(),
   tokens,
+  /** The token-bearing attempts' list price; null unless every one of them is priced. */
+  costUsd,
   attemptCount: z.number(),
   pullRequest: runPullRequestSchema.nullable(),
   /** Every lane of an epic or request (more than one for a multi-repo epic). */

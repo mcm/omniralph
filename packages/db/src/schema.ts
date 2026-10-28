@@ -9,13 +9,16 @@ import type { AgentHostReport, RoutingQuery } from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
+  pgView,
   primaryKey,
   real,
   text,
@@ -1766,6 +1769,82 @@ export const jobs = pgTable(
     check("jobs_task_type_valid", sql`${t.taskType} in ('query', 'review', 'coding', 'system')`),
   ],
 );
+
+/**
+ * A finished session attempt's usage per model (the result's `usage.byModel`), stored with
+ * the result (`completeJob`). Priced by `attempt_costs`; attempts from before agents
+ * reported it have none.
+ */
+export const attemptModelUsage = pgTable(
+  "attempt_model_usage",
+  {
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    /** The model as Claude Code reported it (the `modelUsage` key). */
+    model: text("model").notNull(),
+    /** Its AI Gateway ID (`gatewayModelId`, from the canonical model); null when unmapped. */
+    priceModelId: text("price_model_id"),
+    /** Uncached input. */
+    inputTokens: bigint("input_tokens", { mode: "number" }).notNull(),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }).notNull(),
+    /** 5-minute cache writes; every cache write when the 1-hour split is unknown. */
+    cacheWrite5mTokens: bigint("cache_write_5m_tokens", { mode: "number" }).notNull(),
+    /** 1-hour cache writes; null when unknown. */
+    cacheWrite1hTokens: bigint("cache_write_1h_tokens", { mode: "number" }),
+    outputTokens: bigint("output_tokens", { mode: "number" }).notNull(),
+    /** The largest single request's prompt; null when unknown. */
+    largestRequestInputTokens: integer("largest_request_input_tokens"),
+    fastMode: boolean("fast_mode").notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.model] })],
+);
+
+/**
+ * Anthropic models' list prices from the Vercel AI Gateway (`GET /v1/models`), refreshed
+ * daily (`refreshModelPrices`), with history: a changed price closes its row (`valid_to`)
+ * and opens a new one, so an attempt is priced at the price in effect when it finished.
+ */
+export const modelPrices = pgTable(
+  "model_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** The Gateway's model ID, e.g. `anthropic/claude-opus-5.5`. */
+    modelId: text("model_id").notNull(),
+    name: text("name").notNull(),
+    /** USD per token (the base tier's, for tiered models). */
+    inputUsd: numeric("input_usd").notNull(),
+    outputUsd: numeric("output_usd").notNull(),
+    cacheReadUsd: numeric("cache_read_usd"),
+    /** 5-minute cache writes. */
+    cacheWriteUsd: numeric("cache_write_usd"),
+    /** The base tier's prompt limit (long-context pricing above it); null without tiers. */
+    baseTierMaxTokens: integer("base_tier_max_tokens"),
+    /** `-infinity` for a model's first price: it also prices attempts from before it was seen. */
+    validFrom: timestamp("valid_from", { withTimezone: true }).notNull(),
+    /** Null for the current price. */
+    validTo: timestamp("valid_to", { withTimezone: true }),
+    /** When the Gateway last listed this price. */
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("model_prices_open_model_id_idx")
+      .on(t.modelId)
+      .where(sql`valid_to is null`),
+    index("model_prices_model_id_valid_from_idx").on(t.modelId, t.validFrom),
+  ],
+);
+
+/**
+ * Each priced attempt's list price in USD (created by migration 0112): its
+ * `attempt_model_usage` rows × the `model_prices` in effect at the job's `finished_at`.
+ * `cost_usd` is null when any of its models can't be priced exactly. Read only through
+ * `queries/attempt-costs.ts`.
+ */
+export const attemptCosts = pgView("attempt_costs", {
+  jobId: uuid("job_id").notNull(),
+  costUsd: numeric("cost_usd"),
+}).existing();
 
 /** What a run's session reported: Claude's text (`thought`) or a tool call (`action`). */
 export type RunActivityType = "thought" | "action";

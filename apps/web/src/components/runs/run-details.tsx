@@ -12,6 +12,7 @@ import { IconFolder, IconTag, IconUsers } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import type { RunDetail } from "@/lib/api/runs";
 import { agentHref } from "@/lib/runs/hrefs";
+import { CostFigure } from "./cost-figure";
 import { routedByParts, tokensText } from "./details";
 import "./run-details.css";
 
@@ -48,7 +49,8 @@ function Row({ term, children }: { term: string; children: ReactNode }) {
 
 /**
  * The run detail's Details section (collapsed, Design rule 16): Repo, Branch, Routed by,
- * Agent (linking to its Fleet page), Tokens and Attempts. A multi-repo epic lists each
+ * Agent (linking to its Fleet page), Tokens, Cost (when every token-bearing attempt is
+ * priced) and Attempts. A multi-repo epic lists each
  * lane's repo, branch and PR/MR instead of one repo and branch.
  */
 export function RunDetails({ run }: { run: RunDetail }) {
@@ -102,6 +104,11 @@ export function RunDetails({ run }: { run: RunDetail }) {
           </Row>
         ) : null}
         <Row term="Tokens">{tokensText(details.tokens)}</Row>
+        {typeof details.costUsd === "number" ? (
+          <Row term="Cost">
+            <CostFigure usd={details.costUsd} />
+          </Row>
+        ) : null}
         <Row term="Attempts">{String(details.attemptCount)}</Row>
       </dl>
     </DetailsSection>

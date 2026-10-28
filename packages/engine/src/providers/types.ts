@@ -1,13 +1,10 @@
-import type { Finding } from "@omniralph/shared";
+import type { Finding, TokenUsage } from "@omniralph/shared";
 import type { ReviewTask } from "../plan.js";
 
 export type ReviewStopReason = "completed" | "budget_exhausted" | "rate_limited" | "error";
 
-export interface TokenUsage {
-  /** Every input token sent to the model, including cache reads and writes. */
-  inputTokens: number;
-  outputTokens: number;
-}
+/** Every input token sent to the model (cache reads and writes included), and the usage per model. */
+export type { TokenUsage };
 
 export interface ReviewRequest {
   task: ReviewTask;
