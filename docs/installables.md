@@ -229,6 +229,14 @@ last heartbeat reports every required installable and every required host tool w
 the task's runs; others leave them queued. See
 [definitions.md](definitions.md#derived-requirements).
 
+When no online agent of the organization reports a required host tool with a path (for a run
+targeted at one agent, when that agent doesn't), the run says so instead of waiting silently: its
+item under the Inbox's **Running** tab and its run detail read "Waiting for an agent with gh
+installed" ("gh and opengrep", "a, b and c" for several), followed by an **Open Fleet** link. The
+reason is refreshed when the run's attempt is queued, when an agent reports different host tools or
+comes online, and every minute for agents that went offline or were revoked; it goes away as soon as
+an agent with every required tool is online (or claims the run).
+
 If an installable or host tool goes away between the claim and the run (or its new configured path
 isn't checked yet), the run is retried after a minute, before anything is checked out. An MCP server
 the agent lists but the installed version doesn't provide fails the run.
@@ -276,5 +284,5 @@ next claim use them. Changes to `agent.json` apply when the agent restarts.
 | Install job fails with "isn't allowed on this agent" | The `installables.allow` of the agent's `settings.json` doesn't match the package name. |
 | Install job fails with "isn't a valid installable" | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`). |
 | Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`. |
-| A task's runs stay queued | No agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |
+| A task's runs stay queued | A run that says "Waiting for an agent with … installed" needs a host tool no online agent has: open **Fleet** and set the tool's path on an agent's page (**Host tools**), or bring that agent online. Otherwise no agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |
 | A host tool is unavailable on an agent | Its configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one); or, with no path configured, nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`: fix the `PATH` of the service that starts the agent (pm2, systemd). |

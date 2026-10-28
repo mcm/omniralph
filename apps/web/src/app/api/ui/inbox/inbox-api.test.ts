@@ -6,6 +6,7 @@ import {
   findings,
   agents,
   inboxItemStates,
+  insertJob,
   jobs,
   organizations,
   ralphLanes,
@@ -292,6 +293,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       pullRequest: null,
       agent: null,
       reason: "ENG-11 is a manual story: a person has to do it before the epic goes on.",
+      reasonLink: null,
       since: expect.any(String),
       actions: ["done", "skip", "snooze"],
       question: null,
@@ -479,6 +481,51 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     } finally {
       await db.delete(jobs).where(inArray(jobs.id, [job!.id]));
       await db.delete(ralphRuns).where(inArray(ralphRuns.id, Object.values(questionRuns)));
+    }
+  });
+
+  it("says why a queued run waits for host tools, in its Running item and its detail", async () => {
+    const [triage] = await db
+      .insert(triageRuns)
+      .values({
+        organizationId: state.orgId,
+        linearIssueId: "triage-host-tools",
+        linearAgentSessionId: "triage-session-host-tools",
+        trigger: "label",
+        status: "queued",
+      })
+      .returning();
+    // No online agent of the organization reports gh or opengrep with a path.
+    const { job } = await insertJob(db, {
+      organizationId: state.orgId,
+      type: "triage.run",
+      taskType: "query",
+      triageRunId: triage!.id,
+      requiredHostTools: ["opengrep", "gh"],
+    });
+    try {
+      const expected = {
+        reason: "Waiting for an agent with gh and opengrep installed",
+        reasonLink: { label: "Open Fleet", href: "/fleet" },
+      };
+      const item = (await feed("running")).find((i) => i.run?.id === triage!.id);
+      expect(item).toMatchObject({ kind: "run", ...expected });
+      const response = await runDetail.GET(new Request("http://localhost/api/ui"), {
+        params: Promise.resolve({ id: triage!.id }),
+      });
+      expect(response.status).toBe(200);
+      expect(runDetailSchema.parse(await response.json())).toMatchObject({
+        status: "queued",
+        ...expected,
+      });
+      // The other queued run waits for any agent: no link.
+      const other = (await feed("running")).find(
+        (i) => i.run?.kind === "triage" && i.run.id !== triage!.id,
+      );
+      expect(other).toMatchObject({ reason: "Waiting for an agent.", reasonLink: null });
+    } finally {
+      await db.delete(jobs).where(inArray(jobs.id, [job.id]));
+      await db.delete(triageRuns).where(inArray(triageRuns.id, [triage!.id]));
     }
   });
 

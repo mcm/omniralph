@@ -4028,6 +4028,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           delete row[column];
         }
       }
+      // 0118 adds the jobs' `waiting_reason`, null on every row.
+      for (const row of after.jobs!) {
+        expect(row.waiting_reason).toBeNull();
+        delete row.waiting_reason;
+      }
       expect(after).toEqual(before);
       expect(before.chat_messages).toHaveLength(16);
 
@@ -4812,5 +4817,74 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       );
       expect(rows).toEqual([{ data_type: "jsonb", is_nullable: "YES", column_default: null }]);
     });
+  });
+
+  it("adds a nullable waiting reason to jobs, keeping every production job (0118)", async () => {
+    await db.execute(sql.raw(`create database job_waiting_reason_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/job_waiting_reason_before");
+    await migrateBefore(uri, "0118_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows: orgs } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services'), ('Acme'), ('Initech')
+         returning id`,
+      );
+      // Production: 1,544 jobs across three organizations, every status, legacy types among
+      // them (`review.run`, `ralph.prepare`, `ralph.cleanup`), none requiring a host tool.
+      const types = [
+        ["review.task", "review"],
+        ["review.run", "review"],
+        ["ralph.story", "coding"],
+        ["ralph.prepare", "coding"],
+        ["ralph.cleanup", "system"],
+        ["triage.run", "query"],
+        ["chat.ask", "query"],
+        ["repo.sync", "system"],
+      ];
+      const statuses = ["queued", "running", "completed", "failed", "canceled", "expired"];
+      await client.query(
+        `insert into jobs (organization_id, type, task_type, status, payload, created_at)
+         select ($1::uuid[])[1 + i % 3], ($2::text[])[1 + i % 8], ($3::text[])[1 + i % 8],
+           ($4::text[])[1 + i % 6]::job_status, jsonb_build_object('n', i),
+           now() - make_interval(mins => i)
+         from generate_series(0, 1543) as i`,
+        [
+          orgs.map((o) => o.id),
+          types.map(([type]) => type),
+          types.map(([, taskType]) => taskType),
+          statuses,
+        ],
+      );
+      const snapshot = async () =>
+        (
+          await client.query<{ row: Record<string, unknown> }>(
+            `select to_jsonb(j) - 'waiting_reason' as row from jobs j order by id`,
+          )
+        ).rows.map((r) => r.row);
+      const before = await snapshot();
+      expect(before).toHaveLength(1544);
+      for (const type of ["review.run", "ralph.prepare", "ralph.cleanup"]) {
+        expect(before.some((row) => row.type === type)).toBe(true);
+      }
+
+      await runMigrations(uri);
+
+      expect(await snapshot()).toEqual(before);
+      const { rows } = await client.query<{ count: string }>(
+        `select count(*) from jobs where waiting_reason is null`,
+      );
+      expect(rows[0]!.count).toBe("1544");
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("applies the jobs' waiting reason to a fresh database (0118)", async () => {
+    const { rows } = await db.$client.query(
+      `select data_type, is_nullable, column_default from information_schema.columns
+       where table_schema = 'public' and table_name = 'jobs' and column_name = 'waiting_reason'`,
+    );
+    expect(rows).toEqual([{ data_type: "jsonb", is_nullable: "YES", column_default: null }]);
   });
 });

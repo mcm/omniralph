@@ -25,7 +25,7 @@ const DROPPED_EXPORTS = ["host" + "Tools", "agent" + "HostTools"];
 const DROPPED_KEY = ["agent", "maxConcurrency"].join(".");
 
 /** `git grep` (tracked and new files) over apps/ and packages/, outside the migrations. */
-function grep(args: string[]): string {
+function grep(args: string[], exclude: string[] = []): string {
   const result = spawnSync(
     "git",
     [
@@ -39,6 +39,7 @@ function grep(args: string[]): string {
       // Migrations and their test name them, as history.
       ":!packages/db/drizzle",
       ":!**/migrate.test.ts",
+      ...exclude.map((path) => `:!${path}`),
     ],
     { cwd: root, encoding: "utf8" },
   );
@@ -53,7 +54,10 @@ describe("dropped machine settings", () => {
   it("no code names a dropped column or table as a whole identifier", () => {
     // `-w`: `reported_max_concurrency`, `reported_pool_limits` and `required_host_tools` are
     // other identifiers and stay allowed.
-    expect(grep(["-wE", [...DROPPED_COLUMNS, ...DROPPED_TABLES].join("|")])).toBe("");
+    expect(grep(["-wE", DROPPED_COLUMNS.join("|")])).toBe("");
+    // The agent's own page names its live resource and nav section after the catalog table
+    // too: not the dropped table, which the agent never had.
+    expect(grep(["-wE", DROPPED_TABLES.join("|")], ["apps/agent"])).toBe("");
   });
 
   it("no code names the dropped schema exports or the organization slot key", () => {

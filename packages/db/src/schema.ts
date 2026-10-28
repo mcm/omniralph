@@ -1630,6 +1630,15 @@ export const rules = pgTable(
 /** How an agent runs a job (`JOB_TASK_TYPES` in `@omniralph/shared`). */
 export type JobTaskType = "query" | "review" | "coding" | "system";
 
+/**
+ * Why a `queued` job can't be claimed yet (`refreshHostToolWaits`): the host tools it requires
+ * that no online agent that may claim it reports with a path, sorted.
+ */
+export interface JobWaitingReason {
+  code: "host_tools_missing";
+  hostTools: string[];
+}
+
 export const jobs = pgTable(
   "jobs",
   {
@@ -1659,6 +1668,8 @@ export const jobs = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /** Why the queued job waits (`refreshHostToolWaits`); null when nothing holds it up. */
+    waitingReason: jsonb("waiting_reason").$type<JobWaitingReason>(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     status: jobStatus("status").notNull().default("queued"),
     repositoryId: uuid("repository_id").references(() => repositories.id, {

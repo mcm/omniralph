@@ -55,6 +55,7 @@ function TestLink({ href, onClick, ...props }: LinkProps) {
 }
 
 const RUN_ID = "44444444-4444-4444-8444-444444444444";
+const JOB_ID = "55555555-5555-4555-8555-555555555555";
 
 let feeds: Record<string, InboxItem[]>;
 let runs: Record<string, RunDetail>;
@@ -375,6 +376,21 @@ describe("agents", () => {
 });
 
 describe("a ready PRD", () => {
+  it("says why a queued run waits for a host tool, with a link to Fleet after the sentence", async () => {
+    feeds.running = [hostToolWaitItem()];
+    runs[RUN_ID] = epicRunDetail({ id: RUN_ID, status: "queued" });
+    serve();
+    renderInbox("tab=running");
+    await waitFor(() =>
+      expect(reasonOf().textContent).toBe(
+        "Waiting for an agent with gh and opengrep installed. Open Fleet",
+      ),
+    );
+    const link = within(reasonOf() as HTMLElement).getByRole("link", { name: "Open Fleet" });
+    expect(link.getAttribute("href")).toBe("/fleet");
+    expect(reasonOf().lastElementChild).toBe(link);
+  });
+
   it("shows the work item's size on the row and in the header", async () => {
     feeds["needs-you"] = [
       inboxItem({
@@ -412,6 +428,21 @@ describe("a ready PRD", () => {
     expect(screen.queryByRole("img", { name: /^Size / })).toBeNull();
   });
 });
+
+function hostToolWaitItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return inboxItem({
+    key: `running:${RUN_ID}`,
+    tab: "running",
+    kind: "run",
+    run: { id: RUN_ID, kind: "epic", status: "queued" },
+    reason: "Waiting for an agent with gh and opengrep installed",
+    reasonLink: { label: "Open Fleet", href: "/fleet" },
+    actions: [],
+    ...overrides,
+  });
+}
+
+const reasonOf = () => detail().querySelector(".or-inbox-detail__reason")!;
 
 describe("live updates", () => {
   it("refetch the run detail on the run's change event, updating the progress card and activity", async () => {
@@ -454,5 +485,30 @@ describe("live updates", () => {
     ).toBeTruthy();
     const activity = await card("Activity");
     expect(within(activity).getByText("Built TOOL-2")).toBeTruthy();
+  });
+
+  it("removes the host tool wait on the run's change event once an agent with the tool is online", async () => {
+    const live = fakeAbly();
+    feeds.running = [hostToolWaitItem()];
+    runs[RUN_ID] = epicRunDetail({ id: RUN_ID, status: "queued" });
+    serve();
+    renderInbox("tab=running", live);
+    await waitFor(() => expect(reasonOf().textContent).toContain("gh and opengrep installed"));
+    await waitFor(() =>
+      expect(live.current().subscribed()).toContain(`org:${TEST_ORGANIZATION_ID}:changes`),
+    );
+
+    // An agent with gh and opengrep came online: the run waits for any agent now.
+    feeds.running = [hostToolWaitItem({ reason: "Waiting for an agent.", reasonLink: null })];
+    act(() =>
+      live
+        .current()
+        .deliver(
+          `org:${TEST_ORGANIZATION_ID}:changes`,
+          changeEvent(TEST_ORGANIZATION_ID, { resource: "run", runId: RUN_ID, ids: [JOB_ID] }),
+        ),
+    );
+    await waitFor(() => expect(reasonOf().textContent).toBe("Waiting for an agent."));
+    expect(within(detail()).queryByRole("link", { name: "Open Fleet" })).toBeNull();
   });
 });

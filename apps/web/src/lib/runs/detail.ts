@@ -34,7 +34,13 @@ import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { runActions } from "./actions";
 import { runRow } from "./list";
 import { loadRunQuestion } from "./question";
-import { changeRequestName, runReason } from "./reason";
+import {
+  changeRequestName,
+  runReason,
+  runReasonLink,
+  waitingReasonFacts,
+  type RunReasonFacts,
+} from "./reason";
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
@@ -287,19 +293,21 @@ function attemptKindFacts(attempts: RunAttemptEntry[], base: AttemptLabelContext
 }
 
 /**
- * Why a waiting, stopped or failed run is where it is (`runReason`, as its Inbox item says):
- * a waiting run's open question, else its first manual story, else its blockers.
+ * The reason facts of a run (`runReason`, as its Inbox item says): a waiting run's open
+ * question, else its first manual story, else its blockers; a queued run's newest attempt's
+ * waiting reason; a stopped or failed run's error.
  */
-function detailReason(
+function detailReasonFacts(
   row: RunRow,
   facts: KindFacts,
   question: Awaited<ReturnType<typeof loadRunQuestion>>,
-): string | null {
+  attempts: readonly RunAttemptEntry[],
+): RunReasonFacts | null {
   switch (row.status) {
     case "waiting": {
       if (question) {
         const { kind, story, tool } = question.facts;
-        return runReason({
+        return {
           kind: "question",
           question: kind,
           story,
@@ -307,20 +315,23 @@ function detailReason(
           pullRequest: row.pullRequest
             ? changeRequestName(row.pullRequest.provider, row.pullRequest.number)
             : "pull request",
-        });
+        };
       }
       const manual = facts.manualStories?.[0];
-      if (manual) return runReason({ kind: "manual_story", ...manual });
+      if (manual) return { kind: "manual_story", ...manual };
       const blockers = facts.details.waitingOn?.blockers ?? [];
       if (blockers.length > 0) {
-        return runReason({ kind: "blocked_epic", blockers: blockers.map((b) => b.identifier) });
+        return { kind: "blocked_epic", blockers: blockers.map((b) => b.identifier) };
       }
       return null;
     }
+    case "queued":
+      // Attempts are newest first.
+      return waitingReasonFacts(attempts[0]?.waitingReason);
     case "stopped":
-      return runReason({ kind: "stopped", runKind: row.kind, error: facts.details.error });
+      return { kind: "stopped", runKind: row.kind, error: facts.details.error };
     case "failed":
-      return runReason({ kind: "failed", error: facts.details.error });
+      return { kind: "failed", error: facts.details.error };
     default:
       return null;
   }
@@ -442,9 +453,11 @@ export async function loadRunDetail(
   }));
 
   const { pullRequest, ...details } = facts.details;
+  const reasonFacts = detailReasonFacts(row, facts, open, attempts);
   return {
     ...row,
-    reason: detailReason(row, facts, open),
+    reason: reasonFacts && runReason(reasonFacts),
+    reasonLink: reasonFacts && runReasonLink(reasonFacts),
     steps: facts.steps,
     attempts: attemptViews,
     details: {

@@ -369,16 +369,22 @@ export const runChatSchema = z.object({
 });
 export type RunChat = z.infer<typeof runChatSchema>;
 
+/** Where a reason's problem is fixed (an in-app path), shown after the reason's sentence. */
+export const reasonLinkSchema = z.object({ label: z.string(), href: z.string() });
+export type ReasonLink = z.infer<typeof reasonLinkSchema>;
+
 /**
  * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its reason, steps (in
  * order), attempts (newest first) and details.
  */
 export const runDetailSchema = runRowSchema.extend({
   /**
-   * Why a waiting, stopped or failed run is where it is, in a plain-language sentence (as its
-   * Inbox item says it); null otherwise.
+   * Why a waiting, stopped or failed run is where it is, or why a queued one waits for an
+   * agent, in a plain-language sentence (as its Inbox item says it); null otherwise.
    */
   reason: z.string().nullable(),
+  /** Where the reason's problem is fixed ("Open Fleet" for a missing host tool); null: none. */
+  reasonLink: reasonLinkSchema.nullable(),
   steps: z.array(runStepSchema),
   attempts: z.array(runAttemptSchema),
   details: runDetailsSchema,

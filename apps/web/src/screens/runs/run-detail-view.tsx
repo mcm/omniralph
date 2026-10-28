@@ -30,6 +30,7 @@ import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { QuestionForm } from "@/components/runs/question-form";
 import { RunActivity } from "@/components/runs/run-activity";
+import { RunReason } from "@/components/runs/run-reason";
 import {
   runMenuItems,
   runStatusLine,
@@ -65,7 +66,8 @@ export const RUN_NOT_FOUND = "This run doesn't exist or isn't in your organizati
 /** The failed load of a run. */
 export const RUN_DETAIL_FAILED = "Couldn't load this run.";
 
-const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "stopped", "failed"];
+/** A queued run has a reason only while it waits for something (a missing host tool). */
+const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "queued", "stopped", "failed"];
 
 const KIND_ICONS: Record<RunDetail["kind"], TablerIcon> = {
   epic: IconStack2,
@@ -181,7 +183,9 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
       <h2 id="or-run-detail-title" className="or-run-detail__title">
         {run.title}
       </h2>
-      {reason ? <p className="or-run-detail__reason">{reason}</p> : null}
+      {reason ? (
+        <RunReason className="or-run-detail__reason" reason={reason} link={run.reasonLink} />
+      ) : null}
       {run.details.question ? (
         <QuestionForm
           key={run.details.question.key}

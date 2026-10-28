@@ -77,14 +77,16 @@ export async function listHostToolSuggestions(
 }
 
 /**
- * For each of the organization's non-revoked agents (only `agentIds` when given) that
- * reports at least one usable host tool, their names (`usableHostToolNames`): what
- * `claimJob` checks a job's `required_host_tools` against.
+ * For each of the organization's non-revoked agents (only `agentIds` when given; only the
+ * online ones, `live_online`, with `online`) that reports at least one usable host tool,
+ * their names (`usableHostToolNames`): what `claimJob` checks a job's `required_host_tools`
+ * against.
  */
 export async function listAgentsUsableHostTools(
   db: Database,
   organizationId: string,
   agentIds?: readonly string[],
+  options: { online?: boolean } = {},
 ): Promise<Map<string, string[]>> {
   const usable = new Map<string, string[]>();
   if (agentIds?.length === 0) return usable;
@@ -97,6 +99,7 @@ export async function listAgentsUsableHostTools(
         isNull(agents.revokedAt),
         isNull(agents.deletedAt),
         agentIds ? inArray(agents.id, [...agentIds]) : undefined,
+        options.online ? eq(agents.liveOnline, true) : undefined,
       ),
     );
   for (const row of rows) {

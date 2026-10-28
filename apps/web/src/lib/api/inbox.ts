@@ -6,6 +6,7 @@ import {
   findingCountsSchema,
   organizationRefSchema,
   pullRequestRefSchema,
+  reasonLinkSchema,
   repositoryRefSchema,
   RUN_KINDS,
   RUN_STATUSES,
@@ -89,6 +90,8 @@ export const inboxItemSchema = z.object({
   agent: agentRefSchema.nullable(),
   /** Why it needs a person, in plain language. */
   reason: z.string(),
+  /** Where the reason's problem is fixed ("Open Fleet" for a missing host tool); null: none. */
+  reasonLink: reasonLinkSchema.nullable(),
   /** When what it is about happened (a failure, a question, a stop). */
   since: isoDate,
   actions: z.array(z.enum(INBOX_ACTIONS)),

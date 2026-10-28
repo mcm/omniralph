@@ -1,9 +1,11 @@
 /**
- * Why a run waits on a person, stopped or failed, as one plain-language sentence: the Inbox
- * item's `reason` and the run detail's (`GET /api/ui/runs/{id}`) come from `runReason`, so
+ * Why a run waits on a person or an agent, stopped or failed, as one plain-language sentence
+ * (and, for some, a link to where it's fixed): the Inbox item's `reason` and `reasonLink` and
+ * the run detail's (`GET /api/ui/runs/{id}`) come from `runReason` and `runReasonLink`, so
  * both say the same thing.
  */
-import type { InboxQuestionKind, RunKind } from "@omniralph/db";
+import type { InboxQuestionKind, JobWaitingReason, RunKind } from "@omniralph/db";
+import type { ReasonLink } from "@/lib/api/runs";
 import { truncate } from "@/lib/ralph/display";
 
 /** Longest error a reason quotes. */
@@ -28,6 +30,8 @@ export type RunReasonFacts =
       /** A cleanup question's PR/MR, as `changeRequestName` names it. */
       pullRequest: string;
     }
+  /** A queued run whose newest attempt needs host tools no online agent has. */
+  | { kind: "host_tools_missing"; hostTools: readonly string[] }
   | { kind: "stopped"; runKind: RunKind; error: string | null }
   | { kind: "failed"; error: string | null };
 
@@ -66,6 +70,26 @@ function questionReason(facts: Extract<RunReasonFacts, { kind: "question" }>): s
   }
 }
 
+/** "a", "a and b", "a, b and c". */
+function listOf(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** The reason facts of a queued run's newest attempt's waiting reason (null: none). */
+export function waitingReasonFacts(
+  reason: JobWaitingReason | null | undefined,
+): Extract<RunReasonFacts, { kind: "host_tools_missing" }> | null {
+  return reason?.code === "host_tools_missing" && reason.hostTools.length > 0
+    ? { kind: "host_tools_missing", hostTools: reason.hostTools }
+    : null;
+}
+
+/** Where a reason's problem is fixed, shown after its sentence; null for most reasons. */
+export function runReasonLink(facts: RunReasonFacts): ReasonLink | null {
+  return facts.kind === "host_tools_missing" ? { label: "Open Fleet", href: "/fleet" } : null;
+}
+
 /** The reason sentence for `facts`. */
 export function runReason(facts: RunReasonFacts): string {
   switch (facts.kind) {
@@ -81,6 +105,8 @@ export function runReason(facts: RunReasonFacts): string {
     }
     case "question":
       return questionReason(facts);
+    case "host_tools_missing":
+      return `Waiting for an agent with ${listOf([...facts.hostTools].sort())} installed`;
     case "stopped":
       return withError(`The ${KIND_NAMES[facts.runKind]} was stopped.`, facts.error);
     case "failed":

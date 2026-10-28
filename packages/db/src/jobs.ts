@@ -42,6 +42,7 @@ import {
   repositories,
   type AgentUpdateState,
   type JobTaskType,
+  type JobWaitingReason,
 } from "./schema.js";
 
 export type Job = typeof jobs.$inferSelect;
@@ -174,6 +175,15 @@ export async function insertJob(
       .returning();
     if (row) {
       recordJobChanges(db, [row]);
+      // A job no online agent can run says so from the start.
+      if (row.requiredHostTools.length > 0) {
+        const [refreshed] = await refreshHostToolWaits({
+          db,
+          organizationId: row.organizationId,
+          jobIds: [row.id],
+        });
+        if (refreshed) row.waitingReason = refreshed.waitingReason;
+      }
       // A job only one agent may claim (an install, a pin sync) shows on that agent.
       if (row.targetAgentId) {
         recordChange(db, {
@@ -210,7 +220,87 @@ export async function setQueuedJobTarget(
     .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
     .returning(jobChangeColumns);
   recordJobChanges(db, rows);
+  // Another agent (or any) may now claim it: what it waits for changes with it.
+  for (const row of rows) {
+    await refreshHostToolWaits({ db, organizationId: row.organizationId, jobIds: [row.id] });
+  }
   return rows.length > 0;
+}
+
+/**
+ * Sets the waiting reason of the organization's `queued` jobs that require host tools (only
+ * `jobIds` when given): `{ code: "host_tools_missing", hostTools }` with the required names
+ * that no online (`live_online`), non-revoked agent of the organization reports with a path
+ * (`listAgentsUsableHostTools`), sorted; null when every name is covered. A job targeted at
+ * one agent (`target_agent_id`) checks only that agent. Runs after an enqueue, when an
+ * agent's reported host tools or `live_online` change, and in the `agent-liveness` cron.
+ * Records a live `run` change for each job whose reason changed (none when nothing did).
+ * Returns the jobs whose reason changed, with their new reason.
+ */
+export async function refreshHostToolWaits(input: {
+  db: Database;
+  organizationId: string;
+  jobIds?: readonly string[];
+}): Promise<{ id: string; waitingReason: JobWaitingReason | null }[]> {
+  const { db, organizationId, jobIds } = input;
+  if (jobIds?.length === 0) return [];
+  const waiting = await db
+    .select({
+      id: jobs.id,
+      requiredHostTools: jobs.requiredHostTools,
+      targetAgentId: jobs.targetAgentId,
+      waitingReason: jobs.waitingReason,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.organizationId, organizationId),
+        eq(jobs.status, "queued"),
+        or(sql`cardinality(${jobs.requiredHostTools}) > 0`, sql`${jobs.waitingReason} is not null`),
+        jobIds ? inArray(jobs.id, [...jobIds]) : undefined,
+      ),
+    );
+  if (waiting.length === 0) return [];
+  const usable = await listAgentsUsableHostTools(db, organizationId, undefined, { online: true });
+  const anyAgent = new Set([...usable.values()].flat());
+  const changed: { id: string; waitingReason: JobWaitingReason | null }[] = [];
+  for (const job of waiting) {
+    const covered = job.targetAgentId ? new Set(usable.get(job.targetAgentId)) : anyAgent;
+    const missing = [...new Set(job.requiredHostTools.filter((name) => !covered.has(name)))].sort();
+    const waitingReason: JobWaitingReason | null =
+      missing.length > 0 ? { code: "host_tools_missing", hostTools: missing } : null;
+    if (JSON.stringify(waitingReason) === JSON.stringify(job.waitingReason)) continue;
+    const rows = await db
+      .update(jobs)
+      .set({ waitingReason })
+      // Claimed meanwhile: the claim cleared it.
+      .where(and(eq(jobs.id, job.id), eq(jobs.status, "queued")))
+      .returning(jobChangeColumns);
+    recordJobChanges(db, rows);
+    if (rows.length > 0) changed.push({ id: job.id, waitingReason });
+  }
+  return changed;
+}
+
+/**
+ * `refreshHostToolWaits` for every organization with a `queued` job that requires host tools
+ * or has a waiting reason (the `agent-liveness` cron). Returns how many jobs changed.
+ */
+export async function refreshAllHostToolWaits(db: Database): Promise<number> {
+  const organizations = await db
+    .selectDistinct({ id: jobs.organizationId })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.status, "queued"),
+        or(sql`cardinality(${jobs.requiredHostTools}) > 0`, sql`${jobs.waitingReason} is not null`),
+      ),
+    );
+  let changed = 0;
+  for (const { id } of organizations) {
+    changed += (await refreshHostToolWaits({ db, organizationId: id })).length;
+  }
+  return changed;
 }
 
 export async function getJob(db: Database, jobId: string): Promise<Job | null> {
@@ -435,6 +525,8 @@ export async function claimJob(
         .set({
           status: "running",
           agentId: input.agentId,
+          // It no longer waits for anything.
+          waitingReason: null,
           deliveryCount: sql`${jobs.deliveryCount} + 1`,
           startedAt: now,
           leaseExpiresAt: secondsAfter(now, input.leaseSeconds ?? JOB_LEASE_SECONDS),
@@ -801,7 +893,10 @@ export async function expireQueuedJobs(
   return rows.map((r) => r.id);
 }
 
-/** Records a heartbeat and returns the agent's (central) configuration row. */
+/**
+ * Records a heartbeat and returns the agent's (central) configuration row. A changed
+ * `reported_host_tools` refreshes the organization's host tool waits (`refreshHostToolWaits`).
+ */
 export async function recordAgentHeartbeat(
   db: Database,
   agentId: string,
@@ -923,6 +1018,10 @@ export async function recordAgentHeartbeat(
     JSON.stringify({ ...after, reportedClaude: claudeLoginState(after.reportedClaude) })
   ) {
     recordChange(db, { resource: "agent", ids: [row.id], organizationId: row.organizationId });
+  }
+  // What it can run changed: so may what the organization's queued jobs wait for.
+  if (JSON.stringify(before.reportedHostTools) !== JSON.stringify(after.reportedHostTools)) {
+    await refreshHostToolWaits({ db, organizationId: row.organizationId });
   }
   return row;
 }
