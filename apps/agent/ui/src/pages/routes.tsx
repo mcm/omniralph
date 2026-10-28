@@ -8,10 +8,10 @@ import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
 import { CapacityPage } from "./capacity/capacity-page.js";
 import { ClaudePage } from "./claude/claude-page.js";
 import { HostToolsPage } from "./host-tools/host-tools-page.js";
+import { LogsPage } from "./logs/logs-page.js";
 import { AttemptPage } from "./overview/attempt-page.js";
 import { OverviewPage } from "./overview/overview-page.js";
 import { PackagesPage } from "./packages/packages-page.js";
-import { AgentPage } from "./page.js";
 import { StoragePage } from "./storage/storage-page.js";
 import { VersionPage } from "./version/version-page.js";
 
@@ -27,13 +27,13 @@ const BACK_TO_AGENT = { label: "Agent", href: INDEX_PATH };
 
 function sectionPage(section: AgentSectionKey): ReactNode {
   if (section === "overview") return <OverviewPage />;
+  if (section === "logs") return <LogsPage />;
   if (section === "capacity") return <CapacityPage />;
   if (section === "packages") return <PackagesPage />;
   if (section === "hostTools") return <HostToolsPage />;
   if (section === "version") return <VersionPage />;
   if (section === "claude") return <ClaudePage />;
-  if (section === "storage") return <StoragePage />;
-  return <AgentPage title={AGENT_SECTIONS[section].label} />;
+  return <StoragePage />;
 }
 
 function decodeSegment(segment: string): string {

@@ -87,7 +87,7 @@ export interface FakeReply {
 }
 
 export type FakeRoute =
-  FakeReply | ((init: RequestInit | undefined) => FakeReply | Promise<FakeReply>);
+  FakeReply | ((init: RequestInit | undefined, url: URL) => FakeReply | Promise<FakeReply>);
 
 /**
  * Stubs `fetch` with replies by "METHOD /path" (or "/path" for GET). Unknown requests answer
@@ -105,7 +105,7 @@ export function fakeApi(routes: Record<string, FakeRoute>) {
       route === undefined
         ? { status: 404, body: { error: "Not found" } }
         : typeof route === "function"
-          ? await route(init)
+          ? await route(init, url)
           : route;
     return new Response(reply.body === undefined ? null : JSON.stringify(reply.body), {
       status: reply.status ?? 200,

@@ -64,6 +64,7 @@ import { packageRoutes } from "./ui/package-routes.js";
 import { settingsRoutes } from "./ui/settings-routes.js";
 import { updateRoutes } from "./ui/update-routes.js";
 import { attemptRoutes } from "./ui/attempt-routes.js";
+import { logRoutes } from "./ui/log-routes.js";
 import { claudeRoutes, storageRoutes } from "./ui/machine-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
@@ -520,6 +521,8 @@ async function runAgent(
     updater,
     ring: log.ring,
   });
+  // The log file exists when the agent created its own logger (with its ring).
+  const logSources = log.ring ? { dir: logDirectory(agentDataDir), ring: log.ring } : {};
   const ui = await startAgentPage({
     config,
     configPath,
@@ -533,12 +536,8 @@ async function runAgent(
       ...updateRoutes({ updater, daemon }),
       ...claudeRoutes(claude),
       ...storageRoutes({ storage, logger }),
-      ...attemptRoutes({
-        history,
-        // The log file exists when the agent created its own logger (with its ring).
-        log: log.ring ? { dir: logDirectory(agentDataDir), ring: log.ring } : {},
-        logger,
-      }),
+      ...attemptRoutes({ history, log: logSources, logger }),
+      ...logRoutes({ log: logSources, logger }),
     ],
     state: () =>
       agentUiState({

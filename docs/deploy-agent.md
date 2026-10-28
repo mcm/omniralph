@@ -437,6 +437,15 @@ tab), its transcript (what Om thought and ran, live while it runs, with the erro
 and, under **Log**, the agent's log lines for it. The transcript stays in memory for 10 minutes
 after the attempt finishes. Stopping or retrying a run stays on the control panel.
 
+**Logs** shows the agent's log (see [Logs](#logs)), oldest at the top, newest at the bottom: each
+line's time, level (warnings and errors in coral) and message. A line with fields (the attempt's
+`jobId`, a repo, an error) opens them in place. **All / Warnings and errors** and **Filter** (any
+text in the message or fields, ignoring case) narrow it down, across `agent.log` and its rotated
+files. New lines appear as they are logged: at the bottom the page follows them, and scrolled up it
+stays where you are. **Pause** holds new lines until **Resume**. **Load older** reads the 200 lines
+before the oldest shown; the page keeps at most 5,000 lines. **Download log** saves the current
+`agent.log`.
+
 **Capacity** sets how much work the agent takes on: **Slots**, **Coding slots** and **Review and
 ask slots** (blank means the default, shown in the field), and the **Kinds** of work offered to it
 (at least one). The save bar lists each change with what it does before you save. Saving writes
@@ -525,7 +534,7 @@ Whichever way it runs, the agent writes the same pino JSON lines to three places
 - `<dataDir>/logs/agent.log` (`~/.omniralph/logs/agent.log` by default). The directory is 0700 and
   the files 0600. At 10 MB the file is rotated to `agent.log.1`, the older ones move up to
   `agent.log.5`, and anything older is deleted, so the log never takes more than about 60 MB;
-- the last 2,000 lines in memory, for the agent's page.
+- the last 2,000 lines in memory, for the [agent's page](#the-agent-page) (its **Logs** section).
 
 `OMNIRALPH_LOG_LEVEL` (default `info`) sets the level for all three. Refresh, job and session
 tokens, `Authorization` headers and environment maps are written as `[redacted]` everywhere.

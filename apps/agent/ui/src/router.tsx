@@ -64,6 +64,8 @@ export function Link({ href, onClick, target, ...rest }: LinkProps) {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (target && target !== "_self") return;
+    // A download (e.g. the log) is the browser's to fetch, not a page.
+    if (rest.download !== undefined) return;
     if (new URL(href, window.location.href).origin !== window.location.origin) return;
     event.preventDefault();
     navigate(href);
