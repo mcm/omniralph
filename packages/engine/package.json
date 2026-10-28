@@ -46,7 +46,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && cp -R src/rubric/universal.md src/rubric/languages dist/rubric/",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsrs --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
   },
