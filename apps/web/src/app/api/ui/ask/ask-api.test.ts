@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { createMockLogger, createMockState } from "@chat-adapter/tests";
 import {
+  agents,
   appendWebMessage,
+  chatThreadRuns,
   chatThreads,
   chatWebMessages,
   closeDb,
@@ -10,6 +12,9 @@ import {
   createChatRequestDraft,
   getChatLinearIssueDraft,
   getChatRequestDraft,
+  getJob,
+  insertRunActivity,
+  jobs,
   createDb,
   createWebChatThread,
   disconnectRepository,
@@ -26,6 +31,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import type * as Changes from "@omniralph/db/changes";
+import { QUERY_TASKS_MIN_AGENT_VERSION, type QueryRunResult } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -45,6 +51,7 @@ import {
   type AskChatDetail,
   type AskChatList,
 } from "@/lib/api/ask";
+import type { RunList } from "@/lib/api/runs";
 import { parseSseChunks, type AskStreamEvent } from "@/lib/ask/sse";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type * as Bot from "@/lib/chat/bot";
@@ -106,6 +113,10 @@ const actionsRoute = await import("./chats/[id]/actions/route");
 const { requestDraftCard, requestDraftContext, requestDraftView } =
   await import("@/lib/chat/request-draft");
 const repositoriesRoute = await import("./repositories/route");
+const runsRoute = await import("../runs/route");
+const { processThreadRunEvents } = await import("@/lib/chat/agent/wake");
+const { applyChatAnswer, chatThreadSink } = await import("@/lib/sinks/chat-thread");
+const { parseSinkResult } = await import("@/lib/sinks");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -752,6 +763,170 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
       } finally {
         await db.insert(organizationMembers).values({ organizationId: secondOrgId, userId: "ada" });
       }
+    });
+    it("follows a code question to Runs as kind ask and back as Om's answer, with what it read", async () => {
+      const thread = await chatOf("ada", orgId, portalId, "Why does last() fail?");
+      // An agent online that can take code questions.
+      await db.insert(agents).values({
+        organizationId: orgId,
+        name: "acme-agent",
+        reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
+        lastHeartbeatAt: new Date(),
+      });
+      // Om asks an agent about the chat's repo, then says so.
+      const steps: StreamPart[][] = [
+        [
+          { type: "stream-start", warnings: [] },
+          {
+            type: "tool-call",
+            toolCallId: "call-1",
+            toolName: "ask_about_code",
+            input: JSON.stringify({
+              repository: "acme/customer-portal",
+              question: "Why does last() return undefined on the last page?",
+            }),
+          },
+          { type: "finish", finishReason: "tool-calls", usage: USAGE },
+        ],
+        [
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "t1" },
+          { type: "text-delta", id: "t1", delta: "I asked an agent to read the code." },
+          { type: "text-end", id: "t1" },
+          { type: "finish", finishReason: "stop", usage: USAGE },
+        ],
+      ];
+      let step = 0;
+      useModel(
+        new MockLanguageModelV2({
+          doStream: async () => ({
+            stream: simulateReadableStream({ chunks: steps[Math.min(step++, 1)]! }),
+          }),
+        }),
+      );
+      const events = await readEvents(
+        await request(messagesRoute.POST, {
+          params: { id: thread.id },
+          body: { text: "Why does last() return undefined on the last page?" },
+        }),
+      );
+      expect(events).toContainEqual({
+        event: "status",
+        data: { text: "Asking an agent to read customer-portal" },
+      });
+      expect(events.at(-1)!.event).toBe("done");
+
+      const [threadRun] = await db
+        .select()
+        .from(chatThreadRuns)
+        .where(eq(chatThreadRuns.chatThreadId, thread.id));
+      const job = (await getJob(db, threadRun!.jobId!))!;
+      expect(job).toMatchObject({ type: "chat.ask", repositoryId: portalId });
+      const repository = { id: portalId, provider: "github", fullPath: "acme/customer-portal" };
+
+      // Queued: the chat shows Om waiting for an agent.
+      const queued = askChatDetailSchema.parse((await detail(thread.id)).body);
+      expect(queued.activity).toEqual({
+        state: "queued",
+        repository,
+        filesRead: 0,
+        runIds: [threadRun!.id],
+      });
+
+      // Every member sees it in Runs as an ask, not only the one who asked.
+      state.user = { id: "bob", name: "Bob", email: "bob@acme.test" };
+      const runs = await json<RunList>(await request(runsRoute.GET, { search: { kind: "ask" } }));
+      state.user = ada;
+      expect(runs.status).toBe(200);
+      expect(runs.body.runs.find((r) => r.id === threadRun!.id)).toMatchObject({ kind: "ask" });
+
+      // Running: the files count follows the agent's reads.
+      await db
+        .update(jobs)
+        .set({ status: "running", startedAt: new Date("2026-10-27T12:00:00Z") })
+        .where(eq(jobs.id, job.id));
+      for (const parameter of ["src/list.ts", "src/util.ts", "src/list.ts"]) {
+        await insertRunActivity(db, {
+          jobId: job.id,
+          organizationId: orgId,
+          type: "action",
+          body: "Read",
+          parameter,
+        });
+      }
+      const running = askChatDetailSchema.parse((await detail(thread.id)).body);
+      expect(running.activity).toEqual({
+        state: "running",
+        repository,
+        filesRead: 2,
+        runIds: [threadRun!.id],
+      });
+
+      // Answered: the answer is relayed as Om's message, with its run, reads and cited files.
+      const result: QueryRunResult = {
+        outcome: "answered",
+        answer: "`last()` reads one past the end.",
+        structured: null,
+        references: [{ path: "src/list.ts", startLine: 2, endLine: 9 }],
+        usage: { inputTokens: 10, outputTokens: 5 },
+        durationMs: 41_000,
+      };
+      await db
+        .update(jobs)
+        .set({ status: "completed", finishedAt: new Date("2026-10-27T12:05:00Z"), result })
+        .where(eq(jobs.id, job.id));
+      const finished = (await getJob(db, job.id))!;
+      const bot = state.bot as ReturnType<typeof createChatBot>;
+      const channel = {
+        db,
+        adapters: bot.adapters,
+        state: bot.state,
+        appUrl: APP_URL,
+        encryptionKey: Buffer.from(process.env.ENCRYPTION_KEY!, "base64"),
+      };
+      expect(
+        await applyChatAnswer(
+          db,
+          finished,
+          parseSinkResult(chatThreadSink, finished.result)!,
+          channel,
+        ),
+      ).toBe(true);
+      expect(
+        await processThreadRunEvents(
+          {
+            db,
+            model: null,
+            channel,
+            logger: silent,
+            rateLimits: {
+              wakePerOrganization: () => ({
+                key: `test:wake:${randomBytes(8).toString("hex")}`,
+                limit: 100,
+                windowSeconds: 60,
+              }),
+            },
+          },
+          thread.id,
+        ),
+      ).toMatchObject({ status: "processed", posted: 1 });
+
+      const answered = askChatDetailSchema.parse((await detail(thread.id)).body);
+      expect(answered.activity).toBeNull();
+      expect(answered.messages.at(-1)).toMatchObject({
+        author: "om",
+        markdown: "`last()` reads one past the end.",
+        status: "complete",
+        run: { id: threadRun!.id, status: "completed", durationMs: 41_000, filesRead: 2 },
+        files: [
+          {
+            path: "src/list.ts",
+            startLine: 2,
+            endLine: 9,
+            url: "https://github.com/acme/customer-portal/blob/main/src/list.ts#L2-L9",
+          },
+        ],
+      });
     });
   });
 
