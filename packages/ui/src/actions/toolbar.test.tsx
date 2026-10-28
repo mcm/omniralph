@@ -26,6 +26,27 @@ describe("Toolbar", () => {
     expect(more.getAttribute("aria-haspopup")).toBe("menu");
   });
 
+  it("renders a link action with its target and rel", () => {
+    render(
+      <Toolbar
+        label="Run actions"
+        actions={[
+          {
+            label: "Open run",
+            icon: IconRefresh,
+            href: "https://omniralph.example.com/runs/1",
+            target: "_blank",
+            rel: "noreferrer",
+          },
+        ]}
+      />,
+    );
+    const link = screen.getByRole("link", { name: "Open run" });
+    expect(link.getAttribute("href")).toBe("https://omniralph.example.com/runs/1");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
+  });
+
   it("runs actions and opens the menu from More actions", async () => {
     const user = userEvent.setup();
     const onRerun = vi.fn();

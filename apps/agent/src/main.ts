@@ -39,6 +39,7 @@ import {
   type InstallableInstaller,
 } from "./installables.js";
 import { createLogger, type Logger } from "./logger.js";
+import { logDirectory } from "./logs/rotating-file.js";
 import type { LogRing } from "./logs/ring.js";
 import { ClaudeStatusReporter, sdkReadClaude, type ReadClaude } from "./claude-status.js";
 import { InstallHistory, installsPath } from "./packages/history.js";
@@ -62,6 +63,7 @@ import { startUiServer, type UiRoute, type UiServer } from "./ui/server.js";
 import { packageRoutes } from "./ui/package-routes.js";
 import { settingsRoutes } from "./ui/settings-routes.js";
 import { updateRoutes } from "./ui/update-routes.js";
+import { attemptRoutes } from "./ui/attempt-routes.js";
 import { claudeRoutes, storageRoutes } from "./ui/machine-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
@@ -531,6 +533,12 @@ async function runAgent(
       ...updateRoutes({ updater, daemon }),
       ...claudeRoutes(claude),
       ...storageRoutes({ storage, logger }),
+      ...attemptRoutes({
+        history,
+        // The log file exists when the agent created its own logger (with its ring).
+        log: log.ring ? { dir: logDirectory(agentDataDir), ring: log.ring } : {},
+        logger,
+      }),
     ],
     state: () =>
       agentUiState({

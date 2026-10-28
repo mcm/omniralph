@@ -422,6 +422,21 @@ can't reach it by pointing its own name at 127.0.0.1 (DNS rebinding). Every requ
 cookie, and changes must come from the page itself (same `Origin`, JSON bodies). The agent writes
 the link to `ui.json` next to `agent.json` (mode 0600) and deletes it when it stops.
 
+**Overview** (the first page) says what is wrong, if anything, in one line: the control panel
+can't be reached (since when), the agent was revoked and must be enrolled again, it is finishing
+its running work before an update, or Claude isn't signed in. Under it: **Slots** busy, the running
+**Version** and whether it's up to date, updating, pinned or failed to update, the **Claude**
+login, and the free **Disk** space. **Running now** lists each running attempt as a sentence
+("Building SOC-1720") with its repo, work item and how long it has run; **Recent work** lists the
+last 50 finished ones, failed ones in coral. The agent keeps its last 200 finished attempts in
+`<dataDir>/state/attempts.json`.
+
+An attempt opens its own page: how it stands ("Running for 12m", "Finished in 4m", "Failed after
+2m"), its repo and work item, **Open run in Omniralph** (the run on the control panel, in a new
+tab), its transcript (what Om thought and ran, live while it runs, with the error when it failed)
+and, under **Log**, the agent's log lines for it. The transcript stays in memory for 10 minutes
+after the attempt finishes. Stopping or retrying a run stays on the control panel.
+
 **Capacity** sets how much work the agent takes on: **Slots**, **Coding slots** and **Review and
 ask slots** (blank means the default, shown in the field), and the **Kinds** of work offered to it
 (at least one). The save bar lists each change with what it does before you save. Saving writes
