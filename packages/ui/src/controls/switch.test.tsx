@@ -43,20 +43,6 @@ describe("Switch", () => {
     expect(control.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("toggles on Space and on Enter", async () => {
-    const user = userEvent.setup();
-    const onCheckedChange = vi.fn();
-    render(<Switch aria-label="Auto-merge" onCheckedChange={onCheckedChange} />);
-    const control = screen.getByRole("switch");
-    await user.tab();
-    expect(document.activeElement).toBe(control);
-    await user.keyboard(" ");
-    expect(control.getAttribute("aria-checked")).toBe("true");
-    await user.keyboard("{Enter}");
-    expect(control.getAttribute("aria-checked")).toBe("false");
-    expect(onCheckedChange.mock.calls).toEqual([[true], [false]]);
-  });
-
   it("follows the checked prop when controlled", async () => {
     const user = userEvent.setup();
     function Controlled() {

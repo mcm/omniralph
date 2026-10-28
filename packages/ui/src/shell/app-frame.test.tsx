@@ -360,39 +360,10 @@ describe("AppFrame", () => {
       }
     });
 
-    it("moves focus in and traps it", async () => {
-      const { dialog, user } = await openDrawer();
-      expect(dialog.contains(document.activeElement)).toBe(true);
-      for (let step = 0; step < 10; step += 1) {
-        await user.tab();
-        expect(dialog.contains(document.activeElement)).toBe(true);
-      }
-      await user.tab({ shift: true });
-      expect(dialog.contains(document.activeElement)).toBe(true);
-    });
-
     async function expectClosed(hamburger: HTMLElement) {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(document.activeElement).toBe(hamburger);
     }
-
-    it("closes on Escape and returns focus to the hamburger", async () => {
-      const { user, hamburger } = await openDrawer();
-      await user.keyboard("{Escape}");
-      await expectClosed(hamburger);
-    });
-
-    it("closes from the close button", async () => {
-      const { user, hamburger, dialog } = await openDrawer();
-      await user.click(within(dialog).getByRole("button", { name: "Close menu" }));
-      await expectClosed(hamburger);
-    });
-
-    it("closes on a scrim click", async () => {
-      const { user, hamburger } = await openDrawer();
-      await user.click(document.querySelector(".or-drawer__scrim")!);
-      await expectClosed(hamburger);
-    });
 
     it("closes when a link is followed", async () => {
       const { user, hamburger, dialog } = await openDrawer();

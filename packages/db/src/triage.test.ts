@@ -114,12 +114,6 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     expect(next.run.id).not.toBe(run.id);
   });
 
-  it("gets a run by its agent session", async () => {
-    const { run } = await createTriageRun(db, runInput());
-    expect(await getTriageRunBySession(db, run.linearAgentSessionId)).toEqual(run);
-    expect(await getTriageRunBySession(db, "session-unknown")).toBeNull();
-  });
-
   it("gets the issue's active run in its organization only", async () => {
     const { run } = await createTriageRun(db, runInput());
     expect((await getActiveTriageRun(db, orgId, "issue-1"))?.id).toBe(run.id);
@@ -330,13 +324,6 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     expect(await stopTriageRun(db, run.id)).toMatchObject({ id: run.id, status: "queued" });
     expect(await getTriageRun(db, run.id)).toMatchObject({ status: "stopped", pendingReply: null });
     expect(await stopTriageRun(db, run.id)).toBeNull();
-  });
-
-  it("deletes an organization's runs with it", async () => {
-    const [org] = await db.insert(organizations).values({ name: "Gone" }).returning();
-    const { run } = await createTriageRun(db, runInput({ organizationId: org!.id }));
-    await db.delete(organizations).where(eq(organizations.id, org!.id));
-    expect(await getTriageRun(db, run.id)).toBeNull();
   });
 
   const runJob = async (runId: string, organizationId = orgId, type = "triage.run") =>

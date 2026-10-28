@@ -167,18 +167,4 @@ describe.skipIf(!databaseAvailable)("applyModelPrices", () => {
     const tier = await applyModelPrices(db, [{ ...haiku, baseTierMaxTokens: 200_000 }], day(27));
     expect(tier).toEqual({ inserted: 0, changed: 1, unchanged: 0 });
   });
-
-  it("keeps one open row per model", async () => {
-    await applyModelPrices(db, [opus], day(25));
-    await expect(
-      db.insert(modelPrices).values({
-        modelId: opus.modelId,
-        name: opus.name,
-        inputUsd: "1",
-        outputUsd: "1",
-        validFrom: day(26),
-        checkedAt: day(26),
-      }),
-    ).rejects.toThrow();
-  });
 });

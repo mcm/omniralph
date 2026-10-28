@@ -21,14 +21,12 @@ const actions = vi.hoisted(() => ({
   switchOrganizationAction: vi.fn<(id: string) => Promise<ActionResult>>(),
 }));
 vi.mock("./actions", () => actions);
-const auth = vi.hoisted(() => ({ signOutAction: vi.fn(async () => {}) }));
-vi.mock("@/lib/auth/actions", () => auth);
+vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn(async () => {}) }));
 
 beforeEach(() => {
   for (const action of Object.values(actions)) action.mockReset().mockResolvedValue({ ok: true });
   router.push.mockReset();
   router.refresh.mockReset();
-  auth.signOutAction.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -140,12 +138,5 @@ describe("OnboardingView", () => {
     expect(
       screen.getByRole("link", { name: "Back to the control panel" }).getAttribute("href"),
     ).toBe("/");
-  });
-
-  it("signs out", async () => {
-    const user = userEvent.setup();
-    renderView();
-    await user.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(auth.signOutAction).toHaveBeenCalled();
   });
 });

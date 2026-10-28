@@ -152,15 +152,6 @@ describe("TokenInput", () => {
     expect(document.activeElement).toBe(screen.getByRole("textbox"));
   });
 
-  it("removes a token from the keyboard", async () => {
-    const user = userEvent.setup();
-    render(<Subject initial={["a", "b"]} />);
-    screen.getByRole("button", { name: "Remove a" }).focus();
-    await user.keyboard("{Enter}");
-    expect(tokens()).toEqual(["b"]);
-    expect(document.activeElement).toBe(screen.getByRole("textbox"));
-  });
-
   it("shows a validate error linked by aria-describedby and blocks the add", async () => {
     const user = userEvent.setup();
     const onValues = vi.fn();

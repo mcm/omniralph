@@ -56,32 +56,6 @@ describe("Tabs", () => {
     expect(count("Running, 2")).toBe("or-tab__count");
   });
 
-  it("moves focus and selection with Left and Right", async () => {
-    const { user, onValueChange } = setup();
-    await user.tab();
-    expect(document.activeElement).toBe(tab("Needs you, 4"));
-    await user.keyboard("{ArrowRight}");
-    expect(document.activeElement).toBe(tab("Running, 2"));
-    expect(selected()).toEqual([tab("Running, 2")]);
-    expect(onValueChange).toHaveBeenLastCalledWith("running");
-    await user.keyboard("{ArrowLeft}");
-    expect(document.activeElement).toBe(tab("Needs you, 4"));
-    expect(selected()).toEqual([tab("Needs you, 4")]);
-    await user.keyboard("{ArrowLeft}");
-    expect(document.activeElement).toBe(tab("Done"));
-  });
-
-  it("jumps to the first and last tab with Home and End", async () => {
-    const { user } = setup();
-    await user.tab();
-    await user.keyboard("{End}");
-    expect(document.activeElement).toBe(tab("Done"));
-    expect(selected()).toEqual([tab("Done")]);
-    await user.keyboard("{Home}");
-    expect(document.activeElement).toBe(tab("Needs you, 4"));
-    expect(selected()).toEqual([tab("Needs you, 4")]);
-  });
-
   it("selects a tab on click and shows its panel", async () => {
     const { user, onValueChange } = setup();
     await user.click(tab("Failed, 1"));

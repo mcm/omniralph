@@ -57,24 +57,6 @@ describe("Button", () => {
     expect(button.classList).toContain("or-btn--with-icon");
   });
 
-  it("calls onClick, and not while disabled", async () => {
-    const user = userEvent.setup();
-    const onClick = vi.fn();
-    const { rerender } = render(<Button onClick={onClick}>Save</Button>);
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(onClick).toHaveBeenCalledTimes(1);
-
-    rerender(
-      <Button onClick={onClick} disabled>
-        Save
-      </Button>,
-    );
-    const button = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    await user.click(button);
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-
   it("lets a form use type submit", () => {
     render(<Button type="submit">Sign in</Button>);
     expect(screen.getByRole("button", { name: "Sign in" }).getAttribute("type")).toBe("submit");

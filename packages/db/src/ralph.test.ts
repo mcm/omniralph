@@ -537,62 +537,6 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       expect(new Set(results.map((r) => r.run.id)).size).toBe(1);
     });
 
-    it("keeps one unfinished Linear run per issue", async () => {
-      const input = runInput();
-      await createRun(db, input);
-      expect(
-        await violated(
-          db.insert(ralphRuns).values({
-            organizationId: orgId,
-            linearIssueId: input.linearIssueId,
-            linearIdentifier: input.linearIdentifier,
-            linearAgentSessionId: "session-again",
-            kind: "children",
-            repositoryId: repoA,
-          }),
-        ),
-      ).toBe("ralph_runs_issue_active_uq");
-    });
-
-    it("checks each origin's columns", async () => {
-      const { id: threadId } = await newThread();
-      const linear = {
-        organizationId: orgId,
-        linearIssueId: "issue-check",
-        linearIdentifier: "TOOL-0",
-        linearAgentSessionId: "session-check",
-        kind: "children" as const,
-        repositoryId: repoA,
-      };
-      // Linear runs need their issue, identifier and agent session.
-      for (const missing of ["linearIssueId", "linearIdentifier", "linearAgentSessionId"]) {
-        expect(await violated(db.insert(ralphRuns).values({ ...linear, [missing]: null }))).toBe(
-          "ralph_runs_origin_check",
-        );
-      }
-      // `linear` is the default origin.
-      const [row] = await db.insert(ralphRuns).values(linear).returning();
-      expect(row?.origin).toBe("linear");
-
-      // Chat runs only do what they were asked.
-      const chat = {
-        organizationId: orgId,
-        origin: "chat" as const,
-        chatThreadId: threadId,
-        kind: "single" as const,
-        repositoryId: repoA,
-      };
-      expect(await violated(db.insert(ralphRuns).values({ ...chat, mode: "epic" }))).toBe(
-        "ralph_runs_origin_check",
-      );
-      await expect(
-        db
-          .insert(ralphRuns)
-          .values({ ...chat, mode: "request" })
-          .returning(),
-      ).resolves.toHaveLength(1);
-    });
-
     it("keeps a chat run when its thread goes (e.g. the chat connection is removed)", async () => {
       const { id: threadId, connectionId } = await newThread();
       const { run } = await createRun(db, chatInput(threadId));

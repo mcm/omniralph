@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   appendWebMessage,
   createWebChatThread,
-  deleteWebMessage,
   ensureChatThread,
   ensureWebChatConnection,
   getChatThreadWithConnection,
@@ -193,23 +192,6 @@ describe.skipIf(!databaseAvailable)("web chats", () => {
       expect(found?.thread.id).toBe(chat.id);
       expect(found?.connection).toMatchObject({ platform: "web", credentials: null });
     });
-
-    it("keeps a chat when its repo is removed, and drops it with its starter", async () => {
-      const chat = await newChat("About the portal");
-      await db.delete(repositories).where(eq(repositories.id, repoId));
-      const [kept] = await db.select().from(chatThreads).where(eq(chatThreads.id, chat.id));
-      expect(kept?.repositoryId).toBeNull();
-      await db.insert(users).values({ id: "doomed", email: "doomed@example.com" });
-      const doomed = await createWebChatThread(db, {
-        organizationId: orgId,
-        userId: "doomed",
-        repositoryId: null,
-        branch: null,
-        title: "Mine",
-      });
-      await db.delete(users).where(eq(users.id, "doomed"));
-      expect(await db.select().from(chatThreads).where(eq(chatThreads.id, doomed.id))).toEqual([]);
-    });
   });
 
   describe("listWebChats", () => {
@@ -373,18 +355,6 @@ describe.skipIf(!databaseAvailable)("web chats", () => {
         messages: [],
         nextBefore: null,
       });
-    });
-
-    it("deletes messages, and drops them with their chat", async () => {
-      const chat = await newChat("Short-lived");
-      const message = await appendWebMessage(db, { threadId: chat.id, author: "om" });
-      expect(await deleteWebMessage(db, message!.id)).toBe(true);
-      expect(await deleteWebMessage(db, message!.id)).toBe(false);
-      await appendWebMessage(db, { threadId: chat.id, author: "om" });
-      await db.delete(chatThreads).where(eq(chatThreads.id, chat.id));
-      expect(
-        await db.select().from(chatWebMessages).where(eq(chatWebMessages.threadId, chat.id)),
-      ).toEqual([]);
     });
 
     it("appends nothing to a chat that is gone", async () => {

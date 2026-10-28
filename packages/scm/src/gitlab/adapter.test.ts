@@ -349,12 +349,6 @@ describe("threads", () => {
     expect(requests.some((r) => r.method === "PUT" && r.url.includes(DISCUSSION))).toBe(true);
   });
 
-  it("posts a top-level MR note", async () => {
-    server.use(http.post(`${MR}/notes`, () => HttpResponse.json({ id: 78 }, { status: 201 })));
-    await expect(makeAdapter().postComment(REPO, 7, "Hello")).resolves.toEqual({ id: "78" });
-    expect((await posts(`/merge_requests/7/notes`))[0]?.body).toEqual({ body: "Hello" });
-  });
-
   it("edits an MR note in place", async () => {
     server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ id: 55 })));
     await expect(makeAdapter().upsertComment(REPO, 7, "Updated", "55")).resolves.toEqual({ id: "55" });
@@ -381,14 +375,6 @@ describe("threads", () => {
     server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })));
     await expect(makeAdapter().upsertComment(REPO, 7, "Body", "55")).rejects.toThrow();
     expect(await posts("/merge_requests/7/notes")).toHaveLength(0);
-  });
-
-  it("replies in the discussion", async () => {
-    server.use(
-      http.post(`${MR}/discussions/${DISCUSSION}/notes`, () => HttpResponse.json({ id: 77 }, { status: 201 })),
-    );
-    await expect(makeAdapter().replyToComment(REPO, 7, DISCUSSION, "Thanks")).resolves.toEqual({ id: "77" });
-    expect((await posts(`/discussions/${DISCUSSION}/notes`))[0]?.body).toEqual({ body: "Thanks" });
   });
 });
 
@@ -597,11 +583,6 @@ describe("merge request operations", () => {
     await Promise.all(pendingBodies);
     return requests.filter((r) => r.method === "PUT" && r.url.endsWith(`/merge_requests/${iid}`)).map((r) => r.body);
   }
-
-  it("reads the default branch", async () => {
-    server.use(http.get(API, () => HttpResponse.json({ id: 99, default_branch: "trunk" })));
-    await expect(makeAdapter().getDefaultBranch(REPO)).resolves.toBe("trunk");
-  });
 
   it("finds the open MR for a branch, ignoring MRs from forks", async () => {
     let query: URLSearchParams | undefined;

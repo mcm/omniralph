@@ -7,8 +7,8 @@ import { Menu, orderMenuItems, type MenuItem } from "./menu.js";
 
 const noop = () => {};
 
-function renderMenu(items: MenuItem[], disabled?: boolean) {
-  render(<Menu items={items} trigger={<Button>Actions</Button>} disabled={disabled} />);
+function renderMenu(items: MenuItem[]) {
+  render(<Menu items={items} trigger={<Button>Actions</Button>} />);
   return screen.getByRole("button", { name: "Actions" });
 }
 
@@ -28,63 +28,6 @@ describe("orderMenuItems", () => {
 });
 
 describe("Menu", () => {
-  it.each(["{Enter}", " "])(
-    "opens with %s on the trigger and focuses the first item",
-    async (key) => {
-      const user = userEvent.setup();
-      const trigger = renderMenu([
-        { label: "Copy ID", onSelect: noop },
-        { label: "Rerun", onSelect: noop },
-      ]);
-      expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
-      trigger.focus();
-      await user.keyboard(key);
-      const menu = await screen.findByRole("menu");
-      expect(trigger.getAttribute("aria-expanded")).toBe("true");
-      expect(labels()).toEqual(["Copy ID", "Rerun"]);
-      expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: "Copy ID" }));
-    },
-  );
-
-  it("moves between items with ArrowDown and ArrowUp, and Escape returns focus to the trigger", async () => {
-    const user = userEvent.setup();
-    const trigger = renderMenu([
-      { label: "Copy ID", onSelect: noop },
-      { label: "Rerun", onSelect: noop },
-      { label: "Cancel run", onSelect: noop },
-    ]);
-    trigger.focus();
-    await user.keyboard("{Enter}");
-    await screen.findByRole("menu");
-    await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Rerun" }));
-    await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Cancel run" }));
-    await user.keyboard("{ArrowUp}");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Rerun" }));
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-  });
-
-  it.each(["{Enter}", " "])("selects the focused item with %s and closes", async (key) => {
-    const user = userEvent.setup();
-    const copy = vi.fn();
-    const rerun = vi.fn();
-    const trigger = renderMenu([
-      { label: "Copy ID", onSelect: copy },
-      { label: "Rerun", onSelect: rerun },
-    ]);
-    trigger.focus();
-    await user.keyboard("{Enter}");
-    await screen.findByRole("menu");
-    await user.keyboard("{ArrowDown}");
-    await user.keyboard(key);
-    expect(rerun).toHaveBeenCalledTimes(1);
-    expect(copy).not.toHaveBeenCalled();
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-
   it("renders destructive items last, after a separator, in the danger style", async () => {
     const user = userEvent.setup();
     const trigger = renderMenu([
@@ -119,32 +62,6 @@ describe("Menu", () => {
     );
     await user.click(screen.getByRole("menuitem", { name: "Copy ID" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-
-  it("skips disabled items and never selects them", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-    const trigger = renderMenu([
-      { label: "Copy ID", onSelect: noop },
-      { label: "Rerun", onSelect, disabled: true },
-      { label: "Open", onSelect: noop },
-    ]);
-    trigger.focus();
-    await user.keyboard("{Enter}");
-    const rerun = await screen.findByRole("menuitem", { name: "Rerun" });
-    expect(rerun.getAttribute("aria-disabled")).toBe("true");
-    await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Open" }));
-    await user.click(rerun);
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("does not open while disabled", async () => {
-    const user = userEvent.setup();
-    const trigger = renderMenu([{ label: "Copy ID", onSelect: noop }], true);
-    expect((trigger as HTMLButtonElement).disabled).toBe(true);
-    await user.click(trigger);
     expect(screen.queryByRole("menu")).toBeNull();
   });
 

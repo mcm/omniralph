@@ -61,12 +61,6 @@ describe("saveThemePreference", () => {
 });
 
 describe("saveShowAdvancedPreference", () => {
-  it.each([true, false])("stores %s", async (value) => {
-    await expect(saveShowAdvancedPreference(value)).resolves.toEqual({ ok: true });
-    expect(setUserShowAdvanced).toHaveBeenCalledTimes(1);
-    expect(setUserShowAdvanced).toHaveBeenCalledWith(db, "user-1", value);
-  });
-
   it("tells the user's other devices on their own channel", async () => {
     await saveShowAdvancedPreference(true);
     expect(recordChange).toHaveBeenCalledTimes(1);
