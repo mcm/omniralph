@@ -491,49 +491,64 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
   });
 
   it("adds host_tools and agent_host_tools, cascading on delete (0072)", async () => {
-    const [org] = await db.insert(organizations).values({ name: "Host tools" }).returning();
-    const q = db.$client;
-    const {
-      rows: [tool],
-    } = await q.query<{ id: string }>(
-      `insert into host_tools (organization_id, name) values ($1, 'opengrep') returning id`,
-      [org!.id],
-    );
-    await expect(
-      q.query(`insert into host_tools (organization_id, name) values ($1, 'opengrep')`, [org!.id]),
-    ).rejects.toThrow(/host_tools_organization_name_uq/);
-    const {
-      rows: [agent],
-    } = await q.query<{ id: string }>(
-      `insert into agents (organization_id, name) values ($1, 'h') returning id`,
-      [org!.id],
-    );
-    const { rows } = await q.query(
-      `insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)
+    // 0116 drops both tables: check them on a database migrated up to it.
+    await db.execute(sql.raw(`create database host_tools_catalog`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/host_tools_catalog");
+    await migrateBefore(uri, "0116_");
+    const q = new pg.Client({ connectionString: uri });
+    await q.connect();
+    try {
+      const {
+        rows: [org],
+      } = await q.query<{ id: string }>(
+        `insert into organizations (name) values ('Host tools') returning id`,
+      );
+      const {
+        rows: [tool],
+      } = await q.query<{ id: string }>(
+        `insert into host_tools (organization_id, name) values ($1, 'opengrep') returning id`,
+        [org!.id],
+      );
+      await expect(
+        q.query(`insert into host_tools (organization_id, name) values ($1, 'opengrep')`, [
+          org!.id,
+        ]),
+      ).rejects.toThrow(/host_tools_organization_name_uq/);
+      const {
+        rows: [agent],
+      } = await q.query<{ id: string }>(
+        `insert into agents (organization_id, name) values ($1, 'h') returning id`,
+        [org!.id],
+      );
+      const { rows } = await q.query(
+        `insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)
        returning configured_path, configured_path_exists, discovered_path, reported_at`,
-      [agent!.id, tool!.id],
-    );
-    expect(rows).toEqual([
-      {
-        configured_path: null,
-        configured_path_exists: null,
-        discovered_path: null,
-        reported_at: null,
-      },
-    ]);
-    await expect(
-      q.query(`insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)`, [
-        agent!.id,
-        tool!.id,
-      ]),
-    ).rejects.toThrow(/agent_host_tools_agent_id_host_tool_id_pk/);
-    await q.query(`delete from organizations where id = $1`, [org!.id]);
-    const { rows: left } = await q.query(
-      `select (select count(*) from host_tools where id = $1)::int as tools,
+        [agent!.id, tool!.id],
+      );
+      expect(rows).toEqual([
+        {
+          configured_path: null,
+          configured_path_exists: null,
+          discovered_path: null,
+          reported_at: null,
+        },
+      ]);
+      await expect(
+        q.query(`insert into agent_host_tools (agent_id, host_tool_id) values ($1, $2)`, [
+          agent!.id,
+          tool!.id,
+        ]),
+      ).rejects.toThrow(/agent_host_tools_agent_id_host_tool_id_pk/);
+      await q.query(`delete from organizations where id = $1`, [org!.id]);
+      const { rows: left } = await q.query(
+        `select (select count(*) from host_tools where id = $1)::int as tools,
               (select count(*) from agent_host_tools where host_tool_id = $1)::int as rows`,
-      [tool!.id],
-    );
-    expect(left).toEqual([{ tools: 0, rows: 0 }]);
+        [tool!.id],
+      );
+      expect(left).toEqual([{ tools: 0, rows: 0 }]);
+    } finally {
+      await q.end();
+    }
   });
 
   it("adds required installables and host tools to jobs, empty by default (0073)", async () => {
@@ -2296,7 +2311,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
 
         const before = await snapshot(client, false);
-        await runMigrations(uri);
+        // Up to 0116, which drops the columns this reads (its guard refuses their values).
+        await migrateBefore(uri, "0116_");
         const after = await snapshot(client, true);
 
         // Every row, ID and reference is kept, and the enum's values too.
@@ -2400,7 +2416,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
             [rows[0]!.id, version],
           );
         }
-        await runMigrations(uri);
+        // Up to 0116, which drops the columns this reads (its guard refuses their values).
+        await migrateBefore(uri, "0116_");
         const { rows: settings } = await client.query<{ value: string }>(
           `select value from app_settings where key = 'agent.desiredVersion'`,
         );
@@ -3813,7 +3830,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
       }
 
-      await runMigrations(uri);
+      // Up to 0116, which drops the columns this reads (its guard refuses their values).
+      await migrateBefore(uri, "0116_");
 
       const { rows: after } = await client.query<{
         name: string;
@@ -4329,7 +4347,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         );
       }
 
-      await runMigrations(uri);
+      // Up to 0116, which drops the columns this reads (its guard refuses their values).
+      await migrateBefore(uri, "0116_");
 
       const { rows: after } = await client.query<{
         name: string;
@@ -4460,5 +4479,323 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
     expect(rows).toEqual([
       { data_type: "jsonb", is_nullable: "NO", column_default: "'[]'::jsonb" },
     ]);
+  });
+  describe("the control panel's machine settings are dropped (0116)", () => {
+    const DROPPED_COLUMNS = [
+      "desired_version",
+      "max_concurrency",
+      "pool_limits",
+      "update_request_id",
+      "update_request_version",
+      "update_requested_at",
+    ];
+
+    /** A database migrated up to just before 0116, with one organization. */
+    async function beforeDrop(name: string) {
+      await db.execute(sql.raw(`create database ${name}`));
+      const uri = testDb.uri.replace(/\/[^/]*$/, `/${name}`);
+      await migrateBefore(uri, "0116_");
+      const client = new pg.Client({ connectionString: uri });
+      await client.connect();
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      return { uri, client, org: rows[0]!.id };
+    }
+
+    /** The agents table's columns, the host tool tables and the migrations applied. */
+    async function schemaState(client: pg.Client) {
+      const { rows: columns } = await client.query<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'agents' order by column_name`,
+      );
+      const { rows: tables } = await client.query<{ table_name: string }>(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' and table_name in ('host_tools', 'agent_host_tools')
+         order by table_name`,
+      );
+      const { rows: applied } = await client.query<{ count: number }>(
+        `select count(*)::int as count from drizzle.__drizzle_migrations`,
+      );
+      return {
+        columns: columns.map((r) => r.column_name),
+        tables: tables.map((r) => r.table_name),
+        applied: applied[0]!.count,
+      };
+    }
+
+    it("keeps every production row and kept column, and drops the settings", async () => {
+      const { uri, client } = await beforeDrop("drop_machine_settings_production");
+      try {
+        // Production: 3 organizations, all 9 agents in the first (7 live, 2 revoked and
+        // soft-deleted, one of those with a concurrency it set long ago), 16 pins and the
+        // organization's version policy.
+        const { rows: orgs } = await client.query<{ id: string }>(
+          `insert into organizations (name) values ('Acme'), ('Globex') returning id`,
+        );
+        const { rows: firstOrg } = await client.query<{ id: string }>(
+          `select id from organizations where name = 'Managed Services'`,
+        );
+        const org = firstOrg[0]!.id;
+        expect(orgs).toHaveLength(2);
+        const { rows: connections } = await client.query<{ id: string }>(
+          `insert into scm_connections (organization_id, provider, name, base_url, encrypted_credentials)
+           values ($1, 'github', 'GitHub', 'https://api.github.com', 'x') returning id`,
+          [org],
+        );
+        const repos: string[] = [];
+        for (let i = 1; i <= 16; i++) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into repositories (organization_id, provider, external_id, full_path, connection_id)
+             values ($1, 'github', $2, $3, $4) returning id`,
+            [org, String(i), `managed/repo-${i}`, connections[0]!.id],
+          );
+          repos.push(rows[0]!.id);
+        }
+        const live: string[] = [];
+        for (let i = 0; i < 7; i++) {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into agents (organization_id, name, reported_version, self_update,
+               reported_installables, reported_models, failed_versions, update_state,
+               reported_max_concurrency, last_heartbeat_at, live_online)
+             values ($1, $2, '2.0.3', 'supported',
+               '[{"name":"@omniralph/hello","version":"1.0.0"}]',
+               '[{"value":"opus","displayName":"Opus"}]', $3, $4, 5, now(), true)
+             returning id`,
+            [
+              org,
+              `coder-agent-${i + 1}`,
+              i === 0 ? ["2.0.1"] : [],
+              i === 0
+                ? {
+                    state: "idle",
+                    version: "2.0.1",
+                    previous: "2.0.0",
+                    startsSincePending: 0,
+                    error: "exited",
+                  }
+                : null,
+            ],
+          );
+          live.push(rows[0]!.id);
+        }
+        for (const [name, maxConcurrency] of [
+          ["old-laptop", 3],
+          ["retired-runner", null],
+        ] as const) {
+          await client.query(
+            `insert into agents (organization_id, name, reported_version, max_concurrency,
+               revoked_at, deleted_at)
+             values ($1, $2, '1.9.0', $3, now() - interval '30 days', now() - interval '29 days')`,
+            [org, name, maxConcurrency],
+          );
+        }
+        for (const [i, repo] of repos.entries()) {
+          await client.query(
+            `insert into agent_repo_pins (agent_id, repository_id) values ($1, $2)`,
+            [live[i % live.length], repo],
+          );
+        }
+        await client.query(
+          `insert into app_settings (organization_id, key, value)
+           values ($1, 'agent.desiredVersion', '"latest"')`,
+          [org],
+        );
+
+        const dropped = DROPPED_COLUMNS.map((c) => `'${c}'`).join(" - ");
+        const read = async () => ({
+          organizations: (await client.query(`select * from organizations order by id`)).rows,
+          agents: (
+            await client.query(
+              `select id, to_jsonb(a) - ${dropped} as kept from agents a order by id`,
+            )
+          ).rows,
+          pins: (await client.query(`select * from agent_repo_pins order by id`)).rows,
+          settings: (await client.query(`select * from app_settings order by organization_id, key`))
+            .rows,
+        });
+        const before = await read();
+        expect(before.organizations).toHaveLength(3);
+        expect(before.agents).toHaveLength(9);
+        expect(before.pins).toHaveLength(16);
+
+        await runMigrations(uri);
+
+        expect(await read()).toEqual(before);
+        const state = await schemaState(client);
+        for (const column of DROPPED_COLUMNS) expect(state.columns).not.toContain(column);
+        expect(state.tables).toEqual([]);
+        const { rows: setting } = await client.query<{ value: unknown }>(
+          `select value from app_settings where organization_id = $1 and key = 'agent.desiredVersion'`,
+          [org],
+        );
+        expect(setting).toEqual([{ value: "latest" }]);
+        const { rows: first } = await client.query<Record<string, unknown>>(
+          `select failed_versions, update_state, reported_models, reported_pool_limits,
+             reported_version_pin, reported_installables_allow, reported_host_tools
+           from agents where id = $1`,
+          [live[0]],
+        );
+        expect(first[0]).toMatchObject({
+          failed_versions: ["2.0.1"],
+          update_state: { state: "idle", version: "2.0.1", error: "exited" },
+          reported_models: [{ value: "opus", displayName: "Opus" }],
+          reported_pool_limits: null,
+          reported_version_pin: null,
+          reported_installables_allow: null,
+          reported_host_tools: [],
+        });
+      } finally {
+        await client.end();
+      }
+    });
+
+    const guards: {
+      name: string;
+      set: (client: pg.Client, ids: { org: string; agent: string }) => Promise<unknown>;
+      item: (ids: { org: string; agent: string }) => string;
+    }[] = [
+      {
+        name: "max_concurrency",
+        set: (client, { agent }) =>
+          client.query(`update agents set max_concurrency = 3 where id = $1`, [agent]),
+        item: ({ agent }) => `agent ${agent} max_concurrency`,
+      },
+      {
+        name: "pool_limits",
+        set: (client, { agent }) =>
+          client.query(`update agents set pool_limits = '{"long":1}' where id = $1`, [agent]),
+        item: ({ agent }) => `agent ${agent} pool_limits`,
+      },
+      {
+        name: "desired_version",
+        set: (client, { agent }) =>
+          client.query(`update agents set desired_version = '2.0.3' where id = $1`, [agent]),
+        item: ({ agent }) => `agent ${agent} desired_version`,
+      },
+      {
+        name: "update_request_id",
+        set: (client, { agent }) =>
+          client.query(
+            `update agents set update_request_id = gen_random_uuid(),
+               update_request_version = '2.0.4', update_requested_at = now() where id = $1`,
+            [agent],
+          ),
+        item: ({ agent }) => `agent ${agent} update_request_id`,
+      },
+      {
+        name: "host_tools",
+        set: (client, { org }) =>
+          client.query(`insert into host_tools (organization_id, name) values ($1, 'gh')`, [org]),
+        item: () => "table host_tools",
+      },
+      {
+        name: "agent_host_tools",
+        set: async (client, { org, agent }) => {
+          // Both tables have a row; the message names each.
+          const { rows } = await client.query<{ id: string }>(
+            `insert into host_tools (organization_id, name) values ($1, 'gh') returning id`,
+            [org],
+          );
+          await client.query(
+            `insert into agent_host_tools (agent_id, host_tool_id, configured_path)
+             values ($1, $2, '/usr/bin/gh')`,
+            [agent, rows[0]!.id],
+          );
+        },
+        item: () => "table agent_host_tools",
+      },
+      {
+        name: "agent_max_concurrency_setting",
+        set: (client, { org }) =>
+          client.query(
+            `insert into app_settings (organization_id, key, value)
+             values ($1, 'agent.maxConcurrency', '2')`,
+            [org],
+          ),
+        item: ({ org }) => `app_settings agent.maxConcurrency (organization ${org})`,
+      },
+    ];
+
+    it.each(guards)("refuses to drop a set $name and changes nothing", async (guard) => {
+      const { uri, client, org } = await beforeDrop(`drop_machine_settings_${guard.name}`);
+      try {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into agents (organization_id, name, reported_version, last_heartbeat_at, live_online)
+           values ($1, 'coder-agent-1', '2.0.3', now(), true) returning id`,
+          [org],
+        );
+        const ids = { org, agent: rows[0]!.id };
+        // A soft-deleted agent's values aren't checked.
+        await client.query(
+          `insert into agents (organization_id, name, max_concurrency, desired_version, deleted_at)
+           values ($1, 'retired', 3, '1.9.0', now())`,
+          [org],
+        );
+        await client.query(
+          `insert into app_settings (organization_id, key, value)
+           values ($1, 'agent.desiredVersion', '"latest"')`,
+          [org],
+        );
+        await guard.set(client, ids);
+        const read = async () => ({
+          schema: await schemaState(client),
+          agents: (await client.query(`select to_jsonb(a) as row from agents a order by id`)).rows,
+          settings: (await client.query(`select * from app_settings order by key`)).rows,
+          hostTools: (await client.query(`select * from host_tools order by id`)).rows,
+          agentHostTools: (await client.query(`select * from agent_host_tools order by agent_id`))
+            .rows,
+        });
+        const before = await read();
+
+        const failure = await runMigrations(uri).then(
+          () => undefined,
+          (error: unknown) => error as { cause?: { message?: string } },
+        );
+        const message = failure?.cause?.message ?? "";
+        expect(message).toMatch(/^Set these on the agent's page first: /);
+        expect(message).toContain(guard.item(ids));
+        expect(message).not.toContain("retired");
+
+        expect(await read()).toEqual(before);
+      } finally {
+        await client.end();
+      }
+    });
+
+    it("names every offending value in one message", async () => {
+      const { uri, client, org } = await beforeDrop("drop_machine_settings_all");
+      try {
+        const { rows } = await client.query<{ id: string }>(
+          `insert into agents (organization_id, name, max_concurrency, pool_limits)
+           values ($1, 'coder-agent-1', 3, '{"long":1}') returning id`,
+          [org],
+        );
+        await client.query(`insert into host_tools (organization_id, name) values ($1, 'gh')`, [
+          org,
+        ]);
+        await expect(runMigrations(uri)).rejects.toMatchObject({
+          cause: {
+            message: `Set these on the agent's page first: agent ${rows[0]!.id} max_concurrency, agent ${rows[0]!.id} pool_limits, table host_tools`,
+          },
+        });
+      } finally {
+        await client.end();
+      }
+    });
+
+    it("applies to a fresh database: the columns and tables are gone", async () => {
+      const { rows: columns } = await db.$client.query<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'agents'`,
+      );
+      const names = columns.map((r) => r.column_name);
+      for (const column of DROPPED_COLUMNS) expect(names).not.toContain(column);
+      const { rows: tables } = await db.$client.query(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' and table_name in ('host_tools', 'agent_host_tools')`,
+      );
+      expect(tables).toEqual([]);
+    });
   });
 });

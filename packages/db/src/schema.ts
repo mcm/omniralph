@@ -1232,26 +1232,11 @@ export const agents = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     /**
-     * Unused: an agent's slots are its own (`settings.json`), reported in
-     * `reported_max_concurrency`. Kept until the migration that drops it refuses set values.
-     */
-    maxConcurrency: integer("max_concurrency"),
-    /**
      * The task types the agent runs (`system` is always accepted), as it reports them: its
      * local `acceptedTaskTypes`, sent in every heartbeat and claim. Read-only here. Null
      * until it reports one: every task type.
      */
     reportedAcceptedTaskTypes: text("reported_accepted_task_types").array(),
-    /**
-     * Unused: an agent's pool limits are its own (`settings.json`), reported in
-     * `reported_pool_limits`. Kept until the migration that drops it refuses set values.
-     */
-    poolLimits: jsonb("pool_limits").$type<Partial<Record<string, number>>>().notNull().default({}),
-    /**
-     * Unused: an agent's own version is its local pin (`settings.json`), reported in
-     * `reported_version_pin`. Kept until the migration that drops it refuses set values.
-     */
-    desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
     /** The installables installed on the agent, as its last heartbeat reported them. */
     reportedInstallables: jsonb("reported_installables")
@@ -1293,13 +1278,6 @@ export const agents = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
-    /**
-     * Unused: "Update now" is local to the agent. Kept, with the two below, until the
-     * migration that drops them refuses set values.
-     */
-    updateRequestId: uuid("update_request_id"),
-    updateRequestVersion: text("update_request_version"),
-    updateRequestedAt: timestamp("update_requested_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     /**
      * Whether the live change events last announced the agent online: a heartbeat sets it
@@ -1407,55 +1385,6 @@ export const agentRepoPins = pgTable(
   (t) => [
     uniqueIndex("agent_repo_pins_agent_repo_uq").on(t.agentId, t.repositoryId),
     index("agent_repo_pins_repository_id_idx").on(t.repositoryId),
-  ],
-);
-
-/**
- * @deprecated The organization's former catalog of host tools. Nothing reads or writes it:
- * host tool paths are set on each agent (`settings.json`) and reported in
- * `agents.reported_host_tools`. Dropped once production holds no row.
- */
-export const hostTools = pgTable(
-  "host_tools",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    /** Matches `HOST_TOOL_NAME_PATTERN`: the executable's name on `PATH`. */
-    name: text("name").notNull(),
-    description: text("description"),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [uniqueIndex("host_tools_organization_name_uq").on(t.organizationId, t.name)],
-);
-
-/**
- * @deprecated A former catalog host tool on one agent. Nothing reads or writes it
- * (`agents.reported_host_tools` replaces it). Dropped with `host_tools`.
- */
-export const agentHostTools = pgTable(
-  "agent_host_tools",
-  {
-    agentId: uuid("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
-    hostToolId: uuid("host_tool_id")
-      .notNull()
-      .references(() => hostTools.id, { onDelete: "cascade" }),
-    /** An absolute path; when set it wins over `discoveredPath`, even when it doesn't exist. */
-    configuredPath: text("configured_path"),
-    /** Whether the configured path is a usable executable on the agent; null until reported or with none configured. */
-    configuredPathExists: boolean("configured_path_exists"),
-    /** The first match the agent found on its own `PATH` (never one it blocks). */
-    discoveredPath: text("discovered_path"),
-    /** When the agent last reported on the tool. */
-    reportedAt: timestamp("reported_at", { withTimezone: true }),
-  },
-  (t) => [
-    primaryKey({ columns: [t.agentId, t.hostToolId] }),
-    index("agent_host_tools_host_tool_id_idx").on(t.hostToolId),
   ],
 );
 
