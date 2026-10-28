@@ -12,8 +12,10 @@ import { getDb } from "@/lib/db";
  * organization, one of the user's (`organization=<id>`) or all of them
  * (`organization=all`), optionally one repository of those (`repository`; any other is
  * ignored, as `params.repositoryId: null` tells). Also answers every repository of the
- * scope, for the screen's filter. An unknown `days` or `bucket` answers 400. It never sets
- * `costUsd` (Epic 12 will).
+ * scope, for the screen's filter. An unknown `days` or `bucket` answers 400. Each token figure
+ * carries its list price (`costUsd`, and `unpricedAttempts` when the sum leaves out
+ * token-bearing attempts with no list price; see `RunCost`): the totals only when the window
+ * has a priced attempt.
  */
 export const GET = apiHandler(
   { query: runAnalyticsQuerySchema },

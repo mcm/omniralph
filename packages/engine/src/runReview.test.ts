@@ -337,6 +337,40 @@ describe("runReview", () => {
     expect(result.fixedOpenFindings).toEqual([1]);
   });
 
+  it("adds up the tasks' usage per model", async () => {
+    split.on = true;
+    const opus = {
+      model: "claude-opus-5-5",
+      canonicalModel: "claude-opus-5-5",
+      inputTokens: 10,
+      cacheReadInputTokens: 900,
+      cacheCreationInputTokens: 90,
+      cacheWrite1hInputTokens: 0,
+      outputTokens: 100,
+      largestRequestInputTokens: 500,
+      fastMode: false,
+    };
+    const provider = new FakeProvider(() => ({
+      usage: { inputTokens: 1_000, outputTokens: 100, byModel: [opus] },
+    }));
+    const result = await runReview(input(), { provider, logger: quietLogger });
+    const tasks = provider.requests.length;
+    expect(tasks).toBeGreaterThan(1);
+    expect(result.usage).toEqual({
+      inputTokens: 1_000 * tasks,
+      outputTokens: 100 * tasks,
+      byModel: [
+        {
+          ...opus,
+          inputTokens: 10 * tasks,
+          cacheReadInputTokens: 900 * tasks,
+          cacheCreationInputTokens: 90 * tasks,
+          outputTokens: 100 * tasks,
+        },
+      ],
+    });
+  });
+
   it("keeps partial findings and reports budget exhaustion and provider errors", async () => {
     const exhausted = new FakeProvider(() => ({
       stopReason: "budget_exhausted",

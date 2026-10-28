@@ -20,9 +20,13 @@
  *   and request tokens the `usage` of `ralph.*` jobs, by the job's creation (a job with no
  *   run counts as epic); triage and ask tokens the `usage` of their runs' jobs, by the job's
  *   creation.
+ * - Cost: the list price (`attempt_costs`) of the same token-bearing attempts, in the same
+ *   buckets as their tokens (a review's is its jobs'). A sum covers priced attempts only and
+ *   counts the ones it leaves out (`unpricedAttempts`); see `RunCost`.
  */
 import { and, asc, eq, gte, inArray, isNotNull, like, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "../client.js";
+import { attemptCostOf } from "./attempt-costs.js";
 import { RUN_KINDS, type RunKind } from "../run-index.js";
 import {
   jobs,
@@ -69,7 +73,18 @@ export interface RunAnalyticsFilter {
   now?: Date;
 }
 
-export interface RunTokens {
+/**
+ * What a sum of tokens would cost at Anthropic's API list prices, in USD (6 decimals): the
+ * sum of its priced attempts when it has one, 0 when it has no token-bearing attempts, and
+ * absent when none of its token-bearing attempts is priced. `unpricedAttempts` counts the
+ * token-bearing attempts the sum leaves out (absent when none is, or without `costUsd`).
+ */
+export interface RunCost {
+  costUsd?: number;
+  unpricedAttempts?: number;
+}
+
+export interface RunTokens extends RunCost {
   tokensIn: number;
   tokensOut: number;
 }
@@ -84,12 +99,12 @@ export interface RunAttempts {
   successRate: number | null;
 }
 
-export interface RunAnalyticsFigures {
+export interface RunAnalyticsFigures extends RunCost {
   /** Stories built (completed) by the epic and request runs started in the period. */
   stories: number;
   reviewRuns: number;
   attempts: RunAttempts;
-  /** Tokens by run kind. */
+  /** Tokens (and their cost) by run kind. */
   tokens: Record<RunKind, RunTokens>;
 }
 
@@ -160,7 +175,14 @@ export async function listAnalyticsRepositories(
 /** Postgres aggregates come back as strings (bigint/numeric) or null. */
 const num = (value: unknown): number => (value == null ? 0 : Number(value));
 
-/** Counts that add up; `successRate` is derived when the figures are read. */
+/** Token-bearing attempts' list prices: the priced ones' sum, and how many are (un)priced. */
+interface CostTally {
+  usd: number;
+  priced: number;
+  unpriced: number;
+}
+
+/** Counts that add up; `successRate` and costs are derived when the figures are read. */
 interface Tally {
   stories: number;
   reviewRuns: number;
@@ -168,8 +190,12 @@ interface Tally {
   completed: number;
   failed: number;
   expired: number;
-  tokens: Record<RunKind, RunTokens>;
+  tokens: Record<RunKind, { tokensIn: number; tokensOut: number }>;
+  cost: Record<RunKind, CostTally>;
 }
+
+const byKind = <T>(value: () => T) =>
+  Object.fromEntries(RUN_KINDS.map((k) => [k, value()])) as Record<RunKind, T>;
 
 const emptyTally = (): Tally => ({
   stories: 0,
@@ -178,14 +204,32 @@ const emptyTally = (): Tally => ({
   completed: 0,
   failed: 0,
   expired: 0,
-  tokens: Object.fromEntries(RUN_KINDS.map((k) => [k, { tokensIn: 0, tokensOut: 0 }])) as Record<
-    RunKind,
-    RunTokens
-  >,
+  tokens: byKind(() => ({ tokensIn: 0, tokensOut: 0 })),
+  cost: byKind(() => ({ usd: 0, priced: 0, unpriced: 0 })),
 });
 
-function figures(tally: Tally): RunAnalyticsFigures {
+/** USD to 6 decimals (sub-cent figures stay visible as "<$0.01"). */
+const roundUsd = (usd: number) => Math.round(usd * 1e6) / 1e6;
+
+/** A bucket's or row's cost (see `RunCost`). */
+function cost(tally: CostTally): RunCost {
+  if (tally.priced === 0) return tally.unpriced === 0 ? { costUsd: 0 } : {};
+  return {
+    costUsd: roundUsd(tally.usd),
+    ...(tally.unpriced > 0 && { unpricedAttempts: tally.unpriced }),
+  };
+}
+
+function figures(tally: Tally, options: { totals?: boolean } = {}): RunAnalyticsFigures {
   const rated = tally.completed + tally.failed + tally.expired;
+  const all = RUN_KINDS.reduce<CostTally>(
+    (sum, kind) => ({
+      usd: sum.usd + tally.cost[kind].usd,
+      priced: sum.priced + tally.cost[kind].priced,
+      unpriced: sum.unpriced + tally.cost[kind].unpriced,
+    }),
+    { usd: 0, priced: 0, unpriced: 0 },
+  );
   return {
     stories: tally.stories,
     reviewRuns: tally.reviewRuns,
@@ -196,7 +240,11 @@ function figures(tally: Tally): RunAnalyticsFigures {
       expired: tally.expired,
       successRate: rated === 0 ? null : tally.completed / rated,
     },
-    tokens: tally.tokens,
+    tokens: Object.fromEntries(
+      RUN_KINDS.map((kind) => [kind, { ...tally.tokens[kind], ...cost(tally.cost[kind]) }]),
+    ) as Record<RunKind, RunTokens>,
+    // The totals carry a cost only when the window has a priced attempt.
+    ...(options.totals && all.priced === 0 ? {} : cost(all)),
   };
 }
 
@@ -283,6 +331,27 @@ export async function getRunAnalytics(
     else 'ask' end`;
   const usage = (field: "inputTokens" | "outputTokens") =>
     sql<string>`sum(coalesce((${jobs.result} -> 'usage' ->> ${sql.raw(`'${field}'`)})::bigint, 0))`;
+  // A job's tokens and list price (per row, before aggregating).
+  const jobTokens = sql`(coalesce((${jobs.result} -> 'usage' ->> 'inputTokens')::bigint, 0)
+    + coalesce((${jobs.result} -> 'usage' ->> 'outputTokens')::bigint, 0))`;
+  const jobCost = attemptCostOf(jobs.id);
+  // A review's list price: its token-bearing jobs', when every one of them is priced.
+  const reviewCost = sql`(select case when count(*) > 0 and bool_and(ac.cost_usd is not null)
+      then sum(ac.cost_usd) end
+    from jobs rj left join attempt_costs ac on ac.job_id = rj.id
+    where rj.review_run_id = ${reviews.reviewRunId}
+      and rj.type in ('review.task', 'review.run')
+      and coalesce(rj.payload -> 'trigger' -> 'context' ->> 'reviewId', rj.payload ->> 'reviewId')
+        = ${reviews.id}::text
+      and coalesce((rj.result -> 'usage' ->> 'inputTokens')::bigint, 0)
+        + coalesce((rj.result -> 'usage' ->> 'outputTokens')::bigint, 0) > 0)`;
+  const reviewTokens = sql`(${reviews.tokensIn} + ${reviews.tokensOut})`;
+  /** The priced sum and the (un)priced counts of token-bearing rows (`tokens` > 0). */
+  const costColumns = (tokens: SQL, price: SQL) => ({
+    costUsd: sql<string | null>`sum(${price}) filter (where ${tokens} > 0)`,
+    priced: sql<string>`count(*) filter (where ${tokens} > 0 and ${price} is not null)`,
+    unpriced: sql<string>`count(*) filter (where ${tokens} > 0 and ${price} is null)`,
+  });
   const count = (status: string) => sql<string>`count(*) filter (where ${jobs.status} = ${status})`;
 
   const [storyRows, reviewRunRows, reviewTokenRows, jobTokenRows, attemptRows, organizationRows] =
@@ -315,6 +384,7 @@ export async function getRunAnalytics(
           repositoryId: reviews.repositoryId,
           tokensIn: sql<string>`sum(${reviews.tokensIn})`,
           tokensOut: sql<string>`sum(${reviews.tokensOut})`,
+          ...costColumns(reviewTokens, reviewCost),
         })
         .from(reviews)
         .innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
@@ -328,6 +398,7 @@ export async function getRunAnalytics(
           kind: jobKind,
           tokensIn: usage("inputTokens"),
           tokensOut: usage("outputTokens"),
+          ...costColumns(jobTokens, jobCost),
         })
         .from(jobs)
         .leftJoin(ralphRuns, eq(ralphRuns.id, jobs.ralphRunId))
@@ -377,9 +448,22 @@ export async function getRunAnalytics(
       if (tally) apply(tally);
     }
   };
-  const addTokens = (tally: Tally, kind: RunKind, row: { tokensIn: string; tokensOut: string }) => {
+  const addTokens = (
+    tally: Tally,
+    kind: RunKind,
+    row: {
+      tokensIn: string;
+      tokensOut: string;
+      costUsd: string | null;
+      priced: string;
+      unpriced: string;
+    },
+  ) => {
     tally.tokens[kind].tokensIn += num(row.tokensIn);
     tally.tokens[kind].tokensOut += num(row.tokensOut);
+    tally.cost[kind].usd += num(row.costUsd);
+    tally.cost[kind].priced += num(row.priced);
+    tally.cost[kind].unpriced += num(row.unpriced);
   };
 
   for (const row of storyRows) add(row, (t) => (t.stories += num(row.count)));
@@ -414,7 +498,7 @@ export async function getRunAnalytics(
     to,
     bucket,
     buckets: starts.map((start) => ({ start, ...figures(byBucket.get(start)!) })),
-    totals: figures(totals),
+    totals: figures(totals, { totals: true }),
     byRepository: repositoryRefs
       .sort((a, b) => a.fullPath.localeCompare(b.fullPath))
       .map(({ organizationId, ...repository }) => ({

@@ -70,9 +70,9 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("no resource but run invalidates Analytics (a transcript changes no figure)", () => {
+  it("no resource but run and model prices invalidates Analytics (a transcript changes no figure)", () => {
     const events: ChangeEvent[] = CHANGE_RESOURCES.filter(
-      (resource) => resource !== "run" && resource !== "settings",
+      (resource) => resource !== "run" && resource !== "model_prices" && resource !== "settings",
     ).flatMap((resource) => [
       event({ resource, runId: RUN, ids: [ID] }),
       event({ resource, ids: [ID] }),
@@ -306,6 +306,19 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(prefixes).toEqual(
       expect.arrayContaining([other.chatLists, askKeys(keys).chatLists, askKeys(keys).chat(ID)]),
     );
+  });
+
+  it("model_prices: every run's detail and Analytics, and nothing else", () => {
+    const prefixes = liveInvalidations(event({ resource: "model_prices", ids: [ORG] }));
+    expect(prefixes).toEqual([[...keys.runs.all, "detail"], ...analyticsOfOrg]);
+    const under = (key: QueryKey) =>
+      prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
+    expect(under(keys.runs.detail(RUN))).toBe(true);
+    expect(under(keys.runs.detail(OTHER_RUN))).toBe(true);
+    expect(under(keys.runs.lists)).toBe(false);
+    expect(under(keys.inbox.all)).toBe(false);
+    expect(under(keys.transcripts.detail(RUN))).toBe(false);
+    expect(under(keys.repositories.lists)).toBe(false);
   });
 
   it("organization: the organization's queries", () => {

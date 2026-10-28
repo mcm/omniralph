@@ -7,6 +7,7 @@ import type { RunAttempt } from "@/lib/api/runs";
 import { agentHref } from "@/lib/runs/hrefs";
 import { useClock } from "@/screens/clock";
 import { AttemptOutcome } from "./attempt-outcome";
+import { CostFigure } from "./cost-figure";
 import { tokensText } from "./details";
 import { formatDuration } from "./progress";
 import { isLiveAttempt } from "./step-attempts";
@@ -38,7 +39,7 @@ export interface AttemptListProps {
 
 /**
  * A step's attempts, newest first: each one's outcome (`AttemptOutcome`), agent, start time,
- * duration and tokens, and a button that shows its transcript. A queued or running attempt
+ * duration, tokens and their list price (when priced), and a button that shows its transcript. A queued or running attempt
  * has a "Cancel attempt" icon button that asks to confirm; the attempt reads "Cancel
  * requested" before the server answers, and until its agent confirms (the attempt ends).
  */
@@ -75,7 +76,15 @@ export function AttemptList({ runId, attempts, selectedAttemptId, onSelect }: At
                     {activityDate(started)}
                   </time>
                   {duration ? <span className="or-mono">{duration}</span> : null}
-                  <span className="or-mono">{tokensText(attempt.tokens)}</span>
+                  <span className="or-mono">
+                    {tokensText(attempt.tokens)}
+                    {typeof attempt.costUsd === "number" ? (
+                      <>
+                        {" · "}
+                        <CostFigure usd={attempt.costUsd} />
+                      </>
+                    ) : null}
+                  </span>
                   {cancelPending ? (
                     <span className="or-attempt__cancel-requested">{CANCEL_REQUESTED}</span>
                   ) : null}

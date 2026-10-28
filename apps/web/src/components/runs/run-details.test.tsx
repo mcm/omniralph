@@ -88,6 +88,35 @@ describe("RunDetails", () => {
     ]);
   });
 
+  it("shows the run's list price after its tokens, with what it means", () => {
+    const { container } = render(<RunDetails run={run({ costUsd: 312.4 })} />);
+    const section = container.querySelector("details")!;
+    expect(rows(section).map(([term]) => term)).toEqual([
+      "Repo",
+      "Branch",
+      "Routed by",
+      "Agent",
+      "Tokens",
+      "Cost",
+      "Attempts",
+    ]);
+    expect(rows(section)[5]).toEqual(["Cost", "$312.40"]);
+    const figure = within(section).getByText("$312.40");
+    expect(figure.classList.contains("or-mono")).toBe(true);
+    expect(figure.getAttribute("title")).toBe(
+      "What these tokens would cost at Anthropic's API list prices, not what was billed.",
+    );
+  });
+
+  it("shows a list price under a cent as <$0.01, and no Cost row without one", () => {
+    const { container, rerender } = render(<RunDetails run={run({ costUsd: 0.004 })} />);
+    expect(rows(container.querySelector("details")!)).toContainEqual(["Cost", "<$0.01"]);
+    rerender(<RunDetails run={run({ costUsd: null })} />);
+    expect(rows(container.querySelector("details")!).map(([term]) => term)).not.toContain("Cost");
+    expect(container.textContent).not.toContain("$");
+    expect(container.textContent).not.toContain("n/a");
+  });
+
   it("lists each lane's repo, branch and pull request on a multi-repo epic", () => {
     const { container } = render(
       <RunDetails run={run({ lanes: [lane("a", "acme/api", 7), lane("b", "acme/web", null)] })} />,

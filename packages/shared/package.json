@@ -9,6 +9,11 @@
       "@omniralph/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@omniralph/source": "./src/usage-fixture.ts",
+      "types": "./dist/usage-fixture.d.ts",
+      "default": "./dist/usage-fixture.js"
     }
   },
   "files": [

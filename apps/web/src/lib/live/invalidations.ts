@@ -232,6 +232,11 @@ export const LIVE_INVALIDATIONS = {
     askKeys(keys).chatLists,
     ...event.ids.map((chatId) => askKeys(keys).chat(chatId)),
   ],
+  // New or changed list prices change Cost: every run's detail and Analytics, nothing else.
+  model_prices: (event, keys) => [
+    [...keys.runs.all, "detail"],
+    ...analyticsKeys(keys).covering(event.organizationId),
+  ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
 };

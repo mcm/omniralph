@@ -6,7 +6,7 @@ import {
   type Options,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { FINDING_CATEGORIES, type Finding } from "@omniralph/shared";
+import { FINDING_CATEGORIES, UsageByModelTracker, type Finding } from "@omniralph/shared";
 import { LEARN_RULE_SYSTEM_PROMPT, parseLearnedRuleOutput } from "../learnRule.js";
 import { ONE_FINDING_RULE, SUGGESTION_RULE } from "../prompt.js";
 import { normalizeReplyAnswer, REPLY_SYSTEM_PROMPT } from "../reply.js";
@@ -192,11 +192,15 @@ interface MessageUsage {
   output: number;
 }
 
-/** Sums usage across SDK messages; streamed messages repeat the same `message.id`. */
+/**
+ * Sums usage across SDK messages; streamed messages repeat the same `message.id`. The usage
+ * per model goes to the shared `UsageByModelTracker` (each `run` is its own `query()` call).
+ */
 class UsageTracker {
   private readonly perMessage = new Map<string, MessageUsage>();
   private floor: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   private anonymous = 0;
+  readonly models = new UsageByModelTracker();
 
   /** Records a message's usage and returns it (input incl. cache reads/writes). */
   record(id: string | undefined, usage: Record<string, unknown> | undefined): MessageUsage {
@@ -232,9 +236,11 @@ class UsageTracker {
       input += usage.input;
       output += usage.output;
     }
+    const byModel = this.models.byModel;
     return {
       inputTokens: Math.max(input, this.floor.inputTokens),
       outputTokens: Math.max(output, this.floor.outputTokens),
+      ...(byModel.length > 0 && { byModel }),
     };
   }
 }
@@ -584,6 +590,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       request.systemPrompt,
     );
     const base = usage.total;
+    usage.models.startQuery();
     let streamed = "";
     let rateLimitRejected = false;
     let retryAfterMs: number | undefined;
@@ -594,10 +601,12 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
           case "assistant": {
             const msg = message.message as unknown as {
               id?: string;
+              model?: string;
               usage?: Record<string, unknown>;
               content?: Array<{ type: string; text?: string }>;
             };
             const turn = usage.record(msg.id, msg.usage);
+            usage.models.recordMessage(msg, message.uuid);
             if (message.parent_tool_use_id === null) {
               for (const block of msg.content ?? []) {
                 if (block.type === "text" && block.text) streamed += block.text;
@@ -659,6 +668,7 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
               { inputTokens: 0, outputTokens: 0 },
             );
             usage.recordRunTotal(base, totals);
+            usage.models.recordResult(message);
             if (message.subtype === "success" && !message.is_error) {
               return { stop: "completed", text: message.result };
             }

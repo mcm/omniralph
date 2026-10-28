@@ -34,6 +34,7 @@ export const CHANGE_RESOURCES = [
   "organization",
   "work_item",
   "chat",
+  "model_prices",
 ] as const satisfies readonly ChangeResource[];
 export type ChangeEventResource = (typeof CHANGE_RESOURCES)[number];
 
@@ -112,6 +113,9 @@ const base = {
  * - `chat`: a web chat (Ask) was created, got a message (posted, streamed to the end, edited
  *   or removed), or one of its cards changed (`ids` = chat IDs); only on its owner's channel,
  *   since a web chat is private to the member who started it.
+ * - `model_prices`: the daily price refresh inserted or changed a model's list price, so any
+ *   run's or Analytics' Cost may have changed (`ids` = the organization); published to every
+ *   organization.
  */
 export const changeEventSchemas = {
   run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
@@ -157,6 +161,7 @@ export const changeEventSchemas = {
     ids: z.array(z.string().regex(WORK_ITEM_ID_PATTERN)).min(1),
   }),
   chat: z.strictObject({ ...base, resource: z.literal("chat") }),
+  model_prices: z.strictObject({ ...base, resource: z.literal("model_prices") }),
 } satisfies { [R in ChangeEventResource]: z.ZodType<{ resource: R }> };
 
 export const changeEventSchema = z.discriminatedUnion("resource", [
@@ -172,6 +177,7 @@ export const changeEventSchema = z.discriminatedUnion("resource", [
   changeEventSchemas.organization,
   changeEventSchemas.work_item,
   changeEventSchemas.chat,
+  changeEventSchemas.model_prices,
 ]);
 
 export type ChangeEvent = z.infer<typeof changeEventSchema>;

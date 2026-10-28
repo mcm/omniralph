@@ -4,6 +4,7 @@ import "server-only";
  * attempts and details, for every run kind.
  */
 import {
+  costForJobs,
   getRalphRunDetailFacts,
   getRunChatThread,
   getReviewRunDetailFacts,
@@ -356,6 +357,23 @@ export async function loadRunChat(
 }
 
 /**
+ * A run's list price: the sum over its token-bearing attempts, null when any of them is
+ * unpriced or none has tokens, so a run never shows a figure that leaves out part of them.
+ */
+export function runCost(
+  attempts: readonly Pick<RunAttempt, "tokens" | "costUsd">[],
+): number | null {
+  const bearing = attempts.filter((a) => a.tokens.in + a.tokens.out > 0);
+  if (bearing.length === 0) return null;
+  let sum = 0;
+  for (const attempt of bearing) {
+    if (attempt.costUsd === null) return null;
+    sum += attempt.costUsd;
+  }
+  return Math.round(sum * 1e6) / 1e6;
+}
+
+/**
  * The run's detail for the user `viewerId`, who is `organization.role` in its organization.
  */
 export async function loadRunDetail(
@@ -371,7 +389,13 @@ export async function loadRunDetail(
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
-  const open = await loadRunQuestion(db, run, row.workItem?.identifier ?? null);
+  const [open, costs] = await Promise.all([
+    loadRunQuestion(db, run, row.workItem?.identifier ?? null),
+    costForJobs(
+      db,
+      attempts.map((a) => a.id),
+    ),
+  ]);
   const base = attemptLabelBase(row);
 
   let facts: KindFacts;
@@ -411,6 +435,7 @@ export async function loadRunDetail(
     startedAt: attempt.startedAt?.toISOString() ?? null,
     finishedAt: attempt.finishedAt?.toISOString() ?? null,
     tokens: attempt.tokens,
+    costUsd: costs.get(attempt.id) ?? null,
     error: attempt.error,
     step: facts.stepOf(attempt),
     transcriptEvents: attempt.transcriptEvents,
@@ -428,6 +453,7 @@ export async function loadRunDetail(
       branch: row.branch,
       agent: row.agent,
       tokens: row.tokens,
+      costUsd: runCost(attemptViews),
       attemptCount: attempts.length,
       pullRequest: row.pullRequest && {
         ...row.pullRequest,

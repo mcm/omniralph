@@ -26,6 +26,7 @@ export const CHANGE_RESOURCES = [
   "organization",
   "work_item",
   "chat",
+  "model_prices",
 ] as const;
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
 

@@ -2,6 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HookInput, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { mergeModelUsage } from "@omniralph/shared";
+import {
+  USAGE_SEQUENCE_TOTALS,
+  usageSequence,
+  usageSequenceByModel,
+} from "@omniralph/shared/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CHAT_ASK_SYSTEM_PROMPT } from "../chatAsk.js";
 import { parseDiff } from "../diff.js";
@@ -164,7 +170,55 @@ describe("ClaudeAgentProvider", () => {
     );
     expect(res.stopReason).toBe("completed");
     expect(res.findings).toEqual([]);
-    expect(res.usage).toEqual({ inputTokens: 260, outputTokens: 20 });
+    expect(res.usage).toEqual({
+      inputTokens: 260,
+      outputTokens: 20,
+      byModel: [
+        {
+          model: "sonnet",
+          canonicalModel: null,
+          inputTokens: 200,
+          cacheReadInputTokens: 50,
+          cacheCreationInputTokens: 10,
+          cacheWrite1hInputTokens: null,
+          outputTokens: 20,
+          largestRequestInputTokens: null,
+          fastMode: false,
+        },
+      ],
+    });
+  });
+
+  it("reports usage per model for the shared recorded session", async () => {
+    const fake = fakeQuery(usageSequence() as SDKMessage[]);
+    const res = await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
+      request({ task: { ...task, budget: 1_000_000 } }),
+    );
+    expect(res.stopReason).toBe("completed");
+    expect(res.usage).toEqual({ ...USAGE_SEQUENCE_TOTALS, byModel: usageSequenceByModel() });
+
+    const fast = fakeQuery(usageSequence({ fastMode: "on" }) as SDKMessage[]);
+    const fastRes = await new ClaudeAgentProvider({
+      query: fast.query,
+      logger: silentLogger(),
+    }).review(request({ task: { ...task, budget: 1_000_000 } }));
+    expect(fastRes.usage.byModel).toEqual(usageSequenceByModel({ fastMode: true }));
+  });
+
+  it("adds up the usage per model of a review and its repair turn", async () => {
+    const invalid = usageSequence().map((m) =>
+      (m as { type: string }).type === "result" ? { ...(m as object), result: "not json" } : m,
+    );
+    const fake = fakeQuery(invalid as SDKMessage[], usageSequence() as SDKMessage[]);
+    const res = await new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() }).review(
+      request({ task: { ...task, budget: 1_000_000 } }),
+    );
+    expect(fake.calls).toHaveLength(2);
+    expect(res.usage).toEqual({
+      inputTokens: USAGE_SEQUENCE_TOTALS.inputTokens * 2,
+      outputTokens: USAGE_SEQUENCE_TOTALS.outputTokens * 2,
+      byModel: mergeModelUsage(usageSequenceByModel(), usageSequenceByModel()),
+    });
   });
 
   it("applies the read-only tool policy without exploration", async () => {

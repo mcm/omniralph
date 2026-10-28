@@ -321,7 +321,24 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
       summary: "Nothing to change.",
       error: null,
       sessionId: "claude-req-1",
-      usage: { inputTokens: 100, outputTokens: 20 },
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        // The fake result's `modelUsage` key: an alias, never streamed.
+        byModel: [
+          {
+            model: "opus",
+            canonicalModel: null,
+            inputTokens: 100,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheWrite1hInputTokens: 0,
+            outputTokens: 20,
+            largestRequestInputTokens: null,
+            fastMode: false,
+          },
+        ],
+      },
       durationMs: expect.any(Number),
     });
     const [call] = calls;

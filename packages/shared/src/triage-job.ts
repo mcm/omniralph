@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { JobRepository } from "./protocol.js";
 import { GitBranch } from "./ralph-job.js";
+import { TokenUsage } from "./usage.js";
 
 export const TRIAGE_RUN_JOB_TYPE = "triage.run";
 export const TRIAGE_JOB_TYPES = [TRIAGE_RUN_JOB_TYPE] as const;
@@ -18,8 +19,6 @@ export const TRIAGE_JOB_TYPES = [TRIAGE_RUN_JOB_TYPE] as const;
 /** Longest issue description or PRD passed to or returned by a triage job. */
 const MAX_DOCUMENT_LENGTH = 200_000;
 const MAX_TEXT_LENGTH = 20_000;
-
-const TokenUsage = z.object({ inputTokens: z.int().min(0), outputTokens: z.int().min(0) });
 
 /** Linear workflow state types (`WorkflowState.type`). */
 export const LINEAR_STATE_TYPES = [

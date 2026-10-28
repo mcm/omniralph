@@ -34,7 +34,8 @@ const key = randomBytes(32);
 // A Monday: the 7-day window is Tue 2026-09-29 to Mon 2026-10-05.
 const now = new Date("2026-10-05T12:00:00Z");
 
-const zeroTokens = { tokensIn: 0, tokensOut: 0 };
+// No token-bearing attempts: their cost is 0.
+const zeroTokens = { tokensIn: 0, tokensOut: 0, costUsd: 0 };
 const noTokens = {
   epic: zeroTokens,
   request: zeroTokens,
@@ -449,6 +450,7 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       reviewRuns: 0,
       attempts: { finished: 0, completed: 0, failed: 0, expired: 0, successRate: null },
       tokens: noTokens,
+      costUsd: 0,
     };
     expect(buckets[0]).toEqual({ start: "2026-09-29", ...empty });
     expect(buckets[1]).toEqual({ start: "2026-09-30", ...empty });
