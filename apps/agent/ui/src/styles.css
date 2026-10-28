@@ -158,6 +158,20 @@ body,
   .agent-log__msg {
     grid-column: 1 / -1;
   }
+
+  /* Logs: the filter takes the toolbar's second row; a line's message goes under its time. */
+  .agent-logs__filter {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .agent-logs__row {
+    grid-template-columns: 14px auto minmax(0, 1fr);
+  }
+
+  .agent-logs__msg {
+    grid-column: 2 / -1;
+  }
 }
 
 /* A card's one-line description, e.g. why nothing can be installed. */
@@ -357,4 +371,120 @@ body,
 .agent-log__line--error .agent-log__level,
 .agent-log__line--fatal .agent-log__level {
   color: var(--or-fail);
+}
+
+/* Logs: the toolbar, then the lines in their own scroll area (oldest at the top). */
+.agent-logs__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.agent-logs__filter {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.agent-logs__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-logs__lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  height: min(70dvh, 900px);
+  min-height: 240px;
+  overflow: auto;
+  overflow-anchor: auto;
+  padding: 8px 0;
+  border-top: 1px solid var(--or-line);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-logs__list {
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-logs__row {
+  display: grid;
+  grid-template-columns: 14px auto 5ch minmax(0, 1fr);
+  gap: 0 8px;
+  width: 100%;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.agent-logs__row--toggle {
+  cursor: pointer;
+}
+
+.agent-logs__row--toggle:hover {
+  background: var(--or-side);
+}
+
+.agent-logs__chevron {
+  align-self: center;
+  color: var(--or-sec);
+  transition: transform 120ms ease;
+}
+
+.agent-logs__row[aria-expanded="true"] .agent-logs__chevron {
+  transform: rotate(90deg);
+}
+
+.agent-logs__time,
+.agent-logs__level {
+  color: var(--or-sec);
+}
+
+.agent-logs__line--fail .agent-logs__level {
+  color: var(--or-fail);
+}
+
+.agent-logs__msg {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agent-logs__fields {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 6px 26px;
+}
+
+.agent-logs__field {
+  display: grid;
+  grid-template-columns: minmax(8ch, max-content) minmax(0, 1fr);
+  gap: 0 12px;
+}
+
+.agent-logs__field dt {
+  color: var(--or-sec);
+}
+
+.agent-logs__field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agent-logs__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-family: inherit;
+  font-size: 13px;
 }
