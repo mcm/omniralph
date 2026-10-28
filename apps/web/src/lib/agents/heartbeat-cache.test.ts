@@ -320,7 +320,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       async ({ orgId }) => {
         await defaults.setGlobalAgentVersion(db, admin(orgId), "2.8.0");
       },
-      (response) => expect(response.desiredVersion).toBe("2.8.0"),
+      (response) => {
+        expect(response.desiredVersion).toBe("2.8.0");
+        expect(response.versionPolicy).toBe("pinned");
+      },
     ],
     [
       "playbook created",
@@ -444,7 +447,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
   it("follows npm's latest from Redis, and a new latest invalidates the cached response", async () => {
     const { agentId, orgId } = await newAgent();
     await defaults.setGlobalAgentVersion(db, admin(orgId), "latest");
-    expect((await warm(agentId)).desiredVersion).toBe("2.0.0");
+    const warmed = await warm(agentId);
+    expect(warmed.desiredVersion).toBe("2.0.0");
+    expect(warmed.versionPolicy).toBe("latest");
     const age = async (key: string) => {
       const stored = JSON.parse((await getRedis().get(key))!) as { checkedAt: number };
       stored.checkedAt -= 10 * 60_000;
@@ -465,6 +470,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     const after = await send(agentId);
     expect(after.calls).toBeGreaterThan(0);
     expect(after.response.desiredVersion).toBe("2.1.0");
+    expect(after.response.versionPolicy).toBe("latest");
   });
 
   it("takes the Postgres path with running jobs, renewing their leases", async () => {

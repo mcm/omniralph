@@ -32,6 +32,7 @@ function config(desiredVersion: string | null): HeartbeatResponse {
     jobTokens: [],
     jobMessages: [],
     desiredVersion,
+    versionPolicy: desiredVersion ? "pinned" : null,
     requiredHostTools: [],
   };
 }
@@ -521,6 +522,28 @@ describe("SelfUpdater", () => {
       expect(fromPage.pendingRequest()).toEqual(asked);
       // Taken by the heartbeat.
       expect(fromCli.pendingRequest()).toBeNull();
+    });
+
+    it("emits change at each step, so the page shows the request, the drain and the install", async () => {
+      const u = updater({ pin: () => "2.0.4" });
+      await u.start();
+      const seen: string[] = [];
+      u.on("change", () => {
+        const { update } = u.report();
+        seen.push(`${u.pendingRequest() ? "requested " : ""}${update!.state}`);
+      });
+      let finishDrain!: () => void;
+      const drained = new Promise<void>((resolve) => (finishDrain = resolve));
+      const { calls, daemon } = fakeDaemon();
+      daemon.drain = () => drained;
+      u.request();
+      expect(seen).toEqual(["requested idle"]);
+      const heartbeat = u.onHeartbeat(config(null), daemon);
+      await vi.waitFor(() => expect(seen.at(-1)).toBe("draining"));
+      finishDrain();
+      await heartbeat;
+      expect(seen).toContain("installing");
+      expect(calls).toEqual(["exit"]);
     });
 
     it("updates at once to the pin, even one that failed", async () => {

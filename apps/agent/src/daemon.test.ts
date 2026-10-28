@@ -55,6 +55,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     jobTokens: [],
     jobMessages: [],
     desiredVersion: null,
+    versionPolicy: null,
     requiredHostTools: [],
     ...overrides,
   };
@@ -522,6 +523,20 @@ describe("AgentDaemon", () => {
     }
   });
 
+  it("knows the organization's version policy from the last heartbeat", async () => {
+    const { state, daemon } = setup({});
+    expect(daemon.versionPolicy()).toBeNull();
+    state.config = centralConfig({ desiredVersion: "2.0.4", versionPolicy: "latest" });
+    await daemon.heartbeat();
+    expect(daemon.versionPolicy()).toEqual({ kind: "latest", version: "2.0.4" });
+    state.config = centralConfig({ desiredVersion: "2.0.3", versionPolicy: "pinned" });
+    await daemon.heartbeat();
+    expect(daemon.versionPolicy()).toEqual({ kind: "pinned", version: "2.0.3" });
+    state.config = centralConfig();
+    await daemon.heartbeat();
+    expect(daemon.versionPolicy()).toBeNull();
+  });
+
   it("re-checks and reports host tools at once when settings.json changes", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-tools-"));
     try {
@@ -547,10 +562,34 @@ describe("AgentDaemon", () => {
       );
       expect(daemon.hostToolPath("gh")).toBe(discovered);
 
+      expect(daemon.hostToolsState()).toEqual({
+        required: ["gh"],
+        tools: [
+          {
+            name: "gh",
+            path: discovered,
+            source: "discovered",
+            problem: null,
+            checkedPath: null,
+            required: true,
+          },
+        ],
+      });
+
       local.set({ maxConcurrency: 1, hostTools: { gh: configured } });
       // The configured path changed: unavailable until checked, which the heartbeat does at once.
       expect(daemon.hostToolPath("gh")).toBeNull();
+      // The page tells it's being checked: the check was made without a configured path.
+      expect(daemon.hostToolsState().tools[0]!.checkedPath).toBeNull();
       await settle();
+      expect(daemon.hostToolsState().tools[0]).toEqual({
+        name: "gh",
+        path: configured,
+        source: "configured",
+        problem: null,
+        checkedPath: configured,
+        required: true,
+      });
       expect(api.heartbeat).toHaveBeenCalledTimes(3);
       expect(api.heartbeat).toHaveBeenLastCalledWith(
         expect.objectContaining({

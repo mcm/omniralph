@@ -47,7 +47,7 @@ import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
 import { AgentStorage } from "./storage.js";
 import { UiEventHub } from "./ui/events.js";
-import { publishLocalChanges } from "./ui/publish.js";
+import { heartbeatPublisher, publishLocalChanges } from "./ui/publish.js";
 import {
   openInBrowser,
   pingUiLink,
@@ -61,6 +61,7 @@ import {
 import { startUiServer, type UiRoute, type UiServer } from "./ui/server.js";
 import { packageRoutes } from "./ui/package-routes.js";
 import { settingsRoutes } from "./ui/settings-routes.js";
+import { updateRoutes } from "./ui/update-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
   SelfUpdater,
@@ -468,7 +469,8 @@ async function runAgent(
   });
   const claude = new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger });
   const hub = new UiEventHub();
-  let lastPins = "[]";
+  // Set right after the daemon exists (it reads the daemon); nothing heartbeats before `run()`.
+  let onHeartbeat = () => {};
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
@@ -488,14 +490,9 @@ async function runAgent(
     updater,
     wakeSubscription: (organizationId) =>
       createWakeSubscription({ agentId: config.agentId, organizationId, logger }),
-    onHeartbeat: () => {
-      hub.publish("status");
-      hub.publish("update");
-      const pins = JSON.stringify(daemon.pinnedRepositories());
-      if (pins !== lastPins) hub.publish("repos");
-      lastPins = pins;
-    },
+    onHeartbeat: () => onHeartbeat(),
   });
+  onHeartbeat = heartbeatPublisher(hub, daemon);
   running.daemon = daemon;
   if (fatal) daemon.fail(fatal);
   // What is installed changed: report the installables now, not at the next interval.
@@ -517,6 +514,7 @@ async function runAgent(
     claude,
     storage,
     installs,
+    updater,
     ring: log.ring,
   });
   const ui = await startAgentPage({
@@ -529,6 +527,7 @@ async function runAgent(
     routes: [
       ...settingsRoutes(settings),
       ...packageRoutes({ packages, history: installs, logger }),
+      ...updateRoutes({ updater, daemon }),
     ],
     state: () =>
       agentUiState({
@@ -538,6 +537,7 @@ async function runAgent(
         updater,
         claude,
         storage,
+        blockedExecPaths: config.blockedExecPaths ?? [],
         logger,
       }),
   });

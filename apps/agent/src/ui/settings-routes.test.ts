@@ -9,7 +9,8 @@ import { LocalSettingsStore } from "../settings.js";
 import type { AgentStorage } from "../storage.js";
 import { memorySettingsFs } from "../test/settings-fs.js";
 import { UiEventHub } from "./events.js";
-import { publishLocalChanges } from "./publish.js";
+import type { DaemonHostTools } from "../daemon.js";
+import { heartbeatPublisher, publishLocalChanges } from "./publish.js";
 import { startUiServer, uiCookieName, type UiServer } from "./server.js";
 import {
   SETTINGS_CONFLICT_MESSAGE,
@@ -58,7 +59,7 @@ function put(
   });
 }
 
-describe("PUT /api/settings/{capacity,kinds}", () => {
+describe("PUT /api/settings/{section}", () => {
   let memory: ReturnType<typeof memorySettingsFs>;
   let store: LocalSettingsStore;
   let hub: UiEventHub;
@@ -146,11 +147,74 @@ describe("PUT /api/settings/{capacity,kinds}", () => {
     expect(published).toEqual(["settings", "settings"]);
   });
 
+  it("saves the whole host tools map, and the next heartbeat's check is a host_tools event", async () => {
+    // The daemon re-checks in the heartbeat a settings change sends (here by hand).
+    let checked: DaemonHostTools = { tools: [], required: ["gh"] };
+    const daemon = { pinnedRepositories: () => [], hostToolsState: () => checked };
+    const heartbeat = heartbeatPublisher(hub, daemon);
+    const onChange = () => {
+      checked = {
+        required: ["gh"],
+        tools: Object.entries(store.effective().hostTools).map(([name, path]) => ({
+          name,
+          path,
+          source: "configured" as const,
+          problem: null,
+          checkedPath: path,
+          required: name === "gh",
+        })),
+      };
+      heartbeat();
+    };
+    store.on("change", onChange);
+
+    const reply = await put(server, "/api/settings/host-tools", {
+      revision: "none",
+      hostTools: { gh: "/opt/gh/bin/gh", opengrep: "/usr/local/bin/opengrep" },
+    });
+    expect(reply.status).toBe(200);
+    expect(reply.body.settings).toEqual({
+      v: 1,
+      hostTools: { gh: "/opt/gh/bin/gh", opengrep: "/usr/local/bin/opengrep" },
+    });
+    expect(store.effective().hostTools).toEqual({
+      gh: "/opt/gh/bin/gh",
+      opengrep: "/usr/local/bin/opengrep",
+    });
+    expect(published).toEqual(["settings", "status", "update", "host_tools"]);
+
+    // "Use PATH": the whole map without the tool.
+    const cleared = await put(server, "/api/settings/host-tools", {
+      revision: reply.body.revision,
+      hostTools: { opengrep: "/usr/local/bin/opengrep" },
+    });
+    expect(cleared.status).toBe(200);
+    expect(store.effective().hostTools).toEqual({ opengrep: "/usr/local/bin/opengrep" });
+    expect(published.filter((resource) => resource === "host_tools")).toHaveLength(2);
+    store.off("change", onChange);
+  });
+
+  it("saves and clears the version pin", async () => {
+    const reply = await put(server, "/api/settings/version", { revision: "none", pin: "2.0.3" });
+    expect(reply.status).toBe(200);
+    expect(reply.body.settings).toEqual({ v: 1, update: { pin: "2.0.3" } });
+    expect(store.effective().versionPin).toBe("2.0.3");
+    const cleared = await put(server, "/api/settings/version", {
+      revision: reply.body.revision,
+      pin: null,
+    });
+    expect(cleared.status).toBe(200);
+    expect(store.effective().versionPin).toBeNull();
+    expect(published).toEqual(["settings", "settings"]);
+  });
+
   it("answers 409 with the current settings for a stale revision, writing nothing", async () => {
     memory.handEdit(FILE, `{"v":1,"maxConcurrency":8}`);
     for (const [path, body] of [
       ["/api/settings/capacity", { revision: "none", maxConcurrency: 2 }],
       ["/api/settings/kinds", { revision: "none", acceptedTaskTypes: ["review"] }],
+      ["/api/settings/host-tools", { revision: "none", hostTools: { gh: "/usr/bin/gh" } }],
+      ["/api/settings/version", { revision: "none", pin: "2.0.3" }],
     ] as const) {
       const reply = await put(server, path, body);
       expect(reply.status).toBe(409);
@@ -196,6 +260,26 @@ describe("PUT /api/settings/{capacity,kinds}", () => {
         "/api/settings/kinds",
         { acceptedTaskTypes: ["review"] },
         [expect.objectContaining({ path: ["revision"] })],
+      ],
+      [
+        "/api/settings/host-tools",
+        { revision: "none", hostTools: { gh: "bin/gh" } },
+        [{ path: ["hostTools", "gh"], message: "must be an absolute path" }],
+      ],
+      [
+        "/api/settings/host-tools",
+        { revision: "none", hostTools: { "not a name": "/usr/bin/x" } },
+        [expect.objectContaining({ path: ["hostTools", "not a name"] })],
+      ],
+      [
+        "/api/settings/version",
+        { revision: "none", pin: "1.9.0" },
+        [{ path: ["pin"], message: "must be 2.0.0 or later" }],
+      ],
+      [
+        "/api/settings/version",
+        { revision: "none", pin: "latest" },
+        [expect.objectContaining({ path: ["pin"] }), expect.objectContaining({ path: ["pin"] })],
       ],
     ] as const;
     for (const [path, body, issues] of cases) {

@@ -37,6 +37,7 @@ function sources(overrides: {
   missing?: string[];
   update?: ReturnType<AgentUiStateSources["updater"]["report"]>;
   claude?: ClaudeStatus | null;
+  request?: { version: string | null; requestedAt: string };
   filesystems?: () => Promise<StorageFilesystem[]>;
 }): AgentUiStateSources {
   return {
@@ -49,7 +50,22 @@ function sources(overrides: {
     daemon: {
       status: () => ({ ...STATUS, ...overrides.status }),
       missingRequiredHostTools: () => overrides.missing ?? [],
+      hostToolsState: () => ({
+        tools: [
+          {
+            name: "gh",
+            path: "/usr/bin/gh",
+            source: "discovered",
+            problem: null,
+            checkedPath: null,
+            required: true,
+          },
+        ],
+        required: ["gh"],
+      }),
+      versionPolicy: () => ({ kind: "latest", version: "2.0.4" }),
     },
+    blockedExecPaths: ["/tmp"],
     settings: {
       read: () => ({
         settings: { v: 1 },
@@ -71,6 +87,7 @@ function sources(overrides: {
             error: null,
           },
         },
+      pendingRequest: () => overrides.request ?? null,
     },
     claude: { status: () => (overrides.claude === undefined ? SIGNED_IN : overrides.claude) },
     storage: { filesystems: overrides.filesystems ?? (async () => [ROOMY]) },
@@ -96,12 +113,33 @@ describe("agentUiState", () => {
         revoked: false,
       },
       settings: expect.objectContaining({ revision: "none", lastError: null }),
-      update: expect.objectContaining({ selfUpdate: "supported" }),
+      update: expect.objectContaining({ selfUpdate: "supported", request: null }),
+      versionPolicy: { kind: "latest", version: "2.0.4" },
       claude: SIGNED_IN,
+      hostTools: {
+        tools: [
+          {
+            name: "gh",
+            path: "/usr/bin/gh",
+            source: "discovered",
+            problem: null,
+            checkedPath: null,
+            required: true,
+          },
+        ],
+        required: ["gh"],
+        blockedExecPaths: ["/tmp"],
+      },
       missingRequiredHostTools: [],
       filesystems: [ROOMY],
       problems: [],
     });
+  });
+
+  it("carries an Update now no heartbeat has acted on yet", async () => {
+    const request = { version: null, requestedAt: "2026-10-28T10:50:00.000Z" };
+    const state = await agentUiState(sources({ request }));
+    expect(state.update.request).toEqual(request);
   });
 
   it("names each problem on its nav item", async () => {

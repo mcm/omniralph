@@ -163,6 +163,7 @@ async function post(req: Request): Promise<Response> {
     body.data.claimablePools,
   );
 
+  const desiredVersion = policyVersion(organizationVersion?.version ?? null);
   // Its slots and pool limits are its own (`settings.json`): none are sent.
   const response: CachedHeartbeatResponse = {
     // Legacy fields: old agents require them; `topics: []` stops their polling.
@@ -177,7 +178,12 @@ async function post(req: Request): Promise<Response> {
     jobTokens,
     jobMessages,
     // The organization's policy only: a pin and "Update now" are the agent's own.
-    desiredVersion: policyVersion(organizationVersion?.version ?? null),
+    desiredVersion,
+    versionPolicy: desiredVersion
+      ? organizationVersion?.tracksLatest
+        ? "latest"
+        : "pinned"
+      : null,
     requiredHostTools,
   };
   if (changes) {

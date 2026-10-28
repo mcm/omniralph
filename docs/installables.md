@@ -187,7 +187,9 @@ digit).
 ### Paths on the agent
 
 An agent's host tool paths are in its [`settings.json`](deploy-agent.md#machine-settings-settingsjson)
-(`hostTools`, e.g. `{ "gh": "/opt/gh/bin/gh" }`), set on the agent's page or by hand. The agent
+(`hostTools`, e.g. `{ "gh": "/opt/gh/bin/gh" }`), set on the agent's page
+([Host tools](deploy-agent.md#the-agent-page): **Set path…**, **Use PATH**, **Add host tool…**) or
+by hand. The agent
 checks every name in its `hostTools` and every name in the control panel's `requiredHostTools`
 (below):
 
