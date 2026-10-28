@@ -136,7 +136,7 @@ See [ADR 0002](adr/0002-agent-auth.md).
 
 | Variable | Required | Default | Description |
 | -- | -- | -- | -- |
-| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs agent access and job tokens (RS256, 15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
+| `KMS_AGENT_ISSUER_ID` | yes (production) | — | Vercel KMS issuer that signs agent access tokens (RS256, a day) and job tokens (15 minutes). **One issuer per Vercel environment.** Verified against `https://kms.vercel.com/<issuer>/jwks.json`. |
 | `LOCAL_AGENT_SIGNING_KEY` | no | an in-memory key | Local dev/tests only, used when `KMS_AGENT_ISSUER_ID` is unset: an RSA private key PEM. With the in-memory key, tokens die on restart and agents refresh. Refused when `VERCEL_ENV=production`. |
 
 ### Job dispatch and cron

@@ -3,8 +3,15 @@ import { z } from "zod";
 /** `aud` of agent access and job tokens. */
 export const AGENT_TOKEN_AUDIENCE = "omniralph-agent";
 
-/** Lifetime of access and job tokens, in seconds. */
-export const AGENT_TOKEN_TTL_SECONDS = 900;
+/**
+ * Lifetime of agent access tokens, in seconds: a day, so an agent refreshes (and rotates
+ * its refresh token in Postgres) about once a day. Revocation still takes effect on the
+ * next request: every request checks the agent's auth state. See `docs/adr/0002-agent-auth.md`.
+ */
+export const AGENT_ACCESS_TOKEN_TTL_SECONDS = 86_400;
+
+/** Lifetime of job tokens, in seconds; the heartbeat renews them while the job runs. */
+export const JOB_TOKEN_TTL_SECONDS = 900;
 
 /**
  * Scopes a job token can carry: read (`credentials:read`) or push

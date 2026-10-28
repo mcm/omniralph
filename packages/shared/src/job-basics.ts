@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { JobTokenKind } from "./agent-protocol.js";
 
-/** A freshly signed job token (`AGENT_TOKEN_TTL_SECONDS`). */
+/** A freshly signed job token (`JOB_TOKEN_TTL_SECONDS`). */
 export const JobToken = z.object({
   jobId: z.uuid(),
   token: z.string(),

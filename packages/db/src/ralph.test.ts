@@ -24,6 +24,7 @@ import {
   getRunBySession,
   hasRalphWork,
   isLinearRun,
+  ralphWorkFingerprint,
   linearSessionOf,
   listActiveRunJobIds,
   runReference,
@@ -187,6 +188,50 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       },
     });
     expect(await hasRalphWork(db)).toBe(false);
+  });
+
+  it("fingerprints ralph work: unchanged by a write that changes nothing", async () => {
+    const empty = await ralphWorkFingerprint(db);
+    expect(await ralphWorkFingerprint(db)).toBe(empty);
+    const { run } = await createRun(db, runInput({ status: "waiting" }));
+    const withRun = await ralphWorkFingerprint(db);
+    expect(withRun).not.toBe(empty);
+    // A write of the same values (`updated_at` moves) changes nothing.
+    await updateRun(db, run.id, { status: "waiting" });
+    expect(await ralphWorkFingerprint(db)).toBe(withRun);
+
+    const changes: Array<() => Promise<unknown>> = [
+      () => updateRun(db, run.id, { waitingOn: { blockers: [], manual: [] } }),
+      () => upsertStories(db, run.id, [{ linearIssueId: "i-1", identifier: "TOOL-1", title: "A" }]),
+      async () => {
+        const [story] = await listStories(db, run.id);
+        await updateStory(db, story!.id, { status: "completed" });
+      },
+      () =>
+        insertJob(db, {
+          organizationId: orgId,
+          type: "ralph.story",
+          taskType: "coding",
+          ralphRunId: run.id,
+        }),
+      () => db.update(jobs).set({ cancelRequested: true }),
+      async () => {
+        const lane = (await getMainLane(db, run))!;
+        await updateLane(db, lane.id, { prNumber: 7, prUrl: "https://example.com/7" });
+      },
+      () => updateRun(db, run.id, { status: "completed" }),
+    ];
+    let previous = await ralphWorkFingerprint(db);
+    for (const change of changes) {
+      await change();
+      const next = await ralphWorkFingerprint(db);
+      expect(next).not.toBe(previous);
+      previous = next;
+    }
+    // The open PR/MR still counts after its run completed: its merge does too.
+    const lane = (await getMainLane(db, run))!;
+    await updateLane(db, lane.id, { prClosed: true, prMerged: true });
+    expect(await ralphWorkFingerprint(db)).not.toBe(previous);
   });
 
   it("records hidden refs from story outcomes and selects ended or old ones for deletion", async () => {

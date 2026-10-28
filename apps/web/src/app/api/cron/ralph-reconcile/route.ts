@@ -17,7 +17,9 @@ import { liveRoute } from "@/lib/live/request";
  * checks the CI of every open one (the fallback for CI webhooks). The counts
  * are summed over the organizations. With Redis, it returns without querying
  * Postgres while nothing marked ralph work since a run that found none (and the
- * last full run is less than a day old): see `lib/ralph/active`.
+ * last full run is less than a day old), and while ralph work exists but passes
+ * change nothing, backs off from every 10 minutes to every hour until something
+ * changes: see `lib/ralph/active`.
  */
 async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();

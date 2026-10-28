@@ -13,7 +13,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 import type { RalphDeps } from "./run";
 
@@ -38,7 +38,7 @@ vi.mock("@/lib/ralph/reconcile-cron", () => ({
 
 process.env.CRON_SECRET = "cron-secret";
 const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
-const { markRalphActive } = await import("./active");
+const { markRalphActive, runReconcilePass } = await import("./active");
 const { advanceRun } = await import("./run");
 const { GET } = await import("@/app/api/cron/ralph-reconcile/route");
 
@@ -47,6 +47,8 @@ const redisAvailable = await testRedisAvailable();
 
 const ACTIVE_KEY = "ralph:active";
 const RECONCILED_KEY = "ralph:reconciled";
+const BACKOFF_KEY = "ralph:backoff";
+const MINUTE = 60_000;
 
 const cron = async () =>
   (await GET(
@@ -87,6 +89,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile marker",
   }, 180_000);
 
   afterAll(async () => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     await closeRedis();
     if (db) await closeDb(db);
@@ -100,7 +103,38 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile marker",
     await db.delete(ralphRuns);
     state.runs = 0;
     state.during = undefined;
+    // Only `Date`: the cron's schedule is simulated, Redis and Postgres keep real timers.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 9, 28, 12) });
   });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The cron's next invocation, `minutes` (10: its schedule) after the clock. */
+  async function cronIn(minutes = 10) {
+    vi.setSystemTime(Date.now() + minutes * MINUTE);
+    return cron();
+  }
+
+  /**
+   * Invokes the cron every 10 minutes for `minutes`; returns the minutes (from now) of
+   * the invocations that ran a pass, and checks the others didn't query Postgres.
+   */
+  async function schedule(minutes: number) {
+    const ran: number[] = [];
+    for (let at = 10; at <= minutes; at += 10) {
+      const before = state.runs;
+      postgresCalls = 0;
+      const body = await cronIn();
+      if (state.runs > before) ran.push(at);
+      else {
+        expect(body).toEqual({ skipped: true });
+        expect(postgresCalls).toBe(0);
+      }
+    }
+    return ran;
+  }
 
   /** A run waiting on a blocker: work the cron must keep checking. */
   async function waitingRun() {
@@ -149,15 +183,17 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile marker",
     const run = await waitingRun();
     await markRalphActive();
     await cron();
-    await cron();
+    await cronIn();
     expect(state.runs).toBe(2);
     expect(await getRedis().exists(ACTIVE_KEY)).toBe(1);
 
     await db.update(ralphRuns).set({ status: "completed" }).where(eq(ralphRuns.id, run.id));
-    await cron();
+    await markRalphActive();
+    await cronIn();
     expect(state.runs).toBe(3);
     expect(await getRedis().exists(ACTIVE_KEY)).toBe(0);
-    expect(await cron()).toEqual({ skipped: true });
+    expect(await getRedis().exists(BACKOFF_KEY)).toBe(0);
+    expect(await cronIn()).toEqual({ skipped: true });
   });
 
   it("keeps a marker set during the run", async () => {
@@ -188,8 +224,77 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile marker",
     await getRedis().del(RECONCILED_KEY);
     await cron();
     expect(await getRedis().exists(ACTIVE_KEY)).toBe(1);
-    await cron();
+    await cronIn();
     expect(state.runs).toBe(3);
+  });
+
+  it("backs off from every 10 minutes to every hour while passes change nothing", async () => {
+    await idle();
+    await waitingRun();
+    await markRalphActive();
+    // Intervals of 10, 20, 40, then 60 minutes.
+    expect(await schedule(190)).toEqual([10, 20, 40, 80, 140]);
+  });
+
+  it("starts again at 10 minutes after a change from outside the cron", async () => {
+    await idle();
+    await waitingRun();
+    await markRalphActive();
+    await schedule(80);
+    // Backed off to an hour; a webhook or UI action marks ralph work.
+    await markRalphActive();
+    expect(await schedule(30)).toEqual([10, 20]);
+  });
+
+  it("keeps a reset by a change from outside the cron during a pass", async () => {
+    await idle();
+    await waitingRun();
+    await markRalphActive();
+    expect(await schedule(30)).toEqual([10, 20]);
+    // The pass at 40 minutes: a webhook marks meanwhile.
+    state.during = markRalphActive;
+    // Without the reset: [10, 50].
+    expect(await schedule(50)).toEqual([10, 20, 40]);
+  });
+
+  it("starts again at 10 minutes after a pass that changed something", async () => {
+    await idle();
+    const run = await waitingRun();
+    await markRalphActive();
+    expect(await schedule(30)).toEqual([10, 20]);
+    // The pass at 40 minutes advances the run (and, as `advanceRun` does, marks it).
+    state.during = () =>
+      runReconcilePass(async () => {
+        await db
+          .update(ralphRuns)
+          .set({ waitingOn: { blockers: [], manual: [] } })
+          .where(eq(ralphRuns.id, run.id));
+        await markRalphActive();
+      });
+    // Without the reset: [10, 50].
+    expect(await schedule(50)).toEqual([10, 20, 40]);
+  });
+
+  it("doesn't reset the backoff for the cron's own marks", async () => {
+    await idle();
+    await waitingRun();
+    await markRalphActive();
+    expect(await schedule(30)).toEqual([10, 20]);
+    state.during = () => runReconcilePass(markRalphActive);
+    // Intervals of 40, then 60 minutes, as without the marks.
+    expect(await schedule(60)).toEqual([10, 50]);
+  });
+
+  it("runs a pass when the backoff is lost, and the daily full pass while backed off", async () => {
+    await idle();
+    await waitingRun();
+    await markRalphActive();
+    await schedule(80);
+    await getRedis().del(BACKOFF_KEY);
+    expect(await schedule(20)).toEqual([10, 20]);
+    expect(await schedule(10)).toEqual([]);
+    await getRedis().del(RECONCILED_KEY);
+    expect(await schedule(10)).toEqual([10]);
   });
 
   it("marks ralph work when a run advances", async () => {

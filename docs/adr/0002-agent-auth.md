@@ -108,9 +108,11 @@ code-host or Vercel credentials. Their identity is:
   written, and the harness has to re-enroll. The rotation runs in a transaction
   with the token row locked, so concurrent presentations resolve to one
   rotation and one reuse.
-- **Access and job tokens.** Short-lived (900s) **RS256** JWTs signed by
+- **Access and job tokens.** **RS256** JWTs signed by
   **Vercel KMS** (`signJWT`, issuer `KMS_AGENT_ISSUER_ID`, one issuer per Vercel
-  environment), so no signing key ever sits in an env var. Both carry
+  environment), so no signing key ever sits in an env var. Access tokens last a
+  day (`AGENT_ACCESS_TOKEN_TTL_SECONDS`, 86,400s; see *Access-token lifetime*
+  below), job tokens 900s (`JOB_TOKEN_TTL_SECONDS`). Both carry
   `aud: "omniralph-harness"`; tokens with the audience from before the
   rename are rejected. Access tokens: `typ: "harness"`, `sub: harnessId`. Job tokens
   (issued when a job is claimed and renewed by the heartbeat): `typ: "job"`,
@@ -149,15 +151,39 @@ code-host or Vercel credentials. Their identity is:
   refresh, refresh reuse, revoke, credential issuance, results and auth
   failures (sampled to one per harness per minute).
 
+### Access-token lifetime (TOOL-276)
+
+Access tokens were 900s, like job tokens, so each agent refreshed about every 12
+minutes (at 80% of `expiresIn`): about 840 refreshes a day for 6 agents, each one
+rotating the refresh token and writing a `token_refresh` audit row in Postgres. That
+alone kept the Neon compute awake about 68% of the day. Access tokens now last a day
+(86,400s), so an agent refreshes about once a day (every ~19 hours). Job tokens keep
+900s and their renewal by the heartbeat; refresh-token rotation, reuse detection and
+the `token_refresh` audit row are unchanged and stay in Postgres.
+
+- **Revocation stays immediate.** Every request checks the agent's auth state
+  (`readAgentAuthState`: Redis, which revocation writes after its commit, falling
+  back to Postgres with hot state off or untrusted), so a revoked agent's access
+  token is rejected on its next request whatever its expiry. The cached auth state
+  lives a day ([ADR 0007](0007-redis-hot-state.md)).
+- **The trade-off.** A stolen access token stays usable for up to 24 hours unless
+  the agent is revoked, instead of 15 minutes. A stolen refresh token is detected
+  (reuse) at the next refresh by either holder, up to about 19 hours later instead
+  of about 12 minutes.
+- **KMS.** Vercel's KMS docs and `@vercel/kms` document a default `ttl` of 300s and
+  no maximum. In case KMS signs for less than asked, `/api/agent/token` reports
+  `expiresIn` from the signed token's own `exp - iat` (capped at a day), so the
+  agent still refreshes in time.
+
 ### Consequences
 
-- A leaked access or job token is usable for at most 15 minutes and is cut off
-  immediately by revoking the harness; a leaked refresh token is detected the
-  next time either holder refreshes.
+- A leaked job token is usable for at most 15 minutes and a leaked access token
+  for at most a day; both are cut off immediately by revoking the harness. A
+  leaked refresh token is detected the next time either holder refreshes.
 - A Claude session can never push, even for coding runs: only the harness's
   `lifecycle` token can, and the session never sees it.
 - Every authenticated harness request costs one indexed database lookup.
-- Each refresh costs one KMS signature; harnesses refresh about every 15 minutes.
+- Each refresh costs one KMS signature; harnesses refresh about once a day.
 - A harness that crashes between the control panel rotating its token and
   persisting the new one will present the old token and be revoked; it must
   re-enroll. The harness writes the new token atomically before using it.

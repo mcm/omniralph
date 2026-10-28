@@ -657,6 +657,7 @@ export {
   listRunsAffectedByIssue,
   listRunsToReconcile,
   hasRalphWork,
+  ralphWorkFingerprint,
   listChatRunOrganizationIds,
   listRuns,
   getRunDetail,

@@ -12,6 +12,7 @@ import {
   getLinearGatewayOrDisconnected,
   LinearNotConnectedError,
 } from "@/lib/linear/client";
+import { runReconcilePass } from "./active";
 import { reconcileCi } from "./ci";
 import { reconcileCleanup } from "./cleanup";
 import { reconcileRuns } from "./reconcile";
@@ -29,11 +30,19 @@ export interface ReconcileTotals {
  * Reconciles every organization with a Linear workspace connected (all its
  * runs, with that workspace's gateway), then the chat runs of organizations
  * without one (with a disconnected gateway: chat runs don't need Linear).
- * The counts are summed over the organizations.
+ * The counts are summed over the organizations. Runs as the cron's own pass
+ * (`runReconcilePass`): the runs it advances don't reset the cron's backoff.
  */
-export async function reconcileAllOrganizations(
+export function reconcileAllOrganizations(
   deps: Omit<RalphDeps, "organizationId" | "linear">,
   now = new Date(),
+): Promise<ReconcileTotals> {
+  return runReconcilePass(() => reconcileEverything(deps, now));
+}
+
+async function reconcileEverything(
+  deps: Omit<RalphDeps, "organizationId" | "linear">,
+  now: Date,
 ): Promise<ReconcileTotals> {
   const { db } = deps;
   const totals: ReconcileTotals = {

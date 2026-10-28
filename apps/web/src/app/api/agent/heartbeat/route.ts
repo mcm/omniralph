@@ -23,9 +23,11 @@ import { signJobTokens } from "@/lib/agent-api/jobs";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import {
   cachedHeartbeatResponse,
+  checkHeartbeatDrift,
   heartbeatRequestKey,
   readHeartbeatChanges,
   storeHeartbeatResponse,
+  type CachedHeartbeat,
   type CachedHeartbeatResponse,
   type HeartbeatChanges,
 } from "@/lib/agents/heartbeat-cache";
@@ -61,8 +63,10 @@ const NPM_TIMEOUT_MS = 5_000;
  * heartbeat change counter, so a cached response never lists stale required tools.
  *
  * A heartbeat with no running jobs or acknowledgements is answered from Redis when
- * nothing its last response was built from changed (`heartbeat-cache`): no Postgres
- * query, unless it asked about `claimablePools` and its organization has a due job.
+ * nothing its last response was built from changed (`heartbeat-cache`), for up to a day:
+ * no Postgres query, unless it asked about `claimablePools` and its organization has a
+ * due job. A day on, the response is built from Postgres and the cached one is checked
+ * for drift (a write that forgot to bump its counter is logged).
  * Either way, an agent the live change events last had offline is announced online
  * (`noteAgentOnline`: a Redis read while it stays online).
  */
@@ -98,16 +102,20 @@ async function post(req: Request): Promise<Response> {
     body.data.runningJobIds.length === 0 &&
     body.data.deliveredMessageIds.length === 0 &&
     body.data.rejectedMessageIds.length === 0;
+  // A cached response that reached its bound: checked against the fresh one for drift.
+  let due: CachedHeartbeat | null = null;
   if (cacheable) {
     const cached = await cachedHeartbeatResponse(agentId, report, { timeoutMs: NPM_TIMEOUT_MS });
+    if (cached?.due) due = cached;
     // A due job may be claimable: Postgres tells (`hasDueJob` is false when none is due).
-    if (
+    else if (
       cached &&
-      (body.data.claimablePools === undefined || !(await hasDueJob(db, cached.organizationId)))
+      (body.data.claimablePools === undefined ||
+        !(await hasDueJob(db, cached.response.organizationId)))
     ) {
       const claimable = body.data.claimablePools === undefined ? undefined : false;
       await announceOnline(db, agentId);
-      return Response.json(await withRequestFields(cached, agentId, body.data, claimable));
+      return Response.json(await withRequestFields(cached.response, agentId, body.data, claimable));
     }
   }
   // Read before anything the response is built from: a change committed meanwhile then
@@ -186,6 +194,15 @@ async function post(req: Request): Promise<Response> {
       : null,
     requiredHostTools,
   };
+  if (due) {
+    checkHeartbeatDrift({
+      agentId,
+      organizationId: agent.organizationId,
+      cached: due,
+      fresh: response,
+      latestVersion: organizationVersion?.tracksLatest ? organizationVersion.version : undefined,
+    });
+  }
   if (changes) {
     const latest = organizationVersion?.tracksLatest ? organizationVersion : null;
     await storeHeartbeatResponse(

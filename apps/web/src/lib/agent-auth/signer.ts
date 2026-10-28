@@ -6,8 +6,9 @@ import {
   type KeyObject,
 } from "node:crypto";
 import {
+  AGENT_ACCESS_TOKEN_TTL_SECONDS,
   AGENT_TOKEN_AUDIENCE,
-  AGENT_TOKEN_TTL_SECONDS,
+  JOB_TOKEN_TTL_SECONDS,
   type JobTokenScope,
   type RunTokenKind,
 } from "@omniralph/shared";
@@ -25,8 +26,8 @@ export interface JobTokenInput {
 }
 
 /**
- * Signs agent access and job tokens (RS256, `AGENT_TOKEN_TTL_SECONDS`). See
- * `docs/adr/0002-agent-auth.md`.
+ * Signs agent access tokens (RS256, `AGENT_ACCESS_TOKEN_TTL_SECONDS`) and job tokens
+ * (`JOB_TOKEN_TTL_SECONDS`). See `docs/adr/0002-agent-auth.md`.
  */
 export interface TokenSigner {
   /** `{ typ: "agent", sub: agentId, aud: "omniralph-agent" }` */
@@ -70,19 +71,15 @@ export class KmsTokenSigner implements TokenSigner {
   }
 
   signAccessToken(agentId: string): Promise<string> {
-    return this.sign(accessClaims(agentId));
+    return this.sign(accessClaims(agentId), AGENT_ACCESS_TOKEN_TTL_SECONDS);
   }
 
   signJobToken(input: JobTokenInput): Promise<string> {
-    return this.sign(jobClaims(input));
+    return this.sign(jobClaims(input), JOB_TOKEN_TTL_SECONDS);
   }
 
-  private async sign(claims: Record<string, unknown>): Promise<string> {
-    const { token } = await this.signJwt({
-      issuerId: this.issuerId,
-      claims,
-      ttl: AGENT_TOKEN_TTL_SECONDS,
-    });
+  private async sign(claims: Record<string, unknown>, ttl: number): Promise<string> {
+    const { token } = await this.signJwt({ issuerId: this.issuerId, claims, ttl });
     return token;
   }
 }
@@ -131,20 +128,20 @@ export class LocalTokenSigner implements TokenSigner {
   }
 
   signAccessToken(agentId: string): Promise<string> {
-    return this.sign(accessClaims(agentId));
+    return this.sign(accessClaims(agentId), AGENT_ACCESS_TOKEN_TTL_SECONDS);
   }
 
   signJobToken(input: JobTokenInput): Promise<string> {
-    return this.sign(jobClaims(input));
+    return this.sign(jobClaims(input), JOB_TOKEN_TTL_SECONDS);
   }
 
-  private async sign(claims: Record<string, unknown>): Promise<string> {
+  private async sign(claims: Record<string, unknown>, ttl: number): Promise<string> {
     assertNotProduction(this.env);
     const iat = Math.floor(this.now() / 1000);
     return new SignJWT(claims)
       .setProtectedHeader({ alg: "RS256", typ: "JWT" })
       .setIssuedAt(iat)
-      .setExpirationTime(iat + AGENT_TOKEN_TTL_SECONDS)
+      .setExpirationTime(iat + ttl)
       .sign(this.privateKey);
   }
 }

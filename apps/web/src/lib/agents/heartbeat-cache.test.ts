@@ -1,6 +1,7 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   LATEST_AGENT_VERSION_KEY,
+  agentRepoPins,
   appSettings,
   chatConnections,
   chatThreadRuns,
@@ -25,7 +26,7 @@ import {
 import type { HeartbeatResponse } from "@omniralph/shared";
 import { getBuiltinPlaybook } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrgUser } from "@/lib/auth/session";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 
@@ -51,7 +52,13 @@ const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 const { jobDueKey } = await import("@/lib/dispatch/due");
-const { latestVersionKey } = await import("./heartbeat-cache");
+const {
+  CACHED_RESPONSE_KEEP_MS,
+  CACHED_RESPONSE_TTL_MS,
+  checkHeartbeatDrift,
+  heartbeatResponseKey,
+  latestVersionKey,
+} = await import("./heartbeat-cache");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
 const { saveAgentsCard } = await import("@/lib/repositories/cards");
@@ -473,6 +480,72 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     expect(after.response.versionPolicy).toBe("latest");
   });
 
+  /** Moves the cached response's build time back to `ms` ago. */
+  async function ageCachedResponse(agentId: string, ms: number) {
+    const key = heartbeatResponseKey(agentId);
+    const entry = JSON.parse((await getRedis().get(key))!) as { builtAt: number };
+    entry.builtAt = Date.now() - ms;
+    await getRedis().set(key, JSON.stringify(entry), "PX", CACHED_RESPONSE_KEEP_MS);
+  }
+
+  describe("the cached response's bound", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("uses a cached response for a day, then builds it from Postgres", async () => {
+      const errors = vi.spyOn(console, "error");
+      const { agentId } = await newAgent();
+      const cached = await warm(agentId);
+      expect(CACHED_RESPONSE_TTL_MS).toBe(24 * 3600_000);
+      // Kept past the bound, for the drift check.
+      expect(await getRedis().pttl(heartbeatResponseKey(agentId))).toBeGreaterThan(
+        CACHED_RESPONSE_TTL_MS,
+      );
+      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS - 60_000);
+      expect((await send(agentId)).calls).toBe(0);
+
+      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS);
+      const fresh = await send(agentId);
+      expect(fresh.calls).toBeGreaterThan(0);
+      expect(fresh.response).toEqual(cached);
+      // Nothing drifted; the fresh response is cached again.
+      expect(errors).not.toHaveBeenCalled();
+      expect((await send(agentId)).calls).toBe(0);
+    });
+
+    it("logs the fields of a response served stale by a missed bump", async () => {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { agentId, orgId } = await newAgent();
+      await warm(agentId);
+      const repositoryId = await newRepository(orgId);
+      // A write that forgot to bump: the cache keeps serving the old response...
+      await db.insert(agentRepoPins).values({ agentId, repositoryId });
+      const stale = await send(agentId);
+      expect(stale.calls).toBe(0);
+      expect(stale.response.pinnedRepositories).toEqual([]);
+
+      // ...until it reaches the bound: the agent gets the fresh one, and the drift is logged.
+      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS);
+      const fresh = await send(agentId);
+      expect(fresh.calls).toBeGreaterThan(0);
+      expect(fresh.response.pinnedRepositories).toHaveLength(1);
+      expect(errors).toHaveBeenCalledTimes(1);
+      const [message, detail] = errors.mock.calls[0]!;
+      expect(message).toContain(agentId);
+      expect(message).toContain(orgId);
+      expect(detail).toEqual({ agentId, organizationId: orgId, fields: ["pinnedRepositories"] });
+      // Names, not values.
+      expect(JSON.stringify(errors.mock.calls)).not.toContain(repositoryId);
+      expect(JSON.stringify(errors.mock.calls)).not.toContain("acme/api");
+
+      // The fresh response is cached.
+      const next = await send(agentId);
+      expect(next.calls).toBe(0);
+      expect(next.response.pinnedRepositories).toHaveLength(1);
+    });
+  });
+
   it("takes the Postgres path with running jobs, renewing their leases", async () => {
     const { agentId, orgId } = await newAgent();
     await warm(agentId);
@@ -507,5 +580,70 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     await closeRedis();
     expect((await send(agentId)).calls).toBeGreaterThan(0);
     expect((await send(agentId)).calls).toBeGreaterThan(0);
+  });
+});
+
+describe("checkHeartbeatDrift", () => {
+  const base = {
+    pollIntervalSeconds: 60,
+    pinnedRepositories: [],
+    organizationId: "org-1",
+    topics: [],
+    queueRegion: "",
+    cancelJobIds: [],
+    jobTokens: [],
+    jobMessages: [],
+    desiredVersion: "2.0.0",
+    versionPolicy: "latest" as const,
+    requiredHostTools: ["gh"],
+  };
+  const check = (
+    cached: Partial<typeof base>,
+    fresh: Partial<typeof base>,
+    latest: { cached?: string | null; fresh?: string | null } = {},
+  ) => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const fields = checkHeartbeatDrift({
+        agentId: "agent-1",
+        organizationId: "org-1",
+        cached: {
+          response: { ...base, ...cached },
+          ...(latest.cached !== undefined && { latestVersion: latest.cached }),
+          due: true,
+        },
+        fresh: { ...base, ...fresh },
+        latestVersion: latest.fresh,
+      });
+      return { fields, logged: errors.mock.calls.length };
+    } finally {
+      errors.mockRestore();
+    }
+  };
+
+  it("reports nothing for equal responses, whatever their key order", () => {
+    const reordered = Object.fromEntries(Object.entries(base).reverse());
+    expect(check(base, reordered)).toEqual({ fields: [], logged: 0 });
+  });
+
+  it("names every cached field that differs", () => {
+    expect(check({}, { requiredHostTools: [], desiredVersion: "2.1.0" })).toEqual({
+      fields: ["desiredVersion", "requiredHostTools"],
+      logged: 1,
+    });
+  });
+
+  it("leaves out the version when npm's latest moved without a bump", () => {
+    const moved = { desiredVersion: "2.1.0" };
+    expect(check({}, moved, { cached: "2.0.0", fresh: "2.1.0" })).toEqual({
+      fields: [],
+      logged: 0,
+    });
+    // Same latest: a different version is drift.
+    expect(check({}, moved, { cached: "2.0.0", fresh: "2.0.0" }).fields).toEqual([
+      "desiredVersion",
+    ]);
+    // Not tracking latest: compared.
+    expect(check({}, moved).fields).toEqual(["desiredVersion"]);
   });
 });
