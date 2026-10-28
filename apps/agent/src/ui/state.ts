@@ -57,8 +57,11 @@ export interface AgentUiHostTools extends DaemonHostTools {
 export type AgentUiVersionPolicy = DaemonVersionPolicy;
 
 export interface AgentUiState {
-  /** `name` is the machine's hostname, the name enrolling gives an agent by default. */
-  agent: { agentId: string; name: string; server: string; version: string };
+  /**
+   * `name` is the machine's hostname, the name enrolling gives an agent by default; `user` the
+   * OS user the agent runs as (null when it can't be read).
+   */
+  agent: { agentId: string; name: string; server: string; version: string; user: string | null };
   status: DaemonStatus;
   connection: AgentUiConnection;
   settings: LocalSettingsState;

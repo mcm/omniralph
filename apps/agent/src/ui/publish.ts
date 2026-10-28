@@ -1,3 +1,4 @@
+import { REPO_SYNC_JOB_TYPE } from "@omniralph/shared";
 import type { AttemptChange, AttemptHistory } from "../attempts/history.js";
 import type { ClaudeStatusReporter } from "../claude-status.js";
 import type { LogRing } from "../logs/ring.js";
@@ -28,7 +29,9 @@ export function publishLocalChanges(
     } else {
       hub.publish("attempts", { ids: [change.attempt.id] });
       // A finished repo sync is a repo's last sync.
-      if (change.kind === "finished") hub.publish("repos");
+      if (change.kind === "finished" && change.attempt.type === REPO_SYNC_JOB_TYPE) {
+        hub.publish("repos");
+      }
     }
   };
   // An install queued, finished or failed: the history, and what is installed.

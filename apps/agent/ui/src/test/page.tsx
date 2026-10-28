@@ -175,6 +175,8 @@ export function agentState(
     update?: AgentUiState["update"];
     versionPolicy?: AgentUiState["versionPolicy"];
     hostTools?: Partial<AgentUiState["hostTools"]>;
+    claude?: AgentUiState["claude"];
+    user?: string | null;
   } = {},
 ): AgentUiState {
   return {
@@ -183,6 +185,7 @@ export function agentState(
       name: "build-01",
       server: "https://omniralph.example.com",
       version: "2.0.3",
+      user: overrides.user === undefined ? "omniralph" : overrides.user,
     },
     status: {
       stopping: false,
@@ -203,7 +206,7 @@ export function agentState(
     settings: overrides.settings ?? settingsState(),
     update: overrides.update ?? updateState(),
     versionPolicy: overrides.versionPolicy ?? null,
-    claude: null,
+    claude: overrides.claude ?? null,
     hostTools: { tools: [], required: [], blockedExecPaths: [], ...overrides.hostTools },
     missingRequiredHostTools: [],
     filesystems: [],

@@ -46,6 +46,7 @@ function sources(overrides: {
       name: "build-01",
       server: "https://omniralph.example",
       version: "2.0.3",
+      user: "omniralph",
     },
     daemon: {
       status: () => ({ ...STATUS, ...overrides.status }),
@@ -104,6 +105,7 @@ describe("agentUiState", () => {
         name: "build-01",
         server: "https://omniralph.example",
         version: "2.0.3",
+        user: "omniralph",
       },
       status: STATUS,
       connection: {
