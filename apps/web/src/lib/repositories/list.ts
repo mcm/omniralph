@@ -2,7 +2,10 @@ import "server-only";
 import { listConnectedRepositories, type Database } from "@omniralph/db";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { loadRepositoryStatuses, type RepositoryStatus } from "./status";
+import { splitRepositoryPath } from "./path";
 import { repositoryWebUrl } from "./web-url";
+
+export { splitRepositoryPath };
 
 /** Most repos the Repos rail lists; more answer `truncated`. */
 export const REPOSITORY_LIST_LIMIT = 500;
@@ -30,14 +33,6 @@ export interface RepositoryListView {
   repositories: RepositoryListRow[];
   /** More repositories are connected than were listed. */
   truncated: boolean;
-}
-
-/** Splits a full path into its last segment and the path before it. */
-export function splitRepositoryPath(fullPath: string): { name: string; group: string | null } {
-  const slash = fullPath.lastIndexOf("/");
-  return slash === -1
-    ? { name: fullPath, group: null }
-    : { name: fullPath.slice(slash + 1), group: fullPath.slice(0, slash) || null };
 }
 
 /**

@@ -450,3 +450,45 @@ export async function loadBacklogUpNext(
     needsRefining: rows.filter((row) => row.group === "refine").slice(0, UP_NEXT_REFINING),
   };
 }
+
+/** A Backlog row with when its item was last updated in the tracker (search ranks by it). */
+export interface BacklogSearchEntry {
+  row: WorkItemRow;
+  /** ISO 8601. */
+  updatedAt: string;
+}
+
+/**
+ * Every Backlog row of the organizations (unfiltered, from the cache), for search. An
+ * organization without a tracker, or whose tracker fails, adds none.
+ */
+export async function loadBacklogSearchEntries(
+  deps: BacklogDeps,
+  organizations: readonly ScopedOrganization[],
+): Promise<BacklogSearchEntry[]> {
+  const getTracker =
+    deps.getTracker ??
+    ((organizationId: string) => getWorkItemTracker({ db: deps.db, organizationId }));
+  const perOrganization = await Promise.all(
+    organizations.map(async (organization) => {
+      try {
+        const backlog = await organizationBacklog({
+          db: deps.db,
+          organizationId: organization.id,
+          tracker: () => getTracker(organization.id),
+        });
+        const ref = { id: organization.id, name: organization.name, role: organization.role };
+        return backlog.entries.map((entry) => ({
+          row: { ...entry.row, organization: ref },
+          updatedAt: entry.updatedAt,
+        }));
+      } catch (error) {
+        if (!(error instanceof TrackerNotConnectedError)) {
+          console.error(`Searching the Backlog of organization ${organization.id} failed`, error);
+        }
+        return [];
+      }
+    }),
+  );
+  return perOrganization.flat();
+}

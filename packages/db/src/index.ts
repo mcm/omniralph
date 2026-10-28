@@ -912,3 +912,23 @@ export {
   type SettingsValues,
   type TrackedSettings,
 } from "./settings-changes.js";
+export {
+  changeNumberOf,
+  escapeLike,
+  getSearchAgents,
+  getSearchRepositories,
+  listRecentItems,
+  RECENT_ITEM_KINDS,
+  RECENT_ITEMS_CAP,
+  recordRecentItem,
+  searchAgents,
+  searchRepositories,
+  searchRuns,
+  type AgentSearchHit,
+  type RecentItem,
+  type RecentItemKind,
+  type RepositorySearchHit,
+  type RunSearchHit,
+  type SearchFilter,
+  type SearchTier,
+} from "./search.js";

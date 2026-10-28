@@ -206,6 +206,16 @@ for an organization the user isn't a member of. A 409 `enter_organization` with 
 `enterPath` still makes `QueryBoundary` switch organizations and come back. **List filters and pagination** live in the URL search params
 (`useSearchParams`) and use `placeholderData: keepPreviousData`.
 
+**Search and jump.** `SearchProvider` (`src/components/search/search-palette.tsx`, in
+`AppShell`) opens `@omniralph/ui`'s `SearchPalette` from the frame's search buttons and ⌘K /
+Ctrl+K. It calls `GET /api/ui/search?q=&limit=&organization=` itself (debounced 150 ms, the
+previous request aborted; no TanStack cache: results are ephemeral): the runs, Backlog work
+items, repos, agents and Settings pages of the scope, ranked exact, prefix, substring, then by
+recency (`src/lib/search/search.ts`, `@omniralph/db`'s `search.ts`), or under two characters the
+user's five most recently opened items. Choosing a result posts it to
+`POST /api/ui/search/recent` (`user_recent_items`, 20 per user). New Settings pages go in
+`src/lib/search/settings-pages.ts`.
+
 **Navigation and render errors.** Links show a pending state while their page loads (`Link` in
 `src/components/link.tsx`);
 the new page's skeleton then shows within a frame, since pages render on the client.

@@ -24,18 +24,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import type { RepositoryListItem } from "@/lib/api/repositories";
+import { REPOS_PATH, repoHref } from "@/lib/repositories/hrefs";
 import { AddRepoSheet, isGitHubNotice, type AddRepoStart } from "./add-repo-sheet";
 import { useRepositoryList } from "./queries";
 import { RepoDetailView } from "./repo-detail-view";
 import "./repos.css";
 
-/** The Repos screen's list. */
-export const REPOS_PATH = "/repos";
-
-/** A repo's page on the Repos screen. */
-export function repoHref(repositoryId: string): string {
-  return `${REPOS_PATH}/${repositoryId}`;
-}
+export { REPOS_PATH, repoHref };
 
 /** The query parameters that open the add-repo sheet: `add` + `connection`, or `github`. */
 const ADD_REPO_PARAMS = ["add", "connection", "github"] as const;

@@ -6,12 +6,8 @@ import {
   EmptyState,
   FilterMenu,
   IconButton,
-  IssueBadge,
   ListRow,
-  OrgBadge,
-  RepoBadge,
   RowList,
-  SizeBadge,
   SplitView,
   useSplitWide,
   type FilterOption,
@@ -20,11 +16,11 @@ import { IconPlus } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
-import { BlockedBadge } from "@/components/work-items/blocked";
 import { ShareLinkSheet } from "@/components/work-items/share-link-sheet";
 import type { Backlog } from "@/lib/api/backlog";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
+import { BacklogRowBadges } from "./backlog-row-badges";
 import { NewWorkItemSheet } from "./new-work-item-sheet";
 import { useBacklog } from "./queries";
 import {
@@ -54,36 +50,12 @@ const GROUPS = [
 ] as const;
 
 export { joinNames };
+export { BacklogRowBadges };
 
 /** Whether the user administers an organization in scope (admin-only empty-state actions). */
 function administers(user: SessionUser): boolean {
   if (user.scope === "all") return user.organizations.some((org) => org.role === "admin");
   return user.role === "admin";
-}
-
-/**
- * A Backlog row's badges, in order (Design rules 1, 2 and 13): the organization (only under
- * "All organizations"), the identifier, the repo, the size (when known) and "Blocked" (when
- * blocked). Plain badges: the row link covers the row.
- */
-export function BacklogRowBadges({
-  row,
-  showOrganization,
-}: {
-  row: WorkItemRow;
-  showOrganization: boolean;
-}) {
-  return (
-    <>
-      {showOrganization ? <OrgBadge name={row.organization.name} /> : null}
-      <IssueBadge tracker={row.tracker} id={row.identifier} />
-      {row.repository ? (
-        <RepoBadge host={row.repository.provider} name={row.repository.fullPath} />
-      ) : null}
-      {row.size ? <SizeBadge size={row.size} /> : null}
-      {row.blocked ? <BlockedBadge /> : null}
-    </>
-  );
 }
 
 /** A Source option's label: the same words as the detail's "via" badge. */

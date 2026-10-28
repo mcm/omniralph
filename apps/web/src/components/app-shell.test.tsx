@@ -226,18 +226,67 @@ describe("AppShell", () => {
     expect(clients[1]!.getQueryData([testUser.organization.id, "probe"])).toBeUndefined();
   });
 
-  it("shows no search control, keyboard-shortcut indicators or hints in the sidebar or drawer", async () => {
+  it("shows search buttons in the sidebar and the phone top bar, with no keyboard-shortcut hints", async () => {
     renderShell("/analytics");
     const check = () => {
-      expect(screen.queryAllByRole("search")).toHaveLength(0);
-      expect(screen.queryAllByRole("searchbox")).toHaveLength(0);
-      expect(screen.queryAllByRole("button", { name: /search/i })).toHaveLength(0);
-      expect(document.querySelector("kbd, input[placeholder]")).toBeNull();
-      expect(document.body.textContent).not.toMatch(/⌘|ctrl\s*\+|shortcut|search|press /i);
+      expect(document.querySelector("kbd")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/⌘|ctrl\s*\+|shortcut|press /i);
     };
+    // Between the organization picker and the nav entries.
+    const sidebarSearch = within(sidebar()).getByRole("button", { name: "Search or jump to…" });
+    const picker = sidebar().querySelector(".or-sidebar__org")!;
+    const entries = sidebar().querySelector(".or-nav__list")!;
+    expect(
+      picker.compareDocumentPosition(sidebarSearch) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      sidebarSearch.compareDocumentPosition(entries) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("banner")).getByRole("button", { name: "Search or jump to…" }),
+    ).toBeTruthy();
     check();
     await openDrawer();
     check();
+  });
+
+  it("opens the search palette from the sidebar, the top bar and ⌘K / Ctrl+K", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).startsWith("/api/ui/search")
+          ? new Response(JSON.stringify({ mode: "recent", groups: [] }), {
+              headers: { "content-type": "application/json" },
+            })
+          : new Response("{}", { status: 404, headers: { "content-type": "application/json" } }),
+      ),
+    );
+    try {
+      renderShell("/analytics");
+      const user = userEvent.setup();
+      const close = async () => {
+        await user.keyboard("{Escape}");
+        await waitFor(() =>
+          expect(screen.queryByRole("dialog", { name: "Search or jump to…" })).toBeNull(),
+        );
+      };
+      for (const open of [
+        () => user.click(within(sidebar()).getByRole("button", { name: "Search or jump to…" })),
+        () =>
+          user.click(
+            within(screen.getByRole("banner")).getByRole("button", { name: "Search or jump to…" }),
+          ),
+        () => user.keyboard("{Meta>}k{/Meta}"),
+        () => user.keyboard("{Control>}k{/Control}"),
+      ]) {
+        await open();
+        const dialog = await screen.findByRole("dialog", { name: "Search or jump to…" });
+        expect(document.activeElement).toBe(within(dialog).getByRole("combobox"));
+        await close();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

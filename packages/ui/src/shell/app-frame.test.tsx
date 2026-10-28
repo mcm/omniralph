@@ -608,11 +608,56 @@ describe("AppFrame", () => {
     });
   });
 
-  it("renders no search control", () => {
+  it("renders no search control without `search`", () => {
     renderFrame();
     expect(screen.queryAllByRole("search")).toHaveLength(0);
     expect(screen.queryAllByRole("searchbox")).toHaveLength(0);
     expect(screen.queryAllByRole("button", { name: /search/i })).toHaveLength(0);
+  });
+
+  describe("search", () => {
+    it("puts the search button between the picker and the entries, and one in the top bar", () => {
+      const onOpen = vi.fn();
+      const { container } = renderFrame({ search: { onOpen } });
+      expect(controlNames(sidebar()).slice(0, 4)).toEqual([
+        "Omniralph home",
+        "Acme",
+        "Search or jump to…",
+        "Inbox, 4 need you",
+      ]);
+      const button = within(sidebar()).getByRole("button", { name: "Search or jump to…" });
+      expect(button.getAttribute("aria-haspopup")).toBe("dialog");
+      // The label hides on the rail (still the button's name), leaving the icon.
+      expect(button.querySelector(".or-search-btn__label")!.className).toContain("or-rail-hidden");
+      const topBar = within(screen.getByRole("banner"));
+      const phone = topBar.getByRole("button", { name: "Search or jump to…" });
+      // The top bar: menu, brand, search, avatar.
+      expect(controlNames(screen.getByRole("banner"))).toEqual([
+        "Open menu, 2 alerts",
+        "Omniralph home",
+        "Search or jump to…",
+        "Ada Lovelace",
+      ]);
+      expect(phone.getAttribute("aria-haspopup")).toBe("dialog");
+      expect(container.querySelectorAll(".or-search-btn")).toHaveLength(1);
+    });
+
+    it("calls onOpen from the sidebar and the top bar", async () => {
+      const user = userEvent.setup();
+      const onOpen = vi.fn();
+      renderFrame({ search: { onOpen, label: "Find" } });
+      await user.click(within(sidebar()).getByRole("button", { name: "Find" }));
+      await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Find" }));
+      expect(onOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it("gives the rail's search icon a tooltip with its label", async () => {
+      const user = userEvent.setup();
+      renderFrame({ search: { onOpen: () => {} } });
+      await user.hover(within(sidebar()).getByRole("button", { name: "Search or jump to…" }));
+      const tip = await screen.findByRole("tooltip");
+      expect(tip.textContent).toBe("Search or jump to…");
+    });
   });
 
   it("renders with an empty nav", async () => {
