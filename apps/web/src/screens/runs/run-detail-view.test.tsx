@@ -279,6 +279,28 @@ describe("the run detail", () => {
     );
   });
 
+  it("says why a queued run waits for a host tool, with a link to Fleet after the sentence", async () => {
+    detail = runningEpic({
+      status: "queued",
+      reason: "Waiting for an agent with gh installed",
+      reasonLink: { label: "Open Fleet", href: "/fleet" },
+    });
+    renderRun();
+    await loaded();
+    const reason = pane().querySelector(".or-run-detail__reason")!;
+    expect(reason.textContent).toBe("Waiting for an agent with gh installed. Open Fleet");
+    const link = within(reason as HTMLElement).getByRole("link", { name: "Open Fleet" });
+    expect(link.getAttribute("href")).toBe("/fleet");
+    expect(reason.lastElementChild).toBe(link);
+  });
+
+  it("shows no reason for a queued run that waits for nothing in particular", async () => {
+    detail = runningEpic({ status: "queued", reason: null, reasonLink: null });
+    renderRun();
+    await loaded();
+    expect(pane().querySelector(".or-run-detail__reason")).toBeNull();
+  });
+
   it("shows an open question's form under the reason", async () => {
     detail = runDetail(QUESTIONS.repository, {
       id: RUN_ID,

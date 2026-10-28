@@ -18,7 +18,7 @@ import {
 import { and, eq, gt, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import type { FindingSeverityCounts } from "./run-detail.js";
+import { latestAttemptWaitingReasonSql, type FindingSeverityCounts } from "./run-detail.js";
 import {
   indexColumns,
   indexEntry,
@@ -29,7 +29,7 @@ import {
   type RunStatus,
 } from "./run-index.js";
 import { DESIRED_AGENT_VERSION_KEY } from "./app-settings.js";
-import { inboxItemStates, type RalphIssueRef } from "./schema.js";
+import { inboxItemStates, type JobWaitingReason, type RalphIssueRef } from "./schema.js";
 import { triageIssueKey, triageSizesOf } from "./triage-size.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -148,7 +148,12 @@ export type InboxFacts =
       version: string;
       error: string | null;
     }
-  | { kind: "run"; status: RunStatus };
+  | {
+      kind: "run";
+      status: RunStatus;
+      /** Why a `queued` run's newest attempt waits (`refreshHostToolWaits`); null: nothing. */
+      waitingReason: JobWaitingReason | null;
+    };
 
 /** One Inbox item as derived: its key, tab, organization and run, and its kind's facts. */
 export interface InboxCandidate {
@@ -789,8 +794,11 @@ async function agentProblems(
 // ── Running ──────────────────────────────────────────────────────────────────
 
 async function runningRuns(db: Queryable, scope: Scope): Promise<InboxCandidate[]> {
-  const result = await db.execute<RunIndexRow>(sql`
-    select ${indexColumns} from (${runIndexSql()}) runs
+  const result = await db.execute<RunIndexRow & { waiting_reason: JobWaitingReason | null }>(sql`
+    select ${indexColumns},
+      case when runs.status = 'queued' then ${latestAttemptWaitingReasonSql("runs")} end
+        as waiting_reason
+    from (${runIndexSql()}) runs
     where runs.organization_id in (${scope.orgs}) and runs.status in ('queued', 'running')
       and runs.created_at >= ${scope.cutoff}::timestamptz`);
   return result.rows.map((row) => {
@@ -801,7 +809,7 @@ async function runningRuns(db: Queryable, scope: Scope): Promise<InboxCandidate[
       organizationId: entry.organizationId,
       since: entry.createdAt,
       run: { id: entry.id, kind: entry.kind },
-      facts: { kind: "run", status: entry.status },
+      facts: { kind: "run", status: entry.status, waitingReason: row.waiting_reason ?? null },
     };
   });
 }

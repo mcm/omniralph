@@ -502,6 +502,32 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       askedAt: ago(2),
       expiresAt: new Date(now.getTime() + 600_000),
     });
+    // Queued: its newest attempt waits for host tools no online agent has.
+    const [waitingTriage] = await db
+      .insert(triageRuns)
+      .values({
+        organizationId: acme,
+        linearIssueId: "triage-waiting",
+        linearAgentSessionId: "triage-waiting",
+        trigger: "mention",
+        status: "queued",
+      })
+      .returning();
+    ids.waitingTriage = waitingTriage!.id;
+    await job("waitingTriageOld", {
+      type: "triage.run",
+      triageRunId: waitingTriage!.id,
+      status: "failed",
+      createdAt: ago(30),
+    });
+    await job("waitingTriageJob", {
+      type: "triage.run",
+      triageRunId: waitingTriage!.id,
+      status: "queued",
+      createdAt: ago(1),
+      finishedAt: null,
+      waitingReason: { code: "host_tools_missing", hostTools: ["gh", "opengrep"] },
+    });
     await db.insert(triageRuns).values({
       organizationId: acme,
       linearIssueId: "triage-old",
@@ -555,6 +581,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         `agent_update:${ids.desiredFailed}:2.0.0`,
         `running:${ids.running}`,
         `running:${ids.runningTriage}`,
+        `running:${ids.waitingTriage}`,
       ].sort(),
     );
     const byKind = new Map(items.map((i) => [i.facts.kind + ":" + (i.run?.id ?? ""), i]));
@@ -591,6 +618,16 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       kind: "failed_run",
       lastAttemptId: ids.failedAttempt2,
       error: "The agent crashed.",
+    });
+    expect(byKind.get(`run:${ids.waitingTriage}`)?.facts).toEqual({
+      kind: "run",
+      status: "queued",
+      waitingReason: { code: "host_tools_missing", hostTools: ["gh", "opengrep"] },
+    });
+    expect(byKind.get(`run:${ids.runningTriage}`)?.facts).toEqual({
+      kind: "run",
+      status: "running",
+      waitingReason: null,
     });
     const triagePermission = items.find((i) => i.key.startsWith(`question:${ids.runningTriage}`))!;
     expect(triagePermission.run).toEqual({ id: ids.runningTriage, kind: "triage" });
@@ -689,7 +726,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       onlineWindowMs: ONLINE_WINDOW_MS,
       now,
     });
-    expect(running.map((i) => i.tab)).toEqual(["running", "running"]);
+    expect(running.map((i) => i.tab)).toEqual(["running", "running", "running"]);
     expect(running.every((i) => i.facts.kind === "run")).toBe(true);
   });
 

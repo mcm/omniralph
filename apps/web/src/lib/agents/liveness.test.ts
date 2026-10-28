@@ -3,7 +3,10 @@ import {
   closeDb,
   createDb,
   agents,
+  insertJob,
+  jobs,
   organizations,
+  triageRuns,
   type Database,
 } from "@omniralph/db";
 import {
@@ -155,8 +158,67 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
           headers: { authorization: "Bearer cron-secret" },
         }),
       );
-      expect(await response.json()).toEqual({ offline: 1 });
+      expect(await response.json()).toEqual({ offline: 1, waits: 0 });
       expect(await liveOnline(id)).toBe(false);
+    });
+
+    it("sets what a queued run waits for once the only agent with its host tool goes offline", async () => {
+      vi.stubEnv("REDIS_URL", "");
+      await closeRedis();
+      const [org] = await db.insert(organizations).values({ name: "Initech" }).returning();
+      const [agent] = await db
+        .insert(agents)
+        .values({
+          organizationId: org!.id,
+          name: "gh-box",
+          lastHeartbeatAt: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS - 1_000),
+          reportedHostTools: [
+            { name: "gh", path: "/usr/bin/gh", source: "discovered", problem: null },
+          ],
+        })
+        .returning();
+      await noteAgentOnline(db, agent!.id);
+      const [triage] = await db
+        .insert(triageRuns)
+        .values({
+          organizationId: org!.id,
+          linearIssueId: "triage-gh",
+          linearAgentSessionId: "triage-gh-session",
+          trigger: "label",
+          status: "queued",
+        })
+        .returning();
+      const { job } = await insertJob(db, {
+        organizationId: org!.id,
+        type: "triage.run",
+        taskType: "query",
+        triageRunId: triage!.id,
+        requiredHostTools: ["gh"],
+      });
+      expect(job.waitingReason).toBeNull();
+      const cron = () =>
+        captureChanges(async () => {
+          const response = await livenessCron(
+            new Request("http://localhost/api/cron/agent-liveness", {
+              headers: { authorization: "Bearer cron-secret" },
+            }),
+          );
+          return response.json();
+        });
+      const runEvents = (changes: { resource: string; ids: string[] }[]) =>
+        changes.filter((c) => c.resource === "run" && c.ids.includes(job.id));
+
+      const swept = await cron();
+      expect(swept.result).toEqual({ offline: 1, waits: 1 });
+      expect(runEvents(swept.changes)).toEqual([
+        expect.objectContaining({ resource: "run", ids: [job.id], runId: triage!.id }),
+      ]);
+      const [row] = await db.select().from(jobs).where(eq(jobs.id, job.id));
+      expect(row!.waitingReason).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
+      // Unchanged on the next sweep: nothing published.
+      const again = await cron();
+      expect(again.result).toEqual({ offline: 0, waits: 0 });
+      expect(runEvents(again.changes)).toEqual([]);
     });
   });
 });

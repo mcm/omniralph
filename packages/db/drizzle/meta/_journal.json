@@ -827,6 +827,13 @@
       "when": 1793191094321,
       "tag": "0117_agent_reported_claude",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1793191114738,
+      "tag": "0118_job_waiting_reason",
+      "breakpoints": true
     }
   ]
 }

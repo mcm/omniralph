@@ -6,7 +6,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { RunIndexEntry } from "./run-index.js";
-import type { RalphWaitingOn } from "./schema.js";
+import type { JobWaitingReason, RalphWaitingOn } from "./schema.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -31,6 +31,24 @@ function attemptsOf(run: Pick<RunIndexEntry, "id" | "kind">): SQL {
   }
 }
 
+/**
+ * The waiting reason (`jobs.waiting_reason`) of the newest attempt of each run in `runs`
+ * (an alias of the run index with `id` and `kind`), as a correlated subquery: null when it
+ * has none or no attempt.
+ */
+export function latestAttemptWaitingReasonSql(runs: string): SQL {
+  const id = sql.raw(`${runs}.id`);
+  const kind = sql.raw(`${runs}.kind`);
+  return sql`(select j.waiting_reason from jobs j
+    where (${kind} in ('epic', 'request') and j.ralph_run_id = ${id})
+      or (${kind} = 'review' and (j.review_run_id = ${id} or j.id =
+        (select rr.correlation_job_id from review_runs rr where rr.id = ${id})))
+      or (${kind} = 'triage' and j.triage_run_id = ${id})
+      or (${kind} = 'ask' and (j.chat_thread_run_id = ${id} or j.id =
+        (select c.job_id from chat_thread_runs c where c.id = ${id})))
+    order by j.created_at desc, j.id desc limit 1)`;
+}
+
 /** One attempt (job) of a run. */
 export interface RunAttemptEntry {
   id: string;
@@ -52,6 +70,8 @@ export interface RunAttemptEntry {
   reviewId: string | null;
   /** Its transcript's length (`run_activities`). */
   transcriptEvents: number;
+  /** Why it waits while `queued` (`refreshHostToolWaits`); null when nothing holds it up. */
+  waitingReason: JobWaitingReason | null;
 }
 
 /** The attempts of `run`, newest first. */
@@ -76,6 +96,7 @@ export async function listRunAttempts(
     ralph_story_id: string | null;
     review_id: string | null;
     activities: string;
+    waiting_reason: JobWaitingReason | null;
   }>(sql`
     select j.id, j.type, j.status, j.agent_id, h.name as agent_name, j.delivery_count,
       j.cancel_requested, ${iso("j.created_at")} as created_at, ${iso("j.started_at")} as started_at,
@@ -87,7 +108,8 @@ export async function listRunAttempts(
       (case when j.type in ('review.task', 'review.run')
         then coalesce(j.payload -> 'trigger' -> 'context' ->> 'reviewId', j.payload ->> 'reviewId')
         end) as review_id,
-      (select count(*) from run_activities a where a.job_id = j.id)::text as activities
+      (select count(*) from run_activities a where a.job_id = j.id)::text as activities,
+      j.waiting_reason
     from jobs j
     left join agents h on h.id = j.agent_id
     where ${attemptsOf(run)}
@@ -107,6 +129,7 @@ export async function listRunAttempts(
     storyId: row.ralph_story_id,
     reviewId: row.review_id,
     transcriptEvents: Number(row.activities),
+    waitingReason: row.waiting_reason,
   }));
 }
 

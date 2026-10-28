@@ -19,6 +19,7 @@ import {
   repositories,
   rules,
   scmConnections,
+  triageRuns,
   type Database,
   organizations,
   type RecordedChange,
@@ -1513,6 +1514,57 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       // An older agent sends none: the last report stays.
       await beat(accessToken, HEARTBEAT);
       expect(await stored()).toMatchObject({ status: "signed_out", source: null });
+    });
+
+    it("a heartbeat refreshes what queued runs wait for when its host tools or liveness change", async () => {
+      const organizationId = await newOrg();
+      const { accessToken } = await newAgent({ organizationId, name: "live-tools" });
+      const [triage] = await db
+        .insert(triageRuns)
+        .values({
+          organizationId,
+          linearIssueId: "triage-gh",
+          linearAgentSessionId: "triage-gh-session",
+          trigger: "label",
+          status: "queued",
+        })
+        .returning();
+      // Enqueued while no online agent has gh.
+      const { job } = await dispatcher().createAndPublish({
+        organizationId,
+        type: "triage.run",
+        taskType: "query",
+        triageRunId: triage!.id,
+        requiredHostTools: ["gh"],
+        dedupeKey: randomUUID(),
+      });
+      const waiting = { code: "host_tools_missing", hostTools: ["gh"] };
+      expect((await jobRow(job.id)).waitingReason).toEqual(waiting);
+      const runEvents = (changes: RecordedChange[]) =>
+        changes.filter((c) => c.resource === "run" && c.ids.includes(job.id));
+      const runEvent = expect.objectContaining({
+        resource: "run",
+        ids: [job.id],
+        organizationId,
+        runId: triage!.id,
+      });
+      const gh = { name: "gh", path: "/usr/bin/gh", source: "discovered", problem: null };
+
+      // Its first heartbeat reports gh and brings it online: the run no longer waits.
+      const online = await beat(accessToken, { ...HEARTBEAT, hostTools: [gh] });
+      expect(runEvents(online.changes)).toEqual([runEvent]);
+      expect((await jobRow(job.id)).waitingReason).toBeNull();
+      // Nothing changed: nothing published.
+      const steady = await beat(accessToken, { ...HEARTBEAT, hostTools: [gh] });
+      expect(runEvents(steady.changes)).toEqual([]);
+
+      // gh is now blocked on the agent: the run waits again.
+      const blocked = { name: "gh", path: null, source: null, problem: "blocked" };
+      const changed = await beat(accessToken, { ...HEARTBEAT, hostTools: [blocked] });
+      expect(runEvents(changed.changes)).toEqual([runEvent]);
+      expect((await jobRow(job.id)).waitingReason).toEqual(waiting);
+      const same = await beat(accessToken, { ...HEARTBEAT, hostTools: [blocked] });
+      expect(runEvents(same.changes)).toEqual([]);
     });
 
     it("an attempt's start and finish publish the agent that runs it", async () => {

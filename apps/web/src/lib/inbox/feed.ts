@@ -26,7 +26,13 @@ import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { storyIssueUrl } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
 import { questionView } from "@/lib/runs/question";
-import { changeRequestName, runReason, withError } from "@/lib/runs/reason";
+import {
+  changeRequestName,
+  runReason,
+  runReasonLink,
+  waitingReasonFacts,
+  withError,
+} from "@/lib/runs/reason";
 
 const TAB_OF_PARAM: Record<InboxTabParam, InboxTab> = {
   "needs-you": "needs_you",
@@ -111,6 +117,7 @@ function itemFields(
   | "pullRequest"
   | "agent"
   | "reason"
+  | "reasonLink"
   | "actions"
   | "question"
   | "reviewState"
@@ -125,6 +132,7 @@ function itemFields(
     repository: row?.repository ?? null,
     pullRequest: row?.pullRequest ?? null,
     agent: row?.agent ?? null,
+    reasonLink: null,
     actions: inboxItemActions(item),
     question: null,
     reviewState: null,
@@ -256,11 +264,17 @@ function itemFields(
         version: facts.version,
         reason: withError(`${facts.agent.name} couldn't update to ${facts.version}.`, facts.error),
       };
-    case "run":
+    case "run": {
+      // A queued run whose newest attempt needs host tools no online agent has says so.
+      const waiting = facts.status === "queued" ? waitingReasonFacts(facts.waitingReason) : null;
+      if (waiting) {
+        return { ...base, reason: runReason(waiting), reasonLink: runReasonLink(waiting) };
+      }
       return {
         ...base,
         reason: facts.status === "queued" ? "Waiting for an agent." : "Om is working on it.",
       };
+    }
   }
 }
 

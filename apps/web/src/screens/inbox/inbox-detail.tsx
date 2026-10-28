@@ -4,6 +4,7 @@ import { EmptyState, StatusLine, toast, Toolbar } from "@omniralph/ui";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { ITEM_HANDLED } from "@/components/runs/decisions";
 import { QuestionForm } from "@/components/runs/question-form";
+import { RunReason } from "@/components/runs/run-reason";
 import type { InboxItem } from "@/lib/api/inbox";
 import { InboxHeaderBadges } from "./inbox-badges";
 import { InboxItemCards } from "./inbox-item-cards";
@@ -52,7 +53,7 @@ export function InboxDetail({
       <h2 id="or-inbox-detail-title" className="or-inbox-detail__title">
         {item.title}
       </h2>
-      <p className="or-inbox-detail__reason">{item.reason}</p>
+      <RunReason className="or-inbox-detail__reason" reason={item.reason} link={item.reasonLink} />
       {item.question && item.run && item.actions.includes("answer") ? (
         <QuestionForm
           key={item.key}

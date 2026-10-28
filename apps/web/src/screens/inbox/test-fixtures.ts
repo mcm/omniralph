@@ -25,6 +25,7 @@ export function inboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
     pullRequest: null,
     agent: null,
     reason: "Om can't do this story: it needs access to the certificate store.",
+    reasonLink: null,
     since: minutesAgo(15 * 24 * 60),
     actions: ["done", "skip", "snooze"],
     question: null,

@@ -20,7 +20,7 @@ import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
-import { jobRunId, type Job, type JobStatus } from "./jobs.js";
+import { jobRunId, refreshHostToolWaits, type Job, type JobStatus } from "./jobs.js";
 import {
   agentAudit,
   agentRepoPins,
@@ -390,7 +390,11 @@ export async function markAgentDeleted(
       ),
     )
     .returning({ id: agents.id, organizationId: agents.organizationId });
-  for (const row of rows) recordAgentChange(db, row);
+  for (const row of rows) {
+    recordAgentChange(db, row);
+    // Its host tools count again for the organization's queued jobs.
+    await refreshHostToolWaits({ db, organizationId: row.organizationId });
+  }
   return rows.length > 0;
 }
 
@@ -681,7 +685,8 @@ export async function listQueuedJobsTargetingAgent(db: Database, agentId: string
 
 /**
  * Announces an agent online (`live_online`) when the live events last had it offline,
- * recording a live `agent` change. False when it was already online, or is revoked,
+ * recording a live `agent` change and refreshing its organization's host tool waits
+ * (`refreshHostToolWaits`). False when it was already online, or is revoked,
  * deleted or unknown: a steady heartbeat records nothing.
  */
 export async function markAgentLiveOnline(db: Database, agentId: string): Promise<boolean> {
@@ -697,7 +702,11 @@ export async function markAgentLiveOnline(db: Database, agentId: string): Promis
       ),
     )
     .returning({ id: agents.id, organizationId: agents.organizationId });
-  for (const row of rows) recordAgentChange(db, row);
+  for (const row of rows) {
+    recordAgentChange(db, row);
+    // Its host tools count again for the organization's queued jobs.
+    await refreshHostToolWaits({ db, organizationId: row.organizationId });
+  }
   return rows.length > 0;
 }
 
