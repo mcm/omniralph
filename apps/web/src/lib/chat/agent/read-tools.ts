@@ -635,8 +635,7 @@ export const listAgentsTool = defineChatTool({
           desiredVersion: agent.desiredVersion,
           updateStatus: agent.updateStatus,
           acceptedTaskTypes: agent.acceptedTaskTypes,
-          maxConcurrency: agent.maxConcurrency,
-          poolLimits: agent.effectivePoolLimits,
+          slots: agent.slots,
           lastHeartbeatAt: agent.lastHeartbeatAt,
           runningJobs: agent.runningJobs.map((job) => ({
             type: job.type,

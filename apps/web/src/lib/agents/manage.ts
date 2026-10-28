@@ -1,20 +1,17 @@
 import "server-only";
 import {
-  getDefaultMaxConcurrency,
   getDesiredAgentVersion,
   getAgentOverview,
   listAgentHostTools,
   requestAgentUpdate as requestAgentUpdateRow,
-  setAgentDesiredVersion as setAgentDesiredVersionRow,
   setAgentHostToolPath,
   TRACK_LATEST_AGENT_VERSION,
-  updateAgentConfig as updateAgentConfigRow,
   type Database,
 } from "@omniralph/db";
-import { AgentVersion, HostToolPath, POOLS } from "@omniralph/shared";
+import { HostToolPath } from "@omniralph/shared";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
-import type { AgentConfigForm, AgentSettingsSave, HostToolPathsSave } from "@/lib/api/agents";
+import type { HostToolPathsSave } from "@/lib/api/agents";
 import type { JobDispatcher } from "@/lib/dispatch";
 import {
   deleteAgent as deleteAgentWithRevoke,
@@ -23,7 +20,6 @@ import {
 import { recordLatestAgentVersion } from "./desired-version";
 import { bumpAgentHeartbeat } from "./heartbeat-cache";
 import { enqueueInstall } from "./installables";
-import { agentVersionTooOld } from "./min-version";
 import { latestAgentVersion, NpmRegistryError } from "./npm";
 
 /**
@@ -39,63 +35,6 @@ const UNKNOWN_AGENT: Failure = {
   ok: false,
   error: "That agent doesn't exist or was revoked.",
 };
-
-const AgentConfig = z.object({
-  maxConcurrency: z.number().int().min(1).max(32).nullable(),
-  poolLimits: z.partialRecord(z.enum(POOLS), z.number().int().min(1)),
-});
-
-/** Updates an agent's central config; the agent gets it with its next heartbeat. */
-export async function updateAgentConfig(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  input: AgentConfigForm,
-): Promise<ActionResult> {
-  const parsed = AgentConfig.safeParse(input);
-  // Pool limits are checked against the max concurrency the agent gets, inherited or not.
-  const maxConcurrency = parsed.success
-    ? (parsed.data.maxConcurrency ?? (await getDefaultMaxConcurrency(db, organizationId)))
-    : 0;
-  if (
-    !parsed.success ||
-    Object.values(parsed.data.poolLimits).some((limit) => limit > maxConcurrency)
-  ) {
-    return {
-      ok: false,
-      error: "Max concurrency must be 1–32 and each pool limit 1 to the max concurrency.",
-    };
-  }
-  if (!(await updateAgentConfigRow(db, organizationId, agentId, parsed.data))) {
-    return UNKNOWN_AGENT;
-  }
-  await bumpAgentHeartbeat(agentId);
-  return { ok: true };
-}
-
-/**
- * Sets the version this agent should run, overriding the version policy (Fleet › Version policy); blank
- * clears the override. Agents under pm2 update themselves to it.
- */
-export async function setAgentDesiredVersion(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  version: string,
-): Promise<ActionResult> {
-  const trimmed = version.trim().replace(/^v(?=\d)/, "");
-  const parsed = trimmed ? AgentVersion.safeParse(trimmed) : null;
-  if (parsed && !parsed.success) {
-    return { ok: false, error: "Enter a version like 2.0.0, or leave it blank." };
-  }
-  const tooOld = parsed && agentVersionTooOld(parsed.data);
-  if (tooOld) return { ok: false, error: tooOld, fieldErrors: { version: tooOld } };
-  if (!(await setAgentDesiredVersionRow(db, organizationId, agentId, parsed?.data ?? null))) {
-    return UNKNOWN_AGENT;
-  }
-  await bumpAgentHeartbeat(agentId);
-  return { ok: true };
-}
 
 const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
 
@@ -125,37 +64,6 @@ export async function saveInOrder(steps: readonly SaveStep[]): Promise<ActionRes
     }
   }
   return { ok: true };
-}
-
-/**
- * The Settings tab's save, as one request: the config, then the desired version, in that
- * order. It stops at the first that fails; the error names the changes it didn't save (those
- * before it are saved).
- */
-export async function saveAgentSettings(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  save: AgentSettingsSave,
-): Promise<ActionResult> {
-  return saveInOrder([
-    ...(save.config
-      ? [
-          {
-            label: "concurrency",
-            run: () => updateAgentConfig(db, organizationId, agentId, save.config!),
-          },
-        ]
-      : []),
-    ...(save.version !== undefined
-      ? [
-          {
-            label: "the desired version",
-            run: () => setAgentDesiredVersion(db, organizationId, agentId, save.version!),
-          },
-        ]
-      : []),
-  ]);
 }
 
 export type AgentUpdateResult = ActionResult & { version?: string };

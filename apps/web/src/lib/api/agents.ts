@@ -9,8 +9,6 @@ import { settingsHistoryEntrySchema } from "./settings-history";
 
 /** Wire formats of the agent endpoints under `/api/ui`. */
 
-const limits = z.record(z.string(), z.number());
-
 /** `AgentRow` on the wire. */
 const fleetTone = z.enum(["run", "fail", "neutral"]);
 
@@ -35,11 +33,8 @@ export const agentRowSchema = z.object({
   updateStatus: z.enum(["up_to_date", "updating", "failed", "manual"]),
   /** The task types the agent reports (its local `acceptedTaskTypes`); read-only. */
   acceptedTaskTypes: z.array(z.string()),
-  maxConcurrency: z.number(),
-  overrides: z.object({ maxConcurrency: z.number().nullable() }),
-  defaults: z.object({ maxConcurrency: z.number() }),
-  poolLimits: limits,
-  effectivePoolLimits: limits,
+  /** Attempts running, and the slots the agent reports (null until it reports them); read-only. */
+  slots: z.object({ running: z.number(), max: z.number().nullable() }),
   runningJobs: z.array(
     z.object({
       id: z.string(),
@@ -250,6 +245,16 @@ export const agentDetailSchema = z.object({
   security: agentSecuritySchema,
   /** The version policy's version (Fleet › Version policy; "1.5.0 (latest on npm)" when it tracks npm's latest); null: not set. */
   globalDesiredVersion: z.string().nullable(),
+  /**
+   * Its machine settings as it last reported them (its `settings.json`; read-only, edited on
+   * the agent's page): both pools' limits, its version pin and its installables allow-list.
+   * Null until it reports them.
+   */
+  local: z.object({
+    poolLimits: z.object({ short: z.number(), long: z.number() }).nullable(),
+    versionPin: z.string().nullable(),
+    installablesAllow: z.array(z.string()).nullable(),
+  }),
   /** The 50 most recent audit events, newest first. */
   audit: z.array(auditRowSchema),
   /** The latest sync job (last 7 days) of each pinned repository. */
@@ -299,31 +304,6 @@ export type HostToolRow = z.infer<typeof hostToolRowSchema>;
 /** `GET /api/ui/agents/{id}/host-tools`: every host tool of the catalog on the agent, by name. */
 export const agentHostToolsSchema = z.object({ hostTools: z.array(hostToolRowSchema) });
 export type AgentHostTools = z.infer<typeof agentHostToolsSchema>;
-
-/**
- * An agent's central config, as the Settings tab saves it. Strict: the task types it runs are
- * its own (its local `acceptedTaskTypes`), so sending any is refused.
- */
-export const agentConfigFormSchema = z.strictObject({
-  /** Null uses the organization's default (`/api/ui/agent-defaults`). */
-  maxConcurrency: z.number().nullable(),
-  /** Per-pool concurrency limits (1 to the effective max concurrency); left-out pools use the default. */
-  poolLimits: z.record(z.string(), z.number()),
-});
-export type AgentConfigForm = z.infer<typeof agentConfigFormSchema>;
-
-/**
- * `PUT /api/ui/agents/{id}/settings`: the Settings tab's changes, saved in one request in
- * this order (left-out parts aren't changed). Strict: pins are edited from the repository's
- * settings only, so a `pin` or `unpin` here is refused, and so are task types (the
- * agent's own, reported read-only), here or in `config`.
- */
-export const agentSettingsSaveSchema = z.strictObject({
-  config: agentConfigFormSchema.optional(),
-  /** The desired version override; "" clears it. */
-  version: z.string().max(100).optional(),
-});
-export type AgentSettingsSave = z.infer<typeof agentSettingsSaveSchema>;
 
 /** `PUT /api/ui/agents/{id}/host-tools`: configured paths to save, in order ("" clears one). */
 export const hostToolPathsSaveSchema = z.object({

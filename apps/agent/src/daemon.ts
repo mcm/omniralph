@@ -1,10 +1,11 @@
 import {
+  DEFAULT_POOLS,
   EMPTY_LOCAL_SETTINGS,
   HEARTBEAT_INTERVAL_SECONDS,
   effectiveLocalSettings,
-  effectivePoolLimit,
   poolForTaskType,
   type AgentHostReport,
+  type EffectiveLocalSettings,
   type Heartbeat,
   type HeartbeatResponse,
   type JobFailure,
@@ -33,7 +34,6 @@ import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./r
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
 import { SessionTokenFile } from "./session-token-file.js";
-import type { LocalSettingsStore } from "./settings.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
 import { RepoCache } from "./workspace/repoCache.js";
@@ -99,10 +99,12 @@ export interface DaemonOptions {
   localConfig?: Pick<AgentConfig, "blockedExecPaths">;
   /**
    * The machine settings (`settings.json`), read whenever they're needed: the
-   * accepted task types go in every heartbeat and claim, and only their jobs
-   * (and `system` jobs) are claimed. Default: every default.
+   * slots and pool limits cap the claims, the accepted task types go in every
+   * heartbeat and claim (only their jobs, and `system` jobs, are claimed), and
+   * every heartbeat reports them (`local`). On each `change` the daemon
+   * re-checks its claim and heartbeats at once. Default: every default.
    */
-  settings?: Pick<LocalSettingsStore, "effective">;
+  settings?: DaemonSettings;
   /** The `PATH` host tools are discovered on (default: the agent process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
   /** The Claude models reported in every heartbeat (none when unset). */
@@ -116,6 +118,15 @@ export interface DaemonOptions {
    * heartbeat hands over an Ably token. Without it the agent always long-polls.
    */
   wakeSubscription?: (organizationId: string) => WakeSubscription;
+}
+
+/** The machine settings as the daemon reads them (a `LocalSettingsStore`). */
+export interface DaemonSettings {
+  /** The settings in force, every default filled in. */
+  effective(): EffectiveLocalSettings;
+  /** After each page save or hand edit of `settings.json`. */
+  on(event: "change", listener: () => void): unknown;
+  off(event: "change", listener: () => void): unknown;
 }
 
 /** Runs one claimed job with its context and returns its output. */
@@ -149,13 +160,14 @@ export interface DaemonStatus {
   connected: boolean;
   lastHeartbeatAt: string | null;
   runningJobIds: string[];
-  maxConcurrency: number | null;
+  /** Its slots (`settings.json` `maxConcurrency`). */
+  maxConcurrency: number;
 }
 
 /**
  * The agent's main loop: heartbeats (central config, cancellations, job
  * tokens; the control panel renews the running jobs' leases), a claim loop
- * that, while a slot is free, long-polls for a job or (with an Ably token)
+ * that, while one of its local slots is free, long-polls for a job or (with an Ably token)
  * claims on wake signals, and the job lifecycle (claim → run → result/fail).
  */
 export class AgentDaemon implements DrainableDaemon {
@@ -173,6 +185,11 @@ export class AgentDaemon implements DrainableDaemon {
   /** Set by `drain()`: no new claims until `resume()`. */
   private draining = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** A heartbeat of the loop is in flight. */
+  private heartbeating = false;
+  /** Asked for a heartbeat while one was in flight: send another right after it. */
+  private heartbeatAgain = false;
+  private readonly onSettingsChange = () => this.applyLocalSettings();
   private readonly sleepers = new Set<() => void>();
   private resolveExit!: (code: number) => void;
   private readonly exit = new Promise<number>((resolve) => (this.resolveExit = resolve));
@@ -211,6 +228,7 @@ export class AgentDaemon implements DrainableDaemon {
 
   /** Starts heartbeating and claiming. Resolves with the exit code once the daemon stops. */
   run(): Promise<number> {
+    this.options.settings?.on("change", this.onSettingsChange);
     void this.heartbeatLoop();
     this.claimLoop().catch((error: unknown) =>
       this.fail(error instanceof Error ? error : new Error(String(error))),
@@ -225,7 +243,7 @@ export class AgentDaemon implements DrainableDaemon {
       connected: this.config !== null,
       lastHeartbeatAt: this.lastHeartbeatAt?.toISOString() ?? null,
       runningJobIds: [...this.running.keys()],
-      maxConcurrency: this.config?.maxConcurrency ?? null,
+      maxConcurrency: this.localSettings().maxConcurrency,
     };
   }
 
@@ -325,6 +343,7 @@ export class AgentDaemon implements DrainableDaemon {
 
   private stop(): void {
     this.stopping = true;
+    this.options.settings?.off("change", this.onSettingsChange);
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     this.heartbeatTimer = null;
     for (const wake of this.sleepers) wake();
@@ -334,11 +353,52 @@ export class AgentDaemon implements DrainableDaemon {
 
   // --- Heartbeat and central config -------------------------------------------------------
 
+  /**
+   * Heartbeats now, then every `heartbeatIntervalMs`. Called while one is in
+   * flight, it sends another right after that one (and the interval restarts).
+   */
   private async heartbeatLoop(): Promise<void> {
     if (this.stopping) return;
-    await this.heartbeat();
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    if (this.heartbeating) {
+      this.heartbeatAgain = true;
+      return;
+    }
+    this.heartbeating = true;
+    try {
+      await this.heartbeat();
+    } finally {
+      this.heartbeating = false;
+    }
     if (this.stopping) return;
+    if (this.heartbeatAgain) {
+      this.heartbeatAgain = false;
+      void this.heartbeatLoop();
+      return;
+    }
     this.heartbeatTimer = setTimeout(() => void this.heartbeatLoop(), this.heartbeatIntervalMs);
+  }
+
+  /**
+   * A `settings.json` change (a page save or a hand edit): the claim follows the new slots,
+   * pool limits and kinds at once (lowering a limit cancels nothing), and a heartbeat
+   * reports them without waiting for the interval.
+   */
+  private applyLocalSettings(): void {
+    if (this.stopping) return;
+    const local = this.localSettings();
+    this.options.logger.info(
+      {
+        maxConcurrency: local.maxConcurrency,
+        poolLimits: local.poolLimits,
+        acceptedTaskTypes: local.acceptedTaskTypes,
+        claimablePools: this.claimablePools(),
+      },
+      "applied local settings",
+    );
+    this.refreshClaim();
+    void this.heartbeatLoop();
   }
 
   /** Sends one heartbeat and applies the response. */
@@ -354,6 +414,7 @@ export class AgentDaemon implements DrainableDaemon {
     const installables = await this.installedInstallables();
     const hostTools = await this.checkHostTools();
     const models = (await this.options.models?.current()) ?? [];
+    const local = this.localSettings();
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
@@ -365,8 +426,15 @@ export class AgentDaemon implements DrainableDaemon {
         installables,
         hostTools,
         models,
-        acceptedTaskTypes: this.acceptedTaskTypes(),
+        acceptedTaskTypes: local.acceptedTaskTypes,
         host: (this.options.host ?? (() => agentHost()))(),
+        local: {
+          maxConcurrency: local.maxConcurrency,
+          poolLimits: { short: local.poolLimits.short, long: local.poolLimits.long },
+          // The local pin isn't applied yet: none is reported.
+          versionPin: null,
+          installablesAllow: local.installablesAllow,
+        },
         ...this.options.updater?.report(),
         ...this.wakeReport(),
       });
@@ -437,19 +505,17 @@ export class AgentDaemon implements DrainableDaemon {
   applyConfig(config: HeartbeatResponse): void {
     const previous = this.config;
     this.config = config;
-    if (
-      !previous ||
-      previous.maxConcurrency !== config.maxConcurrency ||
-      JSON.stringify(previous.poolLimits) !== JSON.stringify(config.poolLimits)
-    ) {
+    if (!previous) {
+      const local = this.localSettings();
       this.options.logger.info(
         {
-          maxConcurrency: config.maxConcurrency,
-          acceptedTaskTypes: this.acceptedTaskTypes(),
-          poolLimits: config.poolLimits,
+          organizationId: config.organizationId,
+          maxConcurrency: local.maxConcurrency,
+          poolLimits: local.poolLimits,
+          acceptedTaskTypes: local.acceptedTaskTypes,
           claimablePools: this.claimablePools(),
         },
-        "applied central config",
+        "connected to the control panel",
       );
     }
     for (const jobId of config.cancelJobIds) {
@@ -602,31 +668,30 @@ export class AgentDaemon implements DrainableDaemon {
 
   // --- Claiming --------------------------------------------------------------------------
 
-  /** The pools of the agent's organization, from the heartbeat. */
+  /** The machine settings in force (`settings.json`), every default filled in. */
+  private localSettings(): EffectiveLocalSettings {
+    return this.options.settings?.effective() ?? effectiveLocalSettings(EMPTY_LOCAL_SETTINGS);
+  }
+
   /**
-   * The pools of the heartbeat's `poolLimits` that the accepted task types run in (a job's
-   * pool follows from its task type): no claim asks for a pool it would get no job from.
+   * The `DEFAULT_POOLS` the accepted task types run in (a job's pool follows from its task
+   * type): no claim asks for a pool it would get no job from. None before the first heartbeat.
    */
   private pools(): string[] {
     if (!this.config) return [];
     const accepted = new Set<string>(this.acceptedTaskTypes().map((type) => poolForTaskType(type)));
-    return Object.keys(this.config.poolLimits).filter((pool) => accepted.has(pool));
+    return DEFAULT_POOLS.filter((pool) => accepted.has(pool));
   }
 
   /** The task types the agent runs: `acceptedTaskTypes` of its settings, default all. */
   acceptedTaskTypes(): TaskType[] {
-    return (this.options.settings?.effective() ?? effectiveLocalSettings(EMPTY_LOCAL_SETTINGS))
-      .acceptedTaskTypes;
+    return this.localSettings().acceptedTaskTypes;
   }
 
-  /**
-   * How many of a pool's jobs may run at once: the heartbeat's limit, or the
-   * protocol default when the control panel sent none.
-   */
+  /** How many of a pool's jobs may run at once: its local limit (0 for an unknown pool). */
   poolLimit(pool: string): number {
-    const config = this.config;
-    if (!config) return 0;
-    return effectivePoolLimit(pool, config.poolLimits, config.maxConcurrency);
+    const limits: Partial<Record<string, number>> = this.localSettings().poolLimits;
+    return limits[pool] ?? 0;
   }
 
   private runningByPool(): Map<string, number> {
@@ -637,11 +702,13 @@ export class AgentDaemon implements DrainableDaemon {
     return running;
   }
 
-  /** Jobs the agent could take right now: its free slots (none while draining). */
+  /**
+   * Jobs the agent could take right now: its free local slots (none while draining or
+   * before the first heartbeat).
+   */
   freeSlots(): number {
-    const config = this.config;
-    if (!config || this.draining) return 0;
-    return Math.max(0, config.maxConcurrency - this.running.size);
+    if (!this.config || this.draining) return 0;
+    return Math.max(0, this.localSettings().maxConcurrency - this.running.size);
   }
 
   /**

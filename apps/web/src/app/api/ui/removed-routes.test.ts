@@ -54,7 +54,6 @@ describe("routes the configuration model removed", () => {
       "/api/ui/agents/x/installables",
       "/api/ui/agents/x/installs",
       "/api/ui/agents/x/revoke",
-      "/api/ui/agents/x/settings",
       "/api/ui/agents/x/update",
       "/api/ui/agent-defaults",
       "/api/ui/agent-enrollments",
@@ -65,6 +64,11 @@ describe("routes the configuration model removed", () => {
       expect(servedByRouteHandler(old), old).toBe(false);
     }
     expect(readdirSync(__dirname).filter((name) => /harness/i.test(name))).toEqual([]);
+  });
+
+  it("has no agent settings route: slots and kinds are set on the agent and reported", () => {
+    expect(servedByRouteHandler("/api/ui/agents/x/settings")).toBe(false);
+    expect(existsSync(join(__dirname, "agents/[id]/settings"))).toBe(false);
   });
 
   it("keeps the routes that replaced them", () => {

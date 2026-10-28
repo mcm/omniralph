@@ -78,7 +78,7 @@ describe("queryClaimableAgents", () => {
       revokedAt: null,
       lastHeartbeatAt: now,
       reportedAcceptedTaskTypes: null,
-      effective: { acceptedTaskTypes: ["query", "review"], maxConcurrency: 5 },
+      effective: { acceptedTaskTypes: ["query", "review"] },
       reportedInstallables: [],
       pinnedRepositories: [],
       ...over,
@@ -98,12 +98,12 @@ describe("queryClaimableAgents", () => {
       agent({
         name: "no-query",
         reportedAcceptedTaskTypes: ["review", "coding"],
-        effective: { acceptedTaskTypes: ["review", "coding"], maxConcurrency: 5 },
+        effective: { acceptedTaskTypes: ["review", "coding"] },
       }),
       // Reporting no query tasks.
       agent({
         name: "no-query-reported",
-        effective: { acceptedTaskTypes: ["review"], maxConcurrency: 5 },
+        effective: { acceptedTaskTypes: ["review"] },
       }),
     ];
     expect(claimable(incapable).map((h) => h.capable)).toEqual([false, false, false, false]);

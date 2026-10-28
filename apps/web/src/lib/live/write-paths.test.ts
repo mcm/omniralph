@@ -8,7 +8,6 @@ import {
   removeOrganizationDomain,
   requestAgentUpdate,
   revokeInvitation,
-  setAgentDesiredVersion,
   upsertChatChannelPlaybookSetting,
   addOrganizationDomain,
   captureChanges,
@@ -57,14 +56,12 @@ import {
   saveChatConnection,
   saveIntegration,
   saveWorkItemMatch,
-  setDefaultMaxConcurrency,
   setAgentHostToolPath,
   setRepositorySwitches,
   setTriageRunStatus,
   setWorkItemRepository,
   clearWorkItemRepository,
   recordWorkItemEvent,
-  updateAgentConfig,
   updateLane,
   updateMemberRole,
   updateOrganization,
@@ -522,7 +519,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       organizationId: orgId,
     });
 
-    it("enroll, settings, pins, host tool paths, revoke and delete publish the agent", async () => {
+    it("enroll, pins, host tool paths, revoke and delete publish the agent", async () => {
       const { token } = await createAgentEnrollment(db, { organizationId: orgId });
       let id = "";
       expect(
@@ -530,14 +527,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           id = (await enrollAgent(db, { enrollmentToken: token, name: "new", version: "1.0.0" }))!
             .agentId;
         }),
-      ).toEqual([agentEvent(id)]);
-      expect(
-        await published(() =>
-          updateAgentConfig(db, orgId, id, {
-            maxConcurrency: 2,
-            poolLimits: {},
-          }),
-        ),
       ).toEqual([agentEvent(id)]);
       expect(
         await published(() => pinRepositoryToAgent(db, { agentId: id, repositoryId: repoId })),
@@ -600,16 +589,27 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([]);
     });
 
-    it("a desired version or an update request from the control panel publishes the agent", async () => {
-      expect(await published(() => setAgentDesiredVersion(db, orgId, agentId, "1.2.0"))).toEqual([
-        agentEvent(agentId),
-      ]);
+    it("an update request from the control panel publishes the agent", async () => {
       expect(await published(() => requestAgentUpdate(db, orgId, agentId, "1.2.0"))).toEqual([
         agentEvent(agentId),
       ]);
-      expect(await published(() => setAgentDesiredVersion(db, orgId, agentId, null))).toEqual([
-        agentEvent(agentId),
-      ]);
+    });
+
+    it("a heartbeat publishes reported local settings that differ from the stored ones", async () => {
+      const local = {
+        maxConcurrency: 5,
+        poolLimits: { short: 5, long: 4 },
+        versionPin: null,
+        installablesAllow: ["@omniralph/*"],
+      };
+      const report = { version: "1.0.0", local };
+      await recordAgentHeartbeat(db, agentId, report);
+      expect(await published(() => recordAgentHeartbeat(db, agentId, report))).toEqual([]);
+      expect(
+        await published(() =>
+          recordAgentHeartbeat(db, agentId, { ...report, local: { ...local, maxConcurrency: 2 } }),
+        ),
+      ).toEqual([agentEvent(agentId)]);
     });
 
     it("an install job targeted at an agent publishes the agent", async () => {
@@ -695,9 +695,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           ]),
         ),
       ).toEqual([settingsEvent("routing_rules")]);
-      expect(await published(() => setDefaultMaxConcurrency(db, orgId, 3, userId))).toEqual([
-        settingsEvent("agent_defaults"),
-      ]);
       expect(await published(() => createHostTool(db, orgId, { name: "jq" }))).toEqual([
         settingsEvent("agent_defaults"),
       ]);
@@ -982,14 +979,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
 
   it("publishes nothing for a write that changed nothing", async () => {
     expect(await published(() => updateRun(db, randomUUID(), { status: "running" }))).toEqual([]);
-    expect(
-      await published(() =>
-        updateAgentConfig(db, orgId, randomUUID(), {
-          maxConcurrency: 2,
-          poolLimits: {},
-        }),
-      ),
-    ).toEqual([]);
+    expect(await published(() => requestAgentUpdate(db, orgId, randomUUID(), "1.2.0"))).toEqual([]);
   });
 
   it("never puts names, titles or bodies in an event", async () => {

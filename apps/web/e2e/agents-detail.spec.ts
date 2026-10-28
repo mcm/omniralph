@@ -69,31 +69,6 @@ test.describe("agent detail", () => {
     await expect(page.locator("[data-agent-version]")).toHaveText("1.1.0");
   });
 
-  test("a saved setting waits for the agent's next heartbeat, then shows applied", async ({
-    db,
-    page,
-    request,
-    signIn,
-  }) => {
-    const { agentId, name } = await liveAgent(db, request, "e2e-settings");
-    await signIn("admin");
-    await open(page, `/agents/${agentId}/settings`);
-
-    await page.getByRole("button", { name: "Override max concurrency" }).click();
-    await page.getByLabel("Jobs at once").fill("3");
-    await page.getByRole("button", { name: "Save settings" }).click();
-    await page.getByRole("alertdialog").getByRole("button", { name: /^Save/ }).click();
-    await expect(page.getByText(`Saved — waiting for ${name} to pick it up`)).toBeVisible();
-    const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
-    expect(row!.maxConcurrency).toBe(3);
-
-    await db
-      .update(agents)
-      .set({ lastHeartbeatAt: new Date(Date.now() + 1_000) })
-      .where(eq(agents.id, agentId));
-    await expect(page.getByText("Applied", { exact: true })).toBeVisible({ timeout: 5_000 });
-  });
-
   test("deleting goes back to an agent list without the agent", async ({
     db,
     page,

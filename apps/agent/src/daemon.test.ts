@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   effectiveLocalSettings,
+  type AgentLocalSettings,
   type ClaimRequest,
   type Heartbeat,
   type HeartbeatResponse,
@@ -27,7 +29,7 @@ import {
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
-import { LocalSettingsStore } from "./settings.js";
+import { LocalSettingsStore, type LocalSettingsState } from "./settings.js";
 import { memorySettingsFs } from "./test/settings-fs.js";
 import type { WakeEvent, WakeSubscription } from "./wake.js";
 import type { RepoCache } from "./workspace/repoCache.js";
@@ -43,9 +45,6 @@ const ALL_TYPES = ["query", "review", "coding"];
 
 function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   return {
-    maxConcurrency: 1,
-    // The short pool may use every slot (as the control panel's default).
-    poolLimits: { short: overrides.maxConcurrency ?? 1 },
     pinnedRepoIds: [],
     organizationId: ORG_ID,
     cancelJobIds: [],
@@ -55,6 +54,40 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     updateRequest: null,
     hostTools: [],
     ...overrides,
+  };
+}
+
+type LocalSettings = Omit<AgentLocalSettings, "v">;
+
+/** `settings.json` as the daemon sees it: `set` changes it like a page save. */
+class FakeSettings extends EventEmitter<{ change: [LocalSettingsState] }> {
+  constructor(private settings: AgentLocalSettings) {
+    super();
+  }
+
+  effective() {
+    return effectiveLocalSettings(this.settings);
+  }
+
+  set(settings: LocalSettings): void {
+    this.settings = { v: 1, ...settings };
+    this.emit("change", {
+      settings: this.settings,
+      effective: this.effective(),
+      revision: "none",
+      lastError: null,
+    });
+  }
+}
+
+/** The heartbeat's `local` for `settings`. */
+function localReport(settings: LocalSettings) {
+  const effective = effectiveLocalSettings({ v: 1, ...settings });
+  return {
+    maxConcurrency: effective.maxConcurrency,
+    poolLimits: effective.poolLimits,
+    versionPin: null,
+    installablesAllow: effective.installablesAllow,
   };
 }
 
@@ -281,7 +314,9 @@ function setup(options: {
   updater?: SelfUpdater;
   dataDir?: string;
   localConfig?: DaemonOptions["localConfig"];
+  /** `settings.json` (default: one slot); `local` makes it a `FakeSettings`. */
   settings?: DaemonOptions["settings"];
+  local?: LocalSettings;
   hostToolSearchPath?: string;
   models?: DaemonOptions["models"];
   host?: DaemonOptions["host"];
@@ -290,6 +325,7 @@ function setup(options: {
 }) {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
+  const local = new FakeSettings({ v: 1, maxConcurrency: 1, ...options.local });
   const tokens = { refresh: vi.fn(async () => "access") };
   const wakes: FakeWake[] = [];
   const wakeSubscription = options.wake
@@ -320,14 +356,14 @@ function setup(options: {
     reportRetryDelayMs: 10,
     dataDir: options.dataDir,
     localConfig: options.localConfig,
-    settings: options.settings,
+    settings: options.settings ?? local,
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
     models: options.models,
     host: options.host ?? (() => ({ hostname: "agent-host", coder: null })),
     wakeSubscription,
   });
-  return { api, state, claims, tokens, daemon, wakes };
+  return { api, state, claims, tokens, daemon, wakes, local };
 }
 
 /** Lets pending promises and zero-delay timers run. */
@@ -526,6 +562,13 @@ describe("AgentDaemon", () => {
       // Its local accepted task types: all by default.
       acceptedTaskTypes: ["query", "review", "coding"],
       host: { hostname: "agent-host", coder: null },
+      // Its machine settings in force: one slot (the setup's), the rest defaults.
+      local: {
+        maxConcurrency: 1,
+        poolLimits: { short: 1, long: 1 },
+        versionPin: null,
+        installablesAllow: ["@omniralph/*"],
+      },
     });
     await vi.advanceTimersByTimeAsync(19_999);
     expect(api.heartbeat).toHaveBeenCalledTimes(1);
@@ -543,10 +586,7 @@ describe("AgentDaemon", () => {
     const { api, claims, daemon } = setup({
       runReviewTask,
       runCodingTask,
-      settings: {
-        effective: () => effectiveLocalSettings({ v: 1, acceptedTaskTypes: ["review"] }),
-      },
-      config: centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
+      local: { maxConcurrency: 2, acceptedTaskTypes: ["review"] },
     });
     claims.push(
       job(codingId, {
@@ -579,23 +619,23 @@ describe("AgentDaemon", () => {
       logger: silentLogger(),
       fs: memory.fs,
     });
-    const { api, claims, daemon } = setup({
-      settings: store,
-      config: centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
-    });
+    const { api, claims, daemon } = setup({ settings: store });
     void daemon.run();
     await settle();
     expect(claims.accepted).toEqual([ALL_TYPES]);
     expect(claims.calls).toEqual([["short", "long"]]);
+    expect(api.heartbeat).toHaveBeenCalledTimes(1);
 
-    // Saved mid-run: the next heartbeat and the next claim (after the long poll) use them.
+    // Saved mid-run: a heartbeat goes out at once, and the long poll is replaced by a claim
+    // with the new kinds.
     const saved = await store.update("kinds", { acceptedTaskTypes: ["coding"] }, "none");
     expect(saved.status).toBe("saved");
-    await vi.advanceTimersByTimeAsync(20_000);
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
     expect(api.heartbeat).toHaveBeenLastCalledWith(
       expect.objectContaining({ acceptedTaskTypes: ["coding"] }),
     );
-    await vi.advanceTimersByTimeAsync(30_000);
+    expect(claims.aborted).toEqual([["short", "long"]]);
     expect(claims.accepted.at(-1)).toEqual(["coding"]);
     expect(claims.calls.at(-1)).toEqual(["long"]);
     await daemon.shutdown();
@@ -608,7 +648,7 @@ describe("AgentDaemon", () => {
     await settle();
     expect(claims.calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(claims.calls).toEqual([["short"]]);
+    expect(claims.calls).toEqual([["short", "long"]]);
     await daemon.shutdown();
   });
 
@@ -635,12 +675,15 @@ describe("AgentDaemon", () => {
     void daemon.run();
     await settle();
     expect(api.claim).toHaveBeenCalledWith(
-      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
+      { pools: ["short", "long"], acceptedTaskTypes: ALL_TYPES },
       expect.any(AbortSignal),
     );
     expect(seen).toEqual({ jobToken: `job-token-${id}`, workspaceRoot: "/tmp/omniralph-test" });
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { findings: [], jobId: id } });
-    expect(claims.calls).toEqual([["short"], ["short"]]);
+    expect(claims.calls).toEqual([
+      ["short", "long"],
+      ["short", "long"],
+    ]);
     expect(claims.inFlight).toBe(1);
     await daemon.shutdown();
   });
@@ -710,8 +753,8 @@ describe("AgentDaemon", () => {
       expect.objectContaining({ runningJobIds: [], freeSlots: 1 }),
     );
     expect(api.claim.mock.calls.map(([body]) => body)).toEqual([
-      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
-      { pools: ["short"], acceptedTaskTypes: ALL_TYPES },
+      { pools: ["short", "long"], acceptedTaskTypes: ALL_TYPES },
+      { pools: ["short", "long"], acceptedTaskTypes: ALL_TYPES },
     ]);
     expect(daemon.status().runningJobIds).toEqual([]);
     await daemon.shutdown();
@@ -746,15 +789,18 @@ describe("AgentDaemon", () => {
     expect(api.submitResult).toHaveBeenCalledWith(id, { result: { ok: true } });
     // Long-polls instead of waiting pollIntervalSeconds.
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(claims.calls).toEqual([["short"], ["short"]]);
+    expect(claims.calls).toEqual([
+      ["short", "long"],
+      ["short", "long"],
+    ]);
     await daemon.shutdown();
   });
 
-  it("claims long jobs only once the long pool is sent, and runs them by job type", async () => {
+  it("claims long jobs only once coding is accepted, and runs them by job type", async () => {
     const id = randomUUID();
-    const { api, state, claims, daemon } = setup({
+    const { api, local, claims, daemon } = setup({
       capabilities: [capability(async () => ({})), ralphCapability],
-      config: centralConfig({ poolLimits: { short: 1 } }),
+      local: { maxConcurrency: 1, acceptedTaskTypes: ["query", "review"] },
     });
     claims.push(job(id, { type: "ralph.prepare", taskType: "coding", pool: "long" }));
     void daemon.run();
@@ -762,8 +808,7 @@ describe("AgentDaemon", () => {
     expect(claims.calls).toEqual([["short"]]);
     expect(api.submitFailure).not.toHaveBeenCalled();
 
-    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
-    await vi.advanceTimersByTimeAsync(20_000);
+    local.set({ maxConcurrency: 1 });
     await settle();
     // The claim without the long pool was aborted and replaced.
     expect(claims.aborted).toEqual([["short"]]);
@@ -838,7 +883,7 @@ describe("AgentDaemon", () => {
     let running = 0;
     let maxRunning = 0;
     const { api, claims, daemon } = setup({
-      config: centralConfig({ maxConcurrency: 2 }),
+      local: { maxConcurrency: 2 },
       run: async (j) => {
         running++;
         maxRunning = Math.max(maxRunning, running);
@@ -878,7 +923,7 @@ describe("AgentDaemon", () => {
   });
 
   /** Review and ralph capabilities whose jobs wait on gates. */
-  function gatedCapabilities(config: HeartbeatResponse) {
+  function gatedCapabilities(local: LocalSettings) {
     const gates = new Map<string, ReturnType<typeof deferred>>();
     const runningJobs: Record<string, string[]> = { review: [], ralph: [] };
     const signals = new Map<string, AbortSignal>();
@@ -894,7 +939,7 @@ describe("AgentDaemon", () => {
         return {};
       };
     const env = setup({
-      config,
+      local,
       capabilities: [
         capability(run("review")),
         capability(run("ralph"), { name: "ralph", jobTypes: ["ralph.story"] }),
@@ -908,9 +953,10 @@ describe("AgentDaemon", () => {
   }
 
   it("caps the long pool at its limit so a slot stays free for short jobs", async () => {
-    const { api, claims, daemon, gates, runningJobs, pushRalph } = gatedCapabilities(
-      centralConfig({ maxConcurrency: 2, poolLimits: { short: 2, long: 1 } }),
-    );
+    const { api, claims, daemon, gates, runningJobs, pushRalph } = gatedCapabilities({
+      maxConcurrency: 2,
+      poolLimits: { short: 2, long: 1 },
+    });
     const ralph = Array.from({ length: 3 }, () => randomUUID());
     pushRalph(...ralph);
     void daemon.run();
@@ -952,13 +998,9 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
-  it("keeps running jobs when a limit is lowered and aborts the claim when it's raised", async () => {
-    const config = centralConfig({
-      maxConcurrency: 3,
-      poolLimits: { short: 3, long: 2 },
-    });
-    const { state, claims, daemon, gates, runningJobs, signals, pushRalph } =
-      gatedCapabilities(config);
+  it("keeps running jobs when a limit is lowered below them and aborts the claim when it's raised", async () => {
+    const { api, local, claims, daemon, gates, runningJobs, signals, pushRalph } =
+      gatedCapabilities({ maxConcurrency: 3, poolLimits: { short: 3, long: 2 } });
     const ralph = Array.from({ length: 3 }, () => randomUUID());
     pushRalph(...ralph);
     void daemon.run();
@@ -967,9 +1009,17 @@ describe("AgentDaemon", () => {
     expect(daemon.freeSlots()).toBe(1);
     expect(claims.calls.at(-1)).toEqual(["short"]);
 
-    state.config = { ...config, poolLimits: { short: 3, long: 1 } };
-    await vi.advanceTimersByTimeAsync(20_000);
+    // Lowered below the 2 running coding jobs: nothing is canceled, no coding job is claimed.
+    const late = randomUUID();
+    pushRalph(late);
+    local.set({ maxConcurrency: 3, poolLimits: { short: 3, long: 1 } });
+    await settle();
     expect(daemon.poolLimit("long")).toBe(1);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        local: expect.objectContaining({ poolLimits: { short: 3, long: 1 } }),
+      }),
+    );
     expect(runningJobs.ralph).toEqual([ralph[0], ralph[1]]);
     expect(signals.get(ralph[0]!)!.aborted).toBe(false);
     expect(signals.get(ralph[1]!)!.aborted).toBe(false);
@@ -977,28 +1027,29 @@ describe("AgentDaemon", () => {
     expect(daemon.freeSlots()).toBe(1);
     expect(claims.aborted).toEqual([]);
 
+    // Still at the limit after one finishes: no coding job until the count drops below it.
     gates.get(ralph[0]!)!.resolve();
     await settle();
     expect(runningJobs.ralph).toEqual([ralph[1]]);
     expect(claims.aborted).toEqual([]);
+    expect(claims.calls.at(-1)).toEqual(["short"]);
 
     // Raising the limit aborts the short-only claim; the new one gets the long job.
-    state.config = { ...config, poolLimits: { short: 3, long: 3 } };
-    await vi.advanceTimersByTimeAsync(20_000);
+    local.set({ maxConcurrency: 3, poolLimits: { short: 3, long: 3 } });
     await settle();
     expect(claims.aborted).toEqual([["short"]]);
-    expect(runningJobs.ralph).toEqual([ralph[1], ralph[2]]);
+    expect(runningJobs.ralph).toEqual([ralph[1], ralph[2], late]);
     for (const gate of gates.values()) gate.resolve();
     await settle();
     await daemon.shutdown();
   });
 
-  it("applies maxConcurrency from each heartbeat without restarting", async () => {
+  it("applies a change of its slots at once, without restarting", async () => {
     const gates: ReturnType<typeof deferred>[] = [];
     let running = 0;
     let maxRunning = 0;
-    const { api, state, claims, daemon } = setup({
-      config: centralConfig({ maxConcurrency: 1 }),
+    const { api, local, claims, daemon } = setup({
+      local: { maxConcurrency: 1 },
       run: async () => {
         running++;
         maxRunning = Math.max(maxRunning, running);
@@ -1014,15 +1065,24 @@ describe("AgentDaemon", () => {
     await settle();
     expect(running).toBe(1);
 
-    state.config = centralConfig({ maxConcurrency: 3 });
-    await vi.advanceTimersByTimeAsync(20_000);
+    // Raised: claims at once, and a heartbeat reports the new slots without waiting.
+    local.set({ maxConcurrency: 3 });
     await settle();
     expect(running).toBe(3);
     expect(api.heartbeat).toHaveBeenCalledTimes(2);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ local: localReport({ maxConcurrency: 3 }) }),
+    );
+    expect(daemon.status().maxConcurrency).toBe(3);
 
-    // Lowering maxConcurrency lets running jobs finish but takes no new ones until under it.
-    state.config = centralConfig({ maxConcurrency: 1 });
-    await vi.advanceTimersByTimeAsync(20_000);
+    // Lowering it cancels nothing: running jobs finish, and none starts until under it.
+    local.set({ maxConcurrency: 1 });
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(3);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ freeSlots: 0, local: localReport({ maxConcurrency: 1 }) }),
+    );
+    expect(running).toBe(3);
     claims.push(job(randomUUID()));
     gates.splice(0, 2).forEach((gate) => gate.resolve());
     await settle();
@@ -1037,15 +1097,50 @@ describe("AgentDaemon", () => {
     await settle();
     expect(api.submitResult).toHaveBeenCalledTimes(5);
 
-    // Without pools centrally, only system jobs are claimed.
-    state.config = centralConfig({ poolLimits: {} });
-    await vi.advanceTimersByTimeAsync(20_000);
-    expect(claims.calls.at(-1)).toEqual([]);
+    // Narrowed to coding: only the long pool is claimed, so a review job waits.
+    local.set({ maxConcurrency: 1, acceptedTaskTypes: ["coding"] });
+    await settle();
+    expect(claims.calls.at(-1)).toEqual(["long"]);
     claims.push(job(randomUUID()));
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
     expect(api.submitResult).toHaveBeenCalledTimes(5);
     await daemon.shutdown();
+  });
+
+  it("heartbeats again right after the one in flight when the settings change meanwhile", async () => {
+    const { api, local, daemon } = setup({});
+    void daemon.run();
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(1);
+    const gate = deferred();
+    api.heartbeat.mockImplementationOnce(async () => {
+      await gate.promise;
+      return centralConfig();
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
+    local.set({ maxConcurrency: 4 });
+    await settle();
+    // One at a time: the next waits for the one in flight, then goes at once.
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
+    gate.resolve();
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(3);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ local: localReport({ maxConcurrency: 4 }) }),
+    );
+    // Then the interval again, from that heartbeat.
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(api.heartbeat).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.heartbeat).toHaveBeenCalledTimes(4);
+
+    // After shutdown a change sends nothing.
+    await daemon.shutdown();
+    local.set({ maxConcurrency: 2 });
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(4);
   });
 
   it("always claims system jobs and runs repo.sync through the repo cache with the job env", async () => {
@@ -1060,8 +1155,6 @@ describe("AgentDaemon", () => {
       fetched: false,
     }));
     const { api, claims, daemon } = setup({
-      // No pools: system jobs need none.
-      config: centralConfig({ poolLimits: {} }),
       repos: { sync } as unknown as RepoCache,
     });
     const id = randomUUID();
@@ -1075,7 +1168,7 @@ describe("AgentDaemon", () => {
     );
     void daemon.run();
     await settle();
-    expect(claims.calls[0]).toEqual([]);
+    // System jobs need no pool: any claim gets them.
     expect(sync).toHaveBeenCalledTimes(1);
     const [repo, options] = sync.mock.calls[0] as unknown as [unknown, { env: NodeJS.ProcessEnv }];
     expect(repo).toEqual(repository);
@@ -1091,7 +1184,6 @@ describe("AgentDaemon", () => {
     const { api, claims, daemon } = setup({
       // A capability claiming the RPC's job type is never asked.
       capabilities: [{ ...capability(run), name: "legacy", jobTypes: ["repo.sync", "repo.other"] }],
-      config: centralConfig({ poolLimits: {} }),
     });
     const unknown = randomUUID();
     claims.push(job(unknown, { type: "repo.other", taskType: "system", pool: null }));
@@ -1428,7 +1520,7 @@ describe("AgentDaemon", () => {
     const id = randomUUID();
     let signal: AbortSignal | undefined;
     const { api, claims, daemon } = setup({
-      config: centralConfig({ maxConcurrency: 2 }),
+      local: { maxConcurrency: 2 },
       run: (_j, ctx) =>
         new Promise((_resolve, reject) => {
           signal = ctx.signal;
@@ -1445,7 +1537,7 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
     expect(await exit).toBe(0);
     expect(claims.inFlight).toBe(0);
-    expect(claims.aborted).toEqual([["short"]]);
+    expect(claims.aborted).toEqual([["short", "long"]]);
     expect(signal?.reason).toBeInstanceOf(ShutdownAbort);
     expect(api.submitFailure).not.toHaveBeenCalled();
     expect(api.submitResult).not.toHaveBeenCalled();
@@ -1554,7 +1646,7 @@ describe("self-update", () => {
     const gate = deferred();
     const installs: string[] = [];
     const { api, claims, state, daemon } = setup({
-      config: centralConfig({ maxConcurrency: 2 }),
+      local: { maxConcurrency: 2 },
       run: async (j) => {
         if (j.id === first) await gate.promise;
         return {};
@@ -1566,13 +1658,13 @@ describe("self-update", () => {
     await settle();
     expect(daemon.status().runningJobIds).toEqual([first]);
 
-    state.config = centralConfig({ maxConcurrency: 2, desiredVersion: "2.0.0" });
+    state.config = centralConfig({ desiredVersion: "2.0.0" });
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
     expect(daemon.status().draining).toBe(true);
     // Draining aborted the in-flight claim.
     expect(claims.inFlight).toBe(0);
-    expect(claims.aborted).toEqual([["short"]]);
+    expect(claims.aborted).toEqual([["short", "long"]]);
     // The next heartbeat reports the drain.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(
@@ -1711,12 +1803,12 @@ describe("AgentDaemon wake mode", () => {
     wakes[0]!.emit("connected");
     await settle();
     expect(api.claim).toHaveBeenCalledWith(
-      { pools: ["short"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
+      { pools: ["short", "long"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
       expect.any(AbortSignal),
     );
     // No job: nothing more until a trigger, heartbeats or not.
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(claims.calls).toEqual([["short"]]);
+    expect(claims.calls).toEqual([["short", "long"]]);
     expect(wakes[0]!.tokens).toHaveLength(4);
     await daemon.shutdown();
   });
@@ -1730,7 +1822,10 @@ describe("AgentDaemon wake mode", () => {
     expect(api.heartbeat.mock.calls[0]![0]).not.toHaveProperty("claimablePools");
     await vi.advanceTimersByTimeAsync(20_000);
     expect(api.heartbeat).toHaveBeenLastCalledWith(
-      expect.objectContaining({ ablyTokenExpiresAt: ABLY.expiresAt, claimablePools: ["short"] }),
+      expect.objectContaining({
+        ablyTokenExpiresAt: ABLY.expiresAt,
+        claimablePools: ["short", "long"],
+      }),
     );
 
     claims.push(job(randomUUID()));
@@ -1748,7 +1843,7 @@ describe("AgentDaemon wake mode", () => {
   it("claims on a wake, again at once after a job, and when a job ends", async () => {
     const gates = new Map<string, ReturnType<typeof deferred>>();
     const { claims, daemon, wakes } = await started({
-      config: centralConfig({ ably: ABLY, maxConcurrency: 2 }),
+      local: { maxConcurrency: 2 },
       run: async (j) => {
         const gate = deferred();
         gates.set(j.id, gate);
@@ -1779,12 +1874,12 @@ describe("AgentDaemon wake mode", () => {
   });
 
   it("claims when its claimable pools change", async () => {
-    const { state, claims, daemon } = await started({
-      config: centralConfig({ ably: ABLY, poolLimits: { short: 1 } }),
+    const { local, claims, daemon } = await started({
+      local: { maxConcurrency: 1, acceptedTaskTypes: ["review"] },
     });
     expect(claims.calls).toEqual([["short"]]);
-    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
-    await vi.advanceTimersByTimeAsync(20_000);
+    local.set({ maxConcurrency: 1 });
+    await settle();
     expect(claims.calls).toEqual([["short"], ["short", "long"]]);
     expect(claims.waits).toEqual([0, 0]);
     await daemon.shutdown();
@@ -1804,15 +1899,15 @@ describe("AgentDaemon wake mode", () => {
   });
 
   it("while disconnected neither long-polls nor claims on other triggers, only on claimable: true", async () => {
-    const { state, claims, daemon, wakes } = await started();
+    const { state, local, claims, daemon, wakes } = await started();
     expect(claims.calls).toHaveLength(1);
     wakes[0]!.emit("disconnected");
     wakes[0]!.emit("wake");
-    state.config = centralConfig({ poolLimits: { short: 1, long: 1 } });
+    local.set({ maxConcurrency: 1, acceptedTaskTypes: ["review"] });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(claims.calls).toHaveLength(1);
 
-    state.config = centralConfig({ poolLimits: { short: 1, long: 1 }, claimable: true });
+    state.config = centralConfig({ claimable: true });
     await vi.advanceTimersByTimeAsync(20_000);
     expect(claims.calls).toHaveLength(2);
     expect(claims.waits).toEqual([0, 0]);
@@ -1881,7 +1976,7 @@ describe("AgentDaemon wake mode", () => {
 
     state.config = centralConfig({ ably: ABLY });
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(claims.aborted).toEqual([["short"]]);
+    expect(claims.aborted).toEqual([["short", "long"]]);
     expect(claims.inFlight).toBe(0);
     wakes[0]!.emit("connected");
     await settle();
@@ -1915,7 +2010,7 @@ describe("AgentDaemon wake mode", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(api.claim).toHaveBeenCalledTimes(3);
     expect(api.claim).toHaveBeenLastCalledWith(
-      { pools: ["short"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
+      { pools: ["short", "long"], acceptedTaskTypes: ALL_TYPES, waitSeconds: 0 },
       expect.any(AbortSignal),
     );
     await vi.advanceTimersByTimeAsync(10_000);

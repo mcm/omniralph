@@ -254,10 +254,13 @@ key but `v` is optional:
 }
 ```
 
-The file accepts no other key. The accepted task types and the allow-list apply without a restart:
-the next claim and the next install use them. The agent doesn't apply slots, pool limits, host tool
-paths and the pin from the file yet; until it does, they come from the control panel as described
-in [Central config](#central-config).
+The file accepts no other key. Slots, pool limits, the accepted task types and the allow-list
+apply without a restart: the agent re-checks what it claims at once (lowering a limit cancels
+nothing) and sends a heartbeat right away, so **Fleet** shows the new values within seconds; the
+next install uses the new allow-list. The agent reports slots, both pools' limits, the pin and the
+allow-list in every heartbeat, and the control panel stores them read-only. It doesn't apply host
+tool paths and the pin from the file yet; until it does, they come from the control panel as
+described in [Central config](#central-config).
 
 Edit the settings on the agent's page, or by hand while the agent runs. The agent watches the file
 and applies a valid edit about a quarter of a second after the last write. It ignores an invalid
@@ -469,17 +472,16 @@ including the task types the agent runs) is configured centrally and delivered i
 
 | Setting                                                             | Where                                                                                      | Default                                                            |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| Max concurrency (parallel jobs)                                     | the agent's `settings.json` (see below)                                                    | 1                                                                  |
-| Concurrency per pool (1 to max concurrency)                         | the agent's `settings.json` (see below)                                                    | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
+| Slots (parallel attempts)                                           | the agent's page (`settings.json` `maxConcurrency`, see below)                             | 5                                                                  |
+| Slots per pool (1 to the slots)                                     | the agent's page (`settings.json` `poolLimits`, see below)                                 | `long`: slots − 1 (at least 1); `short`: the slots                 |
 | Pinned repositories                                                 | **Repos › Agents** (**Fleet** lists them, read-only)                                       | none (every agent is eligible for every repo)                      |
 | Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**                                                                 | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
-Max concurrency, pool limits and host tool paths belong to the agent machine, like its accepted
-task types: they move to its [`settings.json`](#machine-settings-settingsjson), and the control
-panel has no page for them. Until the agent applies them from there
-the control panel still delivers them in the heartbeat, so every agent runs with the defaults
-above.
+Slots and pool limits belong to the agent machine, like its accepted task types: they are set in
+its [`settings.json`](#machine-settings-settingsjson) (on the agent's page or by hand), and no
+control panel page or API sets them. The agent reports them in every heartbeat; **Fleet** shows
+its load (running of slots) read-only. Host tool paths are moving there too.
 
 Accepted task types decide what a host may run (trust), so the host itself decides them: the
 `acceptedTaskTypes` key of its [`settings.json`](#machine-settings-settingsjson) (all three when
@@ -557,7 +559,7 @@ it at once. The agent then also claims its organization's `ralph.*` jobs (`codin
 - A repository pinned to agents (**Repos › Agents**) starts its runs on a pinned
   agent, so at least one of them needs to accept `coding`, or the run's jobs are never picked up.
 - Coding sessions are long and write code: give the agents that run them their own host (or keep **Max
-  concurrency** at 1) if you also develop on it.
+  Slots** at 1 on the agent's page) if you also develop on it.
 
 ### Host prerequisites
 
@@ -653,7 +655,7 @@ the agent isn't running a job for it, then
   at it.
 - There's no automatic eviction yet. To reclaim space, stop the agent and delete a repository's
   directory (it's re-cloned on the next job), or the whole workspace root.
-- Rough sizing: the sum of your repositories' blobless clone sizes, plus `max concurrency` × your
+- Rough sizing: the sum of your repositories' blobless clone sizes, plus the agent's slots × your
   largest checkout, plus headroom. Watch it with `du -sh ~/.omniralph/repos/*` as the agent's user.
 
 ## Coexisting with cyralph
@@ -678,10 +680,10 @@ project or label in both, and don't point the agent's `--workspace-root` at cyra
   instead.
 - **Shared Claude rate limits.** If the agent's user is logged in to the same Claude subscription as
   you, you share its rate limits. The agent backs off and retries on rate limits instead of failing,
-  but busy reviews still slow your sessions down. Lower the agent's max concurrency, or give it its
+  but busy reviews still slow your sessions down. Lower Slots on the agent's page, or give it its
   own API key or subscription. See [claude-auth.md](claude-auth.md).
-- **CPU and memory.** Each running job is a Claude Code process plus git. Keep max concurrency at 1
-  or 2 on a workspace you also develop in.
+- **CPU and memory.** Each running job is a Claude Code process plus git. Keep Slots at 1 or 2 on
+  a workspace you also develop in.
 
 ## Re-enrollment (`refresh_reuse`, "re-enrollment required")
 

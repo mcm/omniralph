@@ -17,7 +17,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { TASK_TYPES, type TaskType } from "@omniralph/tasks";
-import { getDefaultMaxConcurrency } from "./app-settings.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import type { AgentAuditEntry } from "./agent-auth.js";
@@ -56,27 +55,22 @@ export interface AgentJobSummary {
 }
 
 export interface AgentOverview extends AgentRow {
-  /** Its configuration with the organization's defaults filled in (`effectiveAgentConfig`). */
+  /** What it runs (`effectiveAgentConfig`). */
   effective: EffectiveAgentConfig;
-  /** The organization's defaults it inherits where its own values are null. */
-  defaults: AgentDefaults;
   runningJobs: AgentJobSummary[];
   pinnedRepositories: RepositoryLink[];
 }
 
-/** The organization's agent defaults, for agents without their own values. */
-export interface AgentDefaults {
-  maxConcurrency: number;
-}
-
-/** What an agent runs: its own value where it has one, else the organization's default. */
+/**
+ * What an agent runs, as it reported it. Its slots and pool limits are its own
+ * (`settings.json`), reported read-only in `reported_max_concurrency` and `reported_pool_limits`.
+ */
 export interface EffectiveAgentConfig {
   /**
    * Task types it may claim jobs of (`system` is always accepted): the ones it reports
    * (`agentAcceptedTaskTypes`).
    */
   acceptedTaskTypes: TaskType[];
-  maxConcurrency: number;
 }
 
 /**
@@ -90,38 +84,11 @@ export function agentAcceptedTaskTypes(
   return reported ? TASK_TYPES.filter((type) => reported.includes(type)) : [...TASK_TYPES];
 }
 
-/** The organization's agent defaults (`app_settings`, else the built-in ones). */
-export async function getAgentDefaults(
-  db: Database,
-  organizationId: string,
-): Promise<AgentDefaults> {
-  return { maxConcurrency: await getDefaultMaxConcurrency(db, organizationId) };
-}
-
-/** An agent's effective configuration: each of its values when not null, else the default. */
+/** An agent's effective configuration, from what it reported. */
 export function effectiveAgentConfig(
-  agent: Pick<AgentRow, "reportedAcceptedTaskTypes" | "maxConcurrency">,
-  defaults: AgentDefaults,
+  agent: Pick<AgentRow, "reportedAcceptedTaskTypes">,
 ): EffectiveAgentConfig {
-  return {
-    acceptedTaskTypes: agentAcceptedTaskTypes(agent),
-    maxConcurrency: agent.maxConcurrency ?? defaults.maxConcurrency,
-  };
-}
-
-/**
- * An agent's effective configuration, reading its organization's defaults only when it
- * inherits something.
- */
-export async function resolveAgentConfig(
-  db: Database,
-  agent: Pick<AgentRow, "organizationId" | "reportedAcceptedTaskTypes" | "maxConcurrency">,
-): Promise<EffectiveAgentConfig> {
-  return {
-    acceptedTaskTypes: agentAcceptedTaskTypes(agent),
-    maxConcurrency:
-      agent.maxConcurrency ?? (await getDefaultMaxConcurrency(db, agent.organizationId)),
-  };
+  return { acceptedTaskTypes: agentAcceptedTaskTypes(agent) };
 }
 
 export const repositoryLinkColumns = {
@@ -148,8 +115,7 @@ async function withJobsAndPins(
 ): Promise<AgentOverview[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [defaults, running, pins] = await Promise.all([
-    getAgentDefaults(db, organizationId),
+  const [running, pins] = await Promise.all([
     db
       .select({
         id: jobs.id,
@@ -179,8 +145,7 @@ async function withJobsAndPins(
   ]);
   return rows.map((agent) => ({
     ...agent,
-    effective: effectiveAgentConfig(agent, defaults),
-    defaults,
+    effective: effectiveAgentConfig(agent),
     runningJobs: running
       .filter((job) => job.agentId === agent.id)
       .map((job) => ({
@@ -393,42 +358,6 @@ export async function listRepositoryCodingAgentIds(
   };
 }
 
-export interface AgentConfigInput {
-  /** Null inherits the organization's default. */
-  maxConcurrency: number | null;
-  /** Per-pool concurrency limits; pools left out use the default. */
-  poolLimits: Partial<Record<string, number>>;
-}
-
-/**
- * Updates an agent's central configuration. The agent picks it up from its
- * next heartbeat response. Returns null for unknown or revoked agents and
- * agents of another organization.
- */
-export async function updateAgentConfig(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  input: AgentConfigInput,
-): Promise<AgentRow | null> {
-  const [row] = await db
-    .update(agents)
-    .set({
-      maxConcurrency: input.maxConcurrency,
-      poolLimits: input.poolLimits,
-    })
-    .where(
-      and(
-        eq(agents.organizationId, organizationId),
-        eq(agents.id, agentId),
-        isNull(agents.revokedAt),
-      ),
-    )
-    .returning();
-  if (row) recordAgentChange(db, row);
-  return row ?? null;
-}
-
 /** Records a live `agent` change for the agent. */
 function recordAgentChange(db: Database, agent: { id: string; organizationId: string }): void {
   recordChange(db, {
@@ -436,31 +365,6 @@ function recordAgentChange(db: Database, agent: { id: string; organizationId: st
     ids: [agent.id],
     organizationId: agent.organizationId,
   });
-}
-
-/**
- * Sets (or, with null, clears) an agent's desired-version override. Returns
- * null for unknown or revoked agents and agents of another organization.
- */
-export async function setAgentDesiredVersion(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  version: string | null,
-): Promise<AgentRow | null> {
-  const [row] = await db
-    .update(agents)
-    .set({ desiredVersion: version })
-    .where(
-      and(
-        eq(agents.organizationId, organizationId),
-        eq(agents.id, agentId),
-        isNull(agents.revokedAt),
-      ),
-    )
-    .returning();
-  if (row) recordAgentChange(db, row);
-  return row ?? null;
 }
 
 /**

@@ -1,15 +1,10 @@
 import "server-only";
 import {
   createHostTool,
-  DEFAULT_MAX_CONCURRENCY,
   deleteHostTool,
   DESIRED_AGENT_VERSION_KEY,
   getAppSetting,
-  getDefaultMaxConcurrency,
   listHostTools,
-  MAX_MAX_CONCURRENCY,
-  MIN_MAX_CONCURRENCY,
-  setDefaultMaxConcurrency,
   setDesiredAgentVersion,
   TRACK_LATEST_AGENT_VERSION,
   withSettingsChanges,
@@ -28,7 +23,6 @@ import type { VersionPolicy } from "@/lib/fleet/status";
 import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sections";
 import { organizationAgentVersion, recordLatestAgentVersion } from "./desired-version";
 import { bumpOrganizationHeartbeat } from "./heartbeat-cache";
-import { saveInOrder } from "./manage";
 import { agentVersionTooOld } from "./min-version";
 import { latestAgentVersion, NpmRegistryError } from "./npm";
 
@@ -49,15 +43,17 @@ export interface DefaultsActor {
 /** npm's `latest` is read at most every 5 minutes (cached); never let it hold up a poll for long. */
 const NPM_TIMEOUT_MS = 2_000;
 
-/** The Defaults tab: the desired version (with `latest` resolved) and the concurrency default. */
+/**
+ * The version policy: the desired version (with `latest` resolved). Slots are each agent's
+ * own (`settings.json`), so there is no concurrency default.
+ */
 export async function loadAgentDefaults(
   db: Database,
   organizationId: string,
 ): Promise<AgentDefaults> {
-  const [setting, resolved, maxConcurrency] = await Promise.all([
+  const [setting, resolved] = await Promise.all([
     getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY),
     organizationAgentVersion(db, organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    getDefaultMaxConcurrency(db, organizationId),
   ]);
   return {
     desiredVersion: typeof setting?.value === "string" ? setting.value : null,
@@ -70,8 +66,6 @@ export async function loadAgentDefaults(
         }
       : null,
     packageName: AGENT_PACKAGE,
-    defaults: { maxConcurrency },
-    builtInDefaults: { maxConcurrency: DEFAULT_MAX_CONCURRENCY },
   };
 }
 
@@ -151,39 +145,13 @@ export async function trackLatestAgentVersion(
   return { ok: true, version };
 }
 
-const OrganizationDefaultsInput = z.strictObject({
-  maxConcurrency: z.number().int().min(MIN_MAX_CONCURRENCY).max(MAX_MAX_CONCURRENCY),
-});
-
-/**
- * Sets the max concurrency every agent of the organization inherits unless it sets its own;
- * it takes effect with the next heartbeat.
- */
-export async function setOrganizationDefaults(
-  db: Database,
-  admin: DefaultsActor,
-  input: unknown,
-): Promise<ActionResult> {
-  const parsed = OrganizationDefaultsInput.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: `Max concurrency must be ${MIN_MAX_CONCURRENCY}–${MAX_MAX_CONCURRENCY}.`,
-    };
-  }
-  await setDefaultMaxConcurrency(db, admin.organization.id, parsed.data.maxConcurrency, admin.id);
-  await bumpOrganizationHeartbeat(admin.organization.id);
-  return { ok: true };
-}
-
 /** The answer to a save: with a version sent, the version policy it set (Fleet's cell). */
 export type AgentDefaultsSaveResult = ActionResult & { versionPolicy?: VersionPolicy };
 
 /**
- * The agent defaults' save, as one request: the concurrency default, then the desired
- * version, each only when sent. It stops at the first that fails; the error names what it
- * didn't save. What it saved is recorded in the change history. With a version saved, the
- * answer carries the policy it set, so Fleet shows it without a refetch.
+ * The version policy's save: the desired version, when sent. What it saved is recorded in the
+ * change history. With a version saved, the answer carries the policy it set, so Fleet shows
+ * it without a refetch.
  */
 export async function saveAgentDefaults(
   db: Database,
@@ -216,30 +184,9 @@ async function saveDefaultsInOrder(
   admin: DefaultsActor,
   save: AgentDefaultsSave,
 ): Promise<AgentDefaultsSaveResult> {
-  let versionPolicy: VersionPolicy | undefined;
-  const result = await saveInOrder([
-    ...(save.defaults !== undefined
-      ? [
-          {
-            label: "max concurrency",
-            run: () => setOrganizationDefaults(db, admin, save.defaults),
-          },
-        ]
-      : []),
-    ...(save.version !== undefined
-      ? [
-          {
-            label: "the desired version",
-            run: async () => {
-              const saved = await setGlobalAgentVersion(db, admin, save.version!);
-              if (saved.ok) versionPolicy = savedPolicy(save.version!, saved.version);
-              return saved;
-            },
-          },
-        ]
-      : []),
-  ]);
-  return result.ok && versionPolicy ? { ...result, versionPolicy } : result;
+  if (save.version === undefined) return { ok: true };
+  const saved = await setGlobalAgentVersion(db, admin, save.version);
+  return saved.ok ? { ok: true, versionPolicy: savedPolicy(save.version, saved.version) } : saved;
 }
 
 /** The organization's host tool catalog, by name. */

@@ -260,6 +260,13 @@ export async function loadAgentDetail(
         ? `${version.version} (latest on npm)`
         : "the latest on npm"
       : version.version,
+    local: {
+      poolLimits: agent.reportedPoolLimits
+        ? { short: agent.reportedPoolLimits.short, long: agent.reportedPoolLimits.long }
+        : null,
+      versionPin: agent.reportedVersionPin,
+      installablesAllow: agent.reportedInstallablesAllow,
+    },
     audit: audit.map((entry) => ({
       id: entry.id,
       event: entry.event,

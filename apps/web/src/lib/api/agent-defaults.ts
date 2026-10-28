@@ -4,12 +4,6 @@ import { isoDate } from "./schemas";
 
 /** The organization's agent defaults (`/api/ui/agent-defaults`, `/api/ui/host-tools/**`, admins); Fleet edits the version policy. */
 
-/** An organization's max concurrency, saved or built in. */
-export const organizationDefaultsSchema = z.object({
-  maxConcurrency: z.number(),
-});
-export type OrganizationDefaults = z.infer<typeof organizationDefaultsSchema>;
-
 /** `GET /api/ui/agent-defaults`: the Defaults tab. */
 export const agentDefaultsSchema = z.object({
   /** A version, `latest` or null. */
@@ -25,21 +19,16 @@ export const agentDefaultsSchema = z.object({
     })
     .nullable(),
   packageName: z.string(),
-  /** The organization's defaults (the built-in ones when not saved). */
-  defaults: organizationDefaultsSchema,
-  /** The defaults when the organization hasn't saved any. */
-  builtInDefaults: organizationDefaultsSchema,
 });
 export type AgentDefaults = z.infer<typeof agentDefaultsSchema>;
 
 /**
- * `PUT /api/ui/agent-defaults`: the Defaults tab's save, in one request. `defaults`
- * (`{ maxConcurrency }`, its range checked in `setOrganizationDefaults`), then `version` (a
- * version, `latest`, or blank to not manage versions); each only when changed. Strict: task
- * types are the agent's own (its local `acceptedTaskTypes`), so sending any is a 400.
+ * `PUT /api/ui/agent-defaults`: the version policy's save, `version` (a version, `latest`, or
+ * blank to not manage versions). Strict: slots and task types are each agent's own (its
+ * `settings.json`, reported read-only), so sending `maxConcurrency`, `defaults` or task
+ * types is a 400.
  */
 export const agentDefaultsSaveSchema = z.strictObject({
-  defaults: z.strictObject({ maxConcurrency: z.unknown() }).optional(),
   version: z.string().max(200).optional(),
 });
 export type AgentDefaultsSave = z.infer<typeof agentDefaultsSaveSchema>;

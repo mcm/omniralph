@@ -12,7 +12,6 @@ import {
   closeDb,
   createInvitation,
   getActiveOrganization,
-  getDefaultMaxConcurrency,
   getDesiredAgentVersion,
   listHostTools,
   getIntegration,
@@ -215,7 +214,6 @@ const agentList = await import("./agents/route");
 const enrollments = await import("./agent-enrollments/route");
 const enrollment = await import("./agent-enrollments/[id]/route");
 const agentDetail = await import("./agents/[id]/route");
-const agentSettings = await import("./agents/[id]/settings/route");
 const agentUpdate = await import("./agents/[id]/update/route");
 const agentRevoke = await import("./agents/[id]/revoke/route");
 const agentInstallables = await import("./agents/[id]/installables/route");
@@ -1837,14 +1835,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   it("refuses every agent change on the other organization's agent and repositories", async () => {
     state.userId = a.adminId;
     const theirs = { id: b.agentId };
-    const config = { maxConcurrency: 4, poolLimits: {} };
     const refused = [
-      await call(agentSettings.PUT, { method: "PUT", params: theirs, body: { config } }),
-      await call(agentSettings.PUT, {
-        method: "PUT",
-        params: theirs,
-        body: { version: "9.9.9" },
-      }),
       await call(agentUpdate.POST, { method: "POST", params: theirs }),
       // The other's agent, the other's tool, or both.
       ...(await Promise.all(
@@ -1872,7 +1863,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
     const other = (await getAgentOverview(db, b.orgId, b.agentId))!;
     expect(other).toMatchObject({
-      maxConcurrency: null,
       desiredVersion: null,
       updateRequestVersion: null,
       revokedAt: null,
@@ -1887,13 +1877,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ).toEqual([b.jobId]);
 
     // Its own agent still works.
-    expect(
-      await call(agentSettings.PUT, {
-        method: "PUT",
-        params: { id: a.agentId },
-        body: { config },
-      }),
-    ).toMatchObject({ status: 200, body: { ok: true, savedAt: expect.any(String) } });
     expect(
       await call(agentHostTools.PUT, {
         method: "PUT",
@@ -4159,7 +4142,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(
         await call(agentDefaults.PUT, {
           method: "PUT",
-          body: { defaults: { maxConcurrency: 3 }, version: "2.4.0" },
+          body: { version: "2.4.0" },
         }),
       ).toEqual({
         status: 200,
@@ -4177,13 +4160,9 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
       expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
       expect(await getDesiredAgentVersion(db, b.orgId)).not.toBe("2.4.0");
-      expect(await getDefaultMaxConcurrency(db, a.orgId)).toBe(3);
-      expect(await getDefaultMaxConcurrency(db, b.orgId)).toBe(5);
 
       state.userId = b.adminId;
-      expect((await call(agentDefaults.GET)).body).toMatchObject({
-        defaults: { maxConcurrency: 5 },
-      });
+      expect((await call(agentDefaults.GET)).body).not.toMatchObject({ desiredVersion: "2.4.0" });
     });
   });
 });

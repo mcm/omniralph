@@ -11,7 +11,6 @@ import {
 import {
   findJobPage,
   getAgentOverview,
-  resolveAgentConfig,
   listJobs,
   listAgentInstallJobs,
   listAgentPinSyncJobs,
@@ -22,14 +21,9 @@ import {
   listRepositoryCodingAgentIds,
   markAgentDeleted,
   requestAgentUpdate,
-  setAgentDesiredVersion,
-  updateAgentConfig,
 } from "./agents.js";
-import {
-  getDesiredAgentVersion,
-  setDefaultMaxConcurrency,
-  setDesiredAgentVersion,
-} from "./app-settings.js";
+import { getDesiredAgentVersion, setDesiredAgentVersion } from "./app-settings.js";
+import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import { recordAgentHeartbeat } from "./jobs.js";
 import { getResourceOrganizationId } from "./resource-organization.js";
@@ -102,17 +96,6 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     expect(await getAgentOverview(db, orgB, a)).toBeNull();
     expect((await getAgentOverview(db, orgA, a))?.id).toBe(a);
 
-    const config = { maxConcurrency: 2, poolLimits: { long: 1 } };
-    expect(await updateAgentConfig(db, orgB, a, config)).toBeNull();
-    expect(await updateAgentConfig(db, orgA, a, config)).toMatchObject({
-      maxConcurrency: 2,
-      poolLimits: { long: 1 },
-    });
-    expect(await setAgentDesiredVersion(db, orgB, a, "9.9.9")).toBeNull();
-    expect(await setAgentDesiredVersion(db, orgA, a, "1.2.3")).toMatchObject({
-      desiredVersion: "1.2.3",
-    });
-
     expect((await listPinnableAgents(db, orgB)).map((r) => r.id)).not.toContain(a);
     expect(await filterActiveAgentIds(db, orgB, [a, b])).toEqual(new Set([b]));
 
@@ -121,64 +104,23 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     expect(await revokeAgent(db, a, { organizationId: orgA })).not.toBeNull();
   });
 
-  it("resolves an agent's own max concurrency, else its organization's, and its reported task types", async () => {
+  it("runs the task types an agent reports, every one until it reports any", async () => {
     const [org] = await db.insert(organizations).values({ name: "Defaults" }).returning();
     const organizationId = org!.id;
-    const inheriting = await enroll(organizationId, "inheriting");
-    const own = await enroll(organizationId, "own");
+    const unreported = await enroll(organizationId, "unreported");
+    const narrowed = await enroll(organizationId, "narrowed");
     await db
       .update(agents)
-      .set({ maxConcurrency: 2, reportedAcceptedTaskTypes: ["review"] })
-      .where(eq(agents.id, own));
-    const config = async (agentId: string) => {
-      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
-      return resolveAgentConfig(db, row!);
-    };
+      .set({ reportedAcceptedTaskTypes: ["review", "query"] })
+      .where(eq(agents.id, narrowed));
     const effective = async (agentId: string) =>
       (await getAgentOverview(db, organizationId, agentId))?.effective;
 
-    // No organization setting and nothing reported: every task type, 5 at once.
-    const builtIn = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 5 };
-    expect(await config(inheriting)).toEqual(builtIn);
-    expect(await effective(inheriting)).toEqual(builtIn);
-    const ownConfig = { acceptedTaskTypes: ["review"], maxConcurrency: 2 };
-    expect(await config(own)).toEqual(ownConfig);
-
-    await setDefaultMaxConcurrency(db, organizationId, 8, null);
-    const changed = { acceptedTaskTypes: ["query", "review", "coding"], maxConcurrency: 8 };
-    expect(await config(inheriting)).toEqual(changed);
-    expect(await effective(inheriting)).toEqual(changed);
-    expect(await config(own)).toEqual(ownConfig);
-    expect(await effective(own)).toEqual(ownConfig);
-    // Another organization keeps the built-in defaults.
-    expect(await config(await enroll(orgB, "b-defaults"))).toEqual(builtIn);
-  });
-
-  it("saves an override and switches each field back to inheriting with null", async () => {
-    const [org] = await db.insert(organizations).values({ name: "Overrides" }).returning();
-    const organizationId = org!.id;
-    const a = await enroll(organizationId, "override");
-    await setDefaultMaxConcurrency(db, organizationId, 7, null);
-    const overview = async () => (await getAgentOverview(db, organizationId, a))!;
-
-    expect(
-      await updateAgentConfig(db, organizationId, a, { maxConcurrency: 2, poolLimits: {} }),
-    ).toMatchObject({ maxConcurrency: 2 });
-    expect((await overview()).effective).toEqual({
+    expect(await effective(unreported)).toEqual({
       acceptedTaskTypes: ["query", "review", "coding"],
-      maxConcurrency: 2,
     });
-
-    // Back to the organization's max concurrency.
-    expect(
-      await updateAgentConfig(db, organizationId, a, { maxConcurrency: null, poolLimits: {} }),
-    ).toMatchObject({ maxConcurrency: null });
-    const inheriting = await overview();
-    expect(inheriting.effective).toEqual({
-      acceptedTaskTypes: ["query", "review", "coding"],
-      maxConcurrency: 7,
-    });
-    expect(inheriting.defaults).toEqual({ maxConcurrency: 7 });
+    // In `TASK_TYPES` order.
+    expect(await effective(narrowed)).toEqual({ acceptedTaskTypes: ["query", "review"] });
   });
 
   it("soft-deletes only revoked agents of the organization and hides them", async () => {
@@ -205,6 +147,59 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     expect((await getAgentOverview(db, orgA, a))?.reportedModels).toEqual([opus]);
     // An older agent, or one whose login can't list them, reports none.
     expect((await heartbeat())?.reportedModels).toEqual([]);
+  });
+
+  it("stores the reported local settings and announces the agent only when they change", async () => {
+    const a = await enroll(orgA, "a-local");
+    type Local = {
+      maxConcurrency: number;
+      poolLimits: { short: number; long: number };
+      versionPin: string | null;
+      installablesAllow: string[];
+    };
+    const local: Local = {
+      maxConcurrency: 4,
+      poolLimits: { short: 4, long: 3 },
+      versionPin: null,
+      installablesAllow: ["@omniralph/*"],
+    };
+    const heartbeat = (report?: Local) =>
+      captureChanges(() => recordAgentHeartbeat(db, a, { version: "1.0.0", local: report }));
+    const agentChanges = (changes: { resource: string }[]) =>
+      changes.filter((change) => change.resource === "agent");
+
+    const first = await heartbeat(local);
+    expect(first.result).toMatchObject({
+      reportedMaxConcurrency: 4,
+      reportedPoolLimits: { short: 4, long: 3 },
+      reportedVersionPin: null,
+      reportedInstallablesAllow: ["@omniralph/*"],
+    });
+    expect(agentChanges(first.changes)).toHaveLength(1);
+    // A steady heartbeat announces nothing.
+    expect(agentChanges((await heartbeat(local)).changes)).toEqual([]);
+    for (const changed of [
+      { ...local, maxConcurrency: 6 },
+      { ...local, maxConcurrency: 6, poolLimits: { short: 6, long: 2 } },
+      { ...local, maxConcurrency: 6, poolLimits: { short: 6, long: 2 }, versionPin: "2.0.3" },
+      {
+        maxConcurrency: 6,
+        poolLimits: { short: 6, long: 2 },
+        versionPin: "2.0.3",
+        installablesAllow: [],
+      },
+    ] satisfies Local[]) {
+      const { result, changes } = await heartbeat(changed);
+      expect(agentChanges(changes)).toHaveLength(1);
+      expect(result).toMatchObject({
+        reportedMaxConcurrency: changed.maxConcurrency,
+        reportedPoolLimits: changed.poolLimits,
+        reportedVersionPin: changed.versionPin,
+        reportedInstallablesAllow: changed.installablesAllow,
+      });
+    }
+    // A heartbeat without the report keeps the last one.
+    expect((await heartbeat()).result?.reportedMaxConcurrency).toBe(6);
   });
 
   describe("listReportedModels", () => {

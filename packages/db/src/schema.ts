@@ -1231,7 +1231,10 @@ export const agents = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    /** Null: the organization's default (`app_settings` `agent.maxConcurrency`). */
+    /**
+     * Unused: an agent's slots are its own (`settings.json`), reported in
+     * `reported_max_concurrency`. Kept until the migration that drops it refuses set values.
+     */
     maxConcurrency: integer("max_concurrency"),
     /**
      * The task types the agent runs (`system` is always accepted), as it reports them: its
@@ -1240,8 +1243,8 @@ export const agents = pgTable(
      */
     reportedAcceptedTaskTypes: text("reported_accepted_task_types").array(),
     /**
-     * Per-pool caps on concurrent jobs (e.g. `{ "long": 1 }`), within
-     * `maxConcurrency`. Unset pools use the protocol's default limit.
+     * Unused: an agent's pool limits are its own (`settings.json`), reported in
+     * `reported_pool_limits`. Kept until the migration that drops it refuses set values.
      */
     poolLimits: jsonb("pool_limits").$type<Partial<Record<string, number>>>().notNull().default({}),
     /** Overrides the organization's desired agent version (`app_settings` `agent.desiredVersion`). */
@@ -1262,6 +1265,17 @@ export const agents = pgTable(
      * carried one reported it; null until then (older agents send none).
      */
     reportedHost: jsonb("reported_host").$type<AgentHostReport>(),
+    /**
+     * The agent's slots (its local `maxConcurrency`), as its last heartbeat reported them.
+     * Read-only here: the agent's `settings.json` is the only source. Null until it reports.
+     */
+    reportedMaxConcurrency: integer("reported_max_concurrency"),
+    /** Both pools' effective limits (`short`, `long`), as last reported; null until then. */
+    reportedPoolLimits: jsonb("reported_pool_limits").$type<{ short: number; long: number }>(),
+    /** The agent's local version pin, as last reported; null when none or not reported. */
+    reportedVersionPin: text("reported_version_pin"),
+    /** The agent's installables allow-list, as last reported; null until it reports. */
+    reportedInstallablesAllow: text("reported_installables_allow").array(),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The agent's self-update progress, as last reported. */

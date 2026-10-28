@@ -47,7 +47,7 @@ always behaves like cyralph's default and has no setting for it.
 | `port`, `baseUrl` | Not needed | The control panel runs on Vercel at `APP_URL`; webhooks and the OAuth callback use it ([env.md](env.md)). No tunnel. |
 | `stateDir` | Not needed | Run state is in Postgres. Agents keep repositories and branch worktrees under their `workspaceRoot` ([deploy-agent.md](deploy-agent.md#workspaceroot-and-disk-usage)). |
 | `model`, `fallbackModel` | **Model** / **Fallback model** per repository | Same names and defaults (`opus` / none), set per repository instead of globally. |
-| `maxConcurrentSessions` | Max concurrency and concurrency per pool in each agent machine's local config | Per agent; until they move there, every agent runs with the defaults ([deploy-agent.md](deploy-agent.md#central-config)). The `long` pool (coding) limit defaults to max concurrency − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
+| `maxConcurrentSessions` | Slots and slots per pool on each agent's page (its `settings.json`) | Per agent ([deploy-agent.md](deploy-agent.md#machine-settings-settingsjson)), applied at once. The `long` pool (coding) limit defaults to the slots − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
 | `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repos › Add repo › Connect GitLab**), so the code host is known per repository. |
 | `blockerPollMinutes` | Fixed | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes. |
 | `permissionMode` | Fixed | Coding sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**. |
@@ -205,11 +205,10 @@ is delegated to Omniralph yet, so nothing runs.
    for commits, the repositories' toolchains (everything the verify commands, PRD gates and setup
    commands call), and private registry credentials, all for the agent's user. Sessions can use
    any `gh`/`glab` login that user has (see the linked section).
-2. Make sure each agent accepts `coding`: its `agent.json` has no `acceptedTaskTypes` (all
-   types), or lists `coding` (restart it after editing). Max concurrency (cyralph's
-   `maxConcurrentSessions` is a good start) and the `long` pool limit belong to the agent
-   machine's local config; until they move there, every agent runs with the defaults
-   ([deploy-agent.md](deploy-agent.md#central-config)).
+2. Make sure each agent accepts `coding`: its `settings.json` has no `acceptedTaskTypes` (all
+   types), or lists `coding` (applied at once). Set Slots (cyralph's
+   `maxConcurrentSessions` is a good start) and the coding slots on the agent's page (its
+   [`settings.json`](deploy-agent.md#machine-settings-settingsjson)); they apply at once.
 3. For pm2 agents, choose the version with **Fleet › Version policy › Edit** (replaces cyralph's `autoUpdate`).
 4. If a repository is pinned to agents, at least one of them needs to accept `coding`.
 

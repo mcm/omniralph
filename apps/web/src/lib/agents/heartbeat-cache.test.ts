@@ -59,7 +59,19 @@ const { sendToChatRun } = await import("@/lib/ralph/chat-reply");
 const databaseAvailable = testDatabaseAvailable();
 const redisAvailable = await testRedisAvailable();
 
-const IDLE = { version: "1.4.0", selfUpdate: "supported", runningJobIds: [], freeSlots: 1 };
+const LOCAL = {
+  maxConcurrency: 5,
+  poolLimits: { short: 5, long: 4 },
+  versionPin: null,
+  installablesAllow: ["@omniralph/*"],
+};
+const IDLE = {
+  version: "1.4.0",
+  selfUpdate: "supported",
+  runningJobIds: [],
+  freeSlots: 1,
+  local: LOCAL,
+};
 
 let ipCounter = 0;
 
@@ -220,32 +232,30 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
     expect(row!.reportedVersion).toBe("1.5.0");
     expect((await send(agentId, { version: "1.5.0" })).calls).toBe(0);
+    // A new local settings report is stored, then answered from Redis again.
+    const local = { ...LOCAL, maxConcurrency: 2, poolLimits: { short: 2, long: 1 } };
+    expect((await send(agentId, { version: "1.5.0", local })).calls).toBeGreaterThan(0);
+    const [stored] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(stored).toMatchObject({
+      reportedMaxConcurrency: 2,
+      reportedPoolLimits: { short: 2, long: 1 },
+      reportedVersionPin: null,
+      reportedInstallablesAllow: ["@omniralph/*"],
+    });
+    const cached = await send(agentId, { version: "1.5.0", local });
+    expect(cached.calls).toBe(0);
+    // Its slots are its own: the response never carries any.
+    expect(cached.response).not.toHaveProperty("maxConcurrency");
+    expect(cached.response).not.toHaveProperty("poolLimits");
     // A new host tools report is stored too.
     const tools = [{ name: "semgrep", configuredPathExists: null, discoveredPath: "/bin/semgrep" }];
-    expect((await send(agentId, { version: "1.5.0", hostTools: tools })).calls).toBeGreaterThan(0);
+    expect(
+      (await send(agentId, { version: "1.5.0", local, hostTools: tools })).calls,
+    ).toBeGreaterThan(0);
   });
 
   type Change = (ids: { agentId: string; orgId: string }) => Promise<void>;
   const changes: [string, Change, (response: HeartbeatResponse) => void][] = [
-    [
-      "agent config",
-      async ({ agentId, orgId }) => {
-        expect(
-          await manage.updateAgentConfig(db, orgId, agentId, {
-            maxConcurrency: 3,
-            poolLimits: {},
-          }),
-        ).toEqual({ ok: true });
-      },
-      (response) => expect(response.maxConcurrency).toBe(3),
-    ],
-    [
-      "agent desired version",
-      async ({ agentId, orgId }) => {
-        await manage.setAgentDesiredVersion(db, orgId, agentId, "2.9.0");
-      },
-      (response) => expect(response.desiredVersion).toBe("2.9.0"),
-    ],
     [
       "pin",
       async ({ agentId, orgId }) => {
@@ -282,13 +292,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         });
       },
       (response) => expect(response.updateRequest).toMatchObject({ version: "2.0.0" }),
-    ],
-    [
-      "organization defaults",
-      async ({ orgId }) => {
-        await defaults.setOrganizationDefaults(db, admin(orgId), { maxConcurrency: 7 });
-      },
-      (response) => expect(response.maxConcurrency).toBe(7),
     ],
     [
       "organization version",

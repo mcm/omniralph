@@ -6,8 +6,8 @@
  * idempotent (calling it again with nothing new changes nothing).
  */
 import {
+  agentAcceptedTaskTypes,
   getAgent,
-  resolveAgentConfig,
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
@@ -443,7 +443,7 @@ async function usableAgentId(
     !agent ||
     agent.revokedAt ||
     agent.organizationId !== organizationId ||
-    !(await resolveAgentConfig(db, agent)).acceptedTaskTypes.includes("coding")
+    !agentAcceptedTaskTypes(agent).includes("coding")
   ) {
     return undefined;
   }

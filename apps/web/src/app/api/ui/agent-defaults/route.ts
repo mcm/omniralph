@@ -3,14 +3,17 @@ import { agentDefaultsSaveSchema, type AgentDefaults } from "@/lib/api/agent-def
 import { getDb } from "@/lib/db";
 import { loadAgentDefaults, saveAgentDefaults } from "@/lib/agents/defaults";
 
-/** The organization's agent defaults (admins; Fleet edits the version policy): the desired version and the task-type and concurrency defaults. */
+/**
+ * The organization's agent defaults (admins; Fleet edits the version policy): the desired
+ * version. Slots and kinds are each agent's own (`settings.json`).
+ */
 export const GET = apiHandler({ access: "admin" }, async ({ user }): Promise<AgentDefaults> =>
   loadAgentDefaults(getDb(), user.organization.id),
 );
 
 /**
- * Saves the Defaults tab's changes in one request (defaults, then the version): agents get
- * them with their next claim or heartbeat.
+ * Saves the version policy (`maxConcurrency` or `defaults` is a 400): agents get it with
+ * their next heartbeat.
  */
 export const PUT = apiHandler(
   { access: "admin", body: agentDefaultsSaveSchema },
