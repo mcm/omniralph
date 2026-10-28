@@ -81,6 +81,51 @@
   color: var(--or-ter);
 }
 
+/* Search and jump: a field-like button under the picker; on the rail, an icon. */
+.or-sidebar__search {
+  margin-bottom: 8px;
+}
+
+.or-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--or-ctl);
+  border-radius: var(--or-radius);
+  background: var(--or-page);
+  color: var(--or-ter);
+  font-family: var(--or-font-sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.or-search-btn:hover {
+  border-color: var(--or-sec);
+  color: var(--or-sec);
+}
+
+.or-search-btn:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}
+
+.or-search-btn__icon {
+  flex: none;
+}
+
+.or-search-btn__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .or-sidebar__gap {
   flex: 1;
   min-height: 12px;
@@ -416,9 +461,22 @@
 
   .or-sidebar .or-nav__item,
   .or-sidebar .or-user,
-  .or-sidebar .or-org-picker {
+  .or-sidebar .or-org-picker,
+  .or-sidebar .or-search-btn {
     justify-content: center;
     padding: 0;
+  }
+
+  .or-sidebar .or-search-btn {
+    height: 40px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--or-sec);
+  }
+
+  .or-sidebar .or-search-btn:hover {
+    background: var(--or-hover);
+    color: var(--or-text);
   }
 
   .or-sidebar .or-nav__item {

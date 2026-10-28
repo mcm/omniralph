@@ -630,3 +630,125 @@
     border-left: 1px solid var(--or-line);
   }
 }
+
+/*
+ * Search palette: a centered dialog, 640 px wide, 12vh from the top; full screen at 768 px
+ * and narrower with the input pinned at the top. Results are list rows (`or-row`) under
+ * group headings; the highlighted one has the selected row's background.
+ */
+.or-palette__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--or-page) 72%, transparent);
+}
+
+.or-palette {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 76vh;
+  overflow: hidden;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-lg);
+  background: var(--or-surf);
+  color: var(--or-text);
+  transform: translateX(-50%);
+}
+
+.or-palette__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 16px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-palette__icon {
+  flex: none;
+  color: var(--or-ter);
+}
+
+.or-palette__input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--or-text);
+  font-family: var(--or-font-sans);
+  font-size: 15px;
+}
+
+.or-palette__input::placeholder {
+  color: var(--or-ter);
+  opacity: 1;
+}
+
+.or-palette__input:focus {
+  outline: none;
+}
+
+.or-palette__close {
+  display: none;
+}
+
+.or-palette__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.or-palette__heading {
+  padding: 10px 14px 4px;
+  color: var(--or-ter);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.or-palette__option {
+  cursor: pointer;
+}
+
+.or-palette__group:last-child .or-palette__option:last-child {
+  border-bottom: 0;
+}
+
+.or-palette__option[aria-selected="true"] {
+  background: var(--or-sel);
+}
+
+.or-palette__message:not(:empty) {
+  padding: 16px;
+  color: var(--or-sec);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .or-palette {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    transform: none;
+  }
+
+  .or-palette__head {
+    padding-top: max(6px, env(safe-area-inset-top));
+  }
+
+  .or-palette__close {
+    display: inline-flex;
+  }
+}

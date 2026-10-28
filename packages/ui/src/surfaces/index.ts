@@ -7,3 +7,4 @@ export * from "./progress-card.js";
 export * from "./save-bar.js";
 export * from "./sheet.js";
 export * from "./summary-cells.js";
+export * from "./search-palette.js";

@@ -281,6 +281,17 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   "Close" button and a scrim click close it, and focus returns to the trigger, or to the
   element focused when it opened. It sits above the shell's drawer and below menus,
   tooltips and `ConfirmDialog`s opened from inside it.
+- `SearchPalette`: search and jump (Radix modal dialog named by `label`, default "Search or
+  jump to…"): one input and the results under group headings. Props: controlled `open` +
+  `onOpenChange`, `query` + `onQueryChange`, `groups` (`{ id, label, items }[]`; empty
+  groups are left out), `onSelect(item)`, `message?` (shown and announced, `role="status"`,
+  while there are no results, e.g. "No matches for “x”") and `busy?`. An item is
+  `{ id, title, meta?, kindLabel + tone | mark }`, drawn as a `ListRow` (dot and kind line,
+  or a mark; badges under the title). The input is a combobox over the listbox: focus stays
+  in it, ↑/↓ move the highlighted option (`aria-activedescendant`; wraps), Enter or a click
+  chooses, Escape closes and focus returns to the element that opened it. Centered, 640 px
+  wide, above sheets; full screen at 768 px and narrower, the input pinned at the top with a
+  "Close" button. No keyboard hints (the app binds its own shortcut).
 - `SummaryCells`: the only summary or stat-tile component (Fleet, connection pages,
   Analytics). `cells` (`{ id, label, value, detail?, info? }`, `value`, `detail` and
   `info` nodes) and optional `aria-label` (which makes the card a named `region`). One
@@ -360,7 +371,7 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
 ## Shell
 
 - `AppFrame`: the app layout. Props: `currentPath`, `brandHref`, `nav` (`NavItem[]`),
-  `orgPicker?` (node), `user` (`{ name, image?, initials }`), `userMenu(trigger)` (wrap
+  `orgPicker?` (node), `search?` (below), `user` (`{ name, image?, initials }`), `userMenu(trigger)` (wrap
   the trigger in a menu, e.g. `<Menu trigger={trigger} …/>`; called for the sidebar
   footer, the phone avatar and the drawer footer) and `children` (in the `main`
   landmark). It knows nothing about routes or sessions. An `orgPicker` trigger takes the
@@ -386,7 +397,10 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
 - `isNavActive(currentPath, item)`: true when the path equals the `href` or an
   `activeFor` prefix, or starts with one followed by `/` (`/settings` never matches
   `/settingsx`; `/` only matches itself). The active entry gets `aria-current="page"`.
-- There is no search control (a non-goal of the 2.0 shell).
+- `search?: { onOpen, label? }` adds search and jump: a "Search or jump to…" (`label`)
+  button between the picker and the entries (an icon with a rail tooltip on the rail) and a
+  search icon button before the avatar in the phone top bar, each calling `onOpen` (e.g. to
+  open a `SearchPalette`). Without it there is no search control.
 
 ## Scripts
 

@@ -18,6 +18,7 @@ import { OrganizationGuard } from "./organization-guard";
 import { ALL_ORGANIZATIONS_LABEL, OrganizationPicker } from "./organization-picker";
 import { QueryProvider } from "./query-provider";
 import { SavedThemeProvider } from "./saved-theme";
+import { SearchProvider, useSearch } from "./search/search-palette";
 import { ShowAdvancedProvider } from "./show-advanced";
 import { UserMenu } from "./user-menu";
 
@@ -27,7 +28,8 @@ import { UserMenu } from "./user-menu";
  * toasts. One `OrganizationPicker` and one `UserMenu` serve every place the frame shows them.
  * On desktop the Ask entry opens the Ask panel beside the page (`AskPanelProvider`); this
  * layout persists across client-side navigation, so the panel does too. On a phone, New chat
- * and a chat (`/ask/new`, `/ask/{id}`) open full screen, without the tab bar.
+ * and a chat (`/ask/new`, `/ask/{id}`) open full screen, without the tab bar. Search and
+ * jump (`SearchProvider`) opens from the frame's search buttons or ⌘K / Ctrl+K.
  */
 export function AppShell({
   user,
@@ -78,22 +80,24 @@ export function AppShell({
                   <UiProvider linkComponent={Link}>
                     <AskContextProvider>
                       <AskPanelProvider>
-                        <AskFrame
-                          currentPath={pathname}
-                          hideTabBar={isAskFullScreenPath(pathname)}
-                          brandHref="/"
-                          nav={navItems}
-                          orgPicker={<OrganizationPicker />}
-                          user={{
-                            name,
-                            image: user.image ?? undefined,
-                            initials: userInitials(user),
-                          }}
-                          userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                        >
-                          <LiveNoticeSlot />
-                          {children}
-                        </AskFrame>
+                        <SearchProvider>
+                          <AskFrame
+                            currentPath={pathname}
+                            hideTabBar={isAskFullScreenPath(pathname)}
+                            brandHref="/"
+                            nav={navItems}
+                            orgPicker={<OrganizationPicker />}
+                            user={{
+                              name,
+                              image: user.image ?? undefined,
+                              initials: userInitials(user),
+                            }}
+                            userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                          >
+                            <LiveNoticeSlot />
+                            {children}
+                          </AskFrame>
+                        </SearchProvider>
                       </AskPanelProvider>
                     </AskContextProvider>
                     <Toaster />
@@ -108,10 +112,17 @@ export function AppShell({
   );
 }
 
-/** The live frame with the Ask entry wired to the panel, and the panel beside the page while open. */
+/**
+ * The live frame with the Ask entry wired to the panel, the panel beside the page while
+ * open, and the search buttons opening the search palette.
+ */
 function AskFrame({ nav, ...props }: React.ComponentProps<typeof LiveAppFrame>) {
   const panel = useAskPanel();
   const { open, toggle } = panel;
+  const { openSearch } = useSearch();
   const items = React.useMemo(() => withAskEntry(nav, { open, toggle }), [nav, open, toggle]);
-  return <LiveAppFrame {...props} nav={items} aside={open ? <AskPanel /> : undefined} />;
+  const search = React.useMemo(() => ({ onOpen: openSearch }), [openSearch]);
+  return (
+    <LiveAppFrame {...props} nav={items} search={search} aside={open ? <AskPanel /> : undefined} />
+  );
 }

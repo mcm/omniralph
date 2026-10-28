@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { IconMenu2, IconX } from "@tabler/icons-react";
+import { IconMenu2, IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Tooltip } from "../actions/tooltip.js";
 import { BrandLockup } from "../brand/wordmark.js";
@@ -47,7 +47,22 @@ export interface AppFrameProps {
    * bar only shows at 768 px and narrower, so nothing changes on wider screens.
    */
   hideTabBar?: boolean;
+  /**
+   * Search and jump: a "Search or jump to…" button between the picker and the entries in
+   * the sidebar (a search icon on the rail) and a search icon button in the phone top bar,
+   * each calling `onOpen` (e.g. to open a `SearchPalette`). Left out without it.
+   */
+  search?: FrameSearch;
 }
+
+/** The frame's search buttons: what they call and say. */
+export interface FrameSearch {
+  onOpen: () => void;
+  /** The sidebar button's text and the icon buttons' name. Defaults to "Search or jump to…". */
+  label?: string;
+}
+
+const SEARCH_LABEL = "Search or jump to…";
 
 type EntryVariant = "side" | "tab" | "drawer";
 
@@ -178,6 +193,7 @@ export function AppFrame({
   children,
   aside,
   hideTabBar = false,
+  search,
 }: AppFrameProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Any navigation closes the drawer, including ones its link click didn't make (a route
@@ -237,6 +253,17 @@ export function AppFrame({
             </button>
           </Dialog.Trigger>
           <BrandLockup href={brandHref} className="or-topbar__brand" />
+          {search ? (
+            <button
+              type="button"
+              className="or-icon-btn or-icon-btn--ghost or-icon-btn--md"
+              aria-label={search.label ?? SEARCH_LABEL}
+              aria-haspopup="dialog"
+              onClick={search.onOpen}
+            >
+              <IconSearch size={20} stroke={1.75} aria-hidden="true" />
+            </button>
+          ) : null}
           {userMenu(
             <button type="button" className="or-topbar__avatar" aria-label={user.name}>
               <Avatar user={user} />
@@ -249,6 +276,29 @@ export function AppFrame({
             <BrandLockup href={brandHref} />
           </div>
           {orgPicker ? <div className="or-sidebar__org">{orgPicker}</div> : null}
+          {search ? (
+            <div className="or-sidebar__search">
+              {/* Shown only on the icon rail, where the label is visually hidden. */}
+              <Tooltip content={search.label ?? SEARCH_LABEL} side="right" className="or-tip--rail">
+                <button
+                  type="button"
+                  className="or-search-btn"
+                  aria-haspopup="dialog"
+                  onClick={search.onOpen}
+                >
+                  <IconSearch
+                    className="or-search-btn__icon"
+                    size={16}
+                    stroke={1.75}
+                    aria-hidden="true"
+                  />
+                  <span className="or-search-btn__label or-rail-hidden">
+                    {search.label ?? SEARCH_LABEL}
+                  </span>
+                </button>
+              </Tooltip>
+            </div>
+          ) : null}
           <NavEntries items={mainEntries} currentPath={currentPath} variant="side" />
           <div className="or-sidebar__gap" />
           <NavEntries items={bottomEntries} currentPath={currentPath} variant="side" />

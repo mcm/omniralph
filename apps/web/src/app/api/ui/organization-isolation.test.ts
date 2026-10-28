@@ -318,6 +318,8 @@ const askChat = await import("./ask/chats/[id]/route");
 const askChatMessages = await import("./ask/chats/[id]/messages/route");
 const askChatActions = await import("./ask/chats/[id]/actions/route");
 const askRepositories = await import("./ask/repositories/route");
+const searchRoute = await import("./search/route");
+const searchRecent = await import("./search/recent/route");
 const { GET: enterOrganization } = await import("../../api/organizations/enter/route");
 const { default: AppLayout } = await import("../../(app)/layout");
 const { createEnterOrganizationPath } = await import("@/lib/organizations/enter");
@@ -530,7 +532,10 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         });
         expect((all.body.byOrganization as unknown[]).length).toBe(1);
         expect(all.body.repositories).toEqual([
-          expect.objectContaining({ id: own.repoId, organization: { id: own.orgId, name: own.name } }),
+          expect.objectContaining({
+            id: own.repoId,
+            organization: { id: own.orgId, name: own.name },
+          }),
         ]);
         const repo = await call(runAnalytics.GET, { path: `/api/ui?repository=${own.repoId}` });
         expect(repo).toMatchObject({ status: 200, body: { params: { repositoryId: own.repoId } } });
@@ -1264,6 +1269,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         const workspace = new FakeLinearGateway();
         workspace.teams = [{ id: `${own.name}-team`, key: "ENG", name: `${own.name} team` }];
         workspace.add({
+          id: `${own.name}-backlog-issue`,
           identifier: `${own.name.toUpperCase()}-BL1`,
           title: `${own.name} backlog item`,
           teamId: `${own.name}-team`,
@@ -1318,7 +1324,20 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
                 (target) => target.repository.id,
               ),
             ).toEqual([own.repoId]);
-            for (const { body } of [listed, counts, upNext, targets]) {
+            const searched = await call(searchRoute.GET, {
+              path: `/api/ui/search?q=backlog%20item${organization ? `&organization=${organization}` : ""}`,
+            });
+            expect(searched.status).toBe(200);
+            expect(
+              (searched.body.groups as Array<{ id: string; results: Array<{ id: string }> }>).find(
+                (group) => group.id === "workItem",
+              )?.results,
+            ).toEqual([
+              expect.objectContaining({
+                workItem: expect.objectContaining({ title: `${own.name} backlog item` }),
+              }),
+            ]);
+            for (const { body } of [listed, counts, upNext, targets, searched]) {
               for (const marker of markers(other)) {
                 expect(JSON.stringify(body)).not.toContain(marker);
               }
@@ -1334,6 +1353,26 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
               await call(handler, { path: `/api/ui/backlog?organization=${other.orgId}` }),
             ).toMatchObject({ status: 404 });
           }
+          // Opening a work item from search: their own only.
+          const ownGroups = (await call(searchRoute.GET, { path: "/api/ui/search?q=backlog" })).body
+            .groups as Array<{ id: string; results: Array<{ id: string }> }>;
+          const ownId = ownGroups.find((group) => group.id === "workItem")!.results[0]!.id;
+          state.userId = other.memberId;
+          const theirs = (await call(searchRoute.GET, { path: "/api/ui/search?q=backlog" })).body
+            .groups as Array<{ id: string; results: Array<{ id: string }> }>;
+          const otherId = theirs.find((group) => group.id === "workItem")!.results[0]!.id;
+          state.userId = userId;
+          expect(
+            await call(searchRecent.POST, { body: { kind: "workItem", id: otherId } }),
+          ).toMatchObject({ status: 404 });
+          expect(
+            await call(searchRecent.POST, { body: { kind: "workItem", id: ownId } }),
+          ).toMatchObject({ status: 200 });
+          const recent = await call(searchRoute.GET, { path: "/api/ui/search?q=" });
+          expect(recent.body).toMatchObject({
+            mode: "recent",
+            groups: [{ id: "recent", results: [expect.objectContaining({ id: ownId })] }],
+          });
         }
       }
       // A member of both gets both organizations' items under organization=all.
@@ -1379,6 +1418,120 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         await db.delete(integrationRows).where(eq(integrationRows.id, id));
       }
     }
+  });
+
+  it("searches only the scope's own runs, repos, agents and recent items, and 404s on the other's", async () => {
+    type Groups = Array<{ id: string; results: Array<{ kind: string; id: string }> }>;
+    const ids = (groups: Groups, kind: string) =>
+      groups.find((group) => group.id === kind)?.results.map((result) => result.id) ?? [];
+    for (const [own, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      for (const userId of [own.adminId, own.memberId]) {
+        state.userId = userId;
+        for (const organization of [undefined, "all", own.orgId]) {
+          const scope = organization ? `&organization=${organization}` : "";
+          // Their own: by the run's identifier, the repo's path and the agent's name.
+          const byIdentifier = await call(searchRoute.GET, {
+            path: `/api/ui/search?q=${own.name.toUpperCase()}-1${scope}`,
+          });
+          expect(byIdentifier).toMatchObject({ status: 200, body: { mode: "results" } });
+          const groups = byIdentifier.body.groups as Groups;
+          expect(groups[0]).toMatchObject({ id: "run", results: [{ kind: "run", id: own.runId }] });
+          const byName = await call(searchRoute.GET, {
+            path: `/api/ui/search?q=${own.name}${scope}`,
+          });
+          expect(ids(byName.body.groups as Groups, "repository")).toEqual([own.repoId]);
+          const agents = await call(searchRoute.GET, {
+            path: `/api/ui/search?q=${own.name}-agent${scope}`,
+          });
+          expect(ids(agents.body.groups as Groups, "agent")).toEqual([own.agentId]);
+          // The other's: nothing, whatever is typed.
+          const theirs = await call(searchRoute.GET, {
+            path: `/api/ui/search?q=${other.name}${scope}`,
+          });
+          expect(theirs.status).toBe(200);
+          for (const { body } of [byIdentifier, byName, agents, theirs]) {
+            for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
+          }
+        }
+        expect(
+          await call(searchRoute.GET, {
+            path: `/api/ui/search?q=${own.name}&organization=${other.orgId}`,
+          }),
+        ).toMatchObject({ status: 404 });
+
+        // Recent items: only their own can be recorded, and only their own are listed.
+        for (const [kind, id] of [
+          ["run", other.runId],
+          ["run", other.triageRunId],
+          ["repository", other.repoId],
+          ["agent", other.agentId],
+          ["settings", "/settings/nope"],
+        ] as const) {
+          expect(await call(searchRecent.POST, { body: { kind, id } })).toMatchObject({
+            status: 404,
+          });
+        }
+        for (const [kind, id] of [
+          ["agent", own.agentId],
+          ["repository", own.repoId],
+          ["run", own.runId],
+          ["settings", "/settings/members"],
+        ] as const) {
+          expect(await call(searchRecent.POST, { body: { kind, id } })).toMatchObject({
+            status: 200,
+          });
+        }
+        const recent = await call(searchRoute.GET, { path: "/api/ui/search?q=a" });
+        expect(recent).toMatchObject({ status: 200, body: { mode: "recent" } });
+        expect(ids(recent.body.groups as Groups, "recent")).toEqual([
+          "/settings/members",
+          own.runId,
+          own.repoId,
+          own.agentId,
+        ]);
+        for (const marker of markers(other)) {
+          expect(JSON.stringify(recent.body)).not.toContain(marker);
+        }
+      }
+    }
+    // A member of both: either organization's matches under "All organizations", the
+    // active one's otherwise, and recent items of the scope only.
+    const [both] = await db
+      .insert(users)
+      .values({ id: "search-both", email: "search-both@alpha.io" })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: a.orgId, userId: both!.id, role: "member" },
+      { organizationId: b.orgId, userId: both!.id, role: "member" },
+    ]);
+    await setActiveOrganization(db, { userId: both!.id, organizationId: a.orgId });
+    try {
+      state.userId = both!.id;
+      const all = await call(searchRoute.GET, { path: "/api/ui/search?q=app&organization=all" });
+      expect(ids(all.body.groups as Groups, "repository").sort()).toEqual(
+        [a.repoId, b.repoId].sort(),
+      );
+      const active = await call(searchRoute.GET, { path: "/api/ui/search?q=app" });
+      expect(ids(active.body.groups as Groups, "repository")).toEqual([a.repoId]);
+      expect(
+        await call(searchRecent.POST, { body: { kind: "repository", id: b.repoId } }),
+      ).toMatchObject({ status: 200 });
+      const recentActive = await call(searchRoute.GET, { path: "/api/ui/search" });
+      expect(ids(recentActive.body.groups as Groups, "recent")).toEqual([]);
+      const recentAll = await call(searchRoute.GET, { path: "/api/ui/search?organization=all" });
+      expect(ids(recentAll.body.groups as Groups, "recent")).toEqual([b.repoId]);
+    } finally {
+      await db.delete(organizationMembers).where(eq(organizationMembers.userId, both!.id));
+      await db.delete(users).where(eq(users.id, both!.id));
+    }
+    state.userId = null;
+    expect((await call(searchRoute.GET, { path: "/api/ui/search?q=alpha" })).status).toBe(401);
+    expect((await call(searchRecent.POST, { body: { kind: "run", id: a.runId } })).status).toBe(
+      401,
+    );
   });
 
   it("opens and acts on each organization's own work items only, 404 on the other's", async () => {

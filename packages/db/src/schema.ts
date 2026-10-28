@@ -2660,3 +2660,39 @@ export const settingsChanges = pgTable(
     ),
   ],
 );
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+/** What the search palette opens: a run, a Backlog work item, a repo, an agent or a settings page. */
+export const recentItemKind = pgEnum("recent_item_kind", [
+  "run",
+  "work_item",
+  "repository",
+  "agent",
+  "settings",
+]);
+
+/**
+ * The items a user last opened from the search palette (`search.ts`), newest first, at most
+ * `RECENT_ITEMS_CAP` per user. `ref_id` is the item's ID (a work item's URL ID, a settings
+ * page's path); `organization_id` is the item's organization (null for a settings page), so
+ * a read only shows items of organizations in the user's scope.
+ */
+export const userRecentItems = pgTable(
+  "user_recent_items",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: recentItemKind("kind").notNull(),
+    refId: text("ref_id").notNull(),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.kind, t.refId] }),
+    index("user_recent_items_user_opened_at_idx").on(t.userId, t.openedAt),
+  ],
+);
