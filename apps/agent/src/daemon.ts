@@ -432,8 +432,7 @@ export class AgentDaemon implements DrainableDaemon {
         local: {
           maxConcurrency: local.maxConcurrency,
           poolLimits: { short: local.poolLimits.short, long: local.poolLimits.long },
-          // The local pin isn't applied yet: none is reported.
-          versionPin: null,
+          versionPin: local.versionPin,
           installablesAllow: local.installablesAllow,
         },
         ...this.options.updater?.report(),

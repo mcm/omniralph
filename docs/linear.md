@@ -825,7 +825,7 @@ Triage jobs run in the `short` pool on agents that accept `query` tasks; like re
 take every slot by default. Pool limits belong to the agent machine's local config; until they
 move there, every agent runs with the defaults ([deploy-agent.md](deploy-agent.md#central-config)).
 Agents under pm2 update themselves to the version chosen on **Fleet › Version policy**
-([deploy-agent.md](deploy-agent.md#self-update-pm2)).
+([deploy-agent.md](deploy-agent.md#updating)).
 
 ## Troubleshooting
 

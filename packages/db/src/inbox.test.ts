@@ -467,11 +467,15 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       },
     });
     await agent("desiredFailed", { lastHeartbeatAt: now, failedVersions: ["2.0.0"] });
-    await agent("desiredOk", { lastHeartbeatAt: now, failedVersions: ["1.0.0"] });
+    await agent("desiredOk", { lastHeartbeatAt: now, failedVersions: ["2.0.0"] });
     await db
       .insert(appSettings)
       .values({ organizationId: acme, key: "agent.desiredVersion", value: "2.0.0" });
-    await db.update(agents).set({ desiredVersion: "2.1.0" }).where(eq(agents.id, ids.desiredOk!));
+    // Pinned on the agent: its own target wins over the organization's.
+    await db
+      .update(agents)
+      .set({ reportedVersionPin: "2.1.0" })
+      .where(eq(agents.id, ids.desiredOk!));
 
     // ── Running ──
     const [runningTriage] = await db

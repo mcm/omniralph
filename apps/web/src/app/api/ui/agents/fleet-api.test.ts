@@ -470,7 +470,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
         offline: 2,
         busy: 1,
         versionPolicy: { mode: "pinned", version: "2.0.3", target: "2.0.3" },
-        versions: { onTarget: 2, behind: 0, updateFailed: 1 },
+        versions: { onTarget: 2, behind: 0, pinned: 0, updateFailed: 1 },
         acceptedKinds: { limited: 1, total: 5 },
       });
     }
@@ -496,7 +496,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       offline: 2,
       busy: 1,
       versionPolicy: null,
-      versions: { onTarget: 3, behind: 0, updateFailed: 1 },
+      versions: { onTarget: 3, behind: 0, pinned: 0, updateFailed: 1 },
       acceptedKinds: { limited: 1, total: 6 },
     });
     // One organization of the two.
@@ -517,8 +517,35 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
         version: "2.0.3",
         target: "2.0.3",
       });
-      expect(same.body.summary.versions).toEqual({ onTarget: 2, behind: 1, updateFailed: 1 });
+      expect(same.body.summary.versions).toEqual({
+        onTarget: 2,
+        behind: 1,
+        pinned: 0,
+        updateFailed: 1,
+      });
+
+      // Pinned on the agent: on its own target, never behind.
+      await db
+        .update(agents)
+        .set({ reportedVersionPin: "2.0.9" })
+        .where(eq(agents.id, ids["z-beta"]!));
+      const pinned = await list("all");
+      expect(pinned.body.summary.versions).toEqual({
+        onTarget: 2,
+        behind: 0,
+        pinned: 1,
+        updateFailed: 1,
+      });
+      expect(pinned.body.agents.find((a) => a.name === "z-beta")).toMatchObject({
+        versionPin: "2.0.9",
+        desiredVersion: "2.0.9",
+        tracksLatest: false,
+      });
     } finally {
+      await db
+        .update(agents)
+        .set({ reportedVersionPin: null })
+        .where(eq(agents.id, ids["z-beta"]!));
       await setDesiredAgentVersion(db, beta.id, TRACK_LATEST_AGENT_VERSION, null);
     }
   });

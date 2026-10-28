@@ -633,6 +633,7 @@ export const listAgentsTool = defineChatTool({
           status: agent.revoked ? "revoked" : agent.online ? "online" : "offline",
           version: agent.version,
           desiredVersion: agent.desiredVersion,
+          versionPin: agent.versionPin,
           updateStatus: agent.updateStatus,
           acceptedTaskTypes: agent.acceptedTaskTypes,
           slots: agent.slots,

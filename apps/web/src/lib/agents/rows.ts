@@ -1,9 +1,13 @@
 import type { AgentOverview, JobListEntry } from "@omniralph/db";
 import type { AgentHostReport, AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
-import { agentStatus, type AgentStatus } from "@/lib/fleet/status";
+import {
+  agentStatus,
+  agentUpdateStatus,
+  type AgentStatus,
+  type AgentUpdateStatus,
+} from "@/lib/fleet/status";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { jobTarget, type JobTarget } from "./display";
-import { agentUpdateStatus, type AgentUpdateStatus } from "./update";
 
 /** Serializable agent row for the Agents pages. */
 export interface AgentRow {
@@ -19,18 +23,16 @@ export interface AgentRow {
   /** The machine it last reported running on; null until it reports one. */
   host: AgentHostReport | null;
   version: string | null;
-  /** The version the agent should run: its override, else the global setting. */
+  /** The version the agent should run: its local pin, else its organization's policy. */
   desiredVersion: string | null;
-  /** The agent's own desired version, overriding the global one. */
-  desiredVersionOverride: string | null;
-  /** `desiredVersion` is the latest on npm (the global setting tracks it, no override). */
+  /** The version pinned on the agent (its `settings.json`), as it reports it; null when none. */
+  versionPin: string | null;
+  /** `desiredVersion` is the latest on npm (the policy tracks it, no local pin). */
   tracksLatest: boolean;
   /** Null for agents that don't report it (older versions). */
   selfUpdate: SelfUpdateSupport | null;
   update: AgentUpdateReport | null;
   failedVersions: string[];
-  /** An admin's "Update now" the agent hasn't acted on yet (`requestedAt` is ISO). */
-  updateRequest: { version: string; requestedAt: string } | null;
   updateStatus: AgentUpdateStatus;
   /**
    * Task types the agent claims jobs of (`system` jobs always run), as it reports them (its
@@ -63,8 +65,8 @@ export interface AgentRow {
 }
 
 /**
- * `globalDesiredVersion` is the version policy's version (Fleet › Version policy), used by agents
- * without their own override (`globalTracksLatest`: it's the latest on npm).
+ * `globalDesiredVersion` is the version policy's version (Fleet › Version policy), the target of
+ * agents without a local pin (`globalTracksLatest`: it's the latest on npm).
  */
 export function agentRow(
   agent: AgentOverview,
@@ -72,22 +74,15 @@ export function agentRow(
   globalDesiredVersion: string | null = null,
   globalTracksLatest = false,
 ): AgentRow {
-  const desiredVersion = agent.desiredVersion ?? globalDesiredVersion;
+  const versionPin = agent.reportedVersionPin;
+  const desiredVersion = versionPin ?? globalDesiredVersion;
   const update = agent.updateState ?? null;
-  const updateRequest =
-    agent.updateRequestVersion && agent.updateRequestedAt
-      ? {
-          version: agent.updateRequestVersion,
-          requestedAt: agent.updateRequestedAt.toISOString(),
-        }
-      : null;
   const updateStatus = agentUpdateStatus({
     version: agent.reportedVersion,
     desiredVersion,
     selfUpdate: agent.selfUpdate,
     update,
     failedVersions: agent.failedVersions,
-    updateRequested: updateRequest !== null,
   });
   const revoked = agent.revokedAt !== null;
   const online = !revoked && agent.liveOnline;
@@ -105,12 +100,11 @@ export function agentRow(
     host: agent.reportedHost ?? null,
     version: agent.reportedVersion,
     desiredVersion,
-    desiredVersionOverride: agent.desiredVersion,
-    tracksLatest: !agent.desiredVersion && globalTracksLatest,
+    versionPin,
+    tracksLatest: !versionPin && globalTracksLatest,
     selfUpdate: agent.selfUpdate,
     update,
     failedVersions: agent.failedVersions,
-    updateRequest,
     updateStatus,
     acceptedTaskTypes: agent.effective.acceptedTaskTypes,
     slots: { running: runningCount, max: agent.reportedMaxConcurrency },

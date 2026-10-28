@@ -190,8 +190,14 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories/{id}", () => {
           lastHeartbeatAt: now,
           liveOnline: true,
           selfUpdate: "supported",
-          updateRequestVersion: "2.0.0",
-          updateRequestedAt: now,
+          reportedVersion: "1.9.0",
+          updateState: {
+            state: "draining",
+            version: "2.0.0",
+            previous: "1.9.0",
+            startsSincePending: 0,
+            error: null,
+          },
         },
         {
           organizationId: org.acme,

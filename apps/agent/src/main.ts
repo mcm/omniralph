@@ -71,8 +71,8 @@ Commands:
                                             skip the check for a running old daemon
                     --dry-run               Print the summary and write nothing
   update          Ask the running agent (under pm2) to update with its next heartbeat:
-                  to the desired version, else the latest on npm, even one that
-                  failed before
+                  to its pinned version, else the organization's, else the latest
+                  on npm, even one that failed before
   git-credential  Git credential helper for job git commands (\`get\` only; reads
                   OMNIRALPH_JOB_TOKEN, set by the agent for in-job processes)
 
@@ -292,7 +292,7 @@ async function runUpdate(configPath: string, deps: MainDeps): Promise<number> {
   deps.io.stdout(
     `Update requested (${file}).\n` +
       `The running agent picks it up with its next heartbeat: it stops taking jobs, lets running ones\n` +
-      `finish, installs the desired version (or the latest on npm when none is set) and restarts.\n` +
+      `finish, installs the pinned version (else the organization's, else the latest on npm) and restarts.\n` +
       `Only agents under pm2 update themselves; others log a warning and keep running.\n`,
   );
   return 0;
@@ -329,6 +329,7 @@ async function runStart(
   const updater = new SelfUpdater({
     statePath: updateStatePath(configPath),
     requestPath: updateRequestPath(configPath),
+    pin: () => settings.effective().versionPin,
     runningVersion: version,
     underPm2: runningUnderPm2(deps.env),
     installer: deps.installer ?? npmInstaller(deps.env),

@@ -4,11 +4,15 @@ import { Button, Field, SegmentedControl, Sheet, TextInput } from "@omniralph/ui
 import { useState, type FormEvent } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { useApiMutation } from "@/components/use-api-mutation";
-import { agentUpdateStatus } from "@/lib/agents/update";
 import { agentDefaultsSavedSchema } from "@/lib/api/agent-defaults";
 import type { AgentList } from "@/lib/api/agents";
 import { api, type ApiError } from "@/lib/api/client";
-import { agentStatus, versionCounts, type VersionPolicy } from "@/lib/fleet/status";
+import {
+  agentStatus,
+  agentUpdateStatus,
+  versionCounts,
+  type VersionPolicy,
+} from "@/lib/fleet/status";
 import { fleetKeys } from "./queries";
 
 /** The sheet's two choices. */
@@ -38,7 +42,7 @@ export function versionPolicySaved(policy: VersionPolicy | undefined): string {
 
 /**
  * `list` with `policy` as `organizationId`'s version policy: its agents' desired version
- * (an agent's own override still wins), update state and status, and the summary's policy
+ * (a version pinned on the agent still wins), update state and status, and the summary's policy
  * and counts, as the server computes them, so the cell shows a save at once.
  */
 export function withVersionPolicy(
@@ -49,19 +53,18 @@ export function withVersionPolicy(
 ): AgentList {
   const agents = list.agents.map((row) => {
     if (row.organization.id !== organizationId) return row;
-    const desiredVersion = row.desiredVersionOverride ?? policy.target;
+    const desiredVersion = row.versionPin ?? policy.target;
     const updateStatus = agentUpdateStatus({
       version: row.version,
       desiredVersion,
       selfUpdate: row.selfUpdate,
       update: row.update,
       failedVersions: row.failedVersions,
-      updateRequested: row.updateRequest !== null,
     });
     return {
       ...row,
       desiredVersion,
-      tracksLatest: !row.desiredVersionOverride && policy.mode === "latest",
+      tracksLatest: !row.versionPin && policy.mode === "latest",
       updateStatus,
       status: agentStatus(
         {

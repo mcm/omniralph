@@ -368,38 +368,6 @@ function recordAgentChange(db: Database, agent: { id: string; organizationId: st
 }
 
 /**
- * Asks an agent to update to `version` now (an admin's "Update now"), replacing
- * any request it hasn't acted on yet. The agent gets it with its next heartbeat
- * and reports it handled, which clears it. Returns null for unknown or revoked
- * agents and agents of another organization.
- */
-export async function requestAgentUpdate(
-  db: Database,
-  organizationId: string,
-  agentId: string,
-  version: string,
-  now: Date = new Date(),
-): Promise<AgentRow | null> {
-  const [row] = await db
-    .update(agents)
-    .set({
-      updateRequestId: sql`gen_random_uuid()`,
-      updateRequestVersion: version,
-      updateRequestedAt: now,
-    })
-    .where(
-      and(
-        eq(agents.organizationId, organizationId),
-        eq(agents.id, agentId),
-        isNull(agents.revokedAt),
-      ),
-    )
-    .returning();
-  if (row) recordAgentChange(db, row);
-  return row ?? null;
-}
-
-/**
  * Soft-deletes a revoked agent: it's hidden from the Agents pages from then on.
  * Returns false for unknown, active or already deleted agents and agents of
  * another organization.
@@ -440,7 +408,10 @@ export async function listRecentAgentAudit(
   // A revoke or delete names the user who did it; their name, while they still exist.
   const actorId = sql<string>`coalesce(${agentAudit.detail}->>'revokedBy', ${agentAudit.detail}->>'deletedBy')`;
   const rows = await db
-    .select({ entry: agentAudit, actorName: sql<string | null>`coalesce(${users.name}, ${users.email})` })
+    .select({
+      entry: agentAudit,
+      actorName: sql<string | null>`coalesce(${users.name}, ${users.email})`,
+    })
     .from(agentAudit)
     .leftJoin(users, eq(users.id, actorId))
     .where(eq(agentAudit.agentId, agentId))

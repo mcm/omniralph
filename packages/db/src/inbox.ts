@@ -751,7 +751,7 @@ async function agentProblems(
       ${iso("h.updated_at")} as updated_at
     from agents h
     left join lateral (
-      select coalesce(h.desired_version,
+      select coalesce(h.reported_version_pin,
         (select s.value #>> '{}' from app_settings s
           where s.organization_id = h.organization_id
             and s.key = ${DESIRED_AGENT_VERSION_KEY} and jsonb_typeof(s.value) = 'string'))

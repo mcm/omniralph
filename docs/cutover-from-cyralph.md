@@ -98,7 +98,7 @@ always behaves like cyralph's default and has no setting for it.
 
 | cyralph | Omniralph | Notes |
 | -- | -- | -- |
-| `enabled` | **Fleet › Version policy** | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#self-update-pm2)). Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
+| `enabled` | **Fleet › Version policy** | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#updating)). Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
 | `intervalMinutes` | Not needed | The desired version arrives with every heartbeat (20s). |
 | `remote`, `branch` | Not needed | Agents install published npm versions of `@omniralph/agent`, not a git branch. `latest` (**Track latest on npm**) follows the `latest` dist-tag; a per-agent override pins or tries a version on one host. |
 | `buildCommands` | Not needed | Releases are built and tested by CI before they're published. A version that fails to stay up is rolled back automatically and never retried. |

@@ -6,7 +6,6 @@ import {
   deleteChatConnection,
   removeMember,
   removeOrganizationDomain,
-  requestAgentUpdate,
   revokeInvitation,
   upsertChatChannelPlaybookSetting,
   addOrganizationDomain,
@@ -602,12 +601,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       ).toEqual([]);
     });
 
-    it("an update request from the control panel publishes the agent", async () => {
-      expect(await published(() => requestAgentUpdate(db, orgId, agentId, "1.2.0"))).toEqual([
-        agentEvent(agentId),
-      ]);
-    });
-
     it("a heartbeat publishes reported local settings that differ from the stored ones", async () => {
       const local = {
         maxConcurrency: 5,
@@ -989,7 +982,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
 
   it("publishes nothing for a write that changed nothing", async () => {
     expect(await published(() => updateRun(db, randomUUID(), { status: "running" }))).toEqual([]);
-    expect(await published(() => requestAgentUpdate(db, orgId, randomUUID(), "1.2.0"))).toEqual([]);
   });
 
   it("never puts names, titles or bodies in an event", async () => {

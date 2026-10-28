@@ -90,7 +90,7 @@ Node), skip the `prefix` line.
 
 To upgrade by hand: stop the agent, run `npm install -g @omniralph/agent@latest`,
 then start it again. Agents run under pm2 can update themselves instead (see
-[Self-update](#self-update-pm2)). Releases are made with changesets and a "Version Packages" pull
+[Self-update](#updating)). Releases are made with changesets and a "Version Packages" pull
 request: see [apps/agent/README.md › Releasing](../apps/agent/README.md#releasing).
 
 Machines that run the old `@omniralph/harness` package (0.13 and earlier) can't self-update to
@@ -145,6 +145,7 @@ pins and audit log, with no new enrollment.
    - `agent.json` already exists (for example from an install up to 0.8.0, when the package was
      called `@omniralph/agent` the first time): `--force` backs it up to
      `agent.json.bak-<timestamp>` and replaces it.
+
 4. **Start the agent under pm2 with the printed commands.** When pm2 ran the old daemon, `import`
    prints `pm2 delete omniralph-harness`, a `pm2 start … --name omniralph-agent … -- start …`
    that keeps the old process's arguments, and `pm2 save`. Run them in that order. pm2 starts the
@@ -201,13 +202,13 @@ another path, for `enroll` and `start` alike.
 `agent.json` holds the agent's identity and bootstrap only. You can add these optional keys by
 hand. Token rotation keeps them, and they stay out of the file when unset:
 
-| Key                | Default        | Meaning                                                                                                                                                                                                                                                                                                       |
-| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `blockedExecPaths` | `[]`           | Absolute path prefixes the agent never executes: host tools (configured or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides.                                   |
-| `dataDir`          | `~/.omniralph` | Absolute directory for the agent's installables, their caches and `settings.json`.                                                                                                                                                                                                                            |
-| `ui.enabled`       | `true`         | Whether the agent serves its page.                                                                                                                                                                                                                                                                            |
-| `ui.port`          | `7410`         | The agent page's port (1–65535). The page is served on 127.0.0.1 only.                                                                                                                                                                                                                                       |
-| `ui.allowedHosts`  | `[]`           | Extra host names (no scheme or port) the page answers to, for a port-forwarding proxy such as Coder's dashboard.                                                                                                                                                                                             |
+| Key                | Default        | Meaning                                                                                                                                                                                                                                                                    |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blockedExecPaths` | `[]`           | Absolute path prefixes the agent never executes: host tools (configured or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
+| `dataDir`          | `~/.omniralph` | Absolute directory for the agent's installables, their caches and `settings.json`.                                                                                                                                                                                         |
+| `ui.enabled`       | `true`         | Whether the agent serves its page.                                                                                                                                                                                                                                         |
+| `ui.port`          | `7410`         | The agent page's port (1–65535). The page is served on 127.0.0.1 only.                                                                                                                                                                                                     |
+| `ui.allowedHosts`  | `[]`           | Extra host names (no scheme or port) the page answers to, for a port-forwarding proxy such as Coder's dashboard.                                                                                                                                                           |
 
 ```json
 {
@@ -233,16 +234,16 @@ The agent's machine settings live in `settings.json` in its data directory
 source: no control panel page sets them. Without the file every setting has its default. Every
 key but `v` is optional:
 
-| Key                  | Default                                           | Meaning                                                                                                                                                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `v`                  | —                                                 | Always `1`.                                                                                                                                                                                                                                                                                                              |
-| `maxConcurrency`     | `5`                                               | Slots: how many attempts the agent runs at once, 1–32.                                                                                                                                                                                                                                                                  |
-| `poolLimits.long`    | slots − 1 (at least 1)                            | How many slots coding attempts may take, 1 to the slots. By default one slot stays free for reviews and asks.                                                                                                                                                                                                           |
-| `poolLimits.short`   | the slots                                         | How many slots reviews, asks and triage may take, 1 to the slots.                                                                                                                                                                                                                                                       |
-| `acceptedTaskTypes`  | all three                                         | The task types the agent runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The agent reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only.     |
-| `hostTools`          | `{}`                                              | Host tool paths by name (`{ "gh": "/usr/bin/gh" }`), each absolute. A tool without one is looked up on `PATH`; a configured path that is missing, not executable or blocked makes the tool unavailable (see [installables.md](installables.md#host-tools)).                                                           |
-| `installables.allow` | `["@omniralph/*"]`                                | npm package patterns the agent accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The agent enforces this itself, whatever the control panel asks. |
-| `update.pin`         | none                                              | An agent version (2.0.0 or later) that wins over the organization's version policy.                                                                                                                                                                                                                                     |
+| Key                  | Default                | Meaning                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v`                  | —                      | Always `1`.                                                                                                                                                                                                                                                                                                          |
+| `maxConcurrency`     | `5`                    | Slots: how many attempts the agent runs at once, 1–32.                                                                                                                                                                                                                                                               |
+| `poolLimits.long`    | slots − 1 (at least 1) | How many slots coding attempts may take, 1 to the slots. By default one slot stays free for reviews and asks.                                                                                                                                                                                                        |
+| `poolLimits.short`   | the slots              | How many slots reviews, asks and triage may take, 1 to the slots.                                                                                                                                                                                                                                                    |
+| `acceptedTaskTypes`  | all three              | The task types the agent runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The agent reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only. |
+| `hostTools`          | `{}`                   | Host tool paths by name (`{ "gh": "/usr/bin/gh" }`), each absolute. A tool without one is looked up on `PATH`; a configured path that is missing, not executable or blocked makes the tool unavailable (see [installables.md](installables.md#host-tools)).                                                          |
+| `installables.allow` | `["@omniralph/*"]`     | npm package patterns the agent accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The agent enforces this itself, whatever the control panel asks. |
+| `update.pin`         | none                   | An agent version (2.0.0 or later) that wins over the organization's version policy.                                                                                                                                                                                                                                  |
 
 ```json
 {
@@ -259,8 +260,8 @@ the allow-list apply without a restart: the agent re-checks what it claims and i
 once (lowering a limit cancels nothing) and sends a heartbeat right away, so **Fleet** shows the
 new values within seconds; the next install uses the new allow-list. The agent reports slots, both
 pools' limits, the pin, the allow-list and its host tools in every heartbeat, and the control panel
-stores them read-only. It doesn't apply the pin from the file yet; until it does, the desired
-version comes from the control panel as described in [Central config](#central-config).
+stores them read-only. A changed pin applies at once too: the agent re-evaluates which version it
+should run (see [Updating](#updating)).
 
 Edit the settings on the agent's page, or by hand while the agent runs. The agent watches the file
 and applies a valid edit about a quarter of a second after the last write. It ignores an invalid
@@ -277,7 +278,7 @@ theft and revokes the agent (see _Re-enrollment_). To run another agent, enroll 
 
 ## 5. Run it
 
-On a Coder workspace, use pm2 (restarts on exit, [self-updates](#self-update-pm2)) or tmux,
+On a Coder workspace, use pm2 (restarts on exit, [self-updates](#updating)) or tmux,
 started from the template's startup script. Use systemd on hosts that have it, typically with a
 dedicated user.
 
@@ -399,19 +400,34 @@ Notes on the unit:
   home and `/tmp` (private).
 - `StartLimit*` stops the restart loop when the agent exits because it has to be re-enrolled.
 
-### Self-update (pm2)
+### Updating
 
-An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates itself to the
-**desired version**, so upgrades need no SSH:
+An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates itself to its
+**target version**, so upgrades need no SSH. The target is, highest first:
 
-1. When the heartbeat's desired version differs from the running one and isn't in the agent's
-   failed list, the agent stops taking new jobs and lets running ones finish, for up to 2 hours.
-   Heartbeats go on meanwhile (jobs keep their tokens and Linear replies). Jobs still running after
-   2 hours are aborted; their leases lapse, so they're redelivered.
+1. **Update now** on the machine: the agent's page, or `omniralph-agent update` (see
+   [Triggering an update](#triggering-an-update)). Both reach the same request.
+2. **The local pin**: `update.pin` in the agent's
+   [`settings.json`](#machine-settings-settingsjson) (on the agent's page or by hand), 2.0.0 or
+   later.
+3. **The organization's version policy** (**Fleet › Version policy**), which the heartbeat
+   response carries as `desiredVersion`.
+4. None: the agent stays on what it runs.
+
+Failed versions are skipped, except by **Update now**. A pinned version that failed isn't replaced
+by the organization's: the agent stays where it is until the pin changes or **Update now** retries
+it. The control panel never sets an agent's own version and can't ask it to update.
+
+1. When the target differs from the running version and isn't in the agent's failed list, the
+   agent stops taking new jobs and lets running ones finish, for up to 2 hours. Heartbeats go on
+   meanwhile (jobs keep their tokens and Linear replies). Jobs still running after 2 hours are
+   aborted; their leases lapse, so they're redelivered. When the drain ends, the agent works out
+   the target again: if the pin or the organization's version changed meanwhile it installs the new
+   target, or takes jobs again when there is nothing left to install.
 2. It runs `npm i -g @omniralph/agent@<version>` as the agent's user, like the
    [install](#2-install) (the package is public, so no npm auth is needed).
 3. It writes `update-state.json` next to `agent.json` (mode 0600):
-   `{ previous, pending, startsSincePending, failed, lastError, handledRequestId }`.
+   `{ previous, pending, startsSincePending, failed, lastError }`.
 4. It exits with code 0 and pm2 starts the new version.
 
 If the install fails, the version is added to `failed` and the agent keeps running (and taking jobs
@@ -437,32 +453,36 @@ needs.
   then hands out that version. If the registry can't be read, agents get the last version read
   (none before the first read: they stay where they are) and agents stay behind it on Fleet.
 - A version for one agent (e.g. to try a release on one host first, or to keep a host on an older
-  version) belongs to the agent machine: it moves to the agent's local config, and the control
-  panel has no page for it. Until then every agent follows the organization's version.
+  version) is the agent's own pin (`update.pin` in its `settings.json`, set on the agent's page).
+  It wins over the organization's version; the control panel shows it read-only and has no page
+  for it.
 - To pin every agent, set the organization's version to an exact version instead of `latest`;
   agents never move on their own.
 
 **Fleet** shows whether every online agent runs the desired version ("All agents on 2.0.3", "2
-agents behind", "1 update failed"); each agent's row and detail show **Updating** or **Update
-failed** while that applies, and its detail the version it reports.
+agents behind", "1 update failed"); agents pinned on the machine count as on their own target and
+show as "1 pinned on the agent", never behind. Each agent's row and detail show **Updating** or
+**Update failed** (measured against its pin when it has one) while that applies, and its detail
+the version it reports and its pin.
 
 Agents not run by pm2 (systemd, tmux) report `selfUpdate: "unsupported"`, never install anything
 and stay behind on Fleet: upgrade them by hand as in [Install](#2-install).
 
 #### Triggering an update
 
-An update can also be started on demand, on the host:
+An update can also be started on demand, on the machine (**Update now**):
 
+- **Update now** on the agent's page.
 - `omniralph-agent update` on the host (as the agent's user, with the same `--config` as `start`).
   It writes `update-request.json` next to `agent.json` (mode 0600); the running agent picks it up
-  with its next heartbeat and removes it. If the agent isn't running, it acts on it once started.
+  with its next heartbeat, removes it and makes the same request as the page. If the agent isn't
+  running, it acts on it once started.
 
-Either way the agent updates (drain, install, restart, rollback as above) to the desired version,
-or to the package's `latest` on npm when none is chosen or the organization tracks `latest`, and retries that version even if it's in
-`failed` (it's taken off the list first). A request for the version already running does nothing.
-Choosing a different version than the desired one isn't possible this way: the agent would
-update back to the desired version straight away, so change the desired version instead. Agents
-not under pm2 only log the request.
+Either way the agent updates at once (drain, install, restart, rollback as above) to its pin, else
+the organization's version, else the package's `latest` on npm, and retries that version even if
+it's in `failed` (it's taken off the list first). A request for the version already running does
+nothing. To run a different version than the organization's, pin it on the agent. Agents not
+under pm2 only log the request. The control panel has no **Update now**.
 
 ## Central config
 
@@ -470,13 +490,13 @@ Everything except the local files (`agent.json` and `settings.json`, see [Enroll
 including the task types the agent runs) is configured centrally and delivered in every heartbeat response (every
 20s), so changes need no restart:
 
-| Setting                                                             | Where                                                                                      | Default                                                            |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| Slots (parallel attempts)                                           | the agent's page (`settings.json` `maxConcurrency`, see below)                             | 5                                                                  |
-| Slots per pool (1 to the slots)                                     | the agent's page (`settings.json` `poolLimits`, see below)                                 | `long`: slots − 1 (at least 1); `short`: the slots                 |
-| Pinned repositories                                                 | **Repos › Agents** (**Fleet** lists them, read-only)                                       | none (every agent is eligible for every repo)                      |
-| Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**                                                                 | none (not managed)                                                 |
-| Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
+| Setting                                                        | Where                                                                              | Default                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Slots (parallel attempts)                                      | the agent's page (`settings.json` `maxConcurrency`, see below)                     | 5                                                  |
+| Slots per pool (1 to the slots)                                | the agent's page (`settings.json` `poolLimits`, see below)                         | `long`: slots − 1 (at least 1); `short`: the slots |
+| Pinned repositories                                            | **Repos › Agents** (**Fleet** lists them, read-only)                               | none (every agent is eligible for every repo)      |
+| Organization's agent version ([updating](#updating), pm2 only) | **Fleet › Version policy** (an agent's own pin wins: `settings.json` `update.pin`) | none (not managed)                                 |
+| Job cancellations                                              | **Jobs** (cancel)                                                                  | —                                                  |
 
 Slots and pool limits belong to the agent machine, like its accepted task types: they are set in
 its [`settings.json`](#machine-settings-settingsjson) (on the agent's page or by hand), and no
@@ -733,6 +753,6 @@ the newly enrolled one) picks them up.
 - **Coding jobs stay queued**: no agent accepts the `coding` task type, the lane's sticky (or pinned) agent is
   offline, or it runs a version older than the job's minimum. Check **Jobs** for the job's status.
 - **Reviews stay queued**: no online agent accepts the `review` task type (or, if the repository pins jobs to agents, none of the pinned ones). Update the agent
-  ([self-update](#self-update-pm2) or `omniralph-agent update`).
+  ([self-update](#updating) or `omniralph-agent update`).
 - **Reviews fail with a Claude login message**: log in again as the agent's user
   ([claude-auth.md](claude-auth.md)).

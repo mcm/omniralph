@@ -29,13 +29,14 @@ export const agentRowSchema = z.object({
   runningCount: z.number(),
   host: AgentHostReport.nullable(),
   version: z.string().nullable(),
+  /** Its target: its local pin, else its organization's version. */
   desiredVersion: z.string().nullable(),
-  desiredVersionOverride: z.string().nullable(),
+  /** The version pinned on the agent, as it reports it; read-only. */
+  versionPin: z.string().nullable(),
   tracksLatest: z.boolean(),
   selfUpdate: z.enum(SELF_UPDATE_SUPPORT).nullable(),
   update: AgentUpdateReport.nullable(),
   failedVersions: z.array(z.string()),
-  updateRequest: z.object({ version: z.string(), requestedAt: isoDate }).nullable(),
   updateStatus: z.enum(["up_to_date", "updating", "failed", "manual"]),
   /** The task types the agent reports (its local `acceptedTaskTypes`); read-only. */
   acceptedTaskTypes: z.array(z.string()),
@@ -87,8 +88,16 @@ export const fleetSummarySchema = z.object({
   busy: z.number(),
   /** Null under all organizations when they differ ("Varies by organization"). */
   versionPolicy: versionPolicySchema.nullable(),
-  /** Online agents on and behind their organization's target; any agent whose update failed. */
-  versions: z.object({ onTarget: z.number(), behind: z.number(), updateFailed: z.number() }),
+  /**
+   * Online agents on and behind their organization's target, and pinned on the agent (on their
+   * own target); any agent whose update failed.
+   */
+  versions: z.object({
+    onTarget: z.number(),
+    behind: z.number(),
+    pinned: z.number(),
+    updateFailed: z.number(),
+  }),
   /** Agents that report a narrower set of kinds than every kind. */
   acceptedKinds: z.object({ limited: z.number(), total: z.number() }),
 });
@@ -311,9 +320,6 @@ export type InstallableRow = AgentInstallables["installables"][number];
  */
 export const agentSavedSchema = mutationResultSchema.extend({ savedAt: isoDate });
 export type AgentSaved = z.infer<typeof agentSavedSchema>;
-
-/** `POST /api/ui/agents/{id}/update` ("Update now") response: the version requested. */
-export const agentUpdateRequestedSchema = mutationResultSchema.extend({ version: z.string() });
 
 /** `POST /api/ui/agents/{id}/installs` body. */
 export const installRequestSchema = z.object({

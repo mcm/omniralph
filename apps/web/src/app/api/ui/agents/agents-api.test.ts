@@ -3,6 +3,7 @@ import {
   agentRefreshTokens,
   agentRepoPins,
   agents,
+  appSettings,
   connectRepository,
   claimJob,
   insertPlaybook,
@@ -78,7 +79,6 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
 const agentDetail = await import("@/app/api/ui/agents/[id]/route");
-const agentUpdate = await import("@/app/api/ui/agents/[id]/update/route");
 const agentRevoke = await import("@/app/api/ui/agents/[id]/revoke/route");
 const agentInstalls = await import("@/app/api/ui/agents/[id]/installs/route");
 const pins = await import("@/lib/agents/pins");
@@ -161,8 +161,8 @@ async function ui(
 }
 
 /**
- * An agent's desired-version override, set in the database: no route sets it any more (the
- * version pin is the agent's own), and the column goes with the old Settings tab.
+ * The old desired-version override column, set in the database: nothing reads it any more
+ * (the version pin is the agent's own), and the column is dropped later.
  */
 async function setAgentDesiredVersion(id: string, version: string | null) {
   await state.db!.update(agents).set({ desiredVersion: version }).where(eq(agents.id, id));
@@ -183,7 +183,6 @@ async function unpinRepository(agentId: string, repositoryId: string) {
   await bumpAgentHeartbeat(agentId);
   return { ok: true as const };
 }
-const requestAgentUpdate = (id: string) => ui(agentUpdate.POST, id);
 const revokeAgent = (id: string) => ui(agentRevoke.POST, id);
 const cancelJob = (id: string) => ui(jobCancel.POST, id);
 const rerunJob = (id: string) => ui(jobRerun.POST, id);
@@ -572,11 +571,11 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       }
     });
 
-    it("sends the desired version (override, else the organization's) and stores the reported update state", async () => {
+    it("sends the organization's version only, and stores the reported pin and update state", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const other = await enrolledAgent();
-      const desired = async (token: string) =>
-        ((await (await sendHeartbeat(token)).json()) as HeartbeatResponse).desiredVersion;
+      const desired = async (token: string, body: object = HEARTBEAT) =>
+        ((await (await sendHeartbeat(token, body)).json()) as HeartbeatResponse).desiredVersion;
       expect(await desired(accessToken)).toBeNull();
 
       await setDesiredAgentVersion(db, orgId, "2.4.0", adminId);
@@ -584,11 +583,17 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
       await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
       expect(await desired(accessToken)).toBe("2.4.0");
+      // The old override column is ignored.
       await setAgentDesiredVersion(agentId, "2.5.0");
-      expect(await desired(accessToken)).toBe("2.5.0");
+      expect(await desired(accessToken)).toBe("2.4.0");
       expect(await desired(other.accessToken)).toBe("2.4.0");
 
-      // The agent reports where it is; the Agents pages show it.
+      // A pin on the agent: reported and stored, but the response is still the policy.
+      const pinned = { ...HEARTBEAT, local: { ...LOCAL, versionPin: "2.5.0" } };
+      expect(await desired(accessToken, pinned)).toBe("2.4.0");
+      expect((await getAgentOverview(db, orgId, agentId))!.reportedVersionPin).toBe("2.5.0");
+
+      // The agent reports where it is; the Agents pages show it against its pin.
       const update = {
         state: "draining",
         version: "2.5.0",
@@ -597,7 +602,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         error: null,
       };
       await sendHeartbeat(accessToken, {
-        ...HEARTBEAT,
+        ...pinned,
         selfUpdate: "supported",
         update,
         failedVersions: ["2.3.0"],
@@ -608,24 +613,50 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         updateState: update,
         failedVersions: ["2.3.0"],
       });
-      expect(agentRow(overview, new Date(), "2.4.0")).toMatchObject({
+      expect(agentRow(overview, new Date(), "2.4.0", true)).toMatchObject({
         version: "0.2.0",
         desiredVersion: "2.5.0",
-        desiredVersionOverride: "2.5.0",
+        versionPin: "2.5.0",
+        tracksLatest: false,
         updateStatus: "updating",
         failedVersions: ["2.3.0"],
       });
+      const listed = (await listAgents()).find((agent) => agent.id === agentId)!;
+      expect(listed).toMatchObject({ versionPin: "2.5.0", desiredVersion: "2.5.0" });
+      expect(await getAgent(agentId)).toMatchObject({ versionPin: "2.5.0" });
 
-      // Cleared override: the global version again. Older agents report nothing.
-      await setAgentDesiredVersion(agentId, null);
-      expect(await desired(accessToken)).toBe("2.4.0");
+      // Unpinned: the organization's version again. Older agents report nothing.
+      await sendHeartbeat(accessToken);
+      expect((await getAgentOverview(db, orgId, agentId))!.reportedVersionPin).toBeNull();
       const legacy = (await getAgentOverview(db, orgId, agentId))!;
       expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
-      expect(agentRow(legacy, new Date(), "2.4.0").updateStatus).toBe("manual");
+      expect(agentRow(legacy, new Date(), "2.4.0")).toMatchObject({
+        desiredVersion: "2.4.0",
+        versionPin: null,
+        updateStatus: "manual",
+      });
+      await setAgentDesiredVersion(agentId, null);
       await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
-    it("tracking latest sends npm's latest, which Update now refreshes", async () => {
+    it("ignores an organization version below 2.0.0 and sends no update request", async () => {
+      const { accessToken } = await enrolledAgent();
+      await db
+        .insert(appSettings)
+        .values({ organizationId: orgId, key: "agent.desiredVersion", value: "1.9.9" })
+        .onConflictDoUpdate({
+          target: [appSettings.organizationId, appSettings.key],
+          set: { value: "1.9.9" },
+        });
+      const response = (await (
+        await sendHeartbeat(accessToken, { ...HEARTBEAT, handledUpdateRequestId: randomUUID() })
+      ).json()) as HeartbeatResponse;
+      expect(response.desiredVersion).toBeNull();
+      expect(response).not.toHaveProperty("updateRequest");
+      await setDesiredAgentVersion(db, orgId, null, adminId);
+    });
+
+    it("tracking latest sends npm's latest", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const supported = { ...HEARTBEAT, selfUpdate: "supported" };
       const respond = async () =>
@@ -641,73 +672,9 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       // A new release is picked up once the stored read is old; until then heartbeats agree.
       state.latest = "2.1.0";
       expect((await respond()).desiredVersion).toBe("2.0.0");
-      // Update now reads npm at once and records it, so heartbeats don't send the agent back.
-      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.1.0" });
-      expect(await respond()).toMatchObject({
-        desiredVersion: "2.1.0",
-        updateRequest: { version: "2.1.0" },
-      });
-
-      // An override still wins.
-      await setAgentDesiredVersion(agentId, "2.9.0");
-      expect((await respond()).desiredVersion).toBe("2.9.0");
 
       state.latest = "2.0.0";
       await setDesiredAgentVersion(db, orgId, null, adminId);
-    });
-
-    it("Update now sends an update request until the agent reports it handled", async () => {
-      const { agentId, accessToken } = await enrolledAgent();
-      const respond = async (body: object = HEARTBEAT) =>
-        (await (await sendHeartbeat(accessToken, body)).json()) as HeartbeatResponse;
-      const supported = { ...HEARTBEAT, selfUpdate: "supported" };
-
-      // Older agents and agents outside pm2 can't update themselves.
-      await respond();
-      expect(await requestAgentUpdate(agentId)).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
-      expect((await respond(supported)).updateRequest).toBeNull();
-
-      // No version chosen: the latest on npm.
-      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.0.0" });
-      const { updateRequest } = await respond(supported);
-      expect(updateRequest).toEqual({ id: expect.any(String), version: "2.0.0" });
-      const row = agentRow((await getAgentOverview(db, orgId, agentId))!);
-      expect(row).toMatchObject({
-        updateRequest: { version: "2.0.0", requestedAt: expect.any(String) },
-        updateStatus: "updating",
-      });
-
-      // The desired version, even one that failed on the agent.
-      await setAgentDesiredVersion(agentId, "2.5.0");
-      await respond({ ...supported, failedVersions: ["2.5.0"] });
-      expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.5.0" });
-      const second = (await respond(supported)).updateRequest;
-      expect(second).toEqual({ id: expect.any(String), version: "2.5.0" });
-      expect(second!.id).not.toBe(updateRequest!.id);
-
-      // Handled: the request is cleared (an older one doesn't clear it).
-      expect(
-        (await respond({ ...supported, handledUpdateRequestId: updateRequest!.id })).updateRequest,
-      ).toEqual(second);
-      expect(
-        (await respond({ ...supported, handledUpdateRequestId: second!.id })).updateRequest,
-      ).toBeNull();
-      expect(agentRow((await getAgentOverview(db, orgId, agentId))!).updateRequest).toBeNull();
-
-      // Nothing to do on the desired version; members can't ask.
-      await respond({ ...supported, version: "2.5.0" });
-      expect(await requestAgentUpdate(agentId)).toEqual({
-        ok: false,
-        error: expect.stringContaining("already runs 2.5.0"),
-      });
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await requestAgentUpdate(agentId)).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
     });
 
     it("pinning enqueues a repo.sync job targeting the agent", async () => {

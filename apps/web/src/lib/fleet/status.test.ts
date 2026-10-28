@@ -5,10 +5,12 @@ import {
   acceptedKindsSummary,
   agentStatus,
   agentStatusLine,
+  agentUpdateStatus,
   auditEventLabel,
   compactSince,
   pinBadges,
   relativeAgo,
+  versionCounts,
   securityLine,
   versionsBehind,
   versionPolicyLabel,
@@ -93,6 +95,75 @@ describe("agentStatus", () => {
   });
 });
 
+describe("versionCounts", () => {
+  const row = {
+    revoked: false,
+    online: true,
+    version: "2.0.3",
+    desiredVersion: "2.0.4",
+    versionPin: null as string | null,
+    updateStatus: "updating",
+  };
+
+  it("counts an agent pinned on the agent as on its own target, never behind", () => {
+    expect(
+      versionCounts([
+        { ...row, desiredVersion: "2.0.3", updateStatus: "up_to_date" },
+        row,
+        // Pinned to an older version than the policy's: its own target, not behind.
+        { ...row, versionPin: "2.0.3", desiredVersion: "2.0.3", updateStatus: "up_to_date" },
+        // Pinned and on its way there.
+        { ...row, versionPin: "2.0.5", desiredVersion: "2.0.5" },
+        // A failed pin is a failed update; an offline pinned agent isn't counted.
+        { ...row, versionPin: "2.0.6", desiredVersion: "2.0.6", updateStatus: "failed" },
+        { ...row, online: false, versionPin: "2.0.3" },
+        { ...row, revoked: true, versionPin: "2.0.3" },
+      ]),
+    ).toEqual({ onTarget: 1, behind: 1, pinned: 2, updateFailed: 1 });
+  });
+});
+
+describe("agentUpdateStatus", () => {
+  const base = {
+    version: "1.0.0",
+    desiredVersion: "1.1.0" as string | null,
+    selfUpdate: "supported" as const,
+    update: null,
+    failedVersions: [] as string[],
+  };
+  const update = (state: "idle" | "draining" | "installing" | "confirming") => ({
+    state,
+    version: "1.1.0",
+    previous: "1.0.0",
+    startsSincePending: 0,
+    error: null,
+  });
+
+  it("is up to date on its target, or when none is chosen", () => {
+    expect(agentUpdateStatus({ ...base, version: "1.1.0" })).toBe("up_to_date");
+    expect(agentUpdateStatus({ ...base, desiredVersion: null })).toBe("up_to_date");
+  });
+
+  it("is updating while the agent will update, drains, installs or confirms", () => {
+    expect(agentUpdateStatus(base)).toBe("updating");
+    expect(agentUpdateStatus({ ...base, update: update("draining") })).toBe("updating");
+    expect(agentUpdateStatus({ ...base, update: update("installing") })).toBe("updating");
+    expect(agentUpdateStatus({ ...base, version: "1.1.0", update: update("confirming") })).toBe(
+      "updating",
+    );
+  });
+
+  it("is failed when its target failed on the agent", () => {
+    expect(agentUpdateStatus({ ...base, failedVersions: ["1.1.0"] })).toBe("failed");
+  });
+
+  it("says to update manually when the agent can't update itself", () => {
+    expect(agentUpdateStatus({ ...base, selfUpdate: "unsupported" })).toBe("manual");
+    expect(agentUpdateStatus({ ...base, selfUpdate: null })).toBe("manual");
+    expect(agentUpdateStatus({ ...base, selfUpdate: null, version: "1.1.0" })).toBe("up_to_date");
+  });
+});
+
 describe("compactSince", () => {
   it("rounds down to minutes, hours or days, at least a minute", () => {
     expect(compactSince(new Date(ago(0)), NOW)).toBe("1m");
@@ -106,32 +177,52 @@ describe("versionSummary", () => {
   const latest = { mode: "latest" as const, version: null, target: "2.0.3" };
 
   it("says every agent is on the target when none is behind or failed", () => {
-    expect(versionSummary(latest, { onTarget: 6, behind: 0, updateFailed: 0 })).toEqual({
+    expect(versionSummary(latest, { onTarget: 6, behind: 0, pinned: 0, updateFailed: 0 })).toEqual({
       kind: "on_target",
       label: "All agents on",
       version: "2.0.3",
+      pinned: null,
       tone: "neutral",
     });
+  });
+
+  it("reports agents pinned on the agent, never as behind", () => {
+    expect(versionSummary(latest, { onTarget: 5, behind: 0, pinned: 1, updateFailed: 0 })).toEqual({
+      kind: "on_target",
+      label: "All agents on",
+      version: "2.0.3",
+      pinned: "1 pinned on the agent",
+      tone: "neutral",
+    });
+    expect(versionSummary(latest, { onTarget: 0, behind: 0, pinned: 2, updateFailed: 0 })).toEqual({
+      kind: "pinned",
+      label: "2 pinned on the agent",
+      tone: "neutral",
+    });
+    expect(
+      versionSummary(latest, { onTarget: 3, behind: 1, pinned: 1, updateFailed: 0 }),
+    ).toMatchObject({ kind: "behind", label: "1 agent behind", pinned: "1 pinned on the agent" });
   });
 
   it("counts agents behind, neutral", () => {
-    expect(versionSummary(latest, { onTarget: 4, behind: 2, updateFailed: 0 })).toEqual({
+    expect(versionSummary(latest, { onTarget: 4, behind: 2, pinned: 0, updateFailed: 0 })).toEqual({
       kind: "behind",
       label: "2 agents behind",
+      pinned: null,
       tone: "neutral",
     });
-    expect(versionSummary(latest, { onTarget: 4, behind: 1, updateFailed: 0 }).label).toBe(
-      "1 agent behind",
-    );
+    expect(
+      versionSummary(latest, { onTarget: 4, behind: 1, pinned: 0, updateFailed: 0 }).label,
+    ).toBe("1 agent behind");
   });
 
   it("puts a failed update first, coral", () => {
-    expect(versionSummary(latest, { onTarget: 4, behind: 2, updateFailed: 1 })).toEqual({
+    expect(versionSummary(latest, { onTarget: 4, behind: 2, pinned: 0, updateFailed: 1 })).toEqual({
       kind: "update_failed",
       label: "1 update failed",
       tone: "fail",
     });
-    expect(versionSummary(null, { onTarget: 0, behind: 0, updateFailed: 3 }).label).toBe(
+    expect(versionSummary(null, { onTarget: 0, behind: 0, pinned: 0, updateFailed: 3 }).label).toBe(
       "3 updates failed",
     );
   });

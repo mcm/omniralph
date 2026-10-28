@@ -56,7 +56,6 @@ const HEARTBEAT: HeartbeatResponse = {
   jobTokens: [],
   jobMessages: [],
   desiredVersion: null,
-  updateRequest: null,
   requiredHostTools: [],
 };
 
@@ -441,6 +440,35 @@ describe("omniralph-agent CLI", () => {
         version: "1.0.0",
         selfUpdate: "supported",
         models: [{ value: "opus", displayName: "Opus" }],
+      });
+    });
+
+    it("under pm2, updates to the version pinned in settings.json over the organization's", async () => {
+      await writeConfig(configPath, config);
+      await mkdir(path.join(dir, ".omniralph"), { recursive: true });
+      await writeFile(
+        path.join(dir, ".omniralph", "settings.json"),
+        JSON.stringify({ v: 1, update: { pin: "2.0.3" } }),
+        { mode: 0o600 },
+      );
+      const installs: string[] = [];
+      const server = fakeServer({
+        "/api/agent/token": () =>
+          Response.json({ accessToken: "a", expiresIn: 900, refreshToken: "refresh-1" }),
+        "/api/agent/heartbeat": () => Response.json({ ...HEARTBEAT, desiredVersion: "9.9.9" }),
+      });
+      const exit = main(["start", "--config", configPath], {
+        io: capture().io,
+        ...startDeps(server, {
+          env: { pm_id: "3" },
+          version: "2.0.0",
+          installer: { install: async (version) => void installs.push(version) },
+        }),
+      });
+      expect(await exit).toBe(0);
+      expect(installs).toEqual(["2.0.3"]);
+      expect(server.calls.find((c) => c.path === "/api/agent/heartbeat")?.body).toMatchObject({
+        local: { versionPin: "2.0.3" },
       });
     });
 

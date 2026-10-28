@@ -172,7 +172,6 @@ export {
   markAgentLiveOnline,
   markAgentsLiveOffline,
   listLiveOnlineAgents,
-  requestAgentUpdate,
   listAgentPinSyncJobs,
   listAgentAttempts,
   getAgentSecuritySummary,

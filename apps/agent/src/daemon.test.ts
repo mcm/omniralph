@@ -51,7 +51,6 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     jobTokens: [],
     jobMessages: [],
     desiredVersion: null,
-    updateRequest: null,
     requiredHostTools: [],
     ...overrides,
   };
@@ -86,7 +85,7 @@ function localReport(settings: LocalSettings) {
   return {
     maxConcurrency: effective.maxConcurrency,
     poolLimits: effective.poolLimits,
-    versionPin: null,
+    versionPin: effective.versionPin,
     installablesAllow: effective.installablesAllow,
   };
 }
@@ -828,6 +827,25 @@ describe("AgentDaemon", () => {
       retryable: false,
       error: "invalid ralph.prepare payload",
     });
+    await daemon.shutdown();
+  });
+
+  it("reports its version pin, at once when it changes", async () => {
+    const { api, local, daemon } = setup({
+      local: { maxConcurrency: 1, update: { pin: "2.0.3" } },
+    });
+    void daemon.run();
+    await settle();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ local: expect.objectContaining({ versionPin: "2.0.3" }) }),
+    );
+    const before = api.heartbeat.mock.calls.length;
+    local.set({ maxConcurrency: 1 });
+    await settle();
+    expect(api.heartbeat.mock.calls.length).toBeGreaterThan(before);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({ local: expect.objectContaining({ versionPin: null }) }),
+    );
     await daemon.shutdown();
   });
 
