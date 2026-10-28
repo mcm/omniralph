@@ -155,6 +155,26 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       ["installables", { installables: [{ name: "gh", version: "2.0.0" }] }],
       ["models", { models: [{ value: "opus", displayName: "Opus" }] }],
       ["version pin", { local: { ...LOCAL, versionPin: "2.0.3" } }],
+      ["slots", { local: { ...LOCAL, maxConcurrency: 3, poolLimits: { short: 3, long: 2 } } }],
+      ["allow-list", { local: { ...LOCAL, installablesAllow: [] } }],
+      [
+        "host tools",
+        {
+          hostTools: [
+            { name: "gh", path: "/usr/bin/gh", source: "discovered" as const, problem: null },
+          ],
+        },
+      ],
+      [
+        "Claude login",
+        {
+          claude: {
+            status: "signed_out" as const,
+            source: null,
+            checkedAt: "2026-10-01T09:00:00.000Z",
+          },
+        },
+      ],
       ["host", { host: { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "w" } } }],
     ])("writes the row when the %s changed", async (_name, change) => {
       const agentId = await newAgent();
