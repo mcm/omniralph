@@ -1,17 +1,16 @@
 import {
+  agentAcceptedTaskTypes,
   classifyAgentRunningJobs,
   listAgentHostTools,
   listAgentPinnedRepositoryIds,
   recordAgentHostTools,
   renewJobLeases,
-  resolveAgentConfig,
   type Database,
 } from "@omniralph/db";
 import {
   Heartbeat,
   JOB_LEASE_SECONDS,
   LEGACY_POLL_INTERVAL_SECONDS,
-  effectivePoolLimits,
   type HeartbeatResponse,
   type JobMessageDelivery,
 } from "@omniralph/shared";
@@ -43,7 +42,8 @@ import { liveRoute } from "@/lib/live/request";
 const NPM_TIMEOUT_MS = 5_000;
 
 /**
- * Agent heartbeat (every 20s). Records the reported version, accepted task types, host and
+ * Agent heartbeat (every 20s). Records the reported version, accepted task types, host, machine
+ * settings (`local`: slots, pool limits, version pin and allow-list, read-only here) and
  * self-update state (last-seen in Redis; the agent row only when the report
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the agent keeps,
  * applies the acknowledged job messages and returns the central configuration,
@@ -82,6 +82,7 @@ async function post(req: Request): Promise<Response> {
     models: body.data.models,
     acceptedTaskTypes: body.data.acceptedTaskTypes,
     host: body.data.host,
+    local: body.data.local,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =
@@ -114,16 +115,16 @@ async function post(req: Request): Promise<Response> {
   if (!agent) return badRequest("unknown_agent");
   await announceOnline(db, agentId);
   await recordAgentHostTools(db, agent.organizationId, agentId, body.data.hostTools);
-  const [pinnedRepoIds, running, organizationVersion, hostTools, config] = await Promise.all([
+  const [pinnedRepoIds, running, organizationVersion, hostTools] = await Promise.all([
     listAgentPinnedRepositoryIds(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
     agent.desiredVersion
       ? null
       : organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listAgentHostTools(db, agent.organizationId, agentId),
-    // Its own max concurrency, else the organization's default, and its reported task types.
-    resolveAgentConfig(db, agent),
   ]);
+  // The task types it reports now, else (older agents) the ones it last reported.
+  const acceptedTaskTypes = body.data.acceptedTaskTypes ?? agentAcceptedTaskTypes(agent);
   const keepIds = running.keep.map((job) => job.id);
   // The heartbeat is the lease: a job of a live agent is never taken over.
   const renewedAt = new Date();
@@ -155,21 +156,16 @@ async function post(req: Request): Promise<Response> {
 
   const claimable = await heartbeatClaimable(
     db,
-    // The task types it reports now, else (older agents) the ones it last reported.
-    { ...agent, acceptedTaskTypes: body.data.acceptedTaskTypes ?? config.acceptedTaskTypes },
+    { ...agent, acceptedTaskTypes },
     body.data.claimablePools,
   );
 
+  // Its slots and pool limits are its own (`settings.json`): none are sent.
   const response: CachedHeartbeatResponse = {
-    maxConcurrency: config.maxConcurrency,
     // Legacy fields: old agents require them; `topics: []` stops their polling.
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
     // Only older agents, which don't report their task types, take (and require) these.
-    ...(body.data.acceptedTaskTypes === undefined && {
-      acceptedTaskTypes: config.acceptedTaskTypes,
-    }),
-    // The `short` and `long` pools (a job's pool follows from its task type).
-    poolLimits: effectivePoolLimits(agent.poolLimits, config.maxConcurrency),
+    ...(body.data.acceptedTaskTypes === undefined && { acceptedTaskTypes }),
     pinnedRepoIds,
     organizationId: agent.organizationId,
     topics: [],

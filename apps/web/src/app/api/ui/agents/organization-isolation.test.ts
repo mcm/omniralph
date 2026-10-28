@@ -81,8 +81,6 @@ const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
 // Agent defaults (`/api/ui/agent-defaults`) requests, under the names of the server actions they replace.
 const setGlobalAgentVersion = (version: string) =>
   callAction(defaultsRoute.PUT, "PUT", {}, { version });
-const setOrganizationDefaults = (defaults: unknown) =>
-  callAction(defaultsRoute.PUT, "PUT", {}, { defaults });
 const addHostTool = async (input: { name: string; description?: string }) =>
   (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
     hostToolId?: string;
@@ -179,16 +177,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of agents", () => {
     expect((await agentDefaults()).desiredVersion).toBeNull();
     await setDesiredAgentVersion(db, b.orgId, "2.0.0", b.userId);
     expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
-  });
-
-  it("keeps concurrency defaults per organization", async () => {
-    state.userId = a.userId;
-    expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({ ok: true });
-    expect((await agentDefaults()).defaults).toEqual({ maxConcurrency: 3 });
-
-    // The other organization still has the built-in defaults.
-    state.userId = b.userId;
-    expect((await agentDefaults()).defaults).toEqual({ maxConcurrency: 5 });
   });
 
   it("keeps host tools per organization", async () => {

@@ -22,7 +22,6 @@ import {
   type Database,
   organizations,
   type RecordedChange,
-  setDefaultMaxConcurrency,
 } from "@omniralph/db";
 import {
   JOB_LEASE_SECONDS,
@@ -41,6 +40,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { z } from "zod";
 import type * as Tasks from "@omniralph/tasks";
 import type * as Adapters from "@/lib/scm/adapters";
+
+/** A heartbeat's `local`: the agent's machine settings, all defaults. */
+const LOCAL = {
+  maxConcurrency: 5,
+  poolLimits: { short: 5, long: 4 },
+  versionPin: null,
+  installablesAllow: ["@omniralph/*"],
+};
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
@@ -801,6 +808,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
             version: "0.2.0",
             runningJobIds: [jobId],
             freeSlots: 0,
+            local: LOCAL,
           },
         }),
       );
@@ -1219,7 +1227,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
 
   describe("POST /api/agent/heartbeat", () => {
     it("returns central config, refreshed job tokens and jobs to cancel", async () => {
-      const { agentId, accessToken } = await newAgent({ maxConcurrency: 2 });
+      const { agentId, accessToken } = await newAgent();
       const other = await newAgent();
       await db.insert(agentRepoPins).values({ agentId, repositoryId });
 
@@ -1244,6 +1252,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
             version: "0.2.0",
             runningJobIds: [running, canceled, takenOver],
             freeSlots: 0,
+            local: LOCAL,
             models: [{ value: "opus", displayName: "Opus" }],
           },
         }),
@@ -1251,11 +1260,13 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as HeartbeatResponse;
       expect(body).toMatchObject({
-        maxConcurrency: 2,
         acceptedTaskTypes: ["query", "review", "coding"],
         pinnedRepoIds: [repositoryId],
         organizationId: orgId,
       });
+      // Its slots and pool limits are its own: none are sent.
+      expect(body).not.toHaveProperty("maxConcurrency");
+      expect(body).not.toHaveProperty("poolLimits");
       // Legacy fields old agents require: no topics, so they stop polling.
       expect(body.pollIntervalSeconds).toBe(5);
       expect(body.topics).toEqual([]);
@@ -1311,7 +1322,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
 
       const res = await heartbeat(
         agentRequest("heartbeat", accessToken, {
-          body: { version: "0.2.0", runningJobIds: [legacy, runSpec], freeSlots: 0 },
+          body: { version: "0.2.0", runningJobIds: [legacy, runSpec], freeSlots: 0, local: LOCAL },
         }),
       );
       expect(res.status).toBe(200);
@@ -1377,6 +1388,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
               version: "0.2.0",
               runningJobIds: [job!.id],
               freeSlots: 0,
+              local: LOCAL,
               ...acks,
             },
           }),
@@ -1404,7 +1416,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentId));
       const revoked = await heartbeat(
         agentRequest("heartbeat", accessToken, {
-          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
+          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1, local: LOCAL },
         }),
       );
       expect(revoked.status).toBe(401);
@@ -1414,7 +1426,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
   describe("live agent events", () => {
     const agentEvents = (changes: RecordedChange[], agentId: string) =>
       changes.filter((c) => c.resource === "agent" && c.ids.includes(agentId));
-    const HEARTBEAT = { version: "1.0.0", runningJobIds: [], freeSlots: 1 };
+    const HEARTBEAT = { version: "1.0.0", runningJobIds: [], freeSlots: 1, local: LOCAL };
     const beat = (accessToken: string, body: object) =>
       captureChanges(async () => {
         const res = await heartbeat(agentRequest("heartbeat", accessToken, { body }));
@@ -1537,7 +1549,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
     async function heartbeatAs(accessToken: string, report: object = {}) {
       const res = await heartbeat(
         agentRequest("heartbeat", accessToken, {
-          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1, ...report },
+          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1, local: LOCAL, ...report },
         }),
       );
       expect(res.status).toBe(200);
@@ -1562,9 +1574,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       }))!;
       const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(row).toMatchObject({
-        maxConcurrency: null,
+        reportedMaxConcurrency: null,
         reportedAcceptedTaskTypes: null,
-        poolLimits: {},
+        reportedPoolLimits: null,
       });
       const accessToken = await getTokenSigner().signAccessToken(agentId);
 
@@ -1574,9 +1586,13 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       expect(((await res.json()) as JobStartResponse & { action: "run" }).job.id).toBe(jobId);
 
       expect(await heartbeatAs(accessToken)).toMatchObject({
-        maxConcurrency: 5,
         acceptedTaskTypes: ["query", "review", "coding"],
-        poolLimits: { short: 5, long: 4 },
+      });
+      // Its default slots, as it reports them.
+      const [reported] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(reported).toMatchObject({
+        reportedMaxConcurrency: 5,
+        reportedPoolLimits: { short: 5, long: 4 },
       });
     });
 
@@ -1646,21 +1662,51 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       expect((await claimLong(agent.accessToken, { acceptedTaskTypes: [] })).status).toBe(400);
     });
 
-    it("keeps an agent's own max concurrency and gives inheriting agents the organization's new default", async () => {
+    it("stores the slots, pool limits, pin and allow-list each agent reports", async () => {
       const organizationId = await newOrg();
-      const own = await newAgent({ organizationId, maxConcurrency: 2 });
-      const inheriting = await newAgent({ organizationId });
-
-      await setDefaultMaxConcurrency(db, organizationId, 3, null);
-
-      expect(await heartbeatAs(own.accessToken)).toMatchObject({
+      const small = await newAgent({ organizationId });
+      const large = await newAgent({ organizationId });
+      await heartbeatAs(small.accessToken, {
+        local: { ...LOCAL, maxConcurrency: 2, poolLimits: { short: 2, long: 1 } },
+      });
+      await heartbeatAs(large.accessToken, {
+        local: {
+          maxConcurrency: 12,
+          poolLimits: { short: 12, long: 3 },
+          versionPin: "2.0.3",
+          installablesAllow: [],
+        },
+      });
+      const reported = async (agentId: string) => {
+        const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+        return {
+          maxConcurrency: row!.reportedMaxConcurrency,
+          poolLimits: row!.reportedPoolLimits,
+          versionPin: row!.reportedVersionPin,
+          installablesAllow: row!.reportedInstallablesAllow,
+        };
+      };
+      expect(await reported(small.agentId)).toEqual({
+        ...LOCAL,
         maxConcurrency: 2,
         poolLimits: { short: 2, long: 1 },
       });
-      expect(await heartbeatAs(inheriting.accessToken)).toMatchObject({
-        maxConcurrency: 3,
-        poolLimits: { short: 3, long: 2 },
+      expect(await reported(large.agentId)).toEqual({
+        maxConcurrency: 12,
+        poolLimits: { short: 12, long: 3 },
+        versionPin: "2.0.3",
+        installablesAllow: [],
       });
+    });
+
+    it("refuses a heartbeat without the agent's local settings", async () => {
+      const { accessToken } = await newAgent({ organizationId: await newOrg() });
+      const res = await heartbeat(
+        agentRequest("heartbeat", accessToken, {
+          body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
+        }),
+      );
+      expect(res.status).toBe(400);
     });
   });
 
@@ -1757,7 +1803,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       const beat = async (accessToken: string) => {
         const res = await heartbeat(
           agentRequest("heartbeat", accessToken, {
-            body: { version: "0.2.0", runningJobIds: [], freeSlots: 1 },
+            body: { version: "0.2.0", runningJobIds: [], freeSlots: 1, local: LOCAL },
           }),
         );
         return (await res.json()) as HeartbeatResponse;

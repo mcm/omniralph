@@ -23,9 +23,7 @@ vi.mock("node:child_process", () => childProcess);
 
 function config(desiredVersion: string | null): HeartbeatResponse {
   return {
-    maxConcurrency: 1,
     pollIntervalSeconds: 5,
-    poolLimits: { short: 1, long: 1 },
     pinnedRepoIds: [],
     organizationId: "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f",
     topics: [],

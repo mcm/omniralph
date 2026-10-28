@@ -6,7 +6,6 @@ import {
   getAppSetting,
   getChatConnection,
   getChatPlaybookDefaults,
-  getDefaultMaxConcurrency,
   getIntegrationById,
   getRepository,
   getTrackerLabels,
@@ -501,18 +500,11 @@ export function trackedAgentDefaults(organizationId: string): TrackedSettings {
     organizationId,
     section: "agent_defaults",
     fields: {
-      maxConcurrency: { label: "Max concurrency" },
       desiredVersion: { label: "Agent version" },
     },
     read: async (db) => {
-      const [maxConcurrency, version] = await Promise.all([
-        getDefaultMaxConcurrency(db, organizationId),
-        getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY),
-      ]);
-      return {
-        maxConcurrency,
-        desiredVersion: typeof version?.value === "string" ? version.value : null,
-      };
+      const version = await getAppSetting(db, organizationId, DESIRED_AGENT_VERSION_KEY);
+      return { desiredVersion: typeof version?.value === "string" ? version.value : null };
     },
   };
 }

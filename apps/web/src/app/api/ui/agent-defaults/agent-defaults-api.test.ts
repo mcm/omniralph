@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,7 +23,6 @@ const state = vi.hoisted(() => ({
   updatedBy: null as string | null,
   latest: null as { version: string | null; error: string | null } | null,
   latestCheck: null as { version: string | null; error: string | null; checkedAt: Date } | null,
-  maxConcurrency: null as number | null,
   hostTools: [] as {
     id: string;
     organizationId: string;
@@ -46,9 +47,6 @@ vi.mock("@omniralph/db", async () => {
     ) => save(db),
     TRACK_LATEST_AGENT_VERSION: "latest",
     DESIRED_AGENT_VERSION_KEY: "agent.desiredVersion",
-    DEFAULT_MAX_CONCURRENCY: 5,
-    // Nothing saved: the built-in defaults, as the real getters return them.
-    getDefaultMaxConcurrency: async () => state.maxConcurrency ?? 5,
     getAppSetting: async () =>
       state.version === null
         ? null
@@ -61,25 +59,6 @@ vi.mock("@omniralph/db", async () => {
       state.hostTools
         .filter((t) => t.organizationId === organizationId)
         .map((t) => ({ ...t, createdAt: new Date(), updatedAt: new Date() })),
-    MIN_MAX_CONCURRENCY: 1,
-    MAX_MAX_CONCURRENCY: 32,
-    // The organization-defaults setter, with its validation.
-    setDefaultMaxConcurrency: async (
-      _db: unknown,
-      organizationId: string,
-      maxConcurrency: number | null,
-      updatedBy: string,
-    ) => {
-      if (
-        maxConcurrency !== null &&
-        !(Number.isInteger(maxConcurrency) && maxConcurrency >= 1 && maxConcurrency <= 32)
-      ) {
-        throw new Error("Max concurrency must be an integer from 1 to 32");
-      }
-      state.organizationId = organizationId;
-      state.maxConcurrency = maxConcurrency;
-      state.updatedBy = updatedBy;
-    },
     // An in-memory host tool catalog with the db helpers' contract.
     createHostTool: async (
       _db: unknown,
@@ -138,7 +117,6 @@ const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
 const saveDefaults = (body: unknown) => callAction(defaultsRoute.PUT, "PUT", {}, body);
 const setGlobalAgentVersion = (version: string) => saveDefaults({ version });
 const trackLatestAgentVersion = () => saveDefaults({ version: "latest" });
-const setOrganizationDefaults = (defaults: unknown) => saveDefaults({ defaults });
 const addHostTool = async (input: { name: string; description?: string }) =>
   (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
     hostToolId?: string;
@@ -184,7 +162,6 @@ describe("Agent defaults API", () => {
     state.updatedBy = null;
     state.latest = null;
     state.latestCheck = null;
-    state.maxConcurrency = null;
     state.hostTools = [];
     requests.length = 0;
     registry = () => HttpResponse.json({ "dist-tags": { latest: "2.4.2" } });
@@ -324,7 +301,7 @@ describe("Agent defaults API", () => {
       expect((await getDefaults()).status).toBe(403);
     });
 
-    it("shows the organization's version and built-in defaults", async () => {
+    it("shows the organization's version, and no slots: they're each agent's own", async () => {
       state.version = "2.4.0";
       expect(await getDefaults()).toEqual({
         status: 200,
@@ -333,20 +310,10 @@ describe("Agent defaults API", () => {
           updatedAt: "2026-10-01T00:00:00.000Z",
           latest: null,
           packageName: "@omniralph/agent",
-          defaults: { maxConcurrency: 5 },
-          builtInDefaults: { maxConcurrency: 5 },
         },
       });
-    });
-
-    it("shows the organization's saved defaults", async () => {
-      state.maxConcurrency = 2;
-      expect((await getDefaults()).body).toMatchObject({
-        desiredVersion: null,
-        updatedAt: null,
-        defaults: { maxConcurrency: 2 },
-        builtInDefaults: { maxConcurrency: 5 },
-      });
+      state.version = null;
+      expect((await getDefaults()).body).toMatchObject({ desiredVersion: null, updatedAt: null });
     });
 
     it("shows the version read from npm when the organization tracks latest", async () => {
@@ -359,35 +326,31 @@ describe("Agent defaults API", () => {
       expect(requests).toEqual([]);
     });
 
-    it("saves the defaults, then the version, in one request; a failure names what isn't saved", async () => {
+    it("saves the version, answering the version policy it set", async () => {
       // The answer carries the version policy the save set (Fleet's cell).
-      expect(await saveDefaults({ defaults: { maxConcurrency: 4 }, version: "2.6.0" })).toEqual({
+      expect(await saveDefaults({ version: "2.6.0" })).toEqual({
         ok: true,
         versionPolicy: { mode: "pinned", version: "2.6.0", target: "2.6.0" },
       });
-      expect(state).toMatchObject({ maxConcurrency: 4, version: "2.6.0" });
-
-      expect(await saveDefaults({ defaults: { maxConcurrency: 99 }, version: "2.7.0" })).toEqual({
+      expect(state).toMatchObject({ version: "2.6.0", updatedBy: "admin-1" });
+      expect(await saveDefaults({ version: "next" })).toEqual({
         ok: false,
-        error: "Max concurrency must be 1–32. Not saved: max concurrency and the desired version.",
+        error: "Enter a version like 2.0.0 or latest, or leave it blank.",
       });
-      expect(state).toMatchObject({ maxConcurrency: 4, version: "2.6.0" });
-
-      // The defaults are saved before a bad version.
-      expect(await saveDefaults({ defaults: { maxConcurrency: 3 }, version: "next" })).toEqual({
-        ok: false,
-        error:
-          "Enter a version like 2.0.0 or latest, or leave it blank. Not saved: the desired version.",
-      });
-      expect(state).toMatchObject({ maxConcurrency: 3, version: "2.6.0" });
+      expect(state).toMatchObject({ version: "2.6.0" });
+      // Nothing to save.
+      expect(await saveDefaults({})).toEqual({ ok: true });
     });
 
-    it("refuses task types with 400 and saves nothing: each agent decides its own", async () => {
+    it("refuses slots and task types with 400 and saves nothing: each agent decides its own", async () => {
       for (const body of [
+        { maxConcurrency: 4 },
+        { maxConcurrency: 4, version: "2.6.0" },
+        { defaults: { maxConcurrency: 4 } },
+        { defaults: { maxConcurrency: 4 }, version: "2.6.0" },
         { acceptedTaskTypes: ["review"] },
         { acceptedTaskTypes: ["review"], version: "2.6.0" },
         { defaults: { acceptedTaskTypes: ["review"], maxConcurrency: 4 } },
-        { defaults: { allowedTaskTypes: ["review"], maxConcurrency: 4 } },
       ]) {
         const response = await defaultsRoute.PUT(
           new Request("http://localhost/api/ui", {
@@ -397,56 +360,33 @@ describe("Agent defaults API", () => {
           }),
           { params: Promise.resolve({}) },
         );
-        expect(response.status).toBe(400);
+        expect(response.status, JSON.stringify(body)).toBe(400);
       }
-      expect(state).toMatchObject({ maxConcurrency: null, version: null, updatedBy: null });
-    });
-  });
-
-  describe("organization defaults", () => {
-    it("saves the organization's max concurrency", async () => {
-      expect(await setOrganizationDefaults({ maxConcurrency: 8 })).toEqual({ ok: true });
-      expect(state).toMatchObject({
-        organizationId: "org-1",
-        maxConcurrency: 8,
-        updatedBy: "admin-1",
-      });
-
-      // The bounds are valid.
-      expect(await setOrganizationDefaults({ maxConcurrency: 1 })).toEqual({ ok: true });
-      expect(state).toMatchObject({ maxConcurrency: 1 });
-      expect(await setOrganizationDefaults({ maxConcurrency: 32 })).toEqual({ ok: true });
-      expect(state).toMatchObject({ maxConcurrency: 32 });
+      expect(state).toMatchObject({ version: null, updatedBy: null });
     });
 
-    it("rejects max concurrency outside 1–32", async () => {
-      for (const bad of [
-        { maxConcurrency: 0 },
-        { maxConcurrency: 33 },
-        { maxConcurrency: 2.5 },
-        { maxConcurrency: Number.NaN },
-        { maxConcurrency: "4" },
-      ]) {
-        expect(await setOrganizationDefaults(bad)).toEqual({
-          ok: false,
-          error: "Max concurrency must be 1–32.",
-        });
-      }
-      expect(state.maxConcurrency).toBeNull();
-    });
-
-    it("is admin-only", async () => {
-      state.user = user("member");
-      expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
-      state.user = null;
-      expect(await setOrganizationDefaults({ maxConcurrency: 3 })).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
-      expect(state.maxConcurrency).toBeNull();
+    it("never reads or writes an organization slot default in app_settings", () => {
+      // Built here so this file doesn't match itself.
+      const key = ["agent", "maxConcurrency"].join(".");
+      const root = path.resolve(import.meta.dirname, "../../../../../../..");
+      // Old migrations and their test name it, as history.
+      const grep = spawnSync(
+        "git",
+        [
+          "grep",
+          "-nF",
+          key,
+          "--",
+          "apps",
+          "packages",
+          ":!packages/db/drizzle",
+          ":!**/migrate.test.ts",
+        ],
+        { cwd: root, encoding: "utf8" },
+      );
+      // `git grep` exits 1 when nothing matches.
+      expect(grep.stdout).toBe("");
+      expect(grep.status).toBe(1);
     });
   });
 

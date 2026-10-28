@@ -1,10 +1,5 @@
 import type { AgentOverview, JobListEntry } from "@omniralph/db";
-import {
-  effectivePoolLimits,
-  type AgentHostReport,
-  type AgentUpdateReport,
-  type SelfUpdateSupport,
-} from "@omniralph/shared";
+import type { AgentHostReport, AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
 import { agentStatus, type AgentStatus } from "@/lib/fleet/status";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { jobTarget, type JobTarget } from "./display";
@@ -42,16 +37,11 @@ export interface AgentRow {
    * local `acceptedTaskTypes`; every type until it reports any). Read-only.
    */
   acceptedTaskTypes: string[];
-  /** Its max concurrency, the organization's default filled in. */
-  maxConcurrency: number;
-  /** The agent's own max concurrency; null inherits `defaults`. */
-  overrides: { maxConcurrency: number | null };
-  /** The organization's agent defaults (`/api/ui/agent-defaults`). */
-  defaults: { maxConcurrency: number };
-  /** Per-pool limits as stored (unset ones use the default). */
-  poolLimits: Record<string, number>;
-  /** Effective limits of the `short` and `long` pools, as sent to the agent. */
-  effectivePoolLimits: Record<string, number>;
+  /**
+   * Its load: attempts running on it, and its slots as it reports them (its `settings.json`
+   * `maxConcurrency`; null until it reports them). Read-only.
+   */
+  slots: { running: number; max: number | null };
   runningJobs: {
     id: string;
     type: string;
@@ -123,11 +113,7 @@ export function agentRow(
     updateRequest,
     updateStatus,
     acceptedTaskTypes: agent.effective.acceptedTaskTypes,
-    maxConcurrency: agent.effective.maxConcurrency,
-    overrides: { maxConcurrency: agent.maxConcurrency },
-    defaults: { maxConcurrency: agent.defaults.maxConcurrency },
-    poolLimits: storedLimits(agent.poolLimits),
-    effectivePoolLimits: effectivePoolLimits(agent.poolLimits, agent.effective.maxConcurrency),
+    slots: { running: runningCount, max: agent.reportedMaxConcurrency },
     runningJobs: agent.runningJobs.map((job) => ({
       id: job.id,
       type: job.type,
@@ -179,10 +165,4 @@ export function jobRow(job: JobListEntry): JobRow {
     createdAt: job.createdAt.toISOString(),
     finishedAt: job.finishedAt?.toISOString() ?? null,
   };
-}
-
-function storedLimits(limits: Partial<Record<string, number>>): Record<string, number> {
-  return Object.fromEntries(
-    Object.entries(limits).filter((entry): entry is [string, number] => entry[1] !== undefined),
-  );
 }

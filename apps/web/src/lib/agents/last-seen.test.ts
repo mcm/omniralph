@@ -21,6 +21,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 
+/** A heartbeat's `local`: the agent's machine settings, all defaults. */
+const LOCAL = {
+  maxConcurrency: 5,
+  poolLimits: { short: 5, long: 4 },
+  versionPin: null,
+  installablesAllow: ["@omniralph/*"],
+};
+
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({ db: undefined as unknown as Database, orgId: "" }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
@@ -189,7 +197,12 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
               "content-type": "application/json",
               "x-real-ip": "203.0.113.9",
             },
-            body: JSON.stringify({ version: "1.4.0", runningJobIds: [], freeSlots: 1 }),
+            body: JSON.stringify({
+              version: "1.4.0",
+              runningJobIds: [],
+              freeSlots: 1,
+              local: LOCAL,
+            }),
           }),
         );
         expect(response.status).toBe(200);

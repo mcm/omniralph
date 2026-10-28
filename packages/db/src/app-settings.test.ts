@@ -1,13 +1,10 @@
-// Organization defaults for agent max concurrency and the tracker labels.
+// Per-organization settings: the tracker labels and the generic get/set.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_MAX_CONCURRENCY_KEY,
   getAppSetting,
-  getDefaultMaxConcurrency,
   getTrackerLabels,
   setAppSetting,
-  setDefaultMaxConcurrency,
   setTrackerLabels,
   TRACKER_LABELS_KEY,
 } from "./app-settings.js";
@@ -16,7 +13,7 @@ import { appSettings, organizations } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
-describe.skipIf(!databaseAvailable)("organization concurrency defaults", () => {
+describe.skipIf(!databaseAvailable)("organization settings", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgA: string;
@@ -40,14 +37,13 @@ describe.skipIf(!databaseAvailable)("organization concurrency defaults", () => {
     await db.delete(appSettings);
   });
 
-  it("allows a max concurrency of 5 when unset", async () => {
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(5);
-  });
-
-  it("returns the stored value", async () => {
-    await setDefaultMaxConcurrency(db, orgA, 12, null);
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(12);
-    expect((await getAppSetting(db, orgA, DEFAULT_MAX_CONCURRENCY_KEY))?.updatedBy).toBe(null);
+  it("stores a value with who set it, per organization", async () => {
+    await setAppSetting(db, orgA, "agent.desiredVersion", "2.0.4", null);
+    expect(await getAppSetting(db, orgA, "agent.desiredVersion")).toMatchObject({
+      value: "2.0.4",
+      updatedBy: null,
+    });
+    expect(await getAppSetting(db, orgB, "agent.desiredVersion")).toBeNull();
   });
 
   it("keeps the tracker labels per organization, with defaults", async () => {
@@ -64,40 +60,5 @@ describe.skipIf(!databaseAvailable)("organization concurrency defaults", () => {
     expect(await getTrackerLabels(db, orgA)).toEqual(defaults);
     await setTrackerLabels(db, orgA, null, null);
     expect(await getAppSetting(db, orgA, TRACKER_LABELS_KEY)).toBeNull();
-  });
-
-  it("accepts the concurrency bounds", async () => {
-    await setDefaultMaxConcurrency(db, orgA, 1, null);
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(1);
-    await setDefaultMaxConcurrency(db, orgA, 32, null);
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(32);
-  });
-
-  it("deletes the stored value on null, so the built-in default is back", async () => {
-    await setDefaultMaxConcurrency(db, orgA, 2, null);
-    await setDefaultMaxConcurrency(db, orgA, null, null);
-    expect(await getAppSetting(db, orgA, DEFAULT_MAX_CONCURRENCY_KEY)).toBeNull();
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(5);
-  });
-
-  it("rejects out-of-range concurrency without storing it", async () => {
-    await setDefaultMaxConcurrency(db, orgA, 3, null);
-    for (const bad of [0, 33, -1, 2.5, Number.NaN]) {
-      await expect(setDefaultMaxConcurrency(db, orgA, bad, null)).rejects.toThrow();
-    }
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(3);
-  });
-
-  it("falls back to the built-in defaults when a stored value is malformed", async () => {
-    await setAppSetting(db, orgA, DEFAULT_MAX_CONCURRENCY_KEY, 99, null);
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(5);
-  });
-
-  it("keeps each organization's defaults to itself", async () => {
-    await setDefaultMaxConcurrency(db, orgA, 8, null);
-    expect(await getDefaultMaxConcurrency(db, orgB)).toBe(5);
-
-    await setDefaultMaxConcurrency(db, orgB, 2, null);
-    expect(await getDefaultMaxConcurrency(db, orgA)).toBe(8);
   });
 });

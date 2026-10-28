@@ -836,6 +836,16 @@ export async function recordAgentHeartbeat(
     acceptedTaskTypes?: readonly string[];
     /** The machine the agent runs on; replaces the last report. Older agents send none, which keeps it. */
     host?: AgentHostReport;
+    /**
+     * The agent's machine settings in force (its `settings.json`); replaces the last report.
+     * Omitted keeps it.
+     */
+    local?: {
+      maxConcurrency: number;
+      poolLimits: { short: number; long: number };
+      versionPin: string | null;
+      installablesAllow: readonly string[];
+    };
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
@@ -855,6 +865,15 @@ export async function recordAgentHeartbeat(
       reportedModels: input.models ?? [],
       ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
       ...(input.host && { reportedHost: input.host }),
+      ...(input.local && {
+        reportedMaxConcurrency: input.local.maxConcurrency,
+        reportedPoolLimits: {
+          short: input.local.poolLimits.short,
+          long: input.local.poolLimits.long,
+        },
+        reportedVersionPin: input.local.versionPin,
+        reportedInstallablesAllow: [...input.local.installablesAllow],
+      }),
       ...(handled !== null && {
         updateRequestId: clearIfHandled(agents.updateRequestId),
         updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
@@ -875,13 +894,17 @@ export async function recordAgentHeartbeat(
         reportedModels: previous.reportedModels,
         reportedAcceptedTaskTypes: previous.reportedAcceptedTaskTypes,
         reportedHost: previous.reportedHost,
+        reportedMaxConcurrency: previous.reportedMaxConcurrency,
+        reportedPoolLimits: previous.reportedPoolLimits,
+        reportedVersionPin: previous.reportedVersionPin,
+        reportedInstallablesAllow: previous.reportedInstallablesAllow,
         updateRequestId: previous.updateRequestId,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
-  // What the fleet shows changed (version, update state, installs, task types, host): not a steady
-  // heartbeat.
+  // What the fleet shows changed (version, update state, installs, task types, host, local
+  // settings): not a steady heartbeat.
   const after = {
     reportedVersion: row.reportedVersion,
     selfUpdate: row.selfUpdate,
@@ -891,6 +914,10 @@ export async function recordAgentHeartbeat(
     reportedModels: row.reportedModels,
     reportedAcceptedTaskTypes: row.reportedAcceptedTaskTypes,
     reportedHost: row.reportedHost,
+    reportedMaxConcurrency: row.reportedMaxConcurrency,
+    reportedPoolLimits: row.reportedPoolLimits,
+    reportedVersionPin: row.reportedVersionPin,
+    reportedInstallablesAllow: row.reportedInstallablesAllow,
     updateRequestId: row.updateRequestId,
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {

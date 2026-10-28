@@ -9,12 +9,12 @@ import {
   LOCAL_SETTINGS_SECTION_BODIES,
   LOCAL_SETTINGS_SECTIONS,
   LocalSettingsRevision,
-  PackagePattern,
   VersionSettingsBody,
   applyLocalSettingsSection,
   effectiveLocalSettings,
   installableAllowed,
 } from "./agent-settings.js";
+import { PackagePattern } from "./protocol.js";
 
 const REVISION = "a".repeat(64);
 

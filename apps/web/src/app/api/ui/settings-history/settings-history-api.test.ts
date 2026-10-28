@@ -391,20 +391,13 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
       ]);
     });
 
-    it("agent_defaults: concurrency", async () => {
-      expect(
-        await callAction(
-          agentDefaults.PUT,
-          "PUT",
-          {},
-          {
-            defaults: { maxConcurrency: 3 },
-          },
-        ),
-      ).toEqual({ ok: true });
+    it("agent_defaults: the version policy (slots are each agent's own)", async () => {
+      expect(await callAction(agentDefaults.PUT, "PUT", {}, { version: "2.4.0" })).toMatchObject({
+        ok: true,
+      });
       const [entry] = await entries("agent_defaults");
       expect(entry!.changes).toEqual([
-        { field: "maxConcurrency", label: "Max concurrency", before: 5, after: 3 },
+        { field: "desiredVersion", label: "Agent version", before: null, after: "2.4.0" },
       ]);
     });
 

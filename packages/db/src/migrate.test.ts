@@ -2103,9 +2103,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       const read = async (query: string) =>
         (await client.query(n(query))).rows as Record<string, unknown>[];
       // The columns 0103 resets, compared on their own, and the ones later migrations add
-      // (`reported_host`, 0108).
+      // (`reported_host`, 0108; the reported local settings, 0112).
       const reset = `'failed_versions' - 'update_state' - 'update_request_id'
-        - 'update_request_version' - 'update_requested_at' - 'reported_host'`;
+        - 'update_request_version' - 'update_requested_at' - 'reported_host'
+        - 'reported_max_concurrency' - 'reported_pool_limits' - 'reported_version_pin'
+        - 'reported_installables_allow'`;
       return {
         organizations: await read(`select id, name from organizations order by id`),
         repositories: await read(`select id, organization_id from repositories order by id`),
@@ -4285,5 +4287,107 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       await closeDb(before);
       await db.execute(sql.raw(`drop database dollar_cost_before with (force)`));
     }
+  });
+
+  it("adds the agents' nullable reported local settings, keeping existing agents (0114)", async () => {
+    await db.execute(sql.raw(`create database reported_local_settings_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/reported_local_settings_before");
+    await migrateBefore(uri, "0114_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = rows[0]!.id;
+      // Production: 7 live agents with null concurrency and desired version, `{}` pool limits
+      // and reported models (one with failed versions and an update state), and 2 revoked and
+      // soft-deleted ones.
+      const live = Array.from({ length: 7 }, (_, i) => `coder-agent-${i + 1}`);
+      for (const [i, name] of live.entries()) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, self_update,
+             reported_installables, reported_models, reported_accepted_task_types,
+             failed_versions, update_state, last_heartbeat_at, live_online)
+           values ($1, $2, '2.0.3', 'supported',
+             '[{"name":"@omniralph/hello","version":"1.0.0"}]',
+             '[{"value":"opus","displayName":"Opus"}]', $3, $4, $5, now(), true)`,
+          [
+            org,
+            name,
+            i % 2 === 0 ? null : ["review", "query"],
+            i === 0 ? ["2.0.1"] : [],
+            i === 0 ? { status: "failed", version: "2.0.1", error: "exited" } : null,
+          ],
+        );
+      }
+      for (const name of ["old-laptop", "retired-runner"]) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, revoked_at, deleted_at)
+           values ($1, $2, '1.9.0', now() - interval '30 days', now() - interval '29 days')`,
+          [org, name],
+        );
+      }
+
+      await runMigrations(uri);
+
+      const { rows: after } = await client.query<{
+        name: string;
+        reported_version: string;
+        failed_versions: string[];
+        pool_limits: unknown;
+        revoked: boolean;
+        deleted: boolean;
+        reported_max_concurrency: number | null;
+        reported_pool_limits: unknown;
+        reported_version_pin: string | null;
+        reported_installables_allow: string[] | null;
+      }>(
+        `select name, reported_version, failed_versions, pool_limits,
+           revoked_at is not null as revoked, deleted_at is not null as deleted,
+           reported_max_concurrency, reported_pool_limits, reported_version_pin,
+           reported_installables_allow
+         from agents order by name`,
+      );
+      expect(after).toHaveLength(9);
+      for (const row of after) {
+        expect(row.reported_max_concurrency).toBeNull();
+        expect(row.reported_pool_limits).toBeNull();
+        expect(row.reported_version_pin).toBeNull();
+        expect(row.reported_installables_allow).toBeNull();
+      }
+      expect(after.filter((row) => row.revoked && row.deleted).map((row) => row.name)).toEqual([
+        "old-laptop",
+        "retired-runner",
+      ]);
+      expect(after.filter((row) => !row.revoked && !row.deleted).map((row) => row.name)).toEqual(
+        live,
+      );
+      const first = after.find((row) => row.name === "coder-agent-1");
+      expect(first?.reported_version).toBe("2.0.3");
+      expect(first?.failed_versions).toEqual(["2.0.1"]);
+      expect(first?.pool_limits).toEqual({});
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("applies the reported local settings columns to a fresh database (0114)", async () => {
+    const { rows } = await db.$client.query<{
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+    }>(
+      `select column_name, data_type, is_nullable from information_schema.columns
+       where table_name = 'agents' and column_name in ('reported_max_concurrency',
+         'reported_pool_limits', 'reported_version_pin', 'reported_installables_allow')
+       order by column_name`,
+    );
+    expect(rows).toEqual([
+      { column_name: "reported_installables_allow", data_type: "ARRAY", is_nullable: "YES" },
+      { column_name: "reported_max_concurrency", data_type: "integer", is_nullable: "YES" },
+      { column_name: "reported_pool_limits", data_type: "jsonb", is_nullable: "YES" },
+      { column_name: "reported_version_pin", data_type: "text", is_nullable: "YES" },
+    ]);
   });
 });

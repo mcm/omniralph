@@ -178,6 +178,40 @@ export function effectivePoolLimits(
 
 /** An agent version: valid semver, at most 64 characters. */
 export const AgentVersion = z.string().max(64).regex(SEMVER_PATTERN);
+
+/** Fewest and most slots an agent may have (`settings.json` `maxConcurrency`). */
+export const MIN_MAX_CONCURRENCY = 1;
+export const MAX_MAX_CONCURRENCY = 32;
+/** A number of slots: 1–32. */
+export const LocalSlots = z.int().min(MIN_MAX_CONCURRENCY).max(MAX_MAX_CONCURRENCY);
+
+/**
+ * An npm package name, optionally with `*` wildcards (each matching any run of
+ * characters except `/`): `@scope/name`, `@scope/*` or `name`.
+ */
+export const PackagePattern = z
+  .string()
+  .max(214)
+  .refine((value) => value !== "" && !/\s/.test(value) && value.split("/").length <= 2, {
+    message: "must be an npm package name or a pattern like '@scope/*'",
+  });
+export type PackagePattern = z.infer<typeof PackagePattern>;
+
+/**
+ * The agent's machine settings in force (`effectiveLocalSettings` of its
+ * `settings.json`), reported in every heartbeat: the control panel stores
+ * them read-only and shows them on Fleet.
+ */
+export const LocalSettingsReport = z.object({
+  maxConcurrency: LocalSlots,
+  /** Both pools' effective limits. */
+  poolLimits: z.object({ short: LocalSlots, long: LocalSlots }),
+  /** The local version pin; null when none. */
+  versionPin: AgentVersion.nullable(),
+  /** The installables allow-list (`[]` allows none). */
+  installablesAllow: z.array(PackagePattern).max(100),
+});
+export type LocalSettingsReport = z.infer<typeof LocalSettingsReport>;
 export type AgentVersion = z.infer<typeof AgentVersion>;
 
 /**
@@ -324,6 +358,8 @@ export const Heartbeat = z.object({
   acceptedTaskTypes: AcceptedTaskTypes.optional(),
   /** The machine the agent runs on. Absent from older agents: the last report is kept. */
   host: AgentHostReport.optional(),
+  /** The agent's machine settings in force. */
+  local: LocalSettingsReport,
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 
@@ -361,7 +397,6 @@ export const LEGACY_POLL_INTERVAL_SECONDS = 5;
 
 /** Central configuration, returned on every heartbeat. */
 export const HeartbeatResponse = z.object({
-  maxConcurrency: z.int().min(1),
   /**
    * @deprecated Agents claim jobs through `POST /api/agent/claim`. Always
    * `LEGACY_POLL_INTERVAL_SECONDS`, sent only so old agents still parse the response.
@@ -373,11 +408,6 @@ export const HeartbeatResponse = z.object({
    * report theirs: the task types the control panel last had for them.
    */
   acceptedTaskTypes: z.array(JobTaskType).optional(),
-  /**
-   * Effective concurrency limits of the `short` and `long` pools. The
-   * agent only claims a pool's jobs while it runs fewer than this.
-   */
-  poolLimits: PoolLimits,
   /** Repositories pinned to this agent (pre-cloned via `repo.sync` jobs). */
   pinnedRepoIds: z.array(z.uuid()),
   /** The agent's organization: it only claims that organization's jobs. */

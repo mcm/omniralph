@@ -64,7 +64,6 @@ export async function setAppSetting(
 /** The settings section a key's save changes (live `settings` changes); others are internal. */
 const SETTING_SECTIONS: Record<string, "agent_defaults" | "chat_playbooks" | undefined> = {
   "agent.desiredVersion": "agent_defaults",
-  "agent.maxConcurrency": "agent_defaults",
   "chat.playbooks": "chat_playbooks",
 };
 
@@ -174,49 +173,8 @@ export async function setChatPlaybookDefaults(
   await setAppSetting(db, organizationId, CHAT_PLAYBOOKS_KEY, playbooks, updatedBy);
 }
 
-/**
- * How many jobs at once the organization's agents run unless they set their own (an integer,
- * `MIN_MAX_CONCURRENCY`–`MAX_MAX_CONCURRENCY`). Absent: `DEFAULT_MAX_CONCURRENCY`.
- */
-export const DEFAULT_MAX_CONCURRENCY_KEY = "agent.maxConcurrency";
-
 // The agent's slot bounds and default live in `@omniralph/shared` (an agent's `settings.json`).
 export { DEFAULT_MAX_CONCURRENCY, MAX_MAX_CONCURRENCY, MIN_MAX_CONCURRENCY };
-
-function isMaxConcurrency(value: unknown): value is number {
-  return (
-    Number.isInteger(value) &&
-    (value as number) >= MIN_MAX_CONCURRENCY &&
-    (value as number) <= MAX_MAX_CONCURRENCY
-  );
-}
-
-/** The organization's default agent max concurrency; absent or out of range is the built-in default. */
-export async function getDefaultMaxConcurrency(
-  db: Database,
-  organizationId: string,
-): Promise<number> {
-  const value = (await getAppSetting(db, organizationId, DEFAULT_MAX_CONCURRENCY_KEY))?.value;
-  return isMaxConcurrency(value) ? value : DEFAULT_MAX_CONCURRENCY;
-}
-
-/**
- * Sets (or, with null, clears back to the built-in default) the organization's default agent
- * max concurrency. Throws unless it is an integer from 1 to 32.
- */
-export async function setDefaultMaxConcurrency(
-  db: Database,
-  organizationId: string,
-  maxConcurrency: number | null,
-  updatedBy: string | null,
-): Promise<void> {
-  if (maxConcurrency !== null && !isMaxConcurrency(maxConcurrency)) {
-    throw new Error(
-      `Max concurrency must be an integer from ${MIN_MAX_CONCURRENCY} to ${MAX_MAX_CONCURRENCY}`,
-    );
-  }
-  await setAppSetting(db, organizationId, DEFAULT_MAX_CONCURRENCY_KEY, maxConcurrency, updatedBy);
-}
 
 /**
  * The organization's tracker labels (`TrackerLabels`), which routing applies before any

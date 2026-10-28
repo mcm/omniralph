@@ -814,7 +814,7 @@ relation to it; done and canceled ones left out) and `blocked`.
 
 Coding jobs are `coding` tasks in the `long` pool: they run on agents that accept the `coding`
 task type ([deploy-agent.md](deploy-agent.md#coding-work)). An agent's `long` pool limit caps how
-many of its slots Om may take; by default that's max concurrency − 1 (at least 1), so an agent
+many of its slots Om may take; by default that's its slots − 1 (at least 1), so an agent
 with two or more slots keeps one free for reviews while stories run. Each lane sticks to its own
 agent: a lane's story, request, push and describe jobs and a manual story's preparation go to the agent that started the lane's
 last job while it still accepts `coding`, else to an agent its repository is pinned to, else to

@@ -20,6 +20,12 @@ import {
 } from "./protocol.js";
 
 const ID = "6f1c2a59-2a5c-4a8e-9f0a-1d2b3c4d5e6f";
+const LOCAL = {
+  maxConcurrency: 5,
+  poolLimits: { short: 5, long: 4 },
+  versionPin: null,
+  installablesAllow: ["@omniralph/*"],
+};
 
 describe("protocol", () => {
   it("validates heartbeats", () => {
@@ -28,15 +34,36 @@ describe("protocol", () => {
         version: "0.1.0",
         runningJobIds: [ID],
         freeSlots: 0,
+        local: LOCAL,
       }).success,
     ).toBe(true);
     expect(
-      Heartbeat.safeParse({ version: "0.1.0", runningJobIds: [], freeSlots: -1 }).success,
+      Heartbeat.safeParse({ version: "0.1.0", runningJobIds: [], freeSlots: -1, local: LOCAL })
+        .success,
     ).toBe(false);
   });
 
-  it("defaults a heartbeat's installables to none, so older agents validate", () => {
+  it("requires the agent's machine settings in force (`local`)", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    expect(Heartbeat.safeParse(base).success).toBe(false);
+    expect(Heartbeat.parse({ ...base, local: LOCAL }).local).toEqual(LOCAL);
+    const pinned = { ...LOCAL, versionPin: "2.0.3", installablesAllow: [] };
+    expect(Heartbeat.parse({ ...base, local: pinned }).local).toEqual(pinned);
+    for (const bad of [
+      { ...LOCAL, maxConcurrency: 0 },
+      { ...LOCAL, maxConcurrency: 33 },
+      { ...LOCAL, poolLimits: { short: 5 } },
+      { ...LOCAL, versionPin: "latest" },
+      { ...LOCAL, versionPin: undefined },
+      { ...LOCAL, installablesAllow: ["has space"] },
+      { maxConcurrency: 5, poolLimits: LOCAL.poolLimits, versionPin: null },
+    ]) {
+      expect(Heartbeat.safeParse({ ...base, local: bad }).success).toBe(false);
+    }
+  });
+
+  it("defaults a heartbeat's installables to none, so older agents validate", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).installables).toEqual([]);
     const installables = [{ name: "@omniralph/hello", version: "1.0.0" }];
     expect(Heartbeat.parse({ ...base, installables }).installables).toEqual(installables);
@@ -48,7 +75,7 @@ describe("protocol", () => {
   });
 
   it("defaults a heartbeat's models to none, so older agents validate", () => {
-    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).models).toEqual([]);
     const models = [{ value: "opus", displayName: "Opus" }];
     expect(Heartbeat.parse({ ...base, models }).models).toEqual(models);
@@ -60,7 +87,7 @@ describe("protocol", () => {
   });
 
   it("accepts an optional host, so older agents validate", () => {
-    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).host).toBeUndefined();
     const plain = { hostname: "build-01", coder: null };
     expect(Heartbeat.parse({ ...base, host: plain }).host).toEqual(plain);
@@ -80,7 +107,7 @@ describe("protocol", () => {
   });
 
   it("defaults a heartbeat's host tools to none and validates them", () => {
-    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).hostTools).toEqual([]);
     const hostTools = [
       { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
@@ -190,7 +217,7 @@ describe("protocol", () => {
   });
 
   it("carries the agent's own accepted task types in heartbeats and claims, optional for older agents", () => {
-    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 0 };
+    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(heartbeat).acceptedTaskTypes).toBeUndefined();
     expect(
       Heartbeat.parse({ ...heartbeat, acceptedTaskTypes: ["review"] }).acceptedTaskTypes,
@@ -210,10 +237,8 @@ describe("protocol", () => {
 
   it("requires the agent's organization in the heartbeat response", () => {
     const response = {
-      maxConcurrency: 1,
       pollIntervalSeconds: 5,
       acceptedTaskTypes: [],
-      poolLimits: {},
       pinnedRepoIds: [],
       topics: [],
       queueRegion: "iad1",
@@ -240,15 +265,14 @@ describe("self-update protocol", () => {
       version: "0.1.0",
       runningJobIds: [],
       freeSlots: 0,
+      local: LOCAL,
     });
     expect(heartbeat.selfUpdate).toBeUndefined();
     expect(heartbeat.update).toBeUndefined();
     expect(heartbeat.failedVersions).toEqual([]);
     const response = HeartbeatResponse.parse({
-      maxConcurrency: 1,
       pollIntervalSeconds: 5,
       acceptedTaskTypes: [],
-      poolLimits: {},
       pinnedRepoIds: [],
       organizationId: ID,
       topics: [],
@@ -261,7 +285,12 @@ describe("self-update protocol", () => {
   });
 
   it("stays compatible with agents and control panels that predate Ably wake-ups", () => {
-    const heartbeat = Heartbeat.parse({ version: "0.1.0", runningJobIds: [], freeSlots: 0 });
+    const heartbeat = Heartbeat.parse({
+      version: "0.1.0",
+      runningJobIds: [],
+      freeSlots: 0,
+      local: LOCAL,
+    });
     expect(heartbeat.ablyTokenExpiresAt).toBeUndefined();
     const expiresAt = "2026-10-16T00:00:00.000Z";
     expect(
@@ -269,6 +298,7 @@ describe("self-update protocol", () => {
         version: "0.1.0",
         runningJobIds: [],
         freeSlots: 1,
+        local: LOCAL,
         ablyTokenExpiresAt: expiresAt,
       }).ablyTokenExpiresAt,
     ).toBe(expiresAt);
@@ -277,14 +307,13 @@ describe("self-update protocol", () => {
         version: "0.1.0",
         runningJobIds: [],
         freeSlots: 1,
+        local: LOCAL,
         ablyTokenExpiresAt: "soon",
       }).success,
     ).toBe(false);
 
     const base = {
-      maxConcurrency: 1,
       acceptedTaskTypes: [],
-      poolLimits: {},
       pinnedRepoIds: [],
       organizationId: ID,
       cancelJobIds: [],
@@ -297,7 +326,7 @@ describe("self-update protocol", () => {
   });
 
   it("carries the claimable pools and the claimable flag, both optional", () => {
-    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 1 };
+    const heartbeat = { version: "0.1.0", runningJobIds: [], freeSlots: 1, local: LOCAL };
     expect(Heartbeat.parse(heartbeat).claimablePools).toBeUndefined();
     expect(Heartbeat.parse({ ...heartbeat, claimablePools: ["short"] }).claimablePools).toEqual([
       "short",
@@ -309,9 +338,7 @@ describe("self-update protocol", () => {
     ).toBe(false);
 
     const base = {
-      maxConcurrency: 1,
       acceptedTaskTypes: [],
-      poolLimits: {},
       pinnedRepoIds: [],
       organizationId: ID,
       cancelJobIds: [],

@@ -14,28 +14,16 @@ import {
   AgentVersion,
   HostToolName,
   HostToolPath,
+  LocalSlots as Slots,
+  PackagePattern,
   defaultPoolLimit,
 } from "./protocol.js";
 
-export const MIN_MAX_CONCURRENCY = 1;
-export const MAX_MAX_CONCURRENCY = 32;
 /** An agent's slots when its settings don't set them. */
 export const DEFAULT_MAX_CONCURRENCY = 5;
 
 /** Installables an agent accepts when its settings don't say. */
 export const DEFAULT_INSTALLABLE_ALLOW = ["@omniralph/*"] as const;
-
-/**
- * An npm package name, optionally with `*` wildcards (each matching any run of
- * characters except `/`): `@scope/name`, `@scope/*` or `name`.
- */
-export const PackagePattern = z
-  .string()
-  .max(214)
-  .refine((value) => value !== "" && !/\s/.test(value) && value.split("/").length <= 2, {
-    message: "must be an npm package name or a pattern like '@scope/*'",
-  });
-export type PackagePattern = z.infer<typeof PackagePattern>;
 
 /** Whether one of the `allow` patterns matches the package name. */
 export function installableAllowed(allow: readonly string[], packageName: string): boolean {
@@ -49,8 +37,6 @@ function packagePatternRegExp(pattern: string): RegExp {
     .join("[^/]*");
   return new RegExp(`^${source}$`);
 }
-
-const Slots = z.int().min(MIN_MAX_CONCURRENCY).max(MAX_MAX_CONCURRENCY);
 
 /** A version an agent may be pinned to: semver, at least `AGENT_MIN_VERSION`. */
 export const AgentVersionPin = AgentVersion.refine(

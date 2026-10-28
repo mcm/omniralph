@@ -15,7 +15,6 @@ import {
   listAgentHostTools,
   listAgentOverview,
   listRecentAgentAudit,
-  setDefaultMaxConcurrency,
   setDesiredAgentVersion,
   setAgentHostToolPath,
   unpinRepositoryFromAgent,
@@ -38,6 +37,14 @@ import type { AgentDetail, AgentList } from "@/lib/api/agents";
 import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
+
+/** A heartbeat's `local`: the agent's machine settings, all defaults. */
+const LOCAL = {
+  maxConcurrency: 5,
+  poolLimits: { short: 5, long: 4 },
+  versionPin: null,
+  installablesAllow: ["@omniralph/*"],
+};
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -74,7 +81,6 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
 const agentDetail = await import("@/app/api/ui/agents/[id]/route");
-const agentSettings = await import("@/app/api/ui/agents/[id]/settings/route");
 const agentUpdate = await import("@/app/api/ui/agents/[id]/update/route");
 const agentRevoke = await import("@/app/api/ui/agents/[id]/revoke/route");
 const agentInstalls = await import("@/app/api/ui/agents/[id]/installs/route");
@@ -166,16 +172,14 @@ async function ui(
   return result as { ok: true; version?: string };
 }
 
-/** The Settings tab's save of the config alone (the other parts are left as they are). */
-const updateAgentConfig = (
-  id: string,
-  config: {
-    maxConcurrency: number | null;
-    poolLimits: Record<string, number>;
-  },
-) => ui(agentSettings.PUT, id, { method: "PUT", body: { config } });
-const setAgentDesiredVersion = (id: string, version: string) =>
-  ui(agentSettings.PUT, id, { method: "PUT", body: { version } });
+/**
+ * An agent's desired-version override, set in the database: no route sets it any more (the
+ * version pin is the agent's own), and the column goes with the old Settings tab.
+ */
+async function setAgentDesiredVersion(id: string, version: string | null) {
+  await state.db!.update(agents).set({ desiredVersion: version }).where(eq(agents.id, id));
+  await bumpAgentHeartbeat(id);
+}
 // Pins are edited from the repository's settings; these call the same pin logic directly.
 async function pinRepository(agentId: string, repositoryId: string) {
   const dispatcher = new PostgresDispatcher({ db: state.db! });
@@ -213,7 +217,7 @@ async function getAgent(id: string) {
   });
   return ((await response.json()) as AgentDetail).agent;
 }
-const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1 };
+const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1, local: LOCAL };
 
 describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () => {
   let testDb: TestDatabase;
@@ -357,23 +361,20 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
     it("reaches the agent in its next heartbeat response", async () => {
       const { agentId, accessToken } = await enrolledAgent();
       const before = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      // A new agent inherits the organization's (built-in) defaults; an older agent, which
-      // reports no task types, is sent every type.
+      // An older agent, which reports no task types, is sent every type. No slots: they're
+      // its own.
       expect(before).toMatchObject({
-        maxConcurrency: 5,
         pollIntervalSeconds: 5,
         acceptedTaskTypes: ["query", "review", "coding"],
         pinnedRepoIds: [],
       });
+      expect(before).not.toHaveProperty("maxConcurrency");
+      expect(before).not.toHaveProperty("poolLimits");
 
-      expect(await updateAgentConfig(agentId, { maxConcurrency: 4, poolLimits: {} })).toEqual({
-        ok: true,
-      });
       expect(await pinRepository(agentId, repoA)).toEqual({ ok: true });
 
       const after = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
       expect(after).toMatchObject({
-        maxConcurrency: 4,
         // Legacy constants: agents claim jobs instead of polling queue topics.
         pollIntervalSeconds: 5,
         pinnedRepoIds: [repoA],
@@ -422,6 +423,58 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       // A bad report is refused.
       const bad = await sendHeartbeat(accessToken, { ...HEARTBEAT, acceptedTaskTypes: [] });
       expect(bad.status).toBe(400);
+    });
+
+    it("stores the local settings the agent reports, publishing a change only when they differ", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const agentChanges = (changes: RecordedChange[]) =>
+        changes.filter((c) => c.resource === "agent" && c.ids.includes(agentId));
+      const stored = async () => {
+        const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+        return {
+          maxConcurrency: row!.reportedMaxConcurrency,
+          poolLimits: row!.reportedPoolLimits,
+          versionPin: row!.reportedVersionPin,
+          installablesAllow: row!.reportedInstallablesAllow,
+        };
+      };
+      // The first heartbeat announces the agent online and stores the defaults it reports.
+      await sendHeartbeat(accessToken);
+      expect(await stored()).toEqual(LOCAL);
+
+      // The same report again changes nothing and publishes nothing.
+      const same = await captureChanges(() => sendHeartbeat(accessToken));
+      expect(agentChanges(same.changes)).toEqual([]);
+
+      // Each changed value is stored and announces the agent.
+      for (const local of [
+        { ...LOCAL, maxConcurrency: 2, poolLimits: { short: 2, long: 1 } },
+        { ...LOCAL, maxConcurrency: 2, poolLimits: { short: 1, long: 1 } },
+        { ...LOCAL, maxConcurrency: 2, poolLimits: { short: 1, long: 1 }, versionPin: "2.0.3" },
+        {
+          maxConcurrency: 2,
+          poolLimits: { short: 1, long: 1 },
+          versionPin: "2.0.3",
+          installablesAllow: [],
+        },
+      ]) {
+        const changed = await captureChanges(() =>
+          sendHeartbeat(accessToken, { ...HEARTBEAT, local }),
+        );
+        expect(changed.result.status).toBe(200);
+        expect(agentChanges(changed.changes)).toEqual([
+          expect.objectContaining({ resource: "agent", ids: [agentId], organizationId: orgId }),
+        ]);
+        expect(await stored()).toEqual(local);
+      }
+
+      // A bad report is refused and stores nothing.
+      const bad = await sendHeartbeat(accessToken, {
+        ...HEARTBEAT,
+        local: { ...LOCAL, maxConcurrency: 0 },
+      });
+      expect(bad.status).toBe(400);
+      expect((await stored()).maxConcurrency).toBe(2);
     });
 
     it("stores the host the agent reports, keeping it when omitted, publishing only when it changes", async () => {
@@ -476,130 +529,54 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(await reportedHost()).toEqual(plain);
     });
 
-    it("refuses task types in the Settings tab's save: the agent decides them", async () => {
-      const { agentId } = await enrolledAgent();
-      for (const body of [
-        { config: { maxConcurrency: 2, acceptedTaskTypes: ["review"], poolLimits: {} } },
-        { config: { maxConcurrency: 2, acceptedTaskTypes: null, poolLimits: {} } },
-        { acceptedTaskTypes: ["review"] },
-        { version: "1.4.0", acceptedTaskTypes: ["review"] },
-      ]) {
-        const response = await agentSettings.PUT(
-          new Request("http://localhost/api/ui", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          }),
-          { params: Promise.resolve({ id: agentId }) },
+    it("lists the slots each agent reports, and its local settings in the detail", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      const quiet = await enrolledAgent();
+      const listed = async (id: string) => (await listAgents()).find((agent) => agent.id === id)!;
+      const detail = async (id: string) => {
+        const response = await agentDetail.GET(
+          new Request(`http://localhost/api/ui/agents/${id}`),
+          { params: Promise.resolve({ id }) },
         );
-        expect(response.status).toBe(400);
-      }
-      // Nothing was saved.
-      const agent = (await getAgentOverview(db, orgId, agentId))!;
-      expect(agent).toMatchObject({
-        maxConcurrency: null,
-        desiredVersion: null,
-        reportedAcceptedTaskTypes: null,
+        return (await response.json()) as AgentDetail;
+      };
+      // Nothing reported yet: no slots known, no local settings.
+      expect((await listed(agentId)).slots).toEqual({ running: 0, max: null });
+      expect((await detail(agentId)).local).toEqual({
+        poolLimits: null,
+        versionPin: null,
+        installablesAllow: null,
       });
-    });
 
-    it("sends the effective per-pool limits and stores the edited ones", async () => {
-      const { agentId, accessToken } = await enrolledAgent();
-      const initial = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(initial.poolLimits).toEqual({ short: 5, long: 4 });
-
-      // Unset: the long pool leaves one slot for short jobs.
-      const config = { maxConcurrency: 3, poolLimits: {} };
-      expect(await updateAgentConfig(agentId, config)).toEqual({ ok: true });
-      const defaults = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(defaults.poolLimits).toEqual({ short: 3, long: 2 });
-
-      expect(
-        await updateAgentConfig(agentId, {
-          ...config,
-          poolLimits: { long: 1, short: 3 },
-        }),
-      ).toEqual({ ok: true });
-      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
-      expect(row!.poolLimits).toEqual({ long: 1, short: 3 });
-      const limited = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(limited.poolLimits).toEqual({ short: 3, long: 1 });
-
-      // Lowering maxConcurrency clamps the effective values.
-      expect(
-        await updateAgentConfig(agentId, {
-          ...config,
-          maxConcurrency: 2,
-          poolLimits: { long: 1, short: 2 },
-        }),
-      ).toEqual({ ok: true });
-      const clamped = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(clamped.poolLimits).toEqual({ short: 2, long: 1 });
-
-      // Blank limits go back to the defaults.
-      expect(await updateAgentConfig(agentId, config)).toEqual({ ok: true });
-      const [cleared] = await db.select().from(agents).where(eq(agents.id, agentId));
-      expect(cleared!.poolLimits).toEqual({});
-      const reset = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(reset.poolLimits).toEqual({ short: 3, long: 2 });
-    });
-
-    it("saves an override and switches back to the organization's defaults", async () => {
-      const { agentId, accessToken } = await enrolledAgent();
-      const heartbeat = async () =>
-        (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      const row = async () => agentRow((await getAgentOverview(db, orgId, agentId))!);
-      await setDefaultMaxConcurrency(db, orgId, 6, null);
+      const local = {
+        maxConcurrency: 3,
+        poolLimits: { short: 3, long: 1 },
+        versionPin: "2.0.3",
+        installablesAllow: ["@omniralph/*", "@acme/*"],
+      };
+      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, local })).status).toBe(200);
+      const [running] = await db
+        .insert(jobs)
+        .values({
+          organizationId: orgId,
+          type: "test.job",
+          taskType: "review",
+          status: "running",
+          agentId,
+          startedAt: new Date(),
+        })
+        .returning();
       try {
-        expect(await row()).toMatchObject({
-          acceptedTaskTypes: ["query", "review", "coding"],
-          maxConcurrency: 6,
-          overrides: { maxConcurrency: null },
-          defaults: { maxConcurrency: 6 },
-          effectivePoolLimits: { short: 6, long: 5 },
+        expect((await listed(agentId)).slots).toEqual({ running: 1, max: 3 });
+        expect((await getAgent(agentId)).slots).toEqual({ running: 1, max: 3 });
+        expect((await detail(agentId)).local).toEqual({
+          poolLimits: { short: 3, long: 1 },
+          versionPin: "2.0.3",
+          installablesAllow: ["@omniralph/*", "@acme/*"],
         });
-
-        // Override it.
-        expect(await updateAgentConfig(agentId, { maxConcurrency: 2, poolLimits: {} })).toEqual({
-          ok: true,
-        });
-        expect(await row()).toMatchObject({
-          maxConcurrency: 2,
-          overrides: { maxConcurrency: 2 },
-          effectivePoolLimits: { short: 2, long: 1 },
-        });
-        expect(await heartbeat()).toMatchObject({
-          maxConcurrency: 2,
-          poolLimits: { short: 2, long: 1 },
-        });
-
-        // Back to the organization's max concurrency; pool limits are checked against it.
-        const inheritMax = { maxConcurrency: null };
-        expect(
-          await updateAgentConfig(agentId, { ...inheritMax, poolLimits: { short: 7 } }),
-        ).toMatchObject({ ok: false });
-        expect(
-          await updateAgentConfig(agentId, { ...inheritMax, poolLimits: { short: 6 } }),
-        ).toEqual({ ok: true });
-        const [stored] = await db.select().from(agents).where(eq(agents.id, agentId));
-        expect(stored).toMatchObject({ maxConcurrency: null, poolLimits: { short: 6 } });
-        expect(await heartbeat()).toMatchObject({ maxConcurrency: 6 });
-
-        // Inheriting: an organization change reaches the agent.
-        expect(await updateAgentConfig(agentId, { maxConcurrency: null, poolLimits: {} })).toEqual({
-          ok: true,
-        });
-        await setDefaultMaxConcurrency(db, orgId, 3, null);
-        expect(await row()).toMatchObject({
-          maxConcurrency: 3,
-          overrides: { maxConcurrency: null },
-        });
-        expect(await heartbeat()).toMatchObject({
-          maxConcurrency: 3,
-          poolLimits: { short: 3, long: 2 },
-        });
+        expect((await listed(quiet.agentId)).slots).toEqual({ running: 0, max: null });
       } finally {
-        await setDefaultMaxConcurrency(db, orgId, null, null);
+        await db.delete(jobs).where(eq(jobs.id, running!.id));
       }
     });
 
@@ -615,11 +592,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
       await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
       expect(await desired(accessToken)).toBe("2.4.0");
-      expect(await setAgentDesiredVersion(agentId, "v2.5.0")).toEqual({ ok: true });
-      expect(await setAgentDesiredVersion(agentId, "latest")).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
+      await setAgentDesiredVersion(agentId, "2.5.0");
       expect(await desired(accessToken)).toBe("2.5.0");
       expect(await desired(other.accessToken)).toBe("2.4.0");
 
@@ -652,17 +625,11 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       });
 
       // Cleared override: the global version again. Older agents report nothing.
-      expect(await setAgentDesiredVersion(agentId, "")).toEqual({ ok: true });
+      await setAgentDesiredVersion(agentId, null);
       expect(await desired(accessToken)).toBe("2.4.0");
       const legacy = (await getAgentOverview(db, orgId, agentId))!;
       expect(legacy).toMatchObject({ selfUpdate: null, updateState: null, failedVersions: [] });
       expect(agentRow(legacy, new Date(), "2.4.0").updateStatus).toBe("manual");
-
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await setAgentDesiredVersion(agentId, "2.6.0")).toEqual({
-        ok: false,
-        error: expect.any(String),
-      });
       await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
@@ -690,7 +657,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       });
 
       // An override still wins.
-      expect(await setAgentDesiredVersion(agentId, "2.9.0")).toEqual({ ok: true });
+      await setAgentDesiredVersion(agentId, "2.9.0");
       expect((await respond()).desiredVersion).toBe("2.9.0");
 
       state.latest = "2.0.0";
@@ -722,7 +689,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       });
 
       // The desired version, even one that failed on the agent.
-      expect(await setAgentDesiredVersion(agentId, "2.5.0")).toEqual({ ok: true });
+      await setAgentDesiredVersion(agentId, "2.5.0");
       await respond({ ...supported, failedVersions: ["2.5.0"] });
       expect(await requestAgentUpdate(agentId)).toEqual({ ok: true, version: "2.5.0" });
       const second = (await respond(supported)).updateRequest;
@@ -763,114 +730,9 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         repositoryId: repoB,
       });
     });
-
-    it("rejects invalid values, unknown pools, and non-admins", async () => {
-      const { agentId } = await enrolledAgent();
-      const valid = { maxConcurrency: 2, poolLimits: {} };
-      const invalid: Parameters<typeof updateAgentConfig>[1][] = [
-        { ...valid, maxConcurrency: 0 },
-        { ...valid, maxConcurrency: 1.5 },
-        { ...valid, poolLimits: { short: 0 } },
-        { ...valid, poolLimits: { short: 3 } },
-        { ...valid, poolLimits: { long: 1.5 } },
-        { ...valid, poolLimits: { gpu: 1 } },
-      ];
-      for (const input of invalid) {
-        expect(await updateAgentConfig(agentId, input)).toMatchObject({ ok: false });
-      }
-      expect(await updateAgentConfig(randomUUID(), valid)).toMatchObject({ ok: false });
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await updateAgentConfig(agentId, valid)).toMatchObject({ ok: false });
-      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-      // Unchanged: still inheriting.
-      expect(agent!.maxConcurrency).toBeNull();
-    });
   });
 
-  describe("settings save", () => {
-    it("saves every change in one request and names the ones it didn't save when one fails", async () => {
-      const { agentId } = await enrolledAgent();
-      const config = { maxConcurrency: 3, poolLimits: {} };
-      const save = (body: object) => ui(agentSettings.PUT, agentId, { method: "PUT", body });
-
-      expect(await save({ config, version: "nope" })).toEqual({
-        ok: false,
-        error: "Enter a version like 2.0.0, or leave it blank. Not saved: the desired version.",
-      });
-      // What came before the failure is saved; what came after isn't.
-      let agent = (await getAgentOverview(db, orgId, agentId))!;
-      expect(agent).toMatchObject({ maxConcurrency: 3, desiredVersion: null });
-
-      const response = await agentSettings.PUT(
-        new Request("http://localhost/api/ui", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "2.4.0" }),
-        }),
-        { params: Promise.resolve({ id: agentId }) },
-      );
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { ok: boolean; savedAt: string };
-      expect(body.ok).toBe(true);
-      // The agent has picked it up once a heartbeat is later than `savedAt`.
-      expect(Date.parse(body.savedAt)).toBeLessThanOrEqual(Date.now());
-      agent = (await getAgentOverview(db, orgId, agentId))!;
-      expect(agent.desiredVersion).toBe("2.4.0");
-
-      // A single change keeps its own message.
-      expect(await save({ version: "nope" })).toEqual({
-        ok: false,
-        error: "Enter a version like 2.0.0, or leave it blank.",
-      });
-    });
-
-    it("refuses a desired version below @omniralph/agent 2.0.0 with a field error", async () => {
-      const { agentId } = await enrolledAgent();
-      const put = (version: string) =>
-        agentSettings.PUT(
-          new Request("http://localhost/api/ui", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ version }),
-          }),
-          { params: Promise.resolve({ id: agentId }) },
-        );
-      const error = "Agents run @omniralph/agent 2.0.0 or later: enter 2.0.0 or a later version.";
-
-      const rejected = await put("1.9.9");
-      expect(rejected.status).toBe(400);
-      expect(await rejected.json()).toEqual({ error, fieldErrors: { version: error } });
-      expect((await getAgentOverview(db, orgId, agentId))!.desiredVersion).toBeNull();
-
-      const accepted = await put("2.0.0");
-      expect(accepted.status).toBe(200);
-      expect((await getAgentOverview(db, orgId, agentId))!.desiredVersion).toBe("2.0.0");
-    });
-
-    it("refuses pins and unpins: they are edited from the repository's settings", async () => {
-      const { agentId } = await enrolledAgent();
-      for (const body of [
-        { pin: [repoA] },
-        { unpin: [repoA] },
-        { pins: [repoA] },
-        { unpins: [repoA] },
-        { version: "2.4.0", pin: [repoA] },
-      ]) {
-        const response = await agentSettings.PUT(
-          new Request("http://localhost/api/ui", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          }),
-          { params: Promise.resolve({ id: agentId }) },
-        );
-        expect(response.status).toBe(400);
-      }
-      // Nothing was saved, not even the version sent alongside a pin.
-      const agent = (await getAgentOverview(db, orgId, agentId))!;
-      expect(agent).toMatchObject({ desiredVersion: null, pinnedRepositories: [] });
-    });
-
+  describe("host tool paths save", () => {
     it("names the host tool paths it didn't save", async () => {
       const { agentId } = await enrolledAgent();
       const first = await addHostTool({ name: "ui-save-a" });
@@ -1349,10 +1211,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       });
       expect(audit!.ip).toBe("192.0.2.1");
 
-      // A revoked agent can't be configured or pinned.
-      expect(await updateAgentConfig(agentId, { maxConcurrency: 2, poolLimits: {} })).toMatchObject(
-        { ok: false },
-      );
+      // A revoked agent can't be pinned.
       expect(await pinRepository(agentId, repoB)).toMatchObject({ ok: false });
     });
 

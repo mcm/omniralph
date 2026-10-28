@@ -8,6 +8,9 @@ import type { JobTaskType } from "./protocol.js";
 export const POOLS = ["short", "long"] as const;
 export type PoolName = (typeof POOLS)[number];
 
+/** The pools every agent claims from, each capped by its local `poolLimits`. */
+export const DEFAULT_POOLS: readonly PoolName[] = POOLS;
+
 /**
  * The pool whose slots a job of `taskType` takes: `long` for coding runs
  * (hours-long stories), `short` for query and review runs, and none for
