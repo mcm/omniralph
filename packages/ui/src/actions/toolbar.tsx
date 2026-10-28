@@ -17,7 +17,16 @@ export type ToolbarAction = {
   tooltip?: string;
   /** The group's one solid action (e.g. Start epic on the Backlog). */
   solid?: boolean;
-} & ({ onSelect: () => void; href?: undefined } | { href: string; onSelect?: () => void });
+} & (
+  | { onSelect: () => void; href?: undefined }
+  | {
+      href: string;
+      onSelect?: () => void;
+      /** E.g. `_blank` for a page on another site (with `rel="noreferrer"`). */
+      target?: string;
+      rel?: string;
+    }
+);
 
 export interface ToolbarProps {
   /** Names the toolbar for assistive tech (e.g. "Run actions"). */
@@ -124,6 +133,8 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
                 label={actionLabel}
                 icon={icon}
                 href={href}
+                target={action.href !== undefined ? action.target : undefined}
+                rel={action.href !== undefined ? action.rel : undefined}
                 disabled={disabled}
                 disabledReason={disabledReason}
                 tooltip={tooltip}

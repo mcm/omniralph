@@ -8,6 +8,8 @@ import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
 import { CapacityPage } from "./capacity/capacity-page.js";
 import { ClaudePage } from "./claude/claude-page.js";
 import { HostToolsPage } from "./host-tools/host-tools-page.js";
+import { AttemptPage } from "./overview/attempt-page.js";
+import { OverviewPage } from "./overview/overview-page.js";
 import { PackagesPage } from "./packages/packages-page.js";
 import { AgentPage } from "./page.js";
 import { StoragePage } from "./storage/storage-page.js";
@@ -24,6 +26,7 @@ export interface AgentRoute {
 const BACK_TO_AGENT = { label: "Agent", href: INDEX_PATH };
 
 function sectionPage(section: AgentSectionKey): ReactNode {
+  if (section === "overview") return <OverviewPage />;
   if (section === "capacity") return <CapacityPage />;
   if (section === "packages") return <PackagesPage />;
   if (section === "hostTools") return <HostToolsPage />;
@@ -33,30 +36,29 @@ function sectionPage(section: AgentSectionKey): ReactNode {
   return <AgentPage title={AGENT_SECTIONS[section].label} />;
 }
 
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 export function routeFor(path: string): AgentRoute {
   const trimmed = path.length > 1 ? path.replace(/\/+$/, "") : path;
   if (trimmed === INDEX_PATH) return { section: "overview", page: sectionPage("overview") };
   const attempt = /^\/attempts\/([^/]+)$/.exec(trimmed);
   if (attempt) {
-    return {
-      section: "overview",
-      page: (
-        <AgentPage title="Attempt">
-          <TextLink href={AGENT_SECTIONS.overview.href}>‹ Overview</TextLink>
-        </AgentPage>
-      ),
-    };
+    return { section: "overview", page: <AttemptPage id={decodeSegment(attempt[1]!)} /> };
   }
   // An install's output opens over Packages.
   const install = /^\/packages\/history\/([^/]+)$/.exec(trimmed);
   if (install) {
-    let id: string;
-    try {
-      id = decodeURIComponent(install[1]!);
-    } catch {
-      id = install[1]!;
-    }
-    return { section: "packages", page: <PackagesPage historyId={id} />, backLink: BACK_TO_AGENT };
+    return {
+      section: "packages",
+      page: <PackagesPage historyId={decodeSegment(install[1]!)} />,
+      backLink: BACK_TO_AGENT,
+    };
   }
   const entry = (Object.entries(AGENT_SECTIONS) as [AgentSectionKey, { href: string }][]).find(
     ([, section]) => section.href === trimmed,

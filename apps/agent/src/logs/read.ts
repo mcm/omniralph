@@ -13,6 +13,11 @@ export interface LogPageOptions extends LogFilter {
   /** Lines per page (at least 1). */
   limit: number;
   keep?: number;
+  /**
+   * Epoch milliseconds: stop at the first line older than this (the log is written in time
+   * order), so a search for a recent attempt's lines doesn't read every rotated file.
+   */
+  since?: number;
 }
 
 export interface LogPage {
@@ -110,6 +115,9 @@ export async function readLogPage(options: LogPageOptions): Promise<LogPage> {
       const end = i === start && cursor ? Math.min(cursor.offset, file.size) : file.size;
       for await (const line of linesBackward(file.handle, end)) {
         const entry = parseLogLine(line.text);
+        if (entry && options.since !== undefined && entry.time < options.since) {
+          return { entries, before: null };
+        }
         if (!entry || !matchesLogFilter(entry, line.text, options)) continue;
         entries.push(entry);
         if (entries.length === limit) return { entries, before: `${file.ino}:${line.offset}` };

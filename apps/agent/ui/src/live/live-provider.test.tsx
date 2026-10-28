@@ -28,7 +28,8 @@ async function advance(ms = 0) {
 async function setup() {
   const api = fakeApi({ "/api/state": { body: agentState() } });
   const streams = fakeEventSources();
-  const view = renderAgentPage({ createEventSource: streams.create });
+  // A page that only reads `/api/state`, so every other request is the stream's doing.
+  const view = renderAgentPage({ path: "/capacity", createEventSource: streams.create });
   await advance();
   return { api, streams, stream: streams.latest(), ...view };
 }

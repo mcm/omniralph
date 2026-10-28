@@ -139,6 +139,25 @@ body,
   .agent-nav__theme {
     margin: 0 16px;
   }
+
+  /* A running attempt: its sentence on one line, its badges and time under it. */
+  .agent-attempt {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .agent-attempt__badges {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  /* A log line's message goes under its time and level. */
+  .agent-log__line {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .agent-log__msg {
+    grid-column: 1 / -1;
+  }
 }
 
 /* A card's one-line description, e.g. why nothing can be installed. */
@@ -260,4 +279,82 @@ body,
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+/* Overview's Running now: one row per attempt, its sentence, badges and elapsed time. */
+.agent-attempts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-attempt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--or-border);
+}
+
+.agent-attempt:first-child {
+  border-top: 0;
+}
+
+.agent-attempt__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-attempt__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-attempt__elapsed {
+  color: var(--or-sec);
+  font-size: 13px;
+  text-align: right;
+}
+
+.agent-back {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+/* An attempt's log lines: time, level, message. */
+.agent-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-log__line {
+  display: grid;
+  grid-template-columns: auto 5ch minmax(0, 1fr);
+  gap: 0 12px;
+}
+
+.agent-log__time,
+.agent-log__level {
+  color: var(--or-sec);
+}
+
+.agent-log__msg {
+  overflow-wrap: anywhere;
+}
+
+.agent-log__line--warn .agent-log__level,
+.agent-log__line--error .agent-log__level,
+.agent-log__line--fatal .agent-log__level {
+  color: var(--or-fail);
 }

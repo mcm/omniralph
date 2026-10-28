@@ -82,6 +82,13 @@ describe("readLogPage", () => {
     expect(msgs(await readLogPage({ dir, limit: 10, q: "LINE 4" }))).toEqual(["line 4"]);
   });
 
+  it("stops at the first line older than since, across files", async () => {
+    writeLines(8).close();
+    const page = await readLogPage({ dir, limit: 10, since: 1_003 });
+    expect(msgs(page)).toEqual(["line 7", "line 6", "line 5", "line 4", "line 3"]);
+    expect(page.before).toBeNull();
+  });
+
   it("skips lines that aren't pino JSON", async () => {
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "agent.log"), `${line(0)}not json\n{"half":\n${line(1)}`);
