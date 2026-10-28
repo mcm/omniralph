@@ -303,6 +303,31 @@ describe("self-update protocol", () => {
     expect(response.requiredHostTools).toEqual([]);
   });
 
+  it("carries no update request either way: Update now is local to the agent", () => {
+    const heartbeat = Heartbeat.parse({
+      version: "2.0.0",
+      runningJobIds: [],
+      freeSlots: 0,
+      local: LOCAL,
+      handledUpdateRequestId: ID,
+    });
+    expect(heartbeat).not.toHaveProperty("handledUpdateRequestId");
+    const response = HeartbeatResponse.parse({
+      pollIntervalSeconds: 5,
+      acceptedTaskTypes: [],
+      pinnedRepoIds: [],
+      organizationId: ID,
+      topics: [],
+      queueRegion: "iad1",
+      cancelJobIds: [],
+      jobTokens: [],
+      desiredVersion: "2.0.4",
+      updateRequest: { id: ID, version: "2.0.5" },
+    });
+    expect(response.desiredVersion).toBe("2.0.4");
+    expect(response).not.toHaveProperty("updateRequest");
+  });
+
   it("stays compatible with agents and control panels that predate Ably wake-ups", () => {
     const heartbeat = Heartbeat.parse({
       version: "0.1.0",

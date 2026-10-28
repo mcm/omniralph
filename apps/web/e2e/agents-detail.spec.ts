@@ -12,7 +12,6 @@ async function liveAgent(db: Database, request: APIRequestContext, prefix: strin
     .set({
       selfUpdate: "supported",
       reportedVersion: "1.0.0",
-      desiredVersion: "1.1.0",
       lastHeartbeatAt: new Date(),
     })
     .where(eq(agents.id, agentId));
@@ -29,46 +28,6 @@ async function open(page: Page, path: string) {
 }
 
 test.describe("agent detail", () => {
-  test("Update now shows the request, then the version the agent reports", async ({
-    db,
-    page,
-    request,
-    signIn,
-  }) => {
-    const { agentId, name } = await liveAgent(db, request, "e2e-update");
-    await signIn("admin");
-    await open(page, `/agents/${agentId}/settings`);
-
-    await page.getByRole("button", { name: "Update now" }).click();
-    await expect(
-      page.getByText(`Update to 1.1.0 requested; ${name} starts it with its next heartbeat.`),
-    ).toBeVisible();
-
-    // The agent's heartbeat: it handled the request and runs the new version.
-    await db
-      .update(agents)
-      .set({
-        updateRequestId: null,
-        updateRequestVersion: null,
-        updateRequestedAt: null,
-        reportedVersion: "1.1.0",
-        updateState: {
-          state: "idle",
-          version: null,
-          previous: "1.0.0",
-          startsSincePending: 0,
-          error: null,
-        },
-        lastHeartbeatAt: new Date(),
-      })
-      .where(eq(agents.id, agentId));
-    await expect(page.getByText(`${name} updated to 1.1.0.`)).toBeVisible({ timeout: 5_000 });
-
-    // The Overview tab shows it too: the update invalidated the agent everywhere.
-    await page.getByRole("tab", { name: "Overview" }).click();
-    await expect(page.locator("[data-agent-version]")).toHaveText("1.1.0");
-  });
-
   test("deleting goes back to an agent list without the agent", async ({
     db,
     page,

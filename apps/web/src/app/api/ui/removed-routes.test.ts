@@ -53,7 +53,6 @@ describe("routes the configuration model removed", () => {
       "/api/ui/agents/x/installables",
       "/api/ui/agents/x/installs",
       "/api/ui/agents/x/revoke",
-      "/api/ui/agents/x/update",
       "/api/ui/agent-defaults",
       "/api/ui/agent-enrollments",
       "/api/ui/agent-enrollments/x",
@@ -68,6 +67,13 @@ describe("routes the configuration model removed", () => {
   it("has no agent settings route: slots and kinds are set on the agent and reported", () => {
     expect(servedByRouteHandler("/api/ui/agents/x/settings")).toBe(false);
     expect(existsSync(join(__dirname, "agents/[id]/settings"))).toBe(false);
+  });
+
+  it("has no agent update route: Update now is local to the agent", () => {
+    expect(servedByRouteHandler("/api/ui/agents/x/update")).toBe(false);
+    expect(servedByRouteHandler("/api/ui/harnesses/x/update")).toBe(false);
+    expect(existsSync(join(__dirname, "agents/[id]/update"))).toBe(false);
+    expect(existsSync(join(__dirname, "../../../lib/agents/update.ts"))).toBe(false);
   });
 
   it("has no host tool catalog or agent host tool routes: paths are set on the agent and reported", () => {

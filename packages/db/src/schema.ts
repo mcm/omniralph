@@ -1247,7 +1247,10 @@ export const agents = pgTable(
      * `reported_pool_limits`. Kept until the migration that drops it refuses set values.
      */
     poolLimits: jsonb("pool_limits").$type<Partial<Record<string, number>>>().notNull().default({}),
-    /** Overrides the organization's desired agent version (`app_settings` `agent.desiredVersion`). */
+    /**
+     * Unused: an agent's own version is its local pin (`settings.json`), reported in
+     * `reported_version_pin`. Kept until the migration that drops it refuses set values.
+     */
     desiredVersion: text("desired_version"),
     reportedVersion: text("reported_version"),
     /** The installables installed on the agent, as its last heartbeat reported them. */
@@ -1291,11 +1294,10 @@ export const agents = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     /**
-     * An admin's "Update now", sent with every heartbeat until the agent reports
-     * it handled (`handledUpdateRequestId`); null when none is pending.
+     * Unused: "Update now" is local to the agent. Kept, with the two below, until the
+     * migration that drops them refuses set values.
      */
     updateRequestId: uuid("update_request_id"),
-    /** The version requested: the desired version then, else the latest on npm. */
     updateRequestVersion: text("update_request_version"),
     updateRequestedAt: timestamp("update_requested_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),

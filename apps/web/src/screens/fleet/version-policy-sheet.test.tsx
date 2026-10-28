@@ -388,14 +388,14 @@ describe("live updates", () => {
 describe("withVersionPolicy", () => {
   const pinned = (version: string): VersionPolicy => ({ mode: "pinned", version, target: version });
 
-  it("recomputes the organization's agents and the counts, keeping overrides", () => {
+  it("recomputes the organization's agents and the counts, keeping pins on the agent", () => {
     const list: AgentList = {
       agents: [
         agentRow({ id: AGENT_ALPHA, name: "on-target", version: "2.1.0" }),
         agentRow({
-          name: "overridden",
+          name: "pinned",
           version: "2.0.3",
-          desiredVersionOverride: "2.0.3",
+          versionPin: "2.0.3",
           tracksLatest: false,
         }),
         agentRow({
@@ -418,13 +418,13 @@ describe("withVersionPolicy", () => {
       next.agents.map((a) => [a.name, a.desiredVersion, a.tracksLatest, a.updateStatus]),
     ).toEqual([
       ["on-target", "2.1.0", false, "up_to_date"],
-      ["overridden", "2.0.3", false, "up_to_date"],
+      ["pinned", "2.0.3", false, "up_to_date"],
       ["manual", "2.1.0", false, "manual"],
       // Another organization's agent keeps its own policy.
       ["beta", "2.0.3", true, "up_to_date"],
     ]);
     expect(next.summary.versionPolicy).toEqual(pinned("2.1.0"));
-    expect(next.summary.versions).toEqual({ onTarget: 3, behind: 1, updateFailed: 0 });
+    expect(next.summary.versions).toEqual({ onTarget: 2, behind: 1, pinned: 1, updateFailed: 0 });
   });
 
   it("marks an agent whose new target failed before as Update failed", () => {
@@ -435,6 +435,6 @@ describe("withVersionPolicy", () => {
     };
     const next = withVersionPolicy(list, TEST_ORGANIZATION_ID, pinned("2.1.0"));
     expect(next.agents[0]!.status).toMatchObject({ kind: "update_failed", label: "Update failed" });
-    expect(next.summary.versions).toEqual({ onTarget: 0, behind: 0, updateFailed: 1 });
+    expect(next.summary.versions).toEqual({ onTarget: 0, behind: 0, pinned: 0, updateFailed: 1 });
   });
 });

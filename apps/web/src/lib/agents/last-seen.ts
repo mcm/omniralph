@@ -39,7 +39,6 @@ export function heartbeatReportFingerprint(report: HeartbeatReport): string {
     report.selfUpdate ?? null,
     report.update ?? null,
     report.failedVersions ?? [],
-    report.handledUpdateRequestId ?? null,
     report.installables ?? [],
     report.models ?? [],
     report.acceptedTaskTypes ?? null,

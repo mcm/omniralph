@@ -242,17 +242,6 @@ export const AgentUpdateReport = z.object({
 });
 export type AgentUpdateReport = z.infer<typeof AgentUpdateReport>;
 
-/**
- * An admin's "Update now" from the control panel: the agent updates to
- * `version` at once, even if it failed before (it's taken off the failed
- * versions), and reports `id` back as `handledUpdateRequestId`.
- */
-export const AgentUpdateRequest = z.object({
-  id: z.uuid(),
-  version: AgentVersion,
-});
-export type AgentUpdateRequest = z.infer<typeof AgentUpdateRequest>;
-
 /** An installable installed on an agent, as its heartbeat reports it. */
 export const ReportedInstallable = z.object({
   name: z.string().min(1).max(214),
@@ -336,8 +325,6 @@ export const Heartbeat = z.object({
   update: AgentUpdateReport.optional(),
   /** Versions that failed to install or to stay up; the agent never retries them. */
   failedVersions: z.array(z.string().max(64)).max(100).default([]),
-  /** The last `updateRequest` the agent acted on; the control panel then clears it. */
-  handledUpdateRequestId: z.uuid().nullable().optional(),
   /** The installables installed on the agent (absent from older agents). */
   installables: z.array(ReportedInstallable).max(100).default([]),
   /** The Claude models the agent's login can run (absent from older agents; none when unknown). */
@@ -427,12 +414,10 @@ export const HeartbeatResponse = z.object({
   /** Undelivered messages for the agent's running jobs, oldest first. */
   jobMessages: z.array(JobMessageDelivery).default([]),
   /**
-   * The version the agent should run (the agent's override, else its
-   * organization's setting); null when none is chosen. Agents under pm2 update themselves to it.
+   * The organization's version policy (`agent.desiredVersion`, `latest` resolved); null when
+   * none is chosen. Agents under pm2 update themselves to it unless pinned on the agent.
    */
   desiredVersion: AgentVersion.nullable().default(null),
-  /** An update an admin asked for and the agent hasn't acted on yet. */
-  updateRequest: AgentUpdateRequest.nullable().default(null),
   /**
    * The host tools the organization's playbooks require (`requirements.hostTools`), sorted:
    * the agent reports on each in its next heartbeat, with the ones it has configured.

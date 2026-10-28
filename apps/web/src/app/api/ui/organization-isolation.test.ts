@@ -211,7 +211,6 @@ const agentList = await import("./agents/route");
 const enrollments = await import("./agent-enrollments/route");
 const enrollment = await import("./agent-enrollments/[id]/route");
 const agentDetail = await import("./agents/[id]/route");
-const agentUpdate = await import("./agents/[id]/update/route");
 const agentRevoke = await import("./agents/[id]/revoke/route");
 const agentInstallables = await import("./agents/[id]/installables/route");
 const agentInstalls = await import("./agents/[id]/installs/route");
@@ -1835,8 +1834,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
   it("refuses every agent change on the other organization's agent and repositories", async () => {
     state.userId = a.adminId;
     const theirs = { id: b.agentId };
-    const refused = [await call(agentUpdate.POST, { method: "POST", params: theirs })];
-    for (const response of refused) expect(response.status).toBe(400);
     // Fleet's ⋯ actions check the agent's own organization: not a member there, not found.
     const notFound = [
       await call(agentInstalls.POST, { params: theirs, body: { name: "@omniralph/hello" } }),
@@ -1847,8 +1844,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
 
     const other = (await getAgentOverview(db, b.orgId, b.agentId))!;
     expect(other).toMatchObject({
-      desiredVersion: null,
-      updateRequestVersion: null,
       revokedAt: null,
       deletedAt: null,
     });

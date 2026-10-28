@@ -7,6 +7,8 @@ import {
   type Database,
 } from "@omniralph/db";
 import {
+  AGENT_MIN_VERSION,
+  agentVersionAtLeast,
   Heartbeat,
   JOB_LEASE_SECONDS,
   LEGACY_POLL_INTERVAL_SECONDS,
@@ -47,10 +49,9 @@ const NPM_TIMEOUT_MS = 5_000;
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the agent keeps,
  * applies the acknowledged job messages and returns the central configuration,
  * the running jobs the agent must cancel, fresh job tokens and undelivered
- * messages (`jobMessages`) for the ones it keeps running, and the version it
- * should run (its override, else its organization's setting, with `latest`
- * resolved), an admin's pending "Update now" (cleared once the agent reports
- * it handled) and the host tools the organization's playbooks require
+ * messages (`jobMessages`) for the ones it keeps running, its organization's
+ * version policy (`desiredVersion`, with `latest` resolved and nothing below
+ * 2.0.0; a local pin and "Update now" are the agent's own) and the host tools the organization's playbooks require
  * (`requiredHostTools`, which the agent reports on next), plus a subscribe-only
  * Ably token for its wake channels when Ably is on and the agent's token is
  * missing or expires within the hour (`ably: null` when Ably is off), and, when
@@ -64,6 +65,11 @@ const NPM_TIMEOUT_MS = 5_000;
  * Either way, an agent the live change events last had offline is announced online
  * (`noteAgentOnline`: a Redis read while it stays online).
  */
+/** The organization's version for agents: none below `AGENT_MIN_VERSION` (the deprecated 0.x line). */
+function policyVersion(version: string | null): string | null {
+  return version && agentVersionAtLeast(version, AGENT_MIN_VERSION) ? version : null;
+}
+
 async function post(req: Request): Promise<Response> {
   const principal = await requireAgent(req);
   if (principal instanceof Response) return principal;
@@ -77,7 +83,6 @@ async function post(req: Request): Promise<Response> {
     selfUpdate: body.data.selfUpdate,
     update: body.data.update,
     failedVersions: body.data.failedVersions,
-    handledUpdateRequestId: body.data.handledUpdateRequestId,
     installables: body.data.installables,
     models: body.data.models,
     acceptedTaskTypes: body.data.acceptedTaskTypes,
@@ -116,9 +121,7 @@ async function post(req: Request): Promise<Response> {
   const [pinnedRepoIds, running, organizationVersion, requiredHostTools] = await Promise.all([
     listAgentPinnedRepositoryIds(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
-    agent.desiredVersion
-      ? null
-      : organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
+    organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRequiredHostTools(db, agent.organizationId),
   ]);
   // The task types it reports now, else (older agents) the ones it last reported.
@@ -171,11 +174,8 @@ async function post(req: Request): Promise<Response> {
     cancelJobIds: running.cancel,
     jobTokens,
     jobMessages,
-    desiredVersion: agent.desiredVersion ?? organizationVersion?.version ?? null,
-    updateRequest:
-      agent.updateRequestId && agent.updateRequestVersion
-        ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
-        : null,
+    // The organization's policy only: a pin and "Update now" are the agent's own.
+    desiredVersion: policyVersion(organizationVersion?.version ?? null),
     requiredHostTools,
   };
   if (changes) {

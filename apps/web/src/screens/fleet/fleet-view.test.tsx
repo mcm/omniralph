@@ -3,7 +3,7 @@ import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
 import { SummaryCells, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
@@ -212,7 +212,7 @@ describe("the summary", () => {
     renderCells(
       summary({
         versionPolicy: { mode: "pinned", version: "2.0.3", target: "2.0.3" },
-        versions: { onTarget: 4, behind: 2, updateFailed: 0 },
+        versions: { onTarget: 4, behind: 2, pinned: 0, updateFailed: 0 },
       }),
     );
     expect(value("Version policy").textContent).toBe("Pinned to 2.0.3");
@@ -220,8 +220,18 @@ describe("the summary", () => {
     expect(cell("Version policy").querySelector(".or-fleet__fail")).toBeNull();
   });
 
+  it("says how many agents are pinned on the agent, never as behind", () => {
+    renderCells(summary({ versions: { onTarget: 5, behind: 0, pinned: 1, updateFailed: 0 } }));
+    expect(detail("Version policy")!.textContent).toBe(
+      "All agents on2.0.3 · 1 pinned on the agent",
+    );
+    cleanup();
+    renderCells(summary({ versions: { onTarget: 0, behind: 0, pinned: 2, updateFailed: 0 } }));
+    expect(detail("Version policy")!.textContent).toBe("2 pinned on the agent");
+  });
+
   it("shows a failed update in the fail tone", () => {
-    renderCells(summary({ versions: { onTarget: 5, behind: 1, updateFailed: 1 } }));
+    renderCells(summary({ versions: { onTarget: 5, behind: 1, pinned: 0, updateFailed: 1 } }));
     const failed = within(cell("Version policy")).getByText("1 update failed");
     expect(failed.className).toContain("or-fleet__fail");
   });

@@ -52,7 +52,6 @@ const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 const { jobDueKey } = await import("@/lib/dispatch/due");
 const { latestVersionKey } = await import("./heartbeat-cache");
-const manage = await import("./manage");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
 const { saveAgentsCard } = await import("@/lib/repositories/cards");
@@ -312,15 +311,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         expect(saved).toMatchObject({ ok: true, card: { pinned: [] } });
       },
       (response) => expect(response.pinnedRepoIds).toEqual([]),
-    ],
-    [
-      "update request",
-      async ({ agentId, orgId }) => {
-        expect(await manage.requestAgentUpdate(db, orgId, agentId)).toMatchObject({
-          ok: true,
-        });
-      },
-      (response) => expect(response.updateRequest).toMatchObject({ version: "2.0.0" }),
     ],
     [
       "organization version",

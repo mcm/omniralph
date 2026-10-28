@@ -5,6 +5,7 @@
  * never from a client clock.
  */
 
+import type { AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
 import type { AuditEventName } from "@/lib/agents/display";
 
 /** Fleet's tones (Design rule 15): mint for running, coral for trouble, neutral otherwise. */
@@ -33,10 +34,36 @@ export interface AgentStatusInput {
   /** `agents.live_online`. */
   online: boolean;
   lastHeartbeatAt: Date | string | null;
-  /** `AgentUpdateStatus` (`lib/agents/update.ts`). */
-  updateStatus: "up_to_date" | "updating" | "failed" | "manual";
+  /** `agentUpdateStatus`. */
+  updateStatus: AgentUpdateStatus;
   /** Attempts running on the agent. */
   runningCount: number;
+}
+
+/**
+ * Where an agent stands against its target (its local pin, else its organization's version):
+ * - `up_to_date`: it runs its target (or it has none)
+ * - `updating`: it will update itself, or is draining, installing or confirming
+ * - `failed`: its target failed on it, so it won't try it again on its own
+ * - `manual`: it can't update itself (not under pm2, or an older agent)
+ */
+export type AgentUpdateStatus = "up_to_date" | "updating" | "failed" | "manual";
+
+export function agentUpdateStatus(agent: {
+  version: string | null;
+  /** Its target: its local pin, else its organization's version; null when none. */
+  desiredVersion: string | null;
+  selfUpdate: SelfUpdateSupport | null;
+  update: AgentUpdateReport | null;
+  failedVersions: string[];
+}): AgentUpdateStatus {
+  const { desiredVersion, update } = agent;
+  const busy = update !== null && update.state !== "idle";
+  if (desiredVersion === null) return busy ? "updating" : "up_to_date";
+  if (agent.version === desiredVersion && !busy) return "up_to_date";
+  if (agent.failedVersions.includes(desiredVersion)) return "failed";
+  if (busy) return "updating";
+  return agent.selfUpdate === "supported" ? "updating" : "manual";
 }
 
 const MINUTE_MS = 60_000;
@@ -92,10 +119,14 @@ export interface VersionPolicy {
   target: string | null;
 }
 
-/** How the online agents stand against the policy's target (`updateFailed`: any non-revoked agent). */
+/**
+ * How the online agents stand against the policy's target (`pinned`: on a version pinned on the
+ * agent, so on their own target; `updateFailed`: any non-revoked agent).
+ */
 export interface VersionCounts {
   onTarget: number;
   behind: number;
+  pinned: number;
   updateFailed: number;
 }
 
@@ -105,19 +136,23 @@ export interface VersionCountInput {
   online: boolean;
   version: string | null;
   desiredVersion: string | null;
+  /** The version pinned on the agent (`settings.json`); null when none. */
+  versionPin: string | null;
   updateStatus: string;
 }
 
 /**
  * The Version policy cell's counts over non-revoked agents: any whose update failed, then
- * the online ones on their desired version (or with none) and behind it.
+ * the online ones pinned on the agent (on their own target, never behind), on their desired
+ * version (or with none) and behind it.
  */
 export function versionCounts(rows: readonly VersionCountInput[]): VersionCounts {
-  const counts = { onTarget: 0, behind: 0, updateFailed: 0 };
+  const counts = { onTarget: 0, behind: 0, pinned: 0, updateFailed: 0 };
   for (const row of rows) {
     if (row.revoked) continue;
     if (row.updateStatus === "failed") counts.updateFailed += 1;
     else if (!row.online) continue;
+    else if (row.versionPin !== null) counts.pinned += 1;
     else if (row.desiredVersion === null || row.version === row.desiredVersion) {
       counts.onTarget += 1;
     } else counts.behind += 1;
@@ -132,16 +167,25 @@ export function versionPolicyLabel(policy: VersionPolicy | null): string {
   return policy.mode === "pinned" ? `Pinned to ${policy.version}` : "No version set";
 }
 
+/** `pinned`: "1 pinned on the agent" when online agents are pinned there; null otherwise. */
 export type VersionSummary =
-  | { kind: "on_target"; label: string; version: string | null; tone: "neutral" }
-  | { kind: "behind"; label: string; tone: "neutral" }
+  | {
+      kind: "on_target";
+      label: string;
+      version: string | null;
+      pinned: string | null;
+      tone: "neutral";
+    }
+  | { kind: "behind"; label: string; pinned: string | null; tone: "neutral" }
+  | { kind: "pinned"; label: string; tone: "neutral" }
   | { kind: "update_failed"; label: string; tone: "fail" };
 
 const agents = (n: number) => (n === 1 ? "1 agent" : `${n} agents`);
 
 /**
  * The Version policy cell's detail: a failed update first ("1 update failed", coral), then
- * agents behind ("2 agents behind"), else "All agents on" the target version.
+ * agents behind ("2 agents behind"), else "All agents on" the target version; with "1 pinned
+ * on the agent" for agents on a version pinned there (only that when every agent is).
  */
 export function versionSummary(
   policy: VersionPolicy | null,
@@ -152,13 +196,16 @@ export function versionSummary(
       counts.updateFailed === 1 ? "1 update failed" : `${counts.updateFailed} updates failed`;
     return { kind: "update_failed", label, tone: "fail" };
   }
+  const pinned = counts.pinned > 0 ? `${counts.pinned} pinned on the agent` : null;
   if (counts.behind > 0) {
-    return { kind: "behind", label: `${agents(counts.behind)} behind`, tone: "neutral" };
+    return { kind: "behind", label: `${agents(counts.behind)} behind`, pinned, tone: "neutral" };
   }
+  if (pinned && counts.onTarget === 0) return { kind: "pinned", label: pinned, tone: "neutral" };
   return {
     kind: "on_target",
     label: "All agents on",
     version: policy?.target ?? null,
+    pinned,
     tone: "neutral",
   };
 }

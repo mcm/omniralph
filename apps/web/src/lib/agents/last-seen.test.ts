@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import {
   closeDb,
   connectRepository,
@@ -7,7 +7,6 @@ import {
   agents,
   organizations,
   pinnedAgentFor,
-  requestAgentUpdate,
   upsertScmConnection,
   type Database,
 } from "@omniralph/db";
@@ -155,7 +154,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       ["failed versions", { failedVersions: ["1.5.0"] }],
       ["installables", { installables: [{ name: "gh", version: "2.0.0" }] }],
       ["models", { models: [{ value: "opus", displayName: "Opus" }] }],
-      ["handled update request", { handledUpdateRequestId: randomUUID() }],
+      ["version pin", { local: { ...LOCAL, versionPin: "2.0.3" } }],
       ["host", { host: { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "w" } } }],
     ])("writes the row when the %s changed", async (_name, change) => {
       const agentId = await newAgent();
@@ -165,16 +164,6 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       // And the new report is the one an unchanged heartbeat is compared with.
       await recordHeartbeat(db, agentId, { ...REPORT, ...change }, at(40));
       expect((await row(agentId)).lastHeartbeatAt).toEqual(at(20));
-    });
-
-    it("clears a handled update request on the first heartbeat reporting it", async () => {
-      const agentId = await newAgent();
-      await recordHeartbeat(db, agentId, REPORT, at(0));
-      const requested = await requestAgentUpdate(db, orgId, agentId, "1.5.0");
-      const handled = { ...REPORT, handledUpdateRequestId: requested!.updateRequestId };
-      const returned = await recordHeartbeat(db, agentId, handled, at(20));
-      expect(returned?.updateRequestId).toBeNull();
-      expect((await row(agentId)).updateRequestId).toBeNull();
     });
 
     it("writes the row again once the stored report expired (a day without a write)", async () => {

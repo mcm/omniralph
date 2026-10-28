@@ -21,7 +21,6 @@ import {
   listReportedModels,
   listRepositoryCodingAgentIds,
   markAgentDeleted,
-  requestAgentUpdate,
 } from "./agents.js";
 import { getDesiredAgentVersion, setDesiredAgentVersion } from "./app-settings.js";
 import { captureChanges } from "./changes.js";
@@ -575,35 +574,6 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     expect(await findJobPage(db, org!.id, newestFirst[4]!, 2)).toBe(3);
     expect(await findJobPage(db, orgB, newestFirst[4]!, 2)).toBeNull();
     expect(await findJobPage(db, org!.id, "not-a-uuid", 2)).toBeNull();
-  });
-
-  it("keeps an update request until the agent reports it handled", async () => {
-    const a = await enroll(orgA, "a-update");
-    expect(await requestAgentUpdate(db, orgB, a, "2.0.0")).toBeNull();
-    const first = await requestAgentUpdate(db, orgA, a, "2.0.0");
-    expect(first).toMatchObject({ updateRequestVersion: "2.0.0" });
-    expect(first?.updateRequestId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(first?.updateRequestedAt).toBeInstanceOf(Date);
-    // Asking again replaces the pending request.
-    const second = await requestAgentUpdate(db, orgA, a, "2.0.1");
-    expect(second?.updateRequestId).not.toBe(first?.updateRequestId);
-
-    const heartbeat = (handledUpdateRequestId?: string | null) =>
-      recordAgentHeartbeat(db, a, { version: "1.0.0", handledUpdateRequestId });
-    expect(await heartbeat()).toMatchObject({ updateRequestId: second!.updateRequestId });
-    // An older request is handled: the new one stays.
-    expect(await heartbeat(first!.updateRequestId)).toMatchObject({
-      updateRequestId: second!.updateRequestId,
-      updateRequestVersion: "2.0.1",
-    });
-    expect(await heartbeat(second!.updateRequestId)).toMatchObject({
-      updateRequestId: null,
-      updateRequestVersion: null,
-      updateRequestedAt: null,
-    });
-
-    await revokeAgent(db, a, { organizationId: orgA });
-    expect(await requestAgentUpdate(db, orgA, a, "2.0.0")).toBeNull();
   });
 
   it("pins a repository only to an agent of its own organization", async () => {

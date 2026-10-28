@@ -32,7 +32,6 @@ function config(desiredVersion: string | null): HeartbeatResponse {
     jobTokens: [],
     jobMessages: [],
     desiredVersion,
-    updateRequest: null,
     requiredHostTools: [],
   };
 }
@@ -91,12 +90,14 @@ describe("SelfUpdater", () => {
       underPm2?: boolean;
       installer?: Installer;
       clock?: ReturnType<typeof fakeClock>;
+      pin?: () => string | null;
     } = {},
   ) {
     const clock = options.clock ?? fakeClock();
     return new SelfUpdater({
       statePath,
       requestPath,
+      pin: options.pin,
       runningVersion: options.version ?? "2.0.0",
       underPm2: options.underPm2 ?? true,
       installer: options.installer ?? fakeInstaller().installer,
@@ -137,7 +138,6 @@ describe("SelfUpdater", () => {
         error: null,
       },
       failedVersions: [],
-      handledUpdateRequestId: null,
     });
   });
 
@@ -164,7 +164,6 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
-      handledRequestId: null,
     });
     expect((await stat(statePath)).mode & 0o777).toBe(0o600);
   });
@@ -197,7 +196,6 @@ describe("SelfUpdater", () => {
         error: "Installing 2.1.0 failed: npm ERR! 404 2.1.0 not found",
       },
       failedVersions: ["2.1.0"],
-      handledUpdateRequestId: null,
     });
     expect(await readState()).toMatchObject({ pending: null, failed: ["2.1.0"] });
 
@@ -264,7 +262,6 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
-      handledRequestId: null,
     });
     expect(u.report().update?.state).toBe("idle");
   });
@@ -313,7 +310,6 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: ["1.9.0", "2.1.0"],
       lastError: "2.1.0 didn't stay up after 3 starts; rolled back to 2.0.0",
-      handledRequestId: null,
     });
 
     // The previous version starts normally, reports the failure and never retries 2.1.0.
@@ -352,7 +348,6 @@ describe("SelfUpdater", () => {
       startsSincePending: 0,
       failed: [],
       lastError: null,
-      handledRequestId: null,
     });
     await writeFile(statePath, "{not json");
     expect((await readUpdateState(statePath)).pending).toBeNull();
@@ -394,51 +389,176 @@ describe("SelfUpdater", () => {
     expect(await readState()).toMatchObject({ pending: "2.1.0", lastError: null });
   });
 
-  describe("requested updates", () => {
-    const REQUEST_ID = "0b6f2c1e-6a43-4b8e-9d55-3f1f0c9a7e21";
-    const requested = (desired: string | null, version: string, id = REQUEST_ID) => ({
-      ...config(desired),
-      updateRequest: { id, version },
+  describe("the target", () => {
+    it("is the pin over the organization's version, and none without either", async () => {
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      let pin: string | null = "2.0.3";
+      const u = updater({ installer, pin: () => pin });
+      await u.start();
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.3"]);
+
+      // Pinned to the running version: the organization's newer one isn't installed.
+      await writeUpdateState(statePath, {});
+      const pinnedHere = updater({ version: "2.0.3", installer, pin: () => pin });
+      await pinnedHere.start();
+      await pinnedHere.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.3"]);
+
+      // No pin: the organization's version.
+      pin = null;
+      await pinnedHere.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.3", "2.0.4"]);
+
+      // Neither: nothing.
+      const unmanaged = updater({ version: "2.0.3", installer, pin: () => null });
+      await unmanaged.start();
+      await unmanaged.onHeartbeat(config(null), fakeDaemon().daemon);
+      expect(installs).toEqual(["2.0.3", "2.0.4"]);
+      expect(calls).toEqual([
+        `drain ${2 * 60 * 60 * 1000}`,
+        "exit",
+        `drain ${2 * 60 * 60 * 1000}`,
+        "exit",
+      ]);
     });
+
+    it("skips a failed pin without falling back to the organization's version", async () => {
+      await writeUpdateState(statePath, { failed: ["2.0.3"] });
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      const u = updater({ installer, pin: () => "2.0.3" });
+      await u.start();
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("re-evaluates after the drain when the pin changes meanwhile", async () => {
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      let pin: string | null = "2.0.3";
+      daemon.drain = async () => {
+        calls.push("drain");
+        pin = "2.0.5";
+      };
+      const u = updater({ installer, pin: () => pin });
+      await u.start();
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.5"]);
+      expect(calls).toEqual(["drain", "exit"]);
+      expect(await readState()).toMatchObject({ pending: "2.0.5" });
+    });
+
+    it("resumes without installing when the pin changes to the running version during the drain", async () => {
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      let pin: string | null = "2.0.3";
+      daemon.drain = async () => {
+        calls.push("drain");
+        pin = "2.0.0";
+      };
+      const u = updater({ installer, pin: () => pin });
+      await u.start();
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual([]);
+      expect(calls).toEqual(["drain", "resume"]);
+      expect(u.report().update).toMatchObject({ state: "idle", version: null });
+
+      // Unpinned during a later drain: the organization's version is installed instead.
+      pin = "2.0.3";
+      daemon.drain = async () => {
+        calls.push("drain");
+        pin = null;
+      };
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.4"]);
+    });
+
+    it("follows the organization's version as the latest heartbeat says during the drain", async () => {
+      const { installs, installer } = fakeInstaller();
+      let release!: () => void;
+      const drained = new Promise<void>((resolve) => (release = resolve));
+      const { calls, daemon } = fakeDaemon();
+      daemon.drain = async () => {
+        calls.push("drain");
+        await drained;
+      };
+      const u = updater({ installer });
+      await u.start();
+      const first = u.onHeartbeat(config("2.1.0"), daemon);
+      await u.onHeartbeat(config("2.1.1"), daemon);
+      release();
+      await first;
+      expect(calls).toEqual(["drain", "exit"]);
+      expect(installs).toEqual(["2.1.1"]);
+    });
+  });
+
+  describe("Update now", () => {
     const exists = (file: string) =>
       access(file).then(
         () => true,
         () => false,
       );
 
-    it("updates to the control panel's version, even one that failed, and reports the request handled", async () => {
+    it("comes to request() the same way from the page and from `omniralph-agent update`", async () => {
+      const at = new Date("2026-10-28T10:42:00.000Z");
+      const clock = fakeClock(at.getTime());
+      const fromPage = updater({ clock });
+      await fromPage.start();
+      const asked = fromPage.request();
+
+      const fromCli = updater({ clock, underPm2: false });
+      await fromCli.start();
+      const request = vi.spyOn(fromCli, "request");
+      await writeUpdateRequest(requestPath, at);
+      await fromCli.onHeartbeat(config(null), fakeDaemon().daemon);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.results[0]!.value).toEqual(asked);
+      expect(asked).toEqual({ version: null, requestedAt: at.toISOString() });
+      expect(fromPage.pendingRequest()).toEqual(asked);
+      // Taken by the heartbeat.
+      expect(fromCli.pendingRequest()).toBeNull();
+    });
+
+    it("updates at once to the pin, even one that failed", async () => {
       await writeUpdateState(statePath, {
-        failed: ["2.1.0"],
-        lastError: "Installing 2.1.0 failed",
+        failed: ["2.0.3"],
+        lastError: "Installing 2.0.3 failed",
       });
       const { installs, installer } = fakeInstaller();
       const { calls, daemon } = fakeDaemon();
-      const u = updater({ installer });
+      const u = updater({ installer, pin: () => "2.0.3" });
       await u.start();
-      // Without a request the failed version stays untried.
-      await u.onHeartbeat(config("2.1.0"), daemon);
+      // Without a request the failed pin stays untried.
+      await u.onHeartbeat(config("2.0.4"), daemon);
       expect(installs).toEqual([]);
 
-      await u.onHeartbeat(requested("2.1.0", "2.1.0"), daemon);
-      expect(installs).toEqual(["2.1.0"]);
+      u.request();
+      await u.onHeartbeat(config("2.0.4"), daemon);
+      expect(installs).toEqual(["2.0.3"]);
       expect(calls).toEqual([`drain ${2 * 60 * 60 * 1000}`, "exit"]);
       expect(await readState()).toMatchObject({
         previous: "2.0.0",
-        pending: "2.1.0",
+        pending: "2.0.3",
         failed: [],
         lastError: null,
-        handledRequestId: REQUEST_ID,
       });
-
-      // The new version reports it handled and doesn't act on it again.
-      const next = updater({ version: "2.1.0", installer });
-      await next.start();
-      expect(next.report().handledUpdateRequestId).toBe(REQUEST_ID);
-      await next.onHeartbeat(requested("2.1.0", "2.1.0"), fakeDaemon().daemon);
-      expect(installs).toEqual(["2.1.0"]);
+      expect(u.pendingRequest()).toBeNull();
     });
 
-    it("updates when `omniralph-agent update` asks: to the desired version, else the latest on npm", async () => {
+    it("updates to a requested version over the pin", async () => {
+      const { installs, installer } = fakeInstaller();
+      const u = updater({ installer, pin: () => "2.0.3" });
+      await u.start();
+      u.request({ version: "2.0.6" });
+      await u.onHeartbeat(config("2.0.4"), fakeDaemon().daemon);
+      expect(installs).toEqual(["2.0.6"]);
+    });
+
+    it("updates to the organization's version, else the latest on npm", async () => {
       const { installs, installer } = fakeInstaller([], "2.3.0");
       const { calls, daemon } = fakeDaemon();
       const u = updater({ installer });
@@ -451,9 +571,9 @@ describe("SelfUpdater", () => {
       expect(installs).toEqual(["2.3.0"]);
       expect(calls).toEqual([`drain ${2 * 60 * 60 * 1000}`, "exit"]);
       expect(await exists(requestPath)).toBe(false);
-      expect(await readState()).toMatchObject({ pending: "2.3.0", handledRequestId: null });
+      expect(await readState()).toMatchObject({ pending: "2.3.0" });
 
-      // A desired version wins over npm's latest, and is retried even after failing.
+      // The organization's version wins over npm's latest, and is retried even after failing.
       await writeUpdateState(statePath, { failed: ["2.1.0"] });
       const again = updater({ installer });
       await again.start();
@@ -462,44 +582,55 @@ describe("SelfUpdater", () => {
       expect(installs).toEqual(["2.3.0", "2.1.0"]);
     });
 
-    it("only reports a request when it can't update itself or already runs the version", async () => {
+    it("follows a pin changed during the drain", async () => {
+      const { installs, installer } = fakeInstaller();
+      const { calls, daemon } = fakeDaemon();
+      let pin: string | null = "2.0.3";
+      daemon.drain = async () => {
+        calls.push("drain");
+        pin = "2.0.5";
+      };
+      const u = updater({ installer, pin: () => pin });
+      await u.start();
+      u.request();
+      await u.onHeartbeat(config(null), daemon);
+      expect(installs).toEqual(["2.0.5"]);
+      expect(calls).toEqual(["drain", "exit"]);
+    });
+
+    it("only says why when it can't update itself or already runs the version", async () => {
       const { installs, installer } = fakeInstaller();
       const { calls, daemon } = fakeDaemon();
       const manual = updater({ installer, underPm2: false });
       await manual.start();
-      await manual.onHeartbeat(requested(null, "2.1.0"), daemon);
       await writeUpdateRequest(requestPath);
       await manual.onHeartbeat(config(null), daemon);
       expect(manual.report()).toMatchObject({
-        handledUpdateRequestId: REQUEST_ID,
         update: { error: expect.stringContaining("isn't running under pm2") },
       });
       expect(await exists(requestPath)).toBe(false);
 
-      const current = updater({ installer });
+      const current = updater({ installer, pin: () => "2.0.0" });
       await current.start();
-      await current.onHeartbeat(
-        requested(null, "2.0.0", "7d1e0f4a-2b3c-4d5e-8f90-a1b2c3d4e5f6"),
-        daemon,
-      );
-      expect(current.report().handledUpdateRequestId).toBe("7d1e0f4a-2b3c-4d5e-8f90-a1b2c3d4e5f6");
+      current.request();
+      await current.onHeartbeat(config("2.0.4"), daemon);
+      expect(current.pendingRequest()).toBeNull();
       expect(installs).toEqual([]);
       expect(calls).toEqual([]);
     });
 
-    it("refuses a requested version below @omniralph/agent 2.0.0, and handles the request", async () => {
+    it("refuses a requested version below @omniralph/agent 2.0.0", async () => {
       const { installs, installer } = fakeInstaller([], "0.8.0");
       const { calls, daemon } = fakeDaemon();
       const u = updater({ installer });
       await u.start();
 
-      // Asked for by the control panel.
-      await u.onHeartbeat(requested("2.1.0", "1.9.9"), daemon);
+      u.request({ version: "1.9.9" });
+      await u.onHeartbeat(config("2.1.0"), daemon);
       expect(installs).toEqual([]);
       expect(await readState()).toMatchObject({
         pending: null,
         lastError: "Version 1.9.9 is older than @omniralph/agent 2.0.0",
-        handledRequestId: REQUEST_ID,
       });
 
       // `omniralph-agent update` with npm's latest still on the deprecated 0.8.0.
@@ -514,7 +645,7 @@ describe("SelfUpdater", () => {
       });
     });
 
-    it("starts one update while heartbeats keep coming during the drain", async () => {
+    it("starts one update while heartbeats and requests keep coming during the drain", async () => {
       const { installs, installer } = fakeInstaller();
       let release!: () => void;
       const drained = new Promise<void>((resolve) => (release = resolve));
@@ -525,9 +656,10 @@ describe("SelfUpdater", () => {
       };
       const u = updater({ installer });
       await u.start();
-      const first = u.onHeartbeat(requested("2.1.0", "2.1.0"), daemon);
+      u.request();
+      const first = u.onHeartbeat(config("2.1.0"), daemon);
       await writeUpdateRequest(requestPath);
-      await u.onHeartbeat(requested("2.1.0", "2.1.0"), daemon);
+      u.request();
       await u.onHeartbeat(config("2.1.0"), daemon);
       release();
       await first;

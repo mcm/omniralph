@@ -58,16 +58,29 @@ function HealthValue({ summary }: { summary: FleetSummary }) {
   );
 }
 
-/** "All agents on 2.0.3", "2 agents behind" or "1 update failed" (coral). */
+/**
+ * "All agents on 2.0.3", "2 agents behind" or "1 update failed" (coral), with "· 1 pinned on
+ * the agent" for agents on a version pinned there.
+ */
 function VersionDetail({ summary }: { summary: FleetSummary }) {
   const detail = versionSummary(summary.versionPolicy, summary.versions);
   if (detail.kind === "update_failed")
     return <span className="or-fleet__fail">{detail.label}</span>;
-  if (detail.kind === "behind") return <>{detail.label}</>;
+  if (detail.kind === "pinned") return <>{detail.label}</>;
+  const pinned = detail.pinned ? ` · ${detail.pinned}` : null;
+  if (detail.kind === "behind") {
+    return (
+      <>
+        {detail.label}
+        {pinned}
+      </>
+    );
+  }
   return (
     <span className="or-fleet__on">
       {detail.label}
       {detail.version ? <MetaBadge text={detail.version} mono /> : null}
+      {pinned}
     </span>
   );
 }

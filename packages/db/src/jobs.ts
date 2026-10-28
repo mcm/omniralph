@@ -20,7 +20,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { alias } from "drizzle-orm/pg-core";
 import {
   agentVersionAtLeast,
   isJobTaskType,
@@ -808,8 +808,6 @@ export async function recordAgentHeartbeat(
     selfUpdate?: "supported" | "unsupported";
     update?: AgentUpdateState;
     failedVersions?: string[];
-    /** The update request the agent acted on: cleared when it's still the pending one. */
-    handledUpdateRequestId?: string | null;
     /** The installables installed on the agent; replaces the last report (none clears it). */
     installables?: { name: string; version: string }[];
     /** The Claude models the agent can run; replaces the last report (none clears it). */
@@ -836,9 +834,6 @@ export async function recordAgentHeartbeat(
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
-  const handled = input.handledUpdateRequestId ?? null;
-  const clearIfHandled = (column: AnyPgColumn) =>
-    sql`case when ${agents.updateRequestId} = ${handled}::uuid then null else ${column} end`;
   // `previous` is the row before this update (a self-join sees the old snapshot).
   const previous = alias(agents, "previous");
   const [updated] = await db
@@ -867,11 +862,6 @@ export async function recordAgentHeartbeat(
         reportedVersionPin: input.local.versionPin,
         reportedInstallablesAllow: [...input.local.installablesAllow],
       }),
-      ...(handled !== null && {
-        updateRequestId: clearIfHandled(agents.updateRequestId),
-        updateRequestVersion: clearIfHandled(agents.updateRequestVersion),
-        updateRequestedAt: clearIfHandled(agents.updateRequestedAt),
-      }),
       lastHeartbeatAt: input.now ?? new Date(),
     })
     .from(previous)
@@ -892,7 +882,6 @@ export async function recordAgentHeartbeat(
         reportedVersionPin: previous.reportedVersionPin,
         reportedInstallablesAllow: previous.reportedInstallablesAllow,
         reportedHostTools: previous.reportedHostTools,
-        updateRequestId: previous.updateRequestId,
       },
     });
   if (!updated) return null;
@@ -913,7 +902,6 @@ export async function recordAgentHeartbeat(
     reportedVersionPin: row.reportedVersionPin,
     reportedInstallablesAllow: row.reportedInstallablesAllow,
     reportedHostTools: row.reportedHostTools,
-    updateRequestId: row.updateRequestId,
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {
     recordChange(db, { resource: "agent", ids: [row.id], organizationId: row.organizationId });

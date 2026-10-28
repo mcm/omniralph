@@ -7,11 +7,15 @@
  * staying up for 60s) is rolled back to the previous one and never tried
  * again. Hosts not under pm2 report `unsupported` and never install anything.
  *
- * An update can also be asked for: by an admin's "Update now" (the heartbeat's
- * `updateRequest`) or by `omniralph-agent update` on the host (an
- * `update-request.json` next to the config). The agent then updates at once,
- * to the requested version, else the desired one, else the latest on npm, and
- * retries it even if it failed before.
+ * The target, highest first:
+ * 1. "Update now" on the machine (`SelfUpdater.request()`: the agent's page, or
+ *    `omniralph-agent update`, which writes `update-request.json` next to the
+ *    config): at once, to the requested version, else the pin, else the
+ *    organization's, else the latest on npm, even if it failed before;
+ * 2. the local pin (`settings.json` `update.pin`);
+ * 3. the organization's policy (the heartbeat's `desiredVersion`);
+ * 4. none: the agent stays on its version.
+ * Failed versions are skipped except by a request.
  */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -23,7 +27,6 @@ import {
   AgentVersion,
   agentVersionAtLeast,
   type AgentUpdateReport,
-  type AgentUpdateRequest,
   type AgentUpdateStateName,
   type Heartbeat,
   type HeartbeatResponse,
@@ -57,8 +60,6 @@ export const UpdateStateFile = z.object({
   failed: z.array(z.string()).default([]),
   /** Why the last update or rollback failed. */
   lastError: z.string().nullable().default(null),
-  /** The control panel's last `updateRequest` acted on (reported back so it's cleared). */
-  handledRequestId: z.string().nullable().default(null),
 });
 export type UpdateStateFile = z.infer<typeof UpdateStateFile>;
 
@@ -69,7 +70,6 @@ function emptyState(): UpdateStateFile {
     startsSincePending: 0,
     failed: [],
     lastError: null,
-    handledRequestId: null,
   };
 }
 
@@ -90,7 +90,10 @@ export const LocalUpdateRequest = z.object({
 });
 export type LocalUpdateRequest = z.infer<typeof LocalUpdateRequest>;
 
-/** Asks the running agent to update with its next heartbeat (replacing an earlier request). */
+/**
+ * `omniralph-agent update`: asks the running agent to update with its next heartbeat
+ * (replacing an earlier request). The agent hands it to `SelfUpdater.request()`.
+ */
 export async function writeUpdateRequest(
   file: string,
   now: Date = new Date(),
@@ -206,10 +209,19 @@ export interface DrainableDaemon {
   isStopping(): boolean;
 }
 
+/** "Update now": a pending local request (`SelfUpdater.request()`). */
+export interface UpdateRequest {
+  /** The version asked for; null: the pin, else the organization's, else the latest on npm. */
+  version: string | null;
+  requestedAt: string;
+}
+
 export interface SelfUpdaterOptions {
   statePath: string;
-  /** `update-request.json`, checked with every heartbeat (none: only the control panel asks). */
+  /** `update-request.json` (`omniralph-agent update`), checked with every heartbeat. */
   requestPath?: string;
+  /** The version pinned on the agent (`settings.json` `update.pin`), read at every decision. */
+  pin?: () => string | null;
   runningVersion: string;
   /** Running under pm2: only then does the agent update itself. */
   underPm2: boolean;
@@ -230,6 +242,10 @@ export class SelfUpdater {
   private okSince: number | null = null;
   /** A heartbeat is being handled (they're not awaited, so the next may come meanwhile). */
   private busy = false;
+  /** "Update now", until a heartbeat acts on it. */
+  private pending: UpdateRequest | null = null;
+  /** The organization's version from the last heartbeat. */
+  private desired: string | null = null;
   private readonly now: () => number;
   private readonly drainTimeoutMs: number;
   private readonly confirmAfterMs: number;
@@ -285,7 +301,7 @@ export class SelfUpdater {
   }
 
   /** The self-update fields of the next heartbeat. */
-  report(): Pick<Heartbeat, "selfUpdate" | "update" | "failedVersions" | "handledUpdateRequestId"> {
+  report(): Pick<Heartbeat, "selfUpdate" | "update" | "failedVersions"> {
     const confirming = this.phase === "confirming";
     const updating = this.phase === "draining" || this.phase === "installing";
     const update: AgentUpdateReport = {
@@ -299,20 +315,44 @@ export class SelfUpdater {
       selfUpdate: this.support,
       update,
       failedVersions: this.state.failed.slice(-FAILED_VERSIONS_KEPT),
-      handledUpdateRequestId: this.state.handledRequestId,
     };
+  }
+
+  /**
+   * "Update now", the one entry point for it (the agent's page, and
+   * `omniralph-agent update` through `update-request.json`): the next heartbeat
+   * updates at once, replacing an earlier request not acted on yet.
+   */
+  request(options: { version?: string | null; at?: Date } = {}): UpdateRequest {
+    this.pending = {
+      version: options.version ?? null,
+      requestedAt: (options.at ?? new Date(this.now())).toISOString(),
+    };
+    return { ...this.pending };
+  }
+
+  /** The "Update now" not acted on yet, or null. */
+  pendingRequest(): UpdateRequest | null {
+    return this.pending ? { ...this.pending } : null;
+  }
+
+  /** The version the agent should run without a request: the pin, else the organization's. */
+  private targetVersion(): string | null {
+    return this.options.pin?.() ?? this.desired;
   }
 
   /**
    * Called after every heartbeat: `null` when it failed. Confirms a pending
    * version after `confirmAfterMs` of successful heartbeats, then starts an
-   * update when one was asked for or the desired version calls for one.
+   * update when one was asked for or the pin or the organization's version
+   * calls for one.
    */
   async onHeartbeat(response: HeartbeatResponse | null, daemon: DrainableDaemon): Promise<void> {
     if (!response) {
       this.okSince = null;
       return;
     }
+    this.desired = response.desiredVersion;
     if (this.busy) return;
     this.busy = true;
     try {
@@ -322,52 +362,49 @@ export class SelfUpdater {
         await this.confirm();
       }
       if (this.phase !== "idle") return;
-      if (await this.onRequest(response, daemon)) return;
-      const version = this.wantedVersion(response.desiredVersion);
-      if (version && !(await this.refuseTooOld(version))) await this.update(version, daemon);
+      if (await this.onRequest(daemon)) return;
+      const version = this.wantedVersion(this.targetVersion());
+      if (version && !(await this.refuseTooOld(version))) {
+        await this.update(version, daemon, () => this.wantedVersion(this.targetVersion()));
+      }
     } finally {
       this.busy = false;
     }
   }
 
   /**
-   * Acts on an update the control panel or the host asked for; false when
-   * none was. The request is handled (reported, or its file removed) before
-   * anything is installed, so a failing one isn't retried.
+   * Acts on "Update now"; false when none is pending. The request is taken
+   * (and `update-request.json` removed) before anything is installed, so a
+   * failing one isn't retried.
    */
-  private async onRequest(response: HeartbeatResponse, daemon: DrainableDaemon): Promise<boolean> {
-    const fromPanel: AgentUpdateRequest | null =
-      response.updateRequest && response.updateRequest.id !== this.state.handledRequestId
-        ? response.updateRequest
-        : null;
-    const local =
-      !fromPanel && this.options.requestPath
-        ? await readUpdateRequest(this.options.requestPath)
-        : null;
-    if (!fromPanel && !local) return false;
+  private async onRequest(daemon: DrainableDaemon): Promise<boolean> {
+    if (this.options.requestPath) {
+      const file = await readUpdateRequest(this.options.requestPath);
+      if (file) {
+        await rm(this.options.requestPath, { force: true });
+        const at = new Date(file.requestedAt);
+        this.request({ at: Number.isNaN(at.getTime()) ? undefined : at });
+      }
+    }
+    const request = this.pending;
+    if (!request) return false;
+    this.pending = null;
 
     const log = this.options.logger;
-    if (fromPanel) this.state.handledRequestId = fromPanel.id;
-    else await rm(this.options.requestPath!, { force: true });
-    const source = fromPanel ? "the control panel" : "omniralph-agent update";
-
     if (!this.options.underPm2) {
-      this.state.lastError = `An update was requested (${source}), but this agent isn't running under pm2, so it can't update itself`;
-      log.warn({ source }, "an update was requested, but only agents under pm2 update themselves");
+      this.state.lastError = `An update was requested, but this agent isn't running under pm2, so it can't update itself`;
+      log.warn("an update was requested, but only agents under pm2 update themselves");
       await this.save();
       return true;
     }
-    let version = fromPanel?.version ?? response.desiredVersion;
+    let version = request.version ?? this.targetVersion();
     if (!version) {
       try {
         if (!this.options.installer.latest) throw new Error("no way to look it up");
         version = await this.options.installer.latest();
       } catch (error) {
         this.state.lastError = `An update was requested, but reading the latest version failed: ${errorMessage(error)}`;
-        log.error(
-          { err: error, source },
-          "reading the latest version for a requested update failed",
-        );
+        log.error({ err: error }, "reading the latest version for a requested update failed");
         await this.save();
         return true;
       }
@@ -379,7 +416,7 @@ export class SelfUpdater {
     }
     if (await this.refuseTooOld(version)) return true;
     if (version === this.options.runningVersion) {
-      log.info({ version, source }, "an update was requested; already running that version");
+      log.info({ version }, "an update was requested; already running that version");
       await this.save();
       return true;
     }
@@ -387,14 +424,21 @@ export class SelfUpdater {
     this.state.failed = this.state.failed.filter((failed) => failed !== version);
     this.state.lastError = null;
     await this.save();
-    log.info({ version, source }, "an update was requested");
-    await this.update(version, daemon);
+    log.info({ version }, "an update was requested");
+    // After the drain: the version asked for, else the pin or the organization's then.
+    const resolved = version;
+    await this.update(version, daemon, () => {
+      const next = request.version ?? this.targetVersion() ?? resolved;
+      if (!AgentVersion.safeParse(next).success) return null;
+      this.state.failed = this.state.failed.filter((failed) => failed !== next);
+      return next;
+    });
     return true;
   }
 
-  /** The version to update to now, or null. */
+  /** The version to update to without a request, or null. */
   private wantedVersion(desired: string | null): string | null {
-    if (!this.options.underPm2 || this.phase !== "idle" || !desired) return null;
+    if (!this.options.underPm2 || !desired) return null;
     if (desired === this.options.runningVersion) return null;
     if (this.state.failed.includes(desired)) return null;
     // The protocol validates it already; never hand npm anything but a version.
@@ -428,7 +472,15 @@ export class SelfUpdater {
     this.options.logger.info({ version }, "the new version is up and running; keeping it");
   }
 
-  private async update(version: string, daemon: DrainableDaemon): Promise<void> {
+  /**
+   * Drains, then installs what `retarget` says then (the pin or the
+   * organization's version may have changed meanwhile; null: nothing to do).
+   */
+  private async update(
+    version: string,
+    daemon: DrainableDaemon,
+    retarget: () => string | null,
+  ): Promise<void> {
     const log = this.options.logger;
     this.phase = "draining";
     this.target = version;
@@ -441,6 +493,22 @@ export class SelfUpdater {
       this.phase = "idle";
       this.target = null;
       return;
+    }
+    const next = retarget();
+    if (!next || next === this.options.runningVersion || (await this.refuseTooOld(next))) {
+      log.info(
+        { version, now: next },
+        "the target changed during the drain; staying on this version",
+      );
+      this.phase = "idle";
+      this.target = null;
+      daemon.resume();
+      return;
+    }
+    if (next !== version) {
+      log.info({ from: version, to: next }, "the target changed during the drain");
+      version = next;
+      this.target = next;
     }
     this.phase = "installing";
     log.info({ version }, "installing the new version");
