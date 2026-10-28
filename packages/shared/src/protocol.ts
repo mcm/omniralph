@@ -141,7 +141,7 @@ export function legacyJobRouting(type: string): JobRouting {
 }
 
 /**
- * Per-pool caps on concurrent jobs (`agents.pool_limits`), each within
+ * Per-pool caps on concurrent jobs (an agent's local `poolLimits`), each within
  * `maxConcurrency`. Unset pools use `defaultPoolLimit`.
  */
 export const PoolLimits = z.record(poolName, z.int().min(1).max(1000));
