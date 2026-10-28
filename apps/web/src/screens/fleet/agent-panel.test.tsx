@@ -418,6 +418,46 @@ describe("the agent panel's sections", () => {
     expect(within(section("Security")!).getByText("Never connected")).toBeTruthy();
   });
 
+  it("says Claude isn't signed in, in the fail tone, only when the agent reports it signed out", async () => {
+    details[AGENT_ALPHA] = { ...busyDetail(), claude: { status: "signed_out", source: null } };
+    const { unmount } = renderFleet({ agentId: AGENT_ALPHA });
+    await within(panel()).findByRole("heading", { level: 2, name: "coder-1" });
+    const line = within(section("Models reported")!).getByText("Claude isn't signed in");
+    expect(line.getAttribute("data-tone")).toBe("fail");
+    unmount();
+
+    for (const claude of [{ status: "signed_in", source: "login" }, null] as const) {
+      details[AGENT_ALPHA] = { ...busyDetail(), claude };
+      const view = renderFleet({ agentId: AGENT_ALPHA });
+      await within(panel()).findByRole("heading", { level: 2, name: "coder-1" });
+      const models = section("Models reported")!;
+      expect(models.querySelector(".or-fleet-agent__line")).toBeNull();
+      expect(badgeTexts(models)).toEqual(["Opus 5.5", "Sonnet 5.5"]);
+      expect(within(models).queryByText(/signed/i)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("names the missing host tools its playbooks require, in the fail tone, only when there are some", async () => {
+    details[AGENT_ALPHA] = { ...busyDetail(), missingRequiredHostTools: ["gh", "opengrep"] };
+    const { unmount } = renderFleet({ agentId: AGENT_ALPHA });
+    await within(panel()).findByRole("heading", { level: 2, name: "coder-1" });
+    const line = within(panel()).getByText("Missing host tools: gh, opengrep");
+    expect(line.getAttribute("data-tone")).toBe("fail");
+    unmount();
+
+    details[AGENT_ALPHA] = { ...busyDetail(), missingRequiredHostTools: [] };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    expect(within(panel()).queryByText(/Missing host tools/)).toBeNull();
+  });
+
+  it("adds the agent's local pin to the status line", async () => {
+    const before = busyDetail();
+    details[AGENT_ALPHA] = { ...before, agent: { ...before.agent, versionPin: "2.0.3" } };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    expect(within(panel()).getByText("Running · up to date · pinned to 2.0.3")).toBeTruthy();
+  });
+
   it("has no On the machine section and no control for settings set elsewhere", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
     const text = panel().textContent!;
@@ -501,6 +541,51 @@ describe("live updates", () => {
     expect(within(first).getByRole("link", { name: "Built SOC-1720" })).toBeTruthy();
     expect(first.querySelector(".or-fleet-agent__duration")!.textContent).toBe("5m");
     expect(detailRequests(AGENT_ALPHA)).toHaveLength(2);
+  });
+
+  it("shows a heartbeat's new slots, pin, missing host tools, Claude state and allow-list without a reload", async () => {
+    const live = fakeAbly();
+    await openAgent(AGENT_ALPHA, "coder-1", { live });
+    await connected(live);
+    const row = () =>
+      within(screen.getByRole("table", { name: "Agents", hidden: true })).getByRole("row", {
+        name: /^coder-1\b/,
+        hidden: true,
+      });
+    expect(within(row()).getByText("Running 2")).toBeTruthy();
+
+    // The agent's page saved new settings and Claude signed out: its heartbeat stored them and
+    // published its `agent` event.
+    const before = busyDetail();
+    const reported = {
+      ...before.agent,
+      status: { kind: "running" as const, label: "Running 2 of 4", tone: "run" as const },
+      slots: { running: 2, max: 4 },
+      versionPin: "2.0.3",
+    };
+    data = {
+      ...data,
+      agents: data.agents.map((agent) => (agent.id === AGENT_ALPHA ? reported : agent)),
+    };
+    details[AGENT_ALPHA] = {
+      ...before,
+      agent: reported,
+      local: { poolLimits: { short: 4, long: 3 }, versionPin: "2.0.3", installablesAllow: [] },
+      missingRequiredHostTools: ["gh"],
+      claude: { status: "signed_out", source: null },
+    };
+    deliver(live, TEST_ORGANIZATION_ID, [AGENT_ALPHA]);
+
+    await waitFor(() => expect(within(row()).getByText("Running 2 of 4")).toBeTruthy());
+    await within(panel()).findByText("Running · up to date · pinned to 2.0.3");
+    expect(within(panel()).getByText("Missing host tools: gh")).toBeTruthy();
+    expect(within(section("Models reported")!).getByText("Claude isn't signed in")).toBeTruthy();
+
+    const toolbar = within(panel()).getByRole("toolbar", { name: "Agent actions" });
+    await userEvent.click(within(toolbar).getByRole("button", { name: "More actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Install package…" }));
+    const sheet = screen.getByRole("dialog", { name: "Install package" });
+    expect(within(sheet).getByText("This agent doesn't allow any package installs.")).toBeTruthy();
   });
 
   it("ignores another organization's agent events", async () => {

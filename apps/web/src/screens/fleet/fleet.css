@@ -307,6 +307,13 @@
   align-self: stretch;
 }
 
+.or-agent-install__allow {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .or-agent-install__error {
   margin: 0;
   color: var(--or-fail);

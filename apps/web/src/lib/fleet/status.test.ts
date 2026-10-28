@@ -31,6 +31,7 @@ const idle: AgentStatusInput = {
   lastHeartbeatAt: ago(10_000),
   updateStatus: "up_to_date",
   runningCount: 0,
+  maxSlots: null,
 };
 const status = (overrides: Partial<AgentStatusInput>) =>
   agentStatus({ ...idle, ...overrides }, NOW);
@@ -60,6 +61,11 @@ describe("agentStatus", () => {
     expect(status({ runningCount: 2 })).toEqual({
       kind: "running",
       label: "Running 2",
+      tone: "run",
+    });
+    expect(status({ runningCount: 2, maxSlots: 4 })).toEqual({
+      kind: "running",
+      label: "Running 2 of 4",
       tone: "run",
     });
     expect(status({ updateStatus: "updating" })).toEqual({
@@ -266,6 +272,7 @@ describe("agentStatusLine", () => {
       ...idle,
       version: "2.0.3",
       desiredVersion: "2.0.3",
+      versionPin: null,
       revokedAt: null,
       ...overrides,
     };
@@ -310,6 +317,47 @@ describe("agentStatusLine", () => {
       label: "Never connected",
       tone: "neutral",
     });
+  });
+});
+
+describe("agentStatusLine with a local pin", () => {
+  const line = (overrides: Partial<AgentStatusLineInput>) => {
+    const input = {
+      ...idle,
+      version: "2.0.3",
+      desiredVersion: "2.0.3",
+      versionPin: "2.0.3",
+      revokedAt: null,
+      ...overrides,
+    };
+    return agentStatusLine({ ...input, status: agentStatus(input, NOW) });
+  };
+
+  it("adds the pinned version to each line of a connected agent", () => {
+    expect(line({ runningCount: 2 })).toEqual({
+      label: "Running · up to date · pinned to 2.0.3",
+      tone: "run",
+    });
+    expect(line({})).toEqual({ label: "Idle · up to date · pinned to 2.0.3", tone: "neutral" });
+    expect(line({ online: false, lastHeartbeatAt: ago(DAY), version: "2.0.2" })).toEqual({
+      label: "Offline 1d · 1 version behind · pinned to 2.0.3",
+      tone: "fail",
+    });
+    expect(line({ version: "2.0.2", updateStatus: "updating" })).toEqual({
+      label: "Updating to 2.0.3 · pinned to 2.0.3",
+      tone: "neutral",
+    });
+    expect(line({ version: "2.0.2", updateStatus: "failed" })).toEqual({
+      label: "Update failed: 2.0.3 · pinned to 2.0.3",
+      tone: "fail",
+    });
+  });
+
+  it("leaves it out for a revoked or never connected agent", () => {
+    expect(
+      line({ revoked: true, online: false, revokedAt: "2026-10-20T12:00:00.000Z" }).label,
+    ).toBe("Revoked Oct 20");
+    expect(line({ online: false, lastHeartbeatAt: null }).label).toBe("Never connected");
   });
 });
 

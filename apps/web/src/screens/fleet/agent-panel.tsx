@@ -126,9 +126,26 @@ function RecentWork({ attempts }: { attempts: AgentDetail["recentWork"] }) {
   );
 }
 
-function Models({ models }: { models: AgentDetail["models"] }) {
+/** A line in the fail tone (Design rule 15). */
+function FailLine({ children }: { children: ReactNode }) {
+  return (
+    <p className="or-fleet-agent__line or-fleet-agent__line--fail" data-tone="fail">
+      {children}
+    </p>
+  );
+}
+
+/** "Claude isn't signed in" when the agent reports it signed out; nothing otherwise. */
+function Models({
+  models,
+  claude,
+}: {
+  models: AgentDetail["models"];
+  claude: AgentDetail["claude"];
+}) {
   return (
     <Section title="Models reported">
+      {claude?.status === "signed_out" ? <FailLine>Claude isn&apos;t signed in</FailLine> : null}
       {models.length === 0 ? (
         <None>None reported</None>
       ) : (
@@ -203,9 +220,10 @@ function Security({ detail }: { detail: AgentDetail }) {
 
 /**
  * The open agent (Design board Fleet): its organization (under All organizations) and ⋯
- * menu, status line, mono name, host and enrollment badges, then Running now (only while
- * something runs), Recent work, Models reported, Packages and Security. Read-only: pins,
- * concurrency, accepted kinds, host tools and the version are set elsewhere.
+ * menu, status line, mono name, host and enrollment badges, the host tools its playbooks
+ * require that it lacks, then Running now (only while something runs), Recent work, Models
+ * reported, Packages and Security. Read-only: slots, accepted kinds, host tools, the pin and
+ * the allow-list are set on the agent's own page and only shown here as it reports them.
  */
 export function AgentPanelContent({
   detail,
@@ -230,9 +248,12 @@ export function AgentPanelContent({
         <HostBadge host={agent.host} />
         <MetaBadge text={`Enrolled ${shortDate(agent.createdAt)}`} />
       </div>
+      {detail.missingRequiredHostTools.length > 0 ? (
+        <FailLine>Missing host tools: {detail.missingRequiredHostTools.join(", ")}</FailLine>
+      ) : null}
       <RunningNow attempts={detail.runningNow} />
       <RecentWork attempts={detail.recentWork} />
-      <Models models={detail.models} />
+      <Models models={detail.models} claude={detail.claude} />
       <Packages detail={detail} />
       <Security detail={detail} />
     </article>

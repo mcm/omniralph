@@ -24,7 +24,7 @@ export type AgentStatusKind = (typeof AGENT_STATUS_KINDS)[number];
 
 export interface AgentStatus {
   kind: AgentStatusKind;
-  /** "Offline 3d", "Running 2", … */
+  /** "Offline 3d", "Running 2 of 4", "Running 2", … */
   label: string;
   tone: FleetTone;
 }
@@ -38,6 +38,8 @@ export interface AgentStatusInput {
   updateStatus: AgentUpdateStatus;
   /** Attempts running on the agent. */
   runningCount: number;
+  /** Its slots as it reports them (`settings.json` `maxConcurrency`); null until it does. */
+  maxSlots: number | null;
 }
 
 /**
@@ -80,7 +82,7 @@ export function compactSince(from: Date, now: Date): string {
 
 /**
  * An agent's status; the first match wins: Revoked, Offline (with the time since its last
- * heartbeat), Never connected, Update failed, Running N, Updating, Idle.
+ * heartbeat), Never connected, Update failed, Running N (of its reported slots), Updating, Idle.
  */
 export function agentStatus(agent: AgentStatusInput, now: Date = new Date()): AgentStatus {
   if (agent.revoked) return { kind: "revoked", label: "Revoked", tone: "neutral" };
@@ -99,7 +101,8 @@ export function agentStatus(agent: AgentStatusInput, now: Date = new Date()): Ag
     return { kind: "update_failed", label: "Update failed", tone: "fail" };
   }
   if (agent.runningCount > 0) {
-    return { kind: "running", label: `Running ${agent.runningCount}`, tone: "run" };
+    const of = agent.maxSlots === null ? "" : ` of ${agent.maxSlots}`;
+    return { kind: "running", label: `Running ${agent.runningCount}${of}`, tone: "run" };
   }
   if (agent.updateStatus === "updating") {
     return { kind: "updating", label: "Updating", tone: "neutral" };
@@ -262,19 +265,29 @@ export function versionsBehind(version: string | null, target: string): string {
   return `behind ${target}`;
 }
 
-export interface AgentStatusLineInput extends AgentStatusInput {
+export interface AgentStatusLineInput extends Omit<AgentStatusInput, "maxSlots"> {
   status: AgentStatus;
   version: string | null;
   /** The version it should run; null when none is chosen. */
   desiredVersion: string | null;
+  /** The version pinned on the agent (its `settings.json`); null when none. */
+  versionPin: string | null;
   revokedAt: Date | string | null;
 }
 
 /**
  * The agent detail's status line: "Running · up to date", "Offline 3d · 1 version behind",
- * "Update failed: 2.0.4", "Revoked Oct 20", "Never connected", "Updating to 2.0.4".
+ * "Update failed: 2.0.4", "Revoked Oct 20", "Never connected", "Updating to 2.0.4"; with
+ * "· pinned to 2.0.3" when the agent reports a local pin (except revoked or never connected).
  */
 export function agentStatusLine(agent: AgentStatusLineInput): { label: string; tone: FleetTone } {
+  const line = statusLineHead(agent);
+  const { kind } = agent.status;
+  if (agent.versionPin === null || kind === "revoked" || kind === "never_connected") return line;
+  return { ...line, label: `${line.label} · pinned to ${agent.versionPin}` };
+}
+
+function statusLineHead(agent: AgentStatusLineInput): { label: string; tone: FleetTone } {
   const { status } = agent;
   if (status.kind === "revoked") {
     return {

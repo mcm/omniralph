@@ -20,6 +20,7 @@ import {
 import type { AgentDetail, AgentList, FleetAgentRow } from "@/lib/api/agents";
 import {
   INSTALL_ALLOW_LIST,
+  NOT_ON_ALLOW_LIST,
   PACKAGE_NAME_REQUIRED,
   REMOVE_DESCRIPTION,
   REVOKE_DESCRIPTION,
@@ -278,6 +279,69 @@ describe("Install package…", () => {
       expect(writes("POST", `/api/ui/agents/${AGENT_ALPHA}/installs`)[0]!.body).toEqual({
         name: "@acme/tool",
         version: "1.2.3",
+      }),
+    );
+  });
+
+  it("says which packages the agent's reported allow-list lets it install", async () => {
+    details[AGENT_ALPHA] = {
+      ...agentDetail(data.agents.find((row) => row.id === AGENT_ALPHA)!),
+      local: { poolLimits: null, versionPin: null, installablesAllow: ["@omniralph/*", "gh"] },
+    };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    await choose("Install package…");
+    expect(within(sheet()).getByText(INSTALL_ALLOW_LIST)).toBeTruthy();
+    expect(
+      within(sheet()).getByText("This agent only installs packages that match @omniralph/* or gh."),
+    ).toBeTruthy();
+  });
+
+  it("says when the agent allows no installs, and nothing before it reports an allow-list", async () => {
+    const alpha = data.agents.find((row) => row.id === AGENT_ALPHA)!;
+    details[AGENT_ALPHA] = {
+      ...agentDetail(alpha),
+      local: { poolLimits: null, versionPin: null, installablesAllow: [] },
+    };
+    const { unmount } = renderFleet({ agentId: AGENT_ALPHA });
+    await within(panel()).findByRole("heading", { level: 2, name: "coder-1" });
+    await choose("Install package…");
+    expect(
+      within(sheet()).getByText("This agent doesn't allow any package installs."),
+    ).toBeTruthy();
+    unmount();
+
+    details[AGENT_ALPHA] = {
+      ...agentDetail(alpha),
+      local: { poolLimits: null, versionPin: null, installablesAllow: null },
+    };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    await choose("Install package…");
+    expect(within(sheet()).queryByText(/^This agent /)).toBeNull();
+    await userEvent.type(field("Package"), "anything");
+    expect(within(sheet()).queryByText(NOT_ON_ALLOW_LIST)).toBeNull();
+  });
+
+  it("flags a name outside the allow-list but still sends it, because the agent decides", async () => {
+    serve({
+      [`POST /api/ui/agents/${AGENT_ALPHA}/installs`]: () =>
+        jsonResponse({ ok: true, jobId: "job-install" }),
+    });
+    await openAgent(AGENT_ALPHA, "coder-1");
+    await choose("Install package…");
+    // The fixture reports `@omniralph/*`.
+    await userEvent.type(field("Package"), "@omniralph/linear");
+    expect(within(sheet()).queryByText(NOT_ON_ALLOW_LIST)).toBeNull();
+    expect(field("Package").getAttribute("aria-invalid")).not.toBe("true");
+
+    await userEvent.clear(field("Package"));
+    await userEvent.type(field("Package"), "left-pad");
+    expect(within(sheet()).getByText(NOT_ON_ALLOW_LIST)).toBeTruthy();
+    const install = within(sheet()).getByRole("button", { name: "Install" });
+    expect((install as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(install);
+    await waitFor(() =>
+      expect(writes("POST", `/api/ui/agents/${AGENT_ALPHA}/installs`)[0]!.body).toEqual({
+        name: "left-pad",
       }),
     );
   });
