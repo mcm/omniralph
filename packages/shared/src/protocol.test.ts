@@ -86,6 +86,31 @@ describe("protocol", () => {
     expect(Heartbeat.safeParse({ ...base, models: tooMany }).success).toBe(false);
   });
 
+  it("accepts an optional Claude login state and strips the account from it", () => {
+    const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
+    expect(Heartbeat.parse(base).claude).toBeUndefined();
+    const claude = { status: "signed_in", source: "login", checkedAt: "2026-10-28T10:00:00.000Z" };
+    expect(Heartbeat.parse({ ...base, claude }).claude).toEqual(claude);
+    const withAccount = {
+      ...claude,
+      email: "steve@example.com",
+      organization: "Example",
+      subscriptionType: "max",
+    };
+    const parsed = Heartbeat.parse({ ...base, claude: withAccount }).claude;
+    expect(parsed).toEqual(claude);
+    expect(parsed).not.toHaveProperty("email");
+    const signedOut = { status: "signed_out", source: null, checkedAt: claude.checkedAt };
+    expect(Heartbeat.parse({ ...base, claude: signedOut }).claude).toEqual(signedOut);
+    for (const bad of [
+      { ...claude, status: "logged_in" },
+      { ...claude, source: "keychain" },
+      { ...claude, checkedAt: "yesterday" },
+    ]) {
+      expect(Heartbeat.safeParse({ ...base, claude: bad }).success).toBe(false);
+    }
+  });
+
   it("accepts an optional host, so older agents validate", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).host).toBeUndefined();

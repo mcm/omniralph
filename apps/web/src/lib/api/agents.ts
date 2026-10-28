@@ -1,6 +1,8 @@
 import {
   AgentHostReport,
   AgentUpdateReport,
+  CLAUDE_LOGIN_SOURCES,
+  CLAUDE_LOGIN_STATUSES,
   HOST_TOOL_PROBLEMS,
   HOST_TOOL_SOURCES,
   SELF_UPDATE_SUPPORT,
@@ -284,6 +286,16 @@ export const agentDetailSchema = z.object({
   ),
   /** The host tools the organization's playbooks require that it reports no path for, sorted. */
   missingRequiredHostTools: z.array(z.string()),
+  /**
+   * Whether Claude is signed in on it, and with what (`source`; null when not signed in), as it
+   * last reported. Null until it reports (older agents).
+   */
+  claude: z
+    .object({
+      status: z.enum(CLAUDE_LOGIN_STATUSES),
+      source: z.enum(CLAUDE_LOGIN_SOURCES).nullable(),
+    })
+    .nullable(),
   /** The 50 most recent audit events, newest first. */
   audit: z.array(auditRowSchema),
   /** The latest sync job (last 7 days) of each pinned repository. */

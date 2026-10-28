@@ -978,6 +978,18 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         await drop();
       }
     });
+
+    it("shows whether Claude is signed in on the agent's detail, without the time checked", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      expect((await getAgentDetail(agentId)).body.claude).toBeNull();
+      await sendHeartbeat(accessToken, {
+        ...HEARTBEAT,
+        claude: { status: "signed_in", source: "api_key", checkedAt: "2026-10-28T10:00:00.000Z" },
+      });
+      const detail = await getAgentDetail(agentId);
+      expect(detail.status).toBe(200);
+      expect(detail.body.claude).toEqual({ status: "signed_in", source: "api_key" });
+    });
   });
 
   describe("revoke", () => {

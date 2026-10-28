@@ -45,7 +45,8 @@ const NPM_TIMEOUT_MS = 5_000;
 /**
  * Agent heartbeat (every 20s). Records the reported version, accepted task types, host, machine
  * settings (`local`: slots, pool limits, version pin and allow-list, read-only here), host
- * tools (`hostTools`: which it has a path for, read-only here) and self-update state (last-seen in Redis; the agent row only when the report
+ * tools (`hostTools`: which it has a path for, read-only here), Claude login state (`claude`;
+ * no account details) and self-update state (last-seen in Redis; the agent row only when the report
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the agent keeps,
  * applies the acknowledged job messages and returns the central configuration,
  * the running jobs the agent must cancel, fresh job tokens and undelivered
@@ -89,6 +90,7 @@ async function post(req: Request): Promise<Response> {
     host: body.data.host,
     local: body.data.local,
     hostTools: body.data.hostTools,
+    claude: body.data.claude,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =

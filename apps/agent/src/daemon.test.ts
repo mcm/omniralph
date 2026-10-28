@@ -27,6 +27,7 @@ import {
   type JobContext,
 } from "./capabilities/index.js";
 import { AttemptHistory } from "./attempts/history.js";
+import type { ClaudeStatus } from "./claude-status.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
@@ -319,7 +320,7 @@ function setup(options: {
   settings?: DaemonOptions["settings"];
   local?: LocalSettings;
   hostToolSearchPath?: string;
-  models?: DaemonOptions["models"];
+  claude?: DaemonOptions["claude"];
   host?: DaemonOptions["host"];
   history?: DaemonOptions["history"];
   /** Opens fake wake subscriptions (into `wakes`); without it the daemon has no wake transport. */
@@ -361,7 +362,7 @@ function setup(options: {
     settings: options.settings ?? local,
     hostToolSearchPath: () => options.hostToolSearchPath,
     updater: options.updater,
-    models: options.models,
+    claude: options.claude,
     host: options.host ?? (() => ({ hostname: "agent-host", coder: null })),
     history: options.history,
     wakeSubscription,
@@ -547,15 +548,33 @@ describe("AgentDaemon", () => {
     }
   });
 
-  it("reports the models Claude can run in every heartbeat", async () => {
+  it("reports the models Claude can run and its login state, without the account, in every heartbeat", async () => {
     const opus = { value: "opus", displayName: "Opus" };
-    const current = vi.fn(async () => [opus]);
-    const { api, daemon } = setup({ models: { current } });
+    const checkedAt = "2026-10-28T10:00:00.000Z";
+    const current = vi.fn<() => Promise<ClaudeStatus>>(async () => ({
+      status: "signed_in",
+      source: "login",
+      account: { email: "steve@example.com", organization: "Example", subscriptionType: "max" },
+      models: [opus],
+      checkedAt,
+    }));
+    const { api, daemon } = setup({ claude: { current } });
     await daemon.heartbeat();
-    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ models: [opus] }));
-    current.mockResolvedValueOnce([]);
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        models: [opus],
+        claude: { status: "signed_in", source: "login", checkedAt },
+      }),
+    );
+    expect(JSON.stringify(api.heartbeat.mock.lastCall)).not.toContain("steve@example.com");
+    current.mockResolvedValueOnce({ status: "signed_out", source: null, models: [], checkedAt });
     await daemon.heartbeat();
-    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ models: [] }));
+    expect(api.heartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        models: [],
+        claude: { status: "signed_out", source: null, checkedAt },
+      }),
+    );
   });
 
   it("heartbeats every 20s with its version, running jobs and free slots", async () => {

@@ -1,5 +1,5 @@
 // Agents, enrollments and agent settings are scoped to organizations.
-import type { HostToolReport } from "@omniralph/shared";
+import type { ClaudeLoginReport, HostToolReport } from "@omniralph/shared";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -230,6 +230,42 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     const cleared = await heartbeat();
     expect(cleared.result?.reportedHostTools).toEqual([]);
     expect(agentChanges(cleared.changes)).toHaveLength(1);
+  });
+
+  it("stores the Claude login state and announces the agent only when status or source changes", async () => {
+    const a = await enroll(orgA, "a-claude");
+    const login: ClaudeLoginReport = {
+      status: "signed_in",
+      source: "login",
+      checkedAt: "2026-10-28T10:00:00.000Z",
+    };
+    const heartbeat = (claude?: ClaudeLoginReport) =>
+      captureChanges(() => recordAgentHeartbeat(db, a, { version: "1.0.0", claude }));
+    const agentChanges = (changes: { resource: string }[]) =>
+      changes.filter((change) => change.resource === "agent");
+
+    const [before] = await db.select().from(agents).where(eq(agents.id, a));
+    expect(before?.reportedClaude).toBeNull();
+    // The first heartbeat (no report yet) settles the other reported fields.
+    await heartbeat();
+    const first = await heartbeat(login);
+    expect(first.result?.reportedClaude).toEqual(login);
+    expect(agentChanges(first.changes)).toHaveLength(1);
+    // A later check that finds the same state is stored but announces nothing.
+    const rechecked = { ...login, checkedAt: "2026-10-28T11:00:00.000Z" };
+    const same = await heartbeat(rechecked);
+    expect(same.result?.reportedClaude).toEqual(rechecked);
+    expect(agentChanges(same.changes)).toEqual([]);
+    const apiKey: ClaudeLoginReport = { ...rechecked, source: "api_key" };
+    expect(agentChanges((await heartbeat(apiKey)).changes)).toHaveLength(1);
+    const signedOut: ClaudeLoginReport = { ...rechecked, status: "signed_out", source: null };
+    const out = await heartbeat(signedOut);
+    expect(out.result?.reportedClaude).toEqual(signedOut);
+    expect(agentChanges(out.changes)).toHaveLength(1);
+    // A heartbeat without the report (an older agent) keeps the last one.
+    const kept = await heartbeat();
+    expect(kept.result?.reportedClaude).toEqual(signedOut);
+    expect(agentChanges(kept.changes)).toEqual([]);
   });
 
   describe("listReportedModels", () => {

@@ -1477,6 +1477,44 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
       }
     });
 
+    it("a heartbeat stores the Claude login state and publishes the agent when status or source changes", async () => {
+      const { agentId, accessToken } = await newAgent({ name: "live-claude" });
+      await beat(accessToken, HEARTBEAT);
+      const signedIn = {
+        status: "signed_in",
+        source: "login",
+        checkedAt: "2026-10-28T10:00:00.000Z",
+      };
+      const stored = async () =>
+        (await db.select().from(agents).where(eq(agents.id, agentId)))[0]?.reportedClaude;
+
+      // The account never reaches the control panel, even when an agent sends it.
+      const first = await beat(accessToken, {
+        ...HEARTBEAT,
+        claude: { ...signedIn, email: "steve@example.com", subscriptionType: "max" },
+      });
+      expect(agentEvents(first.changes, agentId)).toHaveLength(1);
+      expect(await stored()).toEqual(signedIn);
+
+      // Checked again with the same result: stored, nothing published.
+      const rechecked = { ...signedIn, checkedAt: "2026-10-28T11:00:00.000Z" };
+      const same = await beat(accessToken, { ...HEARTBEAT, claude: rechecked });
+      expect(agentEvents(same.changes, agentId)).toEqual([]);
+      expect(await stored()).toEqual(rechecked);
+
+      for (const claude of [
+        { ...rechecked, source: "oauth_token" },
+        { ...rechecked, status: "signed_out", source: null },
+      ]) {
+        const changed = await beat(accessToken, { ...HEARTBEAT, claude });
+        expect(agentEvents(changed.changes, agentId), claude.status).toHaveLength(1);
+        expect(await stored()).toEqual(claude);
+      }
+      // An older agent sends none: the last report stays.
+      await beat(accessToken, HEARTBEAT);
+      expect(await stored()).toMatchObject({ status: "signed_out", source: null });
+    });
+
     it("an attempt's start and finish publish the agent that runs it", async () => {
       const { agentId, accessToken } = await newAgent({ name: "live-2" });
       const completed = await newJob();

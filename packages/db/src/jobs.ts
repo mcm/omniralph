@@ -26,6 +26,7 @@ import {
   isJobTaskType,
   poolForTaskType,
   type AgentHostReport,
+  type ClaudeLoginReport,
   type HostToolReport,
 } from "@omniralph/shared";
 import { replaceAttemptModelUsage } from "./attempt-usage.js";
@@ -831,6 +832,8 @@ export async function recordAgentHeartbeat(
     };
     /** The host tools the agent configured or was asked about; replaces the last report (none clears it). */
     hostTools?: readonly HostToolReport[];
+    /** Whether the agent's Claude login works; replaces the last report. Older agents send none, which keeps it. */
+    claude?: ClaudeLoginReport;
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
@@ -853,6 +856,13 @@ export async function recordAgentHeartbeat(
       })),
       ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
       ...(input.host && { reportedHost: input.host }),
+      ...(input.claude && {
+        reportedClaude: {
+          status: input.claude.status,
+          source: input.claude.source,
+          checkedAt: input.claude.checkedAt,
+        },
+      }),
       ...(input.local && {
         reportedMaxConcurrency: input.local.maxConcurrency,
         reportedPoolLimits: {
@@ -882,12 +892,14 @@ export async function recordAgentHeartbeat(
         reportedVersionPin: previous.reportedVersionPin,
         reportedInstallablesAllow: previous.reportedInstallablesAllow,
         reportedHostTools: previous.reportedHostTools,
+        reportedClaude: previous.reportedClaude,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
   // What the fleet shows changed (version, update state, installs, task types, host, local
-  // settings, host tools): not a steady heartbeat.
+  // settings, host tools, Claude login state): not a steady heartbeat, nor a Claude re-check
+  // that found the same state.
   const after = {
     reportedVersion: row.reportedVersion,
     selfUpdate: row.selfUpdate,
@@ -902,11 +914,20 @@ export async function recordAgentHeartbeat(
     reportedVersionPin: row.reportedVersionPin,
     reportedInstallablesAllow: row.reportedInstallablesAllow,
     reportedHostTools: row.reportedHostTools,
+    reportedClaude: row.reportedClaude,
   };
-  if (JSON.stringify(before) !== JSON.stringify(after)) {
+  if (
+    JSON.stringify({ ...before, reportedClaude: claudeLoginState(before.reportedClaude) }) !==
+    JSON.stringify({ ...after, reportedClaude: claudeLoginState(after.reportedClaude) })
+  ) {
     recordChange(db, { resource: "agent", ids: [row.id], organizationId: row.organizationId });
   }
   return row;
+}
+
+/** What the fleet shows of a Claude login report: not when it was checked. */
+function claudeLoginState(report: ClaudeLoginReport | null) {
+  return report && { status: report.status, source: report.source };
 }
 
 export async function getAgent(
