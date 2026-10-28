@@ -1,7 +1,7 @@
 import {
   agentAcceptedTaskTypes,
   classifyAgentRunningJobs,
-  listAgentPinnedRepositoryIds,
+  listAgentPinnedRepositories,
   listRequiredHostTools,
   renewJobLeases,
   type Database,
@@ -120,8 +120,8 @@ async function post(req: Request): Promise<Response> {
   const agent = await recordHeartbeat(db, agentId, report);
   if (!agent) return badRequest("unknown_agent");
   await announceOnline(db, agentId);
-  const [pinnedRepoIds, running, organizationVersion, requiredHostTools] = await Promise.all([
-    listAgentPinnedRepositoryIds(db, agentId),
+  const [pinnedRepositories, running, organizationVersion, requiredHostTools] = await Promise.all([
+    listAgentPinnedRepositories(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
     organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRequiredHostTools(db, agent.organizationId),
@@ -169,7 +169,7 @@ async function post(req: Request): Promise<Response> {
     pollIntervalSeconds: LEGACY_POLL_INTERVAL_SECONDS,
     // Only older agents, which don't report their task types, take (and require) these.
     ...(body.data.acceptedTaskTypes === undefined && { acceptedTaskTypes }),
-    pinnedRepoIds,
+    pinnedRepositories,
     organizationId: agent.organizationId,
     topics: [],
     queueRegion: "",

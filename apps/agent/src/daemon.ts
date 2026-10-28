@@ -8,6 +8,7 @@ import {
   type EffectiveLocalSettings,
   type Heartbeat,
   type HeartbeatResponse,
+  type PinnedRepository,
   type JobFailure,
   type JobOutcomeResponse,
   type JobPayload,
@@ -258,6 +259,11 @@ export class AgentDaemon implements DrainableDaemon {
       runningJobIds: [...this.running.keys()],
       maxConcurrency: this.localSettings().maxConcurrency,
     };
+  }
+
+  /** The repositories the last heartbeat pinned to this agent (none before the first one). */
+  pinnedRepositories(): PinnedRepository[] {
+    return this.config?.pinnedRepositories ?? [];
   }
 
   /**

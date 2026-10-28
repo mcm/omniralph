@@ -287,7 +287,7 @@ export {
   getJob,
   insertJob,
   setQueuedJobTarget,
-  listAgentPinnedRepositoryIds,
+  listAgentPinnedRepositories,
   getJobForAgent,
   pinnedAgentFor,
   postJobCommentOnce,

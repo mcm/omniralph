@@ -28,6 +28,7 @@ import {
   type AgentHostReport,
   type ClaudeLoginReport,
   type HostToolReport,
+  type PinnedRepository,
 } from "@omniralph/shared";
 import { replaceAttemptModelUsage } from "./attempt-usage.js";
 import { recordChange } from "./changes.js";
@@ -38,6 +39,7 @@ import {
   agentRepoPins,
   agents,
   jobs,
+  repositories,
   type AgentUpdateState,
   type JobTaskType,
 } from "./schema.js";
@@ -938,16 +940,21 @@ export async function getAgent(
   return row ?? null;
 }
 
-export async function listAgentPinnedRepositoryIds(
+/** The repositories pinned to an agent, oldest pin first (the heartbeat's `pinnedRepositories`). */
+export async function listAgentPinnedRepositories(
   db: Database,
   agentId: string,
-): Promise<string[]> {
-  const rows = await db
-    .select({ repositoryId: agentRepoPins.repositoryId })
+): Promise<PinnedRepository[]> {
+  return db
+    .select({
+      id: repositories.id,
+      provider: repositories.provider,
+      fullPath: repositories.fullPath,
+    })
     .from(agentRepoPins)
+    .innerJoin(repositories, eq(repositories.id, agentRepoPins.repositoryId))
     .where(eq(agentRepoPins.agentId, agentId))
-    .orderBy(asc(agentRepoPins.createdAt));
-  return rows.map((r) => r.repositoryId);
+    .orderBy(asc(agentRepoPins.createdAt), asc(repositories.fullPath));
 }
 
 /**

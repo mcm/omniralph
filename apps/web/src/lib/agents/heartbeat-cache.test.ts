@@ -227,7 +227,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
   it("answers an unchanged idle heartbeat without a Postgres query", async () => {
     const { agentId } = await newAgent();
     const cached = await warm(agentId);
-    expect(cached.pinnedRepoIds).toEqual([]);
+    expect(cached.pinnedRepositories).toEqual([]);
     // Last-seen still moves.
     const seen = Number(await getRedis().get(`agent-last-seen:${agentId}`));
     expect(Date.now() - seen).toBeLessThan(5_000);
@@ -293,14 +293,17 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
           "pinned",
         );
       },
-      (response) => expect(response.pinnedRepoIds).toHaveLength(1),
+      (response) =>
+        expect(response.pinnedRepositories).toEqual([
+          { id: expect.any(String), provider: "gitlab", fullPath: "acme/api" },
+        ]),
     ],
     [
       "unpin",
       async ({ agentId }) => {
         // Pinned before the warm-up (`setUp`), unpinned here from the repo's Agents card.
-        const [repositoryId] = (await send(agentId)).response.pinnedRepoIds;
-        const repository = (await getRepository(db, repositoryId!))!;
+        const [pinned] = (await send(agentId)).response.pinnedRepositories;
+        const repository = (await getRepository(db, pinned!.id))!;
         const saved = await saveAgentsCard(
           db,
           new PostgresDispatcher({ db }),
@@ -310,7 +313,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
         );
         expect(saved).toMatchObject({ ok: true, card: { pinned: [] } });
       },
-      (response) => expect(response.pinnedRepoIds).toEqual([]),
+      (response) => expect(response.pinnedRepositories).toEqual([]),
     ],
     [
       "organization version",

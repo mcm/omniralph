@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   chmod,
+  lstat,
   mkdir,
   readdir,
   readFile,
@@ -288,6 +289,81 @@ function hostEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("OMNIRALPH_")),
   );
+}
+
+/** A repository in the cache, read from the cache's layout (see `cachedRepositories`). */
+export interface CachedRepository {
+  provider: (typeof PROVIDERS)[number];
+  /** The host directory (`omniralph.hostDir`); null for a repository cached before it existed. */
+  host: string | null;
+  fullPath: string;
+  /** The bare clone: `<workspaceRoot>/<provider>/<host>/<repo path>`. */
+  dir: string;
+}
+
+/** `omniralph.hostDir` from a bare clone's `config` file; null when it isn't set or can't be read. */
+async function readHostDir(repoDir: string): Promise<string | null> {
+  const text = await readFile(path.join(repoDir, "config"), "utf8").catch(() => "");
+  const [section, key] = HOST_CONFIG.toLowerCase().split(".");
+  let current = "";
+  let host: string | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\s+|\s+$/g, "");
+    const header = /^\[\s*([^\]\s"]+)\s*\]$/.exec(line);
+    if (header) {
+      current = header[1]!.toLowerCase();
+      continue;
+    }
+    const entry = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line);
+    if (current === section && entry && entry[1]!.toLowerCase() === key) {
+      host = entry[2]!.replace(/^"(.*)"$/, "$1").trim() || null;
+    }
+  }
+  return host;
+}
+
+/**
+ * The repositories cached under `workspaceRoot` (bare clones, recognized by
+ * their `HEAD`), sorted by provider, host and path. The host and full path
+ * come from the layout `<provider>/<host>/<repo path>` and the clone's
+ * `omniralph.hostDir`; a clone without it (cached before repositories were
+ * keyed by host) is `<provider>/<repo path>`. Symlinks are never followed, and
+ * `.worktrees`, `.branches` and the other dot directories aren't searched.
+ */
+export async function cachedRepositories(workspaceRoot: string): Promise<CachedRepository[]> {
+  const root = path.resolve(workspaceRoot);
+  const found: CachedRepository[] = [];
+  const visit = async (
+    provider: CachedRepository["provider"],
+    providerDir: string,
+    dir: string,
+    depth: number,
+  ): Promise<void> => {
+    if (depth > 8) return;
+    const head = await lstat(path.join(dir, "HEAD")).catch(() => null);
+    if (head?.isFile()) {
+      const segments = path.relative(providerDir, dir).split(path.sep);
+      const host = await readHostDir(dir);
+      const keyed = host !== null && segments.length > 2 && segments[0] === host;
+      const repoSegments = keyed ? segments.slice(1) : segments;
+      if (repoSegments.length >= 2) {
+        found.push({ provider, host: keyed ? host : null, fullPath: repoSegments.join("/"), dir });
+      }
+      return;
+    }
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        await visit(provider, providerDir, path.join(dir, entry.name), depth + 1);
+      }
+    }
+  };
+  for (const provider of PROVIDERS) {
+    const providerDir = path.join(root, provider);
+    await visit(provider, providerDir, providerDir, 0);
+  }
+  const key = (r: CachedRepository) => `${r.provider}\0${r.host ?? ""}\0${r.fullPath}`;
+  return found.sort((a, b) => key(a).localeCompare(key(b)));
 }
 
 /**

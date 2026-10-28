@@ -48,7 +48,7 @@ const ALL_TYPES = ["query", "review", "coding"];
 
 function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatResponse {
   return {
-    pinnedRepoIds: [],
+    pinnedRepositories: [],
     organizationId: ORG_ID,
     cancelJobIds: [],
     jobTokens: [],
@@ -434,6 +434,18 @@ describe("AgentDaemon", () => {
     const { api, daemon } = setup({ host: () => host });
     await daemon.heartbeat();
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
+  });
+
+  it("keeps the repositories the last heartbeat pinned to it", async () => {
+    const { daemon, state } = setup({});
+    expect(daemon.pinnedRepositories()).toEqual([]);
+    const pin = { id: randomUUID(), provider: "gitlab" as const, fullPath: "acme/api" };
+    state.config = centralConfig({ pinnedRepositories: [pin] });
+    await daemon.heartbeat();
+    expect(daemon.pinnedRepositories()).toEqual([pin]);
+    state.config = centralConfig({ pinnedRepositories: [] });
+    await daemon.heartbeat();
+    expect(daemon.pinnedRepositories()).toEqual([]);
   });
 
   it("reports its configured and required host tools in the heartbeat and exposes their paths", async () => {

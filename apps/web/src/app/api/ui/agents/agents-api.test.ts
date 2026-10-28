@@ -349,7 +349,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(before).toMatchObject({
         pollIntervalSeconds: 5,
         acceptedTaskTypes: ["query", "review", "coding"],
-        pinnedRepoIds: [],
+        pinnedRepositories: [],
       });
       expect(before).not.toHaveProperty("maxConcurrency");
       expect(before).not.toHaveProperty("poolLimits");
@@ -360,13 +360,13 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(after).toMatchObject({
         // Legacy constants: agents claim jobs instead of polling queue topics.
         pollIntervalSeconds: 5,
-        pinnedRepoIds: [repoA],
+        pinnedRepositories: [{ id: repoA, provider: "gitlab", fullPath: "acme/api" }],
         topics: [],
       });
 
       expect(await unpinRepository(agentId, repoA)).toEqual({ ok: true });
       const unpinned = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(unpinned.pinnedRepoIds).toEqual([]);
+      expect(unpinned.pinnedRepositories).toEqual([]);
     });
 
     it("stores the task types the agent reports, publishing a change only when they differ", async () => {
