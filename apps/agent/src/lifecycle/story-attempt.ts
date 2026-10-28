@@ -251,7 +251,8 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
     logger: log,
     ...(options.fetch && { fetch: options.fetch }),
   });
-  const runSession = options.runSession ?? createSessionRunner();
+  const baseRunner = options.runSession ?? createSessionRunner();
+  const runSession = ctx.sessions?.runner(baseRunner) ?? baseRunner;
   // Quality gates never see a token.
   const plainEnv = withoutJobEnv(ctx.env());
   // The job's own git commands read the job token from a file kept current: the push comes after the session.

@@ -22,7 +22,7 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { AGENT_ONLINE_WINDOW_MS } from "@/lib/agents/display";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
-import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
+import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { storyIssueUrl } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
 import { questionView } from "@/lib/runs/question";

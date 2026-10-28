@@ -30,7 +30,7 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { reviewTaskNames } from "@/lib/review/post";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
-import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
+import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { runActions } from "./actions";
 import { runRow } from "./list";
 import { loadRunQuestion } from "./question";

@@ -181,7 +181,8 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
     logger: log,
     ...(options.fetch && { fetch: options.fetch }),
   });
-  const runSession = options.runSession ?? createSessionRunner();
+  const baseRunner = options.runSession ?? createSessionRunner();
+  const runSession = ctx.sessions?.runner(baseRunner) ?? baseRunner;
   const label = (reason: string) => `${requestStashPrefix(payload)}${reason}`;
 
   try {

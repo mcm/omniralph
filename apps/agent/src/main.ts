@@ -9,6 +9,7 @@ import {
   exchangeRefreshToken,
   type FetchFn,
 } from "./api.js";
+import { AttemptHistory, attemptsPath } from "./attempts/history.js";
 import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
 import { CapabilityRegistry, defaultCapabilities, type Capability } from "./capabilities/index.js";
 import {
@@ -394,6 +395,8 @@ async function runAgent(
   await repos.pruneStaleWorktrees();
 
   await settings.watch();
+  const history = new AttemptHistory({ file: attemptsPath(agentDataDir), logger });
+  await history.load();
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
@@ -415,6 +418,7 @@ async function runAgent(
     models: new ModelReporter({ list: deps.listModels ?? sdkListModels(), logger }),
     localConfig: config,
     settings,
+    history,
     updater,
     wakeSubscription: (organizationId) =>
       createWakeSubscription({ agentId: config.agentId, organizationId, logger }),
@@ -441,6 +445,7 @@ async function runAgent(
   const code = await daemon.run();
   tokens.stop();
   await settings.close();
+  await history.close();
   health?.close();
   if (fatal) {
     deps.io.stderr(`omniralph-agent: ${fatal.message}; run 'omniralph-agent enroll' again\n`);

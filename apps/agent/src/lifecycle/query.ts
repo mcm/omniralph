@@ -169,7 +169,8 @@ export async function runQueryTask(
   options: QueryTaskOptions = {},
 ): Promise<QueryRunResult> {
   const started = Date.now();
-  const runner = options.runner ?? createSessionRunner();
+  const baseRunner = options.runner ?? createSessionRunner();
+  const runner = ctx.sessions?.runner(baseRunner) ?? baseRunner;
   const log = ctx.logger.child({ taskId: spec.task.id, agentId: spec.agent.id });
   const relay = new ActivityRelay({
     server: ctx.server,

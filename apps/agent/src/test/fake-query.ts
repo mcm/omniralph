@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { SessionQueryFn } from "../session/session.js";
+import type { SessionQueryFn, SessionRequest } from "../session/session.js";
 
 /** The text of a streamed session's first user message (the prompt). */
 export async function firstPrompt(prompt: AsyncIterable<SDKUserMessage>): Promise<string> {
@@ -81,4 +81,9 @@ export function assistantMessage(
       },
     },
   } as unknown as SDKMessage;
+}
+
+/** A session request for runners that only look at `onEvent` (and whatever `extra` sets). */
+export function sessionRequest(extra: Partial<SessionRequest> = {}): SessionRequest {
+  return { prompt: "p", cwd: "/tmp", ...extra } as SessionRequest;
 }

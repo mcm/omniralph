@@ -160,14 +160,6 @@ async function ui(
   return result as { ok: true; version?: string };
 }
 
-/**
- * The old desired-version override column, set in the database: nothing reads it any more
- * (the version pin is the agent's own), and the column is dropped later.
- */
-async function setAgentDesiredVersion(id: string, version: string | null) {
-  await state.db!.update(agents).set({ desiredVersion: version }).where(eq(agents.id, id));
-  await bumpAgentHeartbeat(id);
-}
 // Pins are edited from the repository's settings; these call the same pin logic directly.
 async function pinRepository(agentId: string, repositoryId: string) {
   const dispatcher = new PostgresDispatcher({ db: state.db! });
@@ -583,9 +575,6 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       const [otherOrg] = await db.insert(organizations).values({ name: "Other" }).returning();
       await setDesiredAgentVersion(db, otherOrg!.id, "9.0.0", null);
       expect(await desired(accessToken)).toBe("2.4.0");
-      // The old override column is ignored.
-      await setAgentDesiredVersion(agentId, "2.5.0");
-      expect(await desired(accessToken)).toBe("2.4.0");
       expect(await desired(other.accessToken)).toBe("2.4.0");
 
       // A pin on the agent: reported and stored, but the response is still the policy.
@@ -635,7 +624,6 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         versionPin: null,
         updateStatus: "manual",
       });
-      await setAgentDesiredVersion(agentId, null);
       await setDesiredAgentVersion(db, orgId, null, adminId);
     });
 
