@@ -422,6 +422,14 @@ can't reach it by pointing its own name at 127.0.0.1 (DNS rebinding). Every requ
 cookie, and changes must come from the page itself (same `Origin`, JSON bodies). The agent writes
 the link to `ui.json` next to `agent.json` (mode 0600) and deletes it when it stops.
 
+**Capacity** sets how much work the agent takes on: **Slots**, **Coding slots** and **Review and
+ask slots** (blank means the default, shown in the field), and the **Kinds** of work offered to it
+(at least one). The save bar lists each change with what it does before you save. Saving writes
+[`settings.json`](#machine-settings-settingsjson) and applies at once. When the file changed on the
+machine since the page loaded it, nothing is saved: the page shows the current values with your
+edits on top and asks you to review and save again. A hand edit shows up on the page by itself, and
+an invalid one is shown as an alert while the agent keeps its last good settings.
+
 `agent.json` keys (see [Enroll](#4-enroll)):
 
 - `ui.port` (default `7410`): the port. When it's taken (a second agent on the host, say), the

@@ -103,12 +103,18 @@ export function hostAllowed(
   return allowedHosts.some((allowed) => allowed.toLowerCase() === match[1]);
 }
 
+/** Why a request body isn't valid, at its path in the body (e.g. `["poolLimits", "long"]`). */
+export interface UiIssue {
+  path: (string | number)[];
+  message: string;
+}
+
 /** An API error answered as `{ error, issues? }`. */
 export class UiHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly issues?: string[],
+    readonly issues?: UiIssue[],
   ) {
     super(message);
   }

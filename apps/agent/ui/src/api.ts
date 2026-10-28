@@ -18,12 +18,15 @@ export interface LocalApiIssue {
 export class LocalApiError extends Error {
   readonly status: number;
   readonly issues: LocalApiIssue[];
+  /** The whole error body (e.g. a 409's current settings). */
+  readonly body: unknown;
 
-  constructor(message: string, status: number, issues: LocalApiIssue[] = []) {
+  constructor(message: string, status: number, issues: LocalApiIssue[] = [], body?: unknown) {
     super(message);
     this.name = "LocalApiError";
     this.status = status;
     this.issues = issues;
+    this.body = body;
   }
 
   /** The issues by field (the issue's path joined with "."), for a staged card. */
@@ -105,7 +108,7 @@ export async function localRequest<T>(path: string, init: LocalRequestInit = {})
   }
   if (!response.ok) {
     const { error, issues } = errorBody(body);
-    throw new LocalApiError(error ?? REQUEST_FAILED, response.status, issues);
+    throw new LocalApiError(error ?? REQUEST_FAILED, response.status, issues, body);
   }
   return body as T;
 }

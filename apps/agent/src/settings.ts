@@ -93,7 +93,13 @@ export type LocalSettingsUpdate =
   /** `revision` isn't the current one: nothing was written. */
   | { status: "conflict"; state: LocalSettingsState }
   /** The section would make the settings invalid: nothing was written. */
-  | { status: "invalid"; issues: string[] };
+  | { status: "invalid"; issues: SettingsIssue[] };
+
+/** Why a value isn't valid, at its path in the settings (e.g. `["poolLimits", "long"]`). */
+export interface SettingsIssue {
+  path: (string | number)[];
+  message: string;
+}
 
 export interface LocalSettingsStoreOptions {
   /** `localSettingsPath(dataDir)`. */
@@ -114,7 +120,16 @@ function sha256(bytes: string | Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function describeIssues(issues: readonly { path: PropertyKey[]; message: string }[]): string[] {
+type ZodIssueLike = { path: PropertyKey[]; message: string };
+
+export function settingsIssues(issues: readonly ZodIssueLike[]): SettingsIssue[] {
+  return issues.map((issue) => ({
+    path: issue.path.map((key) => (typeof key === "number" ? key : String(key))),
+    message: issue.message,
+  }));
+}
+
+function describeIssues(issues: readonly ZodIssueLike[]): string[] {
   return issues.map((issue) =>
     issue.path.length ? `${issue.path.map(String).join(".")}: ${issue.message}` : issue.message,
   );
@@ -205,7 +220,7 @@ export class LocalSettingsStore extends EventEmitter<{ change: [LocalSettingsSta
         applyLocalSettingsSection(this.loaded.settings, section, body),
       );
       if (!parsed.success)
-        return { status: "invalid", issues: describeIssues(parsed.error.issues) };
+        return { status: "invalid", issues: settingsIssues(parsed.error.issues) };
       await this.fs.writePrivateJson(this.options.file, parsed.data);
       this.loaded = { settings: parsed.data, revision: sha256(privateJsonText(parsed.data)) };
       this.lastError = null;

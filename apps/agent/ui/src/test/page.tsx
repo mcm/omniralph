@@ -3,6 +3,7 @@
  * `ResizeObserver` that reports a chosen width (so `SplitView` shows one pane or both) and
  * `renderAgentPage`, which renders the whole page at a path.
  */
+import { effectiveLocalSettings, type AgentLocalSettings } from "@omniralph/shared";
 import { clearToasts } from "@omniralph/ui";
 import { act, cleanup, render } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import type { AgentUiChange } from "../live/invalidations.js";
 import type { LiveEventSource } from "../live/live-provider.js";
 import { AgentPageRoot } from "../main.js";
 import { createAgentQueryClient } from "../query-client.js";
+import type { LocalSettingsState } from "../../../src/settings.js";
 import type { AgentUiState, NavProblem } from "../state.js";
 
 afterEach(() => {
@@ -129,7 +131,17 @@ export function stubContainerWidth(width: number): void {
 export const WIDE = 1200;
 export const NARROW = 390;
 
-export function agentState(overrides: { problems?: NavProblem[] } = {}): AgentUiState {
+/** `/api/state`'s `settings` for the contents of `settings.json`. */
+export function settingsState(
+  settings: AgentLocalSettings = { v: 1 },
+  { revision = "none", lastError = null }: { revision?: string; lastError?: string | null } = {},
+): LocalSettingsState {
+  return { settings, effective: effectiveLocalSettings(settings), revision, lastError };
+}
+
+export function agentState(
+  overrides: { problems?: NavProblem[]; settings?: LocalSettingsState } = {},
+): AgentUiState {
   return {
     agent: {
       agentId: "3c1d0b8e-0000-4000-8000-000000000080",
@@ -153,12 +165,7 @@ export function agentState(overrides: { problems?: NavProblem[] } = {}): AgentUi
       unreachableSince: null,
       revoked: false,
     },
-    settings: {
-      settings: { v: 1 },
-      effective: {},
-      revision: "none",
-      lastError: null,
-    },
+    settings: overrides.settings ?? settingsState(),
     update: { selfUpdate: "pm2", update: null, failedVersions: [] },
     claude: null,
     missingRequiredHostTools: [],

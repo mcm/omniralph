@@ -233,6 +233,22 @@ describe("applyLocalSettingsSection", () => {
     expect(base.update).toEqual({ pin: "2.0.3" });
   });
 
+  it("treats a left-out capacity value or kinds list as the default", () => {
+    expect(CapacitySettingsBody.safeParse({ revision: "none" }).success).toBe(true);
+    expect(KindsSettingsBody.safeParse({ revision: "none" }).success).toBe(true);
+    expect(applyLocalSettingsSection(base, "capacity", {})).toEqual({
+      v: 1,
+      hostTools: { gh: "/usr/bin/gh" },
+      update: { pin: "2.0.3" },
+    });
+    expect(
+      applyLocalSettingsSection(base, "capacity", { maxConcurrency: 4, poolLimits: { short: 2 } }),
+    ).toEqual({ ...base, maxConcurrency: 4, poolLimits: { short: 2 } });
+    expect(
+      applyLocalSettingsSection({ ...base, acceptedTaskTypes: ["review"] }, "kinds", {}),
+    ).toEqual(base);
+  });
+
   it("leaves validation to the schema", () => {
     const next = applyLocalSettingsSection(base, "capacity", {
       maxConcurrency: 2,

@@ -102,6 +102,31 @@ body,
   flex: none;
 }
 
+/* A settings card's fields, one under the other (each `Field` lays out its own row). */
+.agent-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* A field's checkboxes. */
+.agent-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+/* A problem with the card as a whole, e.g. an invalid hand edit of settings.json. */
+.agent-alert {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--or-fail-tint);
+  color: var(--or-fail);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 @media (max-width: 768px) {
   .agent-topbar {
     padding: 10px 16px;

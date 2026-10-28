@@ -584,6 +584,8 @@ describe("omniralph-agent CLI", () => {
         ...extra,
       });
       await vi.waitFor(async () => expect((await stat(uiJson())).isFile()).toBe(true));
+      // ui.json is written just before the shutdown handler is registered.
+      await vi.waitFor(() => expect(signal).toBeTypeOf("function"));
       return { exit, stop: () => signal(), server };
     }
 

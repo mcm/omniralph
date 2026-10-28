@@ -9,7 +9,7 @@ import {
   exchangeRefreshToken,
   type FetchFn,
 } from "./api.js";
-import { AttemptHistory, attemptsPath, type AttemptChange } from "./attempts/history.js";
+import { AttemptHistory, attemptsPath } from "./attempts/history.js";
 import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
 import { CapabilityRegistry, defaultCapabilities, type Capability } from "./capabilities/index.js";
 import {
@@ -45,6 +45,7 @@ import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
 import { AgentStorage } from "./storage.js";
 import { UiEventHub } from "./ui/events.js";
+import { publishLocalChanges } from "./ui/publish.js";
 import {
   openInBrowser,
   pingUiLink,
@@ -55,7 +56,8 @@ import {
   uiPageUrl,
   writeUiLink,
 } from "./ui/link.js";
-import { startUiServer, type UiServer } from "./ui/server.js";
+import { startUiServer, type UiRoute, type UiServer } from "./ui/server.js";
+import { settingsRoutes } from "./ui/settings-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
   SelfUpdater,
@@ -512,6 +514,7 @@ async function runAgent(
     hub,
     deps,
     logger,
+    routes: settingsRoutes(settings),
     state: () =>
       agentUiState({
         agent: { agentId: config.agentId, name: hostname(), server: config.server, version },
@@ -554,48 +557,6 @@ async function runAgent(
   return code;
 }
 
-/** Maps what changes locally to the page's live stream. */
-function publishLocalChanges(
-  hub: UiEventHub,
-  sources: {
-    settings: LocalSettingsStore;
-    history: AttemptHistory;
-    claude: ClaudeStatusReporter;
-    storage: AgentStorage;
-    ring?: LogRing;
-  },
-): () => void {
-  const onSettings = () => hub.publish("settings");
-  const onAttempt = (change: AttemptChange) => {
-    if (change.kind === "transcript") {
-      hub.publish("transcript", { ids: [change.id], data: change.events });
-    } else {
-      hub.publish("attempts", { ids: [change.attempt.id] });
-      // A finished repo sync is a repo's last sync.
-      if (change.kind === "finished") hub.publish("repos");
-    }
-  };
-  const onClaude = () => hub.publish("claude");
-  const onStorage = () => {
-    hub.publish("storage");
-    hub.publish("repos");
-  };
-  sources.settings.on("change", onSettings);
-  sources.history.on("change", onAttempt);
-  sources.claude.on("change", onClaude);
-  sources.storage.on("change", onStorage);
-  const unsubscribeLogs = sources.ring?.subscribe((entry) =>
-    hub.publish("logs", { data: [entry] }),
-  );
-  return () => {
-    sources.settings.off("change", onSettings);
-    sources.history.off("change", onAttempt);
-    sources.claude.off("change", onClaude);
-    sources.storage.off("change", onStorage);
-    unsubscribeLogs?.();
-  };
-}
-
 /**
  * Serves the agent page (unless `ui.enabled` is false) and writes `ui.json`
  * for `omniralph-agent ui`. The agent runs on without its page when it can't
@@ -609,6 +570,7 @@ async function startAgentPage(options: {
   deps: MainDeps;
   logger: Logger;
   state: () => Promise<unknown>;
+  routes: readonly UiRoute[];
 }): Promise<{ stop(): Promise<void> } | undefined> {
   const { config, deps, logger } = options;
   if (config.ui?.enabled === false) return undefined;
@@ -622,6 +584,7 @@ async function startAgentPage(options: {
       bundleDir: deps.uiBundleDir,
       state: options.state,
       hub: options.hub,
+      routes: options.routes,
       logger,
     });
   } catch (error) {

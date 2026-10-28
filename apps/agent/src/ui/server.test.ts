@@ -312,7 +312,7 @@ describe("agent page server", () => {
             method: "PUT",
             path: /^\/api\/things\/([^/]+)$/,
             handle: ({ params }) => {
-              throw new UiHttpError(400, `bad ${params[0]}`, ["x: too big"]);
+              throw new UiHttpError(400, `bad ${params[0]}`, [{ path: ["x"], message: "too big" }]);
             },
           },
         ],
@@ -332,7 +332,10 @@ describe("agent page server", () => {
         body: "{}",
       });
       expect(thrown.status).toBe(400);
-      expect(JSON.parse(thrown.body)).toEqual({ error: "bad a b", issues: ["x: too big"] });
+      expect(JSON.parse(thrown.body)).toEqual({
+        error: "bad a b",
+        issues: [{ path: ["x"], message: "too big" }],
+      });
       expect((await send(server, { path: "/api/echo" })).status).toBe(405);
       expect((await send(server, { path: "/api/nowhere" })).status).toBe(404);
     });
