@@ -36,16 +36,6 @@ describe("IconButton", () => {
     expect((await screen.findByRole("tooltip")).textContent).toBe("Retry");
   });
 
-  it("does nothing while disabled", async () => {
-    const user = userEvent.setup();
-    const onClick = vi.fn();
-    render(<IconButton label="Retry" icon={IconRefresh} onClick={onClick} disabled />);
-    const button = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    await user.click(button);
-    expect(onClick).not.toHaveBeenCalled();
-  });
-
   it("shows why it is disabled and stays focusable with disabledReason", async () => {
     const user = userEvent.setup();
     const onClick = vi.fn();

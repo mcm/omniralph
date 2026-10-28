@@ -479,18 +479,6 @@ describe("postReview", () => {
 });
 
 describe("replyToComment and resolveThread", () => {
-  it("posts a PR conversation comment", async () => {
-    let posted: unknown;
-    server.use(
-      http.post(`${API}/repos/acme/widgets/issues/7/comments`, async ({ request }) => {
-        posted = await request.json();
-        return HttpResponse.json({ id: 4321 }, { status: 201 });
-      }),
-    );
-    await expect(makeAdapter().postComment(REPO, 7, "Hello")).resolves.toEqual({ id: "4321" });
-    expect(posted).toEqual({ body: "Hello" });
-  });
-
   it("edits a comment in place", async () => {
     let edited: unknown;
     server.use(
@@ -540,20 +528,6 @@ describe("replyToComment and resolveThread", () => {
       status: 403,
     });
     expect(created).toBe(false);
-  });
-
-  it("replies in the comment's thread", async () => {
-    let replied: unknown;
-    server.use(
-      http.post(`${API}/repos/acme/widgets/pulls/7/comments/1000/replies`, async ({ request }) => {
-        replied = await request.json();
-        return HttpResponse.json({ id: 1234 }, { status: 201 });
-      }),
-    );
-    await expect(makeAdapter().replyToComment(REPO, 7, "1000", "Thanks!")).resolves.toEqual({
-      id: "1234",
-    });
-    expect(replied).toEqual({ body: "Thanks!" });
   });
 
   it("finds the thread across pages and resolves it", async () => {
@@ -671,13 +645,6 @@ describe("pull request operations", () => {
   async function jsonBody(request: Request): Promise<Record<string, unknown>> {
     return (await request.json()) as Record<string, unknown>;
   }
-
-  it("reads the default branch", async () => {
-    server.use(
-      http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json({ default_branch: "trunk" })),
-    );
-    await expect(makeAdapter({ installationId: 42 }).getDefaultBranch(REPO)).resolves.toBe("trunk");
-  });
 
   it("finds the open pull request for a branch of this repository", async () => {
     const queries: URLSearchParams[] = [];

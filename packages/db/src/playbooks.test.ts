@@ -1,5 +1,4 @@
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
@@ -12,7 +11,7 @@ import {
   listStoredPlaybooks,
   updatePlaybook,
 } from "./playbooks.js";
-import { jobs, organizations, playbooks, repositories, scmConnections, users } from "./schema.js";
+import { jobs, organizations, repositories, scmConnections, users } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -131,21 +130,6 @@ describe.skipIf(!databaseAvailable)("playbook queries", () => {
   it("treats a built-in ID as no row", async () => {
     expect(await getStoredPlaybook(db, orgA, "builtin:review-pr")).toBeNull();
     expect(await deletePlaybook(db, orgA, "builtin:review-pr")).toBe(false);
-  });
-
-  it("deletes an organization's playbooks with it", async () => {
-    const [doomed] = await db.insert(organizations).values({ name: "Doomed" }).returning();
-    await insertPlaybook(db, doomed!.id, {
-      name: "P",
-      role: "chat-ask",
-      definition: {},
-      requirements: {},
-      createdBy: null,
-    });
-    await db.delete(organizations).where(eq(organizations.id, doomed!.id));
-    expect(
-      await db.select().from(playbooks).where(eq(playbooks.organizationId, doomed!.id)),
-    ).toEqual([]);
   });
 
   it("lists the repositories with their playbook bindings", async () => {

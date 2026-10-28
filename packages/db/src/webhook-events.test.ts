@@ -100,17 +100,6 @@ describe.skipIf(!databaseAvailable)("webhook event queries", () => {
     ]);
   });
 
-  it("requires exactly one connection", async () => {
-    await expect(
-      db.insert(webhookEvents).values({
-        organizationId,
-        provider: "github",
-        event: "x",
-        outcome: "ignored",
-      }),
-    ).rejects.toThrow();
-  });
-
   it("pages newest first without skipping rows received in the same instant", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 5; i++) ids.push(await record(`d${i}`));

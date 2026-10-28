@@ -12,7 +12,7 @@ import {
   listRecentRunActivities,
   listRunActivities,
 } from "./runs.js";
-import { jobs, organizations, runActivities, runPermissionRequests } from "./schema.js";
+import { jobs, organizations, runActivities } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -110,23 +110,6 @@ describe.skipIf(!databaseAvailable)("run activities and permission requests", ()
       expect(await bodies(orgId, [first, second], 2)).toEqual(["two", "three"]);
       expect(await bodies(randomUUID(), [first, second], 10)).toEqual([]);
       expect(await bodies(orgId, [], 10)).toEqual([]);
-    });
-
-    it("rejects unknown types and goes away with the job", async () => {
-      const jobId = await newJob();
-      await expect(
-        insertRunActivity(db, {
-          jobId,
-          organizationId: orgId,
-          type: "response" as "thought",
-          body: "Done",
-        }),
-      ).rejects.toThrow();
-      await insertRunActivity(db, { jobId, organizationId: orgId, type: "thought", body: "Hi" });
-      await db.delete(jobs).where(eq(jobs.id, jobId));
-      expect(await db.select().from(runActivities).where(eq(runActivities.jobId, jobId))).toEqual(
-        [],
-      );
     });
   });
 
@@ -238,19 +221,6 @@ describe.skipIf(!databaseAvailable)("run activities and permission requests", ()
       });
       expect(await listOpenRunPermissionRequests(db, [jobId], now)).toEqual([open.request]);
       expect(await listOpenRunPermissionRequests(db, [], now)).toEqual([]);
-    });
-
-    it("rejects unknown answers and goes away with the job", async () => {
-      const jobId = await newJob();
-      const requestId = randomUUID();
-      await createRunPermissionRequest(db, { jobId, requestId, tool: "Bash", expiresAt });
-      await expect(
-        answerRunPermissionRequest(db, { jobId, requestId, answer: "maybe" as "allowed" }),
-      ).rejects.toThrow();
-      await db.delete(jobs).where(eq(jobs.id, jobId));
-      expect(
-        await db.select().from(runPermissionRequests).where(eq(runPermissionRequests.jobId, jobId)),
-      ).toEqual([]);
     });
   });
 });

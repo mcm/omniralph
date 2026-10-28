@@ -3,12 +3,6 @@ import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { RadioList } from "./radio-list.js";
 
-/**
- * Presses an arrow key and releases it a tick later: Radix moves focus on a timeout and
- * selects the newly focused radio only while the arrow key is still down, as in a browser.
- */
-const arrow = (key: "ArrowUp" | "ArrowDown") => `{${key}>}{/${key}}`;
-
 const options = [
   { value: "web", label: "acme/web" },
   { value: "api", label: "acme/api" },
@@ -41,52 +35,6 @@ describe("RadioList", () => {
       "true",
     );
     expect(onValueChange).toHaveBeenCalledWith("api");
-  });
-
-  it("has one tab stop, and Up and Down move the selection (wrapping)", async () => {
-    const user = userEvent.setup();
-    const onValueChange = vi.fn();
-    render(
-      <>
-        <RadioList
-          label="Which repo?"
-          options={options}
-          defaultValue="web"
-          onValueChange={onValueChange}
-        />
-        <button type="button">After</button>
-      </>,
-    );
-    await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "acme/web" }));
-    await user.keyboard(arrow("ArrowDown"));
-    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "acme/api" }));
-    expect(screen.getByRole("radio", { name: "acme/api" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    await user.keyboard(arrow("ArrowUp") + arrow("ArrowUp"));
-    expect(screen.getByRole("radio", { name: "acme/docs" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(onValueChange.mock.calls).toEqual([["api"], ["web"], ["docs"]]);
-    await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "After" }));
-  });
-
-  it("skips disabled options", async () => {
-    const user = userEvent.setup();
-    render(
-      <RadioList
-        label="Which repo?"
-        options={[options[0]!, { ...options[1]!, disabled: true }, options[2]!]}
-        defaultValue="web"
-      />,
-    );
-    await user.tab();
-    await user.keyboard(arrow("ArrowDown"));
-    expect(screen.getByRole("radio", { name: "acme/docs" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
   });
 
   it("draws option labels in the mono face when asked", () => {

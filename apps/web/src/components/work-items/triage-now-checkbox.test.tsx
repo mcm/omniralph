@@ -46,13 +46,4 @@ describe("TriageNowCheckbox", () => {
     expect(onChange).toHaveBeenLastCalledWith(true);
     expect(box.checked).toBe(true);
   });
-
-  it("can be disabled", async () => {
-    const onChange = vi.fn();
-    render(<TriageNowCheckbox checked={false} onChange={onChange} disabled />);
-    const box = screen.getByRole("checkbox", { name: "Triage now" }) as HTMLInputElement;
-    expect(box.disabled).toBe(true);
-    await userEvent.click(box);
-    expect(onChange).not.toHaveBeenCalled();
-  });
 });

@@ -37,10 +37,6 @@ const ALLOWED: Allowed[] = [
       "migrations up to this epic's two (0103, 0104) and their snapshots and journal tags are history",
   },
   {
-    paths: ["packages/db/src/migrate.test.ts"],
-    reason: "migration tests insert rows under the old table names and check the rename keeps them",
-  },
-  {
     paths: [/^docs\/adr\/00(0[1-9]|10)-[^/]*\.md$/],
     reason: "ADRs 0001–0009 keep their text as history; ADR 0010 records the rename",
   },

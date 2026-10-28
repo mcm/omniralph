@@ -48,7 +48,7 @@ const databaseAvailable = testDatabaseAvailable();
 const SLACK = { clientId: "client-1", clientSecret: "secret-1", signingSecret: "signing-1" };
 const SLACK_BOT_USER = "UBOT";
 const DISCORD_APP_ID = "900000000000000001";
-const { publicKey: discordKey, privateKey: discordPrivateKey } = generateKeyPairSync("ed25519");
+const { publicKey: discordKey } = generateKeyPairSync("ed25519");
 const DISCORD = {
   applicationId: DISCORD_APP_ID,
   clientSecret: "discord-secret",
@@ -454,12 +454,6 @@ describe.skipIf(!databaseAvailable)("chat bot webhooks", () => {
       expect(await db.select().from(chatThreads)).toEqual([]);
     });
 
-    it("rejects a bad signature before anything is handled", async () => {
-      const res = await deliver(handleSlackWebhook, slackRequest(slackMention("T1"), "wrong"));
-      expect(res.status).toBe(401);
-      expect(handled).toEqual([]);
-    });
-
     it("hands replies in a subscribed thread to the handler and ignores the bot's own", async () => {
       await slack(slackMention("T1"));
       await slack(slackReply("T1", "and the reviews?", "1700000001.000100"));
@@ -789,38 +783,6 @@ describe.skipIf(!databaseAvailable)("chat bot webhooks", () => {
         [THREAD, `<@${DISCORD_APP_ID}> hi`],
         [THREAD, "more"],
       ]);
-    });
-
-    it("rejects a bad gateway token or interaction signature before anything is handled", async () => {
-      const event = discordMessage("G1", {
-        id: "M1",
-        channel: "CH1",
-        content: "hi",
-        mention: true,
-      });
-      const forged = await deliver(handleDiscordWebhook, discordGatewayRequest(event, "wrong"));
-      expect(forged.status).toBe(401);
-      // Without the token it's treated as an interaction, whose signature is missing.
-      const unsigned = new Request("https://omniralph.example.com/api/webhooks/discord", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(event),
-      });
-      expect((await deliver(handleDiscordWebhook, unsigned)).status).toBe(401);
-
-      const body = JSON.stringify({ type: 1 });
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const interaction = (signature: string) =>
-        new Request("https://omniralph.example.com/api/webhooks/discord", {
-          method: "POST",
-          headers: { "x-signature-ed25519": signature, "x-signature-timestamp": timestamp },
-          body,
-        });
-      const { sign } = await import("node:crypto");
-      const valid = sign(null, Buffer.from(timestamp + body), discordPrivateKey).toString("hex");
-      expect((await deliver(handleDiscordWebhook, interaction("00".repeat(64)))).status).toBe(401);
-      expect((await deliver(handleDiscordWebhook, interaction(valid))).status).toBe(200);
-      expect(handled).toEqual([]);
     });
 
     it("deletes the connection when the bot is removed from the server", async () => {

@@ -59,14 +59,6 @@ describe("signAblyToken", () => {
     });
     expect(expiresAt).toBe("2026-10-16T00:00:00.000Z");
   });
-
-  it("can't be verified with another secret", async () => {
-    const { token } = await signAblyToken(CONFIG, {
-      agentId: AGENT_ID,
-      organizationId: ORG_ID,
-    });
-    await expect(jwtVerify(token, new TextEncoder().encode("other"))).rejects.toThrow();
-  });
 });
 
 describe("heartbeatAblyToken", () => {

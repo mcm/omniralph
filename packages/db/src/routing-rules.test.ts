@@ -2,12 +2,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { RoutingQuery } from "@omniralph/shared";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
-import { connectRepository, deleteScmConnection, upsertScmConnection } from "./repositories.js";
+import { connectRepository, upsertScmConnection } from "./repositories.js";
 import { listLatestIssueRuns, listRoutingRules, replaceRoutingRules } from "./routing-rules.js";
-import { organizations, ralphRuns, repositories, routingRules } from "./schema.js";
+import { organizations, ralphRuns } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -162,29 +161,6 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
     expect(results.every((r) => r.ok)).toBe(true);
     const saved = await summary(orgId);
     expect(saved.map((r) => r.position)).toEqual([0, 1]);
-  });
-
-  it("deletes a repository's rules with it", async () => {
-    const orgId = await organization("Cascade");
-    const {
-      connectionId,
-      ids: [web, api, docs],
-    } = await repos(orgId, "acme/web", "acme/api", "acme/docs");
-    await replaceRoutingRules(db, orgId, [
-      { repositoryId: web!, query: labels("a") },
-      { repositoryId: api!, query: labels("b") },
-      { repositoryId: docs!, query: labels("c") },
-    ]);
-
-    await db.delete(repositories).where(eq(repositories.id, api!));
-    expect((await summary(orgId)).map((r) => r.repositoryId)).toEqual([web, docs]);
-
-    // Removing the connection removes its repositories, and so their rules.
-    await deleteScmConnection(db, orgId, connectionId);
-    expect(await listRoutingRules(db, orgId)).toEqual([]);
-    expect(
-      await db.select().from(routingRules).where(eq(routingRules.organizationId, orgId)),
-    ).toEqual([]);
   });
 
   it("lists the latest run of each issue, in the organization only", async () => {

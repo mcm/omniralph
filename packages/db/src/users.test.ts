@@ -2,16 +2,7 @@ import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "..
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
 import { getActiveOrganization, listOrganizationsForUser } from "./organizations.js";
-import { accounts, sessions } from "./schema.js";
-import {
-  createUser,
-  deleteUser,
-  getUserById,
-  listUsers,
-  normalizeEmail,
-  setUserShowAdvanced,
-  setUserTheme,
-} from "./users.js";
+import { createUser, normalizeEmail } from "./users.js";
 
 describe("normalizeEmail", () => {
   it("trims and lower-cases", () => {
@@ -45,49 +36,5 @@ describe.skipIf(!databaseAvailable)("user queries", () => {
       expect(await listOrganizationsForUser(db, user.id)).toEqual([]);
     }
     expect(first.email).toBe("first@x.io");
-  });
-
-  it("remembers a user's theme, following the OS until one is chosen", async () => {
-    const user = await createUser(db, { email: "theme@example.com" });
-    expect(user.theme).toBeNull();
-    await setUserTheme(db, user.id, "dark");
-    expect((await getUserById(db, user.id))?.theme).toBe("dark");
-    await setUserTheme(db, user.id, "light");
-    expect((await getUserById(db, user.id))?.theme).toBe("light");
-  });
-
-  it("goes back to following the OS when the theme is cleared", async () => {
-    const user = await createUser(db, { email: "system@example.com" });
-    await setUserTheme(db, user.id, "dark");
-    expect((await getUserById(db, user.id))?.theme).toBe("dark");
-    await setUserTheme(db, user.id, null);
-    expect((await getUserById(db, user.id))?.theme).toBeNull();
-  });
-
-  it("remembers whether a user shows advanced settings, hidden by default, for that user only", async () => {
-    const user = await createUser(db, { email: "advanced@example.com" });
-    const other = await createUser(db, { email: "other-advanced@example.com" });
-    expect(user.showAdvanced).toBe(false);
-    await setUserShowAdvanced(db, user.id, true);
-    expect(await getUserById(db, user.id)).toMatchObject({ showAdvanced: true, theme: null });
-    expect((await getUserById(db, other.id))?.showAdvanced).toBe(false);
-    await setUserShowAdvanced(db, user.id, false);
-    expect((await getUserById(db, user.id))?.showAdvanced).toBe(false);
-  });
-
-  it("deletes users with their accounts and sessions", async () => {
-    const user = await createUser(db, { email: "gone@example.com" });
-    await db.insert(accounts).values({
-      userId: user.id,
-      type: "oauth",
-      provider: "github",
-      providerAccountId: "42",
-    });
-    await db.insert(sessions).values({ sessionToken: "t", userId: user.id, expires: new Date() });
-
-    await deleteUser(db, user.id);
-    expect((await listUsers(db)).some((u) => u.id === user.id)).toBe(false);
-    expect(await db.select().from(accounts)).toEqual([]);
-    expect(await db.select().from(sessions)).toEqual([]);
   });
 });

@@ -321,19 +321,10 @@ describe("Agent defaults API", () => {
       // Built here so this file doesn't match itself.
       const key = ["agent", "maxConcurrency"].join(".");
       const root = path.resolve(import.meta.dirname, "../../../../../../..");
-      // Old migrations and their test name it, as history.
+      // Old migrations name it, as history.
       const grep = spawnSync(
         "git",
-        [
-          "grep",
-          "-nF",
-          key,
-          "--",
-          "apps",
-          "packages",
-          ":!packages/db/drizzle",
-          ":!**/migrate.test.ts",
-        ],
+        ["grep", "-nF", key, "--", "apps", "packages", ":!packages/db/drizzle"],
         { cwd: root, encoding: "utf8" },
       );
       // `git grep` exits 1 when nothing matches.

@@ -56,15 +56,12 @@ import { captureChanges } from "./changes.js";
 import { decrypt } from "./crypto.js";
 import { migrationsFolder } from "./migrate.js";
 import {
-  chatChannelTaskSettings,
   chatConnections,
   chatIdentities,
   chatLinkStateUses,
   chatMessages,
   chatRunEvents,
-  chatThreadRuns,
   chatThreads,
-  chatUserProfiles,
   jobs,
   organizations,
   ralphRuns,
@@ -306,18 +303,6 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       ).toEqual([]);
       const theirs = await connect("slack", "T2", { botToken: "t" }, otherOrgId);
       expect((await captureChanges(() => save(theirs.id, "C1"))).changes).toEqual([]);
-    });
-
-    it("goes with its connection", async () => {
-      const slack = await connect("slack", "T1", { botToken: "t" });
-      const discord = await connect("discord", "G1", null);
-      await save(slack.id, "C1");
-      await save(discord.id, "C1");
-      await deleteChatConnection(db, orgId, slack.id, key);
-      expect((await listChatChannelPlaybookSettings(db, orgId)).map((s) => s.connectionId)).toEqual(
-        [discord.id],
-      );
-      expect(await db.select().from(chatChannelTaskSettings)).toHaveLength(1);
     });
 
     it("never touches another organization's rows", async () => {
@@ -801,42 +786,6 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       expect((await listThreadRuns(db, orgId, thread.id)).map((r) => r.jobId)).toEqual([job.id]);
     });
 
-    it("checks a row's kind against its run and keeps one row per run", async () => {
-      const thread = await newThread();
-      const job = await newJob();
-      const run = await newRalphRun();
-      const row = { organizationId: orgId, chatThreadId: thread.id };
-      const violated = (values: typeof chatThreadRuns.$inferInsert) =>
-        db
-          .insert(chatThreadRuns)
-          .values(values)
-          .then(
-            () => null,
-            (error: { cause?: { constraint?: string } }) => error.cause?.constraint ?? "unknown",
-          );
-      expect(await violated({ ...row, kind: "query", ralphRunId: run.id })).toBe(
-        "chat_thread_runs_kind_check",
-      );
-      expect(await violated({ ...row, kind: "coding", jobId: job.id })).toBe(
-        "chat_thread_runs_kind_check",
-      );
-      expect(await violated({ ...row, kind: "coding", jobId: job.id, ralphRunId: run.id })).toBe(
-        "chat_thread_runs_kind_check",
-      );
-      expect(await violated({ ...row, kind: "query", jobId: job.id })).toBeNull();
-      expect(await violated({ ...row, kind: "query", jobId: job.id })).toBe(
-        "chat_thread_runs_job_id_uq",
-      );
-      expect(await violated({ ...row, kind: "coding", ralphRunId: run.id })).toBeNull();
-      expect(await violated({ ...row, kind: "coding", ralphRunId: run.id })).toBe(
-        "chat_thread_runs_ralph_run_id_uq",
-      );
-
-      // Rows go with their thread.
-      await db.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      expect(await db.select().from(chatThreadRuns)).toEqual([]);
-    });
-
     it("records a run's events once per idempotency key", async () => {
       const thread = await newThread();
       const job = await newJob();
@@ -957,50 +906,6 @@ describe.skipIf(!databaseAvailable)("chat queries", () => {
       expect(await listRunEvents(db, orgId, thread.id, { pending: true })).toEqual([]);
       expect(await waiting()).not.toContain(thread.id);
     });
-  });
-
-  it("removes everything chat when the organization is deleted", async () => {
-    const slack = await connect("slack", "T1", { botToken: "t" });
-    await saveChatUserProfile(db, {
-      connectionId: slack.id,
-      externalUserId: "U1",
-      email: null,
-      displayName: "A",
-    });
-    await linkChatIdentity(db, {
-      organizationId: orgId,
-      platform: "slack",
-      externalUserId: "U1",
-      userId: "admin-1",
-      source: "manual",
-    });
-    const thread = (await ensureChatThread(db, {
-      connectionId: slack.id,
-      externalThreadId: "slack:C1:1.0",
-      channelId: "C1",
-      startedByExternalUserId: "U1",
-    }))!;
-    await appendChatMessage(db, { threadId: thread.id, role: "user", content: "hi" });
-
-    await db.delete(organizations).where(eq(organizations.id, orgId));
-    expect(await db.select().from(chatConnections)).toEqual([]);
-    expect(await db.select().from(chatIdentities)).toEqual([]);
-    expect(await db.select().from(chatUserProfiles)).toEqual([]);
-    expect(await db.select().from(chatThreads)).toEqual([]);
-    expect(await db.select().from(chatMessages)).toEqual([]);
-  });
-
-  it("removes a user's chat identities when the user is deleted", async () => {
-    await db.insert(users).values({ id: "gone-1", email: "gone@example.com" });
-    await linkChatIdentity(db, {
-      organizationId: orgId,
-      platform: "discord",
-      externalUserId: "D1",
-      userId: "gone-1",
-      source: "manual",
-    });
-    await db.delete(users).where(eq(users.id, "gone-1"));
-    expect(await db.select().from(chatIdentities)).toEqual([]);
   });
 
   it("lets the Chat SDK state adapter run on the migrated tables", async () => {

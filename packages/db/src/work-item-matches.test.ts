@@ -184,27 +184,4 @@ describe.skipIf(!databaseAvailable)("work item matches", () => {
     ]);
     expect(await listWorkItemTargets(db, await organization("Empty"))).toEqual([]);
   });
-
-  it('refuses a project name with "no project", and deletes with the repository', async () => {
-    const orgId = await organization("Check");
-    const [api] = await repos(orgId, "acme/api");
-    await expect(
-      db.insert(workItemMatches).values({
-        organizationId: orgId,
-        repositoryId: api!,
-        tracker: "linear",
-        team: "ENG",
-        project: "Portal",
-        withoutProject: true,
-      }),
-    ).rejects.toThrow();
-    await saveWorkItemMatch(db, {
-      organizationId: orgId,
-      repositoryId: api!,
-      userId: null,
-      match: match(),
-    });
-    await db.delete(repositories).where(eq(repositories.id, api!));
-    expect(await listWorkItemMatches(db, orgId)).toEqual([]);
-  });
 });

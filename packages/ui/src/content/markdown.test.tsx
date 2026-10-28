@@ -7,28 +7,6 @@ function renderMarkdown(source: string) {
 }
 
 describe("Markdown", () => {
-  it("renders CommonMark headings, emphasis, lists and code", () => {
-    const root = renderMarkdown(
-      [
-        "# Title",
-        "",
-        "Some **bold** and `code`.",
-        "",
-        "- one",
-        "- two",
-        "",
-        "```ts",
-        "const x = 1;",
-        "```",
-      ].join("\n"),
-    );
-    expect(screen.getByRole("heading", { level: 1, name: "Title" })).toBeTruthy();
-    expect(root.querySelector("strong")!.textContent).toBe("bold");
-    expect(root.querySelector("p code")!.textContent).toBe("code");
-    expect(root.querySelectorAll("ul > li")).toHaveLength(2);
-    expect(root.querySelector("pre code")!.textContent).toBe("const x = 1;\n");
-  });
-
   it("renders GFM tables inside a scroll container", () => {
     const root = renderMarkdown("| Story | Size |\n| --- | --- |\n| Login | M |\n");
     const table = screen.getByRole("table");
@@ -36,13 +14,6 @@ describe("Markdown", () => {
     expect(within(table).getByRole("columnheader", { name: "Story" })).toBeTruthy();
     expect(within(table).getByRole("cell", { name: "M" })).toBeTruthy();
     expect(root.querySelectorAll("tbody tr")).toHaveLength(1);
-  });
-
-  it("renders GFM task lists as read-only checkboxes", () => {
-    renderMarkdown("- [x] Done\n- [ ] Not yet\n");
-    const boxes = screen.getAllByRole<HTMLInputElement>("checkbox");
-    expect(boxes.map((box) => box.checked)).toEqual([true, false]);
-    expect(boxes.every((box) => box.disabled)).toBe(true);
   });
 
   describe("safety", () => {

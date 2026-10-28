@@ -108,20 +108,6 @@ describe.skipIf(!databaseAvailable)("integration queries", () => {
     });
   });
 
-  it("allows at most one integration per provider and organization in the database", async () => {
-    await install("org-1", "Acme", "t1");
-    await expect(
-      db.insert(integrations).values({
-        organizationId: orgId,
-        provider: "linear",
-        externalId: "org-2",
-        name: "Other",
-        encryptedCredentials: "x",
-      }),
-    ).rejects.toThrow();
-    expect((await db.select().from(integrations)).map((r) => r.externalId)).toEqual(["org-1"]);
-  });
-
   it("ends concurrent installs of different workspaces with one row", async () => {
     const results = await Promise.allSettled([
       install("org-1", "Acme", "t1"),

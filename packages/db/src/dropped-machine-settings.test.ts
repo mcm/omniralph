@@ -36,9 +36,8 @@ function grep(args: string[], exclude: string[] = []): string {
       "--",
       "apps",
       "packages",
-      // Migrations and their test name them, as history.
+      // Migrations name them, as history.
       ":!packages/db/drizzle",
-      ":!**/migrate.test.ts",
       ...exclude.map((path) => `:!${path}`),
     ],
     { cwd: root, encoding: "utf8" },

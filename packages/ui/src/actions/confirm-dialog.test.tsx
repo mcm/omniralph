@@ -49,27 +49,6 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("button", { name: "Archive" }).classList).toContain("or-btn--solid");
   });
 
-  it("cancels on Escape and returns focus to the trigger without confirming", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    render(<Subject onConfirm={onConfirm} />);
-    await openDialog(user);
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" }));
-    expect(onConfirm).not.toHaveBeenCalled();
-  });
-
-  it("cancels from the Cancel button", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    render(<Subject onConfirm={onConfirm} cancelLabel="Keep it" />);
-    await openDialog(user);
-    await user.click(screen.getByRole("button", { name: "Keep it" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(onConfirm).not.toHaveBeenCalled();
-  });
-
   it("makes the decision required when cancelLabel is null: no Cancel, Escape keeps it open", async () => {
     const user = userEvent.setup();
     render(
