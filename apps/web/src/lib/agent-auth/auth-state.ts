@@ -12,8 +12,11 @@ import "@/lib/hot-state/rebuilders";
 export type AgentAuthState = Awaited<ReturnType<typeof getAgentAuthState>>;
 
 const KEY_PREFIX = "agent-auth:";
-/** How long a state read from Postgres stays cached. */
-export const AGENT_AUTH_TTL_SECONDS = 3600;
+/**
+ * How long a state read from Postgres stays cached: a day, so an idle agent's requests
+ * reach Postgres at most once a day. Revocation overwrites it (`cacheAgentRevoked`).
+ */
+export const AGENT_AUTH_TTL_SECONDS = 24 * 3600;
 
 export function agentAuthKey(agentId: string): string {
   return `${KEY_PREFIX}${agentId}`;
@@ -24,8 +27,8 @@ function isCachedState(value: string | null): value is "active" | "revoked" {
 }
 
 /**
- * The agent's auth state: from Redis, or on a miss from Postgres (then cached for an
- * hour). `unknown` isn't cached: our tokens are only issued to existing agents.
+ * The agent's auth state: from Redis, or on a miss from Postgres (then cached for a
+ * day). `unknown` isn't cached: our tokens are only issued to existing agents.
  */
 export async function readAgentAuthState(db: Database, agentId: string): Promise<AgentAuthState> {
   return readHotState(

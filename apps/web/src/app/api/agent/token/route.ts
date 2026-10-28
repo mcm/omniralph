@@ -1,5 +1,10 @@
 import { findRefreshTokenAgent, rotateRefreshToken, writeAgentAudit } from "@omniralph/db";
-import { AGENT_TOKEN_TTL_SECONDS, TokenRequest, type TokenResponse } from "@omniralph/shared";
+import {
+  AGENT_ACCESS_TOKEN_TTL_SECONDS,
+  TokenRequest,
+  type TokenResponse,
+} from "@omniralph/shared";
+import { decodeJwt } from "jose";
 import {
   authFailure,
   badRequest,
@@ -19,7 +24,23 @@ import {
 import { liveRoute } from "@/lib/live/request";
 
 /**
- * Exchanges a refresh token for a 15-minute access token and rotates it.
+ * The access token's lifetime as signed (`exp - iat`), so the agent refreshes in time
+ * even if KMS signed it for less than asked; `AGENT_ACCESS_TOKEN_TTL_SECONDS` otherwise.
+ */
+function accessTokenLifetime(token: string): number {
+  try {
+    const { exp, iat } = decodeJwt(token);
+    if (typeof exp === "number" && typeof iat === "number" && exp > iat) {
+      return Math.min(exp - iat, AGENT_ACCESS_TOKEN_TTL_SECONDS);
+    }
+  } catch {
+    // Not a JWT we can read: what was asked for.
+  }
+  return AGENT_ACCESS_TOKEN_TTL_SECONDS;
+}
+
+/**
+ * Exchanges a refresh token for a one-day access token and rotates it.
  * Presenting an already-used refresh token revokes its family and the agent.
  */
 async function post(req: Request): Promise<Response> {
@@ -72,7 +93,7 @@ async function post(req: Request): Promise<Response> {
       });
       return Response.json({
         accessToken,
-        expiresIn: AGENT_TOKEN_TTL_SECONDS,
+        expiresIn: accessTokenLifetime(accessToken),
         refreshToken: rotation.refreshToken,
       } satisfies TokenResponse);
     }

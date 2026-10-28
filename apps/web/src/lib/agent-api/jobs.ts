@@ -1,6 +1,6 @@
 import "server-only";
 import {
-  AGENT_TOKEN_TTL_SECONDS,
+  JOB_TOKEN_TTL_SECONDS,
   WORKTREE_CLEANUP_JOB_TYPE,
   type JobTaskType,
   type JobToken,
@@ -107,7 +107,7 @@ export async function signJobTokens(
       jobToken: {
         jobId: job.id,
         token,
-        expiresIn: AGENT_TOKEN_TTL_SECONDS,
+        expiresIn: JOB_TOKEN_TTL_SECONDS,
         kind: kind ?? "legacy",
       },
     };
@@ -119,7 +119,7 @@ export async function signJobTokens(
       scopes: runTokenScopes(kind, job.taskType),
       kind,
     });
-    return { jobId: job.id, token, expiresIn: AGENT_TOKEN_TTL_SECONDS, kind };
+    return { jobId: job.id, token, expiresIn: JOB_TOKEN_TTL_SECONDS, kind };
   };
   const [jobToken, sessionToken] = await Promise.all([sign("lifecycle"), sign("session")]);
   return { jobToken, sessionToken };

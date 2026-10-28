@@ -1324,7 +1324,7 @@ export const agentEnrollments = pgTable("agent_enrollments", {
 });
 
 /**
- * Opaque refresh tokens an agent exchanges for 15-minute access JWTs. Every refresh marks the
+ * Opaque refresh tokens an agent exchanges for one-day access JWTs. Every refresh marks the
  * presented token used and issues a new one in the same family; presenting a used token again
  * revokes the family and the agent (theft detection).
  */

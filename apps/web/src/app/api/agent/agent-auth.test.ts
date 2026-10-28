@@ -16,7 +16,8 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { eq } from "drizzle-orm";
-import { SignJWT } from "jose";
+import { AGENT_ACCESS_TOKEN_TTL_SECONDS } from "@omniralph/shared";
+import { decodeJwt, SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -202,7 +203,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
   });
 
   describe("POST /api/agent/token", () => {
-    it("rotates the refresh token and returns a 15-minute access token", async () => {
+    it("rotates the refresh token and returns a one-day access token", async () => {
       const { agentId, refreshToken } = await enrollNew();
       const ip = newIp();
       const res = await refresh(refreshToken, ip);
@@ -212,7 +213,9 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         expiresIn: number;
         refreshToken: string;
       };
-      expect(body.expiresIn).toBe(900);
+      expect(body.expiresIn).toBe(86_400);
+      const { exp, iat } = decodeJwt(body.accessToken);
+      expect(exp! - iat!).toBe(86_400);
       expect(body.refreshToken).not.toBe(refreshToken);
 
       const principal = await requireAgent(authed(body.accessToken, ip));
@@ -289,7 +292,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       const past = new LocalTokenSigner({
         privateKey: SIGNING_KEY,
         env: {},
-        now: () => Date.now() - 901_000,
+        now: () => Date.now() - (AGENT_ACCESS_TOKEN_TTL_SECONDS + 1) * 1000,
       });
       const res = await requireAgent(authed(await past.signAccessToken(agentId), newIp()));
       expect(res).toBeInstanceOf(Response);
@@ -546,7 +549,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       const past = new LocalTokenSigner({
         privateKey: SIGNING_KEY,
         env: {},
-        now: () => Date.now() - 901_000,
+        now: () => Date.now() - (AGENT_ACCESS_TOKEN_TTL_SECONDS + 1) * 1000,
       });
       const expired = await past.signAccessToken(agentId);
       for (let i = 0; i < 30; i++) {

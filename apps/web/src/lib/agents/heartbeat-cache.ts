@@ -21,7 +21,11 @@ import { latestAgentVersion, NpmRegistryError } from "./npm";
  * (`bumpAgentHeartbeat`, `bumpOrganizationHeartbeat`), so the next heartbeat that
  * finds both counters, the epoch and its own report unchanged gets the cached response
  * without a Postgres query. The epoch check covers a bump that failed (`writeHotState`
- * then deletes the epoch); the TTL bounds anything else that slips through.
+ * then deletes the epoch); `CACHED_RESPONSE_TTL_MS` bounds anything else that slips
+ * through, such as a write that forgot to bump. A cached response that reaches that bound
+ * with its counters unchanged is checked for drift: the heartbeat builds the response
+ * from Postgres anyway, and `checkHeartbeatDrift` logs the cached fields that differ (a
+ * missed bump) before the fresh one is stored.
  *
  * An organization that tracks npm's `latest` also needs it unchanged: it's read from
  * `agent-latest-version:{org}` (refreshed from npm, not Postgres, once it's older
@@ -33,7 +37,12 @@ const AGENT_CHANGES_PREFIX = "heartbeat-changes:agent:";
 const ORGANIZATION_CHANGES_PREFIX = "heartbeat-changes:org:";
 const LATEST_PREFIX = "agent-latest-version:";
 /** How long a cached response is used at most, whatever the counters say. */
-export const CACHED_RESPONSE_TTL_MS = 3600_000;
+export const CACHED_RESPONSE_TTL_MS = 24 * 3600_000;
+/**
+ * How long Redis keeps a cached response: past `CACHED_RESPONSE_TTL_MS`, so the heartbeat
+ * that finds it due still has it to compare with the fresh one.
+ */
+export const CACHED_RESPONSE_KEEP_MS = 2 * CACHED_RESPONSE_TTL_MS;
 /** Counters outlive any response cached with them; one created afresh starts at a random value. */
 const CHANGES_TTL_MS = 30 * 24 * 3600_000;
 const LATEST_TTL_MS = 24 * 3600_000;
@@ -55,6 +64,20 @@ interface CacheEntry {
   /** The `latest` the response's `desiredVersion` came from; absent when it didn't. */
   latestVersion?: string | null;
   response: CachedHeartbeatResponse;
+  /** When it was stored (ms); absent in entries stored before it was recorded. */
+  builtAt?: number;
+}
+
+/** A cached response whose counters, epoch and report are unchanged. */
+export interface CachedHeartbeat {
+  response: CachedHeartbeatResponse;
+  /** The `latest` its `desiredVersion` came from; absent when it didn't. */
+  latestVersion?: string | null;
+  /**
+   * It reached `CACHED_RESPONSE_TTL_MS`: don't use it, build the response from Postgres
+   * and `checkHeartbeatDrift` against it.
+   */
+  due: boolean;
 }
 
 export function heartbeatResponseKey(agentId: string): string {
@@ -133,13 +156,15 @@ export async function readHeartbeatChanges(
 /** Caches a heartbeat's response (see the module comment). Never throws. */
 export async function storeHeartbeatResponse(
   agentId: string,
-  entry: CacheEntry,
+  entry: Omit<CacheEntry, "builtAt">,
   latest?: { organizationId: string; version: string | null; checkedAt: Date },
+  now: Date = new Date(),
 ): Promise<void> {
   try {
+    const stored: CacheEntry = { ...entry, builtAt: now.getTime() };
     const multi = getRedis()
       .multi()
-      .set(heartbeatResponseKey(agentId), JSON.stringify(entry), "PX", CACHED_RESPONSE_TTL_MS);
+      .set(heartbeatResponseKey(agentId), JSON.stringify(stored), "PX", CACHED_RESPONSE_KEEP_MS);
     if (latest) {
       multi.set(
         latestVersionKey(latest.organizationId),
@@ -163,14 +188,15 @@ export interface CachedHeartbeatOptions {
 
 /**
  * The cached response for a heartbeat with no running jobs or acknowledgements, when
- * nothing it was built from changed; records the heartbeat's last-seen either way. Null
- * means the caller takes the Postgres path. Makes no Postgres query.
+ * nothing it was built from changed; records the heartbeat's last-seen either way. Null,
+ * or `due` (it reached `CACHED_RESPONSE_TTL_MS`), means the caller takes the Postgres
+ * path. Makes no Postgres query.
  */
 export async function cachedHeartbeatResponse(
   agentId: string,
   report: HeartbeatReport,
   options: CachedHeartbeatOptions = {},
-): Promise<CachedHeartbeatResponse | null> {
+): Promise<CachedHeartbeat | null> {
   if (!hotStateEnabled()) return null;
   const now = options.now ?? new Date();
   try {
@@ -198,7 +224,13 @@ export async function cachedHeartbeatResponse(
       const latest = await currentLatestVersion(organizationId, now, options);
       if (latest === undefined || latest !== entry.latestVersion) return null;
     }
-    return entry.response;
+    const due =
+      entry.builtAt === undefined || now.getTime() - entry.builtAt >= CACHED_RESPONSE_TTL_MS;
+    return {
+      response: entry.response,
+      ...(entry.latestVersion !== undefined && { latestVersion: entry.latestVersion }),
+      due,
+    };
   } catch (error) {
     console.warn("hot-state: reading the cached heartbeat failed", error);
     return null;
@@ -235,4 +267,53 @@ async function currentLatestVersion(
   }
   await redis.set(key, JSON.stringify({ version, checkedAt: now.getTime() }), "PX", LATEST_TTL_MS);
   return version;
+}
+
+/** JSON with object keys sorted, so equal values compare equal whatever their key order. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)),
+        )
+      : v,
+  );
+}
+
+/**
+ * Compares a cached response that reached `CACHED_RESPONSE_TTL_MS` with its counters and
+ * epoch unchanged against the one just built from Postgres. A field that differs means a
+ * write changed the response without bumping a counter: logs an error naming the agent,
+ * the organization and the fields (not their values). `desiredVersion` and
+ * `versionPolicy` are left out when the organization tracks npm's `latest`
+ * (`latestVersion` given) and it isn't the one the cached response came from: `latest`
+ * changes without a bump. Returns the fields that differ.
+ */
+export function checkHeartbeatDrift(input: {
+  agentId: string;
+  organizationId: string;
+  cached: CachedHeartbeat;
+  fresh: CachedHeartbeatResponse;
+  /** The `latest` the fresh `desiredVersion` came from; undefined when it didn't. */
+  latestVersion?: string | null;
+}): string[] {
+  const { cached, fresh } = input;
+  const skip = new Set<string>();
+  if (input.latestVersion !== undefined && input.latestVersion !== cached.latestVersion) {
+    skip.add("desiredVersion").add("versionPolicy");
+  }
+  const cachedFields = cached.response as Record<string, unknown>;
+  const freshFields = fresh as Record<string, unknown>;
+  const fields = [...new Set([...Object.keys(cachedFields), ...Object.keys(freshFields)])]
+    .filter((field) => !skip.has(field))
+    .filter((field) => canonicalJson(cachedFields[field]) !== canonicalJson(freshFields[field]))
+    .sort();
+  if (fields.length > 0) {
+    console.error(
+      `heartbeat cache drift: agent ${input.agentId} (organization ${input.organizationId}) ` +
+        `was served a cached response whose ${fields.join(", ")} changed without a bump`,
+      { agentId: input.agentId, organizationId: input.organizationId, fields },
+    );
+  }
+  return fields;
 }
