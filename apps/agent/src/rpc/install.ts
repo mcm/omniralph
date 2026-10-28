@@ -1,99 +1,35 @@
-import {
-  INSTALL_JOB_TYPE,
-  InstallPayload,
-  installableAllowed,
-  type InstallResult,
-} from "@omniralph/shared";
-import {
-  ensureInstallablesPrefix,
-  readInstalledPackage,
-  type InstallableInstaller,
-} from "../installables.js";
+import { INSTALL_JOB_TYPE, InstallPayload } from "@omniralph/shared";
+import type { PackageManager } from "../packages/manager.js";
 import type { SystemRpc } from "./index.js";
 
 export interface InstallRpcOptions {
-  /**
-   * The installables allow-list in force (`settings.json`'s `installables.allow`),
-   * read for each install.
-   */
-  allowList: () => readonly string[];
-  /** The installables npm prefix (`installablesPrefix(dataDir)`). */
-  prefix: string;
-  installer: InstallableInstaller;
+  /** The agent's package manager, shared with the agent page (one queue, one history). */
+  packages: PackageManager;
 }
 
 /**
- * `install` (targeted at one agent by an admin) installs or updates an
- * installable in the agent's installables prefix. It is remote code
- * execution on the host, so the allow-list in force is checked here,
- * before npm runs, whatever the control panel allowed. A package without a
- * valid `omniralph` manifest is removed again (or the version installed
- * before is restored) and the job fails. Installs run one at a time.
+ * `install` (targeted at one agent by an admin from Fleet) installs or
+ * updates an installable through the agent's `PackageManager`: the local
+ * allow-list in force is checked before npm runs, whatever the control panel
+ * allowed; an invalid manifest is rolled back; installs run one at a time
+ * with the page's; each is recorded in the install history as `fleet`.
  */
-export function installRpc(options: InstallRpcOptions): SystemRpc {
-  let queue: Promise<unknown> = Promise.resolve();
+export function installRpc({ packages }: InstallRpcOptions): SystemRpc {
   return {
     name: INSTALL_JOB_TYPE,
     run(job, ctx) {
       const payload = InstallPayload.safeParse(job.payload);
       if (!payload.success) return Promise.reject(new Error("invalid install payload"));
-      const { name, version = "latest" } = payload.data;
-      if (!installableAllowed(options.allowList(), name)) {
-        ctx.logger.warn({ installable: name }, "refused to install a package not allowed here");
-        return Promise.reject(
-          new Error(
-            `${name} isn't allowed on this agent (its allow-list in settings.json doesn't match it)`,
-          ),
-        );
+      try {
+        return packages.install({
+          ...payload.data,
+          from: "fleet",
+          signal: ctx.signal,
+          logger: ctx.logger,
+        }).done;
+      } catch (error) {
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
-      const run = queue.then(() => install(name, version, options, ctx));
-      queue = run.catch(() => undefined);
-      return run;
     },
   };
-}
-
-async function install(
-  name: string,
-  version: string,
-  { prefix, installer }: InstallRpcOptions,
-  ctx: Parameters<SystemRpc["run"]>[1],
-): Promise<InstallResult> {
-  ctx.signal.throwIfAborted();
-  const log = ctx.logger.child({ installable: name });
-  await ensureInstallablesPrefix(prefix);
-  const before = await readInstalledPackage(prefix, name);
-  const previous = before?.ok ? before.installable.version : null;
-
-  log.info({ version, previous }, "installing an installable");
-  await installer.install(name, version, prefix, { signal: ctx.signal });
-
-  const after = await readInstalledPackage(prefix, name);
-  if (after?.ok && after.installable.name === name) {
-    const installed = after.installable.version;
-    log.info({ version: installed, previous }, "installed an installable");
-    const { manifest } = after.installable;
-    return {
-      name,
-      version: installed,
-      changed: installed !== previous,
-      commands: manifest.commands.map((command) => command.name),
-      mcpServers: manifest.mcpServers.map((server) => server.name),
-      skills: manifest.skills.length,
-    };
-  }
-
-  const problem = !after
-    ? "npm didn't install it"
-    : after.ok
-      ? `its package.json names ${after.installable.name}`
-      : after.error.message;
-  log.warn({ version, problem }, "not an installable; removing it again");
-  try {
-    if (previous) await installer.install(name, previous, prefix, { signal: ctx.signal });
-    else await installer.uninstall(name, prefix, { signal: ctx.signal });
-  } catch (error) {
-    log.error({ err: error }, "removing the invalid package failed");
-  }
-  throw new Error(`${name}@${version} isn't a valid installable: ${problem}`.slice(0, 4000));
 }

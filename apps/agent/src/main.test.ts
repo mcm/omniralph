@@ -625,6 +625,84 @@ describe("omniralph-agent CLI", () => {
       await expect(fetch(`${link.url}/api/ping`, { headers })).rejects.toThrow();
     });
 
+    it("installs and removes a package from the page, reporting it in a heartbeat at once", async () => {
+      await writeConfig(configPath, config);
+      const prefix = path.join(dir, ".omniralph", "installables");
+      const dependencies = async (deps: Record<string, string>) =>
+        writeFile(
+          path.join(prefix, "package.json"),
+          JSON.stringify({ name: "omniralph-installables", private: true, dependencies: deps }),
+        );
+      // An npm that "installs" a valid installable.
+      const installableInstaller: MainDeps["installableInstaller"] = {
+        install: async (name, version) => {
+          const pkgDir = path.join(prefix, "node_modules", ...name.split("/"));
+          await mkdir(pkgDir, { recursive: true });
+          const installed = version === "latest" ? "1.0.0" : version;
+          await writeFile(
+            path.join(pkgDir, "package.json"),
+            JSON.stringify({ name, version: installed, omniralph: {} }),
+          );
+          await dependencies({ [name]: installed });
+          return `added ${name}@${installed}`;
+        },
+        uninstall: async (name) => {
+          await rm(path.join(prefix, "node_modules", ...name.split("/")), { recursive: true });
+          await dependencies({});
+          return `removed ${name}`;
+        },
+      };
+      const agent = await startAgent({ installableInstaller });
+      const link = JSON.parse(await readFile(uiJson(), "utf8"));
+      const headers = {
+        cookie: `omniralph_agent_${link.port}=${link.token}`,
+        origin: link.url,
+        "content-type": "application/json",
+      };
+      const reported = () =>
+        agent.server.calls
+          .filter((call) => call.path === "/api/agent/heartbeat")
+          .map((call) => (call.body as { installables: unknown }).installables);
+      // The first heartbeat went out before anything was installed.
+      await vi.waitFor(() => expect(reported()).toEqual([[]]));
+
+      const reply = await fetch(`${link.url}/api/packages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: "@omniralph/hello" }),
+      });
+      expect(reply.status).toBe(202);
+      const queued = (await reply.json()) as { id: string };
+      // Long before the 5 s interval: the install heartbeats at once.
+      await vi.waitFor(() =>
+        expect(reported().at(-1)).toEqual([{ name: "@omniralph/hello", version: "1.0.0" }]),
+      );
+      const entry = await (
+        await fetch(`${link.url}/api/packages/history/${queued.id}`, { headers })
+      ).json();
+      expect(entry).toMatchObject({
+        from: "local",
+        outcome: "installed",
+        output: "added @omniralph/hello@1.0.0",
+      });
+
+      const removal = await fetch(`${link.url}/api/packages/%40omniralph%2Fhello`, {
+        method: "DELETE",
+        headers,
+        body: "{}",
+      });
+      expect(removal.status).toBe(202);
+      await vi.waitFor(() => expect(reported().at(-1)).toEqual([]));
+
+      agent.stop();
+      expect(await agent.exit).toBe(0);
+      // The history survives the restart.
+      const saved = JSON.parse(
+        await readFile(path.join(dir, ".omniralph", "state", "installs.json"), "utf8"),
+      ) as { installs: { outcome: string }[] };
+      expect(saved.installs.map((install) => install.outcome)).toEqual(["removed", "installed"]);
+    });
+
     it("serves on ui.port and makes a new token at every start", async () => {
       const free = await new Promise<number>((resolve) => {
         const probe = createServer();

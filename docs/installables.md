@@ -168,10 +168,14 @@ heartbeat (`name@version`) and its installs in progress or failed, with the erro
 new installable shows up with the next heartbeat after the install, and the agent can claim
 runs that require it from then on.
 
+On the machine, the agent's own page ([Packages](deploy-agent.md#the-agent-page)) installs,
+updates and removes installables through the same queue and checks, edits the allow-list, and
+shows every install's npm output, Fleet's included.
+
 Installables live in `<dataDir>/installables` (`~/.omniralph/installables` by default), an npm
 prefix of their own, never `npm -g`: they can't collide with the agent package or depend on
-whatever is installed globally. There's no uninstall RPC. To remove one, stop the agent and run
-`npm uninstall --prefix ~/.omniralph/installables -- <name>` as its user.
+whatever is installed globally. There's no uninstall RPC: remove one with **Remove…** on the
+agent's page, which runs `npm uninstall` in that prefix.
 
 ## Host tools
 
@@ -235,8 +239,9 @@ and `acceptedTaskTypes` are in its `settings.json` (`~/.omniralph/settings.json`
 in its `agent.json` (`~/.config/omniralph/agent.json`; see
 [deploy-agent.md](deploy-agent.md#4-enroll)).
 
-- **`installables.allow`** (default `["@omniralph/*"]`): the package names the `install` RPC may
-  install. Installing is remote code execution on the host by any admin of the organization, so
+- **`installables.allow`** (default `["@omniralph/*"]`, edited on the agent's page under
+  **Packages › Allow-list** or by hand): the package names the `install` RPC and the agent's page
+  may install. Installing is remote code execution on the host by any admin of the organization, so
   only allow scopes you trust. A pattern is an exact name or contains `*`, which matches anything
   but `/`: `@omniralph/*` matches `@omniralph/code-graph`, not `@omniralph-evil/x`. `[]` refuses
   every install. A refused install fails its job with "_name_ isn't allowed on this agent".

@@ -15,7 +15,22 @@ import {
 import { silentLogger } from "../logger.js";
 import { LocalSettingsStore } from "../settings.js";
 import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./index.js";
+import { InstallHistory } from "../packages/history.js";
+import { PackageManager, type PackageManagerOptions } from "../packages/manager.js";
 import { installRpc } from "./install.js";
+
+function manager(options: Omit<PackageManagerOptions, "history" | "logger">): PackageManager {
+  return new PackageManager({
+    ...options,
+    history: new InstallHistory({ logger: silentLogger() }),
+    logger: silentLogger(),
+  });
+}
+
+/** The `install` RPC over its own package manager. */
+function rpcWith(options: Omit<PackageManagerOptions, "history" | "logger">) {
+  return installRpc({ packages: manager(options) });
+}
 
 /** Saves the allow-list, as the agent page does. */
 async function saved(store: LocalSettingsStore, allow: string[]) {
@@ -99,7 +114,7 @@ describe("install", () => {
     const installer = fakeInstaller({});
     expect(new SystemRpcRegistry(defaultSystemRpcs()).get("install")).toBeUndefined();
     const registry = new SystemRpcRegistry(
-      defaultSystemRpcs({ allowList: DEFAULT_ALLOW, prefix, installer }),
+      defaultSystemRpcs({ packages: manager({ allowList: DEFAULT_ALLOW, prefix, installer }) }),
     );
     expect(registry.names()).toEqual(["repo.sync", "worktree.exec", "worktree.cleanup", "install"]);
   });
@@ -113,7 +128,7 @@ describe("install", () => {
       },
       "@omniralph/hello@1.1.0": { name: "@omniralph/hello", version: "1.1.0", omniralph: manifest },
     });
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
 
     expect(await rpc.run(installJob({ name: "@omniralph/hello" }), context())).toEqual({
       name: "@omniralph/hello",
@@ -144,7 +159,7 @@ describe("install", () => {
     const installer = fakeInstaller({
       "evil@latest": { name: "evil", version: "1.0.0", omniralph: manifest },
     });
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     await expect(rpc.run(installJob({ name: "evil" }), context())).rejects.toThrow(
       /evil isn't allowed on this agent/,
     );
@@ -153,7 +168,7 @@ describe("install", () => {
     );
 
     // An empty allowlist allows nothing, not even @omniralph packages.
-    const none = installRpc({ allowList: () => [], prefix, installer });
+    const none = rpcWith({ allowList: () => [], prefix, installer });
     await expect(none.run(installJob({ name: "@omniralph/hello" }), context())).rejects.toThrow(
       /isn't allowed/,
     );
@@ -164,7 +179,7 @@ describe("install", () => {
     const installer = fakeInstaller({
       "@acme/graph@2.0.0": { name: "@acme/graph", version: "2.0.0", omniralph: manifest },
     });
-    const rpc = installRpc({ allowList: () => ["@acme/*"], prefix, installer });
+    const rpc = rpcWith({ allowList: () => ["@acme/*"], prefix, installer });
     expect(
       await rpc.run(installJob({ name: "@acme/graph", version: "2.0.0" }), context()),
     ).toMatchObject({ name: "@acme/graph", version: "2.0.0" });
@@ -181,7 +196,7 @@ describe("install", () => {
       file: path.join(prefix, "..", "settings.json"),
       logger: silentLogger(),
     });
-    const rpc = installRpc({
+    const rpc = rpcWith({
       allowList: () => store.effective().installablesAllow,
       prefix,
       installer,
@@ -207,7 +222,7 @@ describe("install", () => {
 
   it("rejects an invalid payload without running npm", async () => {
     const installer = fakeInstaller({});
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     for (const payload of [
       {},
       { name: "@omniralph/x", version: "npm:evil@1.0.0" },
@@ -225,7 +240,7 @@ describe("install", () => {
     const installer = fakeInstaller({
       "@omniralph/plain@latest": { name: "@omniralph/plain", version: "1.0.0" },
     });
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     await expect(rpc.run(installJob({ name: "@omniralph/plain" }), context())).rejects.toThrow(
       /@omniralph\/plain@latest isn't a valid installable: Not an installable/,
     );
@@ -244,7 +259,7 @@ describe("install", () => {
         omniralph: { commands: [{ name: "hello", bin: "../escape.js" }] },
       },
     });
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     await rpc.run(installJob({ name: "@omniralph/hello", version: "1.0.0" }), context());
     await expect(
       rpc.run(installJob({ name: "@omniralph/hello", version: "2.0.0" }), context()),
@@ -268,7 +283,7 @@ describe("install", () => {
       },
       uninstall: async () => {},
     };
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     const results = await Promise.allSettled([
       rpc.run(installJob({ name: "@omniralph/a", version: "1.0.0" }), context()),
       rpc.run(installJob({ name: "@omniralph/b", version: "9.9.9" }), context()),
@@ -313,7 +328,7 @@ describe("install", () => {
         if (!tarball) throw new Error(`no tarball for ${name}@${version}`);
         return tarball;
       });
-      const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+      const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
       const dataDir = path.dirname(prefix);
       const bin = path.join(installablePackageDir(prefix, "@omniralph/hello"), "bin", "hello.js");
 
@@ -357,7 +372,7 @@ describe("install", () => {
     const installer = npmInstallableInstaller(NO_REGISTRY_ENV, () =>
       path.join(root, "missing.tgz"),
     );
-    const rpc = installRpc({ allowList: DEFAULT_ALLOW, prefix, installer });
+    const rpc = rpcWith({ allowList: DEFAULT_ALLOW, prefix, installer });
     await expect(rpc.run(installJob({ name: "@omniralph/hello" }), context())).rejects.toThrow(
       /^npm install --save-exact -- .*missing\.tgz failed: (.|\n)*npm error/,
     );

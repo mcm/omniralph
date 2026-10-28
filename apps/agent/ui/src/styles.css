@@ -140,3 +140,62 @@ body,
     margin: 0 16px;
   }
 }
+
+/* A card's one-line description, e.g. why nothing can be installed. */
+.agent-card-description {
+  margin: 0 0 12px;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* A table row's own actions (e.g. Update and ⋯). */
+.agent-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The Install package sheet's form. */
+.agent-install {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agent-install__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* An install's facts in its sheet. */
+.agent-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.agent-facts dt {
+  color: var(--or-sec);
+}
+
+.agent-facts dd {
+  margin: 0;
+}
+
+/* npm's output, as printed. */
+.agent-output {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--or-line);
+  border-radius: 6px;
+  background: var(--or-side);
+  color: var(--or-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

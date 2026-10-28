@@ -41,6 +41,8 @@ import {
 import { createLogger, type Logger } from "./logger.js";
 import type { LogRing } from "./logs/ring.js";
 import { ClaudeStatusReporter, sdkReadClaude, type ReadClaude } from "./claude-status.js";
+import { InstallHistory, installsPath } from "./packages/history.js";
+import { PackageManager } from "./packages/manager.js";
 import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
 import { AgentStorage } from "./storage.js";
@@ -57,6 +59,7 @@ import {
   writeUiLink,
 } from "./ui/link.js";
 import { startUiServer, type UiRoute, type UiServer } from "./ui/server.js";
+import { packageRoutes } from "./ui/package-routes.js";
 import { settingsRoutes } from "./ui/settings-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
@@ -454,6 +457,15 @@ async function runAgent(
   await settings.watch();
   const history = new AttemptHistory({ file: attemptsPath(agentDataDir), logger });
   await history.load();
+  const installs = new InstallHistory({ file: installsPath(agentDataDir), logger });
+  await installs.load();
+  const packages = new PackageManager({
+    allowList: () => settings.effective().installablesAllow,
+    prefix: installablesPrefix(agentDataDir),
+    installer: deps.installableInstaller ?? npmInstallableInstaller(deps.env),
+    history: installs,
+    logger,
+  });
   const claude = new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger });
   const hub = new UiEventHub();
   let lastPins = "[]";
@@ -466,13 +478,7 @@ async function runAgent(
     api,
     tokens,
     registry,
-    rpcs: new SystemRpcRegistry(
-      defaultSystemRpcs({
-        allowList: () => settings.effective().installablesAllow,
-        prefix: installablesPrefix(agentDataDir),
-        installer: deps.installableInstaller ?? npmInstallableInstaller(deps.env),
-      }),
-    ),
+    rpcs: new SystemRpcRegistry(defaultSystemRpcs({ packages })),
     logger,
     dataDir: agentDataDir,
     claude,
@@ -492,6 +498,11 @@ async function runAgent(
   });
   running.daemon = daemon;
   if (fatal) daemon.fail(fatal);
+  // What is installed changed: report the installables now, not at the next interval.
+  const onInstalled = (install: { outcome: string | null }) => {
+    if (install.outcome === "installed" || install.outcome === "removed") daemon.heartbeatSoon();
+  };
+  installs.on("change", onInstalled);
 
   const storage = new AgentStorage({
     workspaceRoot: config.workspaceRoot,
@@ -505,6 +516,7 @@ async function runAgent(
     history,
     claude,
     storage,
+    installs,
     ring: log.ring,
   });
   const ui = await startAgentPage({
@@ -514,7 +526,10 @@ async function runAgent(
     hub,
     deps,
     logger,
-    routes: settingsRoutes(settings),
+    routes: [
+      ...settingsRoutes(settings),
+      ...packageRoutes({ packages, history: installs, logger }),
+    ],
     state: () =>
       agentUiState({
         agent: { agentId: config.agentId, name: hostname(), server: config.server, version },
@@ -546,9 +561,11 @@ async function runAgent(
   const code = await daemon.run();
   await ui?.stop();
   unpublish();
+  installs.off("change", onInstalled);
   tokens.stop();
   await settings.close();
   await history.close();
+  await installs.flush();
   health?.close();
   if (fatal) {
     deps.io.stderr(`omniralph-agent: ${fatal.message}; run 'omniralph-agent enroll' again\n`);

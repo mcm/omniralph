@@ -24,6 +24,7 @@ import { agentKeys } from "../../live/keys.js";
 import { useLocalMutation } from "../../live/use-local-mutation.js";
 import { useAgentState, type AgentUiState } from "../../state.js";
 import { AgentPage } from "../page.js";
+import { SETTINGS_CHANGED, withSettings } from "../settings.js";
 import {
   KEEP_ONE_KIND,
   KIND_OPTIONS,
@@ -39,8 +40,7 @@ import {
   type CapacityField,
 } from "./model.js";
 
-/** Shown when the file changed on the machine since the page read it (a 409). */
-export const SETTINGS_CHANGED = "These settings changed on the machine. Review and save again.";
+export { SETTINGS_CHANGED };
 
 /** Shown in the save bar when Save is pressed with a field in error. */
 export const FIX_FIELDS = "Some values can't be saved yet.";
@@ -69,13 +69,6 @@ function fieldErrorsOf(error: LocalApiError): Record<string, string> {
     if (field && !errors[field]) errors[field] = issue.message;
   }
   return errors;
-}
-
-function withSettings(
-  state: AgentUiState | undefined,
-  settings: LocalSettingsState,
-): AgentUiState | undefined {
-  return state && { ...state, settings };
 }
 
 export function CapacityPage() {

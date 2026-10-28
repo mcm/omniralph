@@ -152,11 +152,18 @@ export const MAX_REPORTED_INSTALLABLES = 100;
  * package.json is a valid installable (others are skipped, with a warning on
  * `log`). Empty when nothing was installed yet.
  */
-export async function listInstalledInstallables(
+export function listInstalledInstallables(
   dataDir: string,
   log?: Pick<Logger, "warn">,
 ): Promise<InstalledInstallable[]> {
-  const prefix = installablesPrefix(dataDir);
+  return listInstalledInPrefix(installablesPrefix(dataDir), log);
+}
+
+/** `listInstalledInstallables` of an npm prefix. */
+export async function listInstalledInPrefix(
+  prefix: string,
+  log?: Pick<Logger, "warn">,
+): Promise<InstalledInstallable[]> {
   let dependencies: unknown;
   try {
     const json: unknown = JSON.parse(await readFile(path.join(prefix, "package.json"), "utf8"));
@@ -183,7 +190,11 @@ export async function listInstalledInstallables(
   return installed;
 }
 
-/** Installs packages into an npm prefix (injectable for tests, as `Installer` for self-update). */
+/**
+ * Installs packages into an npm prefix (injectable for tests, as `Installer`
+ * for self-update). Each call resolves with npm's output (when there is
+ * any); a failure's error carries it as `output` (`NpmError`).
+ */
 export interface InstallableInstaller {
   /** Installs or updates `name` at `version` (a semver version or dist-tag). */
   install(
@@ -191,16 +202,38 @@ export interface InstallableInstaller {
     version: string,
     prefix: string,
     options?: { signal?: AbortSignal },
-  ): Promise<void>;
-  uninstall(name: string, prefix: string, options?: { signal?: AbortSignal }): Promise<void>;
+  ): Promise<string | void>;
+  uninstall(
+    name: string,
+    prefix: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<string | void>;
 }
 
-/** Runs npm in `prefix`; rejects with the tail of its stderr. */
+/** A failed npm run, with what it printed. */
+export class NpmError extends Error {
+  constructor(
+    message: string,
+    readonly output: string,
+  ) {
+    super(message);
+    this.name = "NpmError";
+  }
+}
+
+/** What npm printed: stdout, then stderr. */
+function npmOutput(stdout: unknown, stderr: unknown): string {
+  return [String(stdout ?? "").trimEnd(), String(stderr ?? "").trimEnd()]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Runs npm in `prefix`; resolves with its output, rejects (`NpmError`) with the tail of its stderr. */
 export function runNpm(
   args: string[],
   prefix: string,
   options: { env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {},
-): Promise<void> {
+): Promise<string> {
   const fullArgs = [args[0]!, "--prefix", prefix, "--no-audit", "--no-fund", ...args.slice(1)];
   return new Promise((resolve, reject) => {
     execFile(
@@ -212,10 +245,11 @@ export function runNpm(
         timeout: INSTALL_TIMEOUT_MS,
         maxBuffer: 10 * 1024 * 1024,
       },
-      (error, _stdout, stderr) => {
-        if (!error) return resolve();
+      (error, stdout, stderr) => {
+        const output = npmOutput(stdout, stderr);
+        if (!error) return resolve(output);
         const tail = String(stderr).trim().split("\n").slice(-5).join("\n");
-        reject(new Error(`npm ${args.join(" ")} failed: ${tail || error.message}`));
+        reject(new NpmError(`npm ${args.join(" ")} failed: ${tail || error.message}`, output));
       },
     );
   });
