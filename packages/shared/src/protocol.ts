@@ -295,29 +295,30 @@ export const HostToolPath = z
   .max(4096)
   .refine((path) => path.startsWith("/"), "must be an absolute path");
 
-/**
- * What an agent found for a host tool of the last heartbeat response's
- * `hostTools`: whether the configured path is a usable executable (null when
- * none is configured; false when it's missing, not executable or blocked by
- * the local `blockedExecPaths`) and the first match on the agent's own
- * `PATH` that isn't blocked.
- */
-export const ReportedHostTool = z.object({
-  name: HostToolName,
-  /** The configured path checked: a check of a path no longer configured is ignored. */
-  configuredPath: HostToolPath.nullable().optional(),
-  configuredPathExists: z.boolean().nullable(),
-  discoveredPath: HostToolPath.nullable(),
-});
-export type ReportedHostTool = z.infer<typeof ReportedHostTool>;
+/** Where a host tool's path came from: the local `settings.json`, or the agent's own `PATH`. */
+export const HOST_TOOL_SOURCES = ["configured", "discovered"] as const;
+export type HostToolSource = (typeof HOST_TOOL_SOURCES)[number];
 
-/** A host tool of the organization's catalog, with the path configured for this agent. */
-export const KnownHostTool = z.object({
+/** Why a configured host tool path can't be used. */
+export const HOST_TOOL_PROBLEMS = ["missing", "not_executable", "blocked"] as const;
+export type HostToolProblem = (typeof HOST_TOOL_PROBLEMS)[number];
+
+/**
+ * A host tool as the agent found it, for each name of its `settings.json`
+ * `hostTools` and of the last response's `requiredHostTools`. `path` is what
+ * runs use, null when the tool is unavailable: a configured path that is an
+ * executable file outside `blockedExecPaths` (`configured`), else, with none
+ * configured, the first such match on the agent's own `PATH` (`discovered`).
+ * A configured path that can't be used has a null path and its `problem`:
+ * there is no fallback to `PATH`.
+ */
+export const HostToolReport = z.object({
   name: HostToolName,
-  /** Null when none is configured: the agent then uses the path it discovers. */
-  configuredPath: HostToolPath.nullable(),
+  path: HostToolPath.nullable(),
+  source: z.enum(HOST_TOOL_SOURCES).nullable(),
+  problem: z.enum(HOST_TOOL_PROBLEMS).nullable(),
 });
-export type KnownHostTool = z.infer<typeof KnownHostTool>;
+export type HostToolReport = z.infer<typeof HostToolReport>;
 
 /** `POST /api/agent/heartbeat` request, sent every `HEARTBEAT_INTERVAL_SECONDS`. */
 export const Heartbeat = z.object({
@@ -341,8 +342,8 @@ export const Heartbeat = z.object({
   installables: z.array(ReportedInstallable).max(100).default([]),
   /** The Claude models the agent's login can run (absent from older agents; none when unknown). */
   models: z.array(ReportedModel).max(100).default([]),
-  /** The host tools of the last response's `hostTools`, as the agent found them. */
-  hostTools: z.array(ReportedHostTool).max(100).default([]),
+  /** The host tools the agent has configured or was asked about (`requiredHostTools`), by name. */
+  hostTools: z.array(HostToolReport).max(100).default([]),
   /** When the agent's Ably token (`ably` of a response) expires; absent when it has none. */
   ablyTokenExpiresAt: z.iso.datetime().optional(),
   /**
@@ -433,11 +434,10 @@ export const HeartbeatResponse = z.object({
   /** An update an admin asked for and the agent hasn't acted on yet. */
   updateRequest: AgentUpdateRequest.nullable().default(null),
   /**
-   * The organization's host tools with this agent's configured paths: the
-   * agent reports on each in its next heartbeat. A configured path wins;
-   * when it isn't usable the tool is unavailable (no fallback to `PATH`).
+   * The host tools the organization's playbooks require (`requirements.hostTools`), sorted:
+   * the agent reports on each in its next heartbeat, with the ones it has configured.
    */
-  hostTools: z.array(KnownHostTool).default([]),
+  requiredHostTools: z.array(HostToolName).max(100).default([]),
   /**
    * A fresh Ably token, sent when the agent has none or its token expires
    * within the hour; null when the control panel has Ably off (the agent

@@ -5,6 +5,7 @@ import {
   deletePlaybook as deletePlaybookRow,
   getStoredPlaybook,
   insertPlaybook,
+  listHostToolSuggestions,
   listReportedInstallables,
   listReportedModels,
   updatePlaybook as updatePlaybookRow,
@@ -30,6 +31,7 @@ import type {
   PlaybookSummary,
   SavedPlaybook,
 } from "@/lib/api/playbooks";
+import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
 import type { OrgUser } from "@/lib/auth/session";
 import { getPlaybook, listPlaybookChoices, listPlaybooks } from "./index";
 import { hasNoReferrers, loadPlaybookUsage, type PlaybookReferrers } from "./referrers";
@@ -155,18 +157,20 @@ async function savedPlaybook(db: Database, user: OrgUser, id: string): Promise<S
 /**
  * What the playbook editor offers: the roles a custom playbook can take, the models the
  * organization's non-revoked agents report, the built-in, agent and Linear tool names, the
- * MCP servers of the installables its agents report (`<package>:<server>`) and the PR
- * description playbooks a story or request playbook can name.
+ * MCP servers of the installables its agents report (`<package>:<server>`), the PR
+ * description playbooks a story or request playbook can name and the host tool names to
+ * suggest (those its agents report with a path and those its playbooks require).
  */
 export async function loadPlaybookFormOptions(
   db: Database,
   user: OrgUser,
 ): Promise<PlaybookFormOptions> {
   const organizationId = user.organization.id;
-  const [models, installables, prDescriptionPlaybooks] = await Promise.all([
+  const [models, installables, prDescriptionPlaybooks, hostTools] = await Promise.all([
     listReportedModels(db, organizationId),
     listReportedInstallables(db, organizationId),
     listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
+    listHostToolSuggestions(db, organizationId),
   ]);
   return {
     roles: [...CUSTOM_PLAYBOOK_ROLES],
@@ -176,6 +180,7 @@ export async function loadPlaybookFormOptions(
       mcpServers.map((server) => `${name}${INSTALLABLE_MCP_SERVER_SEPARATOR}${server}`),
     ),
     prDescriptionPlaybooks,
+    hostTools,
   };
 }
 
@@ -232,6 +237,8 @@ export async function createPlaybook(
     requirements: validation.requirements,
     createdBy: admin.id,
   });
+  // Its host tools join the heartbeat's `requiredHostTools`.
+  await bumpOrganizationHeartbeat(organizationId);
   return savedPlaybook(db, admin, id);
 }
 
@@ -271,6 +278,7 @@ export async function updatePlaybook(
     updatedBy: admin.id,
   });
   if (!row) throw ApiRouteError.notFound(NOT_FOUND);
+  await bumpOrganizationHeartbeat(organizationId);
   return savedPlaybook(db, admin, id);
 }
 
@@ -310,6 +318,7 @@ export async function clonePlaybook(
     requirements: validation.requirements,
     createdBy: admin.id,
   });
+  await bumpOrganizationHeartbeat(organizationId);
   return savedPlaybook(db, admin, cloneId);
 }
 
@@ -342,5 +351,6 @@ export async function deletePlaybook(
     );
   }
   if (!(await deletePlaybookRow(db, organizationId, id))) throw ApiRouteError.notFound(NOT_FOUND);
+  await bumpOrganizationHeartbeat(organizationId);
   return { ok: true };
 }

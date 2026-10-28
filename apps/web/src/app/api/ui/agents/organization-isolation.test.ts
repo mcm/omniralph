@@ -1,18 +1,14 @@
 // Two organizations, each with an agent: an admin of one only changes their own agent
-// defaults, version and host tool catalog (through their
-// `/api/ui` handlers). The agent pages
+// defaults and version (through their `/api/ui` handlers). The agent pages
 // moved to `/api/ui`: see src/app/api/ui/organization-isolation.test.ts.
 import {
   closeDb,
   connectRepository,
   createAgentEnrollment,
   createDb,
-  createHostTool,
   createOrganization,
   enrollAgent,
   getDesiredAgentVersion,
-  listAgentHostTools,
-  listHostTools,
   setDesiredAgentVersion,
   upsertScmConnection,
   users,
@@ -25,7 +21,6 @@ import {
 } from "@omniralph/db/testing";
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ActionResult } from "@/lib/action-result";
 import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
@@ -75,17 +70,10 @@ process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";
 
 const defaultsRoute = await import("@/app/api/ui/agent-defaults/route");
-const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
-const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
 
 // Agent defaults (`/api/ui/agent-defaults`) requests, under the names of the server actions they replace.
 const setGlobalAgentVersion = (version: string) =>
   callAction(defaultsRoute.PUT, "PUT", {}, { version });
-const addHostTool = async (input: { name: string; description?: string }) =>
-  (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
-    hostToolId?: string;
-  };
-const removeHostTool = (id: string) => callAction(hostToolRoute.DELETE, "DELETE", { id });
 
 /** A GET handler's JSON body. */
 async function get(
@@ -101,7 +89,6 @@ async function get(
   return (await response.json()) as Record<string, unknown>;
 }
 const agentDefaults = () => get(defaultsRoute.GET);
-const hostToolCatalog = () => get(hostToolsRoute.GET);
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -177,26 +164,5 @@ describe.skipIf(!databaseAvailable)("organization isolation of agents", () => {
     expect((await agentDefaults()).desiredVersion).toBeNull();
     await setDesiredAgentVersion(db, b.orgId, "2.0.0", b.userId);
     expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
-  });
-
-  it("keeps host tools per organization", async () => {
-    const theirs = await createHostTool(db, b.orgId, { name: "semgrep" });
-    if (!theirs.ok) throw new Error("setup");
-    state.userId = a.userId;
-    // The same name in another organization is no duplicate.
-    const ours = await addHostTool({ name: "semgrep", description: "ours" });
-    if (!ours.ok) throw new Error(ours.error);
-    expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toEqual([ours.hostToolId]);
-    expect((await hostToolCatalog()).hostTools).toEqual([
-      { id: ours.hostToolId, name: "semgrep", description: "ours" },
-    ]);
-    expect(await removeHostTool(theirs.hostTool.id)).toMatchObject({ ok: false });
-    expect(await listHostTools(db, b.orgId)).toHaveLength(1);
-    expect((await listAgentHostTools(db, b.orgId, b.agentId)).map((t) => t.configuredPath)).toEqual(
-      [null],
-    );
-
-    // Its own tool still works.
-    expect(await removeHostTool(ours.hostToolId!)).toEqual({ ok: true });
   });
 });

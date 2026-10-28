@@ -57,7 +57,7 @@ const HEARTBEAT: HeartbeatResponse = {
   jobMessages: [],
   desiredVersion: null,
   updateRequest: null,
-  hostTools: [],
+  requiredHostTools: [],
 };
 
 describe("omniralph-agent CLI", () => {

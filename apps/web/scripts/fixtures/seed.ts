@@ -15,12 +15,10 @@ import {
   findings,
   agentAudit,
   agents,
-  agentHostTools,
   agentRepoPins,
   chatConnections,
   chatThreads,
   chatWebMessages,
-  hostTools,
   integrations,
   jobs,
   organizationEmailDomains,
@@ -323,6 +321,15 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         id: H.online,
         organizationId: O.main,
         name: "build-01",
+        reportedHostTools: [
+          {
+            name: "opengrep",
+            path: "/usr/local/bin/opengrep",
+            source: "discovered",
+            problem: null,
+          },
+          { name: "terraform", path: null, source: null, problem: null },
+        ],
         reportedMaxConcurrency: 4,
         reportedAcceptedTaskTypes: allTypes,
         reportedPoolLimits: { short: 4, long: 2 },
@@ -357,6 +364,8 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         id: H.outdated,
         organizationId: O.main,
         name: "ada-laptop",
+        // Its configured path doesn't exist: no fallback to `PATH`.
+        reportedHostTools: [{ name: "opengrep", path: null, source: null, problem: "missing" }],
         reportedMaxConcurrency: 1,
         reportedAcceptedTaskTypes: allTypes,
         reportedVersion: "1.6.2",
@@ -406,26 +415,6 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         createdAt: ago((10 - i) * DAY),
       })),
     );
-    const opengrep = fixtureId("hostTool", 1);
-    await tx.insert(hostTools).values([
-      { id: opengrep, organizationId: O.main, name: "opengrep", description: "Static analysis." },
-      { id: fixtureId("hostTool", 2), organizationId: O.main, name: "terraform" },
-    ]);
-    await tx.insert(agentHostTools).values([
-      {
-        agentId: H.online,
-        hostToolId: opengrep,
-        discoveredPath: "/usr/local/bin/opengrep",
-        reportedAt: ago(MINUTE),
-      },
-      {
-        agentId: H.outdated,
-        hostToolId: opengrep,
-        configuredPath: "/opt/opengrep/bin/opengrep",
-        configuredPathExists: false,
-        reportedAt: ago(2 * HOUR),
-      },
-    ]);
     const audit: (typeof agentAudit.$inferInsert)[] = [];
     for (const [i, agentId] of Object.values(H).entries()) {
       audit.push({

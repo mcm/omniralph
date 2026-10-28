@@ -33,7 +33,7 @@ function config(desiredVersion: string | null): HeartbeatResponse {
     jobMessages: [],
     desiredVersion,
     updateRequest: null,
-    hostTools: [],
+    requiredHostTools: [],
   };
 }
 

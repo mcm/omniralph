@@ -240,7 +240,7 @@ key but `v` is optional:
 | `poolLimits.long`    | slots − 1 (at least 1)                            | How many slots coding attempts may take, 1 to the slots. By default one slot stays free for reviews and asks.                                                                                                                                                                                                           |
 | `poolLimits.short`   | the slots                                         | How many slots reviews, asks and triage may take, 1 to the slots.                                                                                                                                                                                                                                                       |
 | `acceptedTaskTypes`  | all three                                         | The task types the agent runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The agent reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only.     |
-| `hostTools`          | `{}`                                              | Host tool paths by name (`{ "gh": "/usr/bin/gh" }`), each absolute. A tool without one is looked up on `PATH`.                                                                                                                                                                                                         |
+| `hostTools`          | `{}`                                              | Host tool paths by name (`{ "gh": "/usr/bin/gh" }`), each absolute. A tool without one is looked up on `PATH`; a configured path that is missing, not executable or blocked makes the tool unavailable (see [installables.md](installables.md#host-tools)).                                                           |
 | `installables.allow` | `["@omniralph/*"]`                                | npm package patterns the agent accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The agent enforces this itself, whatever the control panel asks. |
 | `update.pin`         | none                                              | An agent version (2.0.0 or later) that wins over the organization's version policy.                                                                                                                                                                                                                                     |
 
@@ -254,13 +254,13 @@ key but `v` is optional:
 }
 ```
 
-The file accepts no other key. Slots, pool limits, the accepted task types and the allow-list
-apply without a restart: the agent re-checks what it claims at once (lowering a limit cancels
-nothing) and sends a heartbeat right away, so **Fleet** shows the new values within seconds; the
-next install uses the new allow-list. The agent reports slots, both pools' limits, the pin and the
-allow-list in every heartbeat, and the control panel stores them read-only. It doesn't apply host
-tool paths and the pin from the file yet; until it does, they come from the control panel as
-described in [Central config](#central-config).
+The file accepts no other key. Slots, pool limits, the accepted task types, host tool paths and
+the allow-list apply without a restart: the agent re-checks what it claims and its host tools at
+once (lowering a limit cancels nothing) and sends a heartbeat right away, so **Fleet** shows the
+new values within seconds; the next install uses the new allow-list. The agent reports slots, both
+pools' limits, the pin, the allow-list and its host tools in every heartbeat, and the control panel
+stores them read-only. It doesn't apply the pin from the file yet; until it does, the desired
+version comes from the control panel as described in [Central config](#central-config).
 
 Edit the settings on the agent's page, or by hand while the agent runs. The agent watches the file
 and applies a valid edit about a quarter of a second after the last write. It ignores an invalid
@@ -481,7 +481,8 @@ including the task types the agent runs) is configured centrally and delivered i
 Slots and pool limits belong to the agent machine, like its accepted task types: they are set in
 its [`settings.json`](#machine-settings-settingsjson) (on the agent's page or by hand), and no
 control panel page or API sets them. The agent reports them in every heartbeat; **Fleet** shows
-its load (running of slots) read-only. Host tool paths are moving there too.
+its load (running of slots) read-only. Host tool paths are the agent's too: there is no
+organization catalog, and the control panel only shows what each agent reports.
 
 Accepted task types decide what a host may run (trust), so the host itself decides them: the
 `acceptedTaskTypes` key of its [`settings.json`](#machine-settings-settingsjson) (all three when

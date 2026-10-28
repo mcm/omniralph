@@ -1,24 +1,15 @@
 import "server-only";
 import {
-  createHostTool,
-  deleteHostTool,
   DESIRED_AGENT_VERSION_KEY,
   getAppSetting,
-  listHostTools,
   setDesiredAgentVersion,
   TRACK_LATEST_AGENT_VERSION,
   withSettingsChanges,
   type Database,
 } from "@omniralph/db";
 import { AGENT_PACKAGE, AgentVersion } from "@omniralph/shared";
-import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
-import type {
-  AddHostToolInput,
-  AgentDefaults,
-  AgentDefaultsSave,
-  HostToolCatalogRow,
-} from "@/lib/api/agent-defaults";
+import type { AgentDefaults, AgentDefaultsSave } from "@/lib/api/agent-defaults";
 import type { VersionPolicy } from "@/lib/fleet/status";
 import { settingsActor, trackedAgentDefaults } from "@/lib/settings-history/sections";
 import { organizationAgentVersion, recordLatestAgentVersion } from "./desired-version";
@@ -28,8 +19,8 @@ import { latestAgentVersion, NpmRegistryError } from "./npm";
 
 /**
  * The organization-wide agent defaults (Fleet edits the version policy) every agent gets
- * with its heartbeat, and the host tool catalog. The logic behind `/api/ui/agent-defaults`
- * and `/api/ui/host-tools/**`, whose handlers parse, authorize and serialize. Every function
+ * with its heartbeat. The logic behind `/api/ui/agent-defaults`, whose handlers parse,
+ * authorize and serialize. Every function
  * is scoped to the admin's active organization and answers an `ActionResult` worded for the
  * panel's toasts.
  */
@@ -187,65 +178,4 @@ async function saveDefaultsInOrder(
   if (save.version === undefined) return { ok: true };
   const saved = await setGlobalAgentVersion(db, admin, save.version);
   return saved.ok ? { ok: true, versionPolicy: savedPolicy(save.version, saved.version) } : saved;
-}
-
-/** The organization's host tool catalog, by name. */
-export async function loadHostToolCatalog(
-  db: Database,
-  organizationId: string,
-): Promise<HostToolCatalogRow[]> {
-  const tools = await listHostTools(db, organizationId);
-  return tools.map(({ id, name, description }) => ({ id, name, description }));
-}
-
-/** Longest host tool description accepted. */
-const MAX_HOST_TOOL_DESCRIPTION = 500;
-
-export type HostToolResult = ActionResult & { hostToolId?: string };
-
-/**
- * Adds a host tool (software agent owners install by hand) to the organization's catalog.
- * Agents get it with their next heartbeat and report where they find it.
- */
-export async function addHostTool(
-  db: Database,
-  organizationId: string,
-  input: AddHostToolInput,
-): Promise<HostToolResult> {
-  const name = input.name.trim();
-  const description = input.description?.trim() || null;
-  if (description && description.length > MAX_HOST_TOOL_DESCRIPTION) {
-    return {
-      ok: false,
-      error: `Descriptions can be at most ${MAX_HOST_TOOL_DESCRIPTION} characters.`,
-    };
-  }
-  const created = await createHostTool(db, organizationId, { name, description });
-  if (!created.ok) {
-    return {
-      ok: false,
-      error:
-        created.error === "duplicate_name"
-          ? `There already is a host tool named ${name}.`
-          : "Names are the executable's name: lowercase letters, digits, dots, dashes and underscores (up to 64), starting with a letter or digit.",
-    };
-  }
-  await bumpOrganizationHeartbeat(organizationId);
-  return { ok: true, hostToolId: created.hostTool.id };
-}
-
-/** Removes a host tool from the catalog, with every agent's configured path for it. */
-export async function removeHostTool(
-  db: Database,
-  organizationId: string,
-  hostToolId: string,
-): Promise<ActionResult> {
-  if (
-    !z.uuid().safeParse(hostToolId).success ||
-    !(await deleteHostTool(db, organizationId, hostToolId))
-  ) {
-    return { ok: false, error: "That host tool doesn't exist." };
-  }
-  await bumpOrganizationHeartbeat(organizationId);
-  return { ok: true };
 }

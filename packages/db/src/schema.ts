@@ -5,7 +5,7 @@
  * After changing this file run `pnpm --filter db generate` to emit a migration
  * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
  */
-import type { AgentHostReport, RoutingQuery } from "@omniralph/shared";
+import type { AgentHostReport, HostToolReport, RoutingQuery } from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -1276,6 +1276,11 @@ export const agents = pgTable(
     reportedVersionPin: text("reported_version_pin"),
     /** The agent's installables allow-list, as last reported; null until it reports. */
     reportedInstallablesAllow: text("reported_installables_allow").array(),
+    /**
+     * The host tools the agent configured or was asked about (`requiredHostTools`), as its
+     * last heartbeat reported them: a tool with a `path` is usable. Empty until it reports.
+     */
+    reportedHostTools: jsonb("reported_host_tools").$type<HostToolReport[]>().notNull().default([]),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The agent's self-update progress, as last reported. */
@@ -1404,8 +1409,9 @@ export const agentRepoPins = pgTable(
 );
 
 /**
- * An organization's catalog of host tools: software agent owners install by
- * hand (e.g. `opengrep`), which agents look up by name on their `PATH`.
+ * @deprecated The organization's former catalog of host tools. Nothing reads or writes it:
+ * host tool paths are set on each agent (`settings.json`) and reported in
+ * `agents.reported_host_tools`. Dropped once production holds no row.
  */
 export const hostTools = pgTable(
   "host_tools",
@@ -1424,8 +1430,8 @@ export const hostTools = pgTable(
 );
 
 /**
- * A host tool on one agent: the path an admin configured (null: none) and
- * what the agent last reported for it in its heartbeat.
+ * @deprecated A former catalog host tool on one agent. Nothing reads or writes it
+ * (`agents.reported_host_tools` replaces it). Dropped with `host_tools`.
  */
 export const agentHostTools = pgTable(
   "agent_host_tools",

@@ -110,22 +110,41 @@ describe("protocol", () => {
     const base = { version: "0.1.0", runningJobIds: [], freeSlots: 0, local: LOCAL };
     expect(Heartbeat.parse(base).hostTools).toEqual([]);
     const hostTools = [
-      { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
-      { name: "semgrep", configuredPathExists: false, discoveredPath: null },
+      { name: "gh", path: "/opt/gh/bin/gh", source: "configured", problem: null },
+      { name: "opengrep", path: "/usr/bin/opengrep", source: "discovered", problem: null },
+      { name: "semgrep", path: null, source: null, problem: null },
+      { name: "trivy", path: null, source: null, problem: "missing" },
+      { name: "syft", path: null, source: null, problem: "not_executable" },
+      { name: "grype", path: null, source: null, problem: "blocked" },
     ];
     expect(Heartbeat.parse({ ...base, hostTools }).hostTools).toEqual(hostTools);
     const tooMany = Array.from({ length: 101 }, (_, i) => ({
       name: `t${i}`,
-      configuredPathExists: null,
-      discoveredPath: null,
+      path: null,
+      source: null,
+      problem: null,
     }));
     expect(Heartbeat.safeParse({ ...base, hostTools: tooMany }).success).toBe(false);
+    for (const bad of [
+      { name: "opengrep", path: "bin/x", source: "discovered", problem: null },
+      { name: "opengrep", path: null, source: "elsewhere", problem: null },
+      { name: "opengrep", path: null, source: null, problem: "broken" },
+      // The old shape (a catalog tool's checks).
+      { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
+    ]) {
+      expect(Heartbeat.safeParse({ ...base, hostTools: [bad] }).success).toBe(false);
+    }
+  });
+
+  it("defaults a response's required host tools to none and validates their names", () => {
+    const base = { pinnedRepoIds: [], organizationId: ID, cancelJobIds: [], jobTokens: [] };
+    expect(HeartbeatResponse.parse(base).requiredHostTools).toEqual([]);
     expect(
-      Heartbeat.safeParse({
-        ...base,
-        hostTools: [{ name: "opengrep", configuredPathExists: null, discoveredPath: "bin/x" }],
-      }).success,
-    ).toBe(false);
+      HeartbeatResponse.parse({ ...base, requiredHostTools: ["gh", "opengrep"] }).requiredHostTools,
+    ).toEqual(["gh", "opengrep"]);
+    expect(HeartbeatResponse.safeParse({ ...base, requiredHostTools: ["Bad Name"] }).success).toBe(
+      false,
+    );
   });
 
   it("accepts host tool names of lowercase letters, digits, dots, dashes and underscores", () => {
@@ -281,7 +300,7 @@ describe("self-update protocol", () => {
       jobTokens: [],
     });
     expect(response.desiredVersion).toBeNull();
-    expect(response.hostTools).toEqual([]);
+    expect(response.requiredHostTools).toEqual([]);
   });
 
   it("stays compatible with agents and control panels that predate Ably wake-ups", () => {

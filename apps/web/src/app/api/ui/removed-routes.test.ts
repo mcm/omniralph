@@ -50,7 +50,6 @@ describe("routes the configuration model removed", () => {
     for (const path of [
       "/api/ui/agents",
       "/api/ui/agents/x",
-      "/api/ui/agents/x/host-tools",
       "/api/ui/agents/x/installables",
       "/api/ui/agents/x/installs",
       "/api/ui/agents/x/revoke",
@@ -69,6 +68,18 @@ describe("routes the configuration model removed", () => {
   it("has no agent settings route: slots and kinds are set on the agent and reported", () => {
     expect(servedByRouteHandler("/api/ui/agents/x/settings")).toBe(false);
     expect(existsSync(join(__dirname, "agents/[id]/settings"))).toBe(false);
+  });
+
+  it("has no host tool catalog or agent host tool routes: paths are set on the agent and reported", () => {
+    for (const path of [
+      "/api/ui/host-tools",
+      "/api/ui/host-tools/x",
+      "/api/ui/agents/x/host-tools",
+    ]) {
+      expect(servedByRouteHandler(path), path).toBe(false);
+    }
+    expect(existsSync(join(__dirname, "host-tools"))).toBe(false);
+    expect(existsSync(join(__dirname, "agents/[id]/host-tools"))).toBe(false);
   });
 
   it("keeps the routes that replaced them", () => {

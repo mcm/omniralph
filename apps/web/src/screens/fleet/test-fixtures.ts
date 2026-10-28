@@ -113,6 +113,8 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
       versionPin: null,
       installablesAllow: ["@omniralph/*"],
     },
+    hostTools: [],
+    missingRequiredHostTools: [],
     audit: [],
     pinSyncJobs: [],
   };

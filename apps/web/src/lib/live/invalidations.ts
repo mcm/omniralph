@@ -85,16 +85,17 @@ const SETTINGS_INVALIDATIONS: Record<
     keys.settings.detail("agent-defaults"),
     // The version agents should run decides which failed their update (the Fleet dot).
     keys.navIndicators.all,
-    keys.settings.detail("host-tools"),
     keys.agents.all,
     keys.repositories.all,
   ],
-  // Playbooks list each other (PR description playbooks); repos and chat settings bind them.
+  // Playbooks list each other (PR description playbooks); repos and chat settings bind them;
+  // agents show the host tools playbooks require that they're missing.
   playbooks: (keys) => [
     playbookKeys(keys).all,
     keys.repositories.all,
     keys.connections.detail("integrations"),
     chatPlaybooksKey(keys),
+    keys.agents.all,
   ],
   // The playbooks chat runs (Advanced › Chat channel overrides), which playbooks list as users.
   chat_playbooks: (keys) => [

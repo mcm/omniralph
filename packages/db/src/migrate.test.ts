@@ -2103,11 +2103,11 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       const read = async (query: string) =>
         (await client.query(n(query))).rows as Record<string, unknown>[];
       // The columns 0103 resets, compared on their own, and the ones later migrations add
-      // (`reported_host`, 0108; the reported local settings, 0112).
+      // (`reported_host`, 0108; the reported local settings, 0114; host tools, 0115).
       const reset = `'failed_versions' - 'update_state' - 'update_request_id'
         - 'update_request_version' - 'update_requested_at' - 'reported_host'
         - 'reported_max_concurrency' - 'reported_pool_limits' - 'reported_version_pin'
-        - 'reported_installables_allow'`;
+        - 'reported_installables_allow' - 'reported_host_tools'`;
       return {
         organizations: await read(`select id, name from organizations order by id`),
         repositories: await read(`select id, organization_id from repositories order by id`),
@@ -4388,6 +4388,77 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       { column_name: "reported_max_concurrency", data_type: "integer", is_nullable: "YES" },
       { column_name: "reported_pool_limits", data_type: "jsonb", is_nullable: "YES" },
       { column_name: "reported_version_pin", data_type: "text", is_nullable: "YES" },
+    ]);
+  });
+
+  it("adds the agents' reported host tools as an empty list, keeping existing agents (0115)", async () => {
+    await db.execute(sql.raw(`create database reported_host_tools_before`));
+    const uri = testDb.uri.replace(/\/[^/]*$/, "/reported_host_tools_before");
+    await migrateBefore(uri, "0115_");
+    const client = new pg.Client({ connectionString: uri });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `insert into organizations (name) values ('Managed Services') returning id`,
+      );
+      const org = rows[0]!.id;
+      // Production: 7 live agents and 2 revoked and soft-deleted ones; no host tool catalog.
+      const live = Array.from({ length: 7 }, (_, i) => `coder-agent-${i + 1}`);
+      for (const name of live) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, reported_models,
+             reported_max_concurrency, last_heartbeat_at, live_online)
+           values ($1, $2, '2.0.3', '[{"value":"opus","displayName":"Opus"}]', 5, now(), true)`,
+          [org, name],
+        );
+      }
+      for (const name of ["old-laptop", "retired-runner"]) {
+        await client.query(
+          `insert into agents (organization_id, name, reported_version, revoked_at, deleted_at)
+           values ($1, $2, '1.9.0', now() - interval '30 days', now() - interval '29 days')`,
+          [org, name],
+        );
+      }
+
+      await runMigrations(uri);
+
+      const { rows: after } = await client.query<{
+        name: string;
+        reported_version: string;
+        reported_max_concurrency: number | null;
+        reported_host_tools: unknown;
+      }>(
+        `select name, reported_version, reported_max_concurrency, reported_host_tools
+         from agents order by name`,
+      );
+      expect(after).toHaveLength(9);
+      for (const row of after) expect(row.reported_host_tools).toEqual([]);
+      expect(after.find((row) => row.name === "coder-agent-1")).toMatchObject({
+        reported_version: "2.0.3",
+        reported_max_concurrency: 5,
+      });
+      // A new agent starts empty too.
+      const { rows: inserted } = await client.query<{ reported_host_tools: unknown }>(
+        `insert into agents (organization_id, name) values ($1, 'new') returning reported_host_tools`,
+        [org],
+      );
+      expect(inserted[0]?.reported_host_tools).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("applies the reported host tools column to a fresh database (0115)", async () => {
+    const { rows } = await db.$client.query<{
+      data_type: string;
+      is_nullable: string;
+      column_default: string;
+    }>(
+      `select data_type, is_nullable, column_default from information_schema.columns
+       where table_name = 'agents' and column_name = 'reported_host_tools'`,
+    );
+    expect(rows).toEqual([
+      { data_type: "jsonb", is_nullable: "NO", column_default: "'[]'::jsonb" },
     ]);
   });
 });

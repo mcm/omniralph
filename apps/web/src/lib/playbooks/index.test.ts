@@ -2,9 +2,7 @@ import {
   claimJob,
   closeDb,
   createDb,
-  agentHostTools,
   agents,
-  hostTools,
   insertPlaybook,
   jobs,
   organizations,
@@ -364,10 +362,6 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       requiredHostTools: ["opengrep"],
     });
 
-    const [tool] = await db
-      .insert(hostTools)
-      .values({ organizationId: orgId, name: "opengrep" })
-      .returning();
     const [bare, graphOnly, capable] = await db
       .insert(agents)
       .values(
@@ -381,11 +375,14 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
         })),
       )
       .returning();
-    await db.insert(agentHostTools).values({
-      agentId: capable!.id,
-      hostToolId: tool!.id,
-      discoveredPath: "/usr/bin/opengrep",
-    });
+    await db
+      .update(agents)
+      .set({
+        reportedHostTools: [
+          { name: "opengrep", path: "/usr/bin/opengrep", source: "discovered", problem: null },
+        ],
+      })
+      .where(eq(agents.id, capable!.id));
     const claim = (agentId: string) =>
       claimJob(db, {
         agentId,

@@ -1,4 +1,10 @@
-import { AgentHostReport, AgentUpdateReport, SELF_UPDATE_SUPPORT } from "@omniralph/shared";
+import {
+  AgentHostReport,
+  AgentUpdateReport,
+  HOST_TOOL_PROBLEMS,
+  HOST_TOOL_SOURCES,
+  SELF_UPDATE_SUPPORT,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { AUDIT_EVENTS } from "@/lib/agents/display";
 import type { AgentRow } from "@/lib/agents/rows";
@@ -148,7 +154,6 @@ export const JOB_STATUSES = [
 ] as const;
 const jobStatus = z.enum(JOB_STATUSES);
 
-
 /** A `agent_audit` row. */
 export const auditRowSchema = z.object({
   id: z.string(),
@@ -255,6 +260,21 @@ export const agentDetailSchema = z.object({
     versionPin: z.string().nullable(),
     installablesAllow: z.array(z.string()).nullable(),
   }),
+  /**
+   * The host tools it configured locally or was asked about, as it last reported them, by
+   * name: a tool with a `path` is usable (`source` tells where the path came from); one
+   * without is not found, or has a configured path with a `problem`. Empty until it reports.
+   */
+  hostTools: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string().nullable(),
+      source: z.enum(HOST_TOOL_SOURCES).nullable(),
+      problem: z.enum(HOST_TOOL_PROBLEMS).nullable(),
+    }),
+  ),
+  /** The host tools the organization's playbooks require that it reports no path for, sorted. */
+  missingRequiredHostTools: z.array(z.string()),
   /** The 50 most recent audit events, newest first. */
   audit: z.array(auditRowSchema),
   /** The latest sync job (last 7 days) of each pinned repository. */
@@ -284,35 +304,6 @@ export const agentInstallablesSchema = z.object({
 });
 export type AgentInstallables = z.infer<typeof agentInstallablesSchema>;
 export type InstallableRow = AgentInstallables["installables"][number];
-
-/** A catalog host tool on the agent (`AgentHostTool` of `@omniralph/db`). */
-export const hostToolRowSchema = z.object({
-  hostToolId: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  configuredPath: z.string().nullable(),
-  /** Whether the configured path exists, as last reported; null: not reported on it yet. */
-  configuredPathExists: z.boolean().nullable(),
-  discoveredPath: z.string().nullable(),
-  /** The agent's last report on the tool; null: never. */
-  reportedAt: isoDate.nullable(),
-  /** `effectiveHostToolPath()`: the path the agent runs the tool from; null: unavailable. */
-  effectivePath: z.string().nullable(),
-});
-export type HostToolRow = z.infer<typeof hostToolRowSchema>;
-
-/** `GET /api/ui/agents/{id}/host-tools`: every host tool of the catalog on the agent, by name. */
-export const agentHostToolsSchema = z.object({ hostTools: z.array(hostToolRowSchema) });
-export type AgentHostTools = z.infer<typeof agentHostToolsSchema>;
-
-/** `PUT /api/ui/agents/{id}/host-tools`: configured paths to save, in order ("" clears one). */
-export const hostToolPathsSaveSchema = z.object({
-  paths: z
-    .array(z.object({ hostToolId: z.string(), path: z.string().max(4096) }))
-    .min(1)
-    .max(100),
-});
-export type HostToolPathsSave = z.infer<typeof hostToolPathsSaveSchema>;
 
 /**
  * The response of a save the agent picks up with its next heartbeat: it has once its

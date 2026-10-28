@@ -26,17 +26,16 @@ import {
   isJobTaskType,
   poolForTaskType,
   type AgentHostReport,
+  type HostToolReport,
 } from "@omniralph/shared";
 import { replaceAttemptModelUsage } from "./attempt-usage.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { effectiveHostToolPath } from "./host-tools.js";
+import { listAgentsUsableHostTools } from "./host-tools.js";
 import {
   chatThreadRuns,
-  agentHostTools,
   agentRepoPins,
   agents,
-  hostTools,
   jobs,
   type AgentUpdateState,
   type JobTaskType,
@@ -340,8 +339,8 @@ export interface ClaimJobResult {
  * `min_agent_version` is null or at most `agentVersion`
  * (`agentVersionAtLeast`; none when the agent reported no version);
  * whose `required_installables` are all in the agent's
- * `reported_installables` and whose `required_host_tools` all have an
- * `effectiveHostToolPath` on it (`agent_host_tools`);
+ * `reported_installables` and whose `required_host_tools` it all reports
+ * with a path (`reported_host_tools`, through `listAgentsUsableHostTools`);
  * targeted at this agent or at none; that are `queued` with
  * `available_at <= now` or `running` with a lapsed lease (the previous
  * agent's results are then rejected). Jobs targeted at this agent come
@@ -523,39 +522,25 @@ export async function hasClaimableJob(
 }
 
 /**
- * The installables an agent reported and the host tools it has an effective
- * path for, by name: what jobs' `required_installables` and
- * `required_host_tools` are checked against.
+ * The installables an agent reported and the host tools it reported with a
+ * path, by name: what jobs' `required_installables` and `required_host_tools`
+ * are checked against.
  */
 async function agentCapabilities(
   db: Database,
   input: { agentId: string; organizationId: string },
 ): Promise<{ installables: string[]; hostTools: string[] }> {
-  const [agent] = await db
-    .select({ installables: agents.reportedInstallables })
-    .from(agents)
-    .where(and(eq(agents.id, input.agentId), eq(agents.organizationId, input.organizationId)))
-    .limit(1);
-  const tools = await db
-    .select({
-      name: hostTools.name,
-      configuredPath: agentHostTools.configuredPath,
-      configuredPathExists: agentHostTools.configuredPathExists,
-      discoveredPath: agentHostTools.discoveredPath,
-    })
-    .from(agentHostTools)
-    .innerJoin(hostTools, eq(hostTools.id, agentHostTools.hostToolId))
-    .where(
-      and(
-        eq(agentHostTools.agentId, input.agentId),
-        eq(hostTools.organizationId, input.organizationId),
-      ),
-    );
+  const [[agent], usable] = await Promise.all([
+    db
+      .select({ installables: agents.reportedInstallables })
+      .from(agents)
+      .where(and(eq(agents.id, input.agentId), eq(agents.organizationId, input.organizationId)))
+      .limit(1),
+    listAgentsUsableHostTools(db, input.organizationId, [input.agentId]),
+  ]);
   return {
     installables: (agent?.installables ?? []).map((installable) => installable.name),
-    hostTools: tools
-      .filter((tool) => effectiveHostToolPath(tool) !== null)
-      .map((tool) => tool.name),
+    hostTools: usable.get(input.agentId) ?? [],
   };
 }
 
@@ -846,6 +831,8 @@ export async function recordAgentHeartbeat(
       versionPin: string | null;
       installablesAllow: readonly string[];
     };
+    /** The host tools the agent configured or was asked about; replaces the last report (none clears it). */
+    hostTools?: readonly HostToolReport[];
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
@@ -863,6 +850,12 @@ export async function recordAgentHeartbeat(
       failedVersions: input.failedVersions ?? [],
       reportedInstallables: input.installables ?? [],
       reportedModels: input.models ?? [],
+      reportedHostTools: (input.hostTools ?? []).map(({ name, path, source, problem }) => ({
+        name,
+        path,
+        source,
+        problem,
+      })),
       ...(input.acceptedTaskTypes && { reportedAcceptedTaskTypes: [...input.acceptedTaskTypes] }),
       ...(input.host && { reportedHost: input.host }),
       ...(input.local && {
@@ -898,13 +891,14 @@ export async function recordAgentHeartbeat(
         reportedPoolLimits: previous.reportedPoolLimits,
         reportedVersionPin: previous.reportedVersionPin,
         reportedInstallablesAllow: previous.reportedInstallablesAllow,
+        reportedHostTools: previous.reportedHostTools,
         updateRequestId: previous.updateRequestId,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
   // What the fleet shows changed (version, update state, installs, task types, host, local
-  // settings): not a steady heartbeat.
+  // settings, host tools): not a steady heartbeat.
   const after = {
     reportedVersion: row.reportedVersion,
     selfUpdate: row.selfUpdate,
@@ -918,6 +912,7 @@ export async function recordAgentHeartbeat(
     reportedPoolLimits: row.reportedPoolLimits,
     reportedVersionPin: row.reportedVersionPin,
     reportedInstallablesAllow: row.reportedInstallablesAllow,
+    reportedHostTools: row.reportedHostTools,
     updateRequestId: row.updateRequestId,
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {

@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "reported_host_tools" jsonb DEFAULT '[]'::jsonb NOT NULL;

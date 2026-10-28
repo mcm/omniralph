@@ -200,7 +200,6 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("agent_defaults")).toEqual([
       keys.settings.detail("agent-defaults"),
       keys.navIndicators.all,
-      keys.settings.detail("host-tools"),
       keys.agents.all,
       keys.repositories.all,
       history.section("agent_defaults", undefined),
@@ -209,7 +208,7 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(settings("linked_accounts")).toEqual([keys.chatAccounts.all]);
   });
 
-  it("settings: a playbook refetches every playbook query and the settings that bind playbooks", () => {
+  it("settings: a playbook refetches every playbook query, the settings that bind playbooks and agents", () => {
     expect(
       liveInvalidations(event({ resource: "settings", section: "playbooks", subjectId: ID })),
     ).toEqual([
@@ -217,6 +216,7 @@ describe("LIVE_INVALIDATIONS", () => {
       keys.repositories.all,
       keys.connections.detail("integrations"),
       chatPlaybooksKey(keys),
+      keys.agents.all,
     ]);
   });
 

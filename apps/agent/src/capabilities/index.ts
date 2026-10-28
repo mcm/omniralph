@@ -92,7 +92,7 @@ export interface JobContext {
    */
   setMessageInjector?(inject: ((text: string) => boolean) | undefined): void;
   /**
-   * The absolute path a host tool runs from, as negotiated in the heartbeats
+   * The absolute path a host tool runs from, as the agent last checked it
    * (null when it's unavailable). Unset: no host tool is available.
    */
   hostToolPath?(name: string): string | null;

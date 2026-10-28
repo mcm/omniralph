@@ -175,48 +175,56 @@ whatever is installed globally. There's no uninstall RPC. To remove one, stop th
 
 ## Host tools
 
-### The catalog
+A host tool is software the agent's owner installs by hand (e.g. `opengrep` or `gh`). There is no
+organization catalog: each agent says where its tools are, and playbooks require them by name (the
+executable's name: up to 64 lowercase letters, digits, `.`, `_` and `-`, starting with a letter or
+digit).
 
-An organization's host tool catalog is kept through `/api/ui/host-tools` (admins), which adds one with a name (the executable's name, e.g. `opengrep`: up to 64 lowercase letters, digits,
-`.`, `_` and `-`, starting with a letter or digit, unique in the organization) and an optional
-description, or delete one. Tasks require host tools by these names.
+### Paths on the agent
 
-### Paths, negotiated in the heartbeat
+An agent's host tool paths are in its [`settings.json`](deploy-agent.md#machine-settings-settingsjson)
+(`hostTools`, e.g. `{ "gh": "/opt/gh/bin/gh" }`), set on the agent's page or by hand. The agent
+checks every name in its `hostTools` and every name in the control panel's `requiredHostTools`
+(below):
 
-Every agent heartbeat negotiates where each host tool is:
+1. A **configured** path is used when it's an executable file outside `blockedExecPaths`.
+2. With no path configured, the agent uses the first executable of that name it **discovers** on
+   its own `PATH` (the agent process's `PATH`, never a run's; relative entries and blocked paths are
+   skipped).
+3. A configured path that is **missing**, **not executable** or **blocked** makes the tool
+   unavailable, rather than falling back to whatever is on `PATH`.
 
-1. The control panel answers a heartbeat with the catalog and, per tool, the path configured for
-   this agent, if any.
-2. On its next heartbeat the agent reports, per tool, whether the configured path is an
-   executable file it may run (**Exists**/**Missing**) and the first executable of that name it
-   discovered on its own `PATH` (the agent process's `PATH`, never a run's; relative entries are
-   skipped). Each report is complete: a tool it leaves out is stored as not found, so an agent
-   that stops reporting a tool stops claiming runs that need it.
-3. The **effective path** is the configured path when one is configured, and only if it exists;
-   with none configured, the discovered path. A configured path that is missing makes the tool
-   unavailable rather than falling back to whatever is on `PATH`.
+A change to `settings.json` is checked at once and reported with an immediate heartbeat, so the
+control panel knows within seconds. After a restart the agent checks its configured tools before
+its first heartbeat and the required ones right after it.
 
-A host tool's path belongs to the agent machine: it moves to the agent's local config, and the
-control panel has no page for it. Until then an agent runs each tool from the path it discovers
-on its `PATH`. A new path reaches the agent with its next heartbeat and is checked with the one
-after, so allow about 40 seconds; after a restart the agent has no paths until its second
-heartbeat, and runs needing a host tool are retried meanwhile.
+### What the control panel knows
 
-A host tool always runs from its effective absolute path. A setup or teardown command whose first
-word is one of the task's host tools (`opengrep scan --json .`) runs that path, even when the
-checkout puts an executable of the same name earlier on the run's `PATH`. Only the tools the task
-requires are resolved this way.
+Every heartbeat response carries `requiredHostTools`: the sorted names the organization's playbooks
+require (built-in playbooks require none). Saving or deleting a playbook updates it on every
+agent's next heartbeat. The agent answers with one entry per tool it configured or was asked
+about: its name, the `path` it runs it from (none when unavailable), where that path came from
+(`configured` or `discovered`) and, for an unusable configured path, the `problem` (`missing`,
+`not_executable` or `blocked`). The control panel stores the report read-only; **Fleet** shows it
+on the agent's detail, with the required tools the agent has no path for. The playbook editor
+suggests the names the organization's agents report with a path and the names playbooks already
+require, and accepts any other valid name.
+
+A host tool always runs from its absolute path. A setup or teardown command whose first word is one
+of the task's host tools (`opengrep scan --json .`) runs that path, even when the checkout puts an
+executable of the same name earlier on the run's `PATH`. Only the tools the task requires are
+resolved this way.
 
 ## Requiring them in a task
 
-A task's **Requirements** list installables (npm package names) and host tools (catalog names); an
-agent listing `<package>:<server>` MCP servers adds those installables too. Only an agent whose
-last heartbeat reports every required installable and that has an effective path for every
-required host tool claims the task's runs; others leave them queued. See
+A task's **Requirements** list installables (npm package names) and host tools (executable names);
+an agent listing `<package>:<server>` MCP servers adds those installables too. Only an agent whose
+last heartbeat reports every required installable and every required host tool with a path claims
+the task's runs; others leave them queued. See
 [definitions.md](definitions.md#derived-requirements).
 
-If an installable or host tool goes away between the claim and the run (or isn't negotiated yet
-after a restart), the run is retried after a minute, before anything is checked out. An MCP server
+If an installable or host tool goes away between the claim and the run (or its new configured path
+isn't checked yet), the run is retried after a minute, before anything is checked out. An MCP server
 the agent lists but the installed version doesn't provide fails the run.
 
 ## Locking an agent down

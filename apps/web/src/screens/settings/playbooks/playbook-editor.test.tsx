@@ -145,6 +145,7 @@ const formOptions: PlaybookFormOptions = {
   tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], linear: [...LINEAR_TOOLS] },
   mcpServers: ["@omniralph/code-graph:graph"],
   prDescriptionPlaybooks: [{ id: "builtin:describe-pr", name: "Describe a PR", builtin: true }],
+  hostTools: ["gh", "opengrep"],
 };
 
 /** The server: its playbooks, and what each write answers (set per test). */
@@ -466,6 +467,26 @@ describe("creating a playbook", () => {
     expect(writes()[0]!.body).toMatchObject({ role: "review", tokenBudget: null });
     expect(writes()[0]!.body).not.toHaveProperty("coding");
     expect(writes()[0]!.body).toMatchObject({ tools: { agent: [] } });
+  });
+
+  it("suggests the host tools agents report and playbooks require, and takes any valid name", async () => {
+    renderAt(`${PLAYBOOKS_PATH}/new`);
+    expect(await pageTitle("New playbook")).toBeTruthy();
+    const input = field("Host tools") as HTMLInputElement;
+    const suggested = () =>
+      [...(input.list?.querySelectorAll("option") ?? [])].map((option) => option.value);
+    expect(suggested()).toEqual(["gh", "opengrep"]);
+    // A suggestion taken isn't suggested again.
+    await userEvent.type(input, "gh{Enter}");
+    expect(suggested()).toEqual(["opengrep"]);
+    // A name no agent reports yet still goes in; an invalid one doesn't.
+    await userEvent.type(input, "semgrep{Enter}");
+    await userEvent.type(input, "Bad Name{Enter}");
+    expect(describedError(input)).toBeTruthy();
+    await userEvent.clear(input);
+    await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]!.body).toMatchObject({ requires: { hostTools: ["gh", "semgrep"] } });
   });
 
   it("checks the token budget before sending anything", async () => {

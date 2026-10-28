@@ -1,14 +1,15 @@
 /**
  * Host tools: software the agent owner installs by hand (e.g. opengrep).
- * The heartbeat response lists the organization's host tools with the path
- * configured for this agent; the next heartbeat reports, per tool, whether
- * that path is a usable executable and what the agent found on its own
- * `PATH`. Nothing covered by the local `blockedExecPaths` is ever reported or used.
+ * Their paths are set in the agent's `settings.json` (`hostTools`); a tool
+ * with none configured is looked up on the agent's own `PATH`. Every
+ * heartbeat reports each configured tool and each one the organization's
+ * playbooks require (the last response's `requiredHostTools`). Nothing
+ * covered by the local `blockedExecPaths` is ever reported or used.
  */
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import path from "node:path";
-import type { KnownHostTool, ReportedHostTool } from "@omniralph/shared";
+import type { HostToolProblem, HostToolReport } from "@omniralph/shared";
 import { execPathBlocked, type AgentConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 
@@ -43,77 +44,84 @@ export async function findOnPath(
   return null;
 }
 
-/**
- * The path a host tool runs from: a configured path when it's usable (none
- * when it isn't: no fallback), else the discovered path, else none.
- */
-export function effectiveHostToolPath(
-  configuredPath: string | null,
-  report: Pick<ReportedHostTool, "configuredPathExists" | "discoveredPath">,
-): string | null {
-  if (configuredPath !== null) return report.configuredPathExists === true ? configuredPath : null;
-  return report.discoveredPath;
-}
-
 export interface HostToolPathsOptions {
   config: Pick<AgentConfig, "blockedExecPaths">;
+  /** The paths configured in `settings.json` (`hostTools`), read at each check and lookup. */
+  configured: () => Readonly<Record<string, string>>;
   /** The `PATH` to discover tools on: the agent's own, never a run's. */
   searchPath: () => string | undefined;
   logger: Logger;
 }
 
+/** A checked tool: the configured path it was checked with (null: none) and its report. */
+interface CheckedHostTool {
+  configuredPath: string | null;
+  report: HostToolReport;
+}
+
 /**
- * The host tools' effective paths from the last exchange with the control
- * panel: `check()` reports on the tools of the last heartbeat response and
- * keeps their effective paths; `update()` drops the ones a newer response
- * removed or configured another path for, until they're checked again.
+ * The host tools' paths. `check()` checks every tool configured in
+ * `settings.json` and every name the control panel asked about (its
+ * `requiredHostTools`) and keeps the result for `path()`. A tool whose
+ * configured path changed since (a page save or hand edit) has no path until
+ * it's checked again.
  */
 export class HostToolPaths {
-  private readonly paths = new Map<
-    string,
-    { configuredPath: string | null; path: string | null }
-  >();
+  private checked = new Map<string, CheckedHostTool>();
   /** Blocked configured paths already warned about (`name\0path`), so each is logged once. */
   private readonly warned = new Set<string>();
 
   constructor(private readonly options: HostToolPathsOptions) {}
 
-  /** Checks the known tools and returns the heartbeat's report on them. */
-  async check(known: readonly KnownHostTool[]): Promise<ReportedHostTool[]> {
+  /** Checks the configured tools and the `required` names; returns the heartbeat's report, by name. */
+  async check(required: readonly string[]): Promise<HostToolReport[]> {
+    const configured = this.options.configured();
     const searchPath = this.options.searchPath();
-    const reports: ReportedHostTool[] = [];
-    const paths = new Map<string, { configuredPath: string | null; path: string | null }>();
-    for (const { name, configuredPath } of known) {
-      const report: ReportedHostTool = {
-        name,
-        configuredPath,
-        configuredPathExists:
-          configuredPath === null ? null : await this.configuredPathUsable(name, configuredPath),
-        discoveredPath: await findOnPath(this.options.config, name, searchPath),
-      };
-      reports.push(report);
-      paths.set(name, { configuredPath, path: effectiveHostToolPath(configuredPath, report) });
+    const names = [...new Set([...Object.keys(configured), ...required])].sort();
+    const checked = new Map<string, CheckedHostTool>();
+    for (const name of names) {
+      const configuredPath = Object.hasOwn(configured, name) ? configured[name]! : null;
+      const report =
+        configuredPath === null
+          ? await this.discover(name, searchPath)
+          : await this.checkConfigured(name, configuredPath);
+      checked.set(name, { configuredPath, report });
     }
-    this.paths.clear();
-    for (const [name, entry] of paths) this.paths.set(name, entry);
-    return reports;
+    this.checked = checked;
+    return names.map((name) => checked.get(name)!.report);
   }
 
-  /** Applies a heartbeat response's tools: a removed or reconfigured tool has no path until checked. */
-  update(known: readonly KnownHostTool[]): void {
-    const configured = new Map(known.map((tool) => [tool.name, tool.configuredPath]));
-    for (const [name, entry] of this.paths) {
-      if (configured.get(name) !== entry.configuredPath) this.paths.delete(name);
-    }
+  /** The names `check()` last checked. */
+  checkedNames(): string[] {
+    return [...this.checked.keys()];
   }
 
   /** The absolute path to run a host tool from, or null when it's unavailable. */
   path(name: string): string | null {
-    return this.paths.get(name)?.path ?? null;
+    const entry = this.checked.get(name);
+    if (!entry) return null;
+    const configured = this.options.configured();
+    const configuredPath = Object.hasOwn(configured, name) ? configured[name]! : null;
+    return configuredPath === entry.configuredPath ? entry.report.path : null;
   }
 
-  private async configuredPathUsable(name: string, configuredPath: string): Promise<boolean> {
-    if (!path.isAbsolute(configuredPath)) return false;
+  private async discover(name: string, searchPath: string | undefined): Promise<HostToolReport> {
+    const found = await findOnPath(this.options.config, name, searchPath);
+    return { name, path: found, source: found === null ? null : "discovered", problem: null };
+  }
+
+  private async checkConfigured(name: string, configuredPath: string): Promise<HostToolReport> {
+    const problem = await this.configuredPathProblem(name, configuredPath);
+    return problem === null
+      ? { name, path: configuredPath, source: "configured", problem: null }
+      : { name, path: null, source: null, problem };
+  }
+
+  private async configuredPathProblem(
+    name: string,
+    configuredPath: string,
+  ): Promise<HostToolProblem | null> {
+    if (!path.isAbsolute(configuredPath)) return "missing";
     if (await execPathBlocked(this.options.config, configuredPath)) {
       const key = `${name}\0${configuredPath}`;
       if (!this.warned.has(key)) {
@@ -123,8 +131,13 @@ export class HostToolPaths {
           "the configured host tool path is covered by blockedExecPaths; the tool is unavailable",
         );
       }
-      return false;
+      return "blocked";
     }
-    return isExecutableFile(configuredPath);
+    try {
+      if (!(await stat(configuredPath)).isFile()) return "not_executable";
+    } catch {
+      return "missing";
+    }
+    return (await isExecutableFile(configuredPath)) ? null : "not_executable";
   }
 }
