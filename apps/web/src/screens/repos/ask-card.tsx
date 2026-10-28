@@ -1,10 +1,10 @@
 "use client";
 
-import { Card, SaveBar, Switch } from "@omniralph/ui";
+import { Card, SaveBar, Switch, useStagedCard, type StagedChange } from "@omniralph/ui";
 import { useMemo } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   askCardSchema,
@@ -43,10 +43,9 @@ export function AskCard({ detail, titleId }: { detail: RepositoryDetail; titleId
   const saved = useMemo<AskDraft>(() => ({ enabled: detail.ask.enabled }), [detail.ask.enabled]);
   const card = useStagedCard<AskDraft, z.infer<typeof askSaveResultSchema>>({
     label: "Ask",
-    anchorId: "ask",
     saved,
     toChanges: askChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/ask`,
@@ -60,7 +59,8 @@ export function AskCard({ detail, titleId }: { detail: RepositoryDetail; titleId
           (previous) => ({ ...previous, ask: result.card }),
           (row) => ({ ...row, askEnabled: result.card.enabled }),
         ),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Ask", "ask"),
   });
   const askError = card.fieldErrors.askEnabled;
 

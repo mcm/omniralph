@@ -1,11 +1,6 @@
-"use client";
-
-import { ConfirmDialog, type PendingChange } from "@omniralph/ui";
 import * as React from "react";
-import type { QueryKeys } from "@/lib/api/keys";
-import { useUnsavedChanges } from "./unsaved-changes";
-import { useApiMutation, type Invalidation, type MutationCache } from "./use-api-mutation";
-import "./staged-card.css";
+import { ConfirmDialog } from "./actions/index.js";
+import type { PendingChange } from "./surfaces/index.js";
 
 /** A pending change as the card's save bar lists it: what changes, and what saving does. */
 export interface StagedChange extends PendingChange {
@@ -16,34 +11,29 @@ export interface StagedChange extends PendingChange {
   effect?: string;
 }
 
-/** How a card saves: one request with the whole draft, its answer written into the cache. */
-export interface StagedCardSave<T, R> {
-  /** Sends the whole card (`useApiMutation`'s `mutationFn`). */
-  request: (draft: T, meta: { organizationId: string }) => Promise<R>;
-  /**
-   * Writes the saved card from the answer into every cached query that shows it, so the view
-   * shows the saved state without a refetch (`useApiMutation`'s `applyResult`).
-   */
-  applyResult: (result: R, cache: MutationCache, draft: T) => Promise<void> | void;
-  /**
-   * Queries to refetch in the background once saved. Defaults to none: the save's change
-   * event reconciles every view showing the card, and the view never waits for it.
-   */
-  invalidate?: (keys: QueryKeys) => Invalidation[];
-  /** The success toast. Defaults to "Saved". */
-  success?: string;
+/**
+ * What a failed save rejects with: its `message` shows in the save bar, and an optional
+ * machine-readable `code` and `fieldErrors` (by field path) are kept for the card to show
+ * where they belong. Any `Error` fits.
+ */
+export interface StagedSaveError {
+  message: string;
+  code?: string;
+  fieldErrors?: Record<string, string>;
 }
 
-export interface UseStagedCardOptions<T extends object, R> {
-  /** The card's name, as "Leave without saving?" lists it. */
+export interface UseStagedCardOptions<T extends object, R = unknown> {
+  /** The card's name, for the confirm dialog's default title. */
   label: string;
-  /** The id of the card's element, which the unsaved-changes bar links to. */
-  anchorId: string;
   /** The saved values (from the live query); a field is a top-level key. */
   saved: T;
   /** The save bar's items for the draft's differences from the saved values. */
   toChanges: (saved: T, draft: T) => StagedChange[];
-  save: StagedCardSave<T, R>;
+  /**
+   * Sends the whole draft. It resolves once the saved state shows (the answer written into
+   * the cache), and rejects with a `StagedSaveError` when the save fails; toasts are its job.
+   */
+  save: (draft: T) => Promise<R>;
   /** The changes that need confirming before the save; none (or left out) saves at once. */
   needsConfirm?: (changes: StagedChange[]) => StagedChange[];
   /** The confirm dialog's title. Defaults to "Save <label> changes?". */
@@ -54,6 +44,8 @@ export interface UseStagedCardOptions<T extends object, R> {
    * Discard or `keepEditing` instead of Save. Without it, the draft stays on top silently.
    */
   conflictMessage?: string;
+  /** Called with `dirty` each time it changes (and once on mount), e.g. to guard leaving. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export interface StagedCard<T> {
@@ -72,7 +64,7 @@ export interface StagedCard<T> {
   saving: boolean;
   /** Why the last save failed (the save bar's `error`), until the next edit or save. */
   error: string | undefined;
-  /** The API's machine-readable reason for the last failed save (to show it where it belongs). */
+  /** The machine-readable reason for the last failed save (to show it where it belongs). */
   errorCode: string | undefined;
   /** The last failed save's field errors, by field path (shown under their fields). */
   fieldErrors: Readonly<Record<string, string>>;
@@ -85,30 +77,44 @@ export interface StagedCard<T> {
   conflict: { message: string; onKeepEditing: () => void } | undefined;
 }
 
+/** Shown when a save fails with no message of its own. */
+export const STAGED_SAVE_FAILED = "Something went wrong. Try again.";
+
 function same(a: unknown, b: unknown): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 const NO_FIELD_ERRORS: Readonly<Record<string, string>> = {};
 
+function saveError(failure: unknown): Required<StagedSaveError> {
+  const value = typeof failure === "object" && failure !== null ? failure : {};
+  const message = "message" in value && typeof value.message === "string" ? value.message : "";
+  const code = "code" in value && typeof value.code === "string" ? value.code : "";
+  const fieldErrors =
+    "fieldErrors" in value && typeof value.fieldErrors === "object" && value.fieldErrors !== null
+      ? (value.fieldErrors as Record<string, string>)
+      : NO_FIELD_ERRORS;
+  return { message: message || STAGED_SAVE_FAILED, code, fieldErrors };
+}
+
 /**
  * A settings card's staged edits (the Repos save model, Design rule 11): the draft is the
  * saved values with the user's edits on top, so a live update of the saved values changes
  * the fields the user hasn't touched and keeps the edited ones. Every difference shows in
- * the card's `SaveBar` with its effect; Save sends the whole card in one request (after a
- * `ConfirmDialog` listing the changes `needsConfirm` picks) and writes the answer into the
- * cache (`applyResult`), so the view shows the saved state at once. While dirty, the card is
- * registered with `UnsavedChangesProvider`, so leaving the page asks first.
+ * the card's `SaveBar` with its effect; Save sends the whole card in one `save` call (after
+ * a `ConfirmDialog` listing the changes `needsConfirm` picks). The hook has no data layer of
+ * its own: `save` writes the answer where the view reads it, and `onDirtyChange` lets the
+ * app ask before leaving while the card is dirty.
  */
-export function useStagedCard<T extends object, R>({
+export function useStagedCard<T extends object, R = unknown>({
   label,
-  anchorId,
   saved,
   toChanges,
   save,
   needsConfirm,
   confirmTitle,
   conflictMessage,
+  onDirtyChange,
 }: UseStagedCardOptions<T, R>): StagedCard<T> {
   const [edits, setEdits] = React.useState<Partial<T>>({});
   // The saved values the draft was started from (or last kept on top of), to tell another
@@ -118,6 +124,16 @@ export function useStagedCard<T extends object, R>({
   const [errorCode, setErrorCode] = React.useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = React.useState(NO_FIELD_ERRORS);
   const [confirming, setConfirming] = React.useState<StagedChange[] | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  // Guards a second submit before the `saving` render lands.
+  const inFlight = React.useRef(false);
+  const mounted = React.useRef(true);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const draft = React.useMemo(() => ({ ...saved, ...edits }) as T, [saved, edits]);
   const edited = (Object.keys(edits) as (keyof T)[]).some(
@@ -140,36 +156,20 @@ export function useStagedCard<T extends object, R>({
     [conflictMessage, dirty, base, saved, toChanges],
   );
 
-  useUnsavedChanges(label, anchorId, dirty);
+  // The latest callback, so callers can pass an inline one.
+  const dirtyListener = React.useRef(onDirtyChange);
+  React.useEffect(() => {
+    dirtyListener.current = onDirtyChange;
+  });
+  React.useEffect(() => {
+    dirtyListener.current?.(dirty);
+  }, [dirty]);
 
   const clearErrors = () => {
     setError(undefined);
     setErrorCode(undefined);
     setFieldErrors(NO_FIELD_ERRORS);
   };
-
-  const mutation = useApiMutation<R, T>({
-    mutationFn: (values, meta) => save.request(values, meta),
-    applyResult: (result, cache, values) => save.applyResult(result, cache, values),
-    invalidate: (keys) => save.invalidate?.(keys) ?? [],
-    success: save.success ?? "Saved",
-    onSuccess: (_result, values) => {
-      setBase(null);
-      // Edits made while the save was in flight stay staged.
-      setEdits((current) => {
-        const next: Partial<T> = {};
-        for (const field of Object.keys(current) as (keyof T)[]) {
-          if (!same(current[field], values[field])) next[field] = current[field];
-        }
-        return next;
-      });
-    },
-    onError: (failure) => {
-      setError(failure.message);
-      setErrorCode(failure.code);
-      setFieldErrors(failure.fieldErrors ?? NO_FIELD_ERRORS);
-    },
-  });
 
   const set = React.useCallback(
     <K extends keyof T>(field: K, value: T[K]) => {
@@ -194,12 +194,39 @@ export function useStagedCard<T extends object, R>({
   const keepEditing = React.useCallback(() => setBase(saved), [saved]);
 
   const run = (values: T) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     clearErrors();
-    mutation.mutate(values);
+    setSaving(true);
+    save(values).then(
+      () => {
+        inFlight.current = false;
+        if (!mounted.current) return;
+        setSaving(false);
+        setBase(null);
+        // Edits made while the save was in flight stay staged.
+        setEdits((current) => {
+          const next: Partial<T> = {};
+          for (const field of Object.keys(current) as (keyof T)[]) {
+            if (!same(current[field], values[field])) next[field] = current[field];
+          }
+          return next;
+        });
+      },
+      (failure: unknown) => {
+        inFlight.current = false;
+        if (!mounted.current) return;
+        const { message, code, fieldErrors: errors } = saveError(failure);
+        setSaving(false);
+        setError(message);
+        setErrorCode(code || undefined);
+        setFieldErrors(errors);
+      },
+    );
   };
 
   const submit = () => {
-    if (changes.length === 0 || mutation.isPending || conflicted) return;
+    if (changes.length === 0 || saving || inFlight.current || conflicted) return;
     const toConfirm = needsConfirm?.(changes) ?? [];
     if (toConfirm.length > 0) setConfirming(toConfirm);
     else run(draft);
@@ -236,7 +263,7 @@ export function useStagedCard<T extends object, R>({
     dirty,
     discard,
     submit,
-    saving: mutation.isPending,
+    saving,
     error,
     errorCode,
     fieldErrors,

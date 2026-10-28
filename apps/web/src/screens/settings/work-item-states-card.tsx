@@ -1,9 +1,18 @@
 "use client";
 
-import { Button, Card, EmptyState, Field, SaveBar, Select } from "@omniralph/ui";
+import {
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  SaveBar,
+  Select,
+  useStagedCard,
+  type StagedChange,
+} from "@omniralph/ui";
 import { useMemo } from "react";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import { connectionKeys } from "@/lib/api/keys";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
@@ -125,11 +134,10 @@ function StatesForm({
   const toChanges = useMemo(() => changesFor(options), [options]);
   const card = useStagedCard<WorkItemStatesDraft, TrackerStateMappingView>({
     label: "Work item states",
-    anchorId: "work-item-states",
     saved,
     toChanges,
     conflictMessage: "Another admin changed these states while you were editing.",
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put(
           `/api/ui/trackers/${encodeURIComponent(view.integrationId)}/state-mapping`,
@@ -150,7 +158,8 @@ function StatesForm({
           () => result,
           { exact: true },
         ),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Work item states", "work-item-states"),
   });
   const overlap = statesOverlap(card.draft);
   const readyError = card.fieldErrors["ready.types"];

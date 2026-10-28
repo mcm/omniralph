@@ -1,11 +1,19 @@
 "use client";
 
-import { Button, Card, Field, SaveBar, Select } from "@omniralph/ui";
+import {
+  Button,
+  Card,
+  Field,
+  SaveBar,
+  Select,
+  useStagedCard,
+  type StagedChange,
+} from "@omniralph/ui";
 import { useCallback, useMemo } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useShowAdvanced } from "@/components/show-advanced";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   cardSaveResultSchema,
@@ -106,10 +114,9 @@ export function PlaybooksCard({ detail }: { detail: RepositoryDetail }) {
   );
   const card = useStagedCard<PlaybooksDraft, z.infer<typeof playbooksSaveResultSchema>>({
     label: "Playbooks",
-    anchorId: "advanced",
     saved,
     toChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/playbooks`,
@@ -121,7 +128,8 @@ export function PlaybooksCard({ detail }: { detail: RepositoryDetail }) {
           ...previous,
           playbooks: result.card,
         })),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Playbooks", "advanced"),
   });
   const disabled = !canEdit || card.saving;
 

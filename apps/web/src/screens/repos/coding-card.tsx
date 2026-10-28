@@ -16,14 +16,16 @@ import {
   Textarea,
   TextLink,
   TokenInput,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useMemo, useState } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   codingCardSaveResultSchema,
@@ -494,11 +496,10 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
     z.infer<typeof codingCardSaveResultSchema> & { warning?: string }
   >({
     label: "Coding",
-    anchorId: "coding",
     saved,
     toChanges,
     needsConfirm: codingNeedsConfirm,
-    save: {
+    save: useStagedSave({
       request: async (draft, { organizationId }) => {
         const result = await api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/coding`,
@@ -515,7 +516,8 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
           (previous) => ({ ...previous, coding: result.card }),
           (row) => ({ ...row, codingEnabled: result.card.enabled }),
         ),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Coding", "coding"),
   });
   const { draft, set, fieldErrors } = card;
   // The conflicts query follows the draft's match (discard, a save or a live update move it).

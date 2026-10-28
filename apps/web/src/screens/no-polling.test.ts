@@ -19,7 +19,7 @@ const SCANNED = [
   "src/app/(app)/fleet",
   "src/app/(app)/settings",
   "src/app/(app)/analytics",
-  "src/components/use-staged-card.ts",
+  "src/components/staged-card.ts",
   "src/components/change-history-popover.tsx",
   "src/components/connection-health.tsx",
   "src/components/connect-gitlab-form.tsx",

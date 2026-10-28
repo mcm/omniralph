@@ -3,6 +3,7 @@
  * lists them, how a condition's value is shaped for its operator, the value suggestions and
  * where `PUT` errors belong. Pure, so it's tested without the page.
  */
+import type { StagedChange } from "@omniralph/ui";
 import {
   fieldErrors,
   routingRulesSchema,
@@ -13,7 +14,6 @@ import {
 } from "@omniralph/shared";
 import { prepareRuleGroup, type RuleGroupType } from "react-querybuilder";
 import type { RoutingRules } from "@/lib/api/routing-rules";
-import type { StagedChange } from "@/components/use-staged-card";
 import { describeQuery } from "@/lib/routing/describe";
 
 export type RoutingFieldData = RoutingRules["fields"][number];

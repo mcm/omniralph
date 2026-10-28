@@ -1,30 +1,13 @@
-// @vitest-environment jsdom
-import type * as OmniralphUi from "@omniralph/ui";
-import { useQuery, QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/lib/api/client";
-import { queryKeys } from "@/lib/api/keys";
-import { CurrentUserProvider } from "./current-user";
-import { createTestQueryClient, TEST_ORGANIZATION_ID, testUser } from "./query-test-utils";
-import { UnsavedChangesProvider } from "./unsaved-changes";
-import { useStagedCard, type StagedChange } from "./use-staged-card";
-
-const ui = vi.hoisted(() => ({ toast: vi.fn() }));
-vi.mock("@omniralph/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof OmniralphUi>()),
-  toast: ui.toast,
-}));
-const nav = vi.hoisted(() => ({ router: { push: vi.fn() } }));
-vi.mock("next/navigation", () => ({ useRouter: () => nav.router }));
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import * as React from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { STAGED_SAVE_FAILED, useStagedCard, type StagedChange } from "./use-staged-card.js";
 
 interface Thing {
   name: string;
   enabled: boolean;
 }
-
-const KEY = queryKeys(TEST_ORGANIZATION_ID).agents.detail("thing");
 
 // Trailing spaces don't count as a change (like a list put back in another order).
 const toChanges = (saved: Thing, draft: Thing): StagedChange[] => [
@@ -36,8 +19,10 @@ const toChanges = (saved: Thing, draft: Thing): StagedChange[] => [
     : []),
 ];
 
-let request: ReturnType<typeof vi.fn<(draft: Thing) => Promise<{ card: Thing }>>>;
-let fetches: number;
+let save: ReturnType<typeof vi.fn<(draft: Thing) => Promise<Thing>>>;
+let onDirtyChange: ReturnType<typeof vi.fn<(dirty: boolean) => void>>;
+/** Replaces the saved values, as a live update (or the save's answer) does. */
+let setSaved: (next: Thing) => void;
 
 interface Options {
   confirm?: boolean;
@@ -45,35 +30,30 @@ interface Options {
 }
 
 function Thing(options: Options) {
-  const saved = useQuery<Thing>({
-    queryKey: KEY,
-    queryFn: async () => {
-      fetches += 1;
-      return { name: "alpha", enabled: true };
-    },
-    staleTime: Infinity,
-  });
-  if (!saved.data) return null;
-  return <ThingCard saved={saved.data} {...options} />;
+  const [saved, set] = React.useState<Thing>({ name: "alpha", enabled: true });
+  setSaved = set;
+  return <ThingCard saved={saved} {...options} />;
 }
 
 function ThingCard({ saved, confirm, conflict }: Options & { saved: Thing }) {
-  const card = useStagedCard<Thing, { card: Thing }>({
+  const card = useStagedCard<Thing, Thing>({
     label: "Thing",
-    anchorId: "thing",
     saved,
     toChanges,
-    save: {
-      request: (draft) => request(draft),
-      applyResult: (result, cache) => cache.set<Thing>(KEY, () => result.card),
+    save: async (draft) => {
+      const result = await save(draft);
+      // The save writes its answer where the view reads it.
+      setSaved(result);
+      return result;
     },
     needsConfirm: confirm
       ? (changes) => changes.filter((change) => change.id === "enabled")
       : undefined,
     conflictMessage: conflict ? "Someone else changed this thing." : undefined,
+    onDirtyChange,
   });
   return (
-    <section id="thing">
+    <section>
       <label>
         Name
         <input value={card.draft.name} onChange={(e) => card.set("name", e.target.value)} />
@@ -93,7 +73,9 @@ function ThingCard({ saved, confirm, conflict }: Options & { saved: Thing }) {
           </li>
         ))}
       </ul>
+      {card.saving ? <p>Saving</p> : null}
       {card.error ? <p role="alert">{card.error}</p> : null}
+      {card.errorCode ? <p>Code: {card.errorCode}</p> : null}
       {card.conflict ? (
         <p>
           Conflict: {card.conflict.message}
@@ -109,24 +91,13 @@ function ThingCard({ saved, confirm, conflict }: Options & { saved: Thing }) {
       <button type="button" onClick={card.discard}>
         Discard
       </button>
-      <a href="/elsewhere">Elsewhere</a>
       {card.dialog}
     </section>
   );
 }
 
 function renderThing(options: Options = {}) {
-  const client: QueryClient = createTestQueryClient();
-  render(
-    <CurrentUserProvider user={testUser}>
-      <QueryClientProvider client={client}>
-        <UnsavedChangesProvider>
-          <Thing {...options} />
-        </UnsavedChangesProvider>
-      </QueryClientProvider>
-    </CurrentUserProvider>,
-  );
-  return client;
+  render(<Thing {...options} />);
 }
 
 const nameInput = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Name" });
@@ -136,33 +107,33 @@ const changeItems = () =>
     .queryAllByRole("listitem")
     .map((item) => item.textContent);
 
-beforeEach(() => {
-  ui.toast.mockReset();
-  nav.router.push.mockReset();
-  request = vi.fn(async (draft: Thing) => ({ card: draft }));
-  fetches = 0;
-  window.history.replaceState(null, "", "/repos/thing");
-});
+class SaveFailure extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly fieldErrors: Record<string, string>,
+  ) {
+    super(message);
+  }
+}
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
+beforeEach(() => {
+  save = vi.fn(async (draft: Thing) => draft);
+  onDirtyChange = vi.fn();
 });
 
 describe("useStagedCard", () => {
-  it("seeds the draft from the saved values, with nothing pending", async () => {
+  it("seeds the draft from the saved values, with nothing pending", () => {
     renderThing();
-    expect((await screen.findByRole("textbox", { name: "Name" })).getAttribute("value")).toBe(
-      "alpha",
-    );
+    expect(nameInput().value).toBe("alpha");
     expect(enabledBox().checked).toBe(true);
     expect(changeItems()).toEqual([]);
+    expect(onDirtyChange.mock.calls).toEqual([[false]]);
   });
 
   it("lists each edit with its effect, and un-stages an edit set back", async () => {
     renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.clear(nameInput());
     await user.type(nameInput(), "beta");
     await user.click(enabledBox());
@@ -172,68 +143,64 @@ describe("useStagedCard", () => {
   });
 
   it("follows a live update in untouched fields and keeps the edited ones", async () => {
-    const client = renderThing();
+    renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.clear(nameInput());
     await user.type(nameInput(), "mine");
-    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: false }));
-    await waitFor(() => expect(enabledBox().checked).toBe(false));
+    act(() => setSaved({ name: "theirs", enabled: false }));
+    expect(enabledBox().checked).toBe(false);
     expect(nameInput().value).toBe("mine");
     expect(changeItems()).toEqual(["Name: Renames it."]);
   });
 
   it("flags another save under the draft as a conflict, when asked to", async () => {
-    const client = renderThing({ conflict: true });
+    renderThing({ conflict: true });
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.clear(nameInput());
     await user.type(nameInput(), "mine");
     expect(screen.queryByText(/Conflict:/)).toBeNull();
 
-    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: false }));
-    expect(await screen.findByText(/Conflict: Someone else changed this thing\./)).toBeTruthy();
+    act(() => setSaved({ name: "theirs", enabled: false }));
+    expect(screen.getByText(/Conflict: Someone else changed this thing\./)).toBeTruthy();
     // Save is refused until the user chooses.
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(request).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.queryByText(/Conflict:/)).toBeNull();
     expect(nameInput().value).toBe("mine");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ name: "mine", enabled: false }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "mine", enabled: false }));
+    await waitFor(() => expect(changeItems()).toEqual([]));
     // Saved: a later update is no conflict.
-    act(() => client.setQueryData<Thing>(KEY, { name: "later", enabled: true }));
-    await waitFor(() => expect(nameInput().value).toBe("later"));
+    act(() => setSaved({ name: "later", enabled: true }));
+    expect(nameInput().value).toBe("later");
     expect(screen.queryByText(/Conflict:/)).toBeNull();
   });
 
   it("drops the conflict and the edits on Discard", async () => {
-    const client = renderThing({ conflict: true });
+    renderThing({ conflict: true });
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "2");
-    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: true }));
-    expect(await screen.findByText(/Conflict:/)).toBeTruthy();
+    act(() => setSaved({ name: "theirs", enabled: true }));
+    expect(screen.getByText(/Conflict:/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.queryByText(/Conflict:/)).toBeNull();
     expect(nameInput().value).toBe("theirs");
   });
 
   it("never flags a conflict without a conflict message", async () => {
-    const client = renderThing();
+    renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "2");
-    act(() => client.setQueryData<Thing>(KEY, { name: "theirs", enabled: true }));
-    await waitFor(() => expect(nameInput().value).toBe("alpha2"));
+    act(() => setSaved({ name: "theirs", enabled: true }));
+    expect(nameInput().value).toBe("alpha2");
     expect(screen.queryByText(/Conflict:/)).toBeNull();
   });
 
   it("discards every edit", async () => {
     renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "-x");
     await user.click(enabledBox());
     await user.click(screen.getByRole("button", { name: "Discard" }));
@@ -242,117 +209,124 @@ describe("useStagedCard", () => {
     expect(changeItems()).toEqual([]);
   });
 
-  it("saves the whole draft once, writes the answer into the cache and refetches nothing", async () => {
-    const client = renderThing();
+  it("saves the whole draft once and shows the saved state", async () => {
+    let finish!: (thing: Thing) => void;
+    save.mockImplementation(() => new Promise<Thing>((resolve) => (finish = resolve)));
+    renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
-    expect(fetches).toBe(1);
     await user.type(nameInput(), "-2");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(changeItems()).toEqual([]));
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({ name: "alpha-2", enabled: true });
-    expect(client.getQueryData(KEY)).toEqual({ name: "alpha-2", enabled: true });
+    expect(screen.getByText("Saving")).toBeTruthy();
+    // A second Save while one is in flight sends nothing.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith({ name: "alpha-2", enabled: true });
+
+    await act(async () => finish({ name: "alpha-2", enabled: true }));
+    expect(screen.queryByText("Saving")).toBeNull();
+    expect(changeItems()).toEqual([]);
     expect(nameInput().value).toBe("alpha-2");
-    expect(ui.toast).toHaveBeenCalledWith("Saved");
-    expect(fetches).toBe(1);
-    expect(client.getQueryState(KEY)!.isInvalidated).toBe(false);
+  });
+
+  it("keeps edits made while the save was in flight", async () => {
+    let finish!: (thing: Thing) => void;
+    save.mockImplementation(() => new Promise<Thing>((resolve) => (finish = resolve)));
+    renderThing();
+    const user = userEvent.setup();
+    await user.type(nameInput(), "-2");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(enabledBox());
+    await act(async () => finish({ name: "alpha-2", enabled: true }));
+    expect(changeItems()).toEqual(["Enabled: Stops it."]);
   });
 
   it("sends nothing without changes", async () => {
     renderThing();
-    await screen.findByRole("textbox", { name: "Name" });
     await userEvent.setup().click(screen.getByRole("button", { name: "Save" }));
-    expect(request).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("asks first when changes need confirming, then saves", async () => {
     renderThing({ confirm: true });
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.click(enabledBox());
     await user.type(nameInput(), "!");
     await user.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Save Thing changes?" });
     expect(dialog.textContent).toContain("Enabled Stops it.");
     expect(dialog.textContent).not.toContain("Renames it.");
-    expect(request).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
-    expect(request).toHaveBeenCalledWith({ name: "alpha!", enabled: false });
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenCalledWith({ name: "alpha!", enabled: false });
   });
 
   it("saves nothing when the confirmation is cancelled, keeping the edits", async () => {
     renderThing({ confirm: true });
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.click(enabledBox());
     await user.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Save Thing changes?" });
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(request).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
     expect(changeItems()).toEqual(["Enabled: Stops it."]);
   });
 
   it("saves without asking when no change needs confirming", async () => {
     renderThing({ confirm: true });
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "!");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("keeps the edits and shows the refusal and its field errors when the save fails", async () => {
-    request.mockRejectedValue(
-      new ApiError("Fix the errors below.", 400, "validation", { name: "Too long." }),
+  it("keeps the edits and shows the refusal, its code and field errors when the save fails", async () => {
+    save.mockRejectedValue(
+      new SaveFailure("Fix the errors below.", "validation", { name: "Too long." }),
     );
     renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "!");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Fix the errors below.");
+    expect(screen.getByText("Code: validation")).toBeTruthy();
     expect(screen.getByText("Name error: Too long.")).toBeTruthy();
+    expect(screen.queryByText("Saving")).toBeNull();
     expect(changeItems()).toEqual(["Name: Renames it."]);
     await user.type(nameInput(), "?");
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Name error: Too long.")).toBeNull();
   });
 
-  it("asks before leaving the page while dirty, and not once saved", async () => {
+  it("shows a generic refusal when the save fails without a message", async () => {
+    save.mockRejectedValue(new Error(""));
     renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
     await user.type(nameInput(), "!");
-    await user.click(screen.getByRole("link", { name: "Elsewhere" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
-    expect(dialog.textContent).toContain("1 card has unsaved changes: Thing.");
-    await user.click(within(dialog).getByRole("button", { name: "Keep editing" }));
-    expect(nav.router.push).not.toHaveBeenCalled();
-
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(changeItems()).toEqual([]));
-    // A followed link (not intercepted) would navigate jsdom: stop it.
-    const link = screen.getByRole("link", { name: "Elsewhere" });
-    link.addEventListener("click", (event) => event.preventDefault());
-    await user.click(link);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toBe(STAGED_SAVE_FAILED);
   });
 
-  it("isn't dirty for an edit with no change to save, and doesn't ask before leaving", async () => {
+  it("reports dirty as it changes, and clean once saved", async () => {
     renderThing();
     const user = userEvent.setup();
-    await screen.findByRole("textbox", { name: "Name" });
+    await user.type(nameInput(), "!");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    expect(onDirtyChange.mock.calls).toEqual([[false], [true], [false]]);
+  });
+
+  it("isn't dirty for an edit with no change to save", async () => {
+    renderThing();
+    const user = userEvent.setup();
     await user.type(nameInput(), " ");
     expect(nameInput().value).toBe("alpha ");
     expect(changeItems()).toEqual([]);
-    const link = screen.getByRole("link", { name: "Elsewhere" });
-    link.addEventListener("click", (event) => event.preventDefault());
-    await user.click(link);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onDirtyChange.mock.calls).toEqual([[false]]);
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(request).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 });

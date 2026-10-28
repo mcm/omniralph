@@ -10,12 +10,14 @@ import {
   StatusDot,
   StatusText,
   type StatusTone,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { IconPinnedOff, IconPlus } from "@tabler/icons-react";
 import { useMemo } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   agentsCardSchema,
@@ -104,10 +106,9 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
   );
   const card = useStagedCard<AgentsDraft, z.infer<typeof agentsSaveResultSchema>>({
     label: "Agents",
-    anchorId: "agents",
     saved,
     toChanges: (from, to) => agentsChanges(known, from, to),
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/agents`,
@@ -119,7 +120,8 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
           ...previous,
           agents: result.card,
         })),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Agents", "agents"),
   });
   const { draft, set } = card;
   const disabled = !canEdit || card.saving;

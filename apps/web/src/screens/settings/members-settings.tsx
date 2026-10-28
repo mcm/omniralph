@@ -16,13 +16,15 @@ import {
   TokenInput,
   toast,
   type DataTableColumn,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { IconMailPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { ApiError, api } from "@/lib/api/client";
 import { organizationKeys, type QueryKeys } from "@/lib/api/keys";
 import type { InvitationRow, MemberRow, OrganizationSettings } from "@/lib/api/organization";
@@ -528,10 +530,9 @@ function DomainsCard({ settings }: { settings: OrganizationSettings }) {
   );
   const card = useStagedCard<DomainsDraft, DomainsDraft>({
     label: "Joining by domain",
-    anchorId: "joining-by-domain",
     saved,
     toChanges: domainChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) => saveDomains(saved, draft, organizationId),
       applyResult: (result, cache) =>
         updateSettings(cache, (previous) => ({
@@ -541,7 +542,8 @@ function DomainsCard({ settings }: { settings: OrganizationSettings }) {
         })),
       // A refusal part-way leaves some changes saved: the refetch shows which.
       invalidate: (keys) => [settingsKey(keys)],
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Joining by domain", "joining-by-domain"),
   });
   const { domains, allowDomainJoin } = card.draft;
   const shownAllow = allowDomainJoin && domains.length > 0;
