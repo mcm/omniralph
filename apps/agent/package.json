@@ -24,7 +24,7 @@
     "build": "tsup && vite build --config ui/vite.config.ts",
     "dev": "tsx watch --conditions=@omniralph/source src/cli.ts",
     "start": "node dist/cli.js",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p ui",
     "lint": "eslint .",
     "test": "vitest run"
   },

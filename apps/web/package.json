@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsrs --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "fixtures:up": "tsx --conditions=@omniralph/source scripts/fixtures/up.ts",
