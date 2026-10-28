@@ -45,6 +45,10 @@ omniralph-agent start --healthz-port 9310
 To run it as a service, see the systemd, tmux and pm2 sections in
 [docs/deploy-agent.md](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md).
 
+The agent logs to stderr and to `<dataDir>/logs/agent.log` (`~/.omniralph/logs/agent.log` by
+default), rotated at 10 MB with five older files kept (`agent.log.1` … `agent.log.5`). See
+[Logs](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md#logs).
+
 ## Upgrade
 
 Stop the agent, then:

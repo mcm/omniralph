@@ -13,6 +13,7 @@ import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
 import { CapabilityRegistry, defaultCapabilities, type Capability } from "./capabilities/index.js";
 import {
   ConfigError,
+  type AgentConfig,
   dataDir,
   defaultConfigPath,
   defaultWorkspaceRoot,
@@ -316,10 +317,28 @@ async function runStart(
     return 1;
   }
   const config = await readConfig(configPath);
-  const logger = deps.logger ?? createLogger(deps.env.OMNIRALPH_LOG_LEVEL);
+  const agentDataDir = dataDir(config, deps.homeDir);
+  // stderr, <dataDir>/logs/agent.log and the in-memory ring.
+  const log = deps.logger
+    ? { logger: deps.logger, close: () => {} }
+    : createLogger({ level: deps.env.OMNIRALPH_LOG_LEVEL, dataDir: agentDataDir });
+  try {
+    return await runAgent(config, configPath, agentDataDir, healthzPort, log.logger, deps);
+  } finally {
+    log.close();
+  }
+}
+
+async function runAgent(
+  config: AgentConfig,
+  configPath: string,
+  agentDataDir: string,
+  healthzPort: number | undefined,
+  logger: Logger,
+  deps: MainDeps,
+): Promise<number> {
   const version = deps.version ?? AGENT_VERSION;
   // Before anything starts: an invalid settings.json stops the agent here.
-  const agentDataDir = dataDir(config, deps.homeDir);
   const settings = await LocalSettingsStore.open({
     file: localSettingsPath(agentDataDir),
     logger,

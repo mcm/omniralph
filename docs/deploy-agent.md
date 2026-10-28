@@ -400,6 +400,23 @@ Notes on the unit:
   home and `/tmp` (private).
 - `StartLimit*` stops the restart loop when the agent exits because it has to be re-enrolled.
 
+### Logs
+
+Whichever way it runs, the agent writes the same pino JSON lines to three places:
+
+- stderr, which pm2 (`pm2 logs omniralph-agent`), systemd (`journalctl`) or tmux keep as before;
+- `<dataDir>/logs/agent.log` (`~/.omniralph/logs/agent.log` by default). The directory is 0700 and
+  the files 0600. At 10 MB the file is rotated to `agent.log.1`, the older ones move up to
+  `agent.log.5`, and anything older is deleted, so the log never takes more than about 60 MB;
+- the last 2,000 lines in memory, for the agent's page.
+
+`OMNIRALPH_LOG_LEVEL` (default `info`) sets the level for all three. Refresh, job and session
+tokens, `Authorization` headers and environment maps are written as `[redacted]` everywhere.
+
+```sh
+tail -f ~/.omniralph/logs/agent.log
+```
+
 ### Updating
 
 An agent running under pm2 (detected by the `pm_id` variable pm2 sets) updates itself to its
