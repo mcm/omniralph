@@ -141,18 +141,22 @@ export const LOCAL_SETTINGS_SECTIONS = [
 ] as const;
 export type LocalSettingsSection = (typeof LOCAL_SETTINGS_SECTIONS)[number];
 
-/** Slots and pool limits; null puts a value back to its default. */
+/** Slots and pool limits; null (or left out) puts a value back to its default. */
 export const CapacitySettingsBody = z
   .object({
     revision: LocalSettingsRevision,
-    maxConcurrency: Slots.nullable(),
-    poolLimits: z.object({ long: Slots.nullable(), short: Slots.nullable() }).strict(),
+    maxConcurrency: Slots.nullable().optional(),
+    poolLimits: z
+      .object({ long: Slots.nullable().optional(), short: Slots.nullable().optional() })
+      .strict()
+      .optional(),
   })
   .strict();
 export type CapacitySettingsBody = z.infer<typeof CapacitySettingsBody>;
 
+/** The accepted kinds; left out, every kind. */
 export const KindsSettingsBody = z
-  .object({ revision: LocalSettingsRevision, acceptedTaskTypes: AcceptedTaskTypes })
+  .object({ revision: LocalSettingsRevision, acceptedTaskTypes: AcceptedTaskTypes.optional() })
   .strict();
 export type KindsSettingsBody = z.infer<typeof KindsSettingsBody>;
 
@@ -209,20 +213,21 @@ export function applyLocalSettingsSection<S extends LocalSettingsSection>(
   switch (section) {
     case "capacity": {
       const { maxConcurrency, poolLimits } = value as Omit<CapacitySettingsBody, "revision">;
-      if (maxConcurrency === null) delete next.maxConcurrency;
+      if (maxConcurrency == null) delete next.maxConcurrency;
       else next.maxConcurrency = maxConcurrency;
       const limits: LocalPoolLimits = {};
-      if (poolLimits.long !== null) limits.long = poolLimits.long;
-      if (poolLimits.short !== null) limits.short = poolLimits.short;
+      if (poolLimits?.long != null) limits.long = poolLimits.long;
+      if (poolLimits?.short != null) limits.short = poolLimits.short;
       if (Object.keys(limits).length > 0) next.poolLimits = limits;
       else delete next.poolLimits;
       break;
     }
-    case "kinds":
-      next.acceptedTaskTypes = [
-        ...(value as Omit<KindsSettingsBody, "revision">).acceptedTaskTypes,
-      ];
+    case "kinds": {
+      const { acceptedTaskTypes } = value as Omit<KindsSettingsBody, "revision">;
+      if (acceptedTaskTypes === undefined) delete next.acceptedTaskTypes;
+      else next.acceptedTaskTypes = [...acceptedTaskTypes];
       break;
+    }
     case "host-tools": {
       const { hostTools } = value as Omit<HostToolsSettingsBody, "revision">;
       if (Object.keys(hostTools).length > 0) next.hostTools = { ...hostTools };

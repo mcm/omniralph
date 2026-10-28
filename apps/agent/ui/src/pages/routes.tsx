@@ -5,6 +5,7 @@
 import { EmptyState, TextLink } from "@omniralph/ui";
 import type { ReactNode } from "react";
 import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
+import { CapacityPage } from "./capacity/capacity-page.js";
 import { AgentPage } from "./page.js";
 
 export interface AgentRoute {
@@ -18,6 +19,7 @@ export interface AgentRoute {
 const BACK_TO_AGENT = { label: "Agent", href: INDEX_PATH };
 
 function sectionPage(section: AgentSectionKey): ReactNode {
+  if (section === "capacity") return <CapacityPage />;
   return <AgentPage title={AGENT_SECTIONS[section].label} />;
 }
 

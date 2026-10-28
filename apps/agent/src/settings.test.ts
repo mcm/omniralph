@@ -172,7 +172,7 @@ describe("LocalSettingsStore.update", () => {
     );
     expect(result).toEqual({
       status: "invalid",
-      issues: ["poolLimits.long: must be at most maxConcurrency (2)"],
+      issues: [{ path: ["poolLimits", "long"], message: "must be at most maxConcurrency (2)" }],
     });
     expect(memory.files.get(FILE)).toBe(`{"v":1,"poolLimits":{"long":4}}`);
     expect(changes).toEqual([]);
