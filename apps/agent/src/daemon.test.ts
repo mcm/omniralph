@@ -553,8 +553,9 @@ describe("AgentDaemon", () => {
       });
       void daemon.run();
       await settle();
-      // The first response asked about gh: it's checked and reported right away.
-      expect(api.heartbeat).toHaveBeenCalledTimes(2);
+      // The first response asked about gh: it's checked and reported right away. Checking it
+      // does real fs I/O.
+      await vi.waitFor(() => expect(api.heartbeat).toHaveBeenCalledTimes(2));
       expect(api.heartbeat).toHaveBeenLastCalledWith(
         expect.objectContaining({
           hostTools: [{ name: "gh", path: discovered, source: "discovered", problem: null }],
@@ -582,6 +583,8 @@ describe("AgentDaemon", () => {
       // The page tells it's being checked: the check was made without a configured path.
       expect(daemon.hostToolsState().tools[0]!.checkedPath).toBeNull();
       await settle();
+      // Checking the configured path does real fs I/O; the heartbeat reports it.
+      await vi.waitFor(() => expect(api.heartbeat).toHaveBeenCalledTimes(3));
       expect(daemon.hostToolsState().tools[0]).toEqual({
         name: "gh",
         path: configured,
