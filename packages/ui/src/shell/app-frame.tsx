@@ -41,6 +41,12 @@ export interface AppFrameProps {
    * (e.g. `<aside aria-label="Ask">`).
    */
   aside?: ReactNode;
+  /**
+   * Leaves the phone tab bar out (the board's `.no-tabbar`), for a page that opens full
+   * screen on a phone (e.g. an Ask chat, with its composer pinned at the bottom). The tab
+   * bar only shows at 768 px and narrower, so nothing changes on wider screens.
+   */
+  hideTabBar?: boolean;
 }
 
 type EntryVariant = "side" | "tab" | "drawer";
@@ -171,6 +177,7 @@ export function AppFrame({
   userMenu,
   children,
   aside,
+  hideTabBar = false,
 }: AppFrameProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Any navigation closes the drawer, including ones its link click didn't make (a route
@@ -193,7 +200,7 @@ export function AppFrame({
 
   const mainEntries = nav.filter((item) => item.placement === "main");
   const bottomEntries = nav.filter((item) => item.placement === "bottom");
-  const tabs = nav.filter((item) => item.phone === "tab");
+  const tabs = hideTabBar ? [] : nav.filter((item) => item.phone === "tab");
   const drawerEntries = nav.filter((item) => item.phone === "drawer");
   const alerts = drawerEntries.filter((item) => isNavAlert(item.indicator)).length;
 
@@ -211,6 +218,7 @@ export function AppFrame({
       className={[
         "or-root or-frame",
         tabs.length > 0 ? "or-frame--tabs" : null,
+        hideTabBar ? "or-frame--no-tabbar" : null,
         aside != null ? "or-frame--aside" : null,
       ]
         .filter(Boolean)

@@ -80,6 +80,13 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { name: "backlog", path: "/backlog", page: "(app)/backlog/page.tsx", auth: "signed-in" },
   // Ask: the member's chats.
   { name: "ask", path: "/ask", page: "(app)/ask/page.tsx", auth: "signed-in" },
+  { name: "ask-new", path: "/ask/new", page: "(app)/ask/new/page.tsx", auth: "signed-in" },
+  {
+    name: "ask-chat",
+    path: `/ask/${ids.askChats.controlPanel}`,
+    page: "(app)/ask/[chatId]/page.tsx",
+    auth: "signed-in",
+  },
   {
     name: "backlog-item",
     path: "/backlog/linear-fixture-issue-fix-101",

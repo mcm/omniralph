@@ -179,14 +179,19 @@ describe("the Ask nav entry", () => {
     for (const path of ["/ask", "/ask/new", `/ask/${CHAT_ID}`]) {
       const { unmount } = renderShell(path);
       expect(askEntry().getAttribute("aria-current")).toBe("page");
-      const tabs = within(tabBar()).getAllByRole("link");
-      expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
-        "Inbox",
-        "Runs",
-        "Backlog",
-        "Ask",
-      ]);
-      expect(tabs[3]!.getAttribute("aria-current")).toBe("page");
+      if (path === "/ask") {
+        const tabs = within(tabBar()).getAllByRole("link");
+        expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
+          "Inbox",
+          "Runs",
+          "Backlog",
+          "Ask",
+        ]);
+        expect(tabs[3]!.getAttribute("aria-current")).toBe("page");
+      } else {
+        // New chat and a chat open full screen on a phone: no tab bar.
+        expect(document.querySelector(".or-tabbar")).toBeNull();
+      }
       unmount();
     }
     renderShell("/runs");

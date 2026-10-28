@@ -250,6 +250,12 @@ of its members starts a chat; it is never listed under **Settings › Connection
   back after a reload in the same tab, and closes with Close Ask, the Ask entry or Esc (unless a
   menu or dialog is open, which Esc closes first). On a phone, Ask is the fourth tab and opens
   `/ask`.
+- **Ask on a phone.** The Ask tab's root, `/ask`, is your chats list with New chat, under the top
+  bar and above the tab bar. New chat (`/ask/new`, where `?repository=` picks the repo) and a chat
+  (`/ask/{id}`) open full screen without the tab bar: the chat's header (‹ Chats, its title, repo
+  and branch, New chat) stays at the top and the message box at the bottom, above the phone's
+  safe area. Starting a chat replaces New chat, so Back returns to the list. The same pages work at
+  desktop widths, showing the same views as the panel in the page.
 - **Code answers as written.** A [code question](#code-questions) asked in a web chat runs on the
   chat's repo (unless Om names another) and the branch the chat stored when it started. Its answer
   is posted exactly as the agent wrote it, without a model turn in between, and shows how long the

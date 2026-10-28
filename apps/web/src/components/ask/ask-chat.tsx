@@ -26,6 +26,8 @@ export interface AskChatProps {
   onClose?: () => void;
   /** Moves focus to the composer when the chat opens. */
   autoFocus?: boolean;
+  /** The title's heading level: 1 when the chat is the page (`/ask/{id}`), else 2. */
+  headingLevel?: 1 | 2;
 }
 
 /** "All repos" or the chat's repo, and its branch. */
@@ -48,7 +50,11 @@ export function AskChatHeader({
   onBack,
   onNewChat,
   onClose,
-}: Pick<AskChatProps, "onBack" | "onNewChat" | "onClose"> & { chat: AskChatModel | null }) {
+  headingLevel = 2,
+}: Pick<AskChatProps, "onBack" | "onNewChat" | "onClose" | "headingLevel"> & {
+  chat: AskChatModel | null;
+}) {
+  const Heading = headingLevel === 1 ? "h1" : "h2";
   return (
     <header className="or-ask-chat__header">
       <Button
@@ -62,7 +68,7 @@ export function AskChatHeader({
         Chats
       </Button>
       <div className="or-ask-chat__heading">
-        <h2 className="or-ask-chat__title">{chat?.title ?? "Ask"}</h2>
+        <Heading className="or-ask-chat__title">{chat?.title ?? "Ask"}</Heading>
         {chat ? <ChatScope chat={chat} /> : null}
       </div>
       <div className="or-ask-chat__tools">
@@ -116,7 +122,14 @@ export function AskChat(props: AskChatProps) {
   return <AskChatView key={props.chatId} {...props} />;
 }
 
-function AskChatView({ chatId, onBack, onNewChat, onClose, autoFocus }: AskChatProps) {
+function AskChatView({
+  chatId,
+  onBack,
+  onNewChat,
+  onClose,
+  autoFocus,
+  headingLevel,
+}: AskChatProps) {
   const ask = useAskChat(chatId);
   const [draft, setDraft] = React.useState(() => askDraft(chatId));
   const list = React.useRef<HTMLDivElement | null>(null);
@@ -175,7 +188,13 @@ function AskChatView({ chatId, onBack, onNewChat, onClose, autoFocus }: AskChatP
 
   return (
     <section className="or-ask-chat" aria-label={ask.chat?.title ?? "Chat"}>
-      <AskChatHeader chat={ask.chat} onBack={onBack} onNewChat={onNewChat} onClose={onClose} />
+      <AskChatHeader
+        chat={ask.chat}
+        onBack={onBack}
+        onNewChat={onNewChat}
+        onClose={onClose}
+        headingLevel={headingLevel}
+      />
       <div
         ref={list}
         className="or-ask-chat__messages"

@@ -113,6 +113,8 @@ export interface AskNewChatProps {
   repositoryId?: string | null;
   /** Moves focus to the composer when the view opens. */
   autoFocus?: boolean;
+  /** The title's heading level: 1 when New chat is the page (`/ask/new`), else 2. */
+  headingLevel?: 1 | 2;
 }
 
 /**
@@ -129,6 +131,7 @@ export function AskNewChat({
   onClose,
   repositoryId,
   autoFocus,
+  headingLevel,
 }: AskNewChatProps) {
   const user = useCurrentUser();
   const client = useQueryClient();
@@ -196,7 +199,13 @@ export function AskNewChat({
 
   return (
     <section className="or-ask-chat or-ask-new" aria-label="New chat">
-      <AskChatHeader chat={null} onBack={onBack} onNewChat={newChat} onClose={onClose} />
+      <AskChatHeader
+        chat={null}
+        onBack={onBack}
+        onNewChat={newChat}
+        onClose={onClose}
+        headingLevel={headingLevel}
+      />
       <div className="or-ask-chat__messages">
         <Field label="Repo" stacked>
           <Select
