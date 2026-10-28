@@ -448,5 +448,10 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
 
 ## Scripts
 
-`pnpm --filter @omniralph/ui build | typecheck | lint | test`. Tests run in jsdom; layout
+`pnpm --filter @omniralph/ui build | typecheck | lint | test`.
+
+The agent's page bundles this package (`apps/agent/ui`), so `@omniralph/agent` releases every
+change to it: a pull request that changes `packages/ui` needs an `@omniralph/agent` changeset
+(`pnpm changeset`), or an empty one (`pnpm changeset --empty`) when the change needs no release
+note. CI fails it otherwise (see `apps/agent/README.md` › Releasing). Tests run in jsdom; layout
 facts jsdom can't compute (token values, contrast) are tested by parsing the CSS files.

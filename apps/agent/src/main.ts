@@ -514,7 +514,7 @@ async function runAgent(
     logger,
     state: () =>
       agentUiState({
-        agent: { agentId: config.agentId, server: config.server, version },
+        agent: { agentId: config.agentId, name: hostname(), server: config.server, version },
         daemon,
         settings,
         updater,

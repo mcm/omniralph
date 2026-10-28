@@ -2,12 +2,17 @@
 // without adding a changeset that names @omniralph/agent or an empty changeset
 // (`pnpm changeset --empty`, the deliberate "no release note" opt-out).
 //
+// The bundled directories are apps/agent, packages/engine, packages/ralph, packages/shared,
+// packages/tasks and packages/ui: tsup bundles the first five into dist/cli.js and Vite bundles
+// packages/ui into the agent page (dist/ui). They are derived from the workspace graph
+// (`agentPackageDirs`), devDependencies included, so a new one counts as soon as it's added.
+//
 // Until the 2.0 cutover (Epic 14), a changeset naming the package's old name,
 // @omniralph/harness, passes too: other 2.0 epics still write those, and
 // scripts/rewrite-legacy-changesets.ts renames them before `pnpm changeset version`.
 //
 // The bundled packages are private devDependencies, so `changeset status` doesn't map their
-// changes to the agent: this check does, from the workspace graph.
+// changes to the agent: this check does.
 //
 // Usage: tsx scripts/check-agent-changeset.ts <base-ref>   (e.g. origin/main; run after `pnpm install`)
 import { execFileSync } from "node:child_process";
@@ -95,6 +100,7 @@ export function checkAgentChangeset({
     message: [
       `This pull request changes ${touched.join(", ")}, which ${AGENT} bundles,`,
       `but adds no changeset for ${AGENT}.`,
+      `${AGENT} bundles ${packageDirs.join(", ")}.`,
       `Run \`pnpm changeset\` and pick ${AGENT} (also for changes made only in a bundled`,
       "workspace package), or `pnpm changeset --empty` if the change needs no release note.",
       "See apps/agent/README.md › Releasing.",
@@ -108,14 +114,19 @@ function git(repoRoot: string, args: string[]): string[] {
     .filter((line) => line !== "");
 }
 
-function agentPackageDirs(repoRoot: string): string[] {
+/**
+ * The repo-relative directories of the agent and every workspace package it bundles, from
+ * `pnpm --filter @omniralph/agent... ls`: all dependency types, so the devDependencies tsup
+ * and Vite bundle count (never `--filter-prod`, which would leave them out).
+ */
+export function agentPackageDirs(repoRoot: string): string[] {
   const output = execFileSync(
     "pnpm",
     ["--filter", `${AGENT}...`, "ls", "--depth", "-1", "--json"],
     { cwd: repoRoot, encoding: "utf8" },
   );
   const packages = JSON.parse(output) as { name: string; path: string }[];
-  return packages.map((pkg) => path.relative(repoRoot, pkg.path).split(path.sep).join("/"));
+  return packages.map((pkg) => path.relative(repoRoot, pkg.path).split(path.sep).join("/")).sort();
 }
 
 /** Runs the check against `<base-ref>` (args[0]) and returns the exit code. */

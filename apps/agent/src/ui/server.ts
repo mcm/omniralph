@@ -383,7 +383,13 @@ export async function startUiServer(options: UiServerOptions): Promise<UiServer>
       res.writeHead(405, { allow: "GET, HEAD" }).end();
       return;
     }
-    const segments = safeSegments(rawPath);
+    let segments = safeSegments(rawPath);
+    // The bundle's URLs are relative (`./assets/…`), so a page opened at a nested route
+    // (`/attempts/<id>`) asks for `/attempts/assets/…`: that is the bundle's `assets/…`.
+    const assetsAt = segments?.lastIndexOf("assets") ?? -1;
+    if (segments && assetsAt > 0 && assetsAt === segments.length - 2) {
+      segments = segments.slice(assetsAt);
+    }
     if (segments === null) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found");
       return;

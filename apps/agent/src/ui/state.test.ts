@@ -40,7 +40,12 @@ function sources(overrides: {
   filesystems?: () => Promise<StorageFilesystem[]>;
 }): AgentUiStateSources {
   return {
-    agent: { agentId: "agent-1", server: "https://omniralph.example", version: "2.0.3" },
+    agent: {
+      agentId: "agent-1",
+      name: "build-01",
+      server: "https://omniralph.example",
+      version: "2.0.3",
+    },
     daemon: {
       status: () => ({ ...STATUS, ...overrides.status }),
       missingRequiredHostTools: () => overrides.missing ?? [],
@@ -77,7 +82,12 @@ describe("agentUiState", () => {
   it("collects the status, connection, settings, update, Claude and disk", async () => {
     const state = await agentUiState(sources({}));
     expect(state).toEqual({
-      agent: { agentId: "agent-1", server: "https://omniralph.example", version: "2.0.3" },
+      agent: {
+        agentId: "agent-1",
+        name: "build-01",
+        server: "https://omniralph.example",
+        version: "2.0.3",
+      },
       status: STATUS,
       connection: {
         connected: true,
@@ -115,11 +125,11 @@ describe("agentUiState", () => {
       }),
     );
     expect(state.problems).toEqual([
-      { section: "overview", reason: "Can't reach the control panel" },
+      { section: "overview", reason: "can't reach the control panel" },
       { section: "host_tools", reason: "gh and opengrep required but not found" },
-      { section: "version", reason: "The last update failed" },
-      { section: "claude", reason: "Claude isn't signed in" },
-      { section: "storage", reason: "Low disk space" },
+      { section: "version", reason: "the last update failed" },
+      { section: "claude", reason: "not signed in" },
+      { section: "storage", reason: "low disk" },
     ]);
   });
 
@@ -127,7 +137,7 @@ describe("agentUiState", () => {
     const state = await agentUiState(
       sources({ status: { revoked: true, unreachableSince: "2026-10-28T10:42:00.000Z" } }),
     );
-    expect(state.problems).toEqual([{ section: "overview", reason: "This agent was revoked" }]);
+    expect(state.problems).toEqual([{ section: "overview", reason: "revoked" }]);
     expect(state.connection.revoked).toBe(true);
   });
 
