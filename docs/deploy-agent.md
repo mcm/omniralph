@@ -674,8 +674,13 @@ runs.
 
 Pinning a repository to an agent routes its jobs to that agent only and makes the agent pre-clone it
 (`repo.sync`). **Fleet** shows each agent's status (online, offline since its last heartbeat,
-running), its running and recent work, its packages, its security line and, under **⋯ › Audit
-log**, its audit log (enrollment, token refreshes, credential issuance, revocation).
+running: "Running 2 of 4" once it reports its slots), its running and recent work, its packages, its
+security line and, under **⋯ › Audit log**, its audit log (enrollment, token refreshes, credential
+issuance, revocation). From each heartbeat it also shows, read-only: "· pinned to 2.0.3" in the
+status line when the agent has a local pin, "Missing host tools: gh" when a playbook requires a
+host tool the agent doesn't have, "Claude isn't signed in" under **Models reported**, and, in
+**⋯ › Install package…**, which packages the agent's allow-list lets it install (a name outside it
+is flagged but still sent: the agent decides).
 
 ## Coding work
 

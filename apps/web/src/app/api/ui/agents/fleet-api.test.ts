@@ -260,6 +260,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     await agent("a-running", alpha.id, {
       ...online,
       reportedVersion: "2.0.3",
+      reportedMaxConcurrency: 4,
       reportedHost: { hostname: "coder-ws", coder: { owner: "steve", workspace: "omniralph" } },
     });
     await agent("b-idle", alpha.id, {
@@ -422,7 +423,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     expect(status).toBe(200);
     const organization = { id: alpha.id, name: "Alpha", role: "member" };
     expect(body.agents.map((a) => [a.name, a.status.label, a.online])).toEqual([
-      ["a-running", "Running 1", true],
+      ["a-running", "Running 1 of 4", true],
       ["b-idle", "Idle", true],
       ["c-offline", "Offline 3d", false],
       ["d-never", "Never connected", false],
@@ -442,6 +443,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     expect(byName["a-running"]).toMatchObject({
       id: ids["a-running"],
       runningCount: 1,
+      slots: { running: 1, max: 4 },
       version: "2.0.3",
       host: { hostname: "coder-ws", coder: { owner: "steve", workspace: "omniralph" } },
       lastHeartbeatAt: ago(10_000).toISOString(),
@@ -566,7 +568,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     expect(running.body.agent).toMatchObject({
       id: ids["a-running"],
       organization: { id: alpha.id, name: "Alpha", role: "member" },
-      status: { kind: "running", label: "Running 1" },
+      status: { kind: "running", label: "Running 1 of 4" },
     });
     expect(running.body.runningNow).toEqual([
       {

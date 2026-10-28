@@ -93,7 +93,14 @@ export function agentRow(
     online,
     revoked,
     status: agentStatus(
-      { revoked, online, lastHeartbeatAt: agent.lastHeartbeatAt, updateStatus, runningCount },
+      {
+        revoked,
+        online,
+        lastHeartbeatAt: agent.lastHeartbeatAt,
+        updateStatus,
+        runningCount,
+        maxSlots: agent.reportedMaxConcurrency,
+      },
       now,
     ),
     runningCount,

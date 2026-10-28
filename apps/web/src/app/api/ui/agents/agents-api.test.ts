@@ -551,6 +551,7 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         .returning();
       try {
         expect((await listed(agentId)).slots).toEqual({ running: 1, max: 3 });
+        expect((await listed(agentId)).status.label).toBe("Running 1 of 3");
         expect((await getAgent(agentId)).slots).toEqual({ running: 1, max: 3 });
         expect((await detail(agentId)).local).toEqual({
           poolLimits: { short: 3, long: 1 },

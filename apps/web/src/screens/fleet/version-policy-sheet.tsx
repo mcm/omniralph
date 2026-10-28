@@ -73,6 +73,7 @@ export function withVersionPolicy(
           lastHeartbeatAt: row.lastHeartbeatAt,
           updateStatus,
           runningCount: row.runningCount,
+          maxSlots: row.slots.max,
         },
         now,
       ),

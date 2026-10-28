@@ -16,6 +16,7 @@ import {
   IconPlugConnectedX,
   IconTrash,
 } from "@tabler/icons-react";
+import { installableAllowed } from "@omniralph/shared";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
@@ -43,6 +44,21 @@ export const PACKAGE_NAME_REQUIRED = "Enter a package name.";
 
 /** What the install sheet says installing does (the agent decides). */
 export const INSTALL_ALLOW_LIST = "The agent installs it only if its local allow-list permits it.";
+
+/** Under the Package field when the typed name doesn't match the reported allow-list. */
+export const NOT_ON_ALLOW_LIST = "This agent's allow-list doesn't include this package.";
+
+/**
+ * The install sheet's sentence about the agent's reported allow-list: "This agent only installs
+ * packages that match @omniralph/* or @acme/*.", "This agent doesn't allow any package
+ * installs." when it's empty; null before the agent reports one.
+ */
+export function allowListSentence(allow: readonly string[] | null): string | null {
+  if (allow === null) return null;
+  if (allow.length === 0) return "This agent doesn't allow any package installs.";
+  const patterns = new Intl.ListFormat("en-US", { type: "disjunction" }).format(allow);
+  return `This agent only installs packages that match ${patterns}.`;
+}
 
 /** The revoke confirmation's description. */
 export const REVOKE_DESCRIPTION =
@@ -119,8 +135,20 @@ export function revokedRow(row: FleetAgentRow, revokedAt: string): FleetAgentRow
   };
 }
 
-/** The install sheet's form: mounted only while the sheet is open, so it starts empty. */
-function InstallForm({ agent, onDone }: { agent: FleetAgentRow; onDone: () => void }) {
+/**
+ * The install sheet's form: mounted only while the sheet is open, so it starts empty. A name
+ * outside the reported allow-list is flagged, but submit stays enabled: the agent decides.
+ */
+function InstallForm({
+  agent,
+  allow,
+  onDone,
+}: {
+  agent: FleetAgentRow;
+  /** The agent's reported allow-list; null before it reports one. */
+  allow: readonly string[] | null;
+  onDone: () => void;
+}) {
   const [name, setName] = useState("");
   const [version, setVersion] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -158,6 +186,10 @@ function InstallForm({ agent, onDone }: { agent: FleetAgentRow; onDone: () => vo
     onError: (failure: ApiError) => setError(failure.message),
   });
 
+  const typed = name.trim();
+  const outsideAllowList = allow !== null && typed !== "" && !installableAllowed(allow, typed);
+  const allowSentence = allowListSentence(allow);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = name.trim();
@@ -171,6 +203,7 @@ function InstallForm({ agent, onDone }: { agent: FleetAgentRow; onDone: () => vo
 
   return (
     <form className="or-agent-install" onSubmit={submit} noValidate>
+      {allowSentence ? <p className="or-agent-install__allow">{allowSentence}</p> : null}
       <Field label="Package" stacked>
         <TextInput
           mono
@@ -184,7 +217,7 @@ function InstallForm({ agent, onDone }: { agent: FleetAgentRow; onDone: () => vo
             setName(event.target.value);
             setNameError(null);
           }}
-          errorMessage={nameError ?? undefined}
+          errorMessage={nameError ?? (outsideAllowList ? NOT_ON_ALLOW_LIST : undefined)}
         />
       </Field>
       <Field label="Version" stacked>
@@ -295,7 +328,13 @@ export function AgentActions({ detail }: { detail: AgentDetail }) {
         open={open === "install"}
         onOpenChange={close}
       >
-        {open === "install" ? <InstallForm agent={agent} onDone={() => setOpen(null)} /> : null}
+        {open === "install" ? (
+          <InstallForm
+            agent={agent}
+            allow={detail.local.installablesAllow}
+            onDone={() => setOpen(null)}
+          />
+        ) : null}
       </Sheet>
       <Sheet title="Audit log" open={open === "audit"} onOpenChange={close}>
         <AuditLog audit={detail.audit} />
