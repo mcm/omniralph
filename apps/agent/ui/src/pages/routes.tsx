@@ -6,6 +6,7 @@ import { EmptyState, TextLink } from "@omniralph/ui";
 import type { ReactNode } from "react";
 import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
 import { CapacityPage } from "./capacity/capacity-page.js";
+import { PackagesPage } from "./packages/packages-page.js";
 import { AgentPage } from "./page.js";
 
 export interface AgentRoute {
@@ -20,6 +21,7 @@ const BACK_TO_AGENT = { label: "Agent", href: INDEX_PATH };
 
 function sectionPage(section: AgentSectionKey): ReactNode {
   if (section === "capacity") return <CapacityPage />;
+  if (section === "packages") return <PackagesPage />;
   return <AgentPage title={AGENT_SECTIONS[section].label} />;
 }
 
@@ -36,6 +38,17 @@ export function routeFor(path: string): AgentRoute {
         </AgentPage>
       ),
     };
+  }
+  // An install's output opens over Packages.
+  const install = /^\/packages\/history\/([^/]+)$/.exec(trimmed);
+  if (install) {
+    let id: string;
+    try {
+      id = decodeURIComponent(install[1]!);
+    } catch {
+      id = install[1]!;
+    }
+    return { section: "packages", page: <PackagesPage historyId={id} />, backLink: BACK_TO_AGENT };
   }
   const entry = (Object.entries(AGENT_SECTIONS) as [AgentSectionKey, { href: string }][]).find(
     ([, section]) => section.href === trimmed,

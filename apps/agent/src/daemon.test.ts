@@ -1234,6 +1234,31 @@ describe("AgentDaemon", () => {
     await daemon.shutdown();
   });
 
+  it("heartbeats at once when asked (after a local install), not before it runs or after it stops", async () => {
+    const { api, daemon } = setup({});
+    daemon.heartbeatSoon();
+    await settle();
+    expect(api.heartbeat).not.toHaveBeenCalled();
+
+    void daemon.run();
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    daemon.heartbeatSoon();
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
+    // The interval restarts from that heartbeat.
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(api.heartbeat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.heartbeat).toHaveBeenCalledTimes(3);
+
+    await daemon.shutdown();
+    daemon.heartbeatSoon();
+    await settle();
+    expect(api.heartbeat).toHaveBeenCalledTimes(3);
+  });
+
   it("heartbeats again right after the one in flight when the settings change meanwhile", async () => {
     const { api, local, daemon } = setup({});
     void daemon.run();

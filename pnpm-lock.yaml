@@ -87,6 +87,9 @@ importers:
       '@omniralph/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@tabler/icons-react':
+        specifier: ^3.48.0
+        version: 3.48.0(react@19.3.0)
       '@tanstack/react-query':
         specifier: ^5.104.3
         version: 5.104.3(react@19.3.0)

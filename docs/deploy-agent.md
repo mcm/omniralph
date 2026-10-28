@@ -430,6 +430,17 @@ machine since the page loaded it, nothing is saved: the page shows the current v
 edits on top and asks you to review and save again. A hand edit shows up on the page by itself, and
 an invalid one is shown as an alert while the agent keeps its last good settings.
 
+**Packages** manages the agent's [installables](installables.md#installing-an-installable) on the
+machine itself. **Installed** lists them with an **Update** button (to `latest`) and, in the ⋯
+menu, **Remove…** (`npm uninstall`, after confirming). **Install package…** takes a name and a
+version (default `latest`). These go through the same queue as Fleet's installs, one at a time, and
+the same checks: the allow-list, and a package without a valid `omniralph` manifest is rolled back.
+The **Allow-list** card edits `installables.allow` in `settings.json` like Capacity does; it also
+governs installs requested from Fleet, and an empty list means no package can be installed.
+**Install history** keeps the last 50 installs and removals, from this machine or from Fleet, in
+`<dataDir>/state/installs.json`; a row opens npm's output (its last 64 KB). The agent reports what
+is installed to the control panel right after each change.
+
 `agent.json` keys (see [Enroll](#4-enroll)):
 
 - `ui.port` (default `7410`): the port. When it's taken (a second agent on the host, say), the

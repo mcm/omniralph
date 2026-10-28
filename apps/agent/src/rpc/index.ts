@@ -43,9 +43,9 @@ export class SystemRpcRegistry {
 }
 
 /**
- * The system RPCs this build of the agent ships. `install` needs the local
- * config and the installables prefix: without them it isn't registered (and
- * an `install` job fails as an unknown RPC).
+ * The system RPCs this build of the agent ships. `install` needs the agent's
+ * package manager: without it it isn't registered (and an `install` job
+ * fails as an unknown RPC).
  */
 export function defaultSystemRpcs(install?: InstallRpcOptions): SystemRpc[] {
   return [

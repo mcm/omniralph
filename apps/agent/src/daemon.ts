@@ -272,6 +272,16 @@ export class AgentDaemon implements DrainableDaemon {
     };
   }
 
+  /**
+   * Heartbeats now instead of at the next interval (e.g. after a local
+   * install, so Fleet sees the new installables at once). Does nothing
+   * before `run()` or once stopping.
+   */
+  heartbeatSoon(): void {
+    if (this.stopping || (!this.heartbeating && this.heartbeatTimer === null)) return;
+    void this.heartbeatLoop();
+  }
+
   /** The repositories the last heartbeat pinned to this agent (none before the first one). */
   pinnedRepositories(): PinnedRepository[] {
     return this.config?.pinnedRepositories ?? [];

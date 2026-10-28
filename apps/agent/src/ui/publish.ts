@@ -1,6 +1,7 @@
 import type { AttemptChange, AttemptHistory } from "../attempts/history.js";
 import type { ClaudeStatusReporter } from "../claude-status.js";
 import type { LogRing } from "../logs/ring.js";
+import type { InstallHistory, InstallSummary } from "../packages/history.js";
 import type { LocalSettingsStore } from "../settings.js";
 import type { AgentStorage } from "../storage.js";
 import type { UiEventHub } from "./events.js";
@@ -13,6 +14,7 @@ export function publishLocalChanges(
     history: AttemptHistory;
     claude: ClaudeStatusReporter;
     storage: AgentStorage;
+    installs?: InstallHistory;
     ring?: LogRing;
   },
 ): () => void {
@@ -26,6 +28,8 @@ export function publishLocalChanges(
       if (change.kind === "finished") hub.publish("repos");
     }
   };
+  // An install queued, finished or failed: the history, and what is installed.
+  const onInstall = (install: InstallSummary) => hub.publish("packages", { ids: [install.id] });
   const onClaude = () => hub.publish("claude");
   const onStorage = () => {
     hub.publish("storage");
@@ -33,6 +37,7 @@ export function publishLocalChanges(
   };
   sources.settings.on("change", onSettings);
   sources.history.on("change", onAttempt);
+  sources.installs?.on("change", onInstall);
   sources.claude.on("change", onClaude);
   sources.storage.on("change", onStorage);
   const unsubscribeLogs = sources.ring?.subscribe((entry) =>
@@ -41,6 +46,7 @@ export function publishLocalChanges(
   return () => {
     sources.settings.off("change", onSettings);
     sources.history.off("change", onAttempt);
+    sources.installs?.off("change", onInstall);
     sources.claude.off("change", onClaude);
     sources.storage.off("change", onStorage);
     unsubscribeLogs?.();
