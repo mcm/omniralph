@@ -4,11 +4,16 @@
  * Claude's login) and the nav's problem dots.
  */
 import type { ClaudeStatus } from "../claude-status.js";
-import type { DaemonStatus } from "../daemon.js";
+import type {
+  DaemonHostTool,
+  DaemonHostTools,
+  DaemonStatus,
+  DaemonVersionPolicy,
+} from "../daemon.js";
 import type { Logger } from "../logger.js";
 import type { LocalSettingsState } from "../settings.js";
 import type { StorageFilesystem } from "../storage.js";
-import type { SelfUpdater } from "../update.js";
+import type { SelfUpdater, UpdateRequest } from "../update.js";
 
 /** The nav items that can carry a problem dot. */
 export const NAV_PROBLEM_SECTIONS = [
@@ -38,14 +43,30 @@ export interface AgentUiConnection {
   revoked: boolean;
 }
 
+/** The update state, and the "Update now" no heartbeat has acted on yet. */
+export type AgentUiUpdate = ReturnType<SelfUpdater["report"]> & { request: UpdateRequest | null };
+
+export type AgentUiHostTool = DaemonHostTool;
+
+/** Host tools as last checked, the names playbooks require and where nothing ever runs from. */
+export interface AgentUiHostTools extends DaemonHostTools {
+  /** `agent.json` `blockedExecPaths`, read-only. */
+  blockedExecPaths: string[];
+}
+
+export type AgentUiVersionPolicy = DaemonVersionPolicy;
+
 export interface AgentUiState {
   /** `name` is the machine's hostname, the name enrolling gives an agent by default. */
   agent: { agentId: string; name: string; server: string; version: string };
   status: DaemonStatus;
   connection: AgentUiConnection;
   settings: LocalSettingsState;
-  update: ReturnType<SelfUpdater["report"]>;
+  update: AgentUiUpdate;
+  /** The organization's version policy from the last heartbeat; null when none. */
+  versionPolicy: AgentUiVersionPolicy | null;
   claude: ClaudeStatus | null;
+  hostTools: AgentUiHostTools;
   /** Host tools a playbook requires that this agent can't run. */
   missingRequiredHostTools: string[];
   /** Free space per filesystem; empty when it can't be read. */
@@ -55,9 +76,16 @@ export interface AgentUiState {
 
 export interface AgentUiStateSources {
   agent: AgentUiState["agent"];
-  daemon: { status(): DaemonStatus; missingRequiredHostTools(): string[] };
+  daemon: {
+    status(): DaemonStatus;
+    missingRequiredHostTools(): string[];
+    hostToolsState(): DaemonHostTools;
+    versionPolicy(): DaemonVersionPolicy | null;
+  };
   settings: { read(): LocalSettingsState };
-  updater: Pick<SelfUpdater, "report">;
+  updater: Pick<SelfUpdater, "report" | "pendingRequest">;
+  /** `agent.json` `blockedExecPaths`. */
+  blockedExecPaths: readonly string[];
   claude: { status(): ClaudeStatus | null };
   storage: { filesystems(): Promise<StorageFilesystem[]> };
   logger: Logger;
@@ -69,7 +97,10 @@ function joinNames(names: readonly string[]): string {
 }
 
 export function navProblems(
-  state: Omit<AgentUiState, "problems" | "agent" | "settings">,
+  state: Pick<
+    AgentUiState,
+    "connection" | "update" | "claude" | "missingRequiredHostTools" | "filesystems"
+  >,
 ): NavProblem[] {
   const problems: NavProblem[] = [];
   const { connection, update, claude } = state;
@@ -112,7 +143,7 @@ export async function agentUiState(sources: AgentUiStateSources): Promise<AgentU
       unreachableSince: status.unreachableSince,
       revoked: status.revoked,
     },
-    update: sources.updater.report(),
+    update: { ...sources.updater.report(), request: sources.updater.pendingRequest() },
     claude: sources.claude.status(),
     missingRequiredHostTools: sources.daemon.missingRequiredHostTools(),
     filesystems,
@@ -120,6 +151,11 @@ export async function agentUiState(sources: AgentUiStateSources): Promise<AgentU
   return {
     agent: sources.agent,
     settings: sources.settings.read(),
+    versionPolicy: sources.daemon.versionPolicy(),
+    hostTools: {
+      ...sources.daemon.hostToolsState(),
+      blockedExecPaths: [...sources.blockedExecPaths],
+    },
     ...partial,
     problems: navProblems(partial),
   };

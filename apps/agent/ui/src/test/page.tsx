@@ -3,7 +3,11 @@
  * `ResizeObserver` that reports a chosen width (so `SplitView` shows one pane or both) and
  * `renderAgentPage`, which renders the whole page at a path.
  */
-import { effectiveLocalSettings, type AgentLocalSettings } from "@omniralph/shared";
+import {
+  effectiveLocalSettings,
+  type AgentLocalSettings,
+  type AgentUpdateStateName,
+} from "@omniralph/shared";
 import { clearToasts } from "@omniralph/ui";
 import { act, cleanup, render } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
@@ -139,8 +143,39 @@ export function settingsState(
   return { settings, effective: effectiveLocalSettings(settings), revision, lastError };
 }
 
+/** The update part of `/api/state`: idle, under pm2, nothing failed. */
+export function updateState(
+  overrides: {
+    state?: AgentUpdateStateName;
+    version?: string | null;
+    error?: string | null;
+    failedVersions?: string[];
+    selfUpdate?: "supported" | "unsupported";
+    request?: AgentUiState["update"]["request"];
+  } = {},
+): AgentUiState["update"] {
+  return {
+    selfUpdate: overrides.selfUpdate ?? "supported",
+    update: {
+      state: overrides.state ?? "idle",
+      version: overrides.version ?? null,
+      previous: null,
+      startsSincePending: 0,
+      error: overrides.error ?? null,
+    },
+    failedVersions: overrides.failedVersions ?? [],
+    request: overrides.request ?? null,
+  };
+}
+
 export function agentState(
-  overrides: { problems?: NavProblem[]; settings?: LocalSettingsState } = {},
+  overrides: {
+    problems?: NavProblem[];
+    settings?: LocalSettingsState;
+    update?: AgentUiState["update"];
+    versionPolicy?: AgentUiState["versionPolicy"];
+    hostTools?: Partial<AgentUiState["hostTools"]>;
+  } = {},
 ): AgentUiState {
   return {
     agent: {
@@ -166,8 +201,10 @@ export function agentState(
       revoked: false,
     },
     settings: overrides.settings ?? settingsState(),
-    update: { selfUpdate: "pm2", update: null, failedVersions: [] },
+    update: overrides.update ?? updateState(),
+    versionPolicy: overrides.versionPolicy ?? null,
     claude: null,
+    hostTools: { tools: [], required: [], blockedExecPaths: [], ...overrides.hostTools },
     missingRequiredHostTools: [],
     filesystems: [],
     problems: overrides.problems ?? [],

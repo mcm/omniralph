@@ -451,6 +451,11 @@ export const HeartbeatResponse = z.object({
    */
   desiredVersion: AgentVersion.nullable().default(null),
   /**
+   * How the organization chose `desiredVersion`: `latest` (it tracks the newest release) or
+   * `pinned` (one version); null with no `desiredVersion`. The agent's page shows it.
+   */
+  versionPolicy: z.enum(["latest", "pinned"]).nullable().default(null),
+  /**
    * The host tools the organization's playbooks require (`requirements.hostTools`), sorted:
    * the agent reports on each in its next heartbeat, with the ones it has configured.
    */

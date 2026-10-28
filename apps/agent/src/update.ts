@@ -19,6 +19,7 @@
  */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -233,7 +234,11 @@ export interface SelfUpdaterOptions {
   confirmAfterMs?: number;
 }
 
-export class SelfUpdater {
+/**
+ * Emits `change` whenever what `report()` or `pendingRequest()` answers may have changed
+ * (a request, a phase, a saved state), for the agent page's `update` events.
+ */
+export class SelfUpdater extends EventEmitter<{ change: [] }> {
   private state: UpdateStateFile = emptyState();
   private phase: AgentUpdateStateName = "idle";
   /** The version being drained for or installed. */
@@ -251,6 +256,7 @@ export class SelfUpdater {
   private readonly confirmAfterMs: number;
 
   constructor(private readonly options: SelfUpdaterOptions) {
+    super();
     this.now = options.now ?? Date.now;
     this.drainTimeoutMs = options.drainTimeoutMs ?? DRAIN_TIMEOUT_MS;
     this.confirmAfterMs = options.confirmAfterMs ?? CONFIRM_AFTER_MS;
@@ -328,6 +334,7 @@ export class SelfUpdater {
       version: options.version ?? null,
       requestedAt: (options.at ?? new Date(this.now())).toISOString(),
     };
+    this.changed();
     return { ...this.pending };
   }
 
@@ -389,6 +396,7 @@ export class SelfUpdater {
     const request = this.pending;
     if (!request) return false;
     this.pending = null;
+    this.changed();
 
     const log = this.options.logger;
     if (!this.options.underPm2) {
@@ -484,6 +492,7 @@ export class SelfUpdater {
     const log = this.options.logger;
     this.phase = "draining";
     this.target = version;
+    this.changed();
     log.info(
       { from: this.options.runningVersion, to: version },
       "updating: taking no new jobs and waiting for the running ones",
@@ -492,6 +501,7 @@ export class SelfUpdater {
     if (daemon.isStopping()) {
       this.phase = "idle";
       this.target = null;
+      this.changed();
       return;
     }
     const next = retarget();
@@ -502,6 +512,7 @@ export class SelfUpdater {
       );
       this.phase = "idle";
       this.target = null;
+      this.changed();
       daemon.resume();
       return;
     }
@@ -511,6 +522,7 @@ export class SelfUpdater {
       this.target = next;
     }
     this.phase = "installing";
+    this.changed();
     log.info({ version }, "installing the new version");
     try {
       await this.options.installer.install(version);
@@ -543,8 +555,20 @@ export class SelfUpdater {
     this.state.failed = this.state.failed.slice(-FAILED_VERSIONS_KEPT);
   }
 
-  private save(): Promise<void> {
-    return writeUpdateState(this.options.statePath, this.state);
+  private async save(): Promise<void> {
+    try {
+      await writeUpdateState(this.options.statePath, this.state);
+    } finally {
+      this.changed();
+    }
+  }
+
+  private changed(): void {
+    try {
+      this.emit("change");
+    } catch (error) {
+      this.options.logger.warn({ err: error }, "an update listener failed");
+    }
   }
 }
 

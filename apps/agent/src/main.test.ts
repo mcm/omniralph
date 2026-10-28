@@ -58,6 +58,7 @@ const HEARTBEAT: HeartbeatResponse = {
   jobTokens: [],
   jobMessages: [],
   desiredVersion: null,
+  versionPolicy: null,
   requiredHostTools: [],
 };
 

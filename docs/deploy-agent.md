@@ -441,6 +441,24 @@ governs installs requested from Fleet, and an empty list means no package can be
 `<dataDir>/state/installs.json`; a row opens npm's output (its last 64 KB). The agent reports what
 is installed to the control panel right after each change.
 
+**Host tools** lists every [host tool](installables.md#host-tools) the agent knows: the ones with a
+path in `settings.json`, and the ones the organization's playbooks require (marked **Required**).
+Each shows its status (**Configured**, **Found on PATH**, **Not found**, **Not executable** or
+**Blocked** by `blockedExecPaths`) and path. **Set path…** takes an absolute path; **Use PATH**
+clears it, so the agent looks the tool up on its own `PATH` again. **Add host tool…** takes a name
+and a path. A saved path shows at once as **Checking…** until the agent has checked it, which it
+does right away (and reports to the control panel). **Never run from** shows `blockedExecPaths`
+read-only: it stays in `agent.json`, and the page can't loosen it.
+
+**Version** shows the running version, the organization's policy ("Track latest · 2.0.4" or
+"Pinned to 2.0.3") and where an update is (**Up to date**, **Finishing running work**,
+**Installing 2.0.4**, **Checking 2.0.4** while a new version proves it stays up). **Pin a version**
+edits `update.pin` in `settings.json` (2.0.0 or later); a pin wins over the organization's policy
+(see [Updating](#updating)). **Update now** asks first, then the agent stops taking new work,
+finishes what's running, installs its target and restarts. **Failed versions** lists the versions
+that failed, with the last error. An agent not under pm2 says it can't update itself, and **Update
+now** is disabled there.
+
 `agent.json` keys (see [Enroll](#4-enroll)):
 
 - `ui.port` (default `7410`): the port. When it's taken (a second agent on the host, say), the
@@ -559,7 +577,8 @@ and stay behind on Fleet: upgrade them by hand as in [Install](#2-install).
 
 An update can also be started on demand, on the machine (**Update now**):
 
-- **Update now** on the agent's page.
+- **Update now** on the agent's page (**Version**). The agent heartbeats at once, so the drain
+  starts within seconds.
 - `omniralph-agent update` on the host (as the agent's user, with the same `--config` as `start`).
   It writes `update-request.json` next to `agent.json` (mode 0600); the running agent picks it up
   with its next heartbeat, removes it and makes the same request as the page. If the agent isn't

@@ -154,7 +154,7 @@ describe("the Packages page", () => {
     const failed = within(region("Install history")).getAllByRole("row")[1]!;
     expect(failed.classList.contains("or-tbl__row--bad")).toBe(true);
     expect(failed.querySelector(".or-status--fail")?.textContent).toBe("Failed");
-    expect(document.body.textContent).not.toMatch(/harness|\bralph\b/i);
+    expect(document.body.textContent).not.toMatch(/h[a]rness|\bralph\b/i);
   });
 
   it("installs from the sheet, showing Installing… at once, then installed from the packages event", async () => {

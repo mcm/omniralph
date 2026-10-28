@@ -8,6 +8,7 @@ import {
   type EffectiveLocalSettings,
   type Heartbeat,
   type HeartbeatResponse,
+  type HostToolReport,
   type PinnedRepository,
   type JobFailure,
   type JobOutcomeResponse,
@@ -164,6 +165,25 @@ interface RunningJob {
   sessions?: SessionTee;
 }
 
+/** A host tool as last checked (`DaemonHostTools`). */
+export interface DaemonHostTool extends HostToolReport {
+  /** The configured path it was checked with; null when it was looked up on `PATH`. */
+  checkedPath: string | null;
+  /** A playbook of the organization requires it. */
+  required: boolean;
+}
+
+export interface DaemonHostTools {
+  tools: DaemonHostTool[];
+  /** The names the organization's playbooks require, sorted. */
+  required: string[];
+}
+
+export interface DaemonVersionPolicy {
+  kind: "latest" | "pinned";
+  version: string;
+}
+
 /** Most message IDs one heartbeat acknowledges (per kind); the rest wait for the next one. */
 const MAX_ACKS_PER_HEARTBEAT = 500;
 /** Acknowledged message IDs remembered, so a message the control panel resends isn't injected twice. */
@@ -285,6 +305,33 @@ export class AgentDaemon implements DrainableDaemon {
   /** The repositories the last heartbeat pinned to this agent (none before the first one). */
   pinnedRepositories(): PinnedRepository[] {
     return this.config?.pinnedRepositories ?? [];
+  }
+
+  /**
+   * The host tools as last checked (each with the configured path it was
+   * checked with, so the page tells a path saved since as still being checked)
+   * and the names the organization's playbooks require (sorted; none before
+   * the first heartbeat).
+   */
+  hostToolsState(): DaemonHostTools {
+    const required = [...(this.config?.requiredHostTools ?? [])].sort();
+    const tools = this.hostTools.checkedTools().map(({ configuredPath, report }) => ({
+      ...report,
+      checkedPath: configuredPath,
+      required: required.includes(report.name),
+    }));
+    return { tools, required };
+  }
+
+  /**
+   * The organization's version policy from the last heartbeat (`latest` with
+   * the version it resolves to, or one `pinned` version); null when it has
+   * none or before the first heartbeat.
+   */
+  versionPolicy(): DaemonVersionPolicy | null {
+    const version = this.config?.desiredVersion ?? null;
+    if (version === null) return null;
+    return { kind: this.config?.versionPolicy ?? "pinned", version };
   }
 
   /**

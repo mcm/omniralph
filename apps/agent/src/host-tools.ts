@@ -54,7 +54,7 @@ export interface HostToolPathsOptions {
 }
 
 /** A checked tool: the configured path it was checked with (null: none) and its report. */
-interface CheckedHostTool {
+export interface CheckedHostTool {
   configuredPath: string | null;
   report: HostToolReport;
 }
@@ -89,6 +89,11 @@ export class HostToolPaths {
     }
     this.checked = checked;
     return names.map((name) => checked.get(name)!.report);
+  }
+
+  /** What `check()` last found, by name. */
+  checkedTools(): CheckedHostTool[] {
+    return [...this.checked.values()].map((entry) => ({ ...entry, report: { ...entry.report } }));
   }
 
   /** The names `check()` last checked. */

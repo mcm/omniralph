@@ -199,3 +199,41 @@ body,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A host tool's name with its "Required" badge. */
+.agent-tool-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Read-only paths, one per line (e.g. "Never run from"). */
+.agent-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--or-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* A row of badges, e.g. the failed versions. */
+.agent-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+/* A badge in the fail tone. */
+.agent-badge--fail {
+  border-color: var(--or-fail);
+  background: var(--or-fail-tint);
+  color: var(--or-fail);
+}
