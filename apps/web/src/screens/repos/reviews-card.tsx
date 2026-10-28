@@ -11,11 +11,13 @@ import {
   Switch,
   Textarea,
   TokenInput,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { useCallback, useId, useMemo } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   cardSaveResultSchema,
@@ -127,10 +129,9 @@ export function ReviewsCard({ detail, titleId }: { detail: RepositoryDetail; tit
   );
   const card = useStagedCard<ReviewsDraft, z.infer<typeof reviewsSaveResultSchema>>({
     label: "Reviews",
-    anchorId: "reviews",
     saved,
     toChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put(
           `/api/ui/repositories/${encodeURIComponent(repository.id)}/reviews`,
@@ -144,7 +145,8 @@ export function ReviewsCard({ detail, titleId }: { detail: RepositoryDetail; tit
           (previous) => ({ ...previous, reviews: result.card }),
           (row) => ({ ...row, reviewsEnabled: result.card.enabled }),
         ),
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Reviews", "reviews"),
   });
   const { draft, set, fieldErrors } = card;
   const disabled = !canEdit || card.saving;

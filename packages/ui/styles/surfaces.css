@@ -752,3 +752,15 @@
     display: inline-flex;
   }
 }
+
+/* The confirm dialog of a staged card (`useStagedCard`): one line per change that needs confirming. */
+.or-staged-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.or-staged-confirm__item {
+  display: block;
+}

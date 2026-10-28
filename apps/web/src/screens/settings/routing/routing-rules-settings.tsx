@@ -11,14 +11,15 @@ import {
   SaveBar,
   Select,
   Sheet,
+  useStagedCard,
 } from "@omniralph/ui";
 import { IconArrowDown, IconArrowUp, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import * as React from "react";
 import type { RuleGroupType } from "react-querybuilder";
 import { MAX_ROUTING_RULES } from "@omniralph/shared";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useCurrentUser } from "@/components/current-user";
-import { useStagedCard } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import {
   savedRoutingRulesSchema,
@@ -348,10 +349,9 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
   );
   const card = useStagedCard<RoutingDraft, SavedRoutingRules>({
     label: "Routing rules",
-    anchorId: "routing-rules",
     saved,
     toChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put("/api/ui/routing-rules", savedRoutingRulesSchema, {
           body: { rules: toRuleInputs(draft.rules) },
@@ -364,7 +364,8 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
           { exact: true },
         ),
       success: "Saved the routing rules",
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Routing rules", "routing-rules"),
     conflictMessage: ROUTING_RULES_CONFLICT,
   });
   const rules = card.draft.rules;

@@ -16,12 +16,14 @@ import {
   TextInput,
   useLinkComponent,
   type DataTableColumn,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { createElement, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { useCurrentUser } from "@/components/current-user";
 import { useApiMutation } from "@/components/use-api-mutation";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api, type ApiError } from "@/lib/api/client";
 import {
   savedChannelPlaybooksSchema,
@@ -186,10 +188,9 @@ function DefaultsCard({
   const toChanges = useMemo(() => defaultsChanges(settings), [settings]);
   const card = useStagedCard<DefaultsDraft, MutationResult>({
     label: "Organization default",
-    anchorId: "chat-defaults",
     saved,
     toChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.put("/api/ui/integrations/chat-tasks", mutationResultSchema, {
           body: { ask: draft.ask, startWork: draft.startWork },
@@ -202,7 +203,8 @@ function DefaultsCard({
           { exact: true },
         ),
       success: "Saved the chat playbooks",
-    },
+    }),
+    onDirtyChange: useUnsavedCard("Organization default", "chat-defaults"),
   });
 
   return (

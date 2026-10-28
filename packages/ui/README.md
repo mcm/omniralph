@@ -302,6 +302,50 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
 - `EmptyState`: `title` heading, optional one-sentence `description`, optional `action`
   and decorative `icon`. There is no hint prop (rule 3).
 
+## Staged cards
+
+`useStagedCard` is the one save model for settings cards (Repos, Settings and the agent's
+page, Design rule 11). The draft is the saved values with the user's edits on top, so a live
+update changes the fields the user hasn't touched and keeps the edited ones. Every
+difference shows in the card's `SaveBar`, and Save sends the whole card at once.
+
+```tsx
+const card = useStagedCard<Draft, Result>({
+  label: "Capacity", // the confirm dialog's default title: "Save Capacity changes?"
+  saved, // from the live query; each top-level key is a field
+  toChanges: (saved, draft) => [...], // StagedChange { id, label, from?, to?, effect? }[]
+  save: (draft) => request(draft), // a promise: resolves once the saved state shows
+  needsConfirm: (changes) => changes.filter(...), // optional: a ConfirmDialog lists these first
+  conflictMessage: "…", // optional: another save under the draft is a conflict
+  onDirtyChange: (dirty) => {}, // optional: e.g. ask before leaving the page while dirty
+});
+
+<SaveBar
+  changes={card.changes}
+  onSave={card.submit}
+  onDiscard={card.discard}
+  saving={card.saving}
+  error={card.error}
+  conflict={card.conflict}
+/>
+{card.dialog}
+```
+
+- It returns `draft`, `set(field, value)` (setting a field back to its saved value
+  un-stages it), `changes`, `dirty` (`changes` isn't empty, so an edit `toChanges` doesn't
+  count shows no bar), `discard()`, `submit()`, `saving`, `dialog` (the confirm dialog to
+  render with the card) and `conflict` (the `SaveBar`'s, until `onKeepEditing` or Discard).
+- The hook has no data layer: it imports no TanStack Query (lint enforces it). `save` sends
+  the request, writes the answer where the view reads it and shows its own toasts. When
+  `save` rejects, the edits stay and `error` (the rejection's `message`, or "Something went
+  wrong. Try again."), `errorCode` (its `code`) and `fieldErrors` (its `fieldErrors`, by
+  field path) hold until the next edit or save. Edits made while a save is in flight stay
+  staged.
+- `onDirtyChange(dirty)` runs once on mount and again each time `dirty` changes. In
+  `apps/web`, `useStagedSave` (`components/staged-card.ts`) builds `save` from
+  `useApiMutation` and `useUnsavedCard(label, anchorId)` builds `onDirtyChange`, which
+  registers the card with `UnsavedChangesProvider`.
+
 ## Lists
 
 - `DataTable<T>`: `rows`, `getRowId`, `columns` (`{ id, header, cell(row), card?, align?,

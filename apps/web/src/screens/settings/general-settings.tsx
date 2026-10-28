@@ -1,13 +1,23 @@
 "use client";
 
-import { Button, Card, ConfirmDialog, EmptyState, Field, SaveBar, TextInput } from "@omniralph/ui";
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  SaveBar,
+  TextInput,
+  useStagedCard,
+  type StagedChange,
+} from "@omniralph/ui";
 import { IconDoorExit } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useExpectOrganizationSwitch } from "@/components/organization-guard";
 import { useApiMutation } from "@/components/use-api-mutation";
-import { useStagedCard, type StagedChange } from "@/components/use-staged-card";
 import { api } from "@/lib/api/client";
 import { organizationKeys } from "@/lib/api/keys";
 import type { OrganizationSettings } from "@/lib/api/organization";
@@ -42,10 +52,9 @@ function GeneralCard({ settings }: { settings: OrganizationSettings }) {
   const saved = useMemo<GeneralDraft>(() => ({ name: organization.name }), [organization.name]);
   const card = useStagedCard<GeneralDraft, MutationResult>({
     label: "General",
-    anchorId: "general",
     saved,
     toChanges: generalChanges,
-    save: {
+    save: useStagedSave({
       request: (draft, { organizationId }) =>
         api.patch("/api/ui/organization", mutationResultSchema, {
           body: { name: draft.name.trim() },
@@ -62,7 +71,8 @@ function GeneralCard({ settings }: { settings: OrganizationSettings }) {
           { exact: true },
         ),
       success: "Renamed",
-    },
+    }),
+    onDirtyChange: useUnsavedCard("General", "general"),
   });
 
   return (
