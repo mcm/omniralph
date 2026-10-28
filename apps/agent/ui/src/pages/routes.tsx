@@ -6,9 +6,11 @@ import { EmptyState, TextLink } from "@omniralph/ui";
 import type { ReactNode } from "react";
 import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
 import { CapacityPage } from "./capacity/capacity-page.js";
+import { ClaudePage } from "./claude/claude-page.js";
 import { HostToolsPage } from "./host-tools/host-tools-page.js";
 import { PackagesPage } from "./packages/packages-page.js";
 import { AgentPage } from "./page.js";
+import { StoragePage } from "./storage/storage-page.js";
 import { VersionPage } from "./version/version-page.js";
 
 export interface AgentRoute {
@@ -26,6 +28,8 @@ function sectionPage(section: AgentSectionKey): ReactNode {
   if (section === "packages") return <PackagesPage />;
   if (section === "hostTools") return <HostToolsPage />;
   if (section === "version") return <VersionPage />;
+  if (section === "claude") return <ClaudePage />;
+  if (section === "storage") return <StoragePage />;
   return <AgentPage title={AGENT_SECTIONS[section].label} />;
 }
 

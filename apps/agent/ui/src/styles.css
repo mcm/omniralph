@@ -237,3 +237,27 @@ body,
   background: var(--or-fail-tint);
   color: var(--or-fail);
 }
+
+/* Claude's login headline. */
+.agent-claude__headline {
+  margin: 0 0 4px;
+  color: var(--or-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* A table cell listing several paths, one per line. */
+.agent-cell-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* A repo badge with its "Pinned" badge. */
+.agent-repo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}

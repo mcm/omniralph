@@ -42,6 +42,10 @@ reports the models and the login state:
 The account's email, organization and subscription stay on the machine: the control panel only
 learns the status and source, and shows them on Fleet.
 
+The agent's own page ([**Claude**](deploy-agent.md#the-agent-page)) shows all of it, with the
+account, and says which OS user to sign in as when nobody is. **Check again** there checks at once
+after you sign in, instead of waiting for the hourly check.
+
 ## Env-var overrides
 
 Set one of these in the agent's environment (the systemd unit's `EnvironmentFile`, or the shell

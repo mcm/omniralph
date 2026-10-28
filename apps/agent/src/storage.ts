@@ -141,6 +141,16 @@ export class AgentStorage extends EventEmitter<{ change: [] }> {
     this.yieldToLoop = options.yieldToLoop ?? defaultYield;
   }
 
+  /** `workspaceRoot` and `dataDir`, resolved. */
+  roots(): { workspaceRoot: string; dataDir: string } {
+    return { workspaceRoot: this.workspaceRoot, dataDir: this.dataDir };
+  }
+
+  /** Whether sizes are being measured now. */
+  isMeasuring(): boolean {
+    return this.measuring !== null;
+  }
+
   /** The directories of each item. */
   itemPaths(): Record<StorageItemKey, string[]> {
     return {
@@ -155,13 +165,17 @@ export class AgentStorage extends EventEmitter<{ change: [] }> {
 
   /**
    * Sizes (measured at most every `cacheMs`, or now with `fresh`, as "Measure
-   * again" does; concurrent calls share one walk) and the free space now.
+   * again" does; concurrent calls share one walk, unless `stale` and there are sizes to
+   * answer) and the free space now.
    */
-  async measure(options: { fresh?: boolean } = {}): Promise<StorageReport> {
+  async measure(options: { fresh?: boolean; stale?: boolean } = {}): Promise<StorageReport> {
     // Measuring again measures the repos again too.
     if (options.fresh) this.repoSizes.clear();
     const [measured, filesystems] = await Promise.all([
-      this.sizes(options.fresh ?? false),
+      // `stale`: while a walk runs, the last sizes answer instead of waiting for it.
+      options.stale && this.measuring && this.measured
+        ? Promise.resolve(this.measured)
+        : this.sizes(options.fresh ?? false),
       this.filesystems(),
     ]);
     return {
@@ -221,9 +235,21 @@ export class AgentStorage extends EventEmitter<{ change: [] }> {
       return Promise.resolve(cached);
     }
     if (this.measuring) return this.measuring;
-    const measuring = this.measureSizes().finally(() => {
+    const done = () => {
       if (this.measuring === measuring) this.measuring = null;
-    });
+    };
+    // Done before `change`, so whoever reacts to it reads the new sizes and `isMeasuring()` false.
+    const measuring: Promise<Measured> = this.measureSizes().then(
+      (measured) => {
+        done();
+        this.emit("change");
+        return measured;
+      },
+      (error: unknown) => {
+        done();
+        throw error;
+      },
+    );
     this.measuring = measuring;
     return measuring;
   }
@@ -244,7 +270,6 @@ export class AgentStorage extends EventEmitter<{ change: [] }> {
     }
     const measured = { at: this.now().getTime(), items };
     this.measured = measured;
-    this.emit("change");
     return measured;
   }
 

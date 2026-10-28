@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { hostname, homedir } from "node:os";
+import { hostname, homedir, userInfo } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -62,6 +62,7 @@ import { startUiServer, type UiRoute, type UiServer } from "./ui/server.js";
 import { packageRoutes } from "./ui/package-routes.js";
 import { settingsRoutes } from "./ui/settings-routes.js";
 import { updateRoutes } from "./ui/update-routes.js";
+import { claudeRoutes, storageRoutes } from "./ui/machine-routes.js";
 import { agentUiState } from "./ui/state.js";
 import {
   SelfUpdater,
@@ -528,10 +529,18 @@ async function runAgent(
       ...settingsRoutes(settings),
       ...packageRoutes({ packages, history: installs, logger }),
       ...updateRoutes({ updater, daemon }),
+      ...claudeRoutes(claude),
+      ...storageRoutes({ storage, logger }),
     ],
     state: () =>
       agentUiState({
-        agent: { agentId: config.agentId, name: hostname(), server: config.server, version },
+        agent: {
+          agentId: config.agentId,
+          name: hostname(),
+          server: config.server,
+          version,
+          user: osUser(),
+        },
         daemon,
         settings,
         updater,
@@ -579,6 +588,15 @@ async function runAgent(
  * for `omniralph-agent ui`. The agent runs on without its page when it can't
  * be served.
  */
+/** The OS user the agent runs as (whose Claude login it uses); null when it can't be read. */
+function osUser(): string | null {
+  try {
+    return userInfo().username;
+  } catch {
+    return null;
+  }
+}
+
 async function startAgentPage(options: {
   config: AgentConfig;
   configPath: string;
