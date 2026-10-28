@@ -251,6 +251,8 @@ describe("the packages API", () => {
     expect(saved.status).toBe(200);
     expect(published).toEqual([{ resource: "settings" }]);
     expect((await send(server, "POST", "/api/packages", { name: "left-pad" })).status).toBe(202);
+    // Let the install finish: it writes into the prefix `afterEach` removes.
+    await until(() => published.filter((p) => p.resource === "packages").length === 2);
     expect((await send(server, "POST", "/api/packages", { name: "@omniralph/x" })).status).toBe(
       403,
     );
