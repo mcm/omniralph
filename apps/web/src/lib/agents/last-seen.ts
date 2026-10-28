@@ -45,6 +45,7 @@ export function heartbeatReportFingerprint(report: HeartbeatReport): string {
     report.host ?? null,
     report.local ?? null,
     report.hostTools ?? [],
+    report.claude ?? null,
   ];
   return createHash("sha256").update(JSON.stringify(normalized)).digest("base64url");
 }

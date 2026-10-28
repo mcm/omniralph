@@ -27,7 +27,7 @@ import { execPathBlocked, type AgentConfig } from "./config.js";
 import { agentHost } from "./host.js";
 import { HostToolPaths } from "./host-tools.js";
 import { listInstalledInstallables } from "./installables.js";
-import type { ModelReporter } from "./models.js";
+import { ClaudeStatusReporter } from "./claude-status.js";
 import { runCodingTask } from "./lifecycle/coding.js";
 import { runQueryTask } from "./lifecycle/query.js";
 import { runReviewTask } from "./lifecycle/review.js";
@@ -109,8 +109,11 @@ export interface DaemonOptions {
   settings?: DaemonSettings;
   /** The `PATH` host tools are discovered on (default: the agent process's own `PATH`). */
   hostToolSearchPath?: () => string | undefined;
-  /** The Claude models reported in every heartbeat (none when unset). */
-  models?: Pick<ModelReporter, "current">;
+  /**
+   * Claude's login state and models, reported in every heartbeat (`claude`
+   * without the account, and `models`). Unset: no models and no `claude`.
+   */
+  claude?: Pick<ClaudeStatusReporter, "current">;
   /** The machine the agent runs on, reported in every heartbeat (default `agentHost()`). */
   host?: () => AgentHostReport;
   /**
@@ -423,7 +426,7 @@ export class AgentDaemon implements DrainableDaemon {
     const rejectedMessageIds = ids(false);
     const installables = await this.installedInstallables();
     const hostTools = await this.checkHostTools();
-    const models = (await this.options.models?.current()) ?? [];
+    const claude = await this.options.claude?.current();
     const local = this.localSettings();
     try {
       const response = await this.options.api.heartbeat({
@@ -435,7 +438,8 @@ export class AgentDaemon implements DrainableDaemon {
         failedVersions: [],
         installables,
         hostTools,
-        models,
+        models: claude?.models ?? [],
+        ...(claude && { claude: ClaudeStatusReporter.report(claude) }),
         acceptedTaskTypes: local.acceptedTaskTypes,
         host: (this.options.host ?? (() => agentHost()))(),
         local: {

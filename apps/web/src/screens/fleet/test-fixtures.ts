@@ -114,6 +114,7 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
     },
     hostTools: [],
     missingRequiredHostTools: [],
+    claude: null,
     audit: [],
     pinSyncJobs: [],
   };

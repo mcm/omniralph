@@ -295,7 +295,10 @@ describe("omniralph-agent CLI", () => {
         homeDir: dir,
         logger: silentLogger(),
         onShutdownSignal: () => {},
-        listModels: async () => [{ value: "opus", displayName: "Opus", description: "" }],
+        readClaude: async () => ({
+          models: [{ value: "opus", displayName: "Opus", description: "" }],
+          account: { email: "agent@example.com", apiProvider: "firstParty" as const },
+        }),
         ...extra,
       };
     }
@@ -440,7 +443,12 @@ describe("omniralph-agent CLI", () => {
         version: "1.0.0",
         selfUpdate: "supported",
         models: [{ value: "opus", displayName: "Opus" }],
+        claude: { status: "signed_in", source: "login", checkedAt: expect.any(String) },
       });
+      // The account never leaves the machine.
+      expect(
+        JSON.stringify(server.calls.find((c) => c.path === "/api/agent/heartbeat")?.body),
+      ).not.toContain("agent@example.com");
     });
 
     it("under pm2, updates to the version pinned in settings.json over the organization's", async () => {

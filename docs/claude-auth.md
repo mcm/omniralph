@@ -28,6 +28,20 @@ them (`settingSources: ["user", "project", "local"]`), so skills installed in th
 If the login is missing or expired, reviews fail with "Log in once on this host with `claude` …".
 Log in again as the agent's user; no restart is needed.
 
+## How the agent checks its login
+
+At startup, then hourly, the agent opens an idle Claude session (no prompt, no tools) and reads
+the account (`accountInfo()`) and the models it can run (`supportedModels()`). Every heartbeat
+reports the models and the login state:
+
+- **status**: `signed_in`; `signed_out` when the check fails with an authentication error or the
+  login reports no models; `unknown` when the check times out (after a minute) or fails otherwise.
+- **source**: `login` (the `claude` login), `api_key` (`ANTHROPIC_API_KEY`), `oauth_token`
+  (`CLAUDE_CODE_OAUTH_TOKEN`) or `other` (a third-party provider such as Bedrock or Vertex).
+
+The account's email, organization and subscription stay on the machine: the control panel only
+learns the status and source, and shows them on Fleet.
+
 ## Env-var overrides
 
 Set one of these in the agent's environment (the systemd unit's `EnvironmentFile`, or the shell

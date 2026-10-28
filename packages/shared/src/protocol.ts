@@ -256,6 +256,30 @@ export const ReportedModel = z.object({
 });
 export type ReportedModel = z.infer<typeof ReportedModel>;
 
+/** Whether the agent's Claude login works: `unknown` when the last check timed out. */
+export const CLAUDE_LOGIN_STATUSES = ["signed_in", "signed_out", "unknown"] as const;
+export type ClaudeLoginStatus = (typeof CLAUDE_LOGIN_STATUSES)[number];
+
+/**
+ * Where the agent's Claude credentials come from: the `claude` CLI's login, an
+ * `ANTHROPIC_API_KEY`, a `CLAUDE_CODE_OAUTH_TOKEN`, or a third-party provider
+ * (Bedrock, Vertex, a gateway…).
+ */
+export const CLAUDE_LOGIN_SOURCES = ["login", "api_key", "oauth_token", "other"] as const;
+export type ClaudeLoginSource = (typeof CLAUDE_LOGIN_SOURCES)[number];
+
+/**
+ * The agent's Claude login state, as its last check found it. The account
+ * (email, organization) never leaves the machine: unknown keys are stripped.
+ */
+export const ClaudeLoginReport = z.object({
+  status: z.enum(CLAUDE_LOGIN_STATUSES),
+  /** Null when signed out or unknown. */
+  source: z.enum(CLAUDE_LOGIN_SOURCES).nullable(),
+  checkedAt: z.iso.datetime(),
+});
+export type ClaudeLoginReport = z.infer<typeof ClaudeLoginReport>;
+
 /** Longest host name, owner or workspace name a heartbeat's `host` carries. */
 export const AGENT_HOST_NAME_MAX = 255;
 
@@ -331,6 +355,8 @@ export const Heartbeat = z.object({
   models: z.array(ReportedModel).max(100).default([]),
   /** The host tools the agent has configured or was asked about (`requiredHostTools`), by name. */
   hostTools: z.array(HostToolReport).max(100).default([]),
+  /** Whether the agent's Claude login works. Absent from older agents: the last report is kept. */
+  claude: ClaudeLoginReport.optional(),
   /** When the agent's Ably token (`ably` of a response) expires; absent when it has none. */
   ablyTokenExpiresAt: z.iso.datetime().optional(),
   /**

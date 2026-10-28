@@ -278,6 +278,9 @@ export async function loadAgentDetail(
       problem,
     })),
     missingRequiredHostTools: missingHostToolNames(agent.reportedHostTools, requiredHostTools),
+    claude: agent.reportedClaude
+      ? { status: agent.reportedClaude.status, source: agent.reportedClaude.source }
+      : null,
     audit: audit.map((entry) => ({
       id: entry.id,
       event: entry.event,

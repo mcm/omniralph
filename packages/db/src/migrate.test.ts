@@ -4524,7 +4524,7 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
       };
     }
 
-    it("keeps every production row and kept column, and drops the settings", async () => {
+    it("keeps every production row and kept column, drops the settings and adds reported_claude", async () => {
       const { uri, client } = await beforeDrop("drop_machine_settings_production");
       try {
         // Production: 3 organizations, all 9 agents in the first (7 live, 2 revoked and
@@ -4602,7 +4602,8 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
           [org],
         );
 
-        const dropped = DROPPED_COLUMNS.map((c) => `'${c}'`).join(" - ");
+        // 0117 adds `reported_claude`, null on every row: compared below.
+        const dropped = [...DROPPED_COLUMNS, "reported_claude"].map((c) => `'${c}'`).join(" - ");
         const read = async () => ({
           organizations: (await client.query(`select * from organizations order by id`)).rows,
           agents: (
@@ -4622,8 +4623,14 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         await runMigrations(uri);
 
         expect(await read()).toEqual(before);
+        const { rows: claude } = await client.query<{ reported_claude: unknown }>(
+          `select reported_claude from agents order by id`,
+        );
+        expect(claude).toHaveLength(9);
+        for (const row of claude) expect(row.reported_claude).toBeNull();
         const state = await schemaState(client);
         for (const column of DROPPED_COLUMNS) expect(state.columns).not.toContain(column);
+        expect(state.columns).toContain("reported_claude");
         expect(state.tables).toEqual([]);
         const { rows: setting } = await client.query<{ value: unknown }>(
           `select value from app_settings where organization_id = $1 and key = 'agent.desiredVersion'`,
@@ -4796,6 +4803,14 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
          where table_schema = 'public' and table_name in ('host_tools', 'agent_host_tools')`,
       );
       expect(tables).toEqual([]);
+    });
+
+    it("applies 0117 to a fresh database: reported_claude is a nullable jsonb", async () => {
+      const { rows } = await db.$client.query(
+        `select data_type, is_nullable, column_default from information_schema.columns
+         where table_schema = 'public' and table_name = 'agents' and column_name = 'reported_claude'`,
+      );
+      expect(rows).toEqual([{ data_type: "jsonb", is_nullable: "YES", column_default: null }]);
     });
   });
 });

@@ -5,7 +5,12 @@
  * After changing this file run `pnpm --filter db generate` to emit a migration
  * into `packages/db/drizzle`, then `pnpm --filter db migrate` to apply it.
  */
-import type { AgentHostReport, HostToolReport, RoutingQuery } from "@omniralph/shared";
+import type {
+  AgentHostReport,
+  ClaudeLoginReport,
+  HostToolReport,
+  RoutingQuery,
+} from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -1269,6 +1274,11 @@ export const agents = pgTable(
      * last heartbeat reported them: a tool with a `path` is usable. Empty until it reports.
      */
     reportedHostTools: jsonb("reported_host_tools").$type<HostToolReport[]>().notNull().default([]),
+    /**
+     * Whether the agent's Claude login works (`status`, `source`, `checkedAt`), as its last
+     * heartbeat that carried one reported it; null until then. No account details.
+     */
+    reportedClaude: jsonb("reported_claude").$type<ClaudeLoginReport>(),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The agent's self-update progress, as last reported. */

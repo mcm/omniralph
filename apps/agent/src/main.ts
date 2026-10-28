@@ -38,7 +38,7 @@ import {
   type InstallableInstaller,
 } from "./installables.js";
 import { createLogger, type Logger } from "./logger.js";
-import { ModelReporter, sdkListModels, type ListModels } from "./models.js";
+import { ClaudeStatusReporter, sdkReadClaude, type ReadClaude } from "./claude-status.js";
 import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
 import {
@@ -118,8 +118,11 @@ export interface MainDeps {
   installer?: Installer;
   /** Installs installables for the `install` RPC (default: `npm install --prefix`). */
   installableInstaller?: InstallableInstaller;
-  /** Reads the models Claude can run, for the heartbeat (default: the Agent SDK's `supportedModels()`). */
-  listModels?: ListModels;
+  /**
+   * Reads Claude's login and the models it can run, for the heartbeat (default: the Agent
+   * SDK's `accountInfo()` and `supportedModels()`).
+   */
+  readClaude?: ReadClaude;
   /** Filesystem for `settings.json` (default: `node:fs`). */
   settingsFs?: SettingsFs;
   /** Clock for self-update confirmation (ms since epoch). */
@@ -415,7 +418,7 @@ async function runAgent(
     ),
     logger,
     dataDir: agentDataDir,
-    models: new ModelReporter({ list: deps.listModels ?? sdkListModels(), logger }),
+    claude: new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger }),
     localConfig: config,
     settings,
     history,
