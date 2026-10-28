@@ -124,9 +124,14 @@ pins and audit log, with no new enrollment.
    - **not imported: unknown key**: a key the agent doesn't know. It's dropped.
    - **not imported: versions of @omniralph/harness**: `update-state.json` and `update-request.json`
      name old package versions, so they stay behind. Self-update starts afresh.
-   - **kept by the control panel**: concurrency, pool limits, pins, host tool paths and the desired
-     version were never in the file. They carry over in the control panel (see
-     [Central config](#central-config)).
+   - **imported into settings.json**: `acceptedTaskTypes` and `installables.allow` go to
+     [`settings.json`](#machine-settings-settingsjson) in the data directory (mode 0600, merged into
+     one already there), not `agent.json`. The file is only written when the old config set one of
+     them.
+   - **default (set them on the agent's page)**: slots, pool limits, host tool paths and the version
+     pin were never in the old file and start at their defaults.
+   - **kept by the control panel**: pins and the desired version carry over in the control panel
+     (see [Central config](#central-config)).
 
    Warnings follow when the `workspaceRoot` or data directory is missing: the agent then clones
    repositories and reinstalls installables again, which is slow but harmless. The import refuses,
@@ -136,6 +141,7 @@ pins and audit log, with no new enrollment.
      invalid): it names each problem. Fix them and run it again;
    - the old daemon is still running: stop it (step 1). `--force` imports anyway, but two processes
      sharing one refresh token revoke the agent;
+   - `settings.json` exists in the data directory but isn't valid: fix or remove it;
    - `agent.json` already exists (for example from an install up to 0.8.0, when the package was
      called `@omniralph/agent` the first time): `--force` backs it up to
      `agent.json.bak-<timestamp>` and replaces it.
@@ -192,15 +198,16 @@ This writes `~/.config/omniralph/agent.json` (mode 0600, directory 0700) with th
 ID, refresh token and `workspaceRoot`. `--config <file>` or `OMNIRALPH_AGENT_CONFIG` choose
 another path, for `enroll` and `start` alike.
 
-You can add these optional keys by hand. Token rotation keeps them, and they stay out of the file
-when unset:
+`agent.json` holds the agent's identity and bootstrap only. You can add these optional keys by
+hand. Token rotation keeps them, and they stay out of the file when unset:
 
-| Key                  | Default            | Meaning                                                                                                                                                                                                                                                                                                                  |
-| -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `installables.allow` | `["@omniralph/*"]` | npm package patterns the agent accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The agent enforces this itself, whatever the control panel asks. |
-| `blockedExecPaths`   | `[]`               | Absolute path prefixes the agent never executes: host tools (whether their path was configured in the control panel or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides. |
-| `dataDir`            | `~/.omniralph`     | Absolute directory for the agent's installables and their caches.                                                                                                                                                                                                                                                      |
-| `acceptedTaskTypes`  | all three          | The task types the agent runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The agent reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only. |
+| Key                | Default        | Meaning                                                                                                                                                                                                                                                                                                       |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blockedExecPaths` | `[]`           | Absolute path prefixes the agent never executes: host tools (configured or discovered on `PATH`), installable commands and installable MCP servers. Matches whole path segments (`/opt/x` covers `/opt/x/bin/tool`, not `/opt/xy`) after resolving symlinks on both sides.                                   |
+| `dataDir`          | `~/.omniralph` | Absolute directory for the agent's installables, their caches and `settings.json`.                                                                                                                                                                                                                            |
+| `ui.enabled`       | `true`         | Whether the agent serves its page.                                                                                                                                                                                                                                                                            |
+| `ui.port`          | `7410`         | The agent page's port (1–65535). The page is served on 127.0.0.1 only.                                                                                                                                                                                                                                       |
+| `ui.allowedHosts`  | `[]`           | Extra host names (no scheme or port) the page answers to, for a port-forwarding proxy such as Coder's dashboard.                                                                                                                                                                                             |
 
 ```json
 {
@@ -208,16 +215,58 @@ when unset:
   "agentId": "…",
   "refreshToken": "…",
   "workspaceRoot": "/home/coder/.omniralph/repos",
-  "installables": { "allow": ["@omniralph/*", "@acme/*"] },
   "blockedExecPaths": ["/opt/untrusted"],
-  "acceptedTaskTypes": ["query", "review"]
+  "ui": { "port": 7410 }
 }
 ```
 
-[installables.md](installables.md) explains installables, host tools and how these keys lock a
-host down. An invalid value stops the agent at startup with an error naming the key. Edit the file while the
+An invalid value stops the agent at startup with an error naming the key. Edit the file while the
 agent is stopped: it rewrites the file when it rotates its refresh token, and a re-enrollment
-replaces it.
+replaces it. `acceptedTaskTypes` and `installables` moved to `settings.json` (below): an
+`agent.json` that still has them stops the agent with "`<key>` moved to settings.json". Move them
+by hand (`omniralph-agent import` does it for an `@omniralph/harness` config).
+
+### Machine settings (`settings.json`)
+
+The agent's machine settings live in `settings.json` in its data directory
+(`~/.omniralph/settings.json` by default), written with mode 0600. The agent is their only
+source: no control panel page sets them. Without the file every setting has its default. Every
+key but `v` is optional:
+
+| Key                  | Default                                           | Meaning                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v`                  | —                                                 | Always `1`.                                                                                                                                                                                                                                                                                                              |
+| `maxConcurrency`     | `5`                                               | Slots: how many attempts the agent runs at once, 1–32.                                                                                                                                                                                                                                                                  |
+| `poolLimits.long`    | slots − 1 (at least 1)                            | How many slots coding attempts may take, 1 to the slots. By default one slot stays free for reviews and asks.                                                                                                                                                                                                           |
+| `poolLimits.short`   | the slots                                         | How many slots reviews, asks and triage may take, 1 to the slots.                                                                                                                                                                                                                                                       |
+| `acceptedTaskTypes`  | all three                                         | The task types the agent runs: a non-empty list of `query`, `review` and `coding`, each once (see [Central config](#central-config)). `repo.sync` and other housekeeping jobs always run. The agent reports it in every heartbeat and claim and only gets jobs of these types; the control panel shows it read-only.     |
+| `hostTools`          | `{}`                                              | Host tool paths by name (`{ "gh": "/usr/bin/gh" }`), each absolute. A tool without one is looked up on `PATH`.                                                                                                                                                                                                         |
+| `installables.allow` | `["@omniralph/*"]`                                | npm package patterns the agent accepts installables from. A pattern is an exact package name or contains `*`, which matches any characters except `/`: `@omniralph/*` matches `@omniralph/codegraph` but not `@omniralph-evil/x`. `[]` allows none. The agent enforces this itself, whatever the control panel asks. |
+| `update.pin`         | none                                              | An agent version (2.0.0 or later) that wins over the organization's version policy.                                                                                                                                                                                                                                     |
+
+```json
+{
+  "v": 1,
+  "maxConcurrency": 4,
+  "poolLimits": { "long": 2 },
+  "acceptedTaskTypes": ["query", "review"],
+  "installables": { "allow": ["@omniralph/*", "@acme/*"] }
+}
+```
+
+The file accepts no other key. The accepted task types and the allow-list apply without a restart:
+the next claim and the next install use them. The agent doesn't apply slots, pool limits, host tool
+paths and the pin from the file yet; until it does, they come from the control panel as described
+in [Central config](#central-config).
+
+Edit the settings on the agent's page, or by hand while the agent runs. The agent watches the file
+and applies a valid edit about a quarter of a second after the last write. It ignores an invalid
+edit: it keeps its last good settings, logs "settings.json isn't valid: …; the agent keeps its last
+good settings" and shows the problem on its page until the file is valid again. A `settings.json`
+that isn't valid when the agent starts stops it with an error naming the key.
+
+[installables.md](installables.md) explains installables, host tools and how these keys lock a
+host down.
 
 The refresh token rotates every ~15 minutes and is rewritten atomically. **Never copy the file to
 another host or restore an old backup of it**: presenting an old refresh token looks like token
@@ -414,25 +463,27 @@ not under pm2 only log the request.
 
 ## Central config
 
-Everything except the local config file (`agent.json`, see [Enroll](#4-enroll), including the task
-types the agent runs) is configured centrally and delivered in every heartbeat response (every
+Everything except the local files (`agent.json` and `settings.json`, see [Enroll](#4-enroll),
+including the task types the agent runs) is configured centrally and delivered in every heartbeat response (every
 20s), so changes need no restart:
 
 | Setting                                                             | Where                                                                                      | Default                                                            |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| Max concurrency (parallel jobs)                                     | the agent machine's local config (see below)                                               | 1                                                                  |
-| Concurrency per pool (1 to max concurrency)                         | the agent machine's local config (see below)                                               | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
+| Max concurrency (parallel jobs)                                     | the agent's `settings.json` (see below)                                                    | 1                                                                  |
+| Concurrency per pool (1 to max concurrency)                         | the agent's `settings.json` (see below)                                                    | `long`: max concurrency − 1 (at least 1); `short`: max concurrency |
 | Pinned repositories                                                 | **Repos › Agents** (**Fleet** lists them, read-only)                                       | none (every agent is eligible for every repo)                      |
 | Desired agent version ([self-update](#self-update-pm2), pm2 only) | **Fleet › Version policy**                                                                 | none (not managed)                                                 |
 | Job cancellations                                                   | **Jobs** (cancel)                                                                          | —                                                                  |
 
 Max concurrency, pool limits and host tool paths belong to the agent machine, like its accepted
-task types: they move to its local config, and the control panel has no page for them. Until then
+task types: they move to its [`settings.json`](#machine-settings-settingsjson), and the control
+panel has no page for them. Until the agent applies them from there
 the control panel still delivers them in the heartbeat, so every agent runs with the defaults
 above.
 
 Accepted task types decide what a host may run (trust), so the host itself decides them: the
-`acceptedTaskTypes` key of its `agent.json` (all three when unset), read when the agent starts.
+`acceptedTaskTypes` key of its [`settings.json`](#machine-settings-settingsjson) (all three when
+unset), applied as soon as it changes.
 `query` covers replies, code questions, learned rules and triage, `review` PR/MR reviews and
 `coding` the jobs of coding runs (`ralph.*`), which change code and push. `repo.sync` and other housekeeping jobs always run.
 The agent sends its list in every heartbeat and claim, and only claims jobs of those types (and
@@ -492,9 +543,9 @@ yet (it uses `opus`).
 
 ### Enabling coding work
 
-An agent runs every task type unless its `agent.json` lists `acceptedTaskTypes`. To let an agent
-that lists them run coding work, add `coding` to the list (or remove the key) while the agent is
-stopped, then start it again. The agent then also claims its organization's `ralph.*` jobs (`coding` task type,
+An agent runs every task type unless its `settings.json` lists `acceptedTaskTypes`. To let an agent
+that lists them run coding work, add `coding` to the list (or remove the key); the agent applies
+it at once. The agent then also claims its organization's `ralph.*` jobs (`coding` task type,
 `long` pool; see
 [ADR 0004](adr/0004-organizations.md#job-isolation)).
 
@@ -658,7 +709,7 @@ What to do:
    for its history.
 4. Pin the old agent's repositories to the new one again from **Repos › Agents** (pins belong to
    the agent ID). Add back any optional keys of the old `agent.json` you used
-   (`acceptedTaskTypes`, `installables`, `blockedExecPaths`, `dataDir`).
+   (`blockedExecPaths`, `dataDir`, `ui`). `settings.json` stays as it was.
 5. Start the agent again.
 
 When an admin revokes an agent, its running jobs are re-queued at once. After a `refresh_reuse`, the

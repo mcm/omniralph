@@ -1,6 +1,7 @@
 export * from "./finding.js";
 export * from "./agent-protocol.js";
 export * from "./protocol.js";
+export * from "./agent-settings.js";
 export * from "./pools.js";
 export * from "./review-job.js";
 export * from "./review-depth.js";

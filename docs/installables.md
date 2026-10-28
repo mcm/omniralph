@@ -221,9 +221,11 @@ the agent lists but the installed version doesn't provide fails the run.
 
 ## Locking an agent down
 
-The agent enforces these settings in its local config (`~/.config/omniralph/agent.json`)
-itself, whatever the control panel asks; see [deploy-agent.md](deploy-agent.md#4-enroll) for
-the file.
+The agent enforces these settings itself, whatever the control panel asks. `installables.allow`
+and `acceptedTaskTypes` are in its `settings.json` (`~/.omniralph/settings.json`; see
+[deploy-agent.md](deploy-agent.md#machine-settings-settingsjson)), `blockedExecPaths` and `dataDir`
+in its `agent.json` (`~/.config/omniralph/agent.json`; see
+[deploy-agent.md](deploy-agent.md#4-enroll)).
 
 - **`installables.allow`** (default `["@omniralph/*"]`): the package names the `install` RPC may
   install. Installing is remote code execution on the host by any admin of the organization, so
@@ -249,13 +251,14 @@ the file.
   so a host you don't trust to push code can leave out `coding`. Housekeeping jobs (`repo.sync`,
   installs) always run.
 
-Changes to the local config apply when the agent restarts.
+Changes to `installables.allow` and `acceptedTaskTypes` apply at once: the next install and the
+next claim use them. Changes to `agent.json` apply when the agent restarts.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | -- | -- |
-| Install job fails with "isn't allowed on this agent" | The agent's `installables.allow` doesn't match the package name. |
+| Install job fails with "isn't allowed on this agent" | The `installables.allow` of the agent's `settings.json` doesn't match the package name. |
 | Install job fails with "isn't a valid installable" | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`). |
 | Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`. |
 | A task's runs stay queued | No agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |

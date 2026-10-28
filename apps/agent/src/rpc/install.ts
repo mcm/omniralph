@@ -1,5 +1,9 @@
-import { INSTALL_JOB_TYPE, InstallPayload, type InstallResult } from "@omniralph/shared";
-import { installableAllowed, type AgentConfig } from "../config.js";
+import {
+  INSTALL_JOB_TYPE,
+  InstallPayload,
+  installableAllowed,
+  type InstallResult,
+} from "@omniralph/shared";
 import {
   ensureInstallablesPrefix,
   readInstalledPackage,
@@ -8,8 +12,11 @@ import {
 import type { SystemRpc } from "./index.js";
 
 export interface InstallRpcOptions {
-  /** The local config: its `installables.allow` decides which packages may be installed. */
-  config: AgentConfig;
+  /**
+   * The installables allow-list in force (`settings.json`'s `installables.allow`),
+   * read for each install.
+   */
+  allowList: () => readonly string[];
   /** The installables npm prefix (`installablesPrefix(dataDir)`). */
   prefix: string;
   installer: InstallableInstaller;
@@ -18,7 +25,7 @@ export interface InstallRpcOptions {
 /**
  * `install` (targeted at one agent by an admin) installs or updates an
  * installable in the agent's installables prefix. It is remote code
- * execution on the host, so the local `installables.allow` is checked here,
+ * execution on the host, so the allow-list in force is checked here,
  * before npm runs, whatever the control panel allowed. A package without a
  * valid `omniralph` manifest is removed again (or the version installed
  * before is restored) and the job fails. Installs run one at a time.
@@ -31,11 +38,11 @@ export function installRpc(options: InstallRpcOptions): SystemRpc {
       const payload = InstallPayload.safeParse(job.payload);
       if (!payload.success) return Promise.reject(new Error("invalid install payload"));
       const { name, version = "latest" } = payload.data;
-      if (!installableAllowed(options.config, name)) {
+      if (!installableAllowed(options.allowList(), name)) {
         ctx.logger.warn({ installable: name }, "refused to install a package not allowed here");
         return Promise.reject(
           new Error(
-            `${name} isn't allowed on this agent (its local config's installables.allow doesn't match it)`,
+            `${name} isn't allowed on this agent (its allow-list in settings.json doesn't match it)`,
           ),
         );
       }

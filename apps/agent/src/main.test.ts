@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HeartbeatResponse } from "@omniralph/shared";
@@ -88,6 +88,25 @@ describe("omniralph-agent CLI", () => {
     expect(importSection).toContain("@omniralph/harness");
     expect(USAGE.replace(importSection, "")).not.toMatch(/harness/i);
     expect(USAGE).not.toMatch(/\bralph\b/i);
+  });
+
+  it("lists the agent.json keys, ui among them, and names settings.json for the rest", () => {
+    const keys = USAGE.slice(USAGE.indexOf("Local config keys"));
+    for (const key of [
+      "server",
+      "agentId",
+      "refreshToken",
+      "workspaceRoot",
+      "dataDir",
+      "blockedExecPaths",
+      "ui.enabled",
+      "ui.port",
+      "ui.allowedHosts",
+    ]) {
+      expect(keys).toContain(key);
+    }
+    expect(keys).not.toMatch(/acceptedTaskTypes|installables\.allow/);
+    expect(keys).toContain("settings.json");
   });
 
   it("lists import and its options in its usage", () => {
@@ -275,6 +294,8 @@ describe("omniralph-agent CLI", () => {
         fetch: server.fetch,
         // Not under pm2, whatever runs the tests.
         env: {},
+        // The data directory (settings.json) under the temp dir, never the real one.
+        homeDir: dir,
         logger: silentLogger(),
         onShutdownSignal: () => {},
         listModels: async () => [{ value: "opus", displayName: "Opus", description: "" }],
@@ -289,6 +310,32 @@ describe("omniralph-agent CLI", () => {
       const server = fakeServer({});
       expect(await main(["start", "--config", configPath], { io, ...startDeps(server) })).toBe(1);
       expect(out.stderr).toContain("accessible by group or others");
+      expect(server.calls).toEqual([]);
+    });
+
+    it("refuses to start, calling nothing, when settings.json isn't valid", async () => {
+      await writeConfig(configPath, config);
+      const settings = path.join(dir, ".omniralph", "settings.json");
+      await mkdir(path.dirname(settings), { recursive: true });
+      await writeFile(settings, JSON.stringify({ v: 1, maxConcurrency: 0 }), { mode: 0o600 });
+      const { out, io } = capture();
+      const server = fakeServer({});
+      expect(await main(["start", "--config", configPath], { io, ...startDeps(server) })).toBe(1);
+      expect(out.stderr).toContain(`${settings} isn't valid: maxConcurrency`);
+      expect(server.calls).toEqual([]);
+    });
+
+    it("refuses to start with a key that moved to settings.json", async () => {
+      await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
+      await writeFile(
+        configPath,
+        JSON.stringify({ ...config, installables: { allow: ["@acme/*"] } }),
+        { mode: 0o600 },
+      );
+      const { out, io } = capture();
+      const server = fakeServer({});
+      expect(await main(["start", "--config", configPath], { io, ...startDeps(server) })).toBe(1);
+      expect(out.stderr).toContain("installables moved to settings.json");
       expect(server.calls).toEqual([]);
     });
 

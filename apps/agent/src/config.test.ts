@@ -13,13 +13,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  acceptedTaskTypes,
   dataDir,
   defaultConfigPath,
   defaultDataDir,
   defaultWorkspaceRoot,
   execPathBlocked,
-  installableAllowed,
   readConfig,
   validateServerUrl,
   writeConfig,
@@ -118,34 +116,6 @@ describe("config file", () => {
   });
 });
 
-describe("installableAllowed", () => {
-  it("defaults to the @omniralph scope", () => {
-    expect(installableAllowed(CONFIG, "@omniralph/codegraph")).toBe(true);
-    expect(installableAllowed(CONFIG, "@omniralph-evil/x")).toBe(false);
-    expect(installableAllowed(CONFIG, "codegraph")).toBe(false);
-    expect(installableAllowed(CONFIG, "@omniralph/a/b")).toBe(false);
-    expect(installableAllowed({ ...CONFIG, installables: {} }, "@omniralph/codegraph")).toBe(true);
-  });
-
-  it("matches exact names and scope wildcards", () => {
-    const config = { ...CONFIG, installables: { allow: ["semgrep-mcp", "@acme/*", "@x/tool-*"] } };
-    expect(installableAllowed(config, "semgrep-mcp")).toBe(true);
-    expect(installableAllowed(config, "semgrep-mcp-extra")).toBe(false);
-    expect(installableAllowed(config, "@acme/anything")).toBe(true);
-    expect(installableAllowed(config, "@acme2/anything")).toBe(false);
-    expect(installableAllowed(config, "@x/tool-graph")).toBe(true);
-    expect(installableAllowed(config, "@x/other")).toBe(false);
-    expect(installableAllowed(config, "@omniralph/codegraph")).toBe(false);
-  });
-
-  it("treats regex characters literally and an empty list as allowing nothing", () => {
-    expect(installableAllowed({ ...CONFIG, installables: { allow: ["a.b"] } }, "axb")).toBe(false);
-    expect(installableAllowed({ ...CONFIG, installables: { allow: [] } }, "@omniralph/x")).toBe(
-      false,
-    );
-  });
-});
-
 describe("execPathBlocked", () => {
   let dir: string;
   beforeEach(async () => {
@@ -226,14 +196,12 @@ describe("config file settings", () => {
     await writeFile(file, JSON.stringify(value), { mode: 0o600 });
   }
 
-  it("loads a file written before the settings existed, with the defaults", async () => {
+  it("loads a file written before the optional keys existed, with the defaults", async () => {
     await writeRaw(CONFIG);
     const config = await readConfig(file);
     expect(config).toEqual(CONFIG);
-    expect(installableAllowed(config, "@omniralph/codegraph")).toBe(true);
     expect(await execPathBlocked(config, "/usr/bin/env")).toBe(false);
     expect(dataDir(config, "/home/h")).toBe("/home/h/.omniralph");
-    expect(acceptedTaskTypes(config)).toEqual(["query", "review", "coding"]);
     // Rewriting it (as token rotation does) doesn't add the new keys.
     await writeConfig(file, { ...config, refreshToken: "next" });
     expect(Object.keys(JSON.parse(await readFile(file, "utf8")) as object).sort()).toEqual([
@@ -244,44 +212,61 @@ describe("config file settings", () => {
     ]);
   });
 
-  it("loads and keeps the settings when set", async () => {
-    const withSettings = {
+  it("loads and keeps the optional keys when set", async () => {
+    const withKeys = {
       ...CONFIG,
       dataDir: "/srv/omniralph",
-      installables: { allow: ["@acme/*", "semgrep-mcp"] },
       blockedExecPaths: ["/opt/untrusted"],
-      acceptedTaskTypes: ["coding", "review"],
+      ui: { enabled: true, port: 7411, allowedHosts: ["coder.example.com", "localhost"] },
     };
-    await writeRaw(withSettings);
+    await writeRaw(withKeys);
     const config = await readConfig(file);
-    expect(config).toEqual(withSettings);
-    expect(acceptedTaskTypes(config)).toEqual(["review", "coding"]);
+    expect(config).toEqual(withKeys);
     await writeConfig(file, config);
-    expect(await readConfig(file)).toEqual(withSettings);
+    expect(await readConfig(file)).toEqual(withKeys);
+    await writeRaw({ ...CONFIG, ui: {} });
+    expect((await readConfig(file)).ui).toEqual({});
   });
 
-  it.each(["", " ", "@a/ b", "@a/b/c", "a//b"])(
-    "rejects the installable pattern %j naming the key",
-    async (pattern) => {
-      await writeRaw({ ...CONFIG, installables: { allow: [pattern] } });
-      await expect(readConfig(file)).rejects.toThrow(/installables\.allow/);
-    },
-  );
+  it.each([
+    ["acceptedTaskTypes", { acceptedTaskTypes: ["review"] }],
+    ["installables", { installables: { allow: ["@acme/*"] } }],
+    ["installables", { installables: {} }],
+  ])("refuses a config that still has %s, pointing at settings.json", async (key, extra) => {
+    await writeRaw({ ...CONFIG, ...extra });
+    await expect(readConfig(file)).rejects.toThrow(`${key} moved to settings.json`);
+  });
+
+  it("names every moved key and every other issue", async () => {
+    await writeRaw({
+      ...CONFIG,
+      acceptedTaskTypes: ["review"],
+      installables: { allow: [] },
+      dataDir: "data",
+    });
+    const error = await readConfig(file).catch((e: Error) => e);
+    expect((error as Error).message).toMatch(
+      /acceptedTaskTypes moved to settings\.json; installables moved to settings\.json; dataDir: must be an absolute path/,
+    );
+  });
+
+  it.each([
+    [{ port: 0 }, "ui.port"],
+    [{ port: 65536 }, "ui.port"],
+    [{ port: 80.5 }, "ui.port"],
+    [{ enabled: "yes" }, "ui.enabled"],
+    [{ allowedHosts: ["http://coder.example"] }, "ui.allowedHosts.0"],
+    [{ allowedHosts: ["coder.example:7410"] }, "ui.allowedHosts.0"],
+    [{ allowedHosts: "coder.example" }, "ui.allowedHosts"],
+  ])("rejects ui %j naming the key", async (ui, key) => {
+    await writeRaw({ ...CONFIG, ui });
+    await expect(readConfig(file)).rejects.toThrow(key);
+  });
 
   it("rejects relative blocked paths and data dir naming the key", async () => {
     await writeRaw({ ...CONFIG, blockedExecPaths: ["/ok", "bin"] });
     await expect(readConfig(file)).rejects.toThrow(/blockedExecPaths\.1: must be an absolute path/);
     await writeRaw({ ...CONFIG, dataDir: "data" });
     await expect(readConfig(file)).rejects.toThrow(/dataDir/);
-    await writeRaw({ ...CONFIG, installables: { allow: "@omniralph/*" } });
-    await expect(readConfig(file)).rejects.toThrow(/installables\.allow/);
   });
-
-  it.each([[], ["system"], ["ralph"], ["review", "review"], "review", [7]])(
-    "rejects the accepted task types %j naming the key",
-    async (acceptedTaskTypes) => {
-      await writeRaw({ ...CONFIG, acceptedTaskTypes });
-      await expect(readConfig(file)).rejects.toThrow(/acceptedTaskTypes/);
-    },
-  );
 });
