@@ -257,6 +257,40 @@ describe("the Version page", () => {
     expect(within(dialog).getByText(/installs 2\.0\.3 and restarts\.$/)).toBeTruthy();
   });
 
+  it("shows a saved pin at once, before the state refetch answers", async () => {
+    const refetch = deferred<{ body: unknown }>();
+    let gets = 0;
+    const saved = settingsState({ v: 1, update: { pin: "2.0.3" } }, { revision: NEXT_REVISION });
+    const { api } = await openVersion({
+      routes: (machine) => ({
+        "/api/state": () => (++gets === 1 ? { body: agentState(machine) } : refetch.promise),
+        "PUT /api/settings/version": () => ({ body: saved }),
+      }),
+    });
+    const card = screen.getByRole("region", { name: "Pin a version" });
+    await userEvent.click(within(card).getByRole("switch", { name: "Pin this agent's version" }));
+    await userEvent.type(within(card).getByLabelText("Version"), "2.0.3");
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    await userEvent.click(within(bar).getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Pinned to 2.0.3");
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
+    );
+    expect(
+      within(card)
+        .getByRole("switch", { name: "Pin this agent's version" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect((within(card).getByLabelText("Version") as HTMLInputElement).value).toBe("2.0.3");
+    await userEvent.click(updateNow());
+    const dialog = await screen.findByRole("alertdialog", { name: "Update now?" });
+    expect(within(dialog).getByText(/installs 2\.0\.3 and restarts\.$/)).toBeTruthy();
+    // The page asked for the state again, and that refetch hasn't answered yet.
+    expect(api.count("GET /api/state")).toBeGreaterThanOrEqual(2);
+    refetch.resolve({ body: agentState({ settings: saved }) });
+  });
+
   it("unpins, and keeps the edit when settings.json changed on the machine", async () => {
     const latest = settingsState(
       { v: 1, maxConcurrency: 3, update: { pin: "2.0.3" } },

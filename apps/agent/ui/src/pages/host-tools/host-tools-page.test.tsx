@@ -127,10 +127,12 @@ async function openHostTools({
 }
 
 /** Saves answer like the agent: the file now holds the map. */
-function savesMap(machine: Machine, sent: unknown[]) {
-  return (init: RequestInit | undefined) => {
+/** Saves the sent map once `held` (if given) resolves, so a test can look before the answer. */
+function savesMap(machine: Machine, sent: unknown[], held?: Promise<void>) {
+  return async (init: RequestInit | undefined) => {
     const body = JSON.parse(String(init?.body)) as { hostTools: Record<string, string> };
     sent.push(body);
+    await held;
     machine.settings = settingsState(
       Object.keys(body.hostTools).length ? { v: 1, hostTools: body.hostTools } : { v: 1 },
       { revision: NEXT_REVISION },
@@ -246,10 +248,13 @@ describe("the Host tools page", () => {
     expect(api.count("GET /api/state")).toBeGreaterThan(before);
   });
 
-  it("goes back to PATH with Use PATH", async () => {
+  it("goes back to PATH with Use PATH, shown before the agent answers", async () => {
     const sent: unknown[] = [];
+    const answer = deferred<void>();
     await openHostTools({
-      routes: (machine) => ({ "PUT /api/settings/host-tools": savesMap(machine, sent) }),
+      routes: (machine) => ({
+        "PUT /api/settings/host-tools": savesMap(machine, sent, answer.promise),
+      }),
     });
     await userEvent.click(within(row("gh")).getByRole("button", { name: "Set path for gh…" }));
     let sheet = await screen.findByRole("dialog", { name: "Set path for gh" });
@@ -268,17 +273,22 @@ describe("the Host tools page", () => {
       revision: REVISION,
       hostTools: { ruff: "/opt/ruff", semgrep: "/tmp/semgrep" },
     });
-    // At once: jq is no longer configured, and goes at the next check.
+    // At once, before the agent answered: jq is no longer configured, and goes at the next check.
     await waitFor(() =>
       expect(rows().find(([name]) => name === "jq")).toEqual(["jq", "Checking…", "—"]),
     );
+    expect(screen.queryByText("jq is looked up on PATH")).toBeNull();
+    answer.resolve();
     await screen.findByText("jq is looked up on PATH");
   });
 
-  it("adds a host tool by name and path, refusing an invalid name", async () => {
+  it("adds a host tool by name and path, refusing an invalid name, shown before the agent answers", async () => {
     const sent: unknown[] = [];
-    await openHostTools({
-      routes: (machine) => ({ "PUT /api/settings/host-tools": savesMap(machine, sent) }),
+    const answer = deferred<void>();
+    const { api } = await openHostTools({
+      routes: (machine) => ({
+        "PUT /api/settings/host-tools": savesMap(machine, sent, answer.promise),
+      }),
     });
     await userEvent.click(screen.getByRole("button", { name: "Add host tool…" }));
     const sheet = await screen.findByRole("dialog", { name: "Add host tool" });
@@ -295,6 +305,7 @@ describe("the Host tools page", () => {
 
     await userEvent.clear(within(sheet).getByLabelText("Name"));
     await userEvent.type(within(sheet).getByLabelText("Name"), "opengrep");
+    const stateReads = api.count("GET /api/state");
     await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
     expect(sent).toEqual([
       {
@@ -309,6 +320,10 @@ describe("the Host tools page", () => {
         "/usr/local/bin/opengrep",
       ]),
     );
+    // Shown while the agent hasn't answered, and nothing refetched yet.
+    expect(api.count("GET /api/state")).toBe(stateReads);
+    answer.resolve();
+    await screen.findByText("opengrep path saved");
   });
 
   it("rolls a set path back when settings.json changed on the machine", async () => {

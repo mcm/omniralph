@@ -346,6 +346,39 @@ describe("the Packages page", () => {
     expect(items()).toEqual([["Allow @acme/*", "Packages matching @acme/* can be installed."]]);
   });
 
+  it("shows a saved allow-list at once, before the state refetch answers", async () => {
+    const refetch = deferred<{ body: unknown }>();
+    let states = 0;
+    let sent: unknown;
+    const saved = settingsState(
+      { v: 1, installables: { allow: ["@omniralph/*", "@acme/*"] } },
+      { revision: NEXT_REVISION },
+    );
+    const { api } = await openPackages({
+      routes: {
+        "/api/state": () =>
+          ++states === 1
+            ? { body: agentState({ settings: settingsState({ v: 1 }, { revision: REVISION }) }) }
+            : refetch.promise,
+        "PUT /api/settings/allow-list": (init) => {
+          sent = JSON.parse(String(init?.body));
+          return { body: saved };
+        },
+      },
+    });
+    await userEvent.type(screen.getByLabelText("Allowed packages"), "@acme/*{Enter}");
+    await userEvent.click(within(saveBar()).getByRole("button", { name: "Save" }));
+    expect(sent).toEqual({ revision: REVISION, allow: ["@omniralph/*", "@acme/*"] });
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Remove @omniralph/*" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove @acme/*" })).toBeTruthy();
+    // The page asked for the state again, and that refetch hasn't answered yet.
+    await waitFor(() => expect(api.count("GET /api/state")).toBe(2));
+    refetch.resolve({ body: agentState({ settings: saved }) });
+  });
+
   it("says an empty allow-list means no package can be installed, and saves it", async () => {
     const refetch = deferred<{ body: unknown }>();
     let states = 0;
