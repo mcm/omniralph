@@ -1,6 +1,6 @@
 // The `jobs` table as a queue: claiming, leases and delayed retries.
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
-import type { ReportedHostTool } from "@omniralph/shared";
+import type { HostToolReport } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, createDb, type Database } from "./client.js";
@@ -16,8 +16,7 @@ import {
   setQueuedJobTarget,
   type NewJobInput,
 } from "./jobs.js";
-import { createHostTool, recordAgentHostTools, setAgentHostToolPath } from "./host-tools.js";
-import { agentHostTools, agents, hostTools, jobs, organizations } from "./schema.js";
+import { agents, jobs, organizations } from "./schema.js";
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -277,69 +276,71 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
     }
   });
 
-  it("only claims jobs whose host tools have an effective path on the agent", async () => {
-    const tools = await db
-      .insert(hostTools)
-      .values([
-        { organizationId: orgA, name: "opengrep" },
-        { organizationId: orgA, name: "semgrep" },
-        { organizationId: orgA, name: "missing" },
-        { organizationId: orgB, name: "other-org" },
-      ])
-      .returning();
-    const [opengrep, semgrep, missing, otherOrg] = tools.map((tool) => tool.id) as string[];
-    await db.insert(agentHostTools).values([
-      // Discovered on PATH, nothing configured: usable.
-      { agentId: agentA, hostToolId: opengrep!, discoveredPath: "/usr/bin/opengrep" },
-      // Configured and found: usable.
-      {
-        agentId: agentA,
-        hostToolId: semgrep!,
-        configuredPath: "/opt/semgrep",
-        configuredPathExists: true,
-      },
-      // Configured but missing: the discovered path is no fallback.
-      {
-        agentId: agentA,
-        hostToolId: missing!,
-        configuredPath: "/opt/missing",
-        configuredPathExists: false,
-        discoveredPath: "/usr/bin/missing",
-      },
-      { agentId: agentA2, hostToolId: opengrep! },
-      { agentId: agentB, hostToolId: otherOrg!, discoveredPath: "/usr/bin/other-org" },
-    ]);
+  it("only claims jobs whose host tools the agent reports with a path", async () => {
+    const reported = (
+      name: string,
+      path: string | null,
+      problem: HostToolReport["problem"] = null,
+    ) =>
+      ({
+        name,
+        path,
+        source: path === null ? null : name === "semgrep" ? "configured" : "discovered",
+        problem,
+      }) satisfies HostToolReport;
+    await recordAgentHeartbeat(db, agentA, {
+      version: "1.0.0",
+      hostTools: [
+        // Discovered on PATH, nothing configured: usable.
+        reported("opengrep", "/usr/bin/opengrep"),
+        // Configured and found: usable.
+        reported("semgrep", "/opt/semgrep"),
+        // Configured but missing: no path, whatever is on PATH.
+        reported("missing", null, "missing"),
+      ],
+    });
+    // The second agent has opengrep, but its configured path is blocked.
+    await recordAgentHeartbeat(db, agentA2, {
+      version: "1.0.0",
+      hostTools: [reported("opengrep", null, "blocked")],
+    });
+    await recordAgentHeartbeat(db, agentB, {
+      version: "1.0.0",
+      hostTools: [reported("other-org", "/usr/bin/other-org")],
+    });
     try {
       const needsMissing = await enqueue({ requiredHostTools: ["missing"], createdAt: at(-40) });
+      const needsOpengrep = await enqueue({ requiredHostTools: ["opengrep"], createdAt: at(-35) });
       const needsBoth = await enqueue({
         requiredHostTools: ["opengrep", "semgrep"],
         createdAt: at(-30),
       });
       const needsOther = await enqueue({ requiredHostTools: ["other-org"], createdAt: at(-20) });
-      // The second agent hasn't found opengrep.
+      // The second agent reports opengrep blocked: it claims none of them.
       expect((await claim(agentA2, at(1))).claim).toBeNull();
+      expect((await claim(agentA, at(1))).claim?.job.id).toBe(needsOpengrep);
       expect((await claim(agentA, at(1))).claim?.job.id).toBe(needsBoth);
       expect((await claim(agentA, at(1))).claim).toBeNull();
       expect((await getJob(db, needsMissing))?.status).toBe("queued");
       expect((await getJob(db, needsOther))?.status).toBe("queued");
     } finally {
-      await db.delete(hostTools);
+      await db.update(agents).set({ reportedHostTools: [] });
     }
   });
 
   it("follows each heartbeat's report of installables and host tools", async () => {
-    const opengrep = await createHostTool(db, orgA, { name: "opengrep" });
-    if (!opengrep.ok) throw new Error("setup");
     const fixture = { name: "@omniralph/fixture", version: "1.0.0" };
-    const found = { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/og" };
-    const heartbeat = async (
+    const found: HostToolReport = {
+      name: "opengrep",
+      path: "/usr/bin/og",
+      source: "discovered",
+      problem: null,
+    };
+    const heartbeat = (
       agentId: string,
       installables: { name: string; version: string }[],
-      tools: ReportedHostTool[],
-    ) => {
-      await recordAgentHeartbeat(db, agentId, { version: "1.0.0", installables });
-      await recordAgentHostTools(db, orgA, agentId, tools);
-    };
+      hostTools: HostToolReport[],
+    ) => recordAgentHeartbeat(db, agentId, { version: "1.0.0", installables, hostTools });
     const requiringBoth = (seconds: number) =>
       enqueue({
         requiredInstallables: [fixture.name],
@@ -362,7 +363,7 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       // The host tool left out of the report, then reported as not found.
       await heartbeat(agentA, [fixture], []);
       expect((await claim(agentA, at(1))).claim).toBeNull();
-      await heartbeat(agentA, [fixture], [{ ...found, discoveredPath: null }]);
+      await heartbeat(agentA, [fixture], [{ ...found, path: null, source: null }]);
       expect((await claim(agentA, at(1))).claim).toBeNull();
       // The installable left out.
       await heartbeat(agentA, [], [found]);
@@ -370,20 +371,21 @@ describe.skipIf(!databaseAvailable)("job queue", () => {
       await heartbeat(agentA, [fixture], [found]);
       expect((await claim(agentA, at(1))).claim?.job.id).toBe(next);
 
-      // A configured path the agent doesn't find: the discovered one is no fallback.
+      // A configured path the agent can't run: nothing on PATH is a fallback.
       const last = await requiringBoth(-1);
-      await setAgentHostToolPath(db, orgA, agentA, opengrep.hostTool.id, "/opt/missing");
       await heartbeat(
         agentA,
         [fixture],
-        [{ ...found, configuredPath: "/opt/missing", configuredPathExists: false }],
+        [{ name: "opengrep", path: null, source: null, problem: "not_executable" }],
       );
       expect((await claim(agentA, at(1))).claim).toBeNull();
       expect((await claim(agentA2, at(1))).claim).toBeNull();
       expect((await getJob(db, last))?.status).toBe("queued");
     } finally {
-      await db.update(agents).set({ reportedInstallables: [] }).where(eq(agents.id, agentA));
-      await db.delete(hostTools);
+      await db
+        .update(agents)
+        .set({ reportedInstallables: [], reportedHostTools: [] })
+        .where(eq(agents.id, agentA));
     }
   });
 

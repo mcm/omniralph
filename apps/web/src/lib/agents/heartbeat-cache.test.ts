@@ -23,8 +23,10 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import type { HeartbeatResponse } from "@omniralph/shared";
+import { getBuiltinPlaybook } from "@omniralph/tasks";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OrgUser } from "@/lib/auth/session";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 
 vi.mock("server-only", () => ({}));
@@ -55,6 +57,7 @@ const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
 const { saveAgentsCard } = await import("@/lib/repositories/cards");
 const { sendToChatRun } = await import("@/lib/ralph/chat-reply");
+const playbookManage = await import("@/lib/playbooks/manage");
 
 const databaseAvailable = testDatabaseAvailable();
 const redisAvailable = await testRedisAvailable();
@@ -167,6 +170,25 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
   }
 
   const admin = (orgId: string) => ({ id: userId, organization: { id: orgId } });
+  /** An admin of `orgId` as the playbook handlers get them. */
+  const orgAdmin = (orgId: string) =>
+    ({
+      id: userId,
+      name: "Ada",
+      email: null,
+      image: null,
+      theme: null,
+      showAdvanced: false,
+      role: "admin",
+      organization: { id: orgId, name: "Acme" },
+    }) as unknown as OrgUser;
+  /** A custom chat-ask playbook requiring `hostTools`. */
+  const playbookInput = (hostTools: string[]) => {
+    const { id: _id, ...fields } = getBuiltinPlaybook("builtin:ask-about-code")!;
+    return { ...fields, name: "Security review", requires: { hostTools } };
+  };
+  /** The playbook `setUp` created, by organization. */
+  const playbookIds = new Map<string, string>();
 
   async function newRepository(orgId: string): Promise<string> {
     const connection = (await upsertScmConnection(db, {
@@ -247,10 +269,17 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     // Its slots are its own: the response never carries any.
     expect(cached.response).not.toHaveProperty("maxConcurrency");
     expect(cached.response).not.toHaveProperty("poolLimits");
-    // A new host tools report is stored too.
-    const tools = [{ name: "semgrep", configuredPathExists: null, discoveredPath: "/bin/semgrep" }];
+    // A new host tools report is stored too, then answered from Redis again.
+    const tools = [{ name: "semgrep", path: "/bin/semgrep", source: "discovered", problem: null }];
     expect(
       (await send(agentId, { version: "1.5.0", local, hostTools: tools })).calls,
+    ).toBeGreaterThan(0);
+    const [withTools] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(withTools!.reportedHostTools).toEqual(tools);
+    expect((await send(agentId, { version: "1.5.0", local, hostTools: tools })).calls).toBe(0);
+    const blocked = [{ name: "semgrep", path: null, source: null, problem: "blocked" }];
+    expect(
+      (await send(agentId, { version: "1.5.0", local, hostTools: blocked })).calls,
     ).toBeGreaterThan(0);
   });
 
@@ -301,30 +330,38 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       (response) => expect(response.desiredVersion).toBe("2.8.0"),
     ],
     [
-      "host tool added",
+      "playbook created",
       async ({ orgId }) => {
-        expect((await defaults.addHostTool(db, orgId, { name: "semgrep" })).ok).toBe(true);
+        const saved = await playbookManage.createPlaybook(
+          db,
+          orgAdmin(orgId),
+          playbookInput(["opengrep"]),
+        );
+        expect(saved).toMatchObject({ ok: true });
       },
-      (response) => expect(response.hostTools).toEqual([{ name: "semgrep", configuredPath: null }]),
+      (response) => expect(response.requiredHostTools).toEqual(["opengrep"]),
     ],
     [
-      "host tool path",
-      async ({ agentId, orgId }) => {
-        const [tool] = await defaults.loadHostToolCatalog(db, orgId);
-        expect(await manage.setHostToolPath(db, orgId, agentId, tool!.id, "/opt/semgrep")).toEqual({
-          ok: true,
-        });
+      "playbook updated",
+      async ({ orgId }) => {
+        const saved = await playbookManage.updatePlaybook(
+          db,
+          orgAdmin(orgId),
+          playbookIds.get(orgId)!,
+          playbookInput(["opengrep", "gh"]),
+        );
+        expect(saved).toMatchObject({ ok: true });
       },
-      (response) =>
-        expect(response.hostTools).toEqual([{ name: "semgrep", configuredPath: "/opt/semgrep" }]),
+      (response) => expect(response.requiredHostTools).toEqual(["gh", "opengrep"]),
     ],
     [
-      "host tool removed",
+      "playbook deleted",
       async ({ orgId }) => {
-        const [tool] = await defaults.loadHostToolCatalog(db, orgId);
-        expect(await defaults.removeHostTool(db, orgId, tool!.id)).toEqual({ ok: true });
+        expect(
+          await playbookManage.deletePlaybook(db, orgAdmin(orgId), playbookIds.get(orgId)!),
+        ).toEqual({ ok: true });
       },
-      (response) => expect(response.hostTools).toEqual([]),
+      (response) => expect(response.requiredHostTools).toEqual([]),
     ],
   ];
 
@@ -334,8 +371,14 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       const repositoryId = await newRepository(ids.orgId);
       await pinRepository(db, new PostgresDispatcher({ db }), { ...ids, repositoryId });
     }
-    if (name === "host tool path" || name === "host tool removed") {
-      await defaults.addHostTool(db, ids.orgId, { name: "semgrep" });
+    if (name === "playbook updated" || name === "playbook deleted") {
+      const saved = await playbookManage.createPlaybook(
+        db,
+        orgAdmin(ids.orgId),
+        playbookInput(["opengrep"]),
+      );
+      if (!("id" in saved)) throw new Error("setup");
+      playbookIds.set(ids.orgId, saved.id);
     }
   }
 

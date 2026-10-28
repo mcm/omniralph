@@ -13,7 +13,6 @@ import {
   createInvitation,
   getActiveOrganization,
   getDesiredAgentVersion,
-  listHostTools,
   getIntegration,
   getMembership,
   listChatChannelPlaybookSettings,
@@ -31,7 +30,6 @@ import {
   createDb,
   createAgentEnrollment,
   createCustomRule,
-  createHostTool,
   listRepositoryRules,
   createOrganization,
   createReview,
@@ -54,7 +52,6 @@ import {
   integrations as integrationRows,
   jobs,
   runActivities,
-  listAgentHostTools,
   mapThreadRun,
   recordWebhookEvent,
   webhookEvents,
@@ -218,7 +215,6 @@ const agentUpdate = await import("./agents/[id]/update/route");
 const agentRevoke = await import("./agents/[id]/revoke/route");
 const agentInstallables = await import("./agents/[id]/installables/route");
 const agentInstalls = await import("./agents/[id]/installs/route");
-const agentHostTools = await import("./agents/[id]/host-tools/route");
 const repositoryList = await import("./repositories/route");
 const repositorySetup = await import("./repositories/setup/route");
 const repository = await import("./repositories/[id]/route");
@@ -309,8 +305,6 @@ const playbookDetail = await import("./playbooks/[id]/route");
 const playbookClone = await import("./playbooks/[id]/clone/route");
 const playbookFormOptions = await import("./playbooks/form-options/route");
 const agentDefaults = await import("./agent-defaults/route");
-const hostToolCatalog = await import("./host-tools/route");
-const hostTool = await import("./host-tools/[id]/route");
 const askChats = await import("./ask/chats/route");
 const askChat = await import("./ask/chats/[id]/route");
 const askChatMessages = await import("./ask/chats/[id]/messages/route");
@@ -357,7 +351,8 @@ interface Tenant {
   repoId: string;
   repoPath: string;
   ruleId: string;
-  hostToolId: string;
+  /** A host tool its agent reports with a path. */
+  hostToolName: string;
   runId: string;
   storyId: string;
   reviewId: string;
@@ -414,8 +409,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       text: `${name} rule`,
       createdBy: admin!.id,
     });
-    const tool = await createHostTool(db, org.id, { name: `${name}-tool` });
-    if (!tool.ok) throw new Error("setup");
+    const hostToolName = `${name}-hosttool`;
+    await db
+      .update(agents)
+      .set({
+        reportedHostTools: [
+          { name: hostToolName, path: `/opt/${hostToolName}`, source: "configured", problem: null },
+        ],
+      })
+      .where(eq(agents.id, agentId));
     const { run } = await createRun(db, {
       organizationId: org.id,
       linearIssueId: `${name}-issue`,
@@ -484,7 +486,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       repoId: repo.id,
       repoPath,
       ruleId: rule.id,
-      hostToolId: tool.hostTool.id,
+      hostToolName,
       runId: run.id,
       storyId: story!.id,
       reviewId: review.id,
@@ -1803,17 +1805,15 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(detail).toMatchObject({ status: 200, body: { agent: { id: own.agentId } } });
       const installables = await call(agentInstallables.GET, { params: ownParams });
       expect(installables).toMatchObject({ status: 200, body: { installJobs: [] } });
-      const hostTools = await call(agentHostTools.GET, { params: ownParams });
-      expect(hostTools).toMatchObject({
-        status: 200,
-        body: { hostTools: [{ hostToolId: own.hostToolId }] },
-      });
-      for (const { body } of [detail, installables, hostTools]) {
+      expect(detail.body.hostTools).toEqual([
+        expect.objectContaining({ name: own.hostToolName, path: `/opt/${own.hostToolName}` }),
+      ]);
+      for (const { body } of [detail, installables]) {
         for (const marker of markers(other)) expect(JSON.stringify(body)).not.toContain(marker);
       }
 
       const otherParams = { id: other.agentId };
-      for (const handler of [agentDetail.GET, agentInstallables.GET, agentHostTools.GET]) {
+      for (const handler of [agentDetail.GET, agentInstallables.GET]) {
         expect(await call(handler, { params: otherParams })).toMatchObject({ status: 404 });
         expect(await call(handler, { params: { id: "not-a-uuid" } })).toMatchObject({
           status: 404,
@@ -1826,32 +1826,16 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         body: { agent: { id: own.agentId, organization: { id: own.orgId, role: "member" } } },
       });
       expect(await call(agentDetail.GET, { params: otherParams })).toMatchObject({ status: 404 });
-      for (const handler of [agentInstallables.GET, agentHostTools.GET]) {
-        expect(await call(handler, { params: ownParams })).toMatchObject({ status: 403 });
-      }
+      expect(await call(agentInstallables.GET, { params: ownParams })).toMatchObject({
+        status: 403,
+      });
     }
   });
 
   it("refuses every agent change on the other organization's agent and repositories", async () => {
     state.userId = a.adminId;
     const theirs = { id: b.agentId };
-    const refused = [
-      await call(agentUpdate.POST, { method: "POST", params: theirs }),
-      // The other's agent, the other's tool, or both.
-      ...(await Promise.all(
-        [
-          [b.agentId, a.hostToolId],
-          [a.agentId, b.hostToolId],
-          [b.agentId, b.hostToolId],
-        ].map(([id, hostToolId]) =>
-          call(agentHostTools.PUT, {
-            method: "PUT",
-            params: { id: id! },
-            body: { paths: [{ hostToolId, path: "/opt/x" }] },
-          }),
-        ),
-      )),
-    ];
+    const refused = [await call(agentUpdate.POST, { method: "POST", params: theirs })];
     for (const response of refused) expect(response.status).toBe(400);
     // Fleet's ⋯ actions check the agent's own organization: not a member there, not found.
     const notFound = [
@@ -1869,24 +1853,17 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       deletedAt: null,
     });
     expect(other.pinnedRepositories).toEqual([]);
-    expect((await listAgentHostTools(db, b.orgId, b.agentId)).map((t) => t.configuredPath)).toEqual(
-      [null],
-    );
     expect(
       (await db.select().from(jobs).where(eq(jobs.organizationId, b.orgId))).map((j) => j.id),
     ).toEqual([b.jobId]);
 
     // Its own agent still works.
     expect(
-      await call(agentHostTools.PUT, {
-        method: "PUT",
+      await call(agentInstalls.POST, {
         params: { id: a.agentId },
-        body: { paths: [{ hostToolId: a.hostToolId, path: "/opt/x" }] },
+        body: { name: "@omniralph/hello" },
       }),
     ).toMatchObject({ status: 200 });
-    expect((await listAgentHostTools(db, a.orgId, a.agentId)).map((t) => t.configuredPath)).toEqual(
-      ["/opt/x"],
-    );
   });
 
   it("shows a member of both organizations either organization's agents without switching", async () => {
@@ -4046,7 +4023,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       expect(list).toContain(own(b));
     });
 
-    it("offers each organization only its own agents' models and installables' MCP servers in the editor", async () => {
+    it("offers each organization only its own agents' models, installables' MCP servers and host tools in the editor", async () => {
       for (const tenant of [a, b]) {
         await db
           .update(agents)
@@ -4080,6 +4057,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           body: {
             models: [{ value: `${mine.name}-model` }],
             mcpServers: [`${mine.name}-tools:${mine.name}-server`],
+            hostTools: [mine.hostToolName],
           },
         });
         const json = JSON.stringify(options.body);
@@ -4090,54 +4068,32 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
   });
   describe("agent defaults", () => {
-    it("shows each organization's own agent defaults and host tools to its admins only", async () => {
+    it("shows each organization's own agent defaults to its admins only", async () => {
       for (const [own, other] of [
         [a, b],
         [b, a],
       ] as const) {
         state.userId = own.memberId;
-        for (const handler of [agentDefaults.GET, hostToolCatalog.GET]) {
-          expect((await call(handler)).status).toBe(403);
-        }
+        expect((await call(agentDefaults.GET)).status).toBe(403);
 
         state.userId = own.adminId;
         const defaults = await call(agentDefaults.GET);
         expect(defaults).toMatchObject({ status: 200, body: { packageName: expect.any(String) } });
 
-        const tools = await call(hostToolCatalog.GET);
-        expect(tools.status).toBe(200);
-        expect((tools.body.hostTools as { id: string }[]).map((t) => t.id)).toContain(
-          own.hostToolId,
-        );
-
-        for (const body of [defaults.body, tools.body]) {
-          const json = JSON.stringify(body);
-          for (const marker of markers(other)) expect(json).not.toContain(marker);
-        }
+        const json = JSON.stringify(defaults.body);
+        for (const marker of markers(other)) expect(json).not.toContain(marker);
       }
     });
 
     it("refuses every change outside the active organization, and to members", async () => {
       state.userId = a.memberId;
-      for (const response of [
-        await call(agentDefaults.PUT, { method: "PUT", body: { version: "2.4.0" } }),
-        await call(hostToolCatalog.POST, { body: { name: "member-tool" } }),
-        await call(hostTool.DELETE, { params: { id: a.hostToolId }, method: "DELETE" }),
-      ]) {
-        expect(response.status).toBe(403);
-      }
-
-      // The other organization's host tool doesn't exist here.
-      state.userId = a.adminId;
       expect(
-        await call(hostTool.DELETE, { params: { id: b.hostToolId }, method: "DELETE" }),
-      ).toEqual({ status: 400, body: { error: "That host tool doesn't exist." } });
-      expect((await listHostTools(db, b.orgId)).map((t) => t.id)).toContain(b.hostToolId);
-      expect((await listHostTools(db, a.orgId)).map((t) => t.id)).toContain(a.hostToolId);
+        (await call(agentDefaults.PUT, { method: "PUT", body: { version: "2.4.0" } })).status,
+      ).toBe(403);
       expect(await getDesiredAgentVersion(db, a.orgId)).not.toBe("2.4.0");
     });
 
-    it("changes only the active organization's agent defaults and host tools", async () => {
+    it("changes only the active organization's agent defaults", async () => {
       state.userId = a.adminId;
       expect(
         await call(agentDefaults.PUT, {
@@ -4148,15 +4104,6 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
         status: 200,
         body: { ok: true, versionPolicy: { mode: "pinned", version: "2.4.0", target: "2.4.0" } },
       });
-      const added = await call(hostToolCatalog.POST, { body: { name: "beta-tool" } });
-      // The other organization's tool name is no duplicate here.
-      expect(added).toMatchObject({ status: 200, body: { ok: true } });
-      expect(
-        await call(hostTool.DELETE, {
-          params: { id: added.body.hostToolId as string },
-          method: "DELETE",
-        }),
-      ).toEqual({ status: 200, body: { ok: true } });
 
       expect(await getDesiredAgentVersion(db, a.orgId)).toBe("2.4.0");
       expect(await getDesiredAgentVersion(db, b.orgId)).not.toBe("2.4.0");

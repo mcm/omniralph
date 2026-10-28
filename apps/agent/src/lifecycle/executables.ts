@@ -28,7 +28,7 @@ export const MISSING_EXECUTABLE_RETRY_SECONDS = 60;
 /** A run's executables, resolved before its setup commands run. */
 export interface RunExecutables {
   /**
-   * Absolute path by command name: the task's host tools (their negotiated
+   * Absolute path by command name: the task's host tools (their checked
    * paths), then the commands of the required installables (a name taken
    * by a host tool keeps the host tool; two installables providing one name
    * fail the run).
@@ -92,12 +92,12 @@ export function installableMcpServerName(installable: string, server: string): s
 
 /**
  * Resolves the executables of a run of `spec.task` on `spec.agent`: each host
- * tool in the task's `requires.hostTools` by its negotiated path
+ * tool in the task's `requires.hostTools` by its checked path
  * (`ctx.hostToolPath`), and each installable the run requires (the task's
  * `requires.installables` and those whose MCP servers the agent lists) in the
  * agent's installables prefix under `ctx.dataDir`. A missing host tool or
  * installable throws `RetryableJobError` (the claim saw it, so it went away
- * since, or isn't negotiated yet after a restart); an MCP server the
+ * since, or its new configured path isn't checked yet); an MCP server the
  * installed version doesn't provide, a command name two installables provide,
  * two MCP servers with one session name, and any path the local config's
  * `blockedExecPaths` cover (`ctx.execPathBlocked`) throw. Each installable's commands and

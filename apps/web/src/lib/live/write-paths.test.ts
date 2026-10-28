@@ -17,7 +17,6 @@ import {
   connectRepository,
   createDb,
   createAgentEnrollment,
-  createHostTool,
   createInvitation,
   createCustomRule,
   createReview,
@@ -56,7 +55,6 @@ import {
   saveChatConnection,
   saveIntegration,
   saveWorkItemMatch,
-  setAgentHostToolPath,
   setRepositorySwitches,
   setTriageRunStatus,
   setWorkItemRepository,
@@ -519,7 +517,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       organizationId: orgId,
     });
 
-    it("enroll, pins, host tool paths, revoke and delete publish the agent", async () => {
+    it("enroll, pins, revoke and delete publish the agent", async () => {
       const { token } = await createAgentEnrollment(db, { organizationId: orgId });
       let id = "";
       expect(
@@ -542,11 +540,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           organizationId: orgId,
         },
       ]);
-      const tool = await createHostTool(db, orgId, { name: "psql" });
-      if (!tool.ok) throw new Error("setup");
-      expect(
-        await published(() => setAgentHostToolPath(db, orgId, id, tool.hostTool.id, "/bin/psql")),
-      ).toEqual([agentEvent(id)]);
       const revoked = await published(() => revokeAgent(db, id, { organizationId: orgId }));
       expect(revoked).toContainEqual(agentEvent(id));
       expect(revoked).toContainEqual(expect.objectContaining({ section: "repository.agents" }));
@@ -570,6 +563,26 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
             ...(failing as never as typeof report),
             installables: [{ name: "gh", version: "2.0.0" }],
           } as never),
+        ),
+      ).toEqual([agentEvent(agentId)]);
+    });
+
+    it("a heartbeat publishes reported host tools that changed, not a steady report", async () => {
+      const psql = {
+        name: "psql",
+        path: "/bin/psql",
+        source: "discovered",
+        problem: null,
+      } as const;
+      const report = { version: "1.0.0", hostTools: [psql] };
+      await recordAgentHeartbeat(db, agentId, report);
+      expect(await published(() => recordAgentHeartbeat(db, agentId, report))).toEqual([]);
+      expect(
+        await published(() =>
+          recordAgentHeartbeat(db, agentId, {
+            version: "1.0.0",
+            hostTools: [{ ...psql, path: null, source: null, problem: "missing" }],
+          }),
         ),
       ).toEqual([agentEvent(agentId)]);
     });
@@ -695,9 +708,6 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           ]),
         ),
       ).toEqual([settingsEvent("routing_rules")]);
-      expect(await published(() => createHostTool(db, orgId, { name: "jq" }))).toEqual([
-        settingsEvent("agent_defaults"),
-      ]);
     });
 
     it("playbook saves and deletes publish the playbooks section, the playbook its subject", async () => {

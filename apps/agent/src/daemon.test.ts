@@ -52,7 +52,7 @@ function centralConfig(overrides: Partial<HeartbeatResponse> = {}): HeartbeatRes
     jobMessages: [],
     desiredVersion: null,
     updateRequest: null,
-    hostTools: [],
+    requiredHostTools: [],
     ...overrides,
   };
 }
@@ -432,7 +432,7 @@ describe("AgentDaemon", () => {
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
   });
 
-  it("negotiates host tool paths in the heartbeat and exposes the effective ones", async () => {
+  it("reports its configured and required host tools in the heartbeat and exposes their paths", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-tools-"));
     try {
       const executable = async (relative: string) => {
@@ -452,63 +452,41 @@ describe("AgentDaemon", () => {
         hostToolSearchPath: [path.join(root, "blocked"), path.join(root, "path")].join(
           path.delimiter,
         ),
+        local: {
+          maxConcurrency: 1,
+          hostTools: {
+            configured,
+            missing: path.join(root, "opt/missing"),
+            blocked,
+          },
+        },
       });
-      state.config = centralConfig({
-        hostTools: [
-          { name: "configured", configuredPath: configured },
-          { name: "missing", configuredPath: path.join(root, "opt/missing") },
-          { name: "discovered", configuredPath: null },
-          { name: "nowhere", configuredPath: null },
-          { name: "blocked", configuredPath: blocked },
-          { name: "hidden", configuredPath: null },
-        ],
-      });
+      state.config = centralConfig({ requiredHostTools: ["discovered", "hidden", "nowhere"] });
 
-      // The first heartbeat knows no tools yet; the response lists them.
+      // The first heartbeat knows only the configured tools; the response asks about more.
       await daemon.heartbeat();
-      expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ hostTools: [] }));
+      expect(api.heartbeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          hostTools: [
+            { name: "blocked", path: null, source: null, problem: "blocked" },
+            { name: "configured", path: configured, source: "configured", problem: null },
+            { name: "missing", path: null, source: null, problem: "missing" },
+          ],
+        }),
+      );
+      expect(daemon.hostToolPath("configured")).toBe(configured);
       expect(daemon.hostToolPath("discovered")).toBeNull();
 
       await daemon.heartbeat();
       expect(api.heartbeat).toHaveBeenLastCalledWith(
         expect.objectContaining({
           hostTools: [
-            {
-              name: "configured",
-              configuredPath: configured,
-              configuredPathExists: true,
-              discoveredPath: null,
-            },
-            {
-              name: "missing",
-              configuredPath: path.join(root, "opt/missing"),
-              configuredPathExists: false,
-              discoveredPath: path.join(root, "path/missing"),
-            },
-            {
-              name: "discovered",
-              configuredPath: null,
-              configuredPathExists: null,
-              discoveredPath: discovered,
-            },
-            {
-              name: "nowhere",
-              configuredPath: null,
-              configuredPathExists: null,
-              discoveredPath: null,
-            },
-            {
-              name: "blocked",
-              configuredPath: blocked,
-              configuredPathExists: false,
-              discoveredPath: null,
-            },
-            {
-              name: "hidden",
-              configuredPath: null,
-              configuredPathExists: null,
-              discoveredPath: null,
-            },
+            { name: "blocked", path: null, source: null, problem: "blocked" },
+            { name: "configured", path: configured, source: "configured", problem: null },
+            { name: "discovered", path: discovered, source: "discovered", problem: null },
+            { name: "hidden", path: null, source: null, problem: null },
+            { name: "missing", path: null, source: null, problem: "missing" },
+            { name: "nowhere", path: null, source: null, problem: null },
           ],
         }),
       );
@@ -518,16 +496,49 @@ describe("AgentDaemon", () => {
       expect(daemon.hostToolPath("nowhere")).toBeNull();
       expect(daemon.hostToolPath("blocked")).toBeNull();
       expect(daemon.hostToolPath("hidden")).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
-      // A response configuring another path makes the tool unavailable until it's checked.
-      state.config = centralConfig({
-        hostTools: [{ name: "discovered", configuredPath: configured }],
+  it("re-checks and reports host tools at once when settings.json changes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "omniralph-daemon-tools-"));
+    try {
+      const discovered = path.join(root, "path/gh");
+      const configured = path.join(root, "opt/gh");
+      for (const file of [discovered, configured]) {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, "#!/bin/sh\n");
+        await chmod(file, 0o755);
+      }
+      const { api, state, daemon, local } = setup({
+        hostToolSearchPath: path.join(root, "path"),
+        config: centralConfig({ requiredHostTools: ["gh"] }),
       });
-      daemon.applyConfig(state.config);
-      expect(daemon.hostToolPath("discovered")).toBeNull();
-      expect(daemon.hostToolPath("configured")).toBeNull();
-      await daemon.heartbeat();
-      expect(daemon.hostToolPath("discovered")).toBe(configured);
+      void daemon.run();
+      await settle();
+      // The first response asked about gh: it's checked and reported right away.
+      expect(api.heartbeat).toHaveBeenCalledTimes(2);
+      expect(api.heartbeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          hostTools: [{ name: "gh", path: discovered, source: "discovered", problem: null }],
+        }),
+      );
+      expect(daemon.hostToolPath("gh")).toBe(discovered);
+
+      local.set({ maxConcurrency: 1, hostTools: { gh: configured } });
+      // The configured path changed: unavailable until checked, which the heartbeat does at once.
+      expect(daemon.hostToolPath("gh")).toBeNull();
+      await settle();
+      expect(api.heartbeat).toHaveBeenCalledTimes(3);
+      expect(api.heartbeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          hostTools: [{ name: "gh", path: configured, source: "configured", problem: null }],
+        }),
+      );
+      expect(daemon.hostToolPath("gh")).toBe(configured);
+      expect(state.config.requiredHostTools).toEqual(["gh"]);
+      await daemon.shutdown();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -19,7 +19,7 @@ export interface RunAgentRequirements {
   minAgentVersion: string | null;
   /** `required_installables`: each must be in the agent's `reportedInstallables`. */
   installables: readonly string[];
-  /** `required_host_tools`: each must have an effective path on the agent. */
+  /** `required_host_tools`: the agent must report each with a path (`reported_host_tools`). */
   hostTools: readonly string[];
 }
 
@@ -29,8 +29,8 @@ export interface RunAgentRequirements {
  * can claim one now as `claimJob` decides: it accepts `query` tasks (itself or
  * by the organization's default: `effective`), reports
  * the run's minimum version or later, reports every required installable and
- * has an effective path for every required host tool (`usableHostTools`, by
- * agent ID: `listAgentsUsableHostTools`). Revoked and offline agents
+ * reports every required host tool with a path (`usableHostTools`, by agent
+ * ID: `listAgentsUsableHostTools`). Revoked and offline agents
  * are left out.
  */
 export function queryClaimableAgents(

@@ -2,12 +2,7 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  HostToolPaths,
-  effectiveHostToolPath,
-  findOnPath,
-  isExecutableFile,
-} from "./host-tools.js";
+import { HostToolPaths, findOnPath, isExecutableFile } from "./host-tools.js";
 import { silentLogger } from "./logger.js";
 
 let root: string;
@@ -99,73 +94,38 @@ describe("findOnPath", () => {
   });
 });
 
-describe("effectiveHostToolPath", () => {
-  it("uses a usable configured path, never falls back, else the discovered one", () => {
-    const discovered = "/usr/bin/tool";
-    expect(
-      effectiveHostToolPath("/opt/tool", {
-        configuredPathExists: true,
-        discoveredPath: discovered,
-      }),
-    ).toBe("/opt/tool");
-    expect(
-      effectiveHostToolPath("/opt/tool", {
-        configuredPathExists: false,
-        discoveredPath: discovered,
-      }),
-    ).toBeNull();
-    expect(
-      effectiveHostToolPath(null, { configuredPathExists: null, discoveredPath: discovered }),
-    ).toBe(discovered);
-    expect(
-      effectiveHostToolPath(null, { configuredPathExists: null, discoveredPath: null }),
-    ).toBeNull();
-  });
-});
-
 describe("HostToolPaths", () => {
-  function paths(blockedExecPaths: string[] = [], searchPath = path.join(root, "path")) {
+  function paths(
+    configured: Record<string, string> = {},
+    blockedExecPaths: string[] = [],
+    searchPath = path.join(root, "path"),
+  ) {
     const logger = silentLogger();
     const warn = vi.spyOn(logger, "warn");
+    const settings = { hostTools: configured };
     const hostTools = new HostToolPaths({
       config: { blockedExecPaths },
+      configured: () => settings.hostTools,
       searchPath: () => searchPath,
       logger,
     });
-    return { hostTools, warn };
+    return { hostTools, warn, settings };
   }
 
-  it("reports and keeps the effective path of each known tool (all four cases)", async () => {
+  it("checks every configured and required name, by name, and keeps their paths", async () => {
     const configured = await stub("opt/configured");
-    const onPath = await stub("path/configured");
+    await stub("path/configured");
     const discovered = await stub("path/discovered");
-    const { hostTools } = paths();
-    const report = await hostTools.check([
-      { name: "configured", configuredPath: configured },
-      { name: "missing", configuredPath: path.join(root, "opt/missing") },
-      { name: "discovered", configuredPath: null },
-      { name: "nowhere", configuredPath: null },
-    ]);
+    const { hostTools } = paths({
+      configured,
+      missing: path.join(root, "opt/missing"),
+    });
+    const report = await hostTools.check(["nowhere", "discovered", "configured"]);
     expect(report).toEqual([
-      {
-        name: "configured",
-        configuredPath: configured,
-        configuredPathExists: true,
-        discoveredPath: onPath,
-      },
-      {
-        name: "missing",
-        configuredPath: path.join(root, "opt/missing"),
-        configuredPathExists: false,
-        discoveredPath: null,
-      },
-      {
-        name: "discovered",
-        configuredPath: null,
-        configuredPathExists: null,
-        discoveredPath: discovered,
-      },
-      { name: "nowhere", configuredPath: null, configuredPathExists: null, discoveredPath: null },
+      { name: "configured", path: configured, source: "configured", problem: null },
+      { name: "discovered", path: discovered, source: "discovered", problem: null },
+      { name: "missing", path: null, source: null, problem: "missing" },
+      { name: "nowhere", path: null, source: null, problem: null },
     ]);
     expect(hostTools.path("configured")).toBe(configured);
     expect(hostTools.path("missing")).toBeNull();
@@ -174,24 +134,51 @@ describe("HostToolPaths", () => {
     expect(hostTools.path("unknown")).toBeNull();
   });
 
-  it("doesn't fall back to the discovered path when the configured one is missing", async () => {
+  it("checks the configured tools when nothing is required", async () => {
+    const configured = await stub("opt/tool");
+    const { hostTools } = paths({ tool: configured });
+    expect(await hostTools.check([])).toEqual([
+      { name: "tool", path: configured, source: "configured", problem: null },
+    ]);
+    expect(await paths().hostTools.check([])).toEqual([]);
+  });
+
+  it("uses a configured path over a match on PATH", async () => {
+    const configured = await stub("opt/tool");
     await stub("path/tool");
-    const { hostTools } = paths();
-    await hostTools.check([{ name: "tool", configuredPath: path.join(root, "nope/tool") }]);
+    const { hostTools } = paths({ tool: configured });
+    expect(await hostTools.check(["tool"])).toEqual([
+      { name: "tool", path: configured, source: "configured", problem: null },
+    ]);
+  });
+
+  it("doesn't fall back to PATH when the configured path is missing", async () => {
+    await stub("path/tool");
+    const { hostTools } = paths({ tool: path.join(root, "nope/tool") });
+    expect(await hostTools.check(["tool"])).toEqual([
+      { name: "tool", path: null, source: null, problem: "missing" },
+    ]);
     expect(hostTools.path("tool")).toBeNull();
   });
 
-  it("reports a blocked configured path as missing and warns once", async () => {
+  it("reports a configured path that isn't an executable file as not executable", async () => {
+    await stub("path/tool");
+    const data = await stub("opt/data", 0o644);
+    await mkdir(path.join(root, "opt/dir"));
+    const { hostTools } = paths({ data, dir: path.join(root, "opt/dir") });
+    expect(await hostTools.check(["data", "dir"])).toEqual([
+      { name: "data", path: null, source: null, problem: "not_executable" },
+      { name: "dir", path: null, source: null, problem: "not_executable" },
+    ]);
+    expect(hostTools.path("data")).toBeNull();
+  });
+
+  it("reports a blocked configured path as blocked, without fallback, and warns once", async () => {
     const configured = await stub("blocked/tool");
-    const { hostTools, warn } = paths([path.join(root, "blocked")]);
-    const known = [{ name: "tool", configuredPath: configured }];
-    expect(await hostTools.check(known)).toEqual([
-      {
-        name: "tool",
-        configuredPath: configured,
-        configuredPathExists: false,
-        discoveredPath: null,
-      },
+    await stub("path/tool");
+    const { hostTools, warn } = paths({ tool: configured }, [path.join(root, "blocked")]);
+    expect(await hostTools.check([])).toEqual([
+      { name: "tool", path: null, source: null, problem: "blocked" },
     ]);
     expect(hostTools.path("tool")).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
@@ -199,33 +186,33 @@ describe("HostToolPaths", () => {
       { hostTool: "tool", path: configured },
       expect.stringContaining("blockedExecPaths"),
     );
-    await hostTools.check(known);
+    await hostTools.check([]);
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("never reports a blocked discovered path", async () => {
     await stub("path/tool");
-    const { hostTools } = paths([path.join(root, "path")]);
-    expect(await hostTools.check([{ name: "tool", configuredPath: null }])).toEqual([
-      { name: "tool", configuredPath: null, configuredPathExists: null, discoveredPath: null },
+    const { hostTools } = paths({}, [path.join(root, "path")]);
+    expect(await hostTools.check(["tool"])).toEqual([
+      { name: "tool", path: null, source: null, problem: null },
     ]);
     expect(hostTools.path("tool")).toBeNull();
   });
 
-  it("forgets a tool's path when a response removes it or configures another path", async () => {
-    const a = await stub("path/a");
-    const b = await stub("path/b");
-    const { hostTools } = paths();
-    await hostTools.check([
-      { name: "a", configuredPath: null },
-      { name: "b", configuredPath: null },
-    ]);
-    hostTools.update([
-      { name: "a", configuredPath: null },
-      { name: "b", configuredPath: null },
-    ]);
-    expect([hostTools.path("a"), hostTools.path("b")]).toEqual([a, b]);
-    hostTools.update([{ name: "b", configuredPath: "/opt/b" }]);
-    expect([hostTools.path("a"), hostTools.path("b")]).toEqual([null, null]);
+  it("has no path for a tool whose configured path changed until it's checked again", async () => {
+    const discovered = await stub("path/tool");
+    const configured = await stub("opt/tool");
+    const { hostTools, settings } = paths();
+    await hostTools.check(["tool"]);
+    expect(hostTools.path("tool")).toBe(discovered);
+    settings.hostTools = { tool: configured };
+    expect(hostTools.path("tool")).toBeNull();
+    await hostTools.check(["tool"]);
+    expect(hostTools.path("tool")).toBe(configured);
+    settings.hostTools = {};
+    expect(hostTools.path("tool")).toBeNull();
+    // A tool no longer configured nor required is no longer checked.
+    expect(await hostTools.check([])).toEqual([]);
+    expect(hostTools.path("tool")).toBeNull();
   });
 });

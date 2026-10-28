@@ -285,7 +285,7 @@ one, also stored with its row on save and returned as `requirements` by `GET /ap
   0.9.0, review 0.10.0, coding 0.11.0), 0.10.0 when it has setup or teardown commands, and any
   later release a variable its template uses needs.
 - **Installables** and **host tools**: the playbook's `requires` (`requires.installables`, npm
-  package names, and `requires.hostTools`, names from the host tool catalog), plus every
+  package names, and `requires.hostTools`, executable names the agents set paths for), plus every
   installable whose MCP servers its tools list as `<package>:<server>` (e.g.
   `@omniralph/code-graph:graph`).
 
@@ -294,10 +294,10 @@ agents on that release or later claim it; older ones leave it queued. Built-ins 
 requirements; their jobs set the version their task type needs. Jobs also carry the installables
 and host tools (`jobs.required_installables`, `jobs.required_host_tools`), derived from the
 playbook as it is when the job is enqueued: only an agent whose heartbeat reports every
-installable and that has an effective path for every host tool claims it.
+installable and every host tool with a path claims it.
 
 On the agent, a setup or teardown command whose first word is one of the playbook's host tools runs
-that tool's negotiated absolute path, and one whose first word names a command of a required
+that tool's absolute path on the agent, and one whose first word names a command of a required
 installable runs that command's `bin` inside the installed package, never an executable of the
 same name the checkout puts on the run's `PATH`. Other commands run as written. The installable
 MCP servers the playbook lists are attached to its sessions from the installed packages (their tools

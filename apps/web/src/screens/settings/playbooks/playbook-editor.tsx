@@ -408,6 +408,7 @@ function PlaybookForm({
 }) {
   const router = useRouter();
   const formId = useId();
+  const hostToolListId = useId();
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -706,7 +707,16 @@ function PlaybookForm({
               values={draft.requires.hostTools}
               onChange={(hostTools) => setRequires({ hostTools })}
               validate={hostToolError}
+              list={hostToolListId}
             />
+            {/* The names its agents report and its playbooks require; any valid name still goes. */}
+            <datalist id={hostToolListId}>
+              {options.hostTools
+                .filter((name) => !draft.requires.hostTools.includes(name))
+                .map((name) => (
+                  <option key={name} value={name} />
+                ))}
+            </datalist>
             <GroupError message={errorAt(errors, "requires.hostTools")} />
           </Field>
         </Card>

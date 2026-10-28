@@ -95,7 +95,8 @@ export const deletedPlaybookSchema = z.object({ ok: z.literal(true) });
 /**
  * `GET /api/ui/playbooks/form-options` (admins): what the playbook editor offers. The roles a
  * custom playbook can take, the models the organization's agents report, the tool names per
- * group, the installables' MCP servers (`<package>:<server>`) and the PR description playbooks.
+ * group, the installables' MCP servers (`<package>:<server>`), the PR description playbooks
+ * and the host tool names to suggest.
  */
 export const playbookFormOptionsSchema = z.object({
   roles: z.array(PlaybookRoleSchema),
@@ -109,5 +110,10 @@ export const playbookFormOptionsSchema = z.object({
   prDescriptionPlaybooks: z.array(
     z.object({ id: z.string(), name: z.string(), builtin: z.boolean() }),
   ),
+  /**
+   * Host tool names to suggest: those the organization's non-revoked agents report with a
+   * path and those its playbooks require, sorted. Any valid name is still accepted.
+   */
+  hostTools: z.array(z.string()),
 });
 export type PlaybookFormOptions = z.infer<typeof playbookFormOptionsSchema>;

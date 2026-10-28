@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomInt } from "node:crypto";
-import type { HeartbeatResponse, ReportedHostTool } from "@omniralph/shared";
+import type { HeartbeatResponse } from "@omniralph/shared";
 import { EPOCH_KEY, getRedis, hotStateEnabled, writeHotState } from "@/lib/hot-state";
 import { LATEST_MAX_AGE_MS } from "./desired-version";
 import {
@@ -73,19 +73,10 @@ export function latestVersionKey(organizationId: string): string {
   return `${LATEST_PREFIX}${organizationId}`;
 }
 
-/** Everything of a heartbeat request that the Postgres path writes. */
-export function heartbeatRequestKey(
-  report: HeartbeatReport,
-  hostTools: readonly ReportedHostTool[],
-): string {
-  const tools = hostTools.map((tool) => [
-    tool.name,
-    tool.configuredPath ?? null,
-    tool.configuredPathExists,
-    tool.discoveredPath,
-  ]);
+/** Everything of a heartbeat request that the Postgres path writes (host tools included). */
+export function heartbeatRequestKey(report: HeartbeatReport): string {
   return createHash("sha256")
-    .update(JSON.stringify([heartbeatReportFingerprint(report), tools]))
+    .update(JSON.stringify([heartbeatReportFingerprint(report)]))
     .digest("base64url");
 }
 
@@ -178,7 +169,6 @@ export interface CachedHeartbeatOptions {
 export async function cachedHeartbeatResponse(
   agentId: string,
   report: HeartbeatReport,
-  hostTools: readonly ReportedHostTool[],
   options: CachedHeartbeatOptions = {},
 ): Promise<CachedHeartbeatResponse | null> {
   if (!hotStateEnabled()) return null;
@@ -195,7 +185,7 @@ export async function cachedHeartbeatResponse(
     if (!epoch || !cached || reported !== heartbeatReportFingerprint(report)) return null;
     const entry = JSON.parse(cached) as CacheEntry;
     if (entry.changes.epoch !== epoch) return null;
-    if (entry.request !== heartbeatRequestKey(report, hostTools)) return null;
+    if (entry.request !== heartbeatRequestKey(report)) return null;
     const organizationId = entry.response.organizationId;
     const [agent, organization] = await redis.mget(
       agentChangesKey(agentId),

@@ -1,9 +1,8 @@
 import {
   agentAcceptedTaskTypes,
   classifyAgentRunningJobs,
-  listAgentHostTools,
   listAgentPinnedRepositoryIds,
-  recordAgentHostTools,
+  listRequiredHostTools,
   renewJobLeases,
   type Database,
 } from "@omniralph/db";
@@ -43,20 +42,21 @@ const NPM_TIMEOUT_MS = 5_000;
 
 /**
  * Agent heartbeat (every 20s). Records the reported version, accepted task types, host, machine
- * settings (`local`: slots, pool limits, version pin and allow-list, read-only here) and
- * self-update state (last-seen in Redis; the agent row only when the report
+ * settings (`local`: slots, pool limits, version pin and allow-list, read-only here), host
+ * tools (`hostTools`: which it has a path for, read-only here) and self-update state (last-seen in Redis; the agent row only when the report
  * changed or once a day: `recordHeartbeat`), renews the leases of the running jobs the agent keeps,
  * applies the acknowledged job messages and returns the central configuration,
  * the running jobs the agent must cancel, fresh job tokens and undelivered
  * messages (`jobMessages`) for the ones it keeps running, and the version it
  * should run (its override, else its organization's setting, with `latest`
  * resolved), an admin's pending "Update now" (cleared once the agent reports
- * it handled) and the organization's host tools with this agent's configured
- * paths, plus a subscribe-only Ably token for its wake channels when Ably is
- * on and the agent's token is missing or expires within the hour (`ably:
- * null` when Ably is off), and, when the request carries `claimablePools`,
- * whether a claim for them would find a job right now (`claimable`). The
- * agent's report on those host tools is stored first.
+ * it handled) and the host tools the organization's playbooks require
+ * (`requiredHostTools`, which the agent reports on next), plus a subscribe-only
+ * Ably token for its wake channels when Ably is on and the agent's token is
+ * missing or expires within the hour (`ably: null` when Ably is off), and, when
+ * the request carries `claimablePools`, whether a claim for them would find a
+ * job right now (`claimable`). A playbook save bumps the organization's
+ * heartbeat change counter, so a cached response never lists stale required tools.
  *
  * A heartbeat with no running jobs or acknowledgements is answered from Redis when
  * nothing its last response was built from changed (`heartbeat-cache`): no Postgres
@@ -83,6 +83,7 @@ async function post(req: Request): Promise<Response> {
     acceptedTaskTypes: body.data.acceptedTaskTypes,
     host: body.data.host,
     local: body.data.local,
+    hostTools: body.data.hostTools,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =
@@ -91,9 +92,7 @@ async function post(req: Request): Promise<Response> {
     body.data.deliveredMessageIds.length === 0 &&
     body.data.rejectedMessageIds.length === 0;
   if (cacheable) {
-    const cached = await cachedHeartbeatResponse(agentId, report, body.data.hostTools, {
-      timeoutMs: NPM_TIMEOUT_MS,
-    });
+    const cached = await cachedHeartbeatResponse(agentId, report, { timeoutMs: NPM_TIMEOUT_MS });
     // A due job may be claimable: Postgres tells (`hasDueJob` is false when none is due).
     if (
       cached &&
@@ -114,14 +113,13 @@ async function post(req: Request): Promise<Response> {
   const agent = await recordHeartbeat(db, agentId, report);
   if (!agent) return badRequest("unknown_agent");
   await announceOnline(db, agentId);
-  await recordAgentHostTools(db, agent.organizationId, agentId, body.data.hostTools);
-  const [pinnedRepoIds, running, organizationVersion, hostTools] = await Promise.all([
+  const [pinnedRepoIds, running, organizationVersion, requiredHostTools] = await Promise.all([
     listAgentPinnedRepositoryIds(db, agentId),
     classifyAgentRunningJobs(db, agentId, body.data.runningJobIds),
     agent.desiredVersion
       ? null
       : organizationAgentVersion(db, agent.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
-    listAgentHostTools(db, agent.organizationId, agentId),
+    listRequiredHostTools(db, agent.organizationId),
   ]);
   // The task types it reports now, else (older agents) the ones it last reported.
   const acceptedTaskTypes = body.data.acceptedTaskTypes ?? agentAcceptedTaskTypes(agent);
@@ -178,7 +176,7 @@ async function post(req: Request): Promise<Response> {
       agent.updateRequestId && agent.updateRequestVersion
         ? { id: agent.updateRequestId, version: agent.updateRequestVersion }
         : null,
-    hostTools: hostTools.map(({ name, configuredPath }) => ({ name, configuredPath })),
+    requiredHostTools,
   };
   if (changes) {
     const latest = organizationVersion?.tracksLatest ? organizationVersion : null;
@@ -186,7 +184,7 @@ async function post(req: Request): Promise<Response> {
       agentId,
       {
         changes,
-        request: heartbeatRequestKey(report, body.data.hostTools),
+        request: heartbeatRequestKey(report),
         ...(latest && { latestVersion: latest.version }),
         response,
       },

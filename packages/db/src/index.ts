@@ -191,21 +191,11 @@ export {
   type RepositoryLink,
 } from "./agents.js";
 export {
-  createHostTool,
-  deleteHostTool,
-  effectiveHostToolPath,
-  isValidHostToolName,
-  isValidHostToolPath,
-  listAgentHostTools,
   listAgentsUsableHostTools,
-  listHostTools,
-  recordAgentHostTools,
-  setAgentHostToolPath,
-  type CreateHostToolResult,
-  type AgentHostTool,
-  type AgentHostToolRow,
-  type HostTool,
-  type SetAgentHostToolPathResult,
+  listHostToolSuggestions,
+  listRequiredHostTools,
+  missingHostToolNames,
+  usableHostToolNames,
 } from "./host-tools.js";
 export {
   getFollowUpSource,

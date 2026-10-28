@@ -1,4 +1,5 @@
 // Agents, enrollments and agent settings are scoped to organizations.
+import type { HostToolReport } from "@omniralph/shared";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -200,6 +201,36 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     }
     // A heartbeat without the report keeps the last one.
     expect((await heartbeat()).result?.reportedMaxConcurrency).toBe(6);
+  });
+
+  it("stores the reported host tools and announces the agent only when they change", async () => {
+    const a = await enroll(orgA, "a-host-tools");
+    const gh: HostToolReport = {
+      name: "gh",
+      path: "/usr/bin/gh",
+      source: "discovered",
+      problem: null,
+    };
+    const heartbeat = (hostTools?: HostToolReport[]) =>
+      captureChanges(() => recordAgentHeartbeat(db, a, { version: "1.0.0", hostTools }));
+    const agentChanges = (changes: { resource: string }[]) =>
+      changes.filter((change) => change.resource === "agent");
+
+    const [before] = await db.select().from(agents).where(eq(agents.id, a));
+    expect(before?.reportedHostTools).toEqual([]);
+    const first = await heartbeat([gh]);
+    expect(first.result?.reportedHostTools).toEqual([gh]);
+    expect(agentChanges(first.changes)).toHaveLength(1);
+    // A steady heartbeat announces nothing.
+    expect(agentChanges((await heartbeat([gh])).changes)).toEqual([]);
+    const blocked: HostToolReport = { name: "gh", path: null, source: null, problem: "blocked" };
+    const changed = await heartbeat([blocked]);
+    expect(changed.result?.reportedHostTools).toEqual([blocked]);
+    expect(agentChanges(changed.changes)).toHaveLength(1);
+    // An empty report (or none) clears it.
+    const cleared = await heartbeat();
+    expect(cleared.result?.reportedHostTools).toEqual([]);
+    expect(agentChanges(cleared.changes)).toHaveLength(1);
   });
 
   describe("listReportedModels", () => {

@@ -5,24 +5,23 @@ import {
   agents,
   connectRepository,
   claimJob,
+  insertPlaybook,
   closeDb,
   createDb,
-  createHostTool,
   captureChanges,
   getAgentOverview,
   jobs,
   listAgentAudit,
-  listAgentHostTools,
   listAgentOverview,
   listRecentAgentAudit,
   setDesiredAgentVersion,
-  setAgentHostToolPath,
   unpinRepositoryFromAgent,
   upsertScmConnection,
   users,
   writeAgentAudit,
   type Database,
   organizations,
+  playbooks,
   type RecordedChange,
 } from "@omniralph/db";
 import type { HeartbeatResponse } from "@omniralph/shared";
@@ -34,8 +33,6 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentDetail, AgentList } from "@/lib/api/agents";
-import type { ActionResult } from "@/lib/action-result";
-import { callAction } from "@/lib/api/test-call";
 import { assertRole, type Role } from "@/lib/auth/roles";
 
 /** A heartbeat's `local`: the agent's machine settings, all defaults. */
@@ -84,17 +81,8 @@ const agentDetail = await import("@/app/api/ui/agents/[id]/route");
 const agentUpdate = await import("@/app/api/ui/agents/[id]/update/route");
 const agentRevoke = await import("@/app/api/ui/agents/[id]/revoke/route");
 const agentInstalls = await import("@/app/api/ui/agents/[id]/installs/route");
-const agentHostTools = await import("@/app/api/ui/agents/[id]/host-tools/route");
 const pins = await import("@/lib/agents/pins");
 const { bumpAgentHeartbeat } = await import("@/lib/agents/heartbeat-cache");
-const hostToolsRoute = await import("@/app/api/ui/host-tools/route");
-const hostToolRoute = await import("@/app/api/ui/host-tools/[id]/route");
-// Host tool catalog (`/api/ui/host-tools`) requests, under the server actions' old names.
-const addHostTool = async (input: { name: string; description?: string }) =>
-  (await callAction(hostToolsRoute.POST, "POST", {}, input)) as ActionResult & {
-    hostToolId?: string;
-  };
-const removeHostTool = (id: string) => callAction(hostToolRoute.DELETE, "DELETE", { id });
 const { agentRow } = await import("@/lib/agents/rows");
 const { enqueueInstall } = await import("@/lib/agents/installables");
 const { PostgresDispatcher } = await import("@/lib/dispatch");
@@ -202,8 +190,6 @@ const rerunJob = (id: string) => ui(jobRerun.POST, id);
 const deleteAgent = (id: string) => ui(agentDetail.DELETE, id, { method: "DELETE" });
 const installInstallable = (id: string, body: { name: string; version?: string }) =>
   ui(agentInstalls.POST, id, { body });
-const setHostToolPath = (id: string, hostToolId: string, path: string) =>
-  ui(agentHostTools.PUT, id, { method: "PUT", body: { paths: [{ hostToolId, path }] } });
 const agentList = await import("@/app/api/ui/agents/route");
 async function listAgents() {
   const response = await agentList.GET(new Request("http://localhost/api/ui/agents"), {
@@ -216,6 +202,12 @@ async function getAgent(id: string) {
     params: Promise.resolve({ id }),
   });
   return ((await response.json()) as AgentDetail).agent;
+}
+async function getAgentDetail(id: string) {
+  const response = await agentDetail.GET(new Request(`http://localhost/api/ui/agents/${id}`), {
+    params: Promise.resolve({ id }),
+  });
+  return { status: response.status, body: (await response.json()) as AgentDetail };
 }
 const HEARTBEAT = { version: "0.2.0", runningJobIds: [], freeSlots: 1, local: LOCAL };
 
@@ -732,37 +724,6 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
     });
   });
 
-  describe("host tool paths save", () => {
-    it("names the host tool paths it didn't save", async () => {
-      const { agentId } = await enrolledAgent();
-      const first = await addHostTool({ name: "ui-save-a" });
-      const second = await addHostTool({ name: "ui-save-b" });
-      if (!first.ok || !second.ok) throw new Error("setup");
-      expect(
-        await ui(agentHostTools.PUT, agentId, {
-          method: "PUT",
-          body: {
-            paths: [
-              { hostToolId: first.hostToolId, path: "/opt/a" },
-              { hostToolId: second.hostToolId, path: "relative" },
-            ],
-          },
-        }),
-      ).toEqual({
-        ok: false,
-        error:
-          "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank. Not saved: the ui-save-b path.",
-      });
-      const tools = await listAgentHostTools(db, orgId, agentId);
-      expect(Object.fromEntries(tools.map((t) => [t.name, t.configuredPath]))).toMatchObject({
-        "ui-save-a": "/opt/a",
-        "ui-save-b": null,
-      });
-      await removeHostTool(first.hostToolId!);
-      await removeHostTool(second.hostToolId!);
-    });
-  });
-
   describe("install", () => {
     /** The IDs of every job the agent claims now (other tests' system jobs too). */
     async function claimAll(agentId: string): Promise<string[]> {
@@ -831,77 +792,6 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
         (await sendHeartbeat(accessToken, { ...HEARTBEAT, installables: tooMany })).status,
       ).toBe(400);
       expect(await reported()).toEqual([hello]);
-    });
-
-    it("negotiates host tool paths: sends the catalog with configured paths, stores the reports", async () => {
-      const { agentId, accessToken } = await enrolledAgent();
-      const configured = await createHostTool(db, orgId, { name: "hb-configured" });
-      const discovered = await createHostTool(db, orgId, { name: "hb-discovered" });
-      if (!configured.ok || !discovered.ok) throw new Error("setup");
-      expect(
-        await setAgentHostToolPath(db, orgId, agentId, configured.hostTool.id, "/opt/c/bin/c"),
-      ).toEqual({ ok: true });
-
-      const response = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      expect(response.hostTools).toEqual(
-        expect.arrayContaining([
-          { name: "hb-configured", configuredPath: "/opt/c/bin/c" },
-          { name: "hb-discovered", configuredPath: null },
-        ]),
-      );
-
-      const hostTools = [
-        {
-          name: "hb-configured",
-          configuredPath: "/opt/c/bin/c",
-          configuredPathExists: true,
-          discoveredPath: "/usr/bin/hb-configured",
-        },
-        { name: "hb-discovered", configuredPathExists: null, discoveredPath: "/usr/bin/hb-d" },
-        { name: "hb-not-in-catalog", configuredPathExists: null, discoveredPath: "/usr/bin/x" },
-      ];
-      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools })).status).toBe(200);
-      const stored = await listAgentHostTools(db, orgId, agentId);
-      expect(stored.filter((tool) => tool.name.startsWith("hb-"))).toEqual([
-        expect.objectContaining({
-          name: "hb-configured",
-          configuredPathExists: true,
-          discoveredPath: "/usr/bin/hb-configured",
-          effectivePath: "/opt/c/bin/c",
-          reportedAt: expect.any(Date),
-        }),
-        expect.objectContaining({
-          name: "hb-discovered",
-          configuredPathExists: null,
-          discoveredPath: "/usr/bin/hb-d",
-          effectivePath: "/usr/bin/hb-d",
-        }),
-      ]);
-
-      // A heartbeat reporting no host tools: none is usable, configured paths stay.
-      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: [] })).status).toBe(200);
-      expect(
-        (await listAgentHostTools(db, orgId, agentId)).filter((tool) =>
-          tool.name.startsWith("hb-"),
-        ),
-      ).toEqual([
-        expect.objectContaining({
-          configuredPath: "/opt/c/bin/c",
-          configuredPathExists: null,
-          discoveredPath: null,
-          effectivePath: null,
-        }),
-        expect.objectContaining({ discoveredPath: null, effectivePath: null }),
-      ]);
-
-      const tooMany = Array.from({ length: 101 }, (_, i) => ({
-        name: `t${i}`,
-        configuredPathExists: null,
-        discoveredPath: null,
-      }));
-      expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: tooMany })).status).toBe(
-        400,
-      );
     });
 
     it("defaults to the latest version", async () => {
@@ -1008,98 +898,130 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
   });
 
   describe("host tools", () => {
-    async function knownTools(accessToken: string) {
-      const response = (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse;
-      return response.hostTools.filter((tool) => tool.name.startsWith("ui-"));
+    const configured = {
+      name: "ui-gh",
+      path: "/opt/gh/bin/gh",
+      source: "configured",
+      problem: null,
+    } as const;
+    const discovered = {
+      name: "ui-opengrep",
+      path: "/usr/bin/opengrep",
+      source: "discovered",
+      problem: null,
+    } as const;
+    const blocked = { name: "ui-semgrep", path: null, source: null, problem: "blocked" } as const;
+
+    /** A playbook of the organization requiring `hostTools` (removed with `drop`). */
+    async function requirePlaybook(hostTools: string[]) {
+      const row = await insertPlaybook(db, orgId, {
+        name: `Requires ${hostTools.join(" ")}`,
+        role: "chat-ask",
+        definition: {},
+        requirements: { installables: [], hostTools },
+        createdBy: null,
+      });
+      return () => db.delete(playbooks).where(eq(playbooks.id, row.id));
     }
 
-    it("the catalog and configured paths set by admins reach the agent's next heartbeat", async () => {
+    it("stores each heartbeat's host tools, publishing the agent only when they change", async () => {
       const { agentId, accessToken } = await enrolledAgent();
-      const added = await addHostTool({ name: "ui-semgrep", description: "SAST" });
-      if (!added.ok) throw new Error(added.error);
-      const id = added.hostToolId!;
-      expect(await knownTools(accessToken)).toEqual([{ name: "ui-semgrep", configuredPath: null }]);
+      const agentChanges = (changes: RecordedChange[]) =>
+        changes.filter((c) => c.resource === "agent" && c.ids.includes(agentId));
+      const reported = async () => {
+        const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+        return row!.reportedHostTools;
+      };
+      // The first heartbeat announces the agent online: get that out of the way.
+      await sendHeartbeat(accessToken);
+      expect(await reported()).toEqual([]);
 
-      expect(await setHostToolPath(agentId, id, " /opt/semgrep/bin/semgrep ")).toEqual({
-        ok: true,
-      });
-      expect(await knownTools(accessToken)).toEqual([
-        { name: "ui-semgrep", configuredPath: "/opt/semgrep/bin/semgrep" },
-      ]);
-      await sendHeartbeat(accessToken, {
-        ...HEARTBEAT,
-        hostTools: [
-          {
-            name: "ui-semgrep",
-            configuredPath: "/opt/semgrep/bin/semgrep",
-            configuredPathExists: true,
-            discoveredPath: "/usr/bin/semgrep",
-          },
-        ],
-      });
-      const [stored] = (await listAgentHostTools(db, orgId, agentId)).filter(
-        (tool) => tool.name === "ui-semgrep",
+      const hostTools = [configured, discovered, blocked];
+      const first = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools }),
       );
-      expect(stored).toMatchObject({
-        configuredPath: "/opt/semgrep/bin/semgrep",
-        configuredPathExists: true,
-        effectivePath: "/opt/semgrep/bin/semgrep",
-      });
+      expect(first.result.status).toBe(200);
+      expect(await reported()).toEqual(hostTools);
+      expect(agentChanges(first.changes)).toEqual([
+        expect.objectContaining({ resource: "agent", ids: [agentId], organizationId: orgId }),
+      ]);
 
-      // Clearing it: the agent falls back to the path it discovers.
-      expect(await setHostToolPath(agentId, id, "  ")).toEqual({ ok: true });
-      expect(await knownTools(accessToken)).toEqual([{ name: "ui-semgrep", configuredPath: null }]);
+      // The same report again publishes nothing.
+      const same = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools }),
+      );
+      expect(agentChanges(same.changes)).toEqual([]);
 
-      // Deleted from the catalog: the agent no longer hears of it.
-      expect(await removeHostTool(id)).toEqual({ ok: true });
-      expect(await knownTools(accessToken)).toEqual([]);
+      // A tool found now: stored and published once.
+      const found = { ...blocked, path: "/opt/semgrep", source: "configured", problem: null };
+      const changed = await captureChanges(() =>
+        sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: [configured, discovered, found] }),
+      );
+      expect(agentChanges(changed.changes)).toHaveLength(1);
+      expect((await reported())[2]).toEqual(found);
+
+      // Too many, or a bad entry: refused, the last report stays.
+      const tooMany = Array.from({ length: 101 }, (_, i) => ({
+        name: `t${i}`,
+        path: null,
+        source: null,
+        problem: null,
+      }));
+      for (const bad of [
+        tooMany,
+        [{ ...configured, path: "bin/gh" }],
+        [{ name: "ui-gh", configuredPathExists: true, discoveredPath: null }],
+      ]) {
+        expect((await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: bad })).status).toBe(
+          400,
+        );
+      }
+      expect(await reported()).toHaveLength(3);
+
+      // None reported clears it.
+      await sendHeartbeat(accessToken, { ...HEARTBEAT, hostTools: [] });
+      expect(await reported()).toEqual([]);
     });
 
-    it("rejects relative paths, unknown agents and tools, revoked agents and members", async () => {
-      const { agentId, accessToken } = await enrolledAgent();
-      const added = await addHostTool({ name: "ui-ruff" });
-      if (!added.ok) throw new Error(added.error);
-      const id = added.hostToolId!;
-      expect(await addHostTool({ name: "ui-ruff" })).toEqual({
-        ok: false,
-        error: "There already is a host tool named ui-ruff.",
-      });
-      for (const relative of ["bin/ruff", "./ruff", "ruff", "~/bin/ruff"]) {
-        expect(await setHostToolPath(agentId, id, relative)).toEqual({
-          ok: false,
-          error: "Enter an absolute path, like /usr/local/bin/semgrep, or leave it blank.",
-        });
+    it("sends the host tools the organization's playbooks require", async () => {
+      const { accessToken } = await enrolledAgent();
+      const required = async () =>
+        (
+          (await (await sendHeartbeat(accessToken)).json()) as HeartbeatResponse
+        ).requiredHostTools.filter((name) => name.startsWith("ui-"));
+      expect(await required()).toEqual([]);
+      const dropFirst = await requirePlaybook(["ui-opengrep", "ui-gh"]);
+      const dropSecond = await requirePlaybook(["ui-gh"]);
+      try {
+        expect(await required()).toEqual(["ui-gh", "ui-opengrep"]);
+      } finally {
+        await dropFirst();
+        await dropSecond();
       }
-      expect(await setHostToolPath(agentId, id, `/${"x".repeat(4096)}`)).toMatchObject({
-        ok: false,
-      });
-      const missing = "That agent or host tool doesn't exist, or the agent was revoked.";
-      expect(await setHostToolPath(randomUUID(), id, "/usr/bin/ruff")).toEqual({
-        ok: false,
-        error: missing,
-      });
-      expect(await setHostToolPath(agentId, randomUUID(), "/usr/bin/ruff")).toEqual({
-        ok: false,
-        error: missing,
-      });
-      expect(await setHostToolPath("not-a-uuid", id, "/usr/bin/ruff")).toEqual({
-        ok: false,
-        error: missing,
-      });
+      expect(await required()).toEqual([]);
+    });
 
-      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
-      expect(await setHostToolPath(agentId, id, "/usr/bin/ruff")).toMatchObject({ ok: false });
-      expect(await addHostTool({ name: "ui-member" })).toMatchObject({ ok: false });
-      expect(await removeHostTool(id)).toMatchObject({ ok: false });
-      expect(await knownTools(accessToken)).toEqual([{ name: "ui-ruff", configuredPath: null }]);
-
-      state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
-      await revokeAgent(agentId);
-      expect(await setHostToolPath(agentId, id, "/usr/bin/ruff")).toEqual({
-        ok: false,
-        error: missing,
+    it("shows the reported host tools and the required ones missing on the agent's detail", async () => {
+      const { agentId, accessToken } = await enrolledAgent();
+      expect(await getAgentDetail(agentId)).toMatchObject({
+        status: 200,
+        body: { hostTools: [], missingRequiredHostTools: [] },
       });
-      expect(await removeHostTool(id)).toEqual({ ok: true });
+      const drop = await requirePlaybook(["ui-gh", "ui-semgrep", "ui-trivy"]);
+      try {
+        await sendHeartbeat(accessToken, {
+          ...HEARTBEAT,
+          hostTools: [configured, discovered, blocked],
+        });
+        const detail = await getAgentDetail(agentId);
+        expect(detail.status).toBe(200);
+        expect(detail.body.hostTools).toEqual([configured, discovered, blocked]);
+        expect(
+          detail.body.missingRequiredHostTools.filter((name) => name.startsWith("ui-")),
+        ).toEqual(["ui-semgrep", "ui-trivy"]);
+      } finally {
+        await drop();
+      }
     });
   });
 

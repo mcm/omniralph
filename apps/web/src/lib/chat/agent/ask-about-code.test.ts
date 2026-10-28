@@ -5,10 +5,7 @@ import {
   appendChatMessage,
   agents,
   closeDb,
-  createHostTool,
-  deleteHostTool,
   insertPlaybook,
-  recordAgentHostTools,
   listThreadRuns,
   connectRepository,
   createDb,
@@ -115,7 +112,7 @@ describe("queryClaimableAgents", () => {
     const all = agent({ name: "all", reportedInstallables: [graph, hello] });
     const missingInstallable = agent({ name: "no-hello", reportedInstallables: [graph] });
     const missingHostTool = agent({ name: "no-semgrep", reportedInstallables: [graph, hello] });
-    // As `listAgentsUsableHostTools`: tools with an effective path, by agent ID.
+    // As `listAgentsUsableHostTools`: tools reported with a path, by agent ID.
     const usable = new Map([
       ["all", ["opengrep", "semgrep"]],
       ["no-hello", ["opengrep", "semgrep"]],
@@ -778,9 +775,6 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       startWorkPlaybookId: null,
       updatedBy: null,
     });
-    const tool = await createHostTool(db, orgId, { name: "opengrep" });
-    if (!tool.ok) throw new Error("setup");
-
     try {
       const missingBoth = await ask(h, { repository: "acme/api", question: "What is this?" });
       expect(missingBoth).toMatchObject({
@@ -794,19 +788,21 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
       await setAgent(agentId, {
         reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
       });
-      await recordAgentHostTools(db, orgId, agentId, [
-        { name: "opengrep", configuredPathExists: null, discoveredPath: null },
-      ]);
+      await setAgent(agentId, {
+        reportedHostTools: [{ name: "opengrep", path: null, source: null, problem: "blocked" }],
+      });
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
         error: "no_capable_agent",
         agents: [{ name: "acme-agent", capable: false }],
       });
 
       // The host tool alone isn't enough either.
-      await setAgent(agentId, { reportedInstallables: [] });
-      await recordAgentHostTools(db, orgId, agentId, [
-        { name: "opengrep", configuredPathExists: null, discoveredPath: "/usr/bin/opengrep" },
-      ]);
+      await setAgent(agentId, {
+        reportedInstallables: [],
+        reportedHostTools: [
+          { name: "opengrep", path: "/usr/bin/opengrep", source: "discovered", problem: null },
+        ],
+      });
       expect(await ask(h, { repository: "acme/api", question: "What is this?" })).toMatchObject({
         error: "no_capable_agent",
       });
@@ -823,8 +819,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
         requiredHostTools: ["opengrep"],
       });
     } finally {
-      await setAgent(agentId, { reportedInstallables: [] });
-      await deleteHostTool(db, orgId, tool.hostTool.id);
+      await setAgent(agentId, { reportedInstallables: [], reportedHostTools: [] });
     }
   });
 

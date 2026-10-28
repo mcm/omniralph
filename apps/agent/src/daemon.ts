@@ -216,6 +216,7 @@ export class AgentDaemon implements DrainableDaemon {
   constructor(private readonly options: DaemonOptions) {
     this.hostTools = new HostToolPaths({
       config: options.localConfig ?? {},
+      configured: () => this.localSettings().hostTools,
       searchPath: options.hostToolSearchPath ?? (() => process.env.PATH),
       logger: options.logger,
     });
@@ -383,7 +384,7 @@ export class AgentDaemon implements DrainableDaemon {
   /**
    * A `settings.json` change (a page save or a hand edit): the claim follows the new slots,
    * pool limits and kinds at once (lowering a limit cancels nothing), and a heartbeat
-   * reports them without waiting for the interval.
+   * re-checks the host tools and reports everything without waiting for the interval.
    */
   private applyLocalSettings(): void {
     if (this.stopping) return;
@@ -467,12 +468,13 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * Reports on the host tools of the last heartbeat response (none before the
-   * first) and keeps their effective paths for `hostToolPath()`.
+   * Checks the host tools configured in `settings.json` and the ones the last
+   * heartbeat response asked about (`requiredHostTools`, none before the
+   * first), and keeps their paths for `hostToolPath()`.
    */
   private async checkHostTools(): Promise<Heartbeat["hostTools"]> {
     try {
-      return await this.hostTools.check(this.config?.hostTools ?? []);
+      return await this.hostTools.check(this.config?.requiredHostTools ?? []);
     } catch (error) {
       this.options.logger.warn({ err: error }, "cannot check host tools");
       return [];
@@ -480,10 +482,11 @@ export class AgentDaemon implements DrainableDaemon {
   }
 
   /**
-   * The absolute path to run a host tool from, as negotiated in the last
-   * heartbeats: its configured path when that's a usable executable, else the
-   * one discovered on the agent's `PATH` when none is configured, else null
-   * (unavailable). Never a path covered by `blockedExecPaths`.
+   * The absolute path to run a host tool from, as last checked: its path in
+   * `settings.json` when that's a usable executable, else the one discovered
+   * on the agent's `PATH` when none is configured, else null (unavailable, or
+   * its configured path changed since the check). Never a path covered by
+   * `blockedExecPaths`.
    */
   hostToolPath(name: string): string | null {
     return this.hostTools.path(name);
@@ -540,7 +543,11 @@ export class AgentDaemon implements DrainableDaemon {
         if (job.sessionToken === undefined) job.sessionTokenFile.update(token);
       }
     }
-    this.hostTools.update(config.hostTools);
+    // Newly required host tools are checked and reported right away, not a heartbeat later.
+    const required = config.requiredHostTools.join("\0");
+    if (this.heartbeating && required !== (previous?.requiredHostTools.join("\0") ?? "")) {
+      this.heartbeatAgain = true;
+    }
     this.deliverMessages(config.jobMessages);
     this.applyAbly(config);
     this.refreshClaim();

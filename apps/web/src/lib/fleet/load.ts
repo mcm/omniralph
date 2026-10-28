@@ -12,7 +12,9 @@ import {
   listAgentOverview,
   listRecentAgentAudit,
   listAgentPinSyncJobs,
+  listRequiredHostTools,
   loadRunListEntries,
+  missingHostToolNames,
   type AgentAttempt,
   type AgentOverview,
   type Database,
@@ -153,25 +155,27 @@ export async function loadAgentDetail(
   organization: ScopedOrganization,
 ): Promise<AgentDetail | null> {
   const now = new Date();
-  const [agent, version, attempts, security, audit, pinSyncJobs, installJobs] = await Promise.all([
-    getAgentOverview(db, organization.id, agentId).then(withAgentLastSeen),
-    organizationAgentVersion(db, organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
-    listAgentAttempts(db, agentId, RECENT_WORK_LIMIT),
-    getAgentSecuritySummary(db, agentId, new Date(now.getTime() - SECURITY_WINDOW_MS)),
-    listRecentAgentAudit(db, agentId, AUDIT_LIMIT),
-    listAgentPinSyncJobs(
-      db,
-      organization.id,
-      agentId,
-      new Date(now.getTime() - PIN_SYNC_WINDOW_MS),
-    ),
-    listAgentInstallJobs(
-      db,
-      organization.id,
-      agentId,
-      new Date(now.getTime() - INSTALLS_WINDOW_MS),
-    ),
-  ]);
+  const [agent, version, attempts, security, audit, pinSyncJobs, installJobs, requiredHostTools] =
+    await Promise.all([
+      getAgentOverview(db, organization.id, agentId).then(withAgentLastSeen),
+      organizationAgentVersion(db, organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
+      listAgentAttempts(db, agentId, RECENT_WORK_LIMIT),
+      getAgentSecuritySummary(db, agentId, new Date(now.getTime() - SECURITY_WINDOW_MS)),
+      listRecentAgentAudit(db, agentId, AUDIT_LIMIT),
+      listAgentPinSyncJobs(
+        db,
+        organization.id,
+        agentId,
+        new Date(now.getTime() - PIN_SYNC_WINDOW_MS),
+      ),
+      listAgentInstallJobs(
+        db,
+        organization.id,
+        agentId,
+        new Date(now.getTime() - INSTALLS_WINDOW_MS),
+      ),
+      listRequiredHostTools(db, organization.id),
+    ]);
   if (!agent) return null;
 
   const runIds = [
@@ -267,6 +271,13 @@ export async function loadAgentDetail(
       versionPin: agent.reportedVersionPin,
       installablesAllow: agent.reportedInstallablesAllow,
     },
+    hostTools: agent.reportedHostTools.map(({ name, path, source, problem }) => ({
+      name,
+      path,
+      source,
+      problem,
+    })),
+    missingRequiredHostTools: missingHostToolNames(agent.reportedHostTools, requiredHostTools),
     audit: audit.map((entry) => ({
       id: entry.id,
       event: entry.event,

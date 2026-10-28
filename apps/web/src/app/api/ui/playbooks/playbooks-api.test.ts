@@ -281,15 +281,38 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           name: "a-builder",
           reportedModels: models("Opus 5.5", "Sonnet 5.5"),
           reportedInstallables: [{ name: "@omniralph/code-graph", version: "1.0.0" }],
+          reportedHostTools: [
+            { name: "opengrep", path: "/usr/bin/opengrep", source: "discovered", problem: null },
+            // No path: not offered.
+            { name: "semgrep", path: null, source: null, problem: "blocked" },
+          ],
         },
-        { organizationId: state.orgId, name: "b-builder", reportedModels: models("Sonnet 5.5") },
+        {
+          organizationId: state.orgId,
+          name: "b-builder",
+          reportedModels: models("Sonnet 5.5"),
+          reportedHostTools: [
+            { name: "gh", path: "/opt/gh/bin/gh", source: "configured", problem: null },
+            { name: "opengrep", path: "/opt/opengrep", source: "configured", problem: null },
+          ],
+        },
         {
           organizationId: state.orgId,
           name: "c-revoked",
           revokedAt: new Date(),
           reportedModels: models("Haiku 5.5"),
+          reportedHostTools: [
+            { name: "revoked-tool", path: "/usr/bin/x", source: "discovered", problem: null },
+          ],
         },
-        { organizationId: otherOrgId, name: "theirs", reportedModels: models("Fable 5.1") },
+        {
+          organizationId: otherOrgId,
+          name: "theirs",
+          reportedModels: models("Fable 5.1"),
+          reportedHostTools: [
+            { name: "their-tool", path: "/usr/bin/x", source: "discovered", problem: null },
+          ],
+        },
       ]);
       await db.insert(jobs).values([
         {
@@ -319,12 +342,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
       });
     });
 
-    it("offers the custom roles, the organization's reported models, the tools and MCP servers", async () => {
+    it("offers the custom roles, the organization's reported models, the tools, MCP servers and host tools", async () => {
       const mine = await insertPlaybook(db, state.orgId, {
         name: "Our PR description",
         role: "pr-description",
         definition: input("builtin:describe-pr"),
-        requirements: {},
+        requirements: { installables: [], hostTools: ["trivy", "gh"] },
         createdBy: null,
       });
       const response = await getFormOptions();
@@ -346,13 +369,22 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           expect.objectContaining({ id: "builtin:describe-pr", builtin: true }),
           { id: mine.id, name: "Our PR description", builtin: false },
         ],
+        // Reported with a path by non-revoked agents, or required by a playbook: sorted, once each.
+        hostTools: ["gh", "opengrep", "trivy"],
       });
       const roles = response.body.roles as string[];
       for (const builtinOnly of ["triage", "learn-rule", "reply-to-finding"]) {
         expect(roles).not.toContain(builtinOnly);
       }
       const json = JSON.stringify(response.body);
-      for (const marker of ["Fable 5.1", "Haiku 5.5", "theirs", "Their PR description"]) {
+      for (const marker of [
+        "Fable 5.1",
+        "Haiku 5.5",
+        "theirs",
+        "Their PR description",
+        "their-tool",
+        "revoked-tool",
+      ]) {
         expect(json).not.toContain(marker);
       }
     });
