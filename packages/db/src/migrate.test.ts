@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -4259,7 +4260,23 @@ describe.skipIf(!databaseAvailable)("migrations", () => {
         job("chat.ask", "query", { repositoryId: null }, [400, 40]),
       ];
       const system = [job("repo.sync", "system", {}, null), job("install", "system", {}, null)];
-      await before.insert(jobs).values([...attempts, ...system]);
+      // Only the columns 0111 has: `jobs` names every column of the latest schema.
+      const jobsAt0111 = pgTable("jobs", {
+        id: uuid("id").primaryKey(),
+        organizationId: uuid("organization_id").notNull(),
+        repositoryId: uuid("repository_id"),
+        type: text("type").notNull(),
+        taskType: text("task_type").notNull(),
+        status: text("status").notNull(),
+        payload: jsonb("payload").notNull(),
+        result: jsonb("result"),
+        ralphRunId: uuid("ralph_run_id"),
+        reviewRunId: uuid("review_run_id"),
+        triageRunId: uuid("triage_run_id"),
+        createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+        finishedAt: timestamp("finished_at", { withTimezone: true }),
+      });
+      await before.insert(jobsAt0111).values([...attempts, ...system]);
 
       await runMigrations(uri);
 
