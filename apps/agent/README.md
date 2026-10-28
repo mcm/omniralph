@@ -49,6 +49,12 @@ The agent logs to stderr and to `<dataDir>/logs/agent.log` (`~/.omniralph/logs/a
 default), rotated at 10 MB with five older files kept (`agent.log.1` … `agent.log.5`). See
 [Logs](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md#logs).
 
+While it runs, the agent serves its page on 127.0.0.1 (port 7410 by default, `ui.port` in
+`agent.json`). `omniralph-agent ui` prints its link, with a token that changes at every start;
+`--open` also opens it in the browser. From another computer, forward the port (`ssh -L
+7410:127.0.0.1:7410`, `coder port-forward <workspace> --tcp 7410:7410`). See
+[The agent page](https://github.com/mcm/omniralph/blob/main/docs/deploy-agent.md#the-agent-page).
+
 ## Upgrade
 
 Stop the agent, then:

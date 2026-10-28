@@ -9,11 +9,12 @@ import {
   exchangeRefreshToken,
   type FetchFn,
 } from "./api.js";
-import { AttemptHistory, attemptsPath } from "./attempts/history.js";
+import { AttemptHistory, attemptsPath, type AttemptChange } from "./attempts/history.js";
 import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
 import { CapabilityRegistry, defaultCapabilities, type Capability } from "./capabilities/index.js";
 import {
   ConfigError,
+  DEFAULT_UI_PORT,
   type AgentConfig,
   dataDir,
   defaultConfigPath,
@@ -38,9 +39,24 @@ import {
   type InstallableInstaller,
 } from "./installables.js";
 import { createLogger, type Logger } from "./logger.js";
+import type { LogRing } from "./logs/ring.js";
 import { ClaudeStatusReporter, sdkReadClaude, type ReadClaude } from "./claude-status.js";
 import { SystemRpcRegistry, defaultSystemRpcs } from "./rpc/index.js";
 import { LocalSettingsStore, localSettingsPath, type SettingsFs } from "./settings.js";
+import { AgentStorage } from "./storage.js";
+import { UiEventHub } from "./ui/events.js";
+import {
+  openInBrowser,
+  pingUiLink,
+  processAlive,
+  readUiLink,
+  removeUiLink,
+  uiLinkPath,
+  uiPageUrl,
+  writeUiLink,
+} from "./ui/link.js";
+import { startUiServer, type UiServer } from "./ui/server.js";
+import { agentUiState } from "./ui/state.js";
 import {
   SelfUpdater,
   npmInstaller,
@@ -63,8 +79,10 @@ Commands:
                     --token <token>         One-time enrollment token from the Agents page
                     --name <name>           Agent name (default: the hostname)
                     --workspace-root <dir>  Repo cache directory (default: ~/.omniralph/repos)
-  start           Run the agent daemon
+  start           Run the agent daemon (and its page on 127.0.0.1, see ui)
                     --healthz-port <port>   Serve GET /healthz on 127.0.0.1:<port>
+  ui              Print the link to the running agent's page (only this machine can open it)
+                    --open                  Also open it in the default browser
   import          Bring over an @omniralph/harness install's config, as the same agent
                   (offline; the old install is left untouched)
                     --from <file>           Old config (default: $OMNIRALPH_HARNESS_CONFIG,
@@ -137,6 +155,14 @@ export interface MainDeps {
   listProcesses?: ProcessLister;
   /** Runs `pm2` for `import` (default: the `pm2` CLI, when its daemon runs). */
   runPm2?: Pm2Runner;
+  /** The agent page's port, over `ui.port` (tests: 0, an ephemeral port). */
+  uiPort?: number;
+  /** The agent page's bundle directory (default: `dist/ui` next to the CLI). */
+  uiBundleDir?: string;
+  /** Opens a URL in the default browser for `ui --open` (default: `xdg-open`, `open` or `start`). */
+  openUrl?: (url: string) => Promise<void>;
+  /** Whether a process runs, for `ui` (default: signal 0). */
+  processAlive?: (pid: number) => boolean;
 }
 
 const defaultDeps: MainDeps = {
@@ -160,6 +186,7 @@ const OPTIONS = {
   from: { type: "string" },
   force: { type: "boolean" },
   "dry-run": { type: "boolean" },
+  open: { type: "boolean" },
 } as const;
 
 /** Parses the CLI arguments, runs the command and returns the process exit code. */
@@ -194,6 +221,8 @@ export async function main(argv: string[], overrides: Partial<MainDeps> = {}): P
         return await runStart(values, configPath, deps);
       case "update":
         return await runUpdate(configPath, deps);
+      case "ui":
+        return await runUi(values.open ?? false, configPath, deps);
       case "import":
         return await runImport(
           {
@@ -303,6 +332,28 @@ async function runUpdate(configPath: string, deps: MainDeps): Promise<number> {
   return 0;
 }
 
+const AGENT_NOT_RUNNING = "The agent isn't running. Start it with 'omniralph-agent start'.\n";
+
+async function runUi(open: boolean, configPath: string, deps: MainDeps): Promise<number> {
+  const config = await readConfig(configPath);
+  const link = await readUiLink(uiLinkPath(configPath));
+  const alive = deps.processAlive ?? processAlive;
+  if (!link || !alive(link.pid) || !(await pingUiLink(link, config.agentId, deps.fetch))) {
+    deps.io.stderr(AGENT_NOT_RUNNING);
+    return 1;
+  }
+  const url = uiPageUrl(link);
+  deps.io.stdout(`Agent page: ${url}\n`);
+  if (open) {
+    try {
+      await (deps.openUrl ?? openInBrowser)(url);
+    } catch (error) {
+      deps.io.stderr(`omniralph-agent: couldn't open a browser (${(error as Error).message})\n`);
+    }
+  }
+  return 0;
+}
+
 async function runStart(
   values: { "healthz-port"?: string },
   configPath: string,
@@ -323,11 +374,11 @@ async function runStart(
   const config = await readConfig(configPath);
   const agentDataDir = dataDir(config, deps.homeDir);
   // stderr, <dataDir>/logs/agent.log and the in-memory ring.
-  const log = deps.logger
+  const log: { logger: Logger; ring?: LogRing; close: () => void } = deps.logger
     ? { logger: deps.logger, close: () => {} }
     : createLogger({ level: deps.env.OMNIRALPH_LOG_LEVEL, dataDir: agentDataDir });
   try {
-    return await runAgent(config, configPath, agentDataDir, healthzPort, log.logger, deps);
+    return await runAgent(config, configPath, agentDataDir, healthzPort, log, deps);
   } finally {
     log.close();
   }
@@ -338,9 +389,10 @@ async function runAgent(
   configPath: string,
   agentDataDir: string,
   healthzPort: number | undefined,
-  logger: Logger,
+  log: { logger: Logger; ring?: LogRing },
   deps: MainDeps,
 ): Promise<number> {
+  const { logger } = log;
   const version = deps.version ?? AGENT_VERSION;
   // Before anything starts: an invalid settings.json stops the agent here.
   const settings = await LocalSettingsStore.open({
@@ -400,6 +452,9 @@ async function runAgent(
   await settings.watch();
   const history = new AttemptHistory({ file: attemptsPath(agentDataDir), logger });
   await history.load();
+  const claude = new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger });
+  const hub = new UiEventHub();
+  let lastPins = "[]";
   const api = new HttpControlPanelApi(config.server, () => tokens.getAccessToken(), deps.fetch);
   const daemon = new AgentDaemon({
     server: config.server,
@@ -418,16 +473,56 @@ async function runAgent(
     ),
     logger,
     dataDir: agentDataDir,
-    claude: new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger }),
+    claude,
     localConfig: config,
     settings,
     history,
     updater,
     wakeSubscription: (organizationId) =>
       createWakeSubscription({ agentId: config.agentId, organizationId, logger }),
+    onHeartbeat: () => {
+      hub.publish("status");
+      hub.publish("update");
+      const pins = JSON.stringify(daemon.pinnedRepositories());
+      if (pins !== lastPins) hub.publish("repos");
+      lastPins = pins;
+    },
   });
   running.daemon = daemon;
   if (fatal) daemon.fail(fatal);
+
+  const storage = new AgentStorage({
+    workspaceRoot: config.workspaceRoot,
+    dataDir: agentDataDir,
+    history,
+    pinned: () => daemon.pinnedRepositories(),
+    logger,
+  });
+  const unpublish = publishLocalChanges(hub, {
+    settings,
+    history,
+    claude,
+    storage,
+    ring: log.ring,
+  });
+  const ui = await startAgentPage({
+    config,
+    configPath,
+    version,
+    hub,
+    deps,
+    logger,
+    state: () =>
+      agentUiState({
+        agent: { agentId: config.agentId, server: config.server, version },
+        daemon,
+        settings,
+        updater,
+        claude,
+        storage,
+        logger,
+      }),
+  });
 
   const health =
     healthzPort === undefined
@@ -446,6 +541,8 @@ async function runAgent(
     "agent started",
   );
   const code = await daemon.run();
+  await ui?.stop();
+  unpublish();
   tokens.stop();
   await settings.close();
   await history.close();
@@ -455,4 +552,104 @@ async function runAgent(
   }
   logger.info({ exitCode: code }, "agent stopped");
   return code;
+}
+
+/** Maps what changes locally to the page's live stream. */
+function publishLocalChanges(
+  hub: UiEventHub,
+  sources: {
+    settings: LocalSettingsStore;
+    history: AttemptHistory;
+    claude: ClaudeStatusReporter;
+    storage: AgentStorage;
+    ring?: LogRing;
+  },
+): () => void {
+  const onSettings = () => hub.publish("settings");
+  const onAttempt = (change: AttemptChange) => {
+    if (change.kind === "transcript") {
+      hub.publish("transcript", { ids: [change.id], data: change.events });
+    } else {
+      hub.publish("attempts", { ids: [change.attempt.id] });
+      // A finished repo sync is a repo's last sync.
+      if (change.kind === "finished") hub.publish("repos");
+    }
+  };
+  const onClaude = () => hub.publish("claude");
+  const onStorage = () => {
+    hub.publish("storage");
+    hub.publish("repos");
+  };
+  sources.settings.on("change", onSettings);
+  sources.history.on("change", onAttempt);
+  sources.claude.on("change", onClaude);
+  sources.storage.on("change", onStorage);
+  const unsubscribeLogs = sources.ring?.subscribe((entry) =>
+    hub.publish("logs", { data: [entry] }),
+  );
+  return () => {
+    sources.settings.off("change", onSettings);
+    sources.history.off("change", onAttempt);
+    sources.claude.off("change", onClaude);
+    sources.storage.off("change", onStorage);
+    unsubscribeLogs?.();
+  };
+}
+
+/**
+ * Serves the agent page (unless `ui.enabled` is false) and writes `ui.json`
+ * for `omniralph-agent ui`. The agent runs on without its page when it can't
+ * be served.
+ */
+async function startAgentPage(options: {
+  config: AgentConfig;
+  configPath: string;
+  version: string;
+  hub: UiEventHub;
+  deps: MainDeps;
+  logger: Logger;
+  state: () => Promise<unknown>;
+}): Promise<{ stop(): Promise<void> } | undefined> {
+  const { config, deps, logger } = options;
+  if (config.ui?.enabled === false) return undefined;
+  let server: UiServer;
+  try {
+    server = await startUiServer({
+      port: deps.uiPort ?? config.ui?.port ?? DEFAULT_UI_PORT,
+      allowedHosts: config.ui?.allowedHosts ?? [],
+      agentId: config.agentId,
+      version: options.version,
+      bundleDir: deps.uiBundleDir,
+      state: options.state,
+      hub: options.hub,
+      logger,
+    });
+  } catch (error) {
+    logger.error({ err: error }, "cannot serve the agent page; running without it");
+    return undefined;
+  }
+  const file = uiLinkPath(options.configPath);
+  try {
+    await writeUiLink(file, {
+      pid: process.pid,
+      port: server.port,
+      url: server.url,
+      startedAt: new Date().toISOString(),
+      token: server.token,
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, file },
+      "cannot write ui.json; omniralph-agent ui won't find the page",
+    );
+  }
+  logger.info({ url: server.url }, "serving the agent page (omniralph-agent ui prints its link)");
+  return {
+    stop: async () => {
+      await server.close();
+      await removeUiLink(file, process.pid).catch((error: unknown) =>
+        logger.warn({ err: error, file }, "cannot remove ui.json"),
+      );
+    },
+  };
 }

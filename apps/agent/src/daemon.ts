@@ -18,6 +18,7 @@ import {
 import type { TaskType } from "@omniralph/tasks";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import type { AttemptHistory } from "./attempts/history.js";
+import { ReenrollmentRequiredError } from "./auth.js";
 import {
   RetryableJobError,
   type CapabilityRegistry,
@@ -129,6 +130,8 @@ export interface DaemonOptions {
    * heartbeat hands over an Ably token. Without it the agent always long-polls.
    */
   wakeSubscription?: (organizationId: string) => WakeSubscription;
+  /** After each heartbeat, whether it got through or not (the agent page's live status). */
+  onHeartbeat?: () => void;
 }
 
 /** The machine settings as the daemon reads them (a `LocalSettingsStore`). */
@@ -172,6 +175,10 @@ export interface DaemonStatus {
   draining: boolean;
   connected: boolean;
   lastHeartbeatAt: string | null;
+  /** When heartbeats started failing (the first failure since the last one that got through); null when the last got through. */
+  unreachableSince: string | null;
+  /** The control panel refused the agent's refresh token: it has to be enrolled again. */
+  revoked: boolean;
   runningJobIds: string[];
   /** Its slots (`settings.json` `maxConcurrency`). */
   maxConcurrency: number;
@@ -186,6 +193,8 @@ export interface DaemonStatus {
 export class AgentDaemon implements DrainableDaemon {
   private config: HeartbeatResponse | null = null;
   private lastHeartbeatAt: Date | null = null;
+  private unreachableSince: Date | null = null;
+  private revoked = false;
   private readonly running = new Map<string, RunningJob>();
   /** Running job handlers (for the shutdown wait). */
   private readonly handlers = new Set<Promise<unknown>>();
@@ -256,6 +265,8 @@ export class AgentDaemon implements DrainableDaemon {
       draining: this.draining,
       connected: this.config !== null,
       lastHeartbeatAt: this.lastHeartbeatAt?.toISOString() ?? null,
+      unreachableSince: this.unreachableSince?.toISOString() ?? null,
+      revoked: this.revoked,
       runningJobIds: [...this.running.keys()],
       maxConcurrency: this.localSettings().maxConcurrency,
     };
@@ -264,6 +275,16 @@ export class AgentDaemon implements DrainableDaemon {
   /** The repositories the last heartbeat pinned to this agent (none before the first one). */
   pinnedRepositories(): PinnedRepository[] {
     return this.config?.pinnedRepositories ?? [];
+  }
+
+  /**
+   * The host tools the organization's playbooks require (the last heartbeat's
+   * `requiredHostTools`) that this agent can't run, as last checked; sorted.
+   */
+  missingRequiredHostTools(): string[] {
+    return (this.config?.requiredHostTools ?? [])
+      .filter((name) => this.hostTools.path(name) === null)
+      .sort();
   }
 
   /**
@@ -354,6 +375,7 @@ export class AgentDaemon implements DrainableDaemon {
   /** Immediate stop with a non-zero exit code (e.g. re-enrollment required). */
   fail(error: Error): void {
     const wasStopping = this.stopping;
+    if (error instanceof ReenrollmentRequiredError) this.revoked = true;
     this.stop();
     for (const job of this.running.values()) job.controller.abort(new ShutdownAbort());
     if (!wasStopping) this.options.logger.error({ err: error }, "agent stopped");
@@ -458,6 +480,7 @@ export class AgentDaemon implements DrainableDaemon {
         ...this.wakeReport(),
       });
       this.lastHeartbeatAt = new Date();
+      this.unreachableSince = null;
       for (const id of [...deliveredMessageIds, ...rejectedMessageIds]) {
         this.pendingAcks.delete(id);
         this.ackedMessageIds.add(id);
@@ -469,8 +492,14 @@ export class AgentDaemon implements DrainableDaemon {
       this.applyConfig(response);
       this.notifyUpdater(response);
     } catch (error) {
+      this.unreachableSince ??= new Date();
       this.onApiError(error, "heartbeat failed");
       this.notifyUpdater(null);
+    }
+    try {
+      this.options.onHeartbeat?.();
+    } catch (error) {
+      this.options.logger.warn({ err: error }, "heartbeat listener failed");
     }
   }
 

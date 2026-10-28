@@ -1,0 +1,122 @@
+/**
+ * `GET /api/state`: what every page of the agent page needs at once (the
+ * daemon's status and connection, the settings in force, the update state,
+ * Claude's login) and the nav's problem dots.
+ */
+import type { ClaudeStatus } from "../claude-status.js";
+import type { DaemonStatus } from "../daemon.js";
+import type { Logger } from "../logger.js";
+import type { LocalSettingsState } from "../settings.js";
+import type { StorageFilesystem } from "../storage.js";
+import type { SelfUpdater } from "../update.js";
+
+/** The nav items that can carry a problem dot. */
+export const NAV_PROBLEM_SECTIONS = [
+  "overview",
+  "host_tools",
+  "version",
+  "claude",
+  "storage",
+] as const;
+export type NavProblemSection = (typeof NAV_PROBLEM_SECTIONS)[number];
+
+/** Something wrong, shown as a dot on its nav item with `reason` in its accessible name. */
+export interface NavProblem {
+  section: NavProblemSection;
+  reason: string;
+}
+
+export interface AgentUiConnection {
+  /** A heartbeat got through since the agent started. */
+  connected: boolean;
+  lastHeartbeatAt: string | null;
+  /** When heartbeats started failing; null while they get through. */
+  unreachableSince: string | null;
+  revoked: boolean;
+}
+
+export interface AgentUiState {
+  agent: { agentId: string; server: string; version: string };
+  status: DaemonStatus;
+  connection: AgentUiConnection;
+  settings: LocalSettingsState;
+  update: ReturnType<SelfUpdater["report"]>;
+  claude: ClaudeStatus | null;
+  /** Host tools a playbook requires that this agent can't run. */
+  missingRequiredHostTools: string[];
+  /** Free space per filesystem; empty when it can't be read. */
+  filesystems: StorageFilesystem[];
+  problems: NavProblem[];
+}
+
+export interface AgentUiStateSources {
+  agent: AgentUiState["agent"];
+  daemon: { status(): DaemonStatus; missingRequiredHostTools(): string[] };
+  settings: { read(): LocalSettingsState };
+  updater: Pick<SelfUpdater, "report">;
+  claude: { status(): ClaudeStatus | null };
+  storage: { filesystems(): Promise<StorageFilesystem[]> };
+  logger: Logger;
+}
+
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+export function navProblems(
+  state: Omit<AgentUiState, "problems" | "agent" | "settings">,
+): NavProblem[] {
+  const problems: NavProblem[] = [];
+  const { connection, update, claude } = state;
+  if (connection.revoked) {
+    problems.push({ section: "overview", reason: "This agent was revoked" });
+  } else if (connection.unreachableSince !== null) {
+    problems.push({ section: "overview", reason: "Can't reach the control panel" });
+  }
+  if (state.missingRequiredHostTools.length > 0) {
+    problems.push({
+      section: "host_tools",
+      reason: `${joinNames(state.missingRequiredHostTools)} required but not found`,
+    });
+  }
+  if (update.update?.state === "idle" && update.update.error !== null) {
+    problems.push({ section: "version", reason: "The last update failed" });
+  }
+  if (claude?.status === "signed_out") {
+    problems.push({ section: "claude", reason: "Claude isn't signed in" });
+  }
+  if (state.filesystems.some((fs) => fs.low)) {
+    problems.push({ section: "storage", reason: "Low disk space" });
+  }
+  return problems;
+}
+
+export async function agentUiState(sources: AgentUiStateSources): Promise<AgentUiState> {
+  const status = sources.daemon.status();
+  let filesystems: StorageFilesystem[] = [];
+  try {
+    filesystems = await sources.storage.filesystems();
+  } catch (error) {
+    sources.logger.warn({ err: error }, "cannot read free disk space");
+  }
+  const partial = {
+    status,
+    connection: {
+      connected: status.connected,
+      lastHeartbeatAt: status.lastHeartbeatAt,
+      unreachableSince: status.unreachableSince,
+      revoked: status.revoked,
+    },
+    update: sources.updater.report(),
+    claude: sources.claude.status(),
+    missingRequiredHostTools: sources.daemon.missingRequiredHostTools(),
+    filesystems,
+  };
+  return {
+    agent: sources.agent,
+    settings: sources.settings.read(),
+    ...partial,
+    problems: navProblems(partial),
+  };
+}
