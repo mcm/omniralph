@@ -14,7 +14,7 @@ import {
 import { z } from "zod";
 import type { RunMessageState, RunSession } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
-import { describeAttempt } from "@/lib/run-model/attempt-labels";
+import { describeAttempt } from "@omniralph/shared";
 import { attemptLabelBase, storyIssueUrl } from "./detail";
 import { runRow } from "./list";
 

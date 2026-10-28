@@ -37,7 +37,7 @@ import {
 } from "@/lib/agents/desired-version";
 import { withAgentLastSeen, withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow } from "@/lib/agents/rows";
-import { describeAttempt, type AttemptLabelContext } from "@/lib/run-model/attempt-labels";
+import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { attemptLabelBase } from "@/lib/runs/detail";
 import { runRow } from "@/lib/runs/list";
 import { loadSettingsHistory } from "@/lib/settings-history/history";

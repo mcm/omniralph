@@ -1,4 +1,4 @@
-import * as shared from "@omniralph/shared";
+import * as shared from "./index.js";
 import { describe, expect, it } from "vitest";
 import {
   type AttemptLabelContext,
@@ -7,7 +7,7 @@ import {
   LABELED_JOB_TYPES,
   LEGACY_REVIEW_RUN_JOB_TYPE,
   repositoryName,
-} from "./attempt-labels";
+} from "./attempt-labels.js";
 
 const STATUSES: AttemptStatus[] = [
   "queued",

@@ -16,9 +16,10 @@ import {
 } from "@omniralph/shared";
 import { getBuiltinRunSpec, getBuiltinTask, renderTemplate, taskCatalog } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { JobTail } from "../attempts/tail.js";
 import type { JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
-import { createSessionRunner, type SessionQueryFn } from "../session/session.js";
+import { createSessionRunner, sessionTee, type SessionQueryFn } from "../session/session.js";
 import { firstPrompt } from "../test/fake-query.js";
 import { ENV, git, Remote } from "../test/git-remote.js";
 import { placeInstallable } from "../test/installables.js";
@@ -387,6 +388,36 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       new Set([`https://omniralph.example.com/api/agent/jobs/${run.jobId}/activities`]),
     );
     expect(posted.every((p) => p.auth === "Bearer session-token")).toBe(true);
+  });
+
+  it("tees the story session's events into the attempt's tail and still relays them", async () => {
+    const { query } = fakeQuery(async function* (call) {
+      await writeFile(path.join(cwdOf(call), "feature.txt"), "built\n");
+      yield assistant(
+        { type: "text", text: "Reading the PRD." },
+        { type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test" } },
+      );
+      yield result({ status: "complete", summary: "Built it.", followUps: [] });
+    });
+    const tail = new JobTail({ now: () => new Date("2026-10-28T10:00:00Z") });
+    const ctx = { ...context(), sessions: sessionTee((event) => tail.event(event)) };
+    const out = await runStoryCoding(spec(), ctx, options(query));
+
+    expect(out.status).toBe("complete");
+    expect(tail.events()).toEqual([
+      {
+        type: "thought",
+        body: "Reading the PRD.",
+        parameter: null,
+        at: "2026-10-28T10:00:00.000Z",
+      },
+      { type: "action", body: "Bash", parameter: "pnpm test", at: "2026-10-28T10:00:00.000Z" },
+    ]);
+    // Relaying to the control panel is unchanged (the quality gates follow).
+    expect(posted.map((p) => p.body).slice(0, 2)).toEqual([
+      { type: "thought", body: "Reading the PRD.", ephemeral: false },
+      { type: "action", body: "Bash", parameter: "pnpm test", ephemeral: true },
+    ]);
   });
 
   it("gives the session the session token only, its git credential helper included", async () => {

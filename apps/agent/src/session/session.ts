@@ -163,6 +163,67 @@ export interface SessionResult {
 /** Runs one Claude session and returns how it ended. */
 export type SessionRunner = (request: SessionRequest) => Promise<SessionResult>;
 
+/**
+ * The events a message of the session itself (not a subagent's) shows:
+ * Claude's non-blank text and its tool calls, in order.
+ */
+export function sessionEvents(message: SDKMessage): SessionEvent[] {
+  if (message.type !== "assistant" || message.parent_tool_use_id !== null) return [];
+  const events: SessionEvent[] = [];
+  for (const block of message.message.content) {
+    if (block.type === "text" && block.text.trim()) {
+      events.push({ type: "text", text: block.text });
+    } else if (block.type === "tool_use") {
+      events.push({ type: "tool", name: block.name, input: block.input });
+    }
+  }
+  return events;
+}
+
+/**
+ * Lets the agent watch a job's Claude sessions (its attempt's live tail)
+ * without changing them: a session runner's `onEvent`, or for the engine's
+ * review provider its SDK `query()`, also goes to the observer.
+ */
+export interface SessionTee {
+  runner(runner: SessionRunner): SessionRunner;
+  query<P>(
+    query: (params: P) => AsyncIterable<SDKMessage>,
+  ): (params: P) => AsyncIterable<SDKMessage>;
+}
+
+/**
+ * A `SessionTee` calling `observe` with every session event, after the
+ * request's own `onEvent` (the relay to the control panel). An observer that
+ * throws never affects the session.
+ */
+export function sessionTee(observe: (event: SessionEvent) => void): SessionTee {
+  const safely = (event: SessionEvent) => {
+    try {
+      observe(event);
+    } catch {
+      // Watching is best effort.
+    }
+  };
+  return {
+    runner: (runner) => (request) =>
+      runner({
+        ...request,
+        onEvent: (event) => {
+          request.onEvent?.(event);
+          safely(event);
+        },
+      }),
+    query: (query) => (params) =>
+      (async function* () {
+        for await (const message of query(params)) {
+          for (const event of sessionEvents(message)) safely(event);
+          yield message;
+        }
+      })(),
+  };
+}
+
 function retryAfter(resetsAt: number | undefined): number | undefined {
   if (resetsAt === undefined) return undefined;
   const ms = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
@@ -573,13 +634,9 @@ async function runQuery(
               usage,
             };
           }
-          for (const block of message.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              texts.push(block.text);
-              request.onEvent?.({ type: "text", text: block.text });
-            } else if (block.type === "tool_use") {
-              request.onEvent?.({ type: "tool", name: block.name, input: block.input });
-            }
+          for (const event of sessionEvents(message)) {
+            if (event.type === "text") texts.push(event.text);
+            request.onEvent?.(event);
           }
           break;
         }

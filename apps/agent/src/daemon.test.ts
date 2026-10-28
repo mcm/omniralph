@@ -26,10 +26,12 @@ import {
   type Capability,
   type JobContext,
 } from "./capabilities/index.js";
+import { AttemptHistory } from "./attempts/history.js";
 import { AgentDaemon, JobCanceled, ShutdownAbort, type DaemonOptions } from "./daemon.js";
 import { ralphCapability } from "./capabilities/ralph/index.js";
 import { silentLogger } from "./logger.js";
 import { LocalSettingsStore, type LocalSettingsState } from "./settings.js";
+import { sessionRequest } from "./test/fake-query.js";
 import { memorySettingsFs } from "./test/settings-fs.js";
 import type { WakeEvent, WakeSubscription } from "./wake.js";
 import type { RepoCache } from "./workspace/repoCache.js";
@@ -319,6 +321,7 @@ function setup(options: {
   hostToolSearchPath?: string;
   models?: DaemonOptions["models"];
   host?: DaemonOptions["host"];
+  history?: DaemonOptions["history"];
   /** Opens fake wake subscriptions (into `wakes`); without it the daemon has no wake transport. */
   wake?: boolean;
 }) {
@@ -360,6 +363,7 @@ function setup(options: {
     updater: options.updater,
     models: options.models,
     host: options.host ?? (() => ({ hostname: "agent-host", coder: null })),
+    history: options.history,
     wakeSubscription,
   });
   return { api, state, claims, tokens, daemon, wakes, local };
@@ -1517,6 +1521,77 @@ describe("AgentDaemon", () => {
     gate.resolve();
     await settle();
     await daemon.shutdown();
+  });
+
+  it("records each attempt in the history and tees its sessions into the attempt's tail", async () => {
+    const [codingId, failingId, canceledId] = [randomUUID(), randomUUID(), randomUUID()];
+    const history = new AttemptHistory({ logger: silentLogger() });
+    let release!: () => void;
+    const runCodingTask = vi.fn(async (_spec: RunSpec, c: JobContext) => {
+      // The lifecycle's session runner, wrapped by the daemon's tee.
+      const runner = c.sessions!.runner(async (request) => {
+        request.onEvent?.({ type: "text", text: "Reading the PRD." });
+        return { stop: "completed", output: "", usage: { inputTokens: 0, outputTokens: 0 } };
+      });
+      const relayed: string[] = [];
+      await runner(
+        sessionRequest({
+          onEvent: (event) => relayed.push(event.type),
+        }),
+      );
+      await new Promise<void>((resolve) => (release = resolve));
+      return { relayed };
+    });
+    const { api, state, claims, daemon } = setup({
+      local: { maxConcurrency: 3 },
+      history,
+      runCodingTask,
+      run: async (j, ctx) => {
+        if (j.id === failingId) throw new Error("the gate failed");
+        return new Promise((_resolve, reject) =>
+          ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason)),
+        );
+      },
+    });
+    api.submitFailure.mockResolvedValue({ status: "failed" });
+    claims.push(
+      job(codingId, { type: "ralph.story", taskType: "coding", pool: "long", taskId: "builtin:t" }),
+    );
+    claims.push(job(failingId));
+    claims.push(job(canceledId));
+    void daemon.run();
+    await settle();
+
+    expect(history.running().map((a) => a.id)).toEqual([codingId, canceledId]);
+    expect(history.get(codingId)).toMatchObject({
+      type: "ralph.story",
+      outcome: null,
+      label: "Building this run",
+      events: [{ type: "thought", body: "Reading the PRD.", parameter: null }],
+    });
+    expect(history.get(failingId)).toMatchObject({
+      outcome: "failed",
+      error: "the gate failed",
+    });
+    expect(history.get(failingId)!.label).not.toContain("review.run");
+
+    state.config = centralConfig({ cancelJobIds: [canceledId] });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await settle();
+    expect(history.get(canceledId)).toMatchObject({ outcome: "canceled", error: null });
+
+    release();
+    await settle();
+    expect(api.submitResult).toHaveBeenCalledWith(codingId, { result: { relayed: ["text"] } });
+    expect(history.running()).toEqual([]);
+    expect(history.recent().map((a) => [a.id, a.outcome])).toEqual([
+      [codingId, "completed"],
+      [canceledId, "canceled"],
+      [failingId, "failed"],
+    ]);
+    expect(history.get(codingId)!.events).toHaveLength(1);
+    await daemon.shutdown();
+    await history.close();
   });
 
   it("aborts a job listed in cancelJobIds and reports it canceled", async () => {

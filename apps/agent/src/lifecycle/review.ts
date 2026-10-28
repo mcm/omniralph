@@ -1,3 +1,4 @@
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import {
   addTaskResult,
   capFindings,
@@ -9,6 +10,7 @@ import {
   prepareReview,
   reviewVariables,
   type ReviewLogger,
+  type QueryFn,
   type ReviewProvider,
   type RunReviewInput,
 } from "@omniralph/engine";
@@ -41,6 +43,8 @@ export interface ReviewTaskOptions {
     logger: ReviewLogger,
     executables: RunExecutables,
   ) => ReviewProvider;
+  /** The SDK `query()` of the default provider (tests; default: the Agent SDK's). */
+  query?: QueryFn;
   /** Retry delay for rate limits whose reset time is unknown. */
   defaultRetryAfterSeconds?: number;
 }
@@ -50,17 +54,20 @@ export interface ReviewTaskOptions {
  * tools ∩ the task's tool settings (as a query session's), narrowed by the
  * repository's tool settings, with the session token only. A session with
  * tools also gets the installable MCP servers the agent lists and the skills
- * of the run's required installables.
+ * of the run's required installables. Its sessions go through `query`
+ * (default: the Agent SDK's), teed by `ctx.sessions` when set.
  */
 export function reviewTaskProvider(
   spec: RunSpec,
   ctx: JobContext,
   logger: ReviewLogger,
   executables: RunExecutables = NO_EXECUTABLES,
+  query: QueryFn = sdkQuery as QueryFn,
 ): ClaudeAgentProvider {
   const permissions = sdkPermissions(queryToolPolicy(spec.agent, spec.task.toolSettings));
   const mcp = executables.mcpServers;
   return new ClaudeAgentProvider({
+    query: ctx.sessions?.query(query) ?? query,
     logger,
     permissions: (scope) => {
       const narrowed = withInstallableSkills(
@@ -207,7 +214,9 @@ export async function runReviewTask(
     const sessions = emptyReviewSessions();
     const [task] = context.plan.tasks;
     if (task && task.files.length > 0) {
-      const provider = (options.provider ?? reviewTaskProvider)(spec, ctx, log, executables);
+      const provider = options.provider
+        ? options.provider(spec, ctx, log, executables)
+        : reviewTaskProvider(spec, ctx, log, executables, options.query);
       const budget = Math.min(task.budget, spec.tokenBudget ?? Infinity);
       const systemPrompt = reviewSystemPrompt(spec);
       const result = await provider.review({

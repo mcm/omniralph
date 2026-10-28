@@ -95,7 +95,7 @@ const ALLOWED: Allowed[] = [
       "apps/web/src/lib/agent-auth/signer.test.ts",
       "apps/web/src/lib/auth/routes.test.ts",
       "apps/web/src/proxy.test.ts",
-      "apps/web/src/lib/run-model/attempt-labels.test.ts",
+      "packages/shared/src/attempt-labels.test.ts",
       "apps/web/src/lib/webhooks/reasons.test.ts",
       "apps/web/src/lib/connections/connect-notices.test.ts",
     ],

@@ -16,6 +16,7 @@ import {
 } from "@omniralph/shared";
 import type { TaskType } from "@omniralph/tasks";
 import { ApiError, type ControlPanelApi } from "./api.js";
+import type { AttemptHistory } from "./attempts/history.js";
 import {
   RetryableJobError,
   type CapabilityRegistry,
@@ -33,6 +34,7 @@ import { runReviewTask } from "./lifecycle/review.js";
 import { SystemRpcRegistry, defaultSystemRpcs, type SystemRpcContext } from "./rpc/index.js";
 import { JOB_TOKEN_FILE_ENV, jobProcessEnv, spawnJobProcess } from "./job-env.js";
 import type { Logger } from "./logger.js";
+import type { SessionTee } from "./session/session.js";
 import { SessionTokenFile } from "./session-token-file.js";
 import type { DrainableDaemon, SelfUpdater } from "./update.js";
 import { defaultCredentialHelper } from "./workspace/git.js";
@@ -111,6 +113,11 @@ export interface DaemonOptions {
   models?: Pick<ModelReporter, "current">;
   /** The machine the agent runs on, reported in every heartbeat (default `agentHost()`). */
   host?: () => AgentHostReport;
+  /**
+   * Records each job's start and outcome, and tees its Claude sessions into
+   * the attempt's live tail (`ctx.sessions`). Unset: nothing is recorded.
+   */
+  history?: Pick<AttemptHistory, "start" | "finish">;
   /** Self-update: reported in every heartbeat and told about each response. */
   updater?: Pick<SelfUpdater, "report" | "onHeartbeat">;
   /**
@@ -146,6 +153,8 @@ interface RunningJob {
   injector?: (text: string) => boolean;
   /** A run-spec job's run, resolved by the control panel at claim time; unset for legacy jobs. */
   runSpec?: RunSpec;
+  /** Tees the job's sessions into its attempt's tail (with a `history`). */
+  sessions?: SessionTee;
 }
 
 /** Most message IDs one heartbeat acknowledges (per kind); the rest wait for the next one. */
@@ -866,6 +875,8 @@ export class AgentDaemon implements DrainableDaemon {
       ...(system ? {} : { sessionToken: start.sessionToken?.token, runSpec: start.runSpec }),
       sessionTokenFile: new SessionTokenFile(),
     };
+    const sessions = this.options.history?.start(job, running.runSpec);
+    if (sessions) running.sessions = sessions;
     this.running.set(job.id, running);
     jobLog.info({ deliveryCount: job.deliveryCount }, "running job");
     void this.track(
@@ -938,19 +949,24 @@ export class AgentDaemon implements DrainableDaemon {
     }
 
     const reason: unknown = running.controller.signal.reason;
+    const history = this.options.history;
     if (failure !== undefined && reason instanceof ShutdownAbort) {
       // Not reported: the lease lapses and the job is redelivered.
       jobLog.info("job interrupted by shutdown");
+      history?.finish(job.id, "canceled", "The agent stopped before the attempt finished");
       return;
     }
     if (failure === undefined) {
       jobLog.info("job finished");
+      history?.finish(job.id, "completed");
       await this.report(job.id, jobLog, () =>
         this.options.api.submitResult(job.id, { result: output ?? {} }),
       );
       return;
     }
     const body = failureBody(failure, reason);
+    if (reason instanceof JobCanceled) history?.finish(job.id, "canceled");
+    else history?.finish(job.id, "failed", body.error);
     jobLog.warn({ err: failure, retryable: body.retryable }, "job failed");
     await this.report(job.id, jobLog, () => this.options.api.submitFailure(job.id, body));
   }
@@ -984,6 +1000,7 @@ export class AgentDaemon implements DrainableDaemon {
       hostToolPath: (name) => this.hostToolPath(name),
       execPathBlocked: (file) => execPathBlocked(this.options.localConfig ?? {}, file),
       ...(this.options.dataDir !== undefined && { dataDir: this.options.dataDir }),
+      ...(running.sessions && { sessions: running.sessions }),
     };
   }
 

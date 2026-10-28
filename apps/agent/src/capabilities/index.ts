@@ -1,6 +1,7 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { JobPayload, RunSpec } from "@omniralph/shared";
 import type { Logger } from "../logger.js";
+import type { SessionTee } from "../session/session.js";
 import type { RepoCache } from "../workspace/repoCache.js";
 import { ralphCapability } from "./ralph/index.js";
 
@@ -103,6 +104,12 @@ export interface JobContext {
    * right before a run uses a host tool or installable. Unset: nothing is blocked.
    */
   execPathBlocked?(path: string): Promise<boolean>;
+  /**
+   * Wraps the session runner (or the review provider's SDK `query()`) of the
+   * job's Claude sessions so the agent sees their events too (its attempt's
+   * live tail). Unset: sessions run unwrapped.
+   */
+  sessions?: SessionTee;
 }
 
 /** The capability's output, sent to `/api/agent/jobs/{id}/result`. */

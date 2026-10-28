@@ -26,8 +26,11 @@ import {
   type TaskDefinitionInput,
 } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { JobTail } from "../attempts/tail.js";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import { silentLogger } from "../logger.js";
+import { sessionTee } from "../session/session.js";
+import { assistantMessage, resultMessage } from "../test/fake-query.js";
 import { ENV, exists, Remote } from "../test/git-remote.js";
 import { RepoCache, WORKTREES_DIR } from "../workspace/repoCache.js";
 import { reviewTaskProvider, runReviewTask } from "./review.js";
@@ -328,6 +331,32 @@ ${diff}
       summary: "Changes `last()` to read past the end.",
     });
     await expectTornDown();
+  });
+
+  it("tees the review session's events into the attempt's tail", async () => {
+    const prompts: string[] = [];
+    const query = (params: { prompt: string }) =>
+      (async function* () {
+        prompts.push(params.prompt);
+        yield assistantMessage("Looking at last().", { toolUse: true });
+        yield resultMessage(JSON.stringify({ findings: [] }));
+      })();
+    const tail = new JobTail({ now: () => new Date("2026-10-28T10:00:00Z") });
+    const ctx = { ...context(), sessions: sessionTee((event) => tail.event(event)) };
+
+    const output = await runReviewTask(spec(), ctx, { query });
+
+    expect(prompts).toHaveLength(1);
+    expect(output.findings).toEqual([]);
+    expect(tail.events()).toEqual([
+      {
+        type: "thought",
+        body: "Looking at last().",
+        parameter: null,
+        at: "2026-10-28T10:00:00.000Z",
+      },
+      { type: "action", body: "Read", parameter: "", at: "2026-10-28T10:00:00.000Z" },
+    ]);
   });
 
   it("falls back to the full diff when the previous head can't be fetched", async () => {

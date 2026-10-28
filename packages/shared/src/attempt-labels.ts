@@ -4,24 +4,26 @@
  * every response that shows an attempt can call it. A raw job type is returned
  * only in its own `type` field, never in a label.
  */
+import { CHAT_ASK_JOB_TYPE } from "./chat-ask.js";
+import { CORRELATION_JOB_TYPE } from "./correlation.js";
 import {
-  CHAT_ASK_JOB_TYPE,
-  CORRELATION_JOB_TYPE,
   INSTALL_JOB_TYPE,
-  LEARN_RULE_JOB_TYPE,
+  REPO_SYNC_JOB_TYPE,
+  WORKTREE_CLEANUP_JOB_TYPE,
+  WORKTREE_EXEC_JOB_TYPE,
+} from "./protocol.js";
+import {
   RALPH_CLEANUP_JOB_TYPE,
   RALPH_DESCRIBE_PR_JOB_TYPE,
   RALPH_PREPARE_JOB_TYPE,
   RALPH_PUSH_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
-  REPO_SYNC_JOB_TYPE,
-  REVIEW_REPLY_JOB_TYPE,
-  REVIEW_TASK_JOB_TYPE,
-  TRIAGE_RUN_JOB_TYPE,
-  WORKTREE_CLEANUP_JOB_TYPE,
-  WORKTREE_EXEC_JOB_TYPE,
-} from "@omniralph/shared";
+} from "./ralph-job.js";
+import { REVIEW_REPLY_JOB_TYPE } from "./reply.js";
+import { REVIEW_TASK_JOB_TYPE } from "./review-job.js";
+import { LEARN_RULE_JOB_TYPE } from "./rules.js";
+import { TRIAGE_RUN_JOB_TYPE } from "./triage-job.js";
 
 /** Job type of the legacy single-pass reviews (before review tasks); no new job has it. */
 export const LEGACY_REVIEW_RUN_JOB_TYPE = "review.run";
