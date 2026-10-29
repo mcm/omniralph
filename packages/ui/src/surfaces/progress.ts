@@ -1,6 +1,12 @@
 /** Where a step stands. Only `waiting` means needs you (Design rule 15). */
 export type StepState =
-  "done" | "waiting" | "running" | "failed" | "blocked" | "pending" | "canceled";
+  | "done"
+  | "waiting"
+  | "running"
+  | "failed"
+  | "blocked"
+  | "pending"
+  | "canceled";
 
 export interface ProgressStep {
   id: string;

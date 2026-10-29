@@ -45,7 +45,9 @@ export function parsePatchLines(patch: string): CommentableLines {
 /** Commentable lines per file path. */
 export type DiffLineIndex = Map<string, CommentableLines>;
 
-export function buildDiffLineIndex(files: { path: string; patch?: string | null }[]): DiffLineIndex {
+export function buildDiffLineIndex(
+  files: { path: string; patch?: string | null }[],
+): DiffLineIndex {
   const index: DiffLineIndex = new Map();
   for (const file of files) {
     if (file.patch) index.set(file.path, parsePatchLines(file.patch));

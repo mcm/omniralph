@@ -21,21 +21,21 @@ Sign-in with GitHub is a separate, plain **OAuth app** (`AUTH_GITHUB_ID` / `AUTH
 
 ## Permissions and events
 
-| Permission | Access | Used for |
-| -- | -- | -- |
-| Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready coding runs' PRs |
-| Contents | Read and write | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour); push tokens brokered to running `ralph` jobs only (`contents: write`, one repository, ≤ 1 hour) |
-| Issues | Read & write | The `issue_comment` event (PR conversation comments are issue comments) and replies to `@bot` commands in the PR conversation |
-| Actions | Read | Om's CI-fix loop: the workflow runs and failed jobs of an Om PR's head commit, and the failed jobs' logs |
-| Metadata | Read | Mandatory for every App |
+| Permission    | Access         | Used for                                                                                                                                                                      |
+| ------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull requests | Read and write | Read PRs and diffs, post reviews with inline comments, reply to and resolve review threads; open, update and mark ready coding runs' PRs                                      |
+| Contents      | Read and write | Clone tokens brokered to agents (`contents: read`, one repository, ≤ 1 hour); push tokens brokered to running `ralph` jobs only (`contents: write`, one repository, ≤ 1 hour) |
+| Issues        | Read & write   | The `issue_comment` event (PR conversation comments are issue comments) and replies to `@bot` commands in the PR conversation                                                 |
+| Actions       | Read           | Om's CI-fix loop: the workflow runs and failed jobs of an Om PR's head commit, and the failed jobs' logs                                                                      |
+| Metadata      | Read           | Mandatory for every App                                                                                                                                                       |
 
-| Event | Triggers |
-| -- | -- |
-| `pull_request` | Reviews on open, reopen, ready for review and push (synchronize); Om cleans up after an Om PR is merged (closed + merged); an Om PR's draft and review-request state (opened, reopened, ready for review, converted to draft, review requested and review request removed) |
-| `pull_request_review` | An Om PR's review state: approved, changes requested or commented (submitted), and dismissed reviews. The App's own reviews don't count |
-| `issue_comment` | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to Om on Om PRs |
-| `pull_request_review_comment` | `@bot dismiss`, `@bot fix` and questions in a finding's thread |
-| `workflow_run` | Om's CI-fix loop: a finished workflow run on an Om PR's head commit (the reconcile cron is the fallback) |
+| Event                         | Triggers                                                                                                                                                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pull_request`                | Reviews on open, reopen, ready for review and push (synchronize); Om cleans up after an Om PR is merged (closed + merged); an Om PR's draft and review-request state (opened, reopened, ready for review, converted to draft, review requested and review request removed) |
+| `pull_request_review`         | An Om PR's review state: approved, changes requested or commented (submitted), and dismissed reviews. The App's own reviews don't count                                                                                                                                    |
+| `issue_comment`               | `@bot` commands in the PR conversation, including `@bot fix [text]` and other requests to Om on Om PRs                                                                                                                                                                     |
+| `pull_request_review_comment` | `@bot dismiss`, `@bot fix` and questions in a finding's thread                                                                                                                                                                                                             |
+| `workflow_run`                | Om's CI-fix loop: a finished workflow run on an Om PR's head commit (the reconcile cron is the fallback)                                                                                                                                                                   |
 
 ## Manifest
 
@@ -102,7 +102,7 @@ Replace `https://omniralph.example.com` with your `APP_URL` and pick a unique `n
 
    ```html
    <form action="https://github.com/settings/apps/new" method="post">
-     <input type="hidden" name="manifest" value='{ …the manifest above… }' />
+     <input type="hidden" name="manifest" value="{ …the manifest above… }" />
      <button type="submit">Create the Omniralph GitHub App</button>
    </form>
    ```
@@ -140,7 +140,7 @@ vercel kms inspect <issuerId>          # must show "algorithm": "RS256" and "ori
 
 Set `GITHUB_APP_KMS_ISSUER_ID=<issuerId>` and leave `GITHUB_APP_PRIVATE_KEY` unset. To rotate the
 key, generate a new one on the App, import it into a **new** issuer and update the variable. See
-*KMS issuer setup* in [ADR 0002](adr/0002-agent-auth.md).
+_KMS issuer setup_ in [ADR 0002](adr/0002-agent-auth.md).
 
 ## Installing and connecting repositories
 
@@ -163,7 +163,7 @@ the link's lifetime, in the same browser:
   organization; to move it, an admin of that organization removes it first (see below).
 - "GitHub installation not connected" means the callback didn't come from a **Connect GitHub**
   started by you in an organization you're an admin of, or the link expired: click **Connect GitHub** again. New and updated PRs are then reviewed with each
-repository's review depth (Standard by default).
+  repository's review depth (Standard by default).
 
 ### Removing an installation
 

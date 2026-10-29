@@ -29,7 +29,17 @@ export const FILE_CATEGORIES: readonly CategoryRule[] = [
   {
     category: "critical",
     weight: 5,
-    patterns: [/auth/, /security/, /password/, /token/, /secret/, /payment/, /billing/, /crypto/, /encrypt/],
+    patterns: [
+      /auth/,
+      /security/,
+      /password/,
+      /token/,
+      /secret/,
+      /payment/,
+      /billing/,
+      /crypto/,
+      /encrypt/,
+    ],
   },
   {
     category: "high",
@@ -54,7 +64,8 @@ export const DEFAULT_RISK_WEIGHT = 2;
 export function categorizeFile(path: string): { category: RiskCategory; weight: number } {
   const lower = path.toLowerCase();
   for (const rule of FILE_CATEGORIES) {
-    if (rule.patterns.some((p) => p.test(lower))) return { category: rule.category, weight: rule.weight };
+    if (rule.patterns.some((p) => p.test(lower)))
+      return { category: rule.category, weight: rule.weight };
   }
   return { category: "default", weight: DEFAULT_RISK_WEIGHT };
 }
@@ -162,7 +173,8 @@ const LINE_SIGNALS: readonly LineSignal[] = [
     severity: "medium",
     message: "Debug output statement (console.* / Debug.WriteLine / System.out / printStackTrace)",
     side: "new",
-    pattern: /console\.(?:log|debug|info|warn|error|trace)\(|\bDebug\.WriteLine\(|\bSystem\.out\.print(?:ln)?\(|\.printStackTrace\(/i,
+    pattern:
+      /console\.(?:log|debug|info|warn|error|trace)\(|\bDebug\.WriteLine\(|\bSystem\.out\.print(?:ln)?\(|\.printStackTrace\(/i,
   },
   {
     name: "todo_fixme",
@@ -174,7 +186,8 @@ const LINE_SIGNALS: readonly LineSignal[] = [
   {
     name: "analyzer_disable",
     severity: "medium",
-    message: "Static-analyzer rule disabled (eslint-disable / #pragma warning disable / @SuppressWarnings)",
+    message:
+      "Static-analyzer rule disabled (eslint-disable / #pragma warning disable / @SuppressWarnings)",
     side: "new",
     pattern: /eslint-disable|#pragma\s+warning\s+disable|\[SuppressMessage|@SuppressWarnings/i,
   },
@@ -233,7 +246,8 @@ const LINE_SIGNALS: readonly LineSignal[] = [
   {
     name: "prompt_injection",
     severity: "critical",
-    message: "Text that looks like instructions to an AI reviewer (possible prompt injection); treat as data",
+    message:
+      "Text that looks like instructions to an AI reviewer (possible prompt injection); treat as data",
     side: "new",
     pattern: PROMPT_INJECTION,
   },
@@ -351,7 +365,10 @@ export function scanFile(file: DiffFile): FileRisk {
  * PR complexity, 1–10: up to 3 points for the number of files, 3 for changed
  * lines, 2 for critical signals and 2 for high signals (one per file × signal).
  */
-export function complexityScore(files: readonly DiffFile[], signals: readonly RiskSignal[]): number {
+export function complexityScore(
+  files: readonly DiffFile[],
+  signals: readonly RiskSignal[],
+): number {
   let score = 0;
 
   const fileCount = files.length;

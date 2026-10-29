@@ -344,13 +344,21 @@ describe("LinearWorkItemTracker", () => {
     expect(page.items.every((i) => i.routingFields?.issue.id === i.id)).toBe(true);
     // Nothing delegated: the app user isn't read.
     expect(calls).toEqual(["listIssues"]);
-    expect(h.fake.issueLists.at(-1)).toMatchObject({ withoutProject: true, withRoutingFields: true });
+    expect(h.fake.issueLists.at(-1)).toMatchObject({
+      withoutProject: true,
+      withRoutingFields: true,
+    });
   });
 
   it("reads the app user once to tell Omniralph's delegations from another agent's", async () => {
     const calls: string[] = [];
     const h = linearAgent({ gateway: (fake) => counting(fake, calls) });
-    const om = await h.seed({ teamId: "team-a", title: "Om", state: "todo", delegatedToOmniralph: true });
+    const om = await h.seed({
+      teamId: "team-a",
+      title: "Om",
+      state: "todo",
+      delegatedToOmniralph: true,
+    });
     await h.seed({ teamId: "team-a", title: "Other", state: "todo", delegatedToOtherAgent: true });
     calls.length = 0;
     await h.tracker.listCandidates({ teamId: "team-a", limit: 50 });
@@ -364,7 +372,11 @@ describe("LinearWorkItemTracker", () => {
     const read = await h.tracker.get(id);
     h.fake.touch(id);
     await expect(
-      h.tracker.update(id, { description: "x", addLabels: ["new"] }, { ifUpdatedAt: read.updatedAt }),
+      h.tracker.update(
+        id,
+        { description: "x", addLabels: ["new"] },
+        { ifUpdatedAt: read.updatedAt },
+      ),
     ).rejects.toThrow(/changed since it was read/);
     expect(h.fake.issueUpdates).toEqual([]);
     expect(h.fake.labelChanges).toEqual([]);

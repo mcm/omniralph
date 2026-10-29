@@ -1,24 +1,13 @@
 {
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
-  "extends": [
-    "../../.oxlintrc.json"
-  ],
-  "plugins": [
-    "typescript",
-    "nextjs",
-    "react",
-    "import",
-    "jsx-a11y"
-  ],
+  "extends": ["../../.oxlintrc.json"],
+  "plugins": ["typescript", "nextjs", "react", "import", "jsx-a11y"],
   "jsPlugins": [
     "./lint-rules/design-system.mjs",
     "./lint-rules/data-path.mjs",
     "./lint-rules/ralph-conversation.mjs"
   ],
-  "ignorePatterns": [
-    "out/**",
-    "build/**"
-  ],
+  "ignorePatterns": ["out/**", "build/**"],
   "rules": {
     "nextjs/google-font-display": "warn",
     "nextjs/google-font-preconnect": "warn",
@@ -44,9 +33,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "**/*.{js,jsx,mjs,ts,tsx,mts,cts}"
-      ],
+      "files": ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
       "rules": {
         "react/display-name": "error",
         "react/jsx-key": "error",
@@ -69,12 +56,8 @@
         "jsx-a11y/alt-text": [
           "warn",
           {
-            "elements": [
-              "img"
-            ],
-            "img": [
-              "Image"
-            ]
+            "elements": ["img"],
+            "img": ["Image"]
           }
         ],
         "jsx-a11y/aria-props": "warn",
@@ -99,27 +82,19 @@
       }
     },
     {
-      "files": [
-        "src/**/*.{ts,tsx}"
-      ],
+      "files": ["src/**/*.{ts,tsx}"],
       "rules": {
         "ralph-conversation/no-direct-session-write": "error"
       }
     },
     {
-      "files": [
-        "src/lib/linear/**",
-        "src/lib/ralph/conversation.ts",
-        "src/**/*.test.{ts,tsx}"
-      ],
+      "files": ["src/lib/linear/**", "src/lib/ralph/conversation.ts", "src/**/*.test.{ts,tsx}"],
       "rules": {
         "ralph-conversation/no-direct-session-write": "off"
       }
     },
     {
-      "files": [
-        "src/**/*.tsx"
-      ],
+      "files": ["src/**/*.tsx"],
       "rules": {
         "design-system/no-raw-color": "error",
         "design-system/no-inline-layout-style": "error",
@@ -127,17 +102,13 @@
       }
     },
     {
-      "files": [
-        "src/app/(app)/**/*.tsx"
-      ],
+      "files": ["src/app/(app)/**/*.tsx"],
       "rules": {
         "design-system/no-bare-timestamp": "error"
       }
     },
     {
-      "files": [
-        "src/**/*.test.tsx"
-      ],
+      "files": ["src/**/*.test.tsx"],
       "rules": {
         "design-system/no-raw-color": "off",
         "design-system/no-inline-layout-style": "off",
@@ -146,26 +117,19 @@
       }
     },
     {
-      "files": [
-        "src/app/(app)/**/*.{ts,tsx}"
-      ],
+      "files": ["src/app/(app)/**/*.{ts,tsx}"],
       "rules": {
         "data-path/no-server-data": "error"
       }
     },
     {
-      "files": [
-        "src/app/(app)/layout.tsx"
-      ],
+      "files": ["src/app/(app)/layout.tsx"],
       "rules": {
         "data-path/no-server-data": "off"
       }
     },
     {
-      "files": [
-        "src/app/(app)/**/*.tsx",
-        "src/components/**/*.tsx"
-      ],
+      "files": ["src/app/(app)/**/*.tsx", "src/components/**/*.tsx"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -181,11 +145,7 @@
       }
     },
     {
-      "files": [
-        "src/components/link.tsx",
-        "src/components/auth-shell.tsx",
-        "src/**/*.test.tsx"
-      ],
+      "files": ["src/components/link.tsx", "src/components/auth-shell.tsx", "src/**/*.test.tsx"],
       "rules": {
         "no-restricted-imports": "off"
       }

@@ -109,9 +109,9 @@ describe("Analytics' stylesheet", () => {
   });
 
   it("makes the charts one column, 140 px tall, naming only the first and last bucket on phone", () => {
-    expect(declarations(phoneRules(pageCss), ".or-analytics__charts")["grid-template-columns"]).toBe(
-      "minmax(0, 1fr)",
-    );
+    expect(
+      declarations(phoneRules(pageCss), ".or-analytics__charts")["grid-template-columns"],
+    ).toBe("minmax(0, 1fr)");
     expect(declarations(topLevel(chartsCss), ".or-chart")["--or-chart-height"]).toBe("180px");
     const phoneCharts = phoneRules(chartsCss);
     expect(declarations(phoneCharts, ".or-chart")["--or-chart-height"]).toBe("140px");
@@ -137,7 +137,9 @@ describe("Analytics' stylesheet", () => {
     const lists = phoneRules(listsCss);
     expect(declarations(lists, ".or-tblwrap").display).toBe("none");
     expect(declarations(lists, ".or-cards").display).toMatch(/flex|block|grid/);
-    expect(phoneRules(surfacesCss)).toMatch(/\.or-stats\s*\{[^}]*grid-template-columns:\s*repeat\(2,/);
+    expect(phoneRules(surfacesCss)).toMatch(
+      /\.or-stats\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
+    );
   });
 
   it("uses only --or- tokens", () => {
@@ -154,7 +156,9 @@ describe("the Analytics page's files", () => {
   it("import neither @iamthemcmaster/ui nor a chart library", () => {
     for (const [file, source] of sources) {
       expect(source, file).not.toMatch(/["']@iamthemcmaster\//);
-      expect(source, file).not.toMatch(/["'](recharts|d3[\w-]*|chart\.js|@nivo\/[\w-]+|victory)["']/);
+      expect(source, file).not.toMatch(
+        /["'](recharts|d3[\w-]*|chart\.js|@nivo\/[\w-]+|victory)["']/,
+      );
     }
   });
 });

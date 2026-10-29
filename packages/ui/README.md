@@ -65,7 +65,7 @@ export function Providers({
   previous preference comes back (unless a newer choice was made meanwhile). It sets `data-theme` on `document.documentElement` and, on `system`, follows
   `prefers-color-scheme` as the OS changes (dark when the OS states no preference).
   `useTheme()` returns `{ preference, resolved, setPreference }`, and `resolveTheme(preference,
-prefersLight)` is the pure rule behind it.
+  prefersLight)` is the pure rule behind it.
 - `ThemeControl` is the one theme control (a user menu, settings, the agent UI): a "Theme"
   `SegmentedControl` with System, Dark and Light (`THEME_OPTIONS`) bound to `useTheme()`.
   `size` defaults to `sm`. To avoid a flash before hydration, set
@@ -349,7 +349,7 @@ const card = useStagedCard<Draft, Result>({
 ## Lists
 
 - `DataTable<T>`: `rows`, `getRowId`, `columns` (`{ id, header, cell(row), card?, align?,
-mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
+  mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
   `selectedId` and `rowTone(row)`. It renders a real `<table>` (`<caption>`,
   `<th scope="col">`) in `.or-tblwrap` above 768 px and the same rows as a `<ul>` of
   stacked cards (`.or-cards`) at 768 px and narrower (Design rule 16). `card` places a
@@ -435,7 +435,7 @@ mono? }`), a required `caption` (visually hidden), and optional `getRowHref`,
     `phone: "drawer"` entries and the user footer). Escape, the close button, a scrim
     click or following a link closes it, and focus returns to the hamburger.
 - `NavItem`: `{ id, label, href, icon, placement: "main" | "bottom", phone: "tab" |
-"drawer", activeFor?, indicator? }`. `indicator` is `{ kind: "count", value, label }`
+  "drawer", activeFor?, indicator? }`. `indicator` is `{ kind: "count", value, label }`
   (the accent pill) or `{ kind: "dot", tone: "run" | "fail", label }` (a `StatusDot`
   pip); its `label` joins the entry's accessible name ("Inbox, 4 need you").
 - `isNavActive(currentPath, item)`: true when the path equals the `href` or an

@@ -72,7 +72,12 @@ export interface PlanOptions {
 }
 
 export type SkipReason =
-  "excluded" | "generated" | "binary" | "no_changes" | "budget" | "max_files";
+  | "excluded"
+  | "generated"
+  | "binary"
+  | "no_changes"
+  | "budget"
+  | "max_files";
 
 export interface SkippedFile {
   path: string;

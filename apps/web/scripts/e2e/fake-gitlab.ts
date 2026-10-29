@@ -5,11 +5,7 @@
 // for localhost).
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  FAKE_GITLAB_PROJECTS,
-  FAKE_GITLAB_TOKEN,
-  FAKE_GITLAB_USER,
-} from "../../e2e/fake-gitlab";
+import { FAKE_GITLAB_PROJECTS, FAKE_GITLAB_TOKEN, FAKE_GITLAB_USER } from "../../e2e/fake-gitlab";
 
 export interface FakeGitLab {
   /** `http://localhost:<port>`, as the panel (on this host) reaches it. */

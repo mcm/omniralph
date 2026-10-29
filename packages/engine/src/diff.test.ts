@@ -34,11 +34,23 @@ describe("parseDiff", () => {
       { type: "del", content: "line 3", oldLine: 3, newLine: null },
       { type: "add", content: "line three", oldLine: null, newLine: 3 },
     ]);
-    expect(second).toMatchObject({ header: "@@ -22,9 +22,8 @@ line 21", oldStart: 22, newStart: 22 });
-    expect(second?.lines.find((l) => l.content === "line twenty-five")).toMatchObject({ newLine: 25 });
-    expect(second?.lines.find((l) => l.content === "line 27")).toMatchObject({ type: "del", oldLine: 27 });
+    expect(second).toMatchObject({
+      header: "@@ -22,9 +22,8 @@ line 21",
+      oldStart: 22,
+      newStart: 22,
+    });
+    expect(second?.lines.find((l) => l.content === "line twenty-five")).toMatchObject({
+      newLine: 25,
+    });
+    expect(second?.lines.find((l) => l.content === "line 27")).toMatchObject({
+      type: "del",
+      oldLine: 27,
+    });
     // Line 28 shifts up by one after the deletion.
-    expect(second?.lines.find((l) => l.content === "line 28")).toMatchObject({ oldLine: 28, newLine: 27 });
+    expect(second?.lines.find((l) => l.content === "line 28")).toMatchObject({
+      oldLine: 28,
+      newLine: 27,
+    });
   });
 
   it("handles added and deleted files", () => {
@@ -59,7 +71,12 @@ describe("parseDiff", () => {
     const lines = tail.hunks[0]?.lines ?? [];
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatchObject({ type: "del", content: "no newline", noNewlineAtEof: true });
-    expect(lines[2]).toMatchObject({ type: "add", content: "now has more", newLine: 2, noNewlineAtEof: true });
+    expect(lines[2]).toMatchObject({
+      type: "add",
+      content: "now has more",
+      newLine: 2,
+      noNewlineAtEof: true,
+    });
   });
 
   it("keeps each file's raw patch", () => {
@@ -73,7 +90,12 @@ describe("parseDiff", () => {
     const files = fixture("renames-binary");
 
     const renamed = byPath(files, "new name ä.txt");
-    expect(renamed).toMatchObject({ status: "renamed", oldPath: "old.txt", similarity: 100, binary: false });
+    expect(renamed).toMatchObject({
+      status: "renamed",
+      oldPath: "old.txt",
+      similarity: 100,
+      binary: false,
+    });
     expect(renamed.hunks).toEqual([]);
 
     const copied = byPath(files, "copy.txt");
@@ -87,7 +109,12 @@ describe("parseDiff", () => {
     expect(newBinary).toMatchObject({ status: "added", binary: true, oldPath: null });
 
     const mode = byPath(files, "mode.sh");
-    expect(mode).toMatchObject({ status: "modified", oldMode: "100644", newMode: "100755", hunks: [] });
+    expect(mode).toMatchObject({
+      status: "modified",
+      oldMode: "100644",
+      newMode: "100755",
+      hunks: [],
+    });
 
     expect(byPath(files, "gone.txt").status).toBe("deleted");
   });
@@ -96,7 +123,10 @@ describe("parseDiff", () => {
     const files = fixture("tricky");
     const renamed = byPath(files, "after.txt");
     expect(renamed).toMatchObject({ status: "renamed", oldPath: "before.txt", similarity: 89 });
-    expect(renamed.hunks[0]?.lines.find((l) => l.type === "add")).toMatchObject({ content: "FIVE", newLine: 5 });
+    expect(renamed.hunks[0]?.lines.find((l) => l.type === "add")).toMatchObject({
+      content: "FIVE",
+      newLine: 5,
+    });
 
     const sql = byPath(files, "query.sql");
     expect(sql.hunks[0]?.lines).toEqual([
@@ -125,8 +155,17 @@ describe("parseDiff", () => {
     ].join("\r\n");
     const files = parseDiff(diff);
     expect(files.map((f) => f.path)).toEqual(["x.txt", "y.txt"]);
-    expect(files[0]?.hunks[0]?.lines[1]).toEqual({ type: "context", content: "", oldLine: 2, newLine: 2 });
-    expect(files[0]?.hunks[0]?.lines[3]).toMatchObject({ type: "add", content: "THREE", newLine: 3 });
+    expect(files[0]?.hunks[0]?.lines[1]).toEqual({
+      type: "context",
+      content: "",
+      oldLine: 2,
+      newLine: 2,
+    });
+    expect(files[0]?.hunks[0]?.lines[3]).toMatchObject({
+      type: "add",
+      content: "THREE",
+      newLine: 3,
+    });
     expect(files[1]?.hunks[0]).toMatchObject({ oldLines: 1, newLines: 1 });
   });
 
@@ -136,7 +175,9 @@ describe("parseDiff", () => {
   });
 
   it("splits unquoted header paths containing spaces", () => {
-    const files = parseDiff("diff --git a/my file.txt b/my file.txt\nold mode 100644\nnew mode 100755\n");
+    const files = parseDiff(
+      "diff --git a/my file.txt b/my file.txt\nold mode 100644\nnew mode 100755\n",
+    );
     expect(files[0]).toMatchObject({ path: "my file.txt", oldPath: "my file.txt" });
   });
 });

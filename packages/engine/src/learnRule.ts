@@ -101,7 +101,9 @@ Answer with {"rule": string} or {"rule": null}.
 }
 
 export type LearnedRuleParse =
-  { status: "rule"; rule: string } | { status: "none" } | { status: "rejected"; error: string };
+  | { status: "rule"; rule: string }
+  | { status: "none" }
+  | { status: "rejected"; error: string };
 
 /** The JSON object in a model answer (bare, or inside a ```json fence). */
 function jsonObject(text: string): unknown {

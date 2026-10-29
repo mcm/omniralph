@@ -76,14 +76,14 @@ Jobs are dispatched through the `jobs` table, which agents claim from
 
 ### Uniqueness rules
 
-| Resource | Unique on | Effect |
-| -- | -- | -- |
-| Integration | `(organization_id, provider)` (`integrations_provider_uq`) | At most one Linear workspace per organization. |
-| Linear workspace | `(provider, external_id)` (`integrations_provider_external_id_uq`) | A workspace belongs to one organization; connecting it from another is refused until it's disconnected. Linear webhooks resolve their organization from the workspace ID. |
-| SCM connection | `(provider, base_url, external_id)` | A GitHub App installation, or a GitLab token user on an instance, belongs to one organization; connecting it from another is refused until it's removed (or, for GitHub, uninstalled). Code-host webhooks resolve their organization from the verifying connection. |
-| Review profile | `(organization_id, id)` (primary key) | Profile IDs (`quick`, `standard`, `deep`, …) are unique per organization. Repositories reference `(organization_id, profile_id)`, so a repository can only use its own organization's profiles. |
-| App setting | `(organization_id, key)` (primary key) | Settings such as the agents' desired version are per organization. |
-| Active ralph run | `(organization_id, linear_issue_id)` | One active run per Linear issue per organization. |
+| Resource         | Unique on                                                          | Effect                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration      | `(organization_id, provider)` (`integrations_provider_uq`)         | At most one Linear workspace per organization.                                                                                                                                                                                                                      |
+| Linear workspace | `(provider, external_id)` (`integrations_provider_external_id_uq`) | A workspace belongs to one organization; connecting it from another is refused until it's disconnected. Linear webhooks resolve their organization from the workspace ID.                                                                                           |
+| SCM connection   | `(provider, base_url, external_id)`                                | A GitHub App installation, or a GitLab token user on an instance, belongs to one organization; connecting it from another is refused until it's removed (or, for GitHub, uninstalled). Code-host webhooks resolve their organization from the verifying connection. |
+| Review profile   | `(organization_id, id)` (primary key)                              | Profile IDs (`quick`, `standard`, `deep`, …) are unique per organization. Repositories reference `(organization_id, profile_id)`, so a repository can only use its own organization's profiles.                                                                     |
+| App setting      | `(organization_id, key)` (primary key)                             | Settings such as the agents' desired version are per organization.                                                                                                                                                                                                  |
+| Active ralph run | `(organization_id, linear_issue_id)`                               | One active run per Linear issue per organization.                                                                                                                                                                                                                   |
 
 OAuth flows that leave the app (GitHub App install, Linear connect) carry the organization in a
 signed `state` (`apps/web/src/lib/auth/signed-state.ts`) bound to a nonce cookie; callbacks

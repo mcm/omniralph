@@ -8,7 +8,11 @@ import {
   type Capability,
   type JobContext,
 } from "./index.js";
-import { NotImplementedJobError, RALPH_PREPARE_TOOL_POLICY, ralphCapability } from "./ralph/index.js";
+import {
+  NotImplementedJobError,
+  RALPH_PREPARE_TOOL_POLICY,
+  ralphCapability,
+} from "./ralph/index.js";
 
 describe("capability registry", () => {
   it("ships only the ralph capability, and no system, review or triage capability", () => {
@@ -34,7 +38,8 @@ describe("capability registry", () => {
   it("dispatches by job type, so a type may belong to one capability only", () => {
     const [ralph] = defaultCapabilities() as [Capability];
     expect(
-      () => new CapabilityRegistry([ralph, { ...ralph, name: "other", jobTypes: ["ralph.prepare"] }]),
+      () =>
+        new CapabilityRegistry([ralph, { ...ralph, name: "other", jobTypes: ["ralph.prepare"] }]),
     ).toThrow(/job type 'ralph.prepare' registered twice/);
   });
 

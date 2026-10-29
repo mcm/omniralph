@@ -52,7 +52,12 @@ describe("GitLabSetupClient.listProjects", () => {
 
     expect(projects).toEqual([
       { id: 3, fullPath: "acme/api", webUrl: `${HOST}/acme/api`, visibility: "public" },
-      { id: 4, fullPath: "acme/sub/tools", webUrl: `${HOST}/acme/sub/tools`, visibility: "internal" },
+      {
+        id: 4,
+        fullPath: "acme/sub/tools",
+        webUrl: `${HOST}/acme/sub/tools`,
+        visibility: "internal",
+      },
       { id: 2, fullPath: "acme/web", webUrl: `${HOST}/acme/web`, visibility: "private" },
     ]);
     expect(queries).toHaveLength(2);
@@ -62,23 +67,29 @@ describe("GitLabSetupClient.listProjects", () => {
   });
 
   it("reports a rejected token as a setup error", async () => {
-    await expect(new GitLabSetupClient({ baseUrl: HOST, token: "nope" }).listProjects()).rejects.toBeInstanceOf(
-      GitLabSetupError,
-    );
+    await expect(
+      new GitLabSetupClient({ baseUrl: HOST, token: "nope" }).listProjects(),
+    ).rejects.toBeInstanceOf(GitLabSetupError);
   });
 });
 
 describe("GitLabSetupClient.validateToken", () => {
   function tokenUser(username: string, scopes = ["api"]) {
     server.use(
-      http.get(`${HOST}/api/v4/user`, () => HttpResponse.json({ id: 42, username, name: "Omniralph" })),
-      http.get(`${HOST}/api/v4/personal_access_tokens/self`, () => HttpResponse.json({ id: 7, scopes })),
+      http.get(`${HOST}/api/v4/user`, () =>
+        HttpResponse.json({ id: 42, username, name: "Omniralph" }),
+      ),
+      http.get(`${HOST}/api/v4/personal_access_tokens/self`, () =>
+        HttpResponse.json({ id: 7, scopes }),
+      ),
     );
   }
 
   it("accepts a service account's token with only the api scope", async () => {
     tokenUser("service_account_group_12_omniralph");
-    await expect(new GitLabSetupClient({ baseUrl: HOST, token: TOKEN }).validateToken()).resolves.toEqual({
+    await expect(
+      new GitLabSetupClient({ baseUrl: HOST, token: TOKEN }).validateToken(),
+    ).resolves.toEqual({
       userId: 42,
       username: "service_account_group_12_omniralph",
       name: "Omniralph",
@@ -92,15 +103,17 @@ describe("GitLabSetupClient.validateToken", () => {
       tokenUser(username);
       const result = new GitLabSetupClient({ baseUrl: HOST, token: TOKEN }).validateToken();
       await expect(result).rejects.toBeInstanceOf(GitLabSetupError);
-      await expect(result).rejects.toThrow(/can't create the project access tokens|service account's personal access token/);
+      await expect(result).rejects.toThrow(
+        /can't create the project access tokens|service account's personal access token/,
+      );
     },
   );
 
   it("requires the api scope", async () => {
     tokenUser("omniralph-bot", ["read_api", "write_repository"]);
-    await expect(new GitLabSetupClient({ baseUrl: HOST, token: TOKEN }).validateToken()).rejects.toThrow(
-      "The access token needs the api scope (it has: read_api, write_repository).",
-    );
+    await expect(
+      new GitLabSetupClient({ baseUrl: HOST, token: TOKEN }).validateToken(),
+    ).rejects.toThrow("The access token needs the api scope (it has: read_api, write_repository).");
   });
 });
 

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  enrollCommand,
-  AGENT_INSTALL_COMMAND,
-  isAgentOnline,
-  jobTarget,
-} from "./display";
+import { enrollCommand, AGENT_INSTALL_COMMAND, isAgentOnline, jobTarget } from "./display";
 
 describe("isAgentOnline", () => {
   const now = new Date("2026-10-05T12:00:00Z");

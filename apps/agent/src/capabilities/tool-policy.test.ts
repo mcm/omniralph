@@ -247,8 +247,7 @@ describe("sdkPermissions additional directories", () => {
 
 describe("narrowPermissions", () => {
   const story = () => sdkPermissions(RALPH_TOOL_POLICY)({ cwd, allowExploration: true });
-  const readOnly = () =>
-    sdkPermissions(READ_ONLY_GIT_POLICY)({ cwd, allowExploration: true });
+  const readOnly = () => sdkPermissions(READ_ONLY_GIT_POLICY)({ cwd, allowExploration: true });
 
   it("reads the tool of a permission rule", () => {
     expect(ruleTool("Read")).toBe("Read");

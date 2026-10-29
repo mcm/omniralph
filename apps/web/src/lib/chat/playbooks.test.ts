@@ -138,7 +138,11 @@ const builtin = (id: string) => getBuiltinPlaybook(id) ?? null;
 describe("validateChatPlaybookChoice", () => {
   it("accepts the built-in chat playbooks", () => {
     expect(
-      validateChatPlaybookChoice("ask", "builtin:ask-about-code", builtin("builtin:ask-about-code")),
+      validateChatPlaybookChoice(
+        "ask",
+        "builtin:ask-about-code",
+        builtin("builtin:ask-about-code"),
+      ),
     ).toMatchObject({ ok: true, playbook: { id: "builtin:ask-about-code" } });
     expect(
       validateChatPlaybookChoice(
@@ -159,11 +163,17 @@ describe("validateChatPlaybookChoice", () => {
 
   it("refuses a playbook of another role", () => {
     expect(
-      validateChatPlaybookChoice("ask", "builtin:handle-request", builtin("builtin:handle-request")),
+      validateChatPlaybookChoice(
+        "ask",
+        "builtin:handle-request",
+        builtin("builtin:handle-request"),
+      ),
     ).toMatchObject({
       ok: false,
       reason: "wrong_role",
-      error: expect.stringMatching(/^Ask about code needs a chat-ask playbook; .* is a request playbook\.$/),
+      error: expect.stringMatching(
+        /^Ask about code needs a chat-ask playbook; .* is a request playbook\.$/,
+      ),
     });
     for (const id of [
       "builtin:ask-about-code",

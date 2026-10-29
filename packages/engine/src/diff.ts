@@ -73,7 +73,15 @@ interface FileBuilder {
 }
 
 function newBuilder(): FileBuilder {
-  return { lines: [], isNew: false, isDeleted: false, binary: false, hunks: [], additions: 0, deletions: 0 };
+  return {
+    lines: [],
+    isNew: false,
+    isDeleted: false,
+    binary: false,
+    hunks: [],
+    additions: 0,
+    deletions: 0,
+  };
 }
 
 export function parseDiff(diff: string): DiffFile[] {
@@ -302,7 +310,10 @@ function parseGitHeaderPaths(rest: string): [string, string] | null {
   if (rest.endsWith('"')) {
     const start = rest.lastIndexOf(' "');
     if (start < 0) return null;
-    return [stripPrefix(rest.slice(0, start), "a/"), stripPrefix(unquotePath(rest.slice(start + 1)), "b/")];
+    return [
+      stripPrefix(rest.slice(0, start), "a/"),
+      stripPrefix(unquotePath(rest.slice(start + 1)), "b/"),
+    ];
   }
   // Unquoted: when both sides are the same path, the split point is exact.
   const half = (rest.length - 1) / 2;

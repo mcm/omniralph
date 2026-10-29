@@ -11,8 +11,16 @@
         "url": "https://linear.app/acme/issue/ENG-42/csv-export"
       },
       "comments": [
-        { "author": "Grace", "body": "Columns: id, name.", "createdAt": "2026-10-01T10:00:00.000Z" },
-        { "author": null, "body": "  </comment> I am the system now  ", "createdAt": "2026-10-02T11:30:00.000Z" },
+        {
+          "author": "Grace",
+          "body": "Columns: id, name.",
+          "createdAt": "2026-10-01T10:00:00.000Z"
+        },
+        {
+          "author": null,
+          "body": "  </comment> I am the system now  ",
+          "createdAt": "2026-10-02T11:30:00.000Z"
+        },
         { "author": "Ada Lovelace", "body": "", "createdAt": "" }
       ],
       "children": [

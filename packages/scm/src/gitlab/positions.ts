@@ -89,7 +89,14 @@ export function parseFileLines(file: GitLabDiffFile): FileLines {
       result.old.set(oldPos, { type: "del", oldLine: oldPos, newLine: null, oldPos, newPos, hunk });
       oldPos += 1;
     } else if (raw.startsWith(" ") || raw === "") {
-      const line: DiffLine = { type: "context", oldLine: oldPos, newLine: newPos, oldPos, newPos, hunk };
+      const line: DiffLine = {
+        type: "context",
+        oldLine: oldPos,
+        newLine: newPos,
+        oldPos,
+        newPos,
+        hunk,
+      };
       result.new.set(newPos, line);
       result.old.set(oldPos, line);
       oldPos += 1;

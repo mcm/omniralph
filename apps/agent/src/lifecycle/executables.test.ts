@@ -267,10 +267,7 @@ describe("resolveRunExecutables", () => {
       agent: agent(),
     };
     await expect(resolveRunExecutables(spec, { dataDir })).rejects.toThrow(
-      new RetryableJobError(
-        "the installable @omniralph/graph is not installed on this agent",
-        60,
-      ),
+      new RetryableJobError("the installable @omniralph/graph is not installed on this agent", 60),
     );
     await expect(resolveRunExecutables(spec, {})).rejects.toBeInstanceOf(RetryableJobError);
   });

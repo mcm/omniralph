@@ -242,7 +242,7 @@ depend on that agent's local state.
 TOOL-99 closed the gap to cyralph without changing the decision above: the control panel still
 orchestrates, agents still run one short job at a time per run, and every change still goes
 through `JobDispatcher`, the per-capability outcome handlers, `advanceRun` and the run lock. The
-sections *Lanes* and *Requests and run modes* above describe the details; this is the summary.
+sections _Lanes_ and _Requests and run modes_ above describe the details; this is the summary.
 
 - **Request mode.** `ralph_runs.mode` is `epic` or `request`. An @mention creates (or reuses) a run
   in `request` mode: no story loop, no Linear state changes, no blocker checks. Requests run as
@@ -257,7 +257,7 @@ sections *Lanes* and *Requests and run modes* above describe the details; this i
   runs. Lanes keep PR/MR follow-up state (`review_rounds`, `handled_review_ids`, `ci_fix_rounds`,
   `handled_ci_shas`, cleanup) and are published one at a time. All lanes use the run's sticky
   agent, so "one job per run" still holds: lanes run in sequence, not in parallel (the first
-  *Revisit when* condition is still unmet).
+  _Revisit when_ condition is still unmet).
 - **Live messages.** A reply or request for a run whose `ralph.story` or `ralph.request` job is
   running is stored in `ralph_messages` with that job's ID. The heartbeat response carries it
   (`jobMessages`); the agent injects it into the live session as a streamed user message
@@ -268,7 +268,7 @@ sections *Lanes* and *Requests and run modes* above describe the details; this i
 - **PR/MR follow-up without new orchestration.** Review responses hang off the `review.run`
   outcome handler; CI failures and merges arrive by webhook with `/api/cron/ralph-reconcile` as the
   fallback; cleanup is a `worktree.cleanup` system RPC on the sticky agent. These are the "waiting
-  on CI and reviews" loops the second *Revisit when* condition anticipated. They fit the state machine as
+  on CI and reviews" loops the second _Revisit when_ condition anticipated. They fit the state machine as
   pending requests plus once-per-review/SHA bookkeeping and the existing 10-minute cron, so Vercel
   Workflows stays deferred.
 - **Attachments.** The control panel gathers Linear upload URLs and records them on the run; agents

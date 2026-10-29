@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "pnpm-lock.yaml",
+    "dist",
+    ".next",
+    ".turbo",
+    "coverage",
+    "evals/cases",
+    "evals/reports",
+    "packages/engine/test/fixtures/eval-cases",
+    "apps/agent/src/test/fixtures/import/invalid-json",
+    "apps/agent/src/test/fixtures/import/full/.omniralph/installables/package.json",
+    "packages/db/drizzle/meta",
+    ".impeccable",
+    "**/__snapshots__"
+  ]
+}

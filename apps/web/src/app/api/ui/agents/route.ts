@@ -12,10 +12,7 @@ const listQuery = z.object({ organization: z.string().optional() });
  * (`organization=<id>`) or all of them (`organization=all`), each with its organization,
  * status and pins, and the summary cells. Another organization answers 404.
  */
-export const GET = apiHandler(
-  { query: listQuery },
-  async ({ user, query }): Promise<AgentList> => {
-    const organizations = await resolveOrganizationScope(user, query.organization);
-    return loadFleet(getDb(), organizations);
-  },
-);
+export const GET = apiHandler({ query: listQuery }, async ({ user, query }): Promise<AgentList> => {
+  const organizations = await resolveOrganizationScope(user, query.organization);
+  return loadFleet(getDb(), organizations);
+});

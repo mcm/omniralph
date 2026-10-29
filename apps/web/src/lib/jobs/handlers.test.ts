@@ -30,9 +30,7 @@ describe("job outcome handlers", () => {
   it("ignores jobs whose type or payload don't match", () => {
     expect(jobOutcomeHandler(job({ type: "review.other" }))).toBeUndefined();
     expect(jobOutcomeHandler(job({ type: "ralph.story", payload: { x: 1 } }))).toBeUndefined();
-    expect(
-      jobOutcomeHandler(job({ type: "repo.sync", taskType: "system" })),
-    ).toBeUndefined();
+    expect(jobOutcomeHandler(job({ type: "repo.sync", taskType: "system" }))).toBeUndefined();
   });
 
   it("has no story, request or describe handler: those coding and query runs use their sinks", () => {
@@ -43,9 +41,7 @@ describe("job outcome handlers", () => {
   });
 
   it("has no triage handler: triage runs are builtin:triage runs with the triage sink", () => {
-    expect(jobOutcomeHandler(job({ type: "triage.run", taskType: "query" }))).toBe(
-      undefined,
-    );
+    expect(jobOutcomeHandler(job({ type: "triage.run", taskType: "query" }))).toBe(undefined);
   });
 
   it("registers new job types, once each", () => {

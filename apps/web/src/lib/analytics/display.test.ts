@@ -187,7 +187,11 @@ describe("chartSummary", () => {
 
   it("says when there is nothing to sum or rate", () => {
     expect(
-      chartSummary({ ...base, points: [{ start: "2026-10-03", value: 0 }], measure: { kind: "total" } }),
+      chartSummary({
+        ...base,
+        points: [{ start: "2026-10-03", value: 0 }],
+        measure: { kind: "total" },
+      }),
     ).toBe("Stories completed per day, Sep 25 to Oct 24: none");
     expect(
       chartSummary({

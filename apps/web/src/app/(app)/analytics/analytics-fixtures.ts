@@ -42,7 +42,9 @@ const DAY_MS = 86_400_000;
 const TO = Date.UTC(2026, 9, 25);
 
 function emptyTokens(): Tokens {
-  return Object.fromEntries(RUN_KINDS.map((kind) => [kind, { tokensIn: 0, tokensOut: 0 }])) as Tokens;
+  return Object.fromEntries(
+    RUN_KINDS.map((kind) => [kind, { tokensIn: 0, tokensOut: 0 }]),
+  ) as Tokens;
 }
 
 function emptyFigures(): Figures {

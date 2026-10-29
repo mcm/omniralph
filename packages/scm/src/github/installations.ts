@@ -19,10 +19,18 @@ export interface GitHubInstallationRepo {
 }
 
 /** The app installation `installationId`; fails (404) when it isn't an installation of this app. */
-export async function getInstallation(auth: GitHubAppAuth, installationId: number): Promise<GitHubInstallation> {
+export async function getInstallation(
+  auth: GitHubAppAuth,
+  installationId: number,
+): Promise<GitHubInstallation> {
   const octokit = auth.appOctokit(await auth.getAppJwt());
   const { data } = await octokit.apps.getInstallation({ installation_id: installationId });
-  const account = data.account as { login?: string; slug?: string; name?: string; type?: string } | null;
+  const account = data.account as {
+    login?: string;
+    slug?: string;
+    name?: string;
+    type?: string;
+  } | null;
   return {
     id: data.id,
     account: account?.login ?? account?.slug ?? account?.name ?? String(data.id),
@@ -37,11 +45,20 @@ export async function listInstallationRepos(
   auth: GitHubAppAuth,
   installationId: number,
 ): Promise<GitHubInstallationRepo[]> {
-  const { token } = await auth.getInstallationToken(installationId, { permissions: { metadata: "read" } });
+  const { token } = await auth.getInstallationToken(installationId, {
+    permissions: { metadata: "read" },
+  });
   const octokit = auth.octokit(token);
-  const repos = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, { per_page: 100 });
+  const repos = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, {
+    per_page: 100,
+  });
   return repos
-    .map((repo) => ({ id: repo.id, fullPath: repo.full_name, private: repo.private, htmlUrl: repo.html_url }))
+    .map((repo) => ({
+      id: repo.id,
+      fullPath: repo.full_name,
+      private: repo.private,
+      htmlUrl: repo.html_url,
+    }))
     .sort((a, b) => a.fullPath.localeCompare(b.fullPath));
 }
 
@@ -60,7 +77,8 @@ export async function getAppSlug(auth: GitHubAppAuth): Promise<string> {
  */
 export function appInstallUrl(slug: string, apiUrl: string = GITHUB_API_URL): string {
   const api = apiUrl.replace(/\/+$/, "");
-  if (api === GITHUB_API_URL) return `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`;
+  if (api === GITHUB_API_URL)
+    return `https://github.com/apps/${encodeURIComponent(slug)}/installations/new`;
   // GitHub Enterprise Server: https://<host>/api/v3 → https://<host>/github-apps/<slug>/installations/new
   const origin = new URL(api).origin;
   return `${origin}/github-apps/${encodeURIComponent(slug)}/installations/new`;

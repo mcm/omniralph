@@ -69,13 +69,17 @@ const FIXED_STEP = [
   "          PR_TITLE: ${{ github.event.pull_request.title }}",
   "        run: |",
   '          echo "### Coverage for: ${PR_TITLE}" >> "$GITHUB_STEP_SUMMARY"',
-  "          node -e 'const s = require(\"./coverage/coverage-summary.json\").total; for (const [k, v] of Object.entries(s)) console.log(`- ${k}: ${v.pct}%`)' >> \"$GITHUB_STEP_SUMMARY\"",
+  '          node -e \'const s = require("./coverage/coverage-summary.json").total; for (const [k, v] of Object.entries(s)) console.log(`- ${k}: ${v.pct}%`)\' >> "$GITHUB_STEP_SUMMARY"',
 ].join("\n");
 
 /** What "Commit suggestion" does: replace exactly startLine..endLine. */
 function apply(text: string, finding: Finding): string {
   const lines = text.split("\n");
-  lines.splice(finding.startLine - 1, finding.endLine - finding.startLine + 1, ...finding.suggestion!.split("\n"));
+  lines.splice(
+    finding.startLine - 1,
+    finding.endLine - finding.startLine + 1,
+    ...finding.suggestion!.split("\n"),
+  );
   return lines.join("\n");
 }
 
@@ -101,7 +105,10 @@ describe("cross-references between findings", () => {
     expect(stripCrossReferences(injection)).toBe(injection);
     const code = { ...injection, body: "Problem.\n\n```\n# see the other finding\n```" };
     expect(stripCrossReferences(code)).toBe(code);
-    const domain = { ...injection, body: "`dedupeFindings` returns findings unsorted, so the summary order changes." };
+    const domain = {
+      ...injection,
+      body: "`dedupeFindings` returns findings unsorted, so the summary order changes.",
+    };
     expect(stripCrossReferences(domain)).toBe(domain);
     const only = { ...injection, body: "See the other finding." };
     expect(stripCrossReferences(only)).toBe(only);
@@ -110,7 +117,9 @@ describe("cross-references between findings", () => {
 
 describe("workflow suggestions that use undefined variables", () => {
   it("finds variable references, ignoring single quotes and defaults", () => {
-    expect([...variableReferences('echo "${A} $B ${C:-x} $$" \'$D ${E}\' ${{ github.ref }}')]).toEqual(["A", "B"]);
+    expect([
+      ...variableReferences("echo \"${A} $B ${C:-x} $$\" '$D ${E}' ${{ github.ref }}"),
+    ]).toEqual(["A", "B"]);
   });
 
   it("collects the step, job and workflow env that apply at a line", () => {
@@ -145,11 +154,14 @@ describe("workflow suggestions that use undefined variables", () => {
     expect(undefinedSuggestionVariables(widened, HEAD)).toEqual([]);
     const fixed = apply(HEAD, widened).split("\n");
     expect(fixed.slice(89, 96)).toEqual(FIXED_STEP.split("\n"));
-    expect(fixed.join("\n")).not.toContain("${{ github.event.pull_request.title }}\"");
+    expect(fixed.join("\n")).not.toContain('${{ github.event.pull_request.title }}"');
   });
 
   it("accepts variables the runner, the file or the original lines already define", () => {
-    const quoted = { ...injection, suggestion: '          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"' };
+    const quoted = {
+      ...injection,
+      suggestion: '          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"',
+    };
     expect(undefinedSuggestionVariables(quoted, HEAD)).toEqual([]);
     const workflowEnv = { ...injection, suggestion: '          echo "node $NODE_VERSION"' };
     expect(undefinedSuggestionVariables(workflowEnv, HEAD)).toEqual([]);
@@ -198,7 +210,9 @@ describe("merging a fragment into the finding it completes", () => {
     });
     expect(findings[1]!.suggestion).toBeUndefined();
     expect(findings[1]!.body).toContain("Also (lines 91-92): The step never sets PR_TITLE.");
-    expect(findings[1]!.body).toContain(`Suggested change for line 93:\n\`\`\`\n${injection.suggestion}`);
+    expect(findings[1]!.body).toContain(
+      `Suggested change for line 93:\n\`\`\`\n${injection.suggestion}`,
+    );
     expect(findings[2]).toBe(pinning);
   });
 
@@ -325,9 +339,14 @@ describe("runReview on mcm/omniralph-sandbox#1", () => {
 
   it("keeps a complete whole-step suggestion as is", async () => {
     const widened = { ...injection, startLine: 90, endLine: 94, suggestion: FIXED_STEP };
-    const { result } = await review([widened, { ...coverage, body: stripCrossReferences(coverage).body }]);
+    const { result } = await review([
+      widened,
+      { ...coverage, body: stripCrossReferences(coverage).body },
+    ]);
     expect(result.findings[0]).toEqual(widened);
-    expect(apply(HEAD, result.findings[0]!)).toContain("PR_TITLE: ${{ github.event.pull_request.title }}");
+    expect(apply(HEAD, result.findings[0]!)).toContain(
+      "PR_TITLE: ${{ github.event.pull_request.title }}",
+    );
   });
 
   it("fits the live #2 whole-step suggestion anchored at 92-94 to the step at 90-94", async () => {
@@ -344,7 +363,12 @@ describe("runReview on mcm/omniralph-sandbox#1", () => {
       suggestion: FIXED_STEP.replace("${PR_TITLE}", "$PR_TITLE"),
       confidence: 0.95,
     };
-    const liveCoverage: Finding = { ...coverage, startLine: 94, endLine: 94, body: stripCrossReferences(coverage).body };
+    const liveCoverage: Finding = {
+      ...coverage,
+      startLine: 94,
+      endLine: 94,
+      body: stripCrossReferences(coverage).body,
+    };
     const { result } = await review([live, liveCoverage, pinning]);
 
     const inj = result.findings.find((f) => f.category === "security" && f.startLine < 97)!;
@@ -355,7 +379,18 @@ describe("runReview on mcm/omniralph-sandbox#1", () => {
     expect(fixed.match(/- name: Publish coverage summary/g)).toHaveLength(1);
     expect(fixed.match(/if: github\.event_name == 'pull_request'\n/g)).toHaveLength(1);
     const workflow = parseYaml(fixed) as {
-      jobs: Record<string, { steps: { name?: string; if?: string; env?: Record<string, string>; run?: string; uses?: string }[] }>;
+      jobs: Record<
+        string,
+        {
+          steps: {
+            name?: string;
+            if?: string;
+            env?: Record<string, string>;
+            run?: string;
+            uses?: string;
+          }[];
+        }
+      >;
     };
     const step = Object.values(workflow.jobs)
       .flatMap((job) => job.steps)

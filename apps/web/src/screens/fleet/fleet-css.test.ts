@@ -59,7 +59,9 @@ describe("Fleet's stylesheet", () => {
   });
 
   it("uses no color literals, only --or- tokens and or- classes", () => {
-    expect(fleetCss.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/gi)).toBeNull();
+    expect(
+      fleetCss.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/gi),
+    ).toBeNull();
     const tokens = Array.from(fleetCss.matchAll(/var\((--[\w-]+)/g), ([, name]) => name!);
     expect(tokens.length).toBeGreaterThan(0);
     expect(tokens.filter((name) => !name.startsWith("--or-"))).toEqual([]);

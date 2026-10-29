@@ -35,7 +35,8 @@ export type TemplateNode =
     } & TemplatePosition);
 
 export type ParseResult =
-  { ok: true; nodes: TemplateNode[] } | { ok: false; error: TemplateParseError };
+  | { ok: true; nodes: TemplateNode[] }
+  | { ok: false; error: TemplateParseError };
 
 export type TemplateProblem =
   | ({ kind: "parse"; message: string } & TemplatePosition)

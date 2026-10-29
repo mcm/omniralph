@@ -159,7 +159,9 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
           onSelect: () => retry.mutate({ target: item.target, selectedStepId: step?.id }),
         };
   const actions = runToolbar(run, step).map(toolbarAction).slice(0, 2) as
-    [] | [ToolbarAction] | [ToolbarAction, ToolbarAction];
+    | []
+    | [ToolbarAction]
+    | [ToolbarAction, ToolbarAction];
   const menu = runMenuItems(run, {
     onCopyBranch: () => void copyBranch(run.branch ?? ""),
     onStop: () => setConfirmStop(true),

@@ -42,66 +42,66 @@ always behaves like cyralph's default and has no setting for it.
 
 ### Top level
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `port`, `baseUrl` | Not needed | The control panel runs on Vercel at `APP_URL`; webhooks and the OAuth callback use it ([env.md](env.md)). No tunnel. |
-| `stateDir` | Not needed | Run state is in Postgres. Agents keep repositories and branch worktrees under their `workspaceRoot` ([deploy-agent.md](deploy-agent.md#workspaceroot-and-disk-usage)). |
-| `model`, `fallbackModel` | **Model** / **Fallback model** per repository | Same names and defaults (`opus` / none), set per repository instead of globally. |
-| `maxConcurrentSessions` | Slots and slots per pool on each agent's page (its `settings.json`) | Per agent ([deploy-agent.md](deploy-agent.md#machine-settings-settingsjson)), applied at once. The `long` pool (coding) limit defaults to the slots − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
-| `gitlabHosts` | Not needed | Each GitLab connection has its own base URL (**Repos › Add repo › Connect GitLab**), so the code host is known per repository. |
-| `blockerPollMinutes` | Fixed | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes. |
-| `permissionMode` | Fixed | Coding sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**. |
+| cyralph                  | Omniralph                                                           | Notes                                                                                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`, `baseUrl`        | Not needed                                                          | The control panel runs on Vercel at `APP_URL`; webhooks and the OAuth callback use it ([env.md](env.md)). No tunnel.                                                                                                                                              |
+| `stateDir`               | Not needed                                                          | Run state is in Postgres. Agents keep repositories and branch worktrees under their `workspaceRoot` ([deploy-agent.md](deploy-agent.md#workspaceroot-and-disk-usage)).                                                                                            |
+| `model`, `fallbackModel` | **Model** / **Fallback model** per repository                       | Same names and defaults (`opus` / none), set per repository instead of globally.                                                                                                                                                                                  |
+| `maxConcurrentSessions`  | Slots and slots per pool on each agent's page (its `settings.json`) | Per agent ([deploy-agent.md](deploy-agent.md#machine-settings-settingsjson)), applied at once. The `long` pool (coding) limit defaults to the slots − 1 (at least 1), so an agent with 2+ slots keeps one for reviews. Use several agents for more parallel runs. |
+| `gitlabHosts`            | Not needed                                                          | Each GitLab connection has its own base URL (**Repos › Add repo › Connect GitLab**), so the code host is known per repository.                                                                                                                                    |
+| `blockerPollMinutes`     | Fixed                                                               | Blockers are re-checked on Linear **Issues** webhooks and by `/api/cron/ralph-reconcile` every 10 minutes.                                                                                                                                                        |
+| `permissionMode`         | Fixed                                                               | Coding sessions use `bypassPermissions` in the branch worktree (`dontAsk` when **Allowed tools** is set). Narrow them per repository with **Allowed tools** / **Disallowed tools**.                                                                               |
 
 ### `linear`
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `accessToken`, `refreshToken` | **Settings › Connections › Add connection › Linear › Connect** | Installs the Omniralph app (`actor=app`); its tokens are stored encrypted and refreshed automatically. Not copied from cyralph: they belong to cyralph's app. |
-| `webhookSecret` | `LINEAR_WEBHOOK_SECRET` | The Omniralph app's own signing secret. |
-| `clientId`, `clientSecret` | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | The Omniralph app's own credentials. `cyralph auth` becomes **Connect Linear**. |
-| `workspaceId`, `workspaceName` | Not needed | Recorded when connecting; shown on **Settings › Connections › Linear**. |
+| cyralph                        | Omniralph                                                      | Notes                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accessToken`, `refreshToken`  | **Settings › Connections › Add connection › Linear › Connect** | Installs the Omniralph app (`actor=app`); its tokens are stored encrypted and refreshed automatically. Not copied from cyralph: they belong to cyralph's app. |
+| `webhookSecret`                | `LINEAR_WEBHOOK_SECRET`                                        | The Omniralph app's own signing secret.                                                                                                                       |
+| `clientId`, `clientSecret`     | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`                     | The Omniralph app's own credentials. `cyralph auth` becomes **Connect Linear**.                                                                               |
+| `workspaceId`, `workspaceName` | Not needed                                                     | Recorded when connecting; shown on **Settings › Connections › Linear**.                                                                                       |
 
 ### `ralph`
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `maxAttemptsPerStory` | Fixed: 3 | On the **Coding tasks** path, the story task's `maxAttemptsPerStory` (3 for `builtin:implement-story`). |
-| `maxIterationsPerRun` | Fixed: 50 | Story jobs per run. On the **Coding tasks** path, the story task's `maxIterationsPerRun` (50). |
-| `materializeStories` | Fixed: on | A PRD in an issue's description is always turned into sub-issues first. |
-| `commitPerStory`, `pushPerStory` | Fixed: on | Every finished story is committed and pushed; the remote branch is the only state between jobs (agents can change). On the **Coding tasks** path the story task's `pushTiming` can be `end`: stories are then pushed to a hidden ref (`refs/omniralph/runs/<run>`) and the branch once at the end. |
-| `createPullRequest` | Fixed: on | The control panel opens the PR/MR through the GitHub App or GitLab bot. |
-| `openPullRequestEarly` | **Open the pull request early** per repository (`openPullRequestEarly`) | Same default (off). |
-| `describePullRequest` | Fixed: on | A read-only `ralph.describe-pr` job writes the title and body (on the **Coding tasks** path, a run of the story task's PR description task, `builtin:describe-pr`). |
-| `markPrReadyWhenComplete` | Fixed: on | |
-| `historyRewrite` | **Rewrite history** per repository (`historyRewrite`) | Same values and default (`when-asked`), plus `always`: rebase (and push with `--force-with-lease`) without being asked, never merging the base branch. |
-| `allowPreparation` | The story playbook's `allowPreparation` | Same default (on). |
-| `manualLabels` | The organization's tracker labels (`app_settings` `tracker.labels`) | Same default (`manual`), for every repository. |
-| `epicCompletedStateType`, `epicCompletedStateName` | The story playbook's `epicCompletedState` | One field: `started` / `completed` (a state type) or a state name such as `In Review`. Empty leaves the epic alone. |
+| cyralph                                            | Omniralph                                                               | Notes                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxAttemptsPerStory`                              | Fixed: 3                                                                | On the **Coding tasks** path, the story task's `maxAttemptsPerStory` (3 for `builtin:implement-story`).                                                                                                                                                                                            |
+| `maxIterationsPerRun`                              | Fixed: 50                                                               | Story jobs per run. On the **Coding tasks** path, the story task's `maxIterationsPerRun` (50).                                                                                                                                                                                                     |
+| `materializeStories`                               | Fixed: on                                                               | A PRD in an issue's description is always turned into sub-issues first.                                                                                                                                                                                                                            |
+| `commitPerStory`, `pushPerStory`                   | Fixed: on                                                               | Every finished story is committed and pushed; the remote branch is the only state between jobs (agents can change). On the **Coding tasks** path the story task's `pushTiming` can be `end`: stories are then pushed to a hidden ref (`refs/omniralph/runs/<run>`) and the branch once at the end. |
+| `createPullRequest`                                | Fixed: on                                                               | The control panel opens the PR/MR through the GitHub App or GitLab bot.                                                                                                                                                                                                                            |
+| `openPullRequestEarly`                             | **Open the pull request early** per repository (`openPullRequestEarly`) | Same default (off).                                                                                                                                                                                                                                                                                |
+| `describePullRequest`                              | Fixed: on                                                               | A read-only `ralph.describe-pr` job writes the title and body (on the **Coding tasks** path, a run of the story task's PR description task, `builtin:describe-pr`).                                                                                                                                |
+| `markPrReadyWhenComplete`                          | Fixed: on                                                               |                                                                                                                                                                                                                                                                                                    |
+| `historyRewrite`                                   | **Rewrite history** per repository (`historyRewrite`)                   | Same values and default (`when-asked`), plus `always`: rebase (and push with `--force-with-lease`) without being asked, never merging the base branch.                                                                                                                                             |
+| `allowPreparation`                                 | The story playbook's `allowPreparation`                                 | Same default (on).                                                                                                                                                                                                                                                                                 |
+| `manualLabels`                                     | The organization's tracker labels (`app_settings` `tracker.labels`)     | Same default (`manual`), for every repository.                                                                                                                                                                                                                                                     |
+| `epicCompletedStateType`, `epicCompletedStateName` | The story playbook's `epicCompletedState`                               | One field: `started` / `completed` (a state type) or a state name such as `In Review`. Empty leaves the epic alone.                                                                                                                                                                                |
 
 ### `github`
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `webhookSecret` | Not needed (`GITHUB_WEBHOOK_SECRET` is the GitHub App's) | cyralph's separate `/github-webhook` webhook goes away; the GitHub App's webhook delivers everything ([github-app.md](github-app.md)). Remove cyralph's webhook in [step 6](#6-stop-cyralph-and-remove-its-linear-app-and-webhooks). |
-| `reviewBots` | Not needed | Omniralph acts on its **own** reviews of Om PRs/MRs and on `@omniralph fix` / `@omniralph` requests from people with write access. Third-party review bots (e.g. cubic) are no longer acted on; turn the Omniralph review on for the repository instead. |
-| `reviewPollMinutes` | Not needed | A finished Omniralph review hands its findings to the run directly; there is nothing to poll. |
-| `maxReviewRounds` | The request playbook's `maxReviewRounds` | Same default (3). The repository's **Fix review comments and CI failures** (`respondToReviewsAndCi`) turns it off. |
+| cyralph             | Omniralph                                                | Notes                                                                                                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `webhookSecret`     | Not needed (`GITHUB_WEBHOOK_SECRET` is the GitHub App's) | cyralph's separate `/github-webhook` webhook goes away; the GitHub App's webhook delivers everything ([github-app.md](github-app.md)). Remove cyralph's webhook in [step 6](#6-stop-cyralph-and-remove-its-linear-app-and-webhooks).                     |
+| `reviewBots`        | Not needed                                               | Omniralph acts on its **own** reviews of Om PRs/MRs and on `@omniralph fix` / `@omniralph` requests from people with write access. Third-party review bots (e.g. cubic) are no longer acted on; turn the Omniralph review on for the repository instead. |
+| `reviewPollMinutes` | Not needed                                               | A finished Omniralph review hands its findings to the run directly; there is nothing to poll.                                                                                                                                                            |
+| `maxReviewRounds`   | The request playbook's `maxReviewRounds`                 | Same default (3). The repository's **Fix review comments and CI failures** (`respondToReviewsAndCi`) turns it off.                                                                                                                                       |
 
 ### `ci`
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `pollMinutes` | Not needed | Failed CI arrives by webhook (GitHub `workflow_run`, GitLab **Pipeline events**), with `/api/cron/ralph-reconcile` (every 10 minutes) as the fallback. `0` (off) becomes **Fix review comments and CI failures** (`respondToReviewsAndCi`) off per repository. |
-| `maxFixRounds` | The request playbook's `maxFixRounds` | Same default (3). |
+| cyralph        | Omniralph                             | Notes                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pollMinutes`  | Not needed                            | Failed CI arrives by webhook (GitHub `workflow_run`, GitLab **Pipeline events**), with `/api/cron/ralph-reconcile` (every 10 minutes) as the fallback. `0` (off) becomes **Fix review comments and CI failures** (`respondToReviewsAndCi`) off per repository. |
+| `maxFixRounds` | The request playbook's `maxFixRounds` | Same default (3).                                                                                                                                                                                                                                              |
 
 ### `autoUpdate`
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `enabled` | **Fleet › Version policy** | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#updating)). Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
-| `intervalMinutes` | Not needed | The desired version arrives with every heartbeat (20s). |
-| `remote`, `branch` | Not needed | Agents install published npm versions of `@omniralph/agent`, not a git branch. `latest` (**Track latest on npm**) follows the `latest` dist-tag; a per-agent override pins or tries a version on one host. |
-| `buildCommands` | Not needed | Releases are built and tested by CI before they're published. A version that fails to stay up is rolled back automatically and never retried. |
+| cyralph            | Omniralph                  | Notes                                                                                                                                                                                                                                      |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enabled`          | **Fleet › Version policy** | Agents under pm2 update to the desired version (or each release, with `latest`) ([self-update](deploy-agent.md#updating)). Agents under systemd or tmux are updated by hand. The control panel itself updates with each Vercel deployment. |
+| `intervalMinutes`  | Not needed                 | The desired version arrives with every heartbeat (20s).                                                                                                                                                                                    |
+| `remote`, `branch` | Not needed                 | Agents install published npm versions of `@omniralph/agent`, not a git branch. `latest` (**Track latest on npm**) follows the `latest` dist-tag; a per-agent override pins or tries a version on one host.                                 |
+| `buildCommands`    | Not needed                 | Releases are built and tested by CI before they're published. A version that fails to stay up is rolled back automatically and never retried.                                                                                              |
 
 ### `repositories[]`
 
@@ -111,43 +111,43 @@ match, extra instructions, open PR early, history rewrite and responding to revi
 (`/api/ui/repositories/{id}/coding`); the rest is its story and request playbooks' (see
 [definitions](definitions.md#coding-settings)).
 
-| cyralph | Omniralph | Notes |
-| -- | -- | -- |
-| `id`, `name` | The repository's full path (`acme/app`, `group/subgroup/project`) | Taken from the code host. |
-| `repositoryPath` | Not needed | Agents clone into their own cache (`workspaceRoot`) with brokered credentials. |
-| `baseBranch` | The repository's default branch on the code host | Read when a run starts. There's no override; a PR/MR always targets the default branch. |
-| `workspaceBaseDir` | Not needed | Branch worktrees live under `<workspaceRoot>/.branches/` on the agent. |
-| `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Advanced › Routing rules** | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
-| `githubUrl`, `gitlabUrl` | Not needed | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead. |
-| `isActive` | The repository's **Coding** switch | Off for a new repository, and it needs a work item match to turn on: only repositories with Coding on are routed to, offered in the repository question or pushed to. |
-| `verifyCommands` | The story and request playbooks' `verifyCommands` | |
-| `runPrdQualityGates` | The playbooks' `runPrdQualityGates` | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour. |
-| `forge`, `gitlabHost` | Not needed | Known from the connection the repository belongs to. |
-| `setupCommand` | The playbooks' `worktreeSetupCommand` | |
-| `model` | The playbooks' `model` | |
-| `allowedTools`, `disallowedTools` | The playbooks' `tools` | A playbook's tools are its runs' tools. |
-| `appendInstruction` | **Extra instructions** (`codingInstructions`) | Also appended to request prompts. |
-| `historyRewrite`, `allowPreparation` | **Rewrite history**, the story playbook's `allowPreparation` | No global value to override. |
-| `promptTemplatePath` | Not supported | Custom templates aren't ported; move what the template added into **Extra instructions**. |
-| `respondToReviews` | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | One switch for reviews (Omniralph's own and `@bot` requests) and CI: on when either was. |
-| `respondToCiFailures` | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | |
-| `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes` | **Clean up after the merge**, **Unmerged branch timeout** | Same defaults (on, 60 minutes). |
+| cyralph                                                    | Omniralph                                                         | Notes                                                                                                                                                                                                                   |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `name`                                               | The repository's full path (`acme/app`, `group/subgroup/project`) | Taken from the code host.                                                                                                                                                                                               |
+| `repositoryPath`                                           | Not needed                                                        | Agents clone into their own cache (`workspaceRoot`) with brokered credentials.                                                                                                                                          |
+| `baseBranch`                                               | The repository's default branch on the code host                  | Read when a run starts. There's no override; a PR/MR always targets the default branch.                                                                                                                                 |
+| `workspaceBaseDir`                                         | Not needed                                                        | Branch worktrees live under `<workspaceRoot>/.branches/` on the agent.                                                                                                                                                  |
+| `teamKeys`, `routingLabels`, `projectKeys`, `projectNames` | Rules on **Settings › Advanced › Routing rules**                  | Organization-wide, tried top to bottom: e.g. **Labels contains any of** `backend`, then **Project is** `App`, then **Team is** `ENG`, each targeting the repository (cyralph's order: labels, then project, then team). |
+| `githubUrl`, `gitlabUrl`                                   | Not needed                                                        | The repository question matches the full path or its last segment. Omniralph ignores `[repo=…]` tags in issue descriptions: route those issues with a routing rule instead.                                             |
+| `isActive`                                                 | The repository's **Coding** switch                                | Off for a new repository, and it needs a work item match to turn on: only repositories with Coding on are routed to, offered in the repository question or pushed to.                                                   |
+| `verifyCommands`                                           | The story and request playbooks' `verifyCommands`                 |                                                                                                                                                                                                                         |
+| `runPrdQualityGates`                                       | The playbooks' `runPrdQualityGates`                               | **Different default:** on in Omniralph, off in cyralph. Turn it off to keep cyralph's behaviour.                                                                                                                        |
+| `forge`, `gitlabHost`                                      | Not needed                                                        | Known from the connection the repository belongs to.                                                                                                                                                                    |
+| `setupCommand`                                             | The playbooks' `worktreeSetupCommand`                             |                                                                                                                                                                                                                         |
+| `model`                                                    | The playbooks' `model`                                            |                                                                                                                                                                                                                         |
+| `allowedTools`, `disallowedTools`                          | The playbooks' `tools`                                            | A playbook's tools are its runs' tools.                                                                                                                                                                                 |
+| `appendInstruction`                                        | **Extra instructions** (`codingInstructions`)                     | Also appended to request prompts.                                                                                                                                                                                       |
+| `historyRewrite`, `allowPreparation`                       | **Rewrite history**, the story playbook's `allowPreparation`      | No global value to override.                                                                                                                                                                                            |
+| `promptTemplatePath`                                       | Not supported                                                     | Custom templates aren't ported; move what the template added into **Extra instructions**.                                                                                                                               |
+| `respondToReviews`                                         | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | One switch for reviews (Omniralph's own and `@bot` requests) and CI: on when either was.                                                                                                                                |
+| `respondToCiFailures`                                      | **Fix review comments and CI failures** (`respondToReviewsAndCi`) |                                                                                                                                                                                                                         |
+| `cleanupMergedWorktrees`, `unmergedBranchTimeoutMinutes`   | **Clean up after the merge**, **Unmerged branch timeout**         | Same defaults (on, 60 minutes).                                                                                                                                                                                         |
 
 Pinning a repo to agents (**Repos › Agents**) has no cyralph equivalent: pin a repository to an agent
 when only that host has its toolchain.
 
 ### Environment variables
 
-| cyralph | Omniralph |
-| -- | -- |
-| `LINEAR_ACCESS_TOKEN` | Not needed: **Connect Linear** stores the app's tokens. |
-| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | Same names on the Vercel project, with the **Omniralph** app's values ([env.md](env.md#linear-app-om)). |
-| `GITHUB_WEBHOOK_SECRET` | Same name, different meaning: in Omniralph it's the GitHub App's webhook secret ([github-app.md](github-app.md)). cyralph's value isn't reused. |
-| `CYRALPH_CONFIG`, `CYRALPH_HOME` | Not needed: agents read `OMNIRALPH_AGENT_CONFIG` (or `--config`), everything else is central. |
-| `CYRALPH_DEBUG` | `OMNIRALPH_LOG_LEVEL=debug` on the agent. |
-| `CYRALPH_RELEASE_SHA`, `CYRALPH_SOURCE_DIR`, `CYRALPH_SUPERVISED` | Not needed: set by cyralph's own update supervisor. |
-| `ANTHROPIC_API_KEY` (or the host's `claude` login) | The same on the agent host, for the agent's user ([claude-auth.md](claude-auth.md)). |
-| `GH_TOKEN` / `gh auth login`, `glab auth login` | Not needed: the control panel opens PRs/MRs, and agents push with brokered credentials. |
+| cyralph                                                             | Omniralph                                                                                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LINEAR_ACCESS_TOKEN`                                               | Not needed: **Connect Linear** stores the app's tokens.                                                                                         |
+| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | Same names on the Vercel project, with the **Omniralph** app's values ([env.md](env.md#linear-app-om)).                                         |
+| `GITHUB_WEBHOOK_SECRET`                                             | Same name, different meaning: in Omniralph it's the GitHub App's webhook secret ([github-app.md](github-app.md)). cyralph's value isn't reused. |
+| `CYRALPH_CONFIG`, `CYRALPH_HOME`                                    | Not needed: agents read `OMNIRALPH_AGENT_CONFIG` (or `--config`), everything else is central.                                                   |
+| `CYRALPH_DEBUG`                                                     | `OMNIRALPH_LOG_LEVEL=debug` on the agent.                                                                                                       |
+| `CYRALPH_RELEASE_SHA`, `CYRALPH_SOURCE_DIR`, `CYRALPH_SUPERVISED`   | Not needed: set by cyralph's own update supervisor.                                                                                             |
+| `ANTHROPIC_API_KEY` (or the host's `claude` login)                  | The same on the agent host, for the agent's user ([claude-auth.md](claude-auth.md)).                                                            |
+| `GH_TOKEN` / `gh auth login`, `glab auth login`                     | Not needed: the control panel opens PRs/MRs, and agents push with brokered credentials.                                                         |
 
 ## What carries over unchanged
 
@@ -305,14 +305,14 @@ Remove `cyralph start` from any startup script (Coder template, crontab, systemd
 
 Every step before 6 is reversible from the control panel and cyralph's `config.json`:
 
-| Undo | How |
-| -- | -- |
-| Step 1 | Turn the repository's **Coding** switch off: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay. |
-| Step 2 | Remove `coding` from the agent's `acceptedTaskTypes` and restart it (running jobs finish; queued ones wait for another agent that accepts `coding`). Pin **Fleet › Version policy** back to the version pm2 agents ran. |
-| Step 3 | Disconnect Linear with **Settings › Connections › Linear › ⋯ › Disconnect…** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear. |
-| Step 4 | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
-| Step 5 | Re-delegate stopped epics to cyralph (while it's still installed). |
-| Steps 6 and 7 | Harder: restore `~/.cyralph` (or re-create it from the saved `config.json`), recreate cyralph's Linear OAuth app and run `cyralph auth` again, re-add its GitHub webhook and tunnel, and `pm2 start` it. Then roll routing back team by team as for step 4. |
+| Undo          | How                                                                                                                                                                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Step 1        | Turn the repository's **Coding** switch off: new delegations aren't routed there. Stop runs you don't want to continue under **Coding tasks**; their branches and PRs/MRs stay.                                                                                                                                                                         |
+| Step 2        | Remove `coding` from the agent's `acceptedTaskTypes` and restart it (running jobs finish; queued ones wait for another agent that accepts `coding`). Pin **Fleet › Version policy** back to the version pm2 agents ran.                                                                                                                                 |
+| Step 3        | Disconnect Linear with **Settings › Connections › Linear › ⋯ › Disconnect…** (runs can't advance until it's connected again) or delete the Omniralph OAuth app in Linear.                                                                                                                                                                               |
+| Step 4        | For a team: remove it from the repository's Omniralph routing first, **then** add it back to cyralph's `config.json`, and tell the team to delegate to cyralph again. Stop Omniralph runs of that team that shouldn't continue (`stop` in their session, or **Coding tasks › Stop**) and re-delegate them to cyralph, which picks up the pushed branch. |
+| Step 5        | Re-delegate stopped epics to cyralph (while it's still installed).                                                                                                                                                                                                                                                                                      |
+| Steps 6 and 7 | Harder: restore `~/.cyralph` (or re-create it from the saved `config.json`), recreate cyralph's Linear OAuth app and run `cyralph auth` again, re-add its GitHub webhook and tunnel, and `pm2 start` it. Then roll routing back team by team as for step 4.                                                                                             |
 
 Rolling back never needs a code change: the two apps share nothing but the code hosts and Linear,
 and each works from the branch pushed to origin.

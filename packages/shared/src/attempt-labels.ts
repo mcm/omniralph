@@ -30,7 +30,13 @@ export const LEGACY_REVIEW_RUN_JOB_TYPE = "review.run";
 
 /** `jobs.status` values. */
 export type AttemptStatus =
-  "queued" | "running" | "completed" | "failed" | "canceled" | "expired" | "skipped";
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "canceled"
+  | "expired"
+  | "skipped";
 
 /** What a sentence may mention. Every field is optional: a label reads well without it. */
 export type AttemptLabelContext = {

@@ -192,7 +192,9 @@ async function openSheet() {
 
 const field = (sheet: HTMLElement, name: string) =>
   within(sheet).getByRole(name === "Repo" ? "combobox" : "textbox", { name }) as
-    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement;
 const triageBox = (sheet: HTMLElement) =>
   within(sheet).getByRole("checkbox", { name: "Triage now" }) as HTMLInputElement;
 const createButton = (sheet: HTMLElement) =>

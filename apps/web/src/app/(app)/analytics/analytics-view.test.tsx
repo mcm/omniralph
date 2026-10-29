@@ -89,19 +89,19 @@ function renderView(
   const tree = () => {
     const view = <AnalyticsView scope={user.scope === "all" ? "all" : user.organization.id} />;
     return (
-    <CurrentUserProvider user={user}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          {options.live ? (
-            <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-              {view}
-            </LiveProvider>
-          ) : (
-            view
-          )}
-        </UiProvider>
-      </QueryClientProvider>
-    </CurrentUserProvider>
+      <CurrentUserProvider user={user}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            {options.live ? (
+              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                {view}
+              </LiveProvider>
+            ) : (
+              view
+            )}
+          </UiProvider>
+        </QueryClientProvider>
+      </CurrentUserProvider>
     );
   };
   const utils = render(tree());
@@ -150,9 +150,9 @@ describe("the head row", () => {
     const window = screen.getByRole("radiogroup", { name: "Window" });
     const options = within(window).getAllByRole("radio");
     expect(options.map((option) => option.textContent)).toEqual(["7 days", "30 days", "90 days"]);
-    expect(within(window).getByRole("radio", { name: "30 days" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      within(window).getByRole("radio", { name: "30 days" }).getAttribute("aria-checked"),
+    ).toBe("true");
     await loaded();
     const repository = screen.getByRole("combobox", { name: "Repository" }) as HTMLSelectElement;
     expect([...repository.options].map((option) => option.textContent)).toEqual([
@@ -183,9 +183,9 @@ describe("the head row", () => {
       repository: REPO_OMNIRALPH.id,
       organization: TEST_ORGANIZATION_ID,
     });
-    expect(
-      (screen.getByRole("combobox", { name: "Repository" }) as HTMLSelectElement).value,
-    ).toBe(REPO_OMNIRALPH.id);
+    expect((screen.getByRole("combobox", { name: "Repository" }) as HTMLSelectElement).value).toBe(
+      REPO_OMNIRALPH.id,
+    );
 
     nav.search = new URLSearchParams({ days: "7" });
     renderView();
@@ -317,9 +317,9 @@ describe("the charts", () => {
     }
     // Tokens holds In and Out, on their own scales, sharing the buckets.
     const tokens = card("Tokens");
-    expect([...tokens.querySelectorAll("figcaption")].map((caption) => caption.textContent)).toEqual(
-      ["In", "Out"],
-    );
+    expect(
+      [...tokens.querySelectorAll("figcaption")].map((caption) => caption.textContent),
+    ).toEqual(["In", "Out"]);
   });
 
   it("draws no bar for a bucket without finished attempts, and says No attempts", async () => {
@@ -333,9 +333,9 @@ describe("the charts", () => {
     expect(bars).toHaveLength(analyticsFixture().buckets.length - 1);
     expect([...bars].some((bar) => bar.textContent!.startsWith("Sep 27"))).toBe(false);
     // A fixed 0–100% axis.
-    expect(
-      [...figure.querySelectorAll(".or-chart__tick")].map((tick) => tick.textContent),
-    ).toEqual(["100%", "0%"]);
+    expect([...figure.querySelectorAll(".or-chart__tick")].map((tick) => tick.textContent)).toEqual(
+      ["100%", "0%"],
+    );
   });
 
   it("charts weeks for 90 days", async () => {
@@ -389,9 +389,10 @@ describe("the tables", () => {
     const rows = bodyRows(table("By repo"));
     expect(rows).toHaveLength(3);
     const first = rows[0]!.querySelector(".or-analytics__repo")!;
-    expect([...first.querySelectorAll(".or-ref__text")].map((badge) => badge.textContent)).toEqual(
-      ["NETbuilder", "mcm/omniralph"],
-    );
+    expect([...first.querySelectorAll(".or-ref__text")].map((badge) => badge.textContent)).toEqual([
+      "NETbuilder",
+      "mcm/omniralph",
+    ]);
     expect(rows.map((row) => row.querySelector(".or-ref--org .or-ref__text")!.textContent)).toEqual(
       ["NETbuilder", "TheFrakinShip", "NETbuilder"],
     );
@@ -410,10 +411,9 @@ describe("the tables", () => {
       "Tokens in",
       "Tokens out",
     ]);
-    expect(bodyRows(byOrganization).map((row) => row.querySelector(".or-ref__text")!.textContent)).toEqual([
-      "TheFrakinShip",
-      "NETbuilder",
-    ]);
+    expect(
+      bodyRows(byOrganization).map((row) => row.querySelector(".or-ref__text")!.textContent),
+    ).toEqual(["TheFrakinShip", "NETbuilder"]);
     expect(card("By organization")).toBeTruthy();
   });
 
@@ -438,7 +438,9 @@ describe("the tables", () => {
       "Triage",
     ]);
     // On phone it sits in a collapsed "By kind" section.
-    const section = document.querySelector("details.or-analytics__by-kind-phone") as HTMLDetailsElement;
+    const section = document.querySelector(
+      "details.or-analytics__by-kind-phone",
+    ) as HTMLDetailsElement;
     expect(section.open).toBe(false);
     expect(section.querySelector("summary")!.textContent).toBe("By kind");
     expect(within(section).getByRole("table", { name: "By kind", hidden: true })).toBeTruthy();
@@ -462,15 +464,13 @@ describe("cost", () => {
     expect(tile.textContent).toBe(
       `$${data.totals.costUsd!.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     );
-    expect(tile.getAttribute("title")).toBe(
-      `${COST_NOTE}\nExcludes 4 attempts with no list price`,
-    );
+    expect(tile.getAttribute("title")).toBe(`${COST_NOTE}\nExcludes 4 attempts with no list price`);
     expect(within(cell("Cost")).getByRole("button", { name: "About cost" })).toBeTruthy();
 
     const tokens = card("Tokens");
-    expect([...tokens.querySelectorAll("figcaption")].map((caption) => caption.textContent)).toEqual(
-      ["In", "Out", "Cost"],
-    );
+    expect(
+      [...tokens.querySelectorAll("figcaption")].map((caption) => caption.textContent),
+    ).toEqual(["In", "Out", "Cost"]);
     const costFigure = [...tokens.querySelectorAll("figure")][2]!;
     expect(costFigure.querySelector("svg")!.getAttribute("aria-label")).toMatch(
       /^Cost per day, Sep 25 to Oct 24: \$[\d,.]+ in total, most on/,
@@ -555,7 +555,9 @@ describe("states", () => {
     nav.search = new URLSearchParams({ days: "7", repo: REPO_OMNIRALPH.id });
     renderView();
     expect(
-      await screen.findByRole("heading", { name: "Nothing ran in mcm/omniralph in the last 7 days" }),
+      await screen.findByRole("heading", {
+        name: "Nothing ran in mcm/omniralph in the last 7 days",
+      }),
     ).toBeTruthy();
   });
 
@@ -606,7 +608,9 @@ describe("live updates", () => {
     const { client } = renderView({ live });
     await loaded();
     await connected(live, TEST_ORGANIZATION_ID);
-    const query = client.getQueryCache().findAll({ queryKey: [TEST_ORGANIZATION_ID, "analytics"] })[0]!;
+    const query = client
+      .getQueryCache()
+      .findAll({ queryKey: [TEST_ORGANIZATION_ID, "analytics"] })[0]!;
     expect(query.meta).toEqual({ liveThrottleMs: ANALYTICS_LIVE_THROTTLE_MS });
     expect(ANALYTICS_LIVE_THROTTLE_MS).toBe(10_000);
 
@@ -616,7 +620,10 @@ describe("live updates", () => {
       totals: { ...before.totals, stories: before.totals.stories + 1 },
     };
     respond = () => jsonResponse(after);
-    deliver(live, TEST_ORGANIZATION_ID, { resource: "run", runId: "44444444-4444-4444-8444-444444444444" });
+    deliver(live, TEST_ORGANIZATION_ID, {
+      resource: "run",
+      runId: "44444444-4444-4444-8444-444444444444",
+    });
     await waitFor(() =>
       expect(cellValue("Stories completed").textContent).toBe(count(after.totals.stories)),
     );
@@ -643,7 +650,10 @@ describe("live updates", () => {
     renderView({ live, user: allOrganizations });
     await loaded();
     await connected(live, FRAKINSHIP.id);
-    deliver(live, FRAKINSHIP.id, { resource: "run", runId: "44444444-4444-4444-8444-444444444444" });
+    deliver(live, FRAKINSHIP.id, {
+      resource: "run",
+      runId: "44444444-4444-4444-8444-444444444444",
+    });
     await waitFor(() => expect(requests()).toHaveLength(2));
     expect(Object.fromEntries(requests()[1]!.query)).toMatchObject({ organization: "all" });
   });

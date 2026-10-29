@@ -9,7 +9,7 @@ Prerequisites: a Vercel team with KMS available (beta), the Vercel CLI
 admin access to this repository and to the GitHub organization and/or GitLab projects you'll connect.
 
 Vercel doesn't build the control panel: GitHub Actions does (`.github/workflows/deploy-web.yml`) and
-uploads the output with `vercel deploy --prebuilt` (see *Deploying from GitHub Actions*).
+uploads the output with `vercel deploy --prebuilt` (see _Deploying from GitHub Actions_).
 
 ## 1. Create the Vercel project
 
@@ -38,21 +38,21 @@ uploads the output with `vercel deploy --prebuilt` (see *Deploying from GitHub A
   read the secrets.
 
 Each run pulls the Vercel environment's settings and variables (`vercel pull`), builds with
-`vercel build`, migrates the database (see *Migrations*) and uploads the output with
+`vercel build`, migrates the database (see _Migrations_) and uploads the output with
 `vercel deploy --prebuilt`. The deployment URL is on the run's summary and its GitHub environment
 (`production` or `preview`). Production runs queue up; a newer push to a pull request cancels its
 running preview deploy.
 
 Set these under the repository's **Settings › Secrets and variables › Actions**:
 
-| Name | Kind | Value |
-| -- | -- | -- |
-| `VERCEL_TOKEN` | secret | A Vercel access token (**Account Settings › Tokens**) scoped to the team that owns the project |
-| `VERCEL_ORG_ID` | variable | `orgId` from `.vercel/project.json` (the team ID) |
-| `VERCEL_PROJECT_ID` | variable | `projectId` from `.vercel/project.json` |
-| `NPM_TOKEN` | secret | npm token that can read `@iamthemcmaster/ui` (also used by CI) |
-| `NEON_API_KEY` | secret | A Neon API key (**Neon Console › Account settings › API keys**) |
-| `NEON_PROJECT_ID` | variable | The Neon project's ID (**Project settings › General**) |
+| Name                         | Kind                | Value                                                                                                              |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `VERCEL_TOKEN`               | secret              | A Vercel access token (**Account Settings › Tokens**) scoped to the team that owns the project                     |
+| `VERCEL_ORG_ID`              | variable            | `orgId` from `.vercel/project.json` (the team ID)                                                                  |
+| `VERCEL_PROJECT_ID`          | variable            | `projectId` from `.vercel/project.json`                                                                            |
+| `NPM_TOKEN`                  | secret              | npm token that can read `@iamthemcmaster/ui` (also used by CI)                                                     |
+| `NEON_API_KEY`               | secret              | A Neon API key (**Neon Console › Account settings › API keys**)                                                    |
+| `NEON_PROJECT_ID`            | variable            | The Neon project's ID (**Project settings › General**)                                                             |
 | `NEON_DATABASE`, `NEON_ROLE` | variables, optional | Database and role of preview connection strings; default `neondb` and `neondb_owner`, the Neon integration's names |
 
 `@iamthemcmaster/ui` is a private package on the public npm registry: the workflow writes
@@ -91,7 +91,7 @@ crons all query Postgres. With `REDIS_URL` set they use Redis instead, and Postg
 work ([ADR 0007](adr/0007-redis-hot-state.md)). Redis only holds state that can be rebuilt from
 Postgres or safely lost, so it needs no backups.
 
-1. **Storage › Upstash › Create** (Vercel Marketplace, *Upstash for Redis*), or create a database
+1. **Storage › Upstash › Create** (Vercel Marketplace, _Upstash for Redis_), or create a database
    in the [Upstash console](https://console.upstash.com). Pick the region closest to the function
    region (e.g. `us-east-1` for `iad1`). The free plan is enough to start; watch its daily command
    limit, which grows with the number of agents (several commands per heartbeat and claim).
@@ -99,7 +99,7 @@ Postgres or safely lost, so it needs no backups.
 2. Use a separate database per environment, as with KMS issuers, so a preview can't change
    production's hot state. Previews can also go without one.
 3. Set `REDIS_URL` to the **TCP** URL with TLS: `rediss://default:<password>@<host>:6379` (the
-   console's *Connect › ioredis/TCP* string; the Marketplace integration exposes it as `REDIS_URL`
+   console's _Connect › ioredis/TCP_ string; the Marketplace integration exposes it as `REDIS_URL`
    or `KV_URL`, so copy it to `REDIS_URL` if needed). Don't use the REST URL and token
    (`UPSTASH_REDIS_REST_*` / `KV_REST_API_*`): REST calls are billed as Observability Plus external
    API events.
@@ -171,14 +171,14 @@ running jobs aren't lost.
 
 `apps/web/vercel.json` declares the cron jobs; they're registered on production deployments:
 
-| Path | Schedule | Does |
-| -- | -- | -- |
-| `/api/cron/chat-run-events` | every minute | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured. With `REDIS_URL` set, it returns without querying Postgres or initialising the chat bot until a run event is recorded (the `chat-run-events:pending` marker) |
-| `/api/cron/expire-jobs` | hourly | Marks jobs still `queued` after 24h as `expired` (no agent claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old |
-| `/api/cron/prune-inbox-states` | daily 03:25 UTC | Deletes users' Done and Snooze states of Inbox items not updated for 60 days |
-| `/api/cron/prune-rate-limits` | hourly at :30 | Deletes old agent API rate-limit windows |
-| `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC | Deletes webhook delivery IDs (redelivery dedupe) older than a week, and the webhook delivery log (`webhook_events`, every verified GitHub, GitLab and Linear delivery with its outcome) older than 14 days, in batches of 1,000 |
-| `/api/cron/ralph-reconcile` | every 10 minutes | The coding loop's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open Om PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)). With `REDIS_URL` set, it returns without querying Postgres until a run is created or advanced (the `ralph:active` marker), and does a full run at least once a day |
+| Path                                 | Schedule         | Does                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/cron/chat-run-events`          | every minute     | The chat responder's fallback for missed wake-ups: relays run events pending for over a minute in their chat threads ([chat.md](chat.md)). Does nothing without the chat agent configured. With `REDIS_URL` set, it returns without querying Postgres or initialising the chat bot until a run event is recorded (the `chat-run-events:pending` marker)                                                                                       |
+| `/api/cron/expire-jobs`              | hourly           | Marks jobs still `queued` after 24h as `expired` (no agent claimed them). With `REDIS_URL` set, it returns without querying Postgres while no queued job is that old                                                                                                                                                                                                                                                                          |
+| `/api/cron/prune-inbox-states`       | daily 03:25 UTC  | Deletes users' Done and Snooze states of Inbox items not updated for 60 days                                                                                                                                                                                                                                                                                                                                                                  |
+| `/api/cron/prune-rate-limits`        | hourly at :30    | Deletes old agent API rate-limit windows                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `/api/cron/prune-webhook-deliveries` | daily 03:15 UTC  | Deletes webhook delivery IDs (redelivery dedupe) older than a week, and the webhook delivery log (`webhook_events`, every verified GitHub, GitLab and Linear delivery with its outcome) older than 14 days, in batches of 1,000                                                                                                                                                                                                               |
+| `/api/cron/ralph-reconcile`          | every 10 minutes | The coding loop's fallback for missed wake-ups: advances waiting runs (and the chat runs of organizations without Linear), checks open Om PRs/MRs for merges (cleanup) and failed CI, and deletes kept branches whose cleanup question timed out ([linear.md](linear.md)). With `REDIS_URL` set, it returns without querying Postgres until a run is created or advanced (the `ralph:active` marker), and does a full run at least once a day |
 
 Set `CRON_SECRET` (e.g. `openssl rand -hex 32`). Vercel sends it as `Authorization: Bearer …`;
 the routes reject everything else. Cron jobs only run for the production deployment.
@@ -187,17 +187,17 @@ the routes reject everything else. Cron jobs only run for the production deploym
 
 Set these per environment (production values shown; see [env.md](env.md) for every variable):
 
-| Variable | Value |
-| -- | -- |
-| `ENCRYPTION_KEY` | `openssl rand -base64 32`. Keep it stable: it decrypts stored GitLab tokens. |
-| `APP_URL` | `https://omniralph.example.com` (your production domain). Optional in production when the default `VERCEL_PROJECT_PRODUCTION_URL` is right; set it for previews that should receive webhooks. |
-| `AUTH_SECRET` | `openssl rand -base64 32` |
-| `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` | A GitHub **OAuth app**, callback `<APP_URL>/api/auth/callback/github` |
-| `AUTH_GITLAB_ID`, `AUTH_GITLAB_SECRET`, `AUTH_GITLAB_URL` | A GitLab OAuth application (`read_user`), callback `<APP_URL>/api/auth/callback/gitlab` |
-| `ALLOWED_EMAIL_DOMAINS` | e.g. `example.com`. Who may sign in (besides people invited to an organization). The only instance-wide access setting: there are no instance admins. |
-| `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | From [github-app.md](github-app.md) |
-| `BOT_HANDLE` | Optional, default `omniralph`. GitHub only: GitLab uses each connection's bot username |
-| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For Om: from [linear.md](linear.md) |
+| Variable                                                            | Value                                                                                                                                                                                         |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ENCRYPTION_KEY`                                                    | `openssl rand -base64 32`. Keep it stable: it decrypts stored GitLab tokens.                                                                                                                  |
+| `APP_URL`                                                           | `https://omniralph.example.com` (your production domain). Optional in production when the default `VERCEL_PROJECT_PRODUCTION_URL` is right; set it for previews that should receive webhooks. |
+| `AUTH_SECRET`                                                       | `openssl rand -base64 32`                                                                                                                                                                     |
+| `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`                              | A GitHub **OAuth app**, callback `<APP_URL>/api/auth/callback/github`                                                                                                                         |
+| `AUTH_GITLAB_ID`, `AUTH_GITLAB_SECRET`, `AUTH_GITLAB_URL`           | A GitLab OAuth application (`read_user`), callback `<APP_URL>/api/auth/callback/gitlab`                                                                                                       |
+| `ALLOWED_EMAIL_DOMAINS`                                             | e.g. `example.com`. Who may sign in (besides people invited to an organization). The only instance-wide access setting: there are no instance admins.                                         |
+| `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET`         | From [github-app.md](github-app.md)                                                                                                                                                           |
+| `BOT_HANDLE`                                                        | Optional, default `omniralph`. GitHub only: GitLab uses each connection's bot username                                                                                                        |
+| `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` | For Om: from [linear.md](linear.md)                                                                                                                                                           |
 
 Configure at least one sign-in provider. Redeploy after changing variables: run the **Deploy web**
 workflow on `main` (**Actions › Deploy web › Run workflow**) or push again to the pull request.

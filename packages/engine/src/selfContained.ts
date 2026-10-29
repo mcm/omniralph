@@ -38,7 +38,8 @@ export function stripCrossReferences(finding: Finding): Finding {
 }
 
 /** Variables every runner (GitHub Actions, GitLab CI) or shell defines. */
-const PREDEFINED = /^(?:GITHUB_\w+|RUNNER_\w+|ACTIONS_\w+|CI|CI_\w+|GITLAB_\w+|HOME|PATH|PWD|OLDPWD|USER|SHELL|HOSTNAME|LANG|TMPDIR|RANDOM|IFS|UID|EUID|SECONDS|LINENO|BASH\w*|OSTYPE)$/;
+const PREDEFINED =
+  /^(?:GITHUB_\w+|RUNNER_\w+|ACTIONS_\w+|CI|CI_\w+|GITLAB_\w+|HOME|PATH|PWD|OLDPWD|USER|SHELL|HOSTNAME|LANG|TMPDIR|RANDOM|IFS|UID|EUID|SECONDS|LINENO|BASH\w*|OSTYPE)$/;
 
 /** Shell text with single-quoted strings removed: the shell expands nothing inside them. */
 const unquoted = (line: string): string => line.replace(/'[^'\n]*'/g, "''");
@@ -151,7 +152,12 @@ export function undefinedSuggestionVariables(finding: Finding, fileText: string)
   const before = variableReferences(original);
   const defined = new Set([
     ...assignedNames(finding.suggestion),
-    ...assignedNames(lines.map(unquoted).join("\n").replace(/^\s*(?:-\s+)?[\w-]+\s*:/gm, "")),
+    ...assignedNames(
+      lines
+        .map(unquoted)
+        .join("\n")
+        .replace(/^\s*(?:-\s+)?[\w-]+\s*:/gm, ""),
+    ),
     ...workflowEnvAt(fileText, finding.startLine),
   ]);
   return [...variableReferences(finding.suggestion)].filter(

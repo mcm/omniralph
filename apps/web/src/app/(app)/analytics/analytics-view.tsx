@@ -354,8 +354,7 @@ export function sortByTokens(rows: readonly RunAnalyticsRepositoryRow[]) {
     return tokens.in + tokens.out;
   };
   return [...rows].sort(
-    (a, b) =>
-      total(b) - total(a) || a.repository.fullPath.localeCompare(b.repository.fullPath),
+    (a, b) => total(b) - total(a) || a.repository.fullPath.localeCompare(b.repository.fullPath),
   );
 }
 
@@ -409,7 +408,8 @@ function AnalyticsChart({
         to: data.to,
         points: points.map((point) => ({ start: point.key, value: point.value })),
         format,
-        measure: overallRate === undefined ? { kind: "total" } : { kind: "rate", overall: overallRate },
+        measure:
+          overallRate === undefined ? { kind: "total" } : { kind: "rate", overall: overallRate },
       })}
       data={points}
       formatValue={format}

@@ -87,7 +87,8 @@ export interface FakeReply {
 }
 
 export type FakeRoute =
-  FakeReply | ((init: RequestInit | undefined, url: URL) => FakeReply | Promise<FakeReply>);
+  | FakeReply
+  | ((init: RequestInit | undefined, url: URL) => FakeReply | Promise<FakeReply>);
 
 /**
  * Stubs `fetch` with replies by "METHOD /path" (or "/path" for GET). Unknown requests answer

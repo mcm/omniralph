@@ -6,7 +6,7 @@ holds no Claude credentials.
 
 ## Default: the host's `claude` login
 
-Log in once as the user the agent runs as (see *Choose the agent's user* in
+Log in once as the user the agent runs as (see _Choose the agent's user_ in
 [deploy-agent.md](deploy-agent.md#1-choose-the-agents-user)). On a Coder workspace that's usually
 the workspace user, so if you already use `claude` there, the agent uses that login and nothing
 else is needed. Otherwise, as the agent's user (e.g. after `sudo -iu omniralph` for a dedicated
@@ -53,9 +53,9 @@ you start tmux or pm2 from) to override the login. pm2 only picks up a change wi
 `pm2 restart omniralph-agent --update-env`. A set but invalid value **wins over** a working login,
 so remove stale ones.
 
-| Variable | What it is |
-| -- | -- |
-| `ANTHROPIC_API_KEY` | An Anthropic Console API key. Billed per token to the Console organization, with that organization's rate limits. Always supported. |
+| Variable                  | What it is                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`       | An Anthropic Console API key. Billed per token to the Console organization, with that organization's rate limits. Always supported.                                              |
 | `CLAUDE_CODE_OAUTH_TOKEN` | A long-lived OAuth token for a Claude subscription, created with `claude setup-token`. Useful where an interactive login is awkward (e.g. a fresh host provisioned by a script). |
 
 Keep them out of world-readable files: put them in an `EnvironmentFile` with mode 0600 owned by

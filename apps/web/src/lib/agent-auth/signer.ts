@@ -152,7 +152,8 @@ export function kmsJwksUrl(issuerId: string): URL {
 
 /** How tokens are verified: the KMS issuer's JWKS, or the local signer's public key. */
 export type VerificationKey =
-  { kind: "jwks"; getKey: JWTVerifyGetKey } | { kind: "local"; key: KeyObject };
+  | { kind: "jwks"; getKey: JWTVerifyGetKey }
+  | { kind: "local"; key: KeyObject };
 
 interface AgentTokenKeys {
   issuerId: string | undefined;
