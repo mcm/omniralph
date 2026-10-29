@@ -3,6 +3,7 @@
 import {
   Button,
   EmptyState,
+  ListLoading,
   ListRow,
   RowList,
   SplitView,
@@ -141,7 +142,9 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
                 </Button>
               }
             />
-          ) : items === undefined ? null : nothingNeedsYou ? (
+          ) : items === undefined ? (
+            <ListLoading label="Loading the Inbox" />
+          ) : nothingNeedsYou ? (
             <NothingNeedsYou upNext={upNext} />
           ) : items.length === 0 && tab !== "needs-you" ? (
             <EmptyState headingLevel={2} title={EMPTY_TAB[tab]} />

@@ -118,6 +118,27 @@ describe("the keyboard walk", () => {
     expect((await walk()).findings).toEqual([]);
   });
 
+  it("counts an open menu's items as reached once the button that opens it is", async () => {
+    // A menu that isn't modal: the items rove with the arrow keys, and Tab leaves the menu.
+    render(`
+      <button class="ring" id="more" aria-haspopup="menu" aria-label="More actions">⋯</button>
+      <div role="menu" aria-labelledby="more">
+        <div class="ring" role="menuitem" tabindex="-1">Audit log</div>
+        <div class="ring" role="menuitem" tabindex="-1">Revoke agent…</div>
+      </div>
+      <button class="ring">After</button>`);
+    expect((await walk()).findings).toEqual([]);
+  });
+
+  it("still reports the items of a menu no reached button opens", async () => {
+    render(`
+      <button class="ring">Before</button>
+      <div role="menu" aria-label="Actions">
+        <div class="ring" role="menuitem" tabindex="-1">Audit log</div>
+      </div>`);
+    expect((await walk()).findings.map((finding) => finding.rule)).toEqual(["unreachable"]);
+  });
+
   it("reports a focused element whose focus styles don't change", async () => {
     render(`<button class="ring">Save</button><button>Bare</button>`);
     const { findings } = await walk();

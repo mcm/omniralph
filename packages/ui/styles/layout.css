@@ -181,3 +181,9 @@
 .or-subnav__dot {
   margin-left: auto;
 }
+
+/* Scroll region: focusable while its content overflows */
+.or-scroll-region:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 2px;
+}

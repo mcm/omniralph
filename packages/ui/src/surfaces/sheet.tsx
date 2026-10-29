@@ -2,7 +2,8 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { IconX } from "@tabler/icons-react";
-import { useRef, type ReactElement, type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
+import { returnFocusTo, useOpener } from "../actions/opener.js";
 
 export interface SheetProps {
   /** Names the sheet and heads it. */
@@ -34,8 +35,9 @@ export function Sheet({
   footer,
   trigger,
 }: SheetProps) {
-  // Without a `trigger`, Radix has nothing to refocus on close: remember who opened it.
-  const opener = useRef<HTMLElement | null>(null);
+  // Without a `trigger`, Radix has nothing to refocus on close: remember who opened it (the
+  // menu's trigger when a menu item opened it).
+  const opener = useOpener(open);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -46,17 +48,7 @@ export function Sheet({
           className="or-root or-sheet"
           // Radix links the description itself; without one, say there is none.
           {...(description === undefined ? { "aria-describedby": undefined } : {})}
-          onOpenAutoFocus={() => {
-            const focused = document.activeElement;
-            opener.current = focused instanceof HTMLElement ? focused : null;
-          }}
-          onCloseAutoFocus={(event) => {
-            if (trigger) return;
-            event.preventDefault();
-            const target = opener.current;
-            opener.current = null;
-            if (target?.isConnected) target.focus();
-          }}
+          onCloseAutoFocus={returnFocusTo(opener)}
         >
           <div className="or-sheet__head">
             <div className="or-sheet__heading">

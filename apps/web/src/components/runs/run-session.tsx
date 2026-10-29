@@ -1,6 +1,13 @@
 "use client";
 
-import { activityDate, Button, DetailsSection, IssueBadge, RepoBadge } from "@omniralph/ui";
+import {
+  activityDate,
+  Button,
+  DetailsSection,
+  IssueBadge,
+  RepoBadge,
+  ScrollRegion,
+} from "@omniralph/ui";
 import { useId, type ReactNode } from "react";
 import type { RunDetail, RunSession as RunSessionData } from "@/lib/api/runs";
 import {
@@ -191,7 +198,11 @@ export function RunSession({ run }: { run: Pick<RunDetail, "id" | "kind"> }) {
     ),
     guidance: () => <Guidance session={session} />,
     recommendations: () => <Recommendations session={session} />,
-    progressLog: () => <pre className="or-run-session__log or-mono">{session.progressLog}</pre>,
+    progressLog: () => (
+      <ScrollRegion as="pre" className="or-run-session__log or-mono" label="Progress log">
+        {session.progressLog}
+      </ScrollRegion>
+    ),
   };
   return (
     <DetailsSection title="Session" className="or-run-session">

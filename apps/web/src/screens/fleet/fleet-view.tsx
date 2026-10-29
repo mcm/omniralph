@@ -4,6 +4,7 @@ import {
   Button,
   DataTable,
   EmptyState,
+  ListLoading,
   MetaBadge,
   OrgBadge,
   RepoBadge,
@@ -242,7 +243,9 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
               </Button>
             }
           />
-        ) : agents === undefined ? null : agents.length === 0 ? (
+        ) : agents === undefined ? (
+          <ListLoading label="Loading agents" />
+        ) : agents.length === 0 ? (
           <EmptyState
             title="No agents yet"
             action={

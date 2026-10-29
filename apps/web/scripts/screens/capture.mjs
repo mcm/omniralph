@@ -210,11 +210,16 @@ async function capture(context, route, viewportName, viewport, theme) {
     });
 
     result.screenshot = `${base}.png`;
+    // A full-page screenshot resizes the viewport and leaves the page scrolled elsewhere (a
+    // focused heading ends up under the sticky top bar): put it back, so the checks below see
+    // the page as it was captured.
+    const scrolled = await page.evaluate(() => [scrollX, scrollY]);
     await page.screenshot({
       path: join(outDir, result.screenshot),
       fullPage: !route.viewportOnly,
       animations: "disabled",
     });
+    await page.evaluate(([x, y]) => scrollTo({ left: x, top: y, behavior: "instant" }), scrolled);
     result.html = `${base}.html`;
     await writeFile(join(outDir, result.html), await snapshotHtml(page));
 

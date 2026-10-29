@@ -432,7 +432,7 @@ describe("the Packages page", () => {
     );
     const sheet = await screen.findByRole("dialog", { name: "@omniralph/hello@latest" });
     expect(window.location.pathname).toBe("/packages/history/f");
-    const output = within(sheet).getByLabelText("npm output");
+    const output = sheet.querySelector<HTMLElement>("pre.agent-output")!;
     expect(output.tagName).toBe("PRE");
     expect(output.classList.contains("or-mono")).toBe(true);
     expect(output.textContent).toBe("npm error code E404\nnpm error 404 Not Found");
@@ -455,7 +455,9 @@ describe("the Packages page", () => {
     expect(await within(sheet).findByText("npm hasn't finished yet.")).toBeTruthy();
     record = { ...record, outcome: "installed", installedVersion: "1.1.0", output: "added 1" };
     streams.latest().change({ resource: "packages", ids: ["g"] });
-    expect((await within(sheet).findByLabelText("npm output")).textContent).toBe("added 1");
+    await waitFor(() =>
+      expect(sheet.querySelector("pre.agent-output")?.textContent).toBe("added 1"),
+    );
   });
 
   it("turns both tables into cards at narrow widths", async () => {

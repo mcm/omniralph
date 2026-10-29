@@ -1,6 +1,6 @@
 "use client";
 
-import { IconChevronRight, IconMinus } from "@tabler/icons-react";
+import { IconCheck, IconChevronRight, IconLock, IconMinus, IconX } from "@tabler/icons-react";
 import { useId, type ReactNode } from "react";
 import { useLinkComponent } from "../provider/index.js";
 import { StatusDot, type StatusTone } from "../status/index.js";
@@ -12,14 +12,21 @@ import {
   type StepState,
 } from "./progress.js";
 
-const STEP_TONES: Record<StepState, StatusTone> = {
-  done: "neutral",
+/** Steps shown by their status dot: the states whose color is a status of its own. */
+const STEP_TONES: Partial<Record<StepState, StatusTone>> = {
   waiting: "need",
   running: "run",
-  failed: "fail",
-  blocked: "neutral",
-  pending: "neutral",
-  canceled: "neutral",
+};
+
+/**
+ * The other states each have their own shape, so none is told apart by color alone (WCAG
+ * 1.4.1): done a check, failed a cross, blocked a lock, canceled a dash, pending a ring.
+ */
+const STEP_ICONS: Partial<Record<StepState, typeof IconCheck>> = {
+  done: IconCheck,
+  failed: IconX,
+  blocked: IconLock,
+  canceled: IconMinus,
 };
 
 export interface ProgressCardProps {
@@ -49,14 +56,14 @@ export interface ProgressCardProps {
 
 function StepIcon({ state }: { state: StepState }) {
   const label = STEP_STATE_LABELS[state];
-  if (state === "canceled") {
-    return (
-      <span className="or-step__icon" role="img" aria-label={label}>
-        <IconMinus size={12} stroke={2} aria-hidden="true" />
-      </span>
-    );
-  }
-  return <StatusDot tone={STEP_TONES[state]} label={label} />;
+  const tone = STEP_TONES[state];
+  if (tone !== undefined) return <StatusDot tone={tone} label={label} />;
+  const Icon = STEP_ICONS[state];
+  return (
+    <span className={`or-step__icon or-step__icon--${state}`} role="img" aria-label={label}>
+      {Icon ? <Icon size={12} stroke={2.25} aria-hidden="true" /> : null}
+    </span>
+  );
 }
 
 /**

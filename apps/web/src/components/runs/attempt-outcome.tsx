@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, StatusDot, type StatusTone } from "@omniralph/ui";
+import { Button, ScrollRegion, StatusDot, type StatusTone } from "@omniralph/ui";
 import { useState } from "react";
 import type { RunAttempt } from "@/lib/api/runs";
 import "./run-cards.css";
@@ -44,7 +44,9 @@ export function AttemptOutcome({ attempt, className }: AttemptOutcomeProps) {
         <span>{attempt.label}</span>
       </p>
       {lines.length > 0 && lines.some(Boolean) ? (
-        <pre className="or-attempt-outcome__error or-mono">{shown.join("\n")}</pre>
+        <ScrollRegion as="pre" className="or-attempt-outcome__error or-mono" label="Error output">
+          {shown.join("\n")}
+        </ScrollRegion>
       ) : null}
       {truncated ? (
         <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>

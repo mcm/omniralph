@@ -6,6 +6,7 @@ import {
   EmptyState,
   FilterMenu,
   IconButton,
+  ListLoading,
   ListRow,
   RowList,
   rowListProps,
@@ -294,7 +295,9 @@ export function BacklogView({
               </Button>
             }
           />
-        ) : !data ? null : groups.length === 0 ? (
+        ) : !data ? (
+          <ListLoading label="Loading the Backlog" />
+        ) : groups.length === 0 ? (
           empty()
         ) : (
           // One list for Next and Previous item, across both groups.

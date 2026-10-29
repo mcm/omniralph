@@ -7,6 +7,7 @@ import {
   EmptyState,
   MetaBadge,
   RepoBadge,
+  ScrollRegion,
   toast,
   Toolbar,
   useLinkComponent,
@@ -134,7 +135,13 @@ function PromptBlock({ label, text }: { label: string; text: string }) {
   return (
     <figure className="or-playbook__prompt">
       <figcaption>{label}</figcaption>
-      {text.trim() === "" ? <None /> : <pre className="or-mono">{text}</pre>}
+      {text.trim() === "" ? (
+        <None />
+      ) : (
+        <ScrollRegion as="pre" className="or-mono" label={label}>
+          {text}
+        </ScrollRegion>
+      )}
     </figure>
   );
 }

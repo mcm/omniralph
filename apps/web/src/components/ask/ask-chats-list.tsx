@@ -5,6 +5,7 @@ import {
   Button,
   EmptyState,
   IconButton,
+  ListLoading,
   ListRow,
   MetaBadge,
   OrgBadge,
@@ -148,7 +149,7 @@ export function AskChatsList({
             </Button>
           </div>
         ) : chats === undefined ? (
-          <div className="or-ask-chats__skeleton" aria-busy="true" aria-label="Loading chats" />
+          <ListLoading label="Loading chats" />
         ) : chats.length === 0 ? (
           <EmptyState
             headingLevel={headingLevel === 1 ? 2 : 3}
