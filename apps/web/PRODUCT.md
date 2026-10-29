@@ -8,80 +8,86 @@ web
 
 ## Users
 
-Primarily the owner: one person who runs Omniralph for their own repositories (sometimes a few
-teammates in the same organization). They open the panel to check on ralph runs, reviews and
-jobs, to work out why something stalled, and to change repository, ralph, review or agent
-settings. Most day-to-day interaction with Omniralph happens in Linear and Slack/Discord; the
-panel is where they come to configure it and to look back at what happened.
+The members of an organization that runs Omniralph for its repos. They open the control panel
+to act on what needs them: a story an agent can't finish, a review waiting on a decision, a
+triaged work item to start, an agent gone offline. Then they leave. Admins also change setup
+(repos, connections, members, defaults). Most visits are at a desk; some are a quick check
+from a phone.
 
 ## Product Purpose
 
-The control panel for Omniralph, a self-hosted system that runs unattended coding agents for
-GitHub and GitLab: ralph builds Linear epics story by story, reviews PRs/MRs, triages issues into
-PRDs, and answers in chat. The panel connects code hosts, Linear and chat; enrolls and configures
-agents; holds per-repository settings (review depth among them) and learned rules; and records every
-run, review, job and outcome.
+Omniralph runs unattended coding agents for GitHub and GitLab. Om, the AI, builds epics story
+by story, reviews pull and merge requests, triages ideas into PRDs, and answers in Ask. The
+agents are the machines Om works on. The control panel is where people see what needs them,
+follow every run, and set up the repos, the fleet and the organization.
 
-Success: settings can be changed confidently without breaking a repository's runs, and the history
-of runs, reviews and outcomes answers "what happened and how well is it working" without a database
-query.
+Success: a member opens the Inbox, clears what needs them in a few decisions, and trusts that
+nothing else does. Every run explains what happened without a database query, and settings
+can be changed without breaking a repo's runs.
 
 ## Positioning
 
-It is the single place where an unattended agent fleet is configured and audited. The agents work
-elsewhere (Linear, code hosts, chat); the panel is where their behaviour is set and where their
-record lives.
+The one place where people and Om meet: the Inbox says what needs a person, and every other
+screen shows what Om and the agents did, are doing and will do next.
 
 ## Operating Context
 
-- Organizations own everything; roles are `admin` (changes setup) and `member` (sees everything,
-  can dismiss/restore findings). Sign-in is next-auth, gated by allowed email domains and
-  invitations.
-- Main areas (see `src/lib/navigation.ts`): Ralph runs, Reviews, Jobs, Analytics, Repositories
-  (and per-repository settings, rules and reviews), Agents, and Settings (organization,
-  integrations, chat accounts, agent defaults).
-- Runs are long-lived and asynchronous; most visits happen after the fact, but every page stays
-  live while open: agents, webhooks and crons change runs, reviews, jobs and agents
-  behind the user's back, and the page shows it within seconds.
-- Used mostly at a desk; occasionally checked from a phone.
+- Organizations own everything. Roles are `admin` (changes setup) and `member` (sees
+  everything and acts on Inbox items). A user in two or more organizations can pick "All
+  organizations".
+- Screens (`src/lib/navigation.ts`):
+  - **Inbox** (`/`): what needs you, one decision per item.
+  - **Runs**: every coding, review and triage run, with its progress, steps and activity.
+  - **Backlog**: the work items in the tracker, ready to triage or start ("Triage now").
+  - **Repos**: each repo's coding, review and agent settings, and its rules.
+  - **Fleet**: the agents, their health, version and packages; enroll, update or revoke.
+  - **Ask**: chat with Om about the organization's repos and runs.
+  - **Settings**: the organization, members, connections, your profile and theme, and
+    advanced settings.
+  - **Analytics**: how well runs and reviews are going over time.
+  - **Help**: the keyboard shortcuts.
+- **The agent's local UI** (`apps/agent/ui`), served by each agent on 127.0.0.1, holds that
+  machine's own settings: capacity, packages, host tools, version, the Claude sign-in and
+  storage, plus its overview and logs.
+- Runs are long and asynchronous, and the whole UI is live: runs progressing, agents going
+  offline and other people's actions appear without a refresh.
 
 ## Capabilities and Constraints
 
-- Next.js 16 app router hosting a client-rendered panel: each `page.tsx` under `(app)` renders a
-  client view that reads and writes through the panel's own JSON API (`/api/ui/*` route
-  handlers) with TanStack Query, polling every 3s while the tab is visible (settings 30s, analytics 60s) and on focus; every
-  change invalidates the views it affects. Only the signed-in layout runs on the server (the
-  session gate). No server actions, and no page reads the database (README, Data fetching).
-- All UI uses `@iamthemcmaster/ui` (Precision Aurora), `@tabler/icons-react` and `sonner`. No
-  other component or styling library. Custom styling uses the library's design tokens only.
-- Terminology to keep: organization, repository, agent, ralph run, story, lane, review run,
-  finding, learned rule, review depth, job, triage, follow-up, manual story.
-- Settings are dense and interdependent (verify commands, quality gates, task
-  choices, caps); mistakes silently break later runs.
+- Next.js app router hosting a client-rendered panel. Each `page.tsx` renders a client view
+  that reads and writes through the panel's own JSON API (`/api/ui/*`) with TanStack Query.
+  Change events invalidate exactly the queries they affect, and polling runs only while the
+  realtime connection is down (README, Data fetching).
+- All UI is built from `@omniralph/ui` (`packages/ui`), the Ultraviolet design system, with
+  `@tabler/icons-react` for UI icons and `@thesvg/react` for brand marks (`DESIGN.md`).
+- Vocabulary: **Om** (the AI), **agent** (a machine Om runs on), **work item** (an issue in
+  the tracker), **run** (one coding, review or triage job), **story** (one step of an epic's
+  run), **repo**, **organization**, **finding**, **rule**, and **Triage now** for turning an
+  idea into a PRD. American English.
+- Work items are created, updated, triaged and cancelled through the tracker interface only.
+- Settings are dense and interdependent; a mistake can silently break later runs.
 
 ## Brand Commitments
 
-Stay close to the Precision Aurora design system (`@iamthemcmaster/ui`), but deviating is fine
-where it clearly benefits this product (for example, denser data views than the library's
-defaults).
+Ultraviolet, as `@omniralph/ui` defines it: its tokens, fonts and the Cursor glyph. Lavender is
+rare on purpose: it means the screen needs you.
 
 ## Evidence on Hand
 
-Real data only comes from a live database; there is no seed dataset or screenshot fixture yet.
-Do not invent metrics, customers or outcomes in UI copy.
+Real data comes from a live database; screenshots use the fixture seed
+(`apps/web/scripts/fixtures`). Do not invent metrics, customers or outcomes in UI copy.
 
 ## Product Principles
 
-1. **Configuration is safe by default.** Every setting says what it does, what it affects, and
-   what happens if it is wrong, before it is saved.
-2. **History answers questions.** Runs, reviews and analytics are organised around "what happened,
-   why, and is it getting better", not around database tables.
-3. **Density over decoration.** This is an operator's tool: information density and scanability
-   beat whitespace and marketing polish.
-4. **Desktop-first, phone-capable.** Designed for a desk; a run or review can still be checked at
-   390px without horizontal scrolling.
+1. **Needs you, or nothing.** The Inbox shows only what needs a person, and every screen shows
+   status only when it is abnormal.
+2. **Configuration is safe by default.** Every setting says what it affects before it is saved.
+3. **History answers questions.** Runs and analytics answer "what happened, why, and is it
+   getting better", in human-readable activity.
+4. **Density over decoration.** Information density and scanability beat whitespace.
+5. **Desktop-first, phone-capable.** Every screen works at 390 px; the phone carries less.
 
 ## Accessibility & Inclusion
 
-WCAG 2.2 AA: text and UI-boundary contrast in every theme, keyboard operability, visible focus,
-and named controls.
+WCAG 2.2 AA in both themes (dark is the default; light is a full theme): text and control
+contrast, keyboard operability, visible focus, named controls and target size.

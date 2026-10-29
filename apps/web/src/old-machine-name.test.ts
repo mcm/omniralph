@@ -84,6 +84,11 @@ const ALLOWED: Allowed[] = [
     reason: "the tests that keep the old word out of copy and out of the repository",
   },
   {
+    paths: ["apps/web/DESIGN.md"],
+    text: /never "Ralph" or "harness" in visible text/g,
+    reason: "the Copy rule names the old word so critiques flag it in visible text",
+  },
+  {
     paths: [
       "apps/web/src/app/api/agent/agent-auth.test.ts",
       "apps/web/src/app/api/agent/routes.test.ts",
