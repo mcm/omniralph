@@ -52,28 +52,31 @@ export function AgentShell() {
           </div>
         ) : null}
       </header>
-      <LiveNoticeSlot />
-      <SplitView
-        ref={splitRef}
-        className="agent-split"
-        list={
-          <div className="agent-nav">
-            <SectionNav
-              title="Agent"
-              headingLevel={1}
-              currentPath={currentPath}
-              groups={agentNavGroups(state?.problems ?? [])}
-            />
-            <ThemeControl className="agent-nav__theme" />
-          </div>
-        }
-        detail={index && !wide ? null : <div className="agent-detail">{route.page}</div>}
-        view={index ? "list" : "detail"}
-        backLink={route.backLink}
-        listLabel="Agent sections"
-        detailLabel={route.section ? AGENT_SECTIONS[route.section].label : "Page"}
-        listWidth={NAV_WIDTH}
-      />
+      <main className="agent-main">
+        <LiveNoticeSlot />
+        <SplitView
+          ref={splitRef}
+          className="agent-split"
+          list={
+            <div className="agent-nav">
+              <SectionNav
+                title="Agent"
+                headingLevel={1}
+                currentPath={currentPath}
+                groups={agentNavGroups(state?.problems ?? [])}
+              />
+              <ThemeControl className="agent-nav__theme" />
+            </div>
+          }
+          detail={index && !wide ? null : <div className="agent-detail">{route.page}</div>}
+          view={index ? "list" : "detail"}
+          backLink={route.backLink}
+          listLabel="Agent sections"
+          title="Agent"
+          detailLabel={route.section ? AGENT_SECTIONS[route.section].label : "Page"}
+          listWidth={NAV_WIDTH}
+        />
+      </main>
     </div>
   );
 }

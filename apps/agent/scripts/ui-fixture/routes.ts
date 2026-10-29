@@ -126,6 +126,6 @@ export const AGENT_SCREEN_ROUTES: readonly AgentScreenRoute[] = [
     name: "agent-not-found",
     path: "/no-such-page",
     page: "pages/routes.tsx",
-    waitFor: [".or-empty__title"],
+    waitFor: [".agent-section__title"],
   },
 ];

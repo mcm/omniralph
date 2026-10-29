@@ -2,7 +2,7 @@
  * Which page a path shows. Each section's page fills its `AgentPage`; an attempt opens from
  * Overview, so Overview stays the active nav entry there.
  */
-import { EmptyState, TextLink } from "@omniralph/ui";
+import { TextLink } from "@omniralph/ui";
 import type { ReactNode } from "react";
 import { AGENT_SECTIONS, INDEX_PATH, type AgentSectionKey } from "../nav.js";
 import { CapacityPage } from "./capacity/capacity-page.js";
@@ -11,6 +11,7 @@ import { HostToolsPage } from "./host-tools/host-tools-page.js";
 import { LogsPage } from "./logs/logs-page.js";
 import { AttemptPage } from "./overview/attempt-page.js";
 import { OverviewPage } from "./overview/overview-page.js";
+import { AgentPage } from "./page.js";
 import { PackagesPage } from "./packages/packages-page.js";
 import { StoragePage } from "./storage/storage-page.js";
 import { VersionPage } from "./version/version-page.js";
@@ -66,12 +67,14 @@ export function routeFor(path: string): AgentRoute {
   if (entry) return { section: entry[0], page: sectionPage(entry[0]), backLink: BACK_TO_AGENT };
   return {
     section: null,
+    // A page like every other: its heading at the page title's size, then what to do.
     page: (
-      <EmptyState
-        title="Page not found"
-        description="This page isn't part of the agent page."
-        action={<TextLink href={AGENT_SECTIONS.overview.href}>Open Overview</TextLink>}
-      />
+      <AgentPage title="Page not found">
+        <p className="agent-card-description">
+          This page isn&apos;t part of the agent page.{" "}
+          <TextLink href={AGENT_SECTIONS.overview.href}>Open Overview</TextLink>
+        </p>
+      </AgentPage>
     ),
     backLink: BACK_TO_AGENT,
   };

@@ -144,7 +144,7 @@ function VersionSummary({ state }: { state: AgentUiState }) {
         {
           id: "running",
           label: "Running",
-          value: <span className="or-mono">{state.agent.version}</span>,
+          value: <MetaBadge text={state.agent.version} mono />,
         },
         { id: "policy", label: "Organization", value: policyText(state.versionPolicy) },
         { id: "update", label: "Update", value: <StatusText tone={tone}>{text}</StatusText> },
