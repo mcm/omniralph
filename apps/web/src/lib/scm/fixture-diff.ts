@@ -5,16 +5,17 @@ import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { scmAdapterFor } from "./adapters";
 
 /**
- * Whether commit diffs of fixture connections come from the fixture code host instead of
- * GitHub or GitLab: only outside production with `OMNIRALPH_FIXTURE_SCM=1`, which the
- * fixture environment (`scripts/fixtures`) sets so screenshots show a story's diff.
+ * Whether commit diffs and the add-repo picker's list of fixture connections come from the
+ * fixture code host instead of GitHub or GitLab: only outside production with
+ * `OMNIRALPH_FIXTURE_SCM=1`, which the fixture environment (`scripts/fixtures`) sets so
+ * screenshots show a story's diff and the picker's repos.
  */
 export function fixtureScmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV !== "production" && env.OMNIRALPH_FIXTURE_SCM === "1";
 }
 
 /** A fixture connection's: its external ID starts with `fixture`, as the seed's do. */
-const isFixtureConnection = (connection: ScmConnection) =>
+export const isFixtureConnection = (connection: ScmConnection) =>
   connection.externalId?.startsWith("fixture") ?? false;
 
 /**

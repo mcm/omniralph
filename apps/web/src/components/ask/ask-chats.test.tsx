@@ -393,23 +393,49 @@ function renderNewChat(
   );
 }
 
-const picker = () => screen.getByRole("combobox", { name: "Repo" }) as HTMLSelectElement;
+const picker = () => screen.getByRole("button", { name: /^Repo: / }) as HTMLButtonElement;
 const composer = () => screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
-const selectedLabel = () => picker().selectedOptions[0]!.textContent;
+const selectedLabel = () => picker().textContent;
+
+/** Opens the Repo picker's menu once `name` is offered (the repos loaded), and returns it. */
+async function openPicker(name: string) {
+  const user = userEvent.setup();
+  return waitFor(async () => {
+    await user.click(picker());
+    const menu = screen.getByRole("menu");
+    within(menu).getByRole("menuitemcheckbox", { name });
+    return menu;
+  });
+}
+
+/** Waits until the picker offers `name`, then closes its menu again. */
+async function reposLoaded(name: string) {
+  await openPicker(name);
+  await userEvent.setup().keyboard("{Escape}");
+}
+
+/** Picks `name` in the Repo picker. */
+async function pick(name: string) {
+  const menu = await openPicker(name);
+  await userEvent.setup().click(within(menu).getByRole("menuitemcheckbox", { name }));
+}
 
 describe("AskNewChat", () => {
   it('offers "All repos" first, then the repos a chat can ask about', async () => {
     const seen = mockFetch({ [REPOS_PATH]: { repositories: REPOS } });
     renderNewChat();
-    await screen.findByRole("option", { name: "acme/billing" });
-    const options = within(picker()).getAllByRole("option");
-    expect(options.map((option) => option.textContent)).toEqual([
-      "All repos",
-      "acme/customer-portal",
-      "acme/billing",
-    ]);
-    expect(picker().querySelector("optgroup")).toBeNull();
     expect(selectedLabel()).toBe("All repos");
+    const menu = await openPicker("acme/billing");
+    const options = within(menu).getAllByRole("menuitemcheckbox");
+    // The label, not the marks' SVG titles.
+    const label = (option: HTMLElement) => option.querySelector(".or-menu__label")!.textContent;
+    expect(options.map(label)).toEqual(["All repos", "acme/customer-portal", "acme/billing"]);
+    expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(within(menu).queryAllByRole("group")).toEqual([]);
     expect(gets(seen, REPOS_PATH)[0]!.query.get("organization")).toBe(ORG);
     // The header: "Ask", no picker-free badges yet.
     expect(screen.getByRole("heading", { name: "Ask" })).toBeTruthy();
@@ -425,18 +451,14 @@ describe("AskNewChat", () => {
       },
     });
     renderNewChat({}, { user: allOrganizationsUser });
-    await screen.findByRole("option", { name: "globex/api" });
-    const groups = [...picker().querySelectorAll("optgroup")];
-    expect(groups.map((group) => group.label)).toEqual(["Acme", "Globex"]);
-    expect([...groups[0]!.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
-      "All repos in Acme",
-      "acme/customer-portal",
-      "acme/billing",
-    ]);
-    expect([...groups[1]!.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
-      "All repos in Globex",
-      "globex/api",
-    ]);
+    const menu = await openPicker("globex/api");
+    const items = (name: string) =>
+      within(within(menu).getByRole("group", { name }))
+        .getAllByRole("menuitemcheckbox")
+        .map((item) => item.querySelector(".or-menu__label")!.textContent);
+    expect(within(menu).getAllByRole("group")).toHaveLength(2);
+    expect(items("Acme")).toEqual(["All repos in Acme", "acme/customer-portal", "acme/billing"]);
+    expect(items("Globex")).toEqual(["All repos in Globex", "globex/api"]);
     expect(selectedLabel()).toBe("All repos in Acme");
   });
 
@@ -446,7 +468,7 @@ describe("AskNewChat", () => {
     await waitFor(() => expect(selectedLabel()).toBe("acme/billing"));
     expect(composer().placeholder).toBe("Ask about billing…");
 
-    await userEvent.setup().selectOptions(picker(), "All repos");
+    await pick("All repos");
     expect(composer().placeholder).toBe("Ask about your repos…");
   });
 
@@ -455,11 +477,20 @@ describe("AskNewChat", () => {
     mockFetch({ [REPOS_PATH]: { repositories: [...REPOS, gitlab] } });
     renderNewChat({}, { pageRepositoryId: "repo-3" });
     await waitFor(() => expect(selectedLabel()).toBe("acme/infra"));
-    const leading = () => picker().parentElement!.querySelector(".or-select__leading")!;
+    const leading = () => picker().closest(".or-select")!.querySelector(".or-select__leading")!;
     expect(leading().getAttribute("aria-hidden")).toBe("true");
     expect(leading().querySelector(".or-brand-mark")!.getAttribute("aria-label")).toBe("GitLab");
 
-    await userEvent.setup().selectOptions(picker(), "All repos");
+    // Every repo option carries its host's mark too; All repos its icon.
+    const menu = await openPicker("acme/infra");
+    const option = (name: string) => within(menu).getByRole("menuitemcheckbox", { name });
+    expect(option("acme/infra").querySelector(".or-brand-mark")!.getAttribute("aria-label")).toBe(
+      "GitLab",
+    );
+    expect(option("acme/billing").querySelector(".or-brand-mark")).not.toBeNull();
+    expect(option("All repos").querySelector(".or-brand-mark")).toBeNull();
+    expect(option("All repos").querySelector("svg")).toBeTruthy();
+    await userEvent.setup().click(option("All repos"));
     expect(leading().querySelector(".or-brand-mark")).toBeNull();
     expect(leading().querySelector("svg")).toBeTruthy();
   });
@@ -468,7 +499,7 @@ describe("AskNewChat", () => {
     // repo-off isn't offered: Ask is off (or it's disconnected).
     mockFetch({ [REPOS_PATH]: { repositories: REPOS } });
     renderNewChat({}, { pageRepositoryId: "repo-off" });
-    await screen.findByRole("option", { name: "acme/billing" });
+    await reposLoaded("acme/billing");
     expect(selectedLabel()).toBe("All repos");
     expect(composer().placeholder).toBe("Ask about your repos…");
   });
@@ -571,7 +602,7 @@ describe("AskNewChat", () => {
     // Switched to the chat: the reply streams there, and the repo is a badge, not a picker.
     const header = await screen.findByRole("heading", { name: started.title });
     expect(await screen.findByText("session.ts", { selector: "code" })).toBeTruthy();
-    expect(screen.queryByRole("combobox", { name: "Repo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Repo: / })).toBeNull();
     const banner = header.closest("header")!;
     expect(within(banner).getByText("acme/customer-portal")).toBeTruthy();
     expect(within(banner).getByText("main")).toBeTruthy();
@@ -588,7 +619,7 @@ describe("AskNewChat", () => {
     expect(screen.getAllByText("Where is the session cookie set?", { selector: "p" })).toHaveLength(
       1,
     );
-    expect(screen.queryByRole("combobox", { name: "Repo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Repo: / })).toBeNull();
   });
 
   it("keeps the text and says why when the chat can't start", async () => {
@@ -599,7 +630,7 @@ describe("AskNewChat", () => {
     });
     const onChatStarted = vi.fn();
     renderNewChat({ onChatStarted });
-    await screen.findByRole("option", { name: "acme/billing" });
+    await reposLoaded("acme/billing");
     const user = userEvent.setup();
     await user.type(composer(), "Anything?{Enter}");
     await waitFor(() => expect(composer().value).toBe("Anything?"));

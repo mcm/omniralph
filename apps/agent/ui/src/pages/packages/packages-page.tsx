@@ -27,8 +27,9 @@ import {
   useStagedCard,
   type DataTableColumn,
   type StagedSaveError,
+  IconRetry,
 } from "@omniralph/ui";
-import { IconDots, IconPlus, IconRefresh, IconRotateClockwise2 } from "@tabler/icons-react";
+import { IconDots, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { InstallRecord } from "../../../../src/packages/history.js";
@@ -545,7 +546,7 @@ function InstallOutputSheet({
         {failed.action === "install" ? (
           <Button
             variant="solid"
-            icon={IconRotateClockwise2}
+            icon={IconRetry}
             disabled={retryBlocked !== null}
             {...(retryBlocked !== null && { disabledReason: retryBlocked })}
             onClick={() => {

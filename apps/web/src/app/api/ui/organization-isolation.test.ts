@@ -2505,7 +2505,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           params: { id: b.connectionId },
           path: `/api/ui?${new URLSearchParams({ provider: "github", organization: b.orgId })}`,
         }),
-      ).toMatchObject({ status: 502, body: { code: "listing_failed" } });
+      ).toMatchObject({ status: 503, body: { code: "github_app_not_configured" } });
       expect(
         await call(selectable.POST, {
           method: "POST",

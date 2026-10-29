@@ -43,7 +43,6 @@ export function WithAskNewChat({ children }: { children: React.ReactNode }) {
 /** Waits until New chat's repo picker starts on `label` (a repo's full path, or "All repos"). */
 export async function expectAskRepo(label: string): Promise<void> {
   await waitFor(() => {
-    const picker = screen.getByRole("combobox", { name: "Repo" }) as HTMLSelectElement;
-    expect(picker.selectedOptions[0]?.textContent).toBe(label);
+    expect(screen.getByRole("button", { name: `Repo: ${label}` })).toBeTruthy();
   });
 }

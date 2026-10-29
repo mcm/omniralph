@@ -15,6 +15,11 @@
   padding: 20px 24px 32px;
 }
 
+/* The back link sits right above the title: the page's 16px gap, less 8px. */
+.or-settings-page__back {
+  margin-bottom: -8px;
+}
+
 .or-settings-page__head {
   display: flex;
   align-items: flex-start;

@@ -219,11 +219,11 @@ describe("the Overview page", () => {
     );
   });
 
-  it("says Pinned when the agent pins its version", async () => {
+  it("says Pinned to when the agent pins its version", async () => {
     await openOverview({
       state: healthy({ settings: settingsState({ v: 1, update: { pin: "2.0.3" } }) }),
     });
-    expect(cells().Version).toBe("2.0.3Pinned");
+    expect(cells().Version).toBe("2.0.3Pinned to 2.0.3");
   });
 
   it("lists what runs now and the recent work, failed attempts in the fail tone", async () => {

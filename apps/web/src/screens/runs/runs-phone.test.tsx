@@ -326,10 +326,6 @@ describe("phone CSS", () => {
     );
   });
 
-  it("wraps the filter buttons onto a second line instead of overflowing", () => {
-    expect(rule(read("runs.css"), ".or-runs__filters")).toMatch(/flex-wrap:\s*wrap/);
-  });
-
   it("keeps the step page full width with only --or- tokens and or- classes", () => {
     const css = read("run-step.css");
     expect(rule(css, ".or-run-step")).toMatch(/width:\s*100%/);

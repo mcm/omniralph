@@ -38,6 +38,12 @@ import "./runs.css";
 type RunKind = RunRow["kind"];
 type RunStatus = RunRow["status"];
 
+/**
+ * The rail keeps its desktop width at the icon rail (769–1199 px), so the Kind, Status and
+ * Repo filters stay on one line beside the run.
+ */
+const RUNS_LIST_WIDTH = { wide: 340, narrow: 340 } as const;
+
 const KIND_OPTIONS: FilterOption<RunKind>[] = RUN_KINDS.map((value) => ({
   value,
   label: RUN_KIND_LABELS[value],
@@ -197,6 +203,7 @@ export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsVie
     <SplitView
       ref={splitRef}
       className="or-runs"
+      listWidth={RUNS_LIST_WIDTH}
       list={rail}
       detail={shownRunId ? renderDetail(shownRunId) : null}
       view={runId ? "detail" : "list"}

@@ -2,6 +2,7 @@ import { getScmConnection } from "@omniralph/db";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import {
   addRepositoriesSchema,
+  GITHUB_APP_NOT_CONFIGURED,
   LISTING_FAILED,
   selectableRepositoriesQuerySchema,
   type SelectableRepositories,
@@ -15,11 +16,16 @@ import {
   listSelectableRepositories,
 } from "@/lib/repositories/manage";
 import { loadRepositoryList } from "@/lib/repositories/list";
+import { fixtureScmEnabled, isFixtureConnection } from "@/lib/scm/fixture-diff";
+import { isGitHubAppConfigured } from "@/lib/scm/github-app";
+import { listFixtureRepositories } from "@/lib/scm/fixture-repositories";
 
 type Params = { id: string };
 
 /** Answered when the code host couldn't list them: the message is its error, which the picker explains. */
 const BAD_GATEWAY = 502;
+/** Answered when this server can't ask GitHub at all: the GitHub App isn't configured. */
+const UNAVAILABLE = 503;
 
 /**
  * The repositories (GitHub) or projects (GitLab) the connection can access, from the code
@@ -49,8 +55,13 @@ export const GET = apiHandler<
     ) {
       throw ApiRouteError.notFound();
     }
+    const fixture = fixtureScmEnabled() && isFixtureConnection(connection);
+    if (!fixture && connection.provider === "github" && !isGitHubAppConfigured()) {
+      throw new ApiRouteError(UNAVAILABLE, "GitHub App not configured", GITHUB_APP_NOT_CONFIGURED);
+    }
+    const list = fixture ? listFixtureRepositories : listSelectableRepositories;
     try {
-      return await listSelectableRepositories(db, connection);
+      return await list(db, connection);
     } catch (cause) {
       throw new ApiRouteError(
         BAD_GATEWAY,

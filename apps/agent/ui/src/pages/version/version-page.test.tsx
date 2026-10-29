@@ -85,10 +85,10 @@ function updateCell(): HTMLElement {
 
 describe("the Version page", () => {
   it("shows the running version, the organization's policy and that it's up to date (idle)", async () => {
-    await openVersion();
+    await openVersion({ versionPolicy: { kind: "latest", version: "2.0.3" } });
     expect(summary()).toEqual([
       "Running2.0.3",
-      "OrganizationTrack latest · 2.0.4",
+      "OrganizationTrack latest · 2.0.3",
       "UpdateUp to date",
     ]);
     expect(within(updateCell()).getByText("Up to date")).toBeTruthy();
@@ -107,6 +107,30 @@ describe("the Version page", () => {
     const version = within(card).getByLabelText("Version") as HTMLInputElement;
     expect(version.disabled).toBe(true);
     expect(version.classList.contains("or-input--mono")).toBe(true);
+  });
+
+  it("never says Up to date while it runs another version than it should, and says why", async () => {
+    // The next heartbeat starts the update.
+    await openVersion();
+    expect(summary()[2]).toBe("UpdateUpdating to 2.0.4 soon");
+  });
+
+  it("says the agent's pin is why it doesn't follow the organization's version", async () => {
+    await openVersion({ settings: settingsState({ v: 1, update: { pin: "2.0.3" } }) });
+    expect(summary().slice(1)).toEqual([
+      "OrganizationTrack latest · 2.0.4",
+      "UpdatePinned to 2.0.3",
+    ]);
+  });
+
+  it("says it isn't retrying a version that failed", async () => {
+    await openVersion({ update: updateState({ failedVersions: ["2.0.4"] }) });
+    expect(summary()[2]).toBe("UpdateNot retrying 2.0.4");
+  });
+
+  it("says it can't update itself when not under pm2 and behind the organization", async () => {
+    await openVersion({ update: updateState({ selfUpdate: "unsupported" }) });
+    expect(summary()[2]).toBe("UpdateCan't update itself");
   });
 
   it("says Pinned to for an organization that pins one version", async () => {
@@ -244,7 +268,8 @@ describe("the Version page", () => {
     expect(bar.querySelector(".or-pending__to")?.textContent).toBe("2.0.3");
     await userEvent.click(within(bar).getByRole("button", { name: "Save" }));
     expect(sent).toEqual({ revision: REVISION, pin: "2.0.3" });
-    await screen.findByText("Pinned to 2.0.3");
+    // The toast; the summary says it too.
+    await screen.findByText("Pinned to 2.0.3", { selector: ".or-toast__message" });
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
     );
@@ -275,7 +300,8 @@ describe("the Version page", () => {
     const bar = screen.getByRole("region", { name: "Unsaved changes" });
     await userEvent.click(within(bar).getByRole("button", { name: "Save" }));
 
-    await screen.findByText("Pinned to 2.0.3");
+    // The toast; the summary says it too.
+    await screen.findByText("Pinned to 2.0.3", { selector: ".or-toast__message" });
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
     );

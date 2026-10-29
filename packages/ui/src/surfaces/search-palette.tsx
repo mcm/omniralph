@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { StatusDot, type StatusTone } from "../status/status.js";
+import { Scrim } from "./scrim.js";
 
 /** One result: a `ListRow`'s look (a status dot and kind line, or a mark), as a listbox option. */
 export type SearchPaletteItem = {
@@ -115,7 +116,7 @@ export function SearchPalette<T extends SearchPaletteItem>({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="or-palette__scrim" />
+        <Scrim className="or-palette__scrim" />
         <Dialog.Content
           className="or-root or-palette"
           aria-describedby={undefined}

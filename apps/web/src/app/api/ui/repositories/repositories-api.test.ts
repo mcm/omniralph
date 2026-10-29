@@ -48,7 +48,8 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@/lib/scm/github-app", () => ({
   getGitHubAppAuth: () => state.githubAuth,
-  // The GitHub App isn't configured here.
+  isGitHubAppConfigured: () => state.githubAuth !== undefined,
+  // The GitHub App's install page isn't configured here.
   getGitHubInstallUrl: async () => null,
   githubInstallPath: (organizationId: string) =>
     `/repositories/github/install?organization=${organizationId}`,
@@ -1047,6 +1048,23 @@ describe.skipIf(!databaseAvailable)("repository and connection handlers", () => 
       .from(scmConnections)
       .where(eq(scmConnections.id, connection!.id));
     expect(stored?.accountType).toBe("Organization");
+  });
+
+  it("says the GitHub App isn't configured instead of asking GitHub for the picker's list", async () => {
+    state.githubAuth = undefined;
+    const [connection] = await state.db
+      .insert(scmConnections)
+      .values({
+        organizationId: orgId,
+        provider: "github",
+        name: "acme",
+        baseUrl: "https://api.github.com",
+        externalId: "8",
+        encryptedCredentials: "x",
+      })
+      .returning();
+    const listed = await get(selection.GET, { provider: "github" }, connection!.id);
+    expect(listed).toMatchObject({ status: 503, body: { code: "github_app_not_configured" } });
   });
 
   it("refuses a GitLab connection that belongs to another organization", async () => {

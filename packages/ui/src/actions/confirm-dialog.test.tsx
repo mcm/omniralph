@@ -42,6 +42,15 @@ describe("ConfirmDialog", () => {
     expect(confirm.classList).toContain("or-btn--danger");
   });
 
+  it("covers the page with a scrim that injects no style element (a CSP without inline styles)", async () => {
+    const user = userEvent.setup();
+    render(<Subject onConfirm={() => {}} />);
+    const styles = document.querySelectorAll("style").length;
+    await openDialog(user);
+    expect(document.querySelector(".or-dialog__overlay.or-scrim")).not.toBeNull();
+    expect(document.querySelectorAll("style")).toHaveLength(styles);
+  });
+
   it("draws a non-destructive confirm as a solid button", async () => {
     const user = userEvent.setup();
     render(<Subject onConfirm={vi.fn()} destructive={false} confirmLabel="Archive" />);

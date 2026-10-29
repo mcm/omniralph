@@ -14,8 +14,9 @@ import {
   useSplitDetailShown,
   type MenuItem,
   type ToolbarAction,
+  IconRetry,
 } from "@omniralph/ui";
-import { IconGitMerge, IconGitPullRequest, IconRefresh } from "@tabler/icons-react";
+import { IconGitMerge, IconGitPullRequest } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
@@ -165,7 +166,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
         }
       : {
           label: item.label,
-          icon: IconRefresh,
+          icon: IconRetry,
           disabled: retrying,
           onSelect: () => retryRun(item),
           keyShortcuts: retryKeys,

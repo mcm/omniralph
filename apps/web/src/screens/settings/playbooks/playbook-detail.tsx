@@ -453,13 +453,17 @@ export function PlaybookDetail({ id }: { id: string }) {
   const detail = query.data;
   const { playbook } = detail;
   return (
-    <SettingsPage title={playbook.name} adminOnly>
-      <div className="or-playbook__head">
-        {back}
-        <div className="or-playbook__badges or-playbook__head-badges">
+    <SettingsPage
+      title={playbook.name}
+      adminOnly
+      back={back}
+      badges={
+        <>
           <MetaBadge text={PLAYBOOK_ROLE_LABELS[playbook.role]} />
           {detail.builtin ? <MetaBadge text="Built-in" /> : null}
-        </div>
+        </>
+      }
+      actions={
         <Toolbar
           label="Playbook actions"
           actions={
@@ -479,7 +483,8 @@ export function PlaybookDetail({ id }: { id: string }) {
             isAdmin && !detail.builtin ? { onDelete: () => setConfirming(true) } : undefined,
           )}
         />
-      </div>
+      }
+    >
       <OverviewCard detail={detail} />
       <PromptsCard playbook={playbook} />
       <ToolsCard playbook={playbook} />

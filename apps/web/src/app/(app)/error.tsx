@@ -1,8 +1,8 @@
 "use client";
 
 // Error boundaries must be client components.
-import { Button, EmptyState } from "@omniralph/ui";
-import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
+import { Button, EmptyState, IconRetry } from "@omniralph/ui";
+import { IconAlertTriangle } from "@tabler/icons-react";
 import * as React from "react";
 
 /**
@@ -38,7 +38,7 @@ export default function AppError({
           </>
         }
         action={
-          <Button variant="outline" size="sm" icon={IconRefresh} onClick={() => retry()}>
+          <Button variant="outline" size="sm" icon={IconRetry} onClick={() => retry()}>
             Retry
           </Button>
         }

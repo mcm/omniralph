@@ -1339,6 +1339,13 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
         finishedAt: at(minute + 3),
       });
     }
+    // A finished run ends after its last attempt, so its Activity reads in order.
+    if (!active) {
+      await tx
+        .update(ralphRuns)
+        .set({ updatedAt: at(minute + 5) })
+        .where(sql`${ralphRuns.id} = ${run.id}`);
+    }
   }
 
   // Messages for the running run: one delivered to the live session, one pending request.

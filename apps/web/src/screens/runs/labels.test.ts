@@ -25,8 +25,8 @@ const TONE = {
 describe("runRowLabel", () => {
   for (const kind of RUN_KINDS) {
     for (const status of RUN_STATUSES) {
-      it(`labels a ${status} ${kind} without progress "${KIND[kind]} · ${STATE[status]}"`, () => {
-        expect(runRowLabel({ kind, status, progress: null })).toEqual({
+      it(`labels a ${status} ${kind} "${KIND[kind]} · ${STATE[status]}"`, () => {
+        expect(runRowLabel({ kind, status })).toEqual({
           label: `${KIND[kind]} · ${STATE[status]}`,
           tone: TONE[status],
         });
@@ -34,32 +34,11 @@ describe("runRowLabel", () => {
     }
   }
 
-  it("names the running story's place, not the count of finished ones", () => {
-    // Story 3 runs while stories 1, 2 and 5 are done (5 was canceled).
-    expect(
-      runRowLabel({ kind: "epic", status: "running", progress: { done: 3, total: 9, running: 3 } }),
-    ).toEqual({ label: "Running · story 3 of 9", tone: "run" });
-    // Between stories nothing runs: no story to name.
-    expect(
-      runRowLabel({
-        kind: "epic",
-        status: "running",
-        progress: { done: 2, total: 4, running: null },
-      }).label,
-    ).toBe("Epic · running");
-  });
-
-  it("counts stories only for a running epic", () => {
-    expect(
-      runRowLabel({ kind: "epic", status: "failed", progress: { done: 1, total: 4, running: 2 } })
-        .label,
-    ).toBe("Epic · failed");
-    expect(
-      runRowLabel({
-        kind: "review",
-        status: "running",
-        progress: { done: 1, total: 3, running: null },
-      }).label,
-    ).toBe("Review · running");
+  it("labels a running epic Epic · running while a story runs, as the Inbox's Running tab does", () => {
+    // Which story runs is on the run's status line, never in the row (Design rule 8).
+    expect(runRowLabel({ kind: "epic", status: "running" })).toEqual({
+      label: "Epic · running",
+      tone: "run",
+    });
   });
 });

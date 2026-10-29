@@ -22,12 +22,17 @@
   line-height: 1.2;
 }
 
+/* One line at every width: a long chosen value ends in an ellipsis, never a second line. */
 .or-runs__filters {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   padding: 0 20px 12px;
   border-bottom: 1px solid var(--or-line);
+}
+
+.or-runs__filters .or-filter {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .or-runs__list {

@@ -50,6 +50,7 @@ import { loadFleet } from "@/lib/fleet/load";
 import { loadStoryDiff } from "@/lib/runs/diff";
 import { loadRunDetail } from "@/lib/runs/detail";
 import { fixtureDiffAdapterFor } from "@/lib/scm/fixture-diff";
+import { listFixtureRepositories } from "@/lib/scm/fixture-repositories";
 import { loadOrganizationBacklog } from "@/lib/work-items/backlog";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
 import {
@@ -340,6 +341,33 @@ describe("seedFixtures", () => {
     expect(diff.provider).toBe("github");
     expect(diff.files.length).toBeGreaterThan(0);
     expect(diff.url).toMatch(/^https:\/\/github\.com\/fixture-labs\/control-panel\/commit\//);
+  });
+
+  it("lists repos added and not added yet in the add-repo picker of each fixture connection", async () => {
+    for (const id of [FIXTURE_IDS.scmConnections.github, FIXTURE_IDS.scmConnections.gitlab]) {
+      const [connection] = await db.select().from(scmConnections).where(eq(scmConnections.id, id));
+      const listing = await listFixtureRepositories(db, connection!);
+      const added = listing.repos.filter((repo) => repo.connected).map((repo) => repo.fullPath);
+      const seeded = await db
+        .select({ fullPath: repositories.fullPath })
+        .from(repositories)
+        .where(and(eq(repositories.connectionId, id), sql`${repositories.disconnectedAt} is null`));
+      expect(added.sort(), id).toEqual(seeded.map((repo) => repo.fullPath).sort());
+      expect(
+        listing.repos.some((repo) => !repo.connected),
+        id,
+      ).toBe(true);
+      expect(new Set(listing.repos.map((repo) => repo.id)).size).toBe(listing.repos.length);
+    }
+  });
+
+  it("ends every finished epic after its last attempt, so its Activity reads in time order", async () => {
+    const result = await db.execute<{ id: string; late: number }>(sql`
+      select r.id, count(j.id)::int as late
+      from ralph_runs r join jobs j on j.ralph_run_id = r.id
+      where r.status in ('completed', 'failed', 'stopped') and j.finished_at > r.updated_at
+      group by r.id`);
+    expect(result.rows).toEqual([]);
   });
 
   it("seeds the names verify:screens looks for as bare metadata", async () => {

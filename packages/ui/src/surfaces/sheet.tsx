@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { IconX } from "@tabler/icons-react";
 import { type ReactElement, type ReactNode, type RefObject } from "react";
 import { returnFocusTo, useOpener } from "../actions/opener.js";
+import { Scrim } from "./scrim.js";
 
 export interface SheetProps {
   /** Names the sheet and heads it. */
@@ -49,7 +50,7 @@ export function Sheet({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       {trigger ? <Dialog.Trigger asChild>{trigger}</Dialog.Trigger> : null}
       <Dialog.Portal>
-        <Dialog.Overlay className="or-sheet__scrim" />
+        <Scrim className="or-sheet__scrim" />
         <Dialog.Content
           className="or-root or-sheet"
           // Radix links the description itself; without one, say there is none.

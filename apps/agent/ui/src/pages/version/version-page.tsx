@@ -136,7 +136,7 @@ export function VersionPage() {
 }
 
 function VersionSummary({ state }: { state: AgentUiState }) {
-  const { text, tone } = updateStateText(state.update);
+  const { text, tone } = updateStateText(state);
   return (
     <SummaryCells
       aria-label="Version summary"

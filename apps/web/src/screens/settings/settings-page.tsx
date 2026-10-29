@@ -6,7 +6,8 @@ import { MemberReadOnlyNote } from "@/components/admins-only-note";
  * page's own heading under the "Settings" title; a page about one thing (a connection) adds
  * its mark before the title, badges under it and its toolbar at the top right. A page of the
  * organization's settings (`adminOnly`) tells a member once, under its title, that only
- * admins can change them.
+ * admins can change them. A page under another (a playbook under Playbooks) has its back
+ * link above the title, as every back link is drawn.
  */
 export function SettingsPage({
   title,
@@ -14,6 +15,7 @@ export function SettingsPage({
   badges,
   actions,
   adminOnly,
+  back,
   children,
 }: {
   title: string;
@@ -25,11 +27,14 @@ export function SettingsPage({
   actions?: ReactNode;
   /** The organization's settings: members see them read-only, with one note saying why. */
   adminOnly?: boolean;
+  /** The link back to the page above (e.g. "‹ Playbooks"), drawn above the title. */
+  back?: ReactNode;
   children?: ReactNode;
 }) {
   const id = useId();
   return (
     <article className="or-settings-page" aria-labelledby={id}>
+      {back ? <div className="or-settings-page__back">{back}</div> : null}
       <header className="or-settings-page__head">
         <div className="or-settings-page__heading">
           <h2 id={id} className="or-settings-page__title">

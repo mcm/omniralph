@@ -1,7 +1,7 @@
 "use client";
 
-import { IconRefresh } from "@tabler/icons-react";
 import { Button } from "../actions/button.js";
+import { IconRetry } from "../actions/retry-icon.js";
 
 /** What the notice says. */
 export const LIVE_NOTICE_MESSAGE = "Live updates stopped. Retrying…";
@@ -22,7 +22,7 @@ export function LiveNotice({ onRetry, className }: LiveNoticeProps) {
     <div className={["or-live-notice", className].filter(Boolean).join(" ")} role="status">
       <span className="or-dot or-dot--neutral" aria-hidden="true" />
       <span className="or-live-notice__message">{LIVE_NOTICE_MESSAGE}</span>
-      <Button variant="outline" size="sm" icon={IconRefresh} onClick={onRetry}>
+      <Button variant="outline" size="sm" icon={IconRetry} onClick={onRetry}>
         Retry now
       </Button>
     </div>

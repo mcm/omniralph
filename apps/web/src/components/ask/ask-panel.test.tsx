@@ -220,7 +220,7 @@ describe("the Ask panel", () => {
     await waitFor(() => expect(document.activeElement).toBe(row));
 
     await user.click(within(aside).getByRole("button", { name: "New chat" }));
-    const picker = await within(panel()!).findByRole("combobox", { name: "Repo" });
+    const picker = await within(panel()!).findByRole("button", { name: /^Repo: / });
     expect(picker).toBeTruthy();
     expect(document.activeElement).toBe(within(panel()!).getByRole("textbox", { name: "Message" }));
 
@@ -241,7 +241,7 @@ describe("the Ask panel", () => {
 
     // New chat from a chat's header.
     await user.click(within(panel()!).getByRole("button", { name: "New chat" }));
-    expect(await within(panel()!).findByRole("combobox", { name: "Repo" })).toBeTruthy();
+    expect(await within(panel()!).findByRole("button", { name: /^Repo: / })).toBeTruthy();
 
     await user.click(within(panel()!).getByRole("button", { name: "Close Ask" }));
     expect(panel()).toBeNull();

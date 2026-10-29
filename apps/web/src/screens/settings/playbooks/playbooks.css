@@ -19,17 +19,6 @@
   color: var(--or-sec);
 }
 
-.or-playbook__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.or-playbook__head-badges {
-  flex: 1 1 auto;
-}
-
 .or-playbook__back {
   color: var(--or-sec);
   font-size: 13px;

@@ -1,6 +1,6 @@
 import type { StatusTone } from "@omniralph/ui";
 import type { RunRow } from "@/lib/api/runs";
-import { RUN_STATUS_TONES, runningStoryLabel } from "@/components/runs/run-status";
+import { RUN_STATUS_TONES } from "@/components/runs/run-status";
 import { RUN_KIND_LABELS } from "@/components/runs/run-kind";
 
 type RunStatus = RunRow["status"];
@@ -24,13 +24,14 @@ export interface RunRowLabel {
 }
 
 /**
- * A run row's label and dot tone: "{Kind} · {state}", and while a running epic's story runs
- * "Running · story {n} of {total}" (the Runs board; `runningStoryLabel`). Never a failure reason, findings count
- * or summary (Design rule 8).
+ * A run row's label and dot tone: "{Kind} · {state}", the same form as the Inbox's rows, so a
+ * running epic is "Epic · running" in Runs and in the Inbox's Running tab (Design rules 8 and
+ * 21). Never a failure reason, findings count, story count or summary (rule 8): which story
+ * runs is on the run's status line (`runStatusLine`).
  */
-export function runRowLabel(row: Pick<RunRow, "kind" | "status" | "progress">): RunRowLabel {
-  const tone = RUN_STATUS_TONES[row.status];
-  const story = runningStoryLabel(row);
-  if (story) return { label: story, tone };
-  return { label: `${RUN_KIND_LABELS[row.kind]} · ${RUN_STATE_WORDS[row.status]}`, tone };
+export function runRowLabel(row: Pick<RunRow, "kind" | "status">): RunRowLabel {
+  return {
+    label: `${RUN_KIND_LABELS[row.kind]} · ${RUN_STATE_WORDS[row.status]}`,
+    tone: RUN_STATUS_TONES[row.status],
+  };
 }

@@ -22,9 +22,4 @@ describe("runs.css", () => {
     const classes = Array.from(css.matchAll(/\.([a-z][\w-]*)/gi), ([, name]) => name!);
     expect(classes.filter((name) => !name.startsWith("or-"))).toEqual([]);
   });
-
-  it("leaves the rail's widths to SplitView's defaults", () => {
-    expect(css).not.toMatch(/--or-split-(wide|narrow)\s*:/);
-    expect(readFileSync(path.join(__dirname, "runs-view.tsx"), "utf8")).not.toMatch(/listWidth=/);
-  });
 });
