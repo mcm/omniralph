@@ -379,7 +379,7 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
   return (
     <Card title="Invitations" titleId="invitations">
       <form className="or-invite" onSubmit={submit}>
-        <Field label="Emails" htmlFor="invite-emails" className="or-invite__emails">
+        <Field label="Emails" htmlFor="invite-emails" className="or-invite__emails" stacked>
           <TokenInput
             id="invite-emails"
             values={emails}
@@ -389,7 +389,7 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
             autoComplete="off"
           />
         </Field>
-        <Field label="Role" htmlFor="invite-role">
+        <Field label="Role" htmlFor="invite-role" stacked>
           <Select
             id="invite-role"
             value={role}

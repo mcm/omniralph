@@ -13,13 +13,29 @@ import {
 } from "@/lib/api/deliveries";
 import { writeFailedDeliveries } from "../nav-indicators";
 
-/** The outcome filters of a connection's delivery log, by the outcomes each lists. */
+/**
+ * The filters of a connection's delivery log: the outcomes each lists, and whether only
+ * deliveries not yet replayed. Failed lists the failures not yet replayed, the same ones its
+ * count and the Settings dot count.
+ */
 export const DELIVERY_FILTERS = {
-  all: [],
-  failed: ["failed"],
-  ignored: ["ignored"],
-} as const satisfies Record<string, readonly DeliveryRow["outcome"][]>;
+  all: { outcome: [] },
+  failed: { outcome: ["failed"], unreplayed: true },
+  ignored: { outcome: ["ignored"] },
+} as const satisfies Record<
+  string,
+  { outcome: readonly DeliveryRow["outcome"][]; unreplayed?: true }
+>;
 export type DeliveryFilter = keyof typeof DELIVERY_FILTERS;
+
+/** Whether `filter`'s list holds `row`. */
+export function inDeliveryFilter(filter: DeliveryFilter, row: DeliveryRow): boolean {
+  const { outcome, ...rest } = DELIVERY_FILTERS[filter];
+  return (
+    (outcome.length === 0 || (outcome as readonly string[]).includes(row.outcome)) &&
+    !("unreplayed" in rest && row.replayed)
+  );
+}
 
 /** A row of the cached log: a replay the server hasn't answered yet is `replaying`. */
 export type ListedDelivery = DeliveryRow & { replaying?: true };
@@ -65,13 +81,13 @@ function replayedInCache(cache: MutationCache, delivery: DeliveryRow): boolean {
 
 /** Counts a failure not yet replayed: the Failed count and the dots drop it at once. */
 const countsAsUnreplayed = (cache: MutationCache, delivery: DeliveryRow) =>
-  delivery.outcome === "failed" && !replayedInCache(cache, delivery);
+  delivery.outcome === "failed" && !delivery.replayed && !replayedInCache(cache, delivery);
 
 /**
  * Replays a delivery (`POST /api/ui/deliveries/{id}/replay`, any member). At once, before
  * the server answers: the replay's row goes on top of the connection's log ("Replaying…"),
- * and a failure not yet replayed leaves the connection's "Failed N" count and the Settings
- * and connection dots. The answer (the replay's own delivery) replaces the row and joins the
+ * the original reads as replayed, and a failure not yet replayed leaves the Failed list, the
+ * connection's "Failed N" count and the Settings and connection dots. The answer (the replay's own delivery) replaces the row and joins the
  * Failed or Ignored list it belongs to; a replay that failed counts as a new failure. A refusal (a payload too large to keep, a
  * removed connection, too many replays, a run still active) toasts the server's message
  * and puts everything back. The log and counts then reconcile in the background (and
@@ -94,10 +110,32 @@ export function useReplayDelivery() {
         run: null,
         replayOfId: delivery.id,
         replayedBy: { id: userId, name: name ?? "You" },
+        replayed: false,
         receivedAt: new Date().toISOString(),
         replaying: true,
       };
-      await updateList(cache, delivery.connection.id, "all", (data) => withFirst(data, replaying));
+      const connectionId = delivery.connection.id;
+      // The original is replayed now: it reads as handled and leaves the Failed list.
+      const markReplayed = (data: CachedDeliveries): CachedDeliveries => ({
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          deliveries: page.deliveries.map((entry) =>
+            entry.id === delivery.id ? { ...entry, replayed: true } : entry,
+          ),
+        })),
+      });
+      await updateList(cache, connectionId, "all", (data) =>
+        withFirst(markReplayed(data), replaying),
+      );
+      await updateList(cache, connectionId, "ignored", markReplayed);
+      await updateList(cache, connectionId, "failed", (data) => ({
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          deliveries: page.deliveries.filter((entry) => entry.id !== delivery.id),
+        })),
+      }));
       if (counted) await writeFailedDeliveries(cache, delivery.connection.id, -1);
     },
     applyResult: async (replay, cache, delivery) => {
@@ -113,7 +151,7 @@ export function useReplayDelivery() {
         })),
       }));
       for (const filter of ["failed", "ignored"] as const) {
-        if ((DELIVERY_FILTERS[filter] as readonly string[]).includes(row.outcome)) {
+        if (inDeliveryFilter(filter, row)) {
           await updateList(cache, connectionId, filter, (data) => withFirst(data, row));
         }
       }

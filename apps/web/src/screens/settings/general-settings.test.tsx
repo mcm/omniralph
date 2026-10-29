@@ -210,6 +210,14 @@ describe("Organization › General", () => {
     expect(field.value).toBe("Acme");
     expect(screen.queryByRole("button", { name: /^Save/ })).toBeNull();
     expect(screen.queryByText(/unsaved change/)).toBeNull();
+    // Says why, once.
+    expect(screen.getAllByText("Only admins can change these settings.")).toHaveLength(1);
+  });
+
+  it("doesn't tell admins only admins can change the settings", async () => {
+    renderGeneral();
+    await nameField();
+    expect(screen.queryByText(/Only admins can change/)).toBeNull();
   });
 });
 

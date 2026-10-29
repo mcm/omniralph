@@ -25,6 +25,13 @@ export interface DataTableColumn<T> {
   align?: "start" | "center" | "end";
   /** Machine facts (IDs, SHAs, durations, timestamps) in Geist Mono. */
   mono?: boolean;
+  /**
+   * Takes the row's remaining width and cuts its content to fit (badges ellipsize) instead of
+   * widening the table, so a narrow pane never scrolls sideways.
+   */
+  truncate?: boolean;
+  /** A class on the column's header and cells (e.g. for a screen to drop it in a narrow pane). */
+  className?: string;
 }
 
 /** A row's tone: `bad` tints it with `--or-fail-tint`. */
@@ -106,7 +113,7 @@ export function DataTable<T>({
                 <th
                   key={column.id}
                   scope="col"
-                  className={cx(column.align && `or-tbl__cell--${column.align}`)}
+                  className={cx(column.align && `or-tbl__cell--${column.align}`, column.className)}
                 >
                   {column.header}
                 </th>
@@ -133,6 +140,8 @@ export function DataTable<T>({
                         column === titleColumn && "or-tbl__title",
                         column.align && `or-tbl__cell--${column.align}`,
                         column.mono && "or-mono",
+                        column.truncate && "or-tbl__cell--truncate",
+                        column.className,
                       )}
                     >
                       {column === titleColumn ? title(row, href, "or-row-link") : column.cell(row)}

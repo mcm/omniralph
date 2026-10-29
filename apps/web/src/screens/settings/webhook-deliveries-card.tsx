@@ -45,11 +45,17 @@ function AppLink({ href, children }: { href: string; children: ReactNode }) {
 
 const cx = (...classes: (string | false | undefined)[]) => classes.filter(Boolean).join(" ");
 
+/** A failure not yet replayed: coral, with Replay always shown (what "Failed N" counts). */
+const unhandledFailure = (delivery: ListedDelivery) =>
+  !delivery.replaying && !delivery.replayed && delivery.outcome === "failed";
+
 function Outcome({ delivery }: { delivery: ListedDelivery }) {
-  const failed = !delivery.replaying && delivery.outcome === "failed";
+  const failed = unhandledFailure(delivery);
   const text = (
     <span className={cx("or-deliveries__outcome", failed && "or-deliveries__outcome--fail")}>
-      {delivery.replaying ? REPLAYING : deliveryOutcomeText(delivery)}
+      {delivery.replaying
+        ? REPLAYING
+        : `${deliveryOutcomeText(delivery)}${delivery.replayed ? " · replayed" : ""}`}
     </span>
   );
   return delivery.run && !delivery.replaying ? (
@@ -61,10 +67,11 @@ function Outcome({ delivery }: { delivery: ListedDelivery }) {
 
 /**
  * A code-host or Linear connection's webhook deliveries (Design board Settings): "All /
- * Failed N / Ignored" (N: the connection's failures not yet replayed, coral above zero),
- * then a table of when each came in, the event and repo in plain words and what it did,
- * linked to its run. Failed rows offer Replay; the other rows show it on hover or keyboard
- * focus, and phone cards only on failed ones. More rows load a page at a time. Live: a
+ * Failed N / Ignored" (N: the connection's failures not yet replayed, coral above zero; the
+ * Failed filter lists exactly those), then a table of when each came in, the event and repo
+ * in plain words and what it did, linked to its run. A failure already replayed says so and
+ * isn't coral. Failures not yet replayed offer Replay; the other rows show it on hover or
+ * keyboard focus, and phone cards only on those failures. More rows load a page at a time. Live: a
  * delivery recorded or replayed (`webhook_event`) shows at once, and so does a replay.
  */
 export function WebhookDeliveriesCard({ connection }: { connection: Connection }) {
@@ -116,7 +123,7 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
             size="sm"
             className={cx(
               "or-deliveries__replay",
-              row.outcome !== "failed" && "or-deliveries__replay--reveal",
+              !unhandledFailure(row) && "or-deliveries__replay--reveal",
             )}
             disabled={replay.isPending && replay.variables?.id === row.id}
             onClick={() => replay.mutate(row)}

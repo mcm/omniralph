@@ -288,14 +288,14 @@ body {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
-.onboarding-row-name {
-  overflow: hidden;
-  color: var(--or-text);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.onboarding-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 .onboarding-row-detail {
   color: var(--or-ter);

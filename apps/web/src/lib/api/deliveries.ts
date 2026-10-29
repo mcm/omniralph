@@ -45,6 +45,8 @@ export const deliveryRowSchema = z.object({
   replayOfId: z.string().nullable(),
   /** Who replayed it (a replay's row); "Someone" once their name is gone. */
   replayedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  /** A later delivery replays this one: a failure here has been handled. */
+  replayed: z.boolean(),
   /** The body was too large to keep, so the detail has no payload (and it can't be replayed). */
   payloadTruncated: z.boolean(),
   receivedAt: isoDate,

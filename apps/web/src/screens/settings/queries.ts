@@ -63,7 +63,11 @@ export function useDeliveries(
         `/api/ui/connections/${kind}/${encodeURIComponent(connection.id)}/deliveries`,
         deliveryListSchema,
         {
-          params: { outcome: [...DELIVERY_FILTERS[filter]], cursor: pageParam },
+          params: {
+            outcome: [...DELIVERY_FILTERS[filter].outcome],
+            unreplayed: "unreplayed" in DELIVERY_FILTERS[filter] ? true : undefined,
+            cursor: pageParam,
+          },
           organizationId: organization.id,
           signal,
         },

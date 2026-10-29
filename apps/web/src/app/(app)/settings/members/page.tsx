@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Members · Omniralph" };
  */
 export default function MembersSettingsPage() {
   return (
-    <SettingsPage title="Members">
+    <SettingsPage title="Members" adminOnly>
       <MembersSettings />
     </SettingsPage>
   );

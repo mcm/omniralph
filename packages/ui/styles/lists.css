@@ -48,6 +48,15 @@
   text-align: right;
 }
 
+/* A truncating column takes the remaining width; its content is cut to it, never wider. */
+.or-tbl td.or-tbl__cell--truncate {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .or-tbl td.or-mono {
   color: var(--or-sec);
   font-size: 12px;

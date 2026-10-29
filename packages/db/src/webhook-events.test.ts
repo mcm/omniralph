@@ -181,6 +181,38 @@ describe.skipIf(!databaseAvailable)("webhook event queries", () => {
     expect(await listWebhookEventReplays(db, second)).toEqual([]);
   });
 
+  it("marks a replayed delivery and lists only the unreplayed ones on request", async () => {
+    const failure = (deliveryId: string, replayOfId?: string) =>
+      recordWebhookEvent(db, {
+        organizationId,
+        provider: "github",
+        source: { scmConnectionId: connectionId },
+        deliveryId,
+        event: "pull_request.opened",
+        rawBody: "{}",
+        outcome: "failed",
+        replayOfId,
+      });
+    const handled = await failure("f1");
+    const replay = await failure("f1", handled);
+    const open = await failure("f2");
+    const source = { scmConnectionId: connectionId };
+    const all = await listWebhookEvents(db, { source, outcomes: ["failed"], limit: 100 });
+    expect(Object.fromEntries(all.events.map((e) => [e.id, e.replayed]))).toEqual({
+      [handled]: true,
+      [replay]: false,
+      [open]: false,
+    });
+    expect((await getWebhookEvent(db, handled))?.replayed).toBe(true);
+    const unreplayed = await listWebhookEvents(db, {
+      source,
+      outcomes: ["failed"],
+      unreplayed: true,
+      limit: 100,
+    });
+    expect(new Set(unreplayed.events.map((e) => e.id))).toEqual(new Set([replay, open]));
+  });
+
   it("finds the organization of a connection", async () => {
     expect(await getWebhookEventSourceOrganizationId(db, { scmConnectionId: connectionId })).toBe(
       organizationId,

@@ -262,9 +262,26 @@ describe.skipIf(!databaseAvailable)("webhook delivery log endpoints", () => {
     ]);
   });
 
+  it("marks a replayed delivery, and lists only the unreplayed ones on request", async () => {
+    state.user = member;
+    const replayed = acmeEvents[acmeEvents.length - 2]!.id;
+    const { body } = await getList("scm", acmeConnection);
+    expect(body.deliveries.filter((d) => d.replayed).map((d) => d.id)).toEqual([replayed]);
+    const unreplayed = await getList("scm", acmeConnection, "?unreplayed=true");
+    expect(unreplayed.body.deliveries.map((d) => d.id)).toEqual(
+      acmeEvents.map((e) => e.id).filter((id) => id !== replayed),
+    );
+  });
+
   it("answers 400 for a bad query", async () => {
     state.user = member;
-    for (const search of ["?outcome=enqueued", "?cursor=nope", "?limit=0", "?limit=101"]) {
+    for (const search of [
+      "?outcome=enqueued",
+      "?cursor=nope",
+      "?limit=0",
+      "?limit=101",
+      "?unreplayed=maybe",
+    ]) {
       expect((await getList("scm", acmeConnection, search)).status, search).toBe(400);
     }
   });

@@ -37,7 +37,8 @@ import {
 /**
  * A rule's condition: react-querybuilder with every control drawn by `@omniralph/ui`. An
  * AND/OR group of conditions (field, operator per field, value), nested groups up to
- * `MAX_ROUTING_DEPTH` and NOT on any group. Values are a `TextInput`, a `Select` of a
+ * `MAX_ROUTING_DEPTH` (a new group comes with its first condition) and NOT on any group. Each
+ * condition is one row: field, operator, value and its ×. Values are a `TextInput`, a `Select` of a
  * field's fixed or workspace values, or a `TokenInput` for sets (labels, Design rule 18)
  * that suggests the workspace's values.
  */
@@ -221,6 +222,7 @@ function RemoveAction({ handleOnClick, disabled, ruleOrGroup }: ActionProps) {
     <IconButton
       size="sm"
       icon={IconX}
+      className="or-routing-builder__remove"
       label={"rules" in ruleOrGroup ? "Remove group" : "Remove condition"}
       onClick={(event: React.MouseEvent) => handleOnClick(event)}
     />
@@ -516,6 +518,7 @@ export function ConditionBuilder({
         context={context}
         disabled={disabled}
         showNotToggle
+        addRuleToNewGroups
         listsAsArrays
         enableMountQueryChange={false}
         getDefaultOperator={getDefaultOperator}

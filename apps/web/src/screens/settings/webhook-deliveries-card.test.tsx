@@ -108,6 +108,7 @@ function delivery(n: number, overrides: Partial<DeliveryRow> = {}): DeliveryRow 
     run: { id: RUN_ID, kind: "review" },
     replayOfId: null,
     replayedBy: null,
+    replayed: false,
     payloadTruncated: false,
     receivedAt: new Date(today.getTime() - n * 60_000).toISOString(),
     ...overrides,
@@ -377,11 +378,14 @@ describe("filter", () => {
     await userEvent.click(within(await filters()).getByRole("radio", { name: "Failed 2" }));
     await waitFor(async () => expect(await tableRows()).toHaveLength(2));
     expect(deliveryReads().at(-1)!.query.getAll("outcome")).toEqual(["failed"]);
+    // Only the failures not yet replayed: the ones "Failed 2" counts.
+    expect(deliveryReads().at(-1)!.query.get("unreplayed")).toBe("true");
     expect((await tableRows()).every((row) => row[3]!.startsWith("Failed:"))).toBe(true);
 
     await userEvent.click(within(await filters()).getByRole("radio", { name: "Ignored" }));
     await waitFor(async () => expect(await tableRows()).toHaveLength(1));
     expect(deliveryReads().at(-1)!.query.getAll("outcome")).toEqual(["ignored"]);
+    expect(deliveryReads().at(-1)!.query.get("unreplayed")).toBeNull();
     expect((await tableRows())[0]![3]).toBe("Ignored: Omniralph doesn't act on this event");
 
     await userEvent.click(within(await filters()).getByRole("radio", { name: "All" }));
@@ -445,6 +449,32 @@ describe("Replay", () => {
     expect(rule(".or-deliveries__replay--reveal")).not.toMatch(/display|visibility/);
   });
 
+  it("shows a failure already replayed as handled: not coral, Replay on hover", async () => {
+    connections = connections.map((row) =>
+      row.provider === "github" ? { ...row, failedDeliveries: 1 } : row,
+    );
+    pages.all = listOf([delivery(1), failed(2, { replayed: true }), failed(4)]);
+    renderConnection("github");
+    await waitFor(async () =>
+      expect((await tableRows())[1]![3]).toBe("Failed: no agent online for this repo · replayed"),
+    );
+    const classes = async (index: number, selector: string) =>
+      (await rowOf(index)).querySelector(selector)!.classList;
+    expect(
+      (await classes(1, ".or-deliveries__outcome")).contains("or-deliveries__outcome--fail"),
+    ).toBe(false);
+    expect(
+      (await classes(2, ".or-deliveries__outcome")).contains("or-deliveries__outcome--fail"),
+    ).toBe(true);
+    expect(
+      (await classes(1, ".or-deliveries__replay")).contains("or-deliveries__replay--reveal"),
+    ).toBe(true);
+    expect(
+      (await classes(2, ".or-deliveries__replay")).contains("or-deliveries__replay--reveal"),
+    ).toBe(false);
+    expect(within(await filters()).getByRole("radio", { name: "Failed 1" })).toBeTruthy();
+  });
+
   it("adds the replay's row and lowers the Failed count at once, then shows the answer before any refetch", async () => {
     let answer!: () => void;
     replayResponse = () =>
@@ -460,6 +490,8 @@ describe("Replay", () => {
     await waitFor(async () => expect((await tableRows())[0]![3]).toBe(REPLAYING));
     expect(within(await filters()).getByRole("radio", { name: "Failed 1" })).toBeTruthy();
     expect(await tableRows()).toHaveLength(5);
+    // The original now reads as replayed.
+    expect((await tableRows())[2]![3]).toBe("Failed: no agent online for this repo · replayed");
     expect(within(await rowOf(0)).queryByRole("button", { name: "Replay" })).toBeNull();
     expect(seen.filter((r) => r.method === "POST")).toHaveLength(1);
 

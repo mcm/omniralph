@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Routing rules · Omniralph" };
 /** Advanced › Routing rules: which repo an issue builds in. Opens by URL whatever the user's "Show advanced settings". */
 export default function RoutingRulesSettingsPage() {
   return (
-    <SettingsPage title="Routing rules">
+    <SettingsPage title="Routing rules" adminOnly>
       <RoutingRulesSettings />
     </SettingsPage>
   );

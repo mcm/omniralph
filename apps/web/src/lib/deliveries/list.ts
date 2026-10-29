@@ -31,9 +31,13 @@ export function decodeDeliveryCursor(value: string): WebhookEventCursor | null {
 
 const limitError = { error: "The limit must be a number from 1 to 100." };
 
-/** The list's query: `outcome` repeats, every value must be known. */
+/**
+ * The list's query: `outcome` repeats, every value must be known; `unreplayed=true` keeps only
+ * deliveries no other delivery replays.
+ */
 export const deliveryListQuerySchema = z.object({
   outcome: z.array(z.enum(DELIVERY_OUTCOMES, { error: "Unknown outcome." })).default([]),
+  unreplayed: z.stringbool({ error: "unreplayed must be true or false." }).default(false),
   cursor: z
     .string()
     .transform((value, ctx) => {
@@ -79,6 +83,7 @@ export function deliveryRow(
       id: event.replayedBy.id,
       name: event.replayedBy.name ?? "Someone",
     },
+    replayed: event.replayed,
     payloadTruncated: event.payloadTruncated,
     receivedAt: event.receivedAt,
   };

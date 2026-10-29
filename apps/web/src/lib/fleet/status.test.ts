@@ -247,11 +247,21 @@ describe("versionSummary", () => {
 
 describe("acceptedKindsSummary", () => {
   it("reads all kinds, or how many agents limit them", () => {
-    expect(acceptedKindsSummary({ limited: 0, total: 7 })).toBe("Accept all kinds");
-    expect(acceptedKindsSummary({ limited: 2, total: 7 })).toBe("2 of 7 agents limit kinds");
-    expect(acceptedKindsSummary({ limited: 1, total: 7 })).toBe("1 of 7 agents limits kinds");
-    expect(acceptedKindsSummary({ limited: 1, total: 1 })).toBe("1 agent limits kinds");
-    expect(acceptedKindsSummary({ limited: 0, total: 0 })).toBe("Accept all kinds");
+    expect(acceptedKindsSummary({ limited: 0, total: 7 })).toBe(
+      "Every agent takes all kinds of work",
+    );
+    expect(acceptedKindsSummary({ limited: 2, total: 7 })).toBe(
+      "2 of 7 agents take only some kinds of work",
+    );
+    expect(acceptedKindsSummary({ limited: 1, total: 7 })).toBe(
+      "1 of 7 agents takes only some kinds of work",
+    );
+    expect(acceptedKindsSummary({ limited: 1, total: 1 })).toBe(
+      "The agent takes only some kinds of work",
+    );
+    expect(acceptedKindsSummary({ limited: 0, total: 0 })).toBe(
+      "Every agent takes all kinds of work",
+    );
   });
 });
 
