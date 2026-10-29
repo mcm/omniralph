@@ -124,6 +124,7 @@ export function SplitView({
       className={["or-split", className].filter(Boolean).join(" ")}
       data-view={view}
       data-fixed={fixedPane}
+      // dynamic-style: the fixed pane's widths come from the caller's `listWidth`
       style={style}
     >
       <div className="or-split__panes">

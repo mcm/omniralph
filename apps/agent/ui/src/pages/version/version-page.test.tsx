@@ -118,11 +118,17 @@ describe("the Version page", () => {
     // The next heartbeat starts the update.
     await openVersion();
     expect(summary()[2]).toBe("UpdateUpdating to 2.0.4 soon");
+    expect(within(updateCell()).getByText("2.0.4").closest("[data-or-badge]")).not.toBeNull();
+    expect(within(updateCell()).getByText("soon")).toBeTruthy();
   });
 
   it("says the agent's pin is why it doesn't follow the organization's version", async () => {
     await openVersion({ settings: settingsState({ v: 1, update: { pin: "2.0.3" } }) });
     expect(summary().slice(1)).toEqual(["OrganizationTrack latest 2.0.4", "UpdatePinned to 2.0.3"]);
+    // The version the Update cell names is a badge too, like its peers' (Design rule 1).
+    const version = within(updateCell()).getByText("2.0.3");
+    expect(version.closest("[data-or-badge]")).not.toBeNull();
+    expect(within(updateCell()).getByText("Pinned to")).toBeTruthy();
   });
 
   it("says it isn't retrying a version that failed", async () => {

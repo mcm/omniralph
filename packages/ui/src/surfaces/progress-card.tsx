@@ -126,6 +126,7 @@ export function ProgressCard({
           <span
             key={step.id}
             className={`or-progress__seg or-progress__seg--${step.state}`}
+            // dynamic-style: each segment's share of the bar, from the number of steps
             style={{ width }}
           />
         ))}

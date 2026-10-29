@@ -13,7 +13,7 @@ import {
   versionCounts,
   securityLine,
   versionsBehind,
-  versionPolicyLabel,
+  versionPolicyParts,
   versionSummary,
   type AgentStatusInput,
   type AgentStatusLineInput,
@@ -233,35 +233,32 @@ describe("versionSummary", () => {
     );
   });
 
-  it("labels the policy", () => {
-    expect(versionPolicyLabel(latest)).toBe("Track latest");
-    expect(versionPolicyLabel({ mode: "pinned", version: "2.0.3", target: "2.0.3" })).toBe(
-      "Pinned to 2.0.3",
-    );
-    expect(versionPolicyLabel({ mode: "unset", version: null, target: null })).toBe(
-      "No version set",
-    );
-    expect(versionPolicyLabel(null)).toBe("Varies by organization");
+  it("labels the policy, with a pinned version apart for its badge", () => {
+    const none = { version: null };
+    expect(versionPolicyParts(latest)).toEqual({ text: "Track latest", ...none });
+    expect(versionPolicyParts({ mode: "pinned", version: "2.0.3", target: "2.0.3" })).toEqual({
+      text: "Pinned to",
+      version: "2.0.3",
+    });
+    expect(versionPolicyParts({ mode: "unset", version: null, target: null })).toEqual({
+      text: "No version set",
+      ...none,
+    });
+    expect(versionPolicyParts(null)).toEqual({ text: "Varies by organization", ...none });
   });
 });
 
 describe("acceptedKindsSummary", () => {
   it("reads all kinds, or how many agents limit them", () => {
-    expect(acceptedKindsSummary({ limited: 0, total: 7 })).toBe(
-      "Every agent takes all kinds of work",
-    );
-    expect(acceptedKindsSummary({ limited: 2, total: 7 })).toBe(
-      "2 of 7 agents take only some kinds of work",
-    );
-    expect(acceptedKindsSummary({ limited: 1, total: 7 })).toBe(
-      "1 of 7 agents takes only some kinds of work",
-    );
-    expect(acceptedKindsSummary({ limited: 1, total: 1 })).toBe(
-      "The agent takes only some kinds of work",
-    );
-    expect(acceptedKindsSummary({ limited: 0, total: 0 })).toBe(
-      "Every agent takes all kinds of work",
-    );
+    const summary = (limited: number, total: number) => {
+      const { value, detail } = acceptedKindsSummary({ limited, total });
+      return `${value} ${detail}`;
+    };
+    expect(summary(0, 7)).toBe("All kinds of work on every agent");
+    expect(summary(2, 7)).toBe("Some kinds of work on 2 of 7 agents");
+    expect(summary(1, 7)).toBe("Some kinds of work on 1 of 7 agents");
+    expect(summary(1, 1)).toBe("Some kinds of work on the agent");
+    expect(summary(0, 0)).toBe("All kinds of work on every agent");
   });
 });
 

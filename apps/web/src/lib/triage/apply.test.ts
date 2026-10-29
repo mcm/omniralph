@@ -634,7 +634,11 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(error).toMatchObject({ type: "error" });
     expect(JSON.stringify(error)).toContain("size XL is an epic");
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
-    expect(await getJob(db, job.id)).toMatchObject({ status: "failed" });
+    // The run's page gets a plain sentence with a next step; the reply keeps the detail.
+    const plain =
+      "Om's PRD was incomplete, so nothing changed in Linear. Retry the triage, or add detail to the work item first.";
+    expect(await getJob(db, job.id)).toMatchObject({ status: "failed", error: plain });
+    expect((await getTriageRun(db, run.id))?.lastResult).toMatchObject({ error: plain });
 
     // Replayed: nothing more.
     await onTriageJobCompleted(db, job, deps());

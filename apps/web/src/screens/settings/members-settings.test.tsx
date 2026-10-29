@@ -188,6 +188,14 @@ describe("Organization › Members: the members", () => {
     const role = within(adaCard!).getByRole("combobox", { name: "Role for Ada Lovelace" });
     expect(adaCard!.querySelector(".or-cardrow__top select")).toBeNull();
     expect(name.compareDocumentPosition(role) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The email and join date share the top line; the role and Remove share the line under the
+    // name, so no line holds one item alone.
+    const top = adaCard!.querySelector(".or-cardrow__top")!;
+    expect(within(top as HTMLElement).getByText("ada@acme.io")).toBeTruthy();
+    expect(within(top as HTMLElement).getByText("Oct 1")).toBeTruthy();
+    const meta = adaCard!.querySelector(".or-cardrow__meta")! as HTMLElement;
+    expect(within(meta).getByRole("combobox", { name: "Role for Ada Lovelace" })).toBeTruthy();
+    expect(within(meta).getByRole("button", { name: "Remove Ada Lovelace" })).toBeTruthy();
   });
 
   it("shows the table as cards at 768 px and narrower", () => {

@@ -121,6 +121,7 @@
 /* Quotes and rules */
 .or-md blockquote {
   padding: 0 0 0 12px;
+  /* impeccable-disable-next-line side-tab: a Markdown quote's rule, in the neutral border color, not a card's accent */
   border-left: 3px solid var(--or-border);
   color: var(--or-sec);
 }

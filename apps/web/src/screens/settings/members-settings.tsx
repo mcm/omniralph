@@ -138,7 +138,15 @@ function memberColumns(actions: MemberActions): DataTableColumn<MemberRow>[] {
         </span>
       ),
     },
-    { id: "email", header: "Email", mono: true, cell: (member) => member.email ?? "No email" },
+    {
+      id: "email",
+      header: "Email",
+      // On phone, the top line beside the join date, so the role and Remove share the line
+      // under the name instead of each sitting alone on one.
+      card: "status",
+      mono: true,
+      cell: (member) => member.email ?? "No email",
+    },
     {
       id: "role",
       header: "Role",
@@ -264,6 +272,7 @@ function MembersCard({ settings }: { settings: OrganizationSettings }) {
     >
       <DataTable
         caption="Members"
+        className="or-members-table"
         rows={members}
         getRowId={(member) => member.id}
         columns={memberColumns(actions)}

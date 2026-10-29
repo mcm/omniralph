@@ -213,7 +213,8 @@ function lowerFirst(text: string): string {
 /**
  * A sentence for an attempt: past tense once completed ("Tried to …" when it
  * didn't finish its work), present progressive while queued or running,
- * "Couldn't …" when failed, "Stopped …" when canceled or expired, and
+ * "Couldn't …" when failed, "Stopped …" when canceled, "Ran out of time …" when
+ * expired (it timed out; nobody stopped it), and
  * "Didn't need to …" when skipped (nothing to do).
  */
 export function describeAttempt({
@@ -234,7 +235,8 @@ export function describeAttempt({
     case "failed":
       return `Couldn't ${forms.base}`;
     case "canceled":
-    case "expired":
       return `Stopped ${lowerFirst(forms.progressive)}`;
+    case "expired":
+      return `Ran out of time ${lowerFirst(forms.progressive)}`;
   }
 }

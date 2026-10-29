@@ -78,6 +78,26 @@ describe("runActivity", () => {
     ]);
   });
 
+  it("numbers a story's attempts by its step, whatever each one's label says", () => {
+    const detail = runDetail(null, {
+      status: "running",
+      createdAt: NOW_AT(-60),
+      attempts: [
+        attempt("built", { finishedAt: NOW_AT(-10), label: "Built FIX-102", step: "s1" }),
+        attempt("tried", { finishedAt: NOW_AT(-50), label: "Tried to build FIX-102", step: "s1" }),
+        attempt("other", { finishedAt: NOW_AT(-40), label: "Built FIX-103", step: "s2" }),
+        attempt("again", { finishedAt: NOW_AT(-30), label: "Tried to build FIX-102", step: "s1" }),
+      ],
+    });
+    expect(runActivity(detail, null).map((entry) => entry.text)).toEqual([
+      "Built FIX-102 (attempt 3)",
+      "Tried to build FIX-102 (attempt 2)",
+      "Built FIX-103",
+      "Tried to build FIX-102 (attempt 1)",
+      "Epic started from Linear",
+    ]);
+  });
+
   it("adds the current reason of a waiting run, and only the event of a stopped or failed one", () => {
     const failed = runDetail(null, { status: "failed", finishedAt: NOW_AT(-5) });
     expect(runActivity(failed, "The run failed. Out of disk.")[0]).toEqual({
@@ -87,8 +107,10 @@ describe("runActivity", () => {
     });
     const stopped = runDetail(null, { status: "stopped", finishedAt: NOW_AT(-5) });
     expect(runActivity(stopped, "The epic was stopped. By hand.")[0]?.text).toBe(
-      "The epic was stopped",
+      "The run was stopped",
     );
+    const ask = runDetail(null, { kind: "ask", status: "stopped", finishedAt: NOW_AT(-5) });
+    expect(runActivity(ask, "The ask was stopped.")[0]?.text).toBe("The run was stopped");
     const waiting = runDetail(null, { status: "waiting", finishedAt: null, updatedAt: NOW_AT(-2) });
     expect(runActivity(waiting, "Om is waiting on you.")[0]).toEqual({
       id: "reason",

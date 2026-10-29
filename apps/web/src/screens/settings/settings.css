@@ -117,11 +117,19 @@
   min-width: 0;
 }
 
+/* Initials keep `.or-avatar`'s 11px, the text floor. */
 .or-member__avatar {
   flex: none;
   width: 24px;
   height: 24px;
-  font-size: 10px;
+}
+
+/* A long email ellipsizes on the phone card's top line, leaving the join date room. */
+.or-members-table .or-cardrow__status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .or-member__name {
