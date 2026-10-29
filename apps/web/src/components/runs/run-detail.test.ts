@@ -78,9 +78,13 @@ describe("runStatusLine", () => {
     );
   });
 
-  it("counts the story a running epic is on", () => {
-    const run = runDetail(null, { status: "running", progress: { done: 1, total: 4 } });
+  it("names the story a running epic is on by its place", () => {
+    // Story 2 runs; stories 1 and 4 are done (4 was canceled).
+    const run = runDetail(null, { status: "running", progress: { done: 2, total: 4, running: 2 } });
     expect(runStatusLine(run)).toEqual({ text: "Running · story 2 of 4", tone: "run" });
+    expect(runStatusLine({ ...run, progress: { done: 2, total: 4, running: null } }).text).toBe(
+      "Running",
+    );
     expect(runStatusLine(withPullRequest(run, MR)).text).toBe(
       "Running · story 2 of 4 · merge request open",
     );
@@ -221,28 +225,39 @@ describe("runToolbar", () => {
 });
 
 describe("runMenuItems", () => {
-  const handlers = () => ({ onCopyBranch: vi.fn(), onStop: vi.fn() });
+  const handlers = () => ({ onCopyBranch: vi.fn(), onCopyLink: vi.fn(), onStop: vi.fn() });
   const labels = (items: MenuItem[]) =>
     items.map((item) =>
       item === "separator" ? "—" : `${item.label}${item.destructive ? " (destructive)" : ""}`,
     );
 
-  it("offers Linear, Copy branch and Stop on a running epic", () => {
+  it("offers Linear, Copy branch, Copy link and Stop on a running epic", () => {
     const run = { ...epicRunDetail(), branch: "omniralph/tool-42" };
     const h = handlers();
     const items = runMenuItems(run, h);
-    expect(labels(items)).toEqual(["Open in Linear", "Copy branch", "Stop run (destructive)"]);
-    const [linear, copy, stop] = items as Exclude<MenuItem, "separator">[];
+    expect(labels(items)).toEqual([
+      "Open in Linear",
+      "Copy branch",
+      "Copy link",
+      "Stop run (destructive)",
+    ]);
+    const [linear, copy, link, stop] = items as Exclude<MenuItem, "separator">[];
     expect(linear!.href).toBe("https://linear.app/acme/issue/TOOL-42");
     copy!.onSelect!();
     expect(h.onCopyBranch).toHaveBeenCalled();
+    link!.onSelect!();
+    expect(h.onCopyLink).toHaveBeenCalled();
     stop!.onSelect!();
     expect(h.onStop).toHaveBeenCalled();
   });
 
   it("can't stop a finished epic", () => {
     const run = withActions({ ...epicRunDetail({ status: "completed" }), branch: "b" }, {});
-    expect(labels(runMenuItems(run, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+    expect(labels(runMenuItems(run, handlers()))).toEqual([
+      "Open in Linear",
+      "Copy branch",
+      "Copy link",
+    ]);
   });
 
   it("offers Linear and Copy branch on a failed request", () => {
@@ -250,17 +265,21 @@ describe("runMenuItems", () => {
       { ...runDetail(null, { kind: "request", status: "failed" }), branch: "b" },
       {},
     );
-    expect(labels(runMenuItems(run, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+    expect(labels(runMenuItems(run, handlers()))).toEqual([
+      "Open in Linear",
+      "Copy branch",
+      "Copy link",
+    ]);
   });
 
-  it("offers Linear alone on a review and a triage run without a branch", () => {
+  it("offers Copy link on every run, even a review or triage without a branch", () => {
     const review = withActions(reviewRunDetail(), {});
-    expect(labels(runMenuItems(review, handlers()))).toEqual(["Open in Linear"]);
+    expect(labels(runMenuItems(review, handlers()))).toEqual(["Open in Linear", "Copy link"]);
     const triage = withActions(
       runDetail(null, { kind: "triage", status: "completed", workItem: null }),
       {},
     );
-    expect(runMenuItems(triage, handlers())).toEqual([]);
+    expect(labels(runMenuItems(triage, handlers()))).toEqual(["Copy link"]);
   });
 
   it("puts the items other screens add first", () => {
@@ -269,7 +288,12 @@ describe("runMenuItems", () => {
       ...handlers(),
       leading: [{ label: "View PRD", onSelect: () => {} }],
     });
-    expect(labels(items)).toEqual(["View PRD", "Open in Linear", "Stop run (destructive)"]);
+    expect(labels(items)).toEqual([
+      "View PRD",
+      "Open in Linear",
+      "Copy link",
+      "Stop run (destructive)",
+    ]);
   });
 
   it("opens the caller's own Ask chat the run came from, before the divider", () => {
@@ -281,7 +305,7 @@ describe("runMenuItems", () => {
       ...handlers(),
       leading: [{ label: "View PRD", onSelect: () => {} }],
     });
-    expect(labels(items)).toEqual(["View PRD", "Open chat", "Stop run (destructive)"]);
+    expect(labels(items)).toEqual(["View PRD", "Open chat", "Copy link", "Stop run (destructive)"]);
     const open = items[1] as Exclude<MenuItem, "separator">;
     expect(open.href).toBe("/ask/t1");
     expect(open.onSelect).toBeUndefined();
@@ -297,7 +321,11 @@ describe("runMenuItems", () => {
         { ...runDetail(null, { kind: "request", status: "failed" }), branch: "b", chat },
         {},
       );
-      expect(labels(runMenuItems(request, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+      expect(labels(runMenuItems(request, handlers()))).toEqual([
+        "Open in Linear",
+        "Copy branch",
+        "Copy link",
+      ]);
     }
   });
 });

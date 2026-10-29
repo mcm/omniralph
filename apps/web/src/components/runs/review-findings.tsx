@@ -1,8 +1,8 @@
 "use client";
 
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
-import { activityDate, Button, ScrollRegion, TextLink } from "@omniralph/ui";
-import { IconFileCode } from "@tabler/icons-react";
+import { activityDate, MetaBadge, ScrollRegion, TextLink } from "@omniralph/ui";
+import { IconAlertTriangle, IconFileCode } from "@tabler/icons-react";
 import type {
   ReviewFindingFile,
   ReviewFindingView,
@@ -20,14 +20,12 @@ import {
   openFindingsTotal,
 } from "./findings";
 import type { StepPanelTab } from "./step-panel";
+import { LoadError } from "./load-error";
 import { useRunFindings } from "./use-run-findings";
 import "./review-findings.css";
 
 /** The step panel's Findings tab (`?tab=findings`). */
 export const STEP_PANEL_FINDINGS = "findings";
-
-/** The failed load of a run's findings, when the server gives no reason. */
-export const FINDINGS_FAILED = "Couldn't load the findings.";
 
 type ReviewPassStep = Extract<RunStep, { kind: "review_pass" }>;
 
@@ -72,7 +70,11 @@ function FindingItem({ finding }: { finding: ReviewFindingView }) {
     >
       <h5 className="or-finding__title">{finding.title}</h5>
       <div className="or-finding__meta">
-        <span className="or-finding__severity">{FINDING_SEVERITY_LABELS[finding.severity]}</span>
+        <MetaBadge
+          className="or-finding__severity"
+          icon={IconAlertTriangle}
+          text={`${FINDING_SEVERITY_LABELS[finding.severity]} severity`}
+        />
         <span className="or-mono">{lineRange(finding)}</span>
         <span>{findingFacts(finding)}</span>
         {finding.status !== "open" ? (
@@ -167,17 +169,12 @@ export function ReviewFindingsView({ runId, step }: { runId: string; step: Revie
   }
   if (findings.isError) {
     return (
-      <p className="or-run-error" role="alert">
-        {findings.error.message || FINDINGS_FAILED}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={findings.isFetching}
-          onClick={() => void findings.refetch()}
-        >
-          Retry
-        </Button>
-      </p>
+      <LoadError
+        what="findings"
+        error={findings.error}
+        reloading={findings.isFetching}
+        onReload={() => void findings.refetch()}
+      />
     );
   }
   const pass = findings.data.passes.find((p) => p.id === step.id);

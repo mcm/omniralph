@@ -34,25 +34,32 @@ describe("runRowLabel", () => {
     }
   }
 
-  it("counts the story a running epic is on", () => {
+  it("names the running story's place, not the count of finished ones", () => {
+    // Story 3 runs while stories 1, 2 and 5 are done (5 was canceled).
     expect(
-      runRowLabel({ kind: "epic", status: "running", progress: { done: 1, total: 4 } }),
-    ).toEqual({ label: "Running · story 2 of 4", tone: "run" });
-    // Never past the last story.
+      runRowLabel({ kind: "epic", status: "running", progress: { done: 3, total: 9, running: 3 } }),
+    ).toEqual({ label: "Running · story 3 of 9", tone: "run" });
+    // Between stories nothing runs: no story to name.
     expect(
-      runRowLabel({ kind: "epic", status: "running", progress: { done: 4, total: 4 } }).label,
-    ).toBe("Running · story 4 of 4");
-    expect(
-      runRowLabel({ kind: "epic", status: "running", progress: { done: 0, total: 0 } }).label,
+      runRowLabel({
+        kind: "epic",
+        status: "running",
+        progress: { done: 2, total: 4, running: null },
+      }).label,
     ).toBe("Epic · running");
   });
 
   it("counts stories only for a running epic", () => {
     expect(
-      runRowLabel({ kind: "epic", status: "failed", progress: { done: 1, total: 4 } }).label,
+      runRowLabel({ kind: "epic", status: "failed", progress: { done: 1, total: 4, running: 2 } })
+        .label,
     ).toBe("Epic · failed");
     expect(
-      runRowLabel({ kind: "review", status: "running", progress: { done: 1, total: 3 } }).label,
+      runRowLabel({
+        kind: "review",
+        status: "running",
+        progress: { done: 1, total: 3, running: null },
+      }).label,
     ).toBe("Review · running");
   });
 });

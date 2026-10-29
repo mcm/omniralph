@@ -500,7 +500,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       branch: (await getMainLane(db, epic))!.branch,
       pullRequest: { provider: "github", number: 7, url: "https://github.com/acme/api/pull/7" },
       agent,
-      progress: { done: 1, total: 2 },
+      progress: { done: 1, total: 2, running: null },
       tokens: { in: 1200, out: 300 },
       createdAt: "2026-10-01T00:00:00.000Z",
       startedAt: "2026-10-01T09:00:00.000Z",
@@ -909,7 +909,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         identifier: run.linearIdentifier,
       },
       organization: { id: orgId, name: "Acme", role: "admin" },
-      progress: { done: 1, total: 4 },
+      progress: { done: 1, total: 4, running: null },
     });
     expect(view.steps).toEqual([
       {
@@ -1553,6 +1553,29 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect((await transcript(run.id, randomUUID())).status).toBe(404);
     expect((await transcript(run.id, "nope")).status).toBe(404);
     expect((await transcript(randomUUID(), job.id)).status).toBe(404);
+  });
+
+  it("counts a running epic's progress by the running story's place", async () => {
+    const run = await newRun();
+    const stories = await upsertStories(db, run.id, [
+      { linearIssueId: "p-1", identifier: "ENG-51", title: "One" },
+      { linearIssueId: "p-2", identifier: "ENG-52", title: "Two" },
+      { linearIssueId: "p-3", identifier: "ENG-53", title: "Three" },
+      { linearIssueId: "p-4", identifier: "ENG-54", title: "Four" },
+    ]);
+    // Story 2 runs while 1 is built and 4 was canceled: two done, yet story 2 (not 3).
+    await updateStory(db, stories[0]!.id, { status: "completed" });
+    await updateStory(db, stories[1]!.id, { status: "running" });
+    await updateStory(db, stories[3]!.id, { status: "canceled" });
+    await updateRun(db, run.id, { status: "running" });
+
+    const progress = { done: 2, total: 4, running: 2 };
+    expect((await detailPage(run.id)).progress).toEqual(progress);
+    expect((await listPage()).runs.find((row) => row.id === run.id)?.progress).toEqual(progress);
+
+    // Between stories nothing runs.
+    await updateStory(db, stories[1]!.id, { status: "completed" });
+    expect((await detailPage(run.id)).progress).toEqual({ done: 3, total: 4, running: null });
   });
 
   async function runningRun(): Promise<{ run: LinearRun; jobId: string }> {

@@ -1,8 +1,14 @@
 import type { MenuItem, StatusTone } from "@omniralph/ui";
-import { IconCopy, IconExternalLink, IconMessage, IconPlayerStop } from "@tabler/icons-react";
+import {
+  IconCopy,
+  IconExternalLink,
+  IconLink,
+  IconMessage,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import type { RunDetail, RunRetryTarget, RunStep } from "@/lib/api/runs";
 import { stepState } from "./progress";
-import { RUN_STATUS_LABELS, RUN_STATUS_TONES } from "./run-status";
+import { RUN_STATUS_LABELS, RUN_STATUS_TONES, runningStoryLabel } from "./run-status";
 
 type Provider = "github" | "gitlab";
 
@@ -11,13 +17,9 @@ function changeRequestWord(provider: Provider): string {
   return provider === "gitlab" ? "merge request" : "pull request";
 }
 
-/** The run's state word: "Running · story 2 of 4" for a running epic with progress. */
+/** The run's state word: "Running · story 2 of 4" while a running epic's story 2 runs. */
 function stateWord(detail: Pick<RunDetail, "kind" | "status" | "progress">): string {
-  const { progress } = detail;
-  if (detail.kind === "epic" && detail.status === "running" && progress && progress.total > 0) {
-    return `Running · story ${Math.min(progress.done + 1, progress.total)} of ${progress.total}`;
-  }
-  return RUN_STATUS_LABELS[detail.status];
+  return runningStoryLabel(detail) ?? RUN_STATUS_LABELS[detail.status];
 }
 
 export interface RunStatusLineView {
@@ -117,6 +119,8 @@ export function runToolbar(
 export interface RunMenuHandlers {
   /** Copies the run's branch. */
   onCopyBranch: () => void;
+  /** Copies the run's link. */
+  onCopyLink: () => void;
   /** Asks to confirm, then stops the run. */
   onStop: () => void;
   /** Items other screens add first (the Backlog's "View PRD"). */
@@ -128,12 +132,12 @@ export interface RunMenuHandlers {
 /**
  * The run detail's ⋯ menu, the single source of its entries: the `leading` items other
  * screens add, Open chat (the caller's own Ask chat the run came from), Open in Linear (the
- * work item) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
- * confirms) when the run can be stopped.
+ * work item), Copy branch and Copy link (every run, so every run has its ⋯ menu: Design
+ * rule 5), then "Stop run" (destructive; `onStop` confirms) when the run can be stopped.
  */
 export function runMenuItems(
   detail: Pick<RunDetail, "workItem" | "branch" | "details" | "chat">,
-  { onCopyBranch, onStop, leading = [], stopKeyShortcuts }: RunMenuHandlers,
+  { onCopyBranch, onCopyLink, onStop, leading = [], stopKeyShortcuts }: RunMenuHandlers,
 ): MenuItem[] {
   const items: MenuItem[] = [...leading];
   if (detail.chat?.href)
@@ -142,6 +146,7 @@ export function runMenuItems(
     items.push({ label: "Open in Linear", icon: IconExternalLink, href: detail.workItem.url });
   }
   if (detail.branch) items.push({ label: "Copy branch", icon: IconCopy, onSelect: onCopyBranch });
+  items.push({ label: "Copy link", icon: IconLink, onSelect: onCopyLink });
   if (detail.details.actions.stop) {
     items.push({
       label: "Stop run",

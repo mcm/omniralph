@@ -33,7 +33,7 @@ export function runRow(overrides: Partial<RunRow> = {}): RunRow {
       url: "https://gitlab.com/acme/portal/-/merge_requests/12",
     },
     agent: { id: "agent-1", name: "build-01" },
-    progress: { done: 4, total: 4 },
+    progress: { done: 4, total: 4, running: null },
     tokens: { in: 1000, out: 200 },
     createdAt: minutesAgo(42),
     startedAt: minutesAgo(41),
@@ -56,7 +56,7 @@ export function reviewRow(overrides: Partial<RunRow> = {}): RunRow {
     repository: { id: REPO_BETA, provider: "github", fullPath: "beta/web" },
     branch: null,
     pullRequest: { provider: "github", number: 7, url: "https://github.com/beta/web/pull/7" },
-    progress: { done: 1, total: 3 },
+    progress: { done: 1, total: 3, running: null },
     createdAt: minutesAgo(120),
     ...overrides,
   });

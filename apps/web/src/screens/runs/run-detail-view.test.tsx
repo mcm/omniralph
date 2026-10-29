@@ -24,6 +24,7 @@ import {
   WithAskNewChat,
 } from "@/components/ask/ask-context-test-utils";
 import { useRunDetailOverlay } from "@/components/runs/run-detail-overlay";
+import { inboxItem } from "@/screens/inbox/test-fixtures";
 import {
   attempt,
   epicRunDetail,
@@ -323,6 +324,64 @@ describe("the run detail", () => {
     expect(within(form).queryByRole("button", { name: /Done|Snooze/ })).toBeNull();
   });
 
+  it("offers a manual story's Inbox decisions on its epic's page, and acts on its item", async () => {
+    detail = runningEpic({
+      steps: [
+        storyStep("1", "completed", 13 * MINUTE),
+        storyStep("2", "running", 5 * MINUTE),
+        storyStep("3", "manual"),
+      ],
+    });
+    const item = inboxItem({
+      key: "manual_story:3",
+      run: { id: RUN_ID, kind: "epic", status: "running" },
+      title: "Story 3",
+      workItem: { id: null, tracker: "linear", identifier: "TOOL-3", url: null },
+      reason: "TOOL-3 is a manual story: a person has to do it before the epic can finish.",
+    });
+    const other = inboxItem({
+      key: "manual_story:x",
+      run: { id: "other", kind: "epic", status: "waiting" },
+    });
+    let posted: unknown = null;
+    seen = mockFetch({
+      "GET /api/ui/runs": () => jsonResponse(list),
+      "GET /api/ui/runs/filter-options": FILTER_OPTIONS,
+      [`GET /api/ui/runs/${RUN_ID}`]: () => jsonResponse(detail),
+      [`GET /api/ui/runs/${RUN_ID}/session`]: () => jsonResponse(runSession()),
+      "GET /api/ui/inbox": () => jsonResponse({ items: [item, other] }),
+      "POST /api/ui/inbox/items/manual_story%3A3": (request: SeenRequest) => {
+        posted = request.body;
+        return jsonResponse({
+          key: item.key,
+          action: "done",
+          state: null,
+          snoozedUntil: null,
+          runId: RUN_ID,
+          warning: null,
+        });
+      },
+    });
+    renderRun();
+    await loaded();
+    const decision = await within(pane()).findByRole("region", { name: "TOOL-3: Story 3" });
+    expect(within(decision).getByText(item.reason)).toBeTruthy();
+    // Only this run's story; the epic still runs, so there's nothing to resume.
+    expect(within(pane()).queryAllByRole("group", { name: "Decisions" })).toHaveLength(1);
+    const buttons = within(decision)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(buttons).toEqual(["Mark story done", "Skip story", "Snooze"]);
+    await userEvent.click(within(decision).getByRole("button", { name: "Mark story done" }));
+    await waitFor(() => expect(posted).toEqual({ action: "done" }));
+  });
+
+  it("asks for no Inbox items for a run without a manual story", async () => {
+    renderRun();
+    await loaded();
+    expect(seen.some((r) => r.path === "/api/ui/inbox")).toBe(false);
+  });
+
   it("selects the default step, and the URL's step, on the progress card", async () => {
     const { navigate } = renderRun({ search: "kind=epic" });
     await loaded();
@@ -421,7 +480,7 @@ describe("the toolbar and menu", () => {
     expect(within(toolbar()).getByRole("button", { name: "Retry run" })).toBeTruthy();
   });
 
-  it("offers Open in Linear, Copy branch and, after a divider, Stop run", async () => {
+  it("offers Open in Linear, Copy branch, Copy link and, after a divider, Stop run", async () => {
     renderRun();
     await loaded();
     const menu = await openMenu();
@@ -429,6 +488,7 @@ describe("the toolbar and menu", () => {
     expect(items.map((item) => item.textContent)).toEqual([
       "Open in Linear",
       "Copy branch",
+      "Copy link",
       "Stop run",
     ]);
     expect(within(menu).getAllByRole("separator")).toHaveLength(1);
@@ -444,6 +504,7 @@ describe("the toolbar and menu", () => {
       "Open chat",
       "Open in Linear",
       "Copy branch",
+      "Copy link",
       "Stop run",
     ]);
     expect(items[0]!.getAttribute("href")).toBe("/ask/chat-1");
@@ -534,7 +595,7 @@ describe("Stop and Retry", () => {
     const resumed: RunRetryResult = {
       ...detail,
       status: "running",
-      progress: { done: 1, total: 3 },
+      progress: { done: 1, total: 3, running: 2 },
       details: {
         ...detail.details,
         actions: { stop: true, retry: { run: false, storyIds: [], attemptIds: [] } },
@@ -550,7 +611,7 @@ describe("Stop and Retry", () => {
   it("re-runs the selected story of a finished epic", async () => {
     const run = runningEpic({
       status: "completed",
-      progress: { done: 2, total: 2 },
+      progress: { done: 2, total: 2, running: null },
       steps: [storyStep("1", "completed", MINUTE), storyStep("2", "completed", MINUTE)],
     });
     detail = {
@@ -631,7 +692,7 @@ describe("Stop and Retry keys", () => {
   it("re-runs the selected story of a finished epic with r", async () => {
     const run = runningEpic({
       status: "completed",
-      progress: { done: 2, total: 2 },
+      progress: { done: 2, total: 2, running: null },
       steps: [storyStep("1", "completed", MINUTE), storyStep("2", "completed", MINUTE)],
     });
     detail = {
@@ -673,7 +734,7 @@ describe("live updates", () => {
     detail = runningEpic({
       status: "failed",
       reason: "The run failed. Out of turns.",
-      progress: { done: 1, total: 3 },
+      progress: { done: 1, total: 3, running: null },
       steps: [
         storyStep("1", "completed", 13 * MINUTE),
         storyStep("2", "exhausted", 5 * MINUTE),

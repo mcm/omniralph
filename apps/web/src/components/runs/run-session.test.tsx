@@ -195,7 +195,7 @@ describe("RunSession", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Couldn't load the session.");
     fail = false;
-    await userEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload session" }));
     await waitFor(() => expect(headings()).toContain("Messages"));
   });
 

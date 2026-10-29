@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, DiffView } from "@omniralph/ui";
+import { DiffView } from "@omniralph/ui";
+import { LoadError } from "./load-error";
 import type { RunDetail, RunStep } from "@/lib/api/runs";
 import type { StepPanelTab } from "./step-panel";
 import { useStoryDiff } from "./use-story-diff";
@@ -8,14 +9,12 @@ import { useStoryDiff } from "./use-story-diff";
 /** The step panel's Diff tab (`?tab=diff`). */
 export const STEP_PANEL_DIFF = "diff";
 
-/** The failed load of a story's diff, when the server gives no reason. */
-export const STORY_DIFF_FAILED = "Couldn't load the diff.";
-
 const PROVIDER_NAMES = { github: "GitHub", gitlab: "GitLab" } as const;
 
 /**
  * The story's commit as a diff, loaded when shown: a skeleton while it loads, the server's
- * reason (e.g. "This commit isn't on GitHub yet.") with Retry when it fails.
+ * reason (e.g. "Couldn't load the diff. This commit isn't on GitHub yet.") with Reload diff
+ * when it fails.
  */
 export function StoryDiffView({
   runId,
@@ -37,17 +36,12 @@ export function StoryDiffView({
   }
   if (diff.isError) {
     return (
-      <p className="or-run-error" role="alert">
-        {diff.error.message || STORY_DIFF_FAILED}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={diff.isFetching}
-          onClick={() => void diff.refetch()}
-        >
-          Retry
-        </Button>
-      </p>
+      <LoadError
+        what="diff"
+        error={diff.error}
+        reloading={diff.isFetching}
+        onReload={() => void diff.refetch()}
+      />
     );
   }
   const { files, truncated, url, provider } = diff.data;

@@ -242,15 +242,15 @@ describe("the step panel's Diff tab", () => {
     );
   });
 
-  it("shows the server's reason when the diff fails, and retries", async () => {
+  it("names the diff and the server's reason when it fails, and reloads it", async () => {
     diffAnswer = () =>
       jsonResponse({ error: "This commit isn't on GitHub yet.", code: "commit_not_found" }, 409);
     renderRun({ search: "step=1&tab=diff" });
     const alert = await waitFor(() => within(panel()).getByRole("alert"));
-    expect(alert.textContent).toContain("This commit isn't on GitHub yet.");
+    expect(alert.textContent).toContain("Couldn't load the diff. This commit isn't on GitHub yet.");
 
     diffAnswer = () => jsonResponse(storyDiff());
-    await userEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload diff" }));
     await waitFor(() => changedFiles());
     expect(requestsTo(diffPath("1"))).toHaveLength(2);
   });

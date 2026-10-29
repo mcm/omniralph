@@ -96,7 +96,7 @@ export function runReason(facts: RunReasonFacts): string {
     case "manual_story":
       return facts.elsewhere
         ? `${facts.identifier} routes to a repo with coding off, so a person has to do it.`
-        : `${facts.identifier} is a manual story: a person has to do it before the epic goes on.`;
+        : `${facts.identifier} is a manual story: a person has to do it before the epic can finish.`;
     case "blocked_epic": {
       const names = facts.blockers.join(", ");
       return facts.blockers.length === 1

@@ -21,9 +21,9 @@ export function formatDuration(ms: number): string {
 
 /**
  * A step's state on the progress card (the epic's mapping): completed → done, manual or
- * waiting → waiting, running or queued → running, failed or exhausted → failed, blocked (a
- * pending story with open blockers) → blocked, canceled or skipped → canceled, anything
- * else → pending.
+ * waiting → waiting, running → running, failed or exhausted → failed, blocked (a pending
+ * story with open blockers) → blocked, canceled or skipped → canceled, anything else
+ * (queued, waiting for an agent, too) → pending, so a queued run never reads as running.
  */
 export function stepState(status: RunStep["status"] | "waiting"): StepState {
   switch (status) {
@@ -33,7 +33,6 @@ export function stepState(status: RunStep["status"] | "waiting"): StepState {
     case "waiting":
       return "waiting";
     case "running":
-    case "queued":
       return "running";
     case "failed":
     case "exhausted":

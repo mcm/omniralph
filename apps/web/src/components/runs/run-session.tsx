@@ -18,6 +18,7 @@ import {
   sessionSections,
   type SessionSection,
 } from "./session";
+import { LoadError } from "./load-error";
 import { useRunSession } from "./use-run-session";
 import "./run-session.css";
 
@@ -171,12 +172,12 @@ export function RunSession({ run }: { run: Pick<RunDetail, "id" | "kind"> }) {
   if (query.isError) {
     return (
       <DetailsSection title="Session" className="or-run-session">
-        <p className="or-run-error" role="alert">
-          Couldn&apos;t load the session.
-          <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
-            Retry
-          </Button>
-        </p>
+        <LoadError
+          what="session"
+          error={query.error}
+          reloading={query.isFetching}
+          onReload={() => void query.refetch()}
+        />
       </DetailsSection>
     );
   }

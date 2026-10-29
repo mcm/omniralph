@@ -88,7 +88,6 @@
   font-size: 12px;
 }
 
-.or-finding__severity,
 .or-finding__status {
   color: var(--or-sec);
   font-weight: 600;

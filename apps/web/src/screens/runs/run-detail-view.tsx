@@ -19,6 +19,7 @@ import { IconGitMerge, IconGitPullRequest, IconRefresh } from "@tabler/icons-rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { ManualStoryDecisions } from "@/components/runs/manual-story-decisions";
 import { QuestionForm } from "@/components/runs/question-form";
 import { RunActivity } from "@/components/runs/run-activity";
 import { RUN_KIND_ICONS, RUN_KIND_LABELS } from "@/components/runs/run-kind";
@@ -51,6 +52,7 @@ import { runRowLabel } from "./labels";
 import "@/components/runs/run-cards.css";
 import "./run-detail.css";
 import { useAskContextRepository } from "@/components/ask/ask-context";
+import { runHref } from "@/lib/runs/hrefs";
 
 /** Shown for a run that doesn't exist, or is outside the user's organizations. */
 export const RUN_NOT_FOUND = "This run doesn't exist or isn't in your organizations.";
@@ -78,6 +80,15 @@ async function copyBranch(branch: string) {
     toast("Branch copied");
   } catch {
     toast("Couldn't copy the branch.", { variant: "danger" });
+  }
+}
+
+async function copyLink(runId: string) {
+  try {
+    await navigator.clipboard.writeText(new URL(runHref(runId), window.location.origin).href);
+    toast("Link copied");
+  } catch {
+    toast("Couldn't copy the link.", { variant: "danger" });
   }
 }
 
@@ -165,6 +176,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
     | [ToolbarAction, ToolbarAction];
   const menu = runMenuItems(run, {
     onCopyBranch: () => void copyBranch(run.branch ?? ""),
+    onCopyLink: () => void copyLink(run.id),
     onStop: () => setConfirmStop(true),
     leading: menuItems?.(run, overlay),
     stopKeyShortcuts: stopKeys,
@@ -198,6 +210,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
           question={run.details.question}
         />
       ) : null}
+      <ManualStoryDecisions run={run} />
       <div className="or-run-detail__cards">
         {run.steps.length > 0 ? (
           <RunProgress

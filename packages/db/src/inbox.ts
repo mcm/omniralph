@@ -223,7 +223,10 @@ async function manualStories(db: Queryable, scope: Scope): Promise<InboxCandidat
     select r.id as run_id, r.organization_id, s.id as story_id, s.linear_issue_id,
       s.identifier, s.title, s.elsewhere, ${iso("s.updated_at")} as since
     from ralph_stories s join ralph_runs r on r.id = s.run_id
-    where r.organization_id in (${scope.orgs}) and r.mode = 'epic' and r.status = 'waiting'
+    where r.organization_id in (${scope.orgs}) and r.mode = 'epic'
+      -- A running epic goes on with its other stories, but its manual story still waits on a
+      -- person (a lavender step): an item as soon as it is manual, not once the epic waits.
+      and r.status in ('waiting', 'running')
       and s.status = 'manual' and s.updated_at >= ${scope.cutoff}::timestamptz`);
   return result.rows.map((row) => ({
     key: `manual_story:${row.story_id}`,

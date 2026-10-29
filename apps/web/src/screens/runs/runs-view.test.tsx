@@ -174,7 +174,7 @@ describe("the Runs rail", () => {
       runs: [
         runRow({
           status: "running",
-          progress: { done: 1, total: 4 },
+          progress: { done: 1, total: 4, running: 2 },
           createdAt: new Date(NOW).toISOString(),
         }),
         reviewRow({ organization: runRow().organization }),

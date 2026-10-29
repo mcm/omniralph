@@ -298,10 +298,10 @@ describe("the step panel's Findings tab", () => {
     findingsAnswer = () => jsonResponse({ error: "Something broke." }, 500);
     renderRun({ search: "step=pass-1&tab=findings" });
     const alert = await waitFor(() => within(panel()).getByRole("alert"));
-    expect(alert.textContent).toContain("Something broke.");
+    expect(alert.textContent).toContain("Couldn't load the findings. Something broke.");
 
     findingsAnswer = () => jsonResponse(runFindings());
-    await userEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload findings" }));
     await waitFor(() => file("src/billing/total.ts"));
   });
 });

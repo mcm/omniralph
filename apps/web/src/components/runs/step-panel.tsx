@@ -10,11 +10,12 @@ import {
   type MenuItem,
   type ToolbarAction,
 } from "@omniralph/ui";
-import { IconGitCommit, IconLink, IconRefresh } from "@tabler/icons-react";
+import { IconGitCommit, IconLink, IconRotateClockwise2 } from "@tabler/icons-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { RunAttempt, RunDetail, RunStep } from "@/lib/api/runs";
 import { AttemptList } from "./attempt-list";
 import { AttemptOutcome } from "./attempt-outcome";
+import { LoadError } from "./load-error";
 import {
   isFailedAttempt,
   isLiveAttempt,
@@ -94,12 +95,12 @@ function AttemptTranscriptView({ runId, attempt }: { runId: string; attempt: Run
   }
   if (transcript.isError) {
     return (
-      <p className="or-run-error" role="alert">
-        Couldn&apos;t load the transcript.
-        <Button variant="outline" size="sm" onClick={() => void transcript.refetch()}>
-          Retry
-        </Button>
-      </p>
+      <LoadError
+        what="transcript"
+        error={transcript.error}
+        reloading={transcript.isFetching}
+        onReload={() => void transcript.refetch()}
+      />
     );
   }
 
@@ -124,7 +125,7 @@ function AttemptTranscriptView({ runId, attempt }: { runId: string; attempt: Run
       <p className="or-run-error" role="alert">
         Couldn&apos;t load the rest of the transcript.
         <Button variant="outline" size="sm" onClick={() => void loadMore()}>
-          Retry
+          Load the rest
         </Button>
       </p>
     );
@@ -190,7 +191,8 @@ export function StepPanel({
     ? [
         {
           label: retryItem.label,
-          icon: IconRefresh,
+          // Not the run's Retry icon: a story or attempt retry is a different action.
+          icon: IconRotateClockwise2,
           disabled: retrying,
           onSelect: () => retry.mutate({ target: retryItem.target, selectedStepId: step.id }),
         },
