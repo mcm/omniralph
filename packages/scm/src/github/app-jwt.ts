@@ -88,7 +88,9 @@ export class KmsAppJwtSigner implements AppJwtSigner {
   /** Validates the KMS token against GitHub's requirements; returns its `exp`. */
   private check(result: SignJWTResult, appId: string, nowSeconds: number): number {
     const fail = (problem: string) =>
-      new KmsAppJwtError(`KMS issuer ${this.issuerId} produced an unusable GitHub App JWT: ${problem}`);
+      new KmsAppJwtError(
+        `KMS issuer ${this.issuerId} produced an unusable GitHub App JWT: ${problem}`,
+      );
     let alg: unknown;
     let payload: JWTPayload;
     try {
@@ -105,15 +107,21 @@ export class KmsAppJwtSigner implements AppJwtSigner {
       );
     }
     if (payload.iss !== appId) {
-      throw fail(`its iss is ${JSON.stringify(payload.iss)}, expected the GitHub App ID ${JSON.stringify(appId)}`);
+      throw fail(
+        `its iss is ${JSON.stringify(payload.iss)}, expected the GitHub App ID ${JSON.stringify(appId)}`,
+      );
     }
     const { iat, exp } = payload;
     if (typeof exp !== "number") throw fail("it has no exp claim");
     if (exp - nowSeconds > GITHUB_MAX_JWT_LIFETIME_SECONDS) {
-      throw fail(`its exp is ${exp - nowSeconds}s away; GitHub allows at most ${GITHUB_MAX_JWT_LIFETIME_SECONDS}s`);
+      throw fail(
+        `its exp is ${exp - nowSeconds}s away; GitHub allows at most ${GITHUB_MAX_JWT_LIFETIME_SECONDS}s`,
+      );
     }
     if (typeof iat === "number" && exp - iat > GITHUB_MAX_JWT_LIFETIME_SECONDS) {
-      throw fail(`it is valid for ${exp - iat}s; GitHub allows at most ${GITHUB_MAX_JWT_LIFETIME_SECONDS}s`);
+      throw fail(
+        `it is valid for ${exp - iat}s; GitHub allows at most ${GITHUB_MAX_JWT_LIFETIME_SECONDS}s`,
+      );
     }
     return exp;
   }
@@ -148,7 +156,9 @@ export class PemAppJwtSigner implements AppJwtSigner {
  * Picks the signer from the environment: KMS when `GITHUB_APP_KMS_ISSUER_ID`
  * is set, otherwise the `GITHUB_APP_PRIVATE_KEY` PEM.
  */
-export function createAppJwtSigner(env: Record<string, string | undefined> = process.env): AppJwtSigner {
+export function createAppJwtSigner(
+  env: Record<string, string | undefined> = process.env,
+): AppJwtSigner {
   const issuerId = env.GITHUB_APP_KMS_ISSUER_ID;
   if (issuerId) return new KmsAppJwtSigner({ issuerId });
   const pem = env.GITHUB_APP_PRIVATE_KEY;

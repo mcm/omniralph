@@ -16,7 +16,13 @@ import type { RoutingIssue, RoutingIssueFields } from "./gateway";
 
 /** A list of the connected workspace's `LinearSettingsOptions` the value picker offers. */
 export type RoutingOptionSource =
-  "teams" | "projects" | "projectMilestones" | "cycles" | "states" | "labels" | "users";
+  | "teams"
+  | "projects"
+  | "projectMilestones"
+  | "cycles"
+  | "states"
+  | "labels"
+  | "users";
 
 export interface RoutingFieldValue {
   value: string;

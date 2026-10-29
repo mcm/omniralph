@@ -143,10 +143,11 @@ describe("DataTable", () => {
     ];
     renderTable({ columns: withOrg });
     const table = screen.getByRole("table", { name: "Runs" });
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Run",
-      "Repository",
-    ]);
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Run", "Repository"]);
     expect(within(table).queryByText("Acme")).toBeNull();
     const card = within(screen.getByRole("list", { name: "Runs" })).getAllByRole("listitem")[0]!;
     expect(card.querySelector(".or-cardrow__meta")!.textContent).toBe("Acmeacme/web");

@@ -33,7 +33,9 @@ export interface GitHubAppAuthOptions {
 
 function scopeKey(installationId: number, scope?: InstallationTokenScope): string {
   const repositories = [...(scope?.repositories ?? [])].sort();
-  const permissions = Object.entries(scope?.permissions ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const permissions = Object.entries(scope?.permissions ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
   return JSON.stringify([installationId, repositories, permissions]);
 }
 

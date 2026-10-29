@@ -18,7 +18,9 @@ beforeEach(() => {
 });
 
 async function view() {
-  const page = (await AnalyticsPage()) as ReactElement<{ children: ReactElement<{ scope: string }> }>;
+  const page = (await AnalyticsPage()) as ReactElement<{
+    children: ReactElement<{ scope: string }>;
+  }>;
   expect(isValidElement(page)).toBe(true);
   const child = page.props.children;
   expect(child.type).toBe(AnalyticsView);

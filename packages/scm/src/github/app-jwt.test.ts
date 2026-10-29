@@ -55,7 +55,12 @@ type KmsMode = {
 };
 
 /** Mimics `signJWT`: signs locally and sets `iat`/`nbf`/`exp` from `ttl` like KMS does. */
-function fakeKms({ alg = "RS256", callerClaims = "honored", forced = {}, kmsNow = NOW }: KmsMode = {}) {
+function fakeKms({
+  alg = "RS256",
+  callerClaims = "honored",
+  forced = {},
+  kmsNow = NOW,
+}: KmsMode = {}) {
   return vi.fn(async ({ claims = {}, ttl }: SignJWTOptions): Promise<SignJWTResult> => {
     if (callerClaims === "rejected" && ("iat" in claims || "exp" in claims)) {
       throw new VercelKmsError({ status: 400, code: "invalid_claims", message: "reserved claim" });
@@ -63,8 +68,12 @@ function fakeKms({ alg = "RS256", callerClaims = "honored", forced = {}, kmsNow 
     const now = Math.floor(kmsNow / 1000);
     const kmsClaims = { iat: now, nbf: now, exp: now + (ttl ?? 300) };
     const payload =
-      callerClaims === "overridden" ? { ...claims, ...kmsClaims, ...forced } : { ...kmsClaims, ...claims, ...forced };
-    const token = await new SignJWT(payload).setProtectedHeader({ alg, typ: "JWT", kid: "k1" }).sign(privateKey);
+      callerClaims === "overridden"
+        ? { ...claims, ...kmsClaims, ...forced }
+        : { ...kmsClaims, ...claims, ...forced };
+    const token = await new SignJWT(payload)
+      .setProtectedHeader({ alg, typ: "JWT", kid: "k1" })
+      .sign(privateKey);
     return { token, keyId: "k1", algorithm: alg, fingerprint: "SHA256:f" };
   });
 }
@@ -84,7 +93,10 @@ describe("KmsAppJwtSigner", () => {
       ttl: APP_JWT_TTL_SECONDS,
     });
     expect(decodeProtectedHeader(jwt.token).alg).toBe("RS256");
-    const { payload } = await jwtVerify(jwt.token, publicKey, { issuer: "12345", currentDate: new Date(NOW) });
+    const { payload } = await jwtVerify(jwt.token, publicKey, {
+      issuer: "12345",
+      currentDate: new Date(NOW),
+    });
     expect(payload.iat).toBeLessThan(nowSeconds);
     expect(payload.exp! - payload.iat!).toBeLessThanOrEqual(600);
     expect(payload.exp! - nowSeconds).toBeLessThanOrEqual(600);
@@ -113,17 +125,27 @@ describe("KmsAppJwtSigner", () => {
     const jwt = await signer.sign("12345");
 
     expect(signJwt).toHaveBeenCalledTimes(2);
-    expect(signJwt.mock.calls[1]![0]).toEqual({ issuerId: "iss_github", claims: { iss: "12345" }, ttl: 540 });
+    expect(signJwt.mock.calls[1]![0]).toEqual({
+      issuerId: "iss_github",
+      claims: { iss: "12345" },
+      ttl: 540,
+    });
     expect(decodeJwt(jwt.token)).toMatchObject({ iss: "12345", exp: nowSeconds + 540 });
   });
 
   it("refuses an RS512 issuer (the KMS default) with instructions to re-import as RS256", async () => {
-    const signer = new KmsAppJwtSigner({ issuerId: "iss_rs512", signJwt: fakeKms({ alg: "RS512" }), now: () => NOW });
+    const signer = new KmsAppJwtSigner({
+      issuerId: "iss_rs512",
+      signJwt: fakeKms({ alg: "RS512" }),
+      now: () => NOW,
+    });
 
     const error = await signer.sign("12345").catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(KmsAppJwtError);
-    expect((error as Error).message).toMatch(/iss_rs512.*RS512.*only accepts RS256.*--algorithm RS256/);
+    expect((error as Error).message).toMatch(
+      /iss_rs512.*RS512.*only accepts RS256.*--algorithm RS256/,
+    );
   });
 
   it("refuses a token whose iss KMS replaced", async () => {
@@ -133,7 +155,9 @@ describe("KmsAppJwtSigner", () => {
       now: () => NOW,
     });
 
-    await expect(signer.sign("12345")).rejects.toThrow(/iss is "https:\/\/kms\.vercel\.com\/iss_github".*"12345"/);
+    await expect(signer.sign("12345")).rejects.toThrow(
+      /iss is "https:\/\/kms\.vercel\.com\/iss_github".*"12345"/,
+    );
   });
 
   it("refuses a token valid for longer than GitHub allows", async () => {
@@ -148,7 +172,11 @@ describe("KmsAppJwtSigner", () => {
 
   it("does not swallow non-400 KMS errors", async () => {
     const signJwt = vi.fn(async () => {
-      throw new VercelKmsError({ status: 403, code: "oidc_token_not_authorized", message: "No matching issuer policy" });
+      throw new VercelKmsError({
+        status: 403,
+        code: "oidc_token_not_authorized",
+        message: "No matching issuer policy",
+      });
     });
     const signer = new KmsAppJwtSigner({ issuerId: "iss_github", signJwt, now: () => NOW });
 
@@ -162,19 +190,28 @@ describe("KmsAppJwtSigner", () => {
     const jwt = await new KmsAppJwtSigner({ issuerId: "iss_default" }).sign("7");
     expect(decodeJwt(jwt.token).iss).toBe("7");
     expect(kmsMock.signJWT).toHaveBeenCalledWith(
-      expect.objectContaining({ issuerId: "iss_default", ttl: 540, claims: expect.objectContaining({ iss: "7" }) }),
+      expect.objectContaining({
+        issuerId: "iss_default",
+        ttl: 540,
+        claims: expect.objectContaining({ iss: "7" }),
+      }),
     );
   });
 });
 
 describe("createAppJwtSigner", () => {
   it("prefers KMS when GITHUB_APP_KMS_ISSUER_ID is set", () => {
-    const signer = createAppJwtSigner({ GITHUB_APP_KMS_ISSUER_ID: "iss_1", GITHUB_APP_PRIVATE_KEY: pkcs1Pem });
+    const signer = createAppJwtSigner({
+      GITHUB_APP_KMS_ISSUER_ID: "iss_1",
+      GITHUB_APP_PRIVATE_KEY: pkcs1Pem,
+    });
     expect(signer).toBeInstanceOf(KmsAppJwtSigner);
   });
 
   it("falls back to the PEM private key", () => {
-    expect(createAppJwtSigner({ GITHUB_APP_PRIVATE_KEY: pkcs1Pem })).toBeInstanceOf(PemAppJwtSigner);
+    expect(createAppJwtSigner({ GITHUB_APP_PRIVATE_KEY: pkcs1Pem })).toBeInstanceOf(
+      PemAppJwtSigner,
+    );
   });
 
   it("throws when neither is configured", () => {

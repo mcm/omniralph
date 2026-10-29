@@ -19,9 +19,6 @@ export function LiveAppFrame({ nav, ...props }: ComponentProps<typeof AppFrame>)
   const backlog = useBacklogCounts();
   const indicators = useNavIndicators();
   return (
-    <AppFrame
-      {...props}
-      nav={withNavIndicators(nav, counts.data, backlog.data, indicators.data)}
-    />
+    <AppFrame {...props} nav={withNavIndicators(nav, counts.data, backlog.data, indicators.data)} />
   );
 }

@@ -49,7 +49,8 @@ export interface LoadEpicOptions {
    * manual stories. A function gets the epic's root issue (to route it first).
    */
   manualLabels?:
-    readonly string[] | ((root: IssueSummary) => readonly string[] | Promise<readonly string[]>);
+    | readonly string[]
+    | ((root: IssueSummary) => readonly string[] | Promise<readonly string[]>);
   /**
    * Read manual stories' ```cyralph-prepare blocks (default); off, they're
    * plain text. A function gets the epic's root issue.

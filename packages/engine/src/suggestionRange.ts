@@ -17,7 +17,12 @@ const hasContent = (lines: readonly string[]): boolean => lines.some((line) => l
  * range (largest first). Lines that also equal the range's own first lines
  * are an unchanged prefix, not a repeat, so they don't count.
  */
-function repeatedAbove(suggestion: readonly string[], file: readonly string[], start: number, end: number): number {
+function repeatedAbove(
+  suggestion: readonly string[],
+  file: readonly string[],
+  start: number,
+  end: number,
+): number {
   const original = file.slice(start - 1, end);
   for (let k = Math.min(suggestion.length, start - 1); k > 0; k--) {
     const head = suggestion.slice(0, k);
@@ -29,7 +34,12 @@ function repeatedAbove(suggestion: readonly string[], file: readonly string[], s
 }
 
 /** Same as `repeatedAbove` for trailing suggestion lines and the lines right below the range. */
-function repeatedBelow(suggestion: readonly string[], file: readonly string[], start: number, end: number): number {
+function repeatedBelow(
+  suggestion: readonly string[],
+  file: readonly string[],
+  start: number,
+  end: number,
+): number {
   const original = file.slice(start - 1, end);
   for (let k = Math.min(suggestion.length, file.length - end); k > 0; k--) {
     const tail = suggestion.slice(suggestion.length - k);

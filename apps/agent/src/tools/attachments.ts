@@ -76,7 +76,8 @@ export function controlPanelFetcher(options: ControlPanelFetcherOptions): Attach
       const contentType = (res.headers.get("content-type") ?? "").split(";")[0]?.trim() ?? "";
       if (!res.ok) {
         const body = (await res.json().catch(() => undefined)) as
-          { reason?: unknown; error?: unknown } | undefined;
+          | { reason?: unknown; error?: unknown }
+          | undefined;
         const reason =
           typeof body?.reason === "string"
             ? body.reason

@@ -758,7 +758,10 @@ export async function listRepositoryOverviewPage(
 }
 
 export type PinRepositoryResult =
-  "pinned" | "already_pinned" | "unknown_agent" | "unknown_repository";
+  | "pinned"
+  | "already_pinned"
+  | "unknown_agent"
+  | "unknown_repository";
 
 /**
  * Pins a connected repository to an agent: its jobs are then targeted at that

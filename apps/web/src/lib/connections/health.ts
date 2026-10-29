@@ -14,7 +14,11 @@ import { formatDate } from "@/lib/format-date";
  * which aren't checked.
  */
 export type ConnectionHealthState =
-  "healthy" | "expiring" | "needs_attention" | "not_checked" | "connected";
+  | "healthy"
+  | "expiring"
+  | "needs_attention"
+  | "not_checked"
+  | "connected";
 
 /** A problem in plain words; `repositoryId` when it is about one repo (webhook problems). */
 export interface ConnectionHealthProblem {

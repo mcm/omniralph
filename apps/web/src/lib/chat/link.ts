@@ -60,7 +60,8 @@ export async function createLinkUrl(
 }
 
 export type ReadLinkStateResult =
-  { ok: true; state: ChatLinkState } | { ok: false; reason: "expired" | "invalid" };
+  | { ok: true; state: ChatLinkState }
+  | { ok: false; reason: "expired" | "invalid" };
 
 /** The chat user and organization of a link's `state`, or why it can't be used. */
 export async function readLinkState(

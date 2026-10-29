@@ -407,7 +407,11 @@ export async function listMembers(
 }
 
 export type AddMemberResult =
-  "added" | "already_member" | "email_not_allowed" | "unknown_organization" | "unknown_user";
+  | "added"
+  | "already_member"
+  | "email_not_allowed"
+  | "unknown_organization"
+  | "unknown_user";
 
 /** Adds a user to an organization; their email must match its domains when it has any. */
 export async function addMember(

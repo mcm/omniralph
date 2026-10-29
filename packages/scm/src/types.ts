@@ -213,9 +213,19 @@ export interface ScmAdapter {
    * when `commentId` is null or the comment no longer exists; returns the ID
    * of the comment now holding `body`.
    */
-  upsertComment(repo: RepoRef, number: number, body: string, commentId: string | null): Promise<{ id: string }>;
+  upsertComment(
+    repo: RepoRef,
+    number: number,
+    body: string,
+    commentId: string | null,
+  ): Promise<{ id: string }>;
   /** Replies in the thread of an inline comment; returns the new comment ID. */
-  replyToComment(repo: RepoRef, number: number, commentId: string, body: string): Promise<{ id: string }>;
+  replyToComment(
+    repo: RepoRef,
+    number: number,
+    commentId: string,
+    body: string,
+  ): Promise<{ id: string }>;
   /** Resolves the thread containing an inline comment. */
   resolveThread(repo: RepoRef, number: number, commentId: string): Promise<void>;
   getReadOnlyCloneCredential(repo: RepoRef): Promise<CloneCredential>;

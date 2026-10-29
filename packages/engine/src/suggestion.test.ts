@@ -3,7 +3,12 @@ import type { Finding } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
 import { parseDiff, type DiffFile } from "./diff.js";
 import { planReview } from "./plan.js";
-import { buildPrompt, ONE_FINDING_RULE, SUGGESTION_RULE, type ReviewProfileConfig } from "./prompt.js";
+import {
+  buildPrompt,
+  ONE_FINDING_RULE,
+  SUGGESTION_RULE,
+  type ReviewProfileConfig,
+} from "./prompt.js";
 import { REVIEW_SYSTEM_PROMPT } from "./providers/claude-agent.js";
 import { filterToDiff } from "./providers/findings-output.js";
 
@@ -64,7 +69,9 @@ describe("suggestions whose fix spans lines outside the finding", () => {
     expect(SUGGESTION_RULE).toContain("widen startLine..endLine");
     expect(SUGGESTION_RULE).toContain("describe the whole fix in body");
     expect(SUGGESTION_RULE).toContain("widens startLine..endLine to the whole step");
-    expect(SUGGESTION_RULE).toContain("must not use a variable that neither it nor the existing step");
+    expect(SUGGESTION_RULE).toContain(
+      "must not use a variable that neither it nor the existing step",
+    );
     expect(ONE_FINDING_RULE).toContain("never in another one");
     expect(ONE_FINDING_RULE).toContain("never refers to other findings");
 

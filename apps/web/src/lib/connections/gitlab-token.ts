@@ -23,7 +23,8 @@ import { settingsActor, trackedConnection } from "@/lib/settings-history/section
  */
 
 export type GitLabTokenOutcome =
-  ({ ok: true } & GitLabTokenResult) | { ok: false; status: number; code: string; error: string };
+  | ({ ok: true } & GitLabTokenResult)
+  | { ok: false; status: number; code: string; error: string };
 
 export const DIFFERENT_GITLAB_USER_ERROR =
   "This token belongs to a different GitLab user. Add it as a new connection.";

@@ -174,7 +174,8 @@ export interface InstallablePackageError {
 }
 
 export type InstallablePackageParse =
-  { ok: true; installable: InstallablePackage } | { ok: false; error: InstallablePackageError };
+  | { ok: true; installable: InstallablePackage }
+  | { ok: false; error: InstallablePackageError };
 
 function failure(
   code: InstallablePackageErrorCode,

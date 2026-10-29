@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { buildGitLabDiffIndex, buildPosition, parseFileLines, type GitLabDiffFile } from "./positions.js";
+import {
+  buildGitLabDiffIndex,
+  buildPosition,
+  parseFileLines,
+  type GitLabDiffFile,
+} from "./positions.js";
 
 const REFS = { baseSha: "b".repeat(40), startSha: "s".repeat(40), headSha: "h".repeat(40) };
 const sha1 = (value: string) => createHash("sha1").update(value).digest("hex");
@@ -44,7 +49,12 @@ describe("parseFileLines", () => {
     const lines = parseFileLines(modified);
     expect(lines.new.get(10)).toMatchObject({ type: "context", oldLine: 10, newLine: 10 });
     expect(lines.old.get(11)).toMatchObject({ type: "del", oldLine: 11, newLine: null });
-    expect(lines.new.get(11)).toMatchObject({ type: "add", oldLine: null, newLine: 11, oldPos: 12 });
+    expect(lines.new.get(11)).toMatchObject({
+      type: "add",
+      oldLine: null,
+      newLine: 11,
+      oldPos: 12,
+    });
     expect(lines.new.get(13)).toMatchObject({ type: "context", oldLine: 12, newLine: 13 });
     expect(lines.new.get(42)).toMatchObject({ type: "add", hunk: 1 });
     expect(lines.new.has(20)).toBe(false);
@@ -65,7 +75,12 @@ describe("buildPosition", () => {
   });
 
   it("gives deleted lines only old_line", () => {
-    const position = buildPosition(index, REFS, { path: "src/app.ts", line: 11, side: "old", body: "x" });
+    const position = buildPosition(index, REFS, {
+      path: "src/app.ts",
+      line: 11,
+      side: "old",
+      body: "x",
+    });
     expect(position).toMatchObject({ old_line: 11 });
     expect(position).not.toHaveProperty("new_line");
   });
@@ -78,12 +93,16 @@ describe("buildPosition", () => {
   });
 
   it("uses both paths of a renamed file and the base path of a deleted file", () => {
-    expect(buildPosition(index, REFS, { path: "lib/new-name.ts", line: 2, body: "x" })).toMatchObject({
+    expect(
+      buildPosition(index, REFS, { path: "lib/new-name.ts", line: 2, body: "x" }),
+    ).toMatchObject({
       old_path: "lib/old-name.ts",
       new_path: "lib/new-name.ts",
       new_line: 2,
     });
-    expect(buildPosition(index, REFS, { path: "gone.ts", line: 2, side: "old", body: "x" })).toMatchObject({
+    expect(
+      buildPosition(index, REFS, { path: "gone.ts", line: 2, side: "old", body: "x" }),
+    ).toMatchObject({
       old_path: "gone.ts",
       old_line: 2,
     });
@@ -91,12 +110,19 @@ describe("buildPosition", () => {
 
   it("returns null for lines or files outside the diff", () => {
     expect(buildPosition(index, REFS, { path: "src/app.ts", line: 30, body: "x" })).toBeNull();
-    expect(buildPosition(index, REFS, { path: "src/app.ts", line: 14, side: "old", body: "x" })).toBeNull();
+    expect(
+      buildPosition(index, REFS, { path: "src/app.ts", line: 14, side: "old", body: "x" }),
+    ).toBeNull();
     expect(buildPosition(index, REFS, { path: "other.ts", line: 1, body: "x" })).toBeNull();
   });
 
   it("adds a line_range for multi-line comments within one hunk", () => {
-    const position = buildPosition(index, REFS, { path: "src/app.ts", startLine: 10, line: 12, body: "x" });
+    const position = buildPosition(index, REFS, {
+      path: "src/app.ts",
+      startLine: 10,
+      line: 12,
+      body: "x",
+    });
     const hash = sha1("src/app.ts");
     expect(position).toMatchObject({
       new_line: 12,
@@ -109,7 +135,11 @@ describe("buildPosition", () => {
   });
 
   it("rejects ranges that span hunks or are reversed", () => {
-    expect(buildPosition(index, REFS, { path: "src/app.ts", startLine: 13, line: 42, body: "x" })).toBeNull();
-    expect(buildPosition(index, REFS, { path: "src/app.ts", startLine: 12, line: 11, body: "x" })).toBeNull();
+    expect(
+      buildPosition(index, REFS, { path: "src/app.ts", startLine: 13, line: 42, body: "x" }),
+    ).toBeNull();
+    expect(
+      buildPosition(index, REFS, { path: "src/app.ts", startLine: 12, line: 11, body: "x" }),
+    ).toBeNull();
   });
 });

@@ -96,11 +96,11 @@ Every tool is declared with a tier (`defineChatTool`, `apps/web/src/lib/chat/age
 message's author resolves to an access level (`resolveChatActor`,
 `apps/web/src/lib/chat/identity.ts`):
 
-| Actor | Tools offered to the model |
-| -- | -- |
-| `member`: a chat identity linked to an account that is still a member of the organization | `read` and `action` |
-| `domain`: an unlinked Slack user whose verified Slack email domain is one of the organization's email domains | `read` |
-| `unlinked`: everyone else | none |
+| Actor                                                                                                         | Tools offered to the model |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `member`: a chat identity linked to an account that is still a member of the organization                     | `read` and `action`        |
+| `domain`: an unlinked Slack user whose verified Slack email domain is one of the organization's email domains | `read`                     |
+| `unlinked`: everyone else                                                                                     | none                       |
 
 A call to a tool above the actor's level returns a "link required" result, and the bot posts a
 link prompt (ephemeral in Slack, a mention in Discord). This epic ships only `read` tools (runs,
@@ -185,6 +185,7 @@ Setup and usage: [chat.md › Ralph from chat](../chat.md#om-from-chat).
   resp. `request`), and a stored choice that can't run returns `playbook_unavailable`. The
   Integrations cards are gone: admins choose under **Settings › Advanced › Chat channel overrides**
   ([chat.md › Chat playbooks](../chat.md#chat-playbooks))._
+
 - **Thread-to-run mapping.** `chat_thread_runs` maps a thread to its runs: `query` rows point at a
   job, `coding` rows at a `ralph_runs` row, each run mapped once (`mapThreadRun`,
   `latestThreadRun`, `threadOfRun` in `packages/db/src/chat.ts`, all scoped to the organization).

@@ -64,7 +64,8 @@ export interface AddedRepository {
 
 /** What adding repositories answers: the ones connected (none when it fails). */
 export type AddRepositoriesResult =
-  { ok: true; warning?: string; added: AddedRepository[] } | { ok: false; error: string };
+  | { ok: true; warning?: string; added: AddedRepository[] }
+  | { ok: false; error: string };
 
 function addedRepositories(connected: Repository[]): AddedRepository[] {
   return connected.map((repo) => ({ id: repo.id, fullPath: repo.fullPath }));

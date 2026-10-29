@@ -52,12 +52,12 @@ The expiry you pick when creating the token only has to last until the first dai
 
 What the bot does, and the role each action needs:
 
-| Action                                                           | Role needed    |
-| ---------------------------------------------------------------- | -------------- |
-| Create, delete and check project webhooks                        | **Maintainer** |
+| Action                                                        | Role needed    |
+| ------------------------------------------------------------- | -------------- |
+| Create, delete and check project webhooks                     | **Maintainer** |
 | Mint project access tokens for agents' clones and Om's pushes | **Maintainer** |
-| Read merge requests, diffs, members, pipelines and job logs      | Reporter       |
-| Post reviews as MR discussions, reply to and resolve threads     | Developer      |
+| Read merge requests, diffs, members, pipelines and job logs   | Reporter       |
+| Post reviews as MR discussions, reply to and resolve threads  | Developer      |
 | Open, update and mark ready Om's merge requests               | Developer      |
 
 The credential broker mints a `read_repository` project access token (Reporter role, named

@@ -14,6 +14,7 @@ There is one staging environment, and it tests one epic at a time.
   ```
 
   No pull requests target `staging`, and no commits are made on it directly.
+
 - **Stable URLs.** Vercel deploys `staging` to a fixed domain with branch-scoped Preview env
   vars (`APP_URL` and the staging GitHub App's credentials). The staging GitHub App's
   webhook and setup URLs point at that domain and never change. It is installed only on

@@ -12,7 +12,8 @@ import { agentHref } from "@/lib/runs/hrefs";
 
 /** What a problem's button does: a `POST` to an endpoint, or a link to a page. */
 export type RepositoryProblemAction =
-  { type: "post"; label: string; path: string } | { type: "link"; label: string; href: string };
+  | { type: "post"; label: string; path: string }
+  | { type: "link"; label: string; href: string };
 
 export type RepositoryProblemCode = "webhook" | "sync_failed" | "no_agent_online" | "connection";
 

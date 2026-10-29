@@ -11,7 +11,8 @@ import { enqueueReview, type ReviewTaskRun } from "./enqueue";
  * run) the run's own mode and depth.
  */
 export type RerunReviewOptions =
-  RerunReviewInput | { runMode: ReviewMode; depth: ReviewDepth | null };
+  | RerunReviewInput
+  | { runMode: ReviewMode; depth: ReviewDepth | null };
 
 /** The review mode a re-run enqueues. */
 function rerunMode(options: RerunReviewOptions): ReviewMode {

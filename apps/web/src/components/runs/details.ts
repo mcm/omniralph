@@ -1,6 +1,7 @@
 /** A part of a run's "Routed by": plain text, or a team, project or label it names. */
 export type RoutedByPart =
-  { kind: "text"; text: string } | { kind: "team" | "project" | "label"; name: string };
+  | { kind: "text"; text: string }
+  | { kind: "team" | "project" | "label"; name: string };
 
 const NAMED = /\b(team|project|label) `([^`]+)`/gi;
 const MATCH_ROUTE = /^work item match \((.*)\)$/;

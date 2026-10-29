@@ -48,7 +48,11 @@ describe("alignSuggestionRange", () => {
 
   it("extends the range over duplicated leading lines", () => {
     // Widened to the loop, still anchored on the body line.
-    const f = finding(4, 5, "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }");
+    const f = finding(
+      4,
+      5,
+      "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }",
+    );
     const aligned = alignSuggestionRange(f, FILE, ALL);
     expect(aligned).toEqual({
       kind: "extended",
@@ -60,7 +64,11 @@ describe("alignSuggestionRange", () => {
   });
 
   it("extends the range over duplicated trailing lines", () => {
-    const f = finding(3, 4, "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }\n  return sum;");
+    const f = finding(
+      3,
+      4,
+      "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }\n  return sum;",
+    );
     const aligned = alignSuggestionRange(f, FILE, ALL);
     expect(aligned).toMatchObject({ kind: "extended", finding: { startLine: 3, endLine: 6 } });
     expect(apply(FILE, aligned.finding)).toBe(FIXED);
@@ -83,7 +91,11 @@ describe("alignSuggestionRange", () => {
   });
 
   it("drops the suggestion and keeps the body when the extended range leaves the hunk", () => {
-    const f = finding(4, 5, "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }");
+    const f = finding(
+      4,
+      5,
+      "  for (const item of items) {\n    sum += item.price * item.quantity;\n  }",
+    );
     // Line 3 is outside the diff hunk, so the range can't cover it.
     const aligned = alignSuggestionRange(f, FILE, [new Set([4, 5, 6, 7])]);
     expect(aligned.kind).toBe("dropped");
@@ -109,9 +121,16 @@ describe("alignSuggestionRange", () => {
       " }",
     ].join("\n");
     const hunks = hunkLineSets(parseDiff(diff)[0]!);
-    const crossing = finding(4, 4, "  for (const item of items) {\n    sum += item.price * item.quantity;");
+    const crossing = finding(
+      4,
+      4,
+      "  for (const item of items) {\n    sum += item.price * item.quantity;",
+    );
     expect(alignSuggestionRange(crossing, FILE, hunks).kind).toBe("dropped");
     const inside = finding(4, 4, "    sum += item.price * item.quantity;\n  }");
-    expect(alignSuggestionRange(inside, FILE, hunks).finding).toMatchObject({ startLine: 4, endLine: 5 });
+    expect(alignSuggestionRange(inside, FILE, hunks).finding).toMatchObject({
+      startLine: 4,
+      endLine: 5,
+    });
   });
 });

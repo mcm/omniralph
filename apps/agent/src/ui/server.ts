@@ -135,7 +135,8 @@ export interface UiApiRequest {
 
 /** `stream`: the handler answered itself (e.g. an event stream or a file download). */
 export type UiApiResult =
-  { status: number; body?: unknown; headers?: OutgoingHttpHeaders } | { stream: true };
+  | { status: number; body?: unknown; headers?: OutgoingHttpHeaders }
+  | { stream: true };
 
 export interface UiRoute {
   method: "GET" | "POST" | "PUT" | "DELETE";

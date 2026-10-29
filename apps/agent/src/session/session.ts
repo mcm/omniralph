@@ -52,7 +52,8 @@ export type PermissionAsker = (call: PermissionCall, signal: AbortSignal) => Pro
 
 /** What a session shows while it runs (relayed to the Linear agent session). */
 export type SessionEvent =
-  { type: "text"; text: string } | { type: "tool"; name: string; input: unknown };
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; input: unknown };
 
 export interface SessionRequest {
   prompt: string;

@@ -105,7 +105,8 @@ export async function fetchModelPrices(fetchFn: typeof fetch = fetch): Promise<M
 }
 
 export type RefreshModelPricesResult =
-  { ok: true; result: ApplyModelPricesResult } | { ok: false; error: string };
+  | { ok: true; result: ApplyModelPricesResult }
+  | { ok: false; error: string };
 
 /**
  * Refreshes `model_prices` from the Gateway: an unchanged price is only checked, a changed

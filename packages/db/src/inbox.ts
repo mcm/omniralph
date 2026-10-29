@@ -83,7 +83,11 @@ export type InboxQuestionSubject =
    */
   | { kind: "permission"; detail: string; jobId: string; requestId: string; stored: boolean };
 export type InboxReviewState =
-  "none" | "review_requested" | "commented" | "changes_requested" | "approved";
+  | "none"
+  | "review_requested"
+  | "commented"
+  | "changes_requested"
+  | "approved";
 
 /** What each kind of item knows beyond its run. */
 export type InboxFacts =

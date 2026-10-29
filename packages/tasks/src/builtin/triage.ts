@@ -374,7 +374,8 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
 export const TRIAGE_PLAYBOOK: PlaybookInput = {
   id: "builtin:triage",
   name: "Triage",
-  description: "Triages a Linear issue into a PRD a coding task can build and applies it to Linear.",
+  description:
+    "Triages a Linear issue into a PRD a coding task can build and applies it to Linear.",
   role: "triage",
   ...PLANNER_PERSONA,
   promptTemplate: TRIAGE_TEMPLATE,

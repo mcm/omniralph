@@ -16,10 +16,10 @@ The GitHub App authenticates with an RS256 JWT (`iss` = app ID) that it
 exchanges for installation tokens. `packages/scm` gets JWTs from an
 `AppJwtSigner` interface (`src/github/app-jwt.ts`) with two implementations:
 
-| Signer | Key | Used when |
-| -- | -- | -- |
-| `KmsAppJwtSigner` | The GitHub App private key imported into an **external-origin**, **RS256** Vercel KMS issuer (see *KMS issuer setup* below). Calls `signJWT({ issuerId, claims: { iss: appId, iat: now - 60, exp: now + 540 }, ttl: 540 })` from `@vercel/kms` (authenticated with the function's Vercel OIDC token), then decodes and checks the token before use. | `GITHUB_APP_KMS_ISSUER_ID` is set |
-| `PemAppJwtSigner` | `GITHUB_APP_PRIVATE_KEY` (PKCS#1 or PKCS#8 PEM), signed locally with `jose`; `iat` is backdated 60s. | Local dev, tests, and as a fallback |
+| Signer            | Key                                                                                                                                                                                                                                                                                                                                                 | Used when                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `KmsAppJwtSigner` | The GitHub App private key imported into an **external-origin**, **RS256** Vercel KMS issuer (see _KMS issuer setup_ below). Calls `signJWT({ issuerId, claims: { iss: appId, iat: now - 60, exp: now + 540 }, ttl: 540 })` from `@vercel/kms` (authenticated with the function's Vercel OIDC token), then decodes and checks the token before use. | `GITHUB_APP_KMS_ISSUER_ID` is set   |
+| `PemAppJwtSigner` | `GITHUB_APP_PRIVATE_KEY` (PKCS#1 or PKCS#8 PEM), signed locally with `jose`; `iat` is backdated 60s.                                                                                                                                                                                                                                                | Local dev, tests, and as a fallback |
 
 `createAppJwtSigner(env)` picks KMS when the issuer ID is set, otherwise the PEM.
 The TTL is 540s (GitHub's maximum is 600s), leaving headroom for clock drift.
@@ -118,12 +118,12 @@ code-host or Vercel credentials. Their identity is:
   (issued when a job is claimed and renewed by the heartbeat): `typ: "job"`,
   `sub: jobId`, `harnessId`, `scopes` and, for run-spec jobs, a `kind`:
 
-  | Token | Jobs | Held by | Scopes |
-  | -- | -- | -- | -- |
-  | `lifecycle` | run-spec jobs (with a `task_id`) | the harness's own git calls (syncing and checking out the repository) | `credentials:read`; `coding` runs add `credentials:write` |
-  | `session` | run-spec jobs | the Claude session: its env (`OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_TOKEN_FILE`), its git credential helper and the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
-  | no `kind` (legacy) | `repo.sync` and other system RPCs | everything in the job | `credentials:read` |
-  | no `kind` (legacy) | `ralph.*` (until the coding epic ports them) | everything in the job | `credentials:read`, `credentials:write`, `run:activity`, `run:attachments` |
+  | Token              | Jobs                                         | Held by                                                                                                                                   | Scopes                                                                                          |
+  | ------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+  | `lifecycle`        | run-spec jobs (with a `task_id`)             | the harness's own git calls (syncing and checking out the repository)                                                                     | `credentials:read`; `coding` runs add `credentials:write`                                       |
+  | `session`          | run-spec jobs                                | the Claude session: its env (`OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_TOKEN_FILE`), its git credential helper and the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
+  | no `kind` (legacy) | `repo.sync` and other system RPCs            | everything in the job                                                                                                                     | `credentials:read`                                                                              |
+  | no `kind` (legacy) | `ralph.*` (until the coding epic ports them) | everything in the job                                                                                                                     | `credentials:read`, `credentials:write`, `run:activity`, `run:attachments`                      |
 
   The credential broker hands out a push credential only for
   `credentials:write` on the `lifecycle` token of a `coding` run-spec job or the
@@ -132,6 +132,7 @@ code-host or Vercel credentials. Their identity is:
   helper) only see a job token, never the harness's tokens. `LocalTokenSigner`
   (`jose`, `LOCAL_AGENT_SIGNING_KEY` or an in-memory key) exists for local dev
   and tests and refuses to run with `VERCEL_ENV=production`.
+
 - **Verification.** `requireAgent`/`requireJob` (`apps/web/src/lib/agent-auth/verify.ts`)
   check the signature (RS256 only), `aud`, `typ` and `exp` with `jose` against
   the issuer's cached JWKS (`https://kms.vercel.com/<issuer>/jwks.json`), then

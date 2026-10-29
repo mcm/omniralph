@@ -580,15 +580,13 @@ describe("live updates", () => {
     await connected(live);
     const reads = deliveryReads().length;
     act(() =>
-      live
-        .current()
-        .deliver(
-          `org:${TEST_ORGANIZATION_ID}:changes`,
-          changeEvent(TEST_ORGANIZATION_ID, {
-            resource: "webhook_event",
-            ids: [D(50), IDS.gitlab],
-          }),
-        ),
+      live.current().deliver(
+        `org:${TEST_ORGANIZATION_ID}:changes`,
+        changeEvent(TEST_ORGANIZATION_ID, {
+          resource: "webhook_event",
+          ids: [D(50), IDS.gitlab],
+        }),
+      ),
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(deliveryReads()).toHaveLength(reads);

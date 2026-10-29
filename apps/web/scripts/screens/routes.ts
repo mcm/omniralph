@@ -20,7 +20,8 @@ export interface ScreenRoute {
 
 /** One interaction: type into a field, or click an element (CSS selectors). */
 export type ScreenStep =
-  { action: "fill"; selector: string; value: string } | { action: "click"; selector: string };
+  | { action: "fill"; selector: string; value: string }
+  | { action: "click"; selector: string };
 
 const ids = FIXTURE_IDS;
 

@@ -35,11 +35,11 @@ makes it an installable is an `omniralph` field in its `package.json`:
 }
 ```
 
-| Field | Meaning |
-| -- | -- |
-| `commands` | Executables setup and teardown commands can run by `name`. `bin` is the file to run. |
-| `mcpServers` | stdio MCP servers agents can use. `command` is the server's executable, started with `args` (default none). |
-| `skills` | Claude Code skills: directories with a `SKILL.md`, or single Markdown files. Loaded into the sessions of runs that require the installable (see below). |
+| Field        | Meaning                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands`   | Executables setup and teardown commands can run by `name`. `bin` is the file to run.                                                                    |
+| `mcpServers` | stdio MCP servers agents can use. `command` is the server's executable, started with `args` (default none).                                             |
+| `skills`     | Claude Code skills: directories with a `SKILL.md`, or single Markdown files. Loaded into the sessions of runs that require the installable (see below). |
 
 Every field is optional (an empty list by default), so `"omniralph": {}` is a valid, if useless,
 manifest. The rules:
@@ -111,9 +111,9 @@ Indexing a repository from scratch on every run is slow, so each installable get
 directories on the agent, passed to its commands (as setup or teardown commands) and MCP servers
 as environment variables:
 
-| Variable | Directory | Set |
-| -- | -- | -- |
-| `OMNIRALPH_CACHE_DIR` | `<dataDir>/cache/<package>/<repository id>/` | On every run with a repository |
+| Variable                 | Directory                                                | Set                                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OMNIRALPH_CACHE_DIR`    | `<dataDir>/cache/<package>/<repository id>/`             | On every run with a repository                                                                                                                        |
 | `OMNIRALPH_PR_CACHE_DIR` | `<dataDir>/pr-cache/<package>/<repository id>/<number>/` | On a run for a PR/MR (triggers `pr.updated`, `pr.mention`, `review.rerun`, `finding.mention`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`) |
 
 The agent creates them (mode 0700) before the run. The installable owns what goes inside and how
@@ -279,10 +279,10 @@ next claim use them. Changes to `agent.json` apply when the agent restarts.
 
 ## Troubleshooting
 
-| Symptom | Cause |
-| -- | -- |
-| Install job fails with "isn't allowed on this agent" | The `installables.allow` of the agent's `settings.json` doesn't match the package name. |
-| Install job fails with "isn't a valid installable" | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`). |
-| Install job fails with "npm install … failed" | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`. |
-| A task's runs stay queued | A run that says "Waiting for an agent with … installed" needs a host tool no online agent has: open **Fleet** and set the tool's path on an agent's page (**Host tools**), or bring that agent online. Otherwise no agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |
-| A host tool is unavailable on an agent | Its configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one); or, with no path configured, nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`: fix the `PATH` of the service that starts the agent (pm2, systemd). |
+| Symptom                                              | Cause                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Install job fails with "isn't allowed on this agent" | The `installables.allow` of the agent's `settings.json` doesn't match the package name.                                                                                                                                                                                                                                                                                     |
+| Install job fails with "isn't a valid installable"   | The package has no `omniralph` field or it's invalid; the error lists each problem by field (`omniralph.commands.0.bin: …`).                                                                                                                                                                                                                                                |
+| Install job fails with "npm install … failed"        | npm's error follows: usually the registry can't be reached or needs auth in the agent user's `~/.npmrc`.                                                                                                                                                                                                                                                                    |
+| A task's runs stay queued                            | A run that says "Waiting for an agent with … installed" needs a host tool no online agent has: open **Fleet** and set the tool's path on an agent's page (**Host tools**), or bring that agent online. Otherwise no agent has every requirement: check the task's **Requirements** against each agent's **Packages** on **Fleet**, and that the agent finds each host tool. |
+| A host tool is unavailable on an agent               | Its configured path doesn't exist, isn't an executable file, or is covered by `blockedExecPaths` (the agent logs a warning for a blocked one); or, with no path configured, nothing executable of that name is on the agent process's `PATH` outside `blockedExecPaths`: fix the `PATH` of the service that starts the agent (pm2, systemd).                                |

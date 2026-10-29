@@ -3,7 +3,11 @@ import { AccessLevel, Gitlab } from "@gitbeaker/rest";
 import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
 import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
 import { capPatch, countPatchLines, maxFilesOf } from "../commit-diff.js";
-import { MemoryCredentialCache, type CachedCredential, type CredentialCache } from "../credential-cache.js";
+import {
+  MemoryCredentialCache,
+  type CachedCredential,
+  type CredentialCache,
+} from "../credential-cache.js";
 import {
   ChangeRequestNotFoundError,
   CloneCredentialPermissionError,
@@ -70,7 +74,10 @@ type RepositoryTokenScope = typeof READ_REPOSITORY_SCOPE | typeof WRITE_REPOSITO
 /** Name and role of the project access token minted for each scope. */
 const REPOSITORY_TOKENS = {
   [READ_REPOSITORY_SCOPE]: { name: "omniralph-read-repository", accessLevel: AccessLevel.REPORTER },
-  [WRITE_REPOSITORY_SCOPE]: { name: "omniralph-write-repository", accessLevel: AccessLevel.DEVELOPER },
+  [WRITE_REPOSITORY_SCOPE]: {
+    name: "omniralph-write-repository",
+    accessLevel: AccessLevel.DEVELOPER,
+  },
 } as const satisfies Record<RepositoryTokenScope, { name: string; accessLevel: number }>;
 
 export interface GitLabAdapterOptions {
@@ -191,7 +198,9 @@ export function renderGitLabComment(comment: InlineComment): string {
   if (comment.suggestion === undefined) return comment.body;
   if (comment.side === "old") return `${comment.body}\n\n${fencedBlock("", comment.suggestion)}`;
   const above =
-    comment.startLine !== undefined && comment.startLine < comment.line ? comment.line - comment.startLine : 0;
+    comment.startLine !== undefined && comment.startLine < comment.line
+      ? comment.line - comment.startLine
+      : 0;
   return `${comment.body}\n\n${fencedBlock(`suggestion:-${above}+0`, comment.suggestion)}`;
 }
 
@@ -218,9 +227,15 @@ export class GitLabAdapter implements ScmAdapter {
 
   async getChangeRequest(repo: RepoRef, number: number): Promise<ChangeRequest> {
     const mr = await this.api.MergeRequests.show(projectId(repo), number);
-    const refs = mr.diff_refs as Partial<{ base_sha: string; start_sha: string; head_sha: string }> | null;
+    const refs = mr.diff_refs as Partial<{
+      base_sha: string;
+      start_sha: string;
+      head_sha: string;
+    }> | null;
     if (!refs?.base_sha || !refs.head_sha) {
-      throw new Error(`Merge request ${repo.fullPath}!${number} has no diff yet (diff_refs is empty)`);
+      throw new Error(
+        `Merge request ${repo.fullPath}!${number} has no diff yet (diff_refs is empty)`,
+      );
     }
     return {
       number: mr.iid,
@@ -278,7 +293,11 @@ export class GitLabAdapter implements ScmAdapter {
 
   /** Adds a top-level note to the MR. */
   async postComment(repo: RepoRef, number: number, body: string): Promise<{ id: string }> {
-    const note = await this.api.MergeRequestNotes.create(projectId(repo), number, capLength(body, MAX_NOTE_LENGTH));
+    const note = await this.api.MergeRequestNotes.create(
+      projectId(repo),
+      number,
+      capLength(body, MAX_NOTE_LENGTH),
+    );
     return { id: String(note.id) };
   }
 
@@ -291,9 +310,14 @@ export class GitLabAdapter implements ScmAdapter {
   ): Promise<{ id: string }> {
     if (commentId !== null) {
       try {
-        const note = await this.api.MergeRequestNotes.edit(projectId(repo), number, Number(commentId), {
-          body: capLength(body, MAX_NOTE_LENGTH),
-        });
+        const note = await this.api.MergeRequestNotes.edit(
+          projectId(repo),
+          number,
+          Number(commentId),
+          {
+            body: capLength(body, MAX_NOTE_LENGTH),
+          },
+        );
         return { id: String(note.id) };
       } catch (error) {
         if (statusOf(error) !== 404) throw error;
@@ -360,7 +384,9 @@ export class GitLabAdapter implements ScmAdapter {
     const user = users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (!user) return false;
     try {
-      const member = await this.api.ProjectMembers.show(projectId(repo), user.id, { includeInherited: true });
+      const member = await this.api.ProjectMembers.show(projectId(repo), user.id, {
+        includeInherited: true,
+      });
       return member.access_level >= AccessLevel.DEVELOPER;
     } catch (error) {
       if (statusOf(error) === 404) return false;
@@ -370,11 +396,15 @@ export class GitLabAdapter implements ScmAdapter {
 
   async getDefaultBranch(repo: RepoRef): Promise<string> {
     const project = await this.api.Projects.show(projectId(repo));
-    if (!project.default_branch) throw new Error(`GitLab project ${repo.fullPath} has no default branch`);
+    if (!project.default_branch)
+      throw new Error(`GitLab project ${repo.fullPath} has no default branch`);
     return project.default_branch;
   }
 
-  async findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null> {
+  async findOpenChangeRequest(
+    repo: RepoRef,
+    sourceBranch: string,
+  ): Promise<OpenChangeRequest | null> {
     const mrs = await this.api.MergeRequests.all({
       projectId: projectId(repo),
       sourceBranch,
@@ -389,7 +419,10 @@ export class GitLabAdapter implements ScmAdapter {
   }
 
   /** A draft MR is one whose title starts with `Draft: `. */
-  async createChangeRequest(repo: RepoRef, request: NewChangeRequest): Promise<CreatedChangeRequest> {
+  async createChangeRequest(
+    repo: RepoRef,
+    request: NewChangeRequest,
+  ): Promise<CreatedChangeRequest> {
     try {
       const mr = await this.api.MergeRequests.create(
         projectId(repo),
@@ -408,7 +441,11 @@ export class GitLabAdapter implements ScmAdapter {
   }
 
   /** A new title keeps the MR's draft state (its `Draft: ` prefix). */
-  async updateChangeRequest(repo: RepoRef, number: number, update: ChangeRequestUpdate): Promise<void> {
+  async updateChangeRequest(
+    repo: RepoRef,
+    number: number,
+    update: ChangeRequestUpdate,
+  ): Promise<void> {
     const project = projectId(repo);
     try {
       let title: string | undefined;
@@ -418,10 +455,13 @@ export class GitLabAdapter implements ScmAdapter {
       }
       await this.api.MergeRequests.edit(project, number, {
         ...(title !== undefined ? { title } : {}),
-        ...(update.body !== undefined ? { description: capLength(update.body, MAX_DESCRIPTION_LENGTH) } : {}),
+        ...(update.body !== undefined
+          ? { description: capLength(update.body, MAX_DESCRIPTION_LENGTH) }
+          : {}),
       });
     } catch (error) {
-      if (statusOf(error) === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      if (statusOf(error) === 404)
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
   }
@@ -435,7 +475,8 @@ export class GitLabAdapter implements ScmAdapter {
       if (title === mr.title && !(mr.draft ?? mr.work_in_progress)) return;
       await this.api.MergeRequests.edit(project, number, { title });
     } catch (error) {
-      if (statusOf(error) === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      if (statusOf(error) === 404)
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
       throw error;
     }
   }
@@ -510,7 +551,11 @@ export class GitLabAdapter implements ScmAdapter {
    * `GET /projects/:id/repository/commits/:sha` for its page, then its
    * `/diff`, up to one file more than `maxFiles` to tell whether there are more.
    */
-  async getCommitDiff(repo: RepoRef, sha: string, options?: CommitDiffOptions): Promise<CommitDiff> {
+  async getCommitDiff(
+    repo: RepoRef,
+    sha: string,
+    options?: CommitDiffOptions,
+  ): Promise<CommitDiff> {
     const project = projectId(repo);
     const maxFiles = maxFilesOf(options);
     let commit;
@@ -551,19 +596,27 @@ export class GitLabAdapter implements ScmAdapter {
     return timingSafeEqual(sha256(token), sha256(this.webhookSecret));
   }
 
-  private async repositoryToken(repo: RepoRef, scope: RepositoryTokenScope): Promise<CachedCredential> {
+  private async repositoryToken(
+    repo: RepoRef,
+    scope: RepositoryTokenScope,
+  ): Promise<CachedCredential> {
     const cached = await this.credentialCache.get(repo, scope);
     if (cached && cached.expiresAt.getTime() - this.now() > CLONE_TOKEN_ROTATE_MS) return cached;
 
     const key = JSON.stringify([projectId(repo), scope]);
     const pending = this.pendingTokens.get(key);
     if (pending) return pending;
-    const created = this.createRepositoryToken(repo, scope).finally(() => this.pendingTokens.delete(key));
+    const created = this.createRepositoryToken(repo, scope).finally(() =>
+      this.pendingTokens.delete(key),
+    );
     this.pendingTokens.set(key, created);
     return created;
   }
 
-  private async createRepositoryToken(repo: RepoRef, scope: RepositoryTokenScope): Promise<CachedCredential> {
+  private async createRepositoryToken(
+    repo: RepoRef,
+    scope: RepositoryTokenScope,
+  ): Promise<CachedCredential> {
     const now = this.now();
     // Tokens expire at 00:00 UTC on `expires_at`. Use tomorrow, or the day
     // after when tomorrow would already be inside the rotation window.
@@ -574,9 +627,15 @@ export class GitLabAdapter implements ScmAdapter {
     const { name, accessLevel } = REPOSITORY_TOKENS[scope];
     let created;
     try {
-      created = await this.api.ProjectAccessTokens.create(projectId(repo), name, [scope], expiresOn, {
-        accessLevel,
-      });
+      created = await this.api.ProjectAccessTokens.create(
+        projectId(repo),
+        name,
+        [scope],
+        expiresOn,
+        {
+          accessLevel,
+        },
+      );
     } catch (error) {
       if (isTokenCreationForbidden(error)) {
         throw new CloneCredentialPermissionError(
@@ -654,7 +713,9 @@ export class GitLabAdapter implements ScmAdapter {
   private async discussionIdFor(repo: RepoRef, number: number, commentId: string): Promise<string> {
     if (DISCUSSION_ID.test(commentId)) return commentId;
     const noteId = Number(commentId);
-    const discussions = await this.api.MergeRequestDiscussions.all(projectId(repo), number, { perPage: 100 });
+    const discussions = await this.api.MergeRequestDiscussions.all(projectId(repo), number, {
+      perPage: 100,
+    });
     const discussion = discussions.find((d) => d.notes?.some((n) => n.id === noteId));
     if (!discussion) {
       throw new Error(`No discussion contains note ${commentId} on ${repo.fullPath}!${number}`);

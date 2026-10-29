@@ -313,7 +313,11 @@ export function parseGitLabCommentEvent(
 
 /** Where a PR/MR's human review stands (`ralph_lanes.pr_review_state`). */
 export type PullRequestReviewState =
-  "none" | "review_requested" | "commented" | "changes_requested" | "approved";
+  | "none"
+  | "review_requested"
+  | "commented"
+  | "changes_requested"
+  | "approved";
 
 /**
  * A change to an open PR/MR's draft or review state (GitHub `pull_request`

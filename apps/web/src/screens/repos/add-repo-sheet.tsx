@@ -53,7 +53,11 @@ const HOST: Record<Provider, string> = { github: "GitHub", gitlab: "GitLab" };
 
 /** Why connecting GitHub didn't finish: the callback's `/repos?github=<status>`. */
 export type GitHubNotice =
-  "requested" | "invalid" | "invalid_state" | "other_organization" | "error";
+  | "requested"
+  | "invalid"
+  | "invalid_state"
+  | "other_organization"
+  | "error";
 
 export const GITHUB_NOTICES: Record<GitHubNotice, { title: string; description: string }> = {
   requested: {

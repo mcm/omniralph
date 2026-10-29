@@ -7,13 +7,23 @@ describe("renderInlineComment", () => {
   });
 
   it("renders the suggestion as a suggestion block", () => {
-    expect(renderInlineComment({ path: "a.ts", line: 1, body: "Use const.", suggestion: "const x = 1;" })).toBe(
-      "Use const.\n\n```suggestion\nconst x = 1;\n```",
-    );
+    expect(
+      renderInlineComment({
+        path: "a.ts",
+        line: 1,
+        body: "Use const.",
+        suggestion: "const x = 1;",
+      }),
+    ).toBe("Use const.\n\n```suggestion\nconst x = 1;\n```");
   });
 
   it("uses a longer fence when the suggestion contains backticks", () => {
-    const body = renderInlineComment({ path: "a.md", line: 1, body: "Fix", suggestion: "```ts\ncode\n```\n" });
+    const body = renderInlineComment({
+      path: "a.md",
+      line: 1,
+      body: "Fix",
+      suggestion: "```ts\ncode\n```\n",
+    });
     expect(body).toBe("Fix\n\n````suggestion\n```ts\ncode\n```\n````");
   });
 

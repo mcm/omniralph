@@ -181,7 +181,8 @@ const { getDispatcher } = await import("@/lib/dispatch");
 const { rerunOrganizationReview } = await import("@/lib/reviews/manage");
 
 type RerunOutcome =
-  { ok: true; reviewId: string } | { ok: false; error: string; activeReviewId?: string };
+  | { ok: true; reviewId: string }
+  | { ok: false; error: string; activeReviewId?: string };
 
 /**
  * Re-runs the organization's review as a review run's retry does (`rerunOrganizationReview`),

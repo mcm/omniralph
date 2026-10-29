@@ -149,10 +149,7 @@ export async function defaultChatChannel(): Promise<ChatChannel> {
 }
 
 /** The run fields a chat conversation needs. */
-export type ChatRunRef = Pick<
-  RalphRun,
-  "id" | "organizationId" | "chatThreadId" | "repositoryId"
->;
+export type ChatRunRef = Pick<RalphRun, "id" | "organizationId" | "chatThreadId" | "repositoryId">;
 
 /** A chat thread to post to proactively, through its connection's adapter. */
 export interface ChatTarget {

@@ -723,7 +723,7 @@ sub-issues, or a PRD with the wrong sections) is reformatted in place:
 - Sub-issues in any other state, and updates that don't name one of the issue's sub-issues, are
   ignored and listed in the response.
 - An epic without a sub-issue whose title starts with "Validate" gets a `Validate functional
-requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
+  requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
 - Triage never cancels, deletes, merges or re-parents sub-issues.
 
 An issue already in the right format is left as it is (`unchanged`); only its open questions are

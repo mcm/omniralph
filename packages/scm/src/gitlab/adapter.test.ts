@@ -227,15 +227,25 @@ describe("postReview", () => {
   it("sends a line_range and a multi-line suggestion for ranges", async () => {
     await makeAdapter().postReview(REPO, 7, {
       summary: "s",
-      inlineComments: [{ path: "src/app.ts", startLine: 11, line: 12, body: "b", suggestion: "x\ny" }],
+      inlineComments: [
+        { path: "src/app.ts", startLine: 11, line: 12, body: "b", suggestion: "x\ny" },
+      ],
     });
     expect((await posts("/discussions"))[0]?.body).toMatchObject({
       body: "b\n\n```suggestion:-1+0\nx\ny\n```",
       position: {
         new_line: 12,
         line_range: {
-          start: { line_code: expect.stringMatching(/^[0-9a-f]{40}_12_11$/), type: "new", new_line: 11 },
-          end: { line_code: expect.stringMatching(/^[0-9a-f]{40}_12_12$/), type: "new", new_line: 12 },
+          start: {
+            line_code: expect.stringMatching(/^[0-9a-f]{40}_12_11$/),
+            type: "new",
+            new_line: 11,
+          },
+          end: {
+            line_code: expect.stringMatching(/^[0-9a-f]{40}_12_12$/),
+            type: "new",
+            new_line: 12,
+          },
         },
       },
     });
@@ -247,7 +257,10 @@ describe("postReview", () => {
       http.post(`${MR}/discussions`, () => {
         calls += 1;
         if (calls === 1) {
-          return HttpResponse.json({ message: "400 Bad request - Note {:line_code=>[\"can't be blank\"]}" }, { status: 400 });
+          return HttpResponse.json(
+            { message: '400 Bad request - Note {:line_code=>["can\'t be blank"]}' },
+            { status: 400 },
+          );
         }
         return HttpResponse.json({ id: "e".repeat(40), notes: [{ id: 1 }] }, { status: 201 });
       }),
@@ -271,7 +284,9 @@ describe("postReview", () => {
   });
 
   it("propagates other API errors", async () => {
-    server.use(http.post(`${MR}/discussions`, () => HttpResponse.json({ message: "nope" }, { status: 403 })));
+    server.use(
+      http.post(`${MR}/discussions`, () => HttpResponse.json({ message: "nope" }, { status: 403 })),
+    );
     await expect(
       makeAdapter().postReview(REPO, 7, {
         summary: "s",
@@ -287,7 +302,12 @@ describe("postReview", () => {
       http.get(`${MR}/versions`, () =>
         HttpResponse.json([
           { id: 2, head_commit_sha: HEAD, base_commit_sha: BASE, start_commit_sha: START },
-          { id: 1, head_commit_sha: OLD_HEAD, base_commit_sha: BASE, start_commit_sha: "t".repeat(40) },
+          {
+            id: 1,
+            head_commit_sha: OLD_HEAD,
+            base_commit_sha: BASE,
+            start_commit_sha: "t".repeat(40),
+          },
         ]),
       ),
       http.get(`${MR}/versions/1`, () =>
@@ -327,7 +347,9 @@ describe("threads", () => {
 
   it("resolves a discussion by ID", async () => {
     server.use(
-      http.put(`${MR}/discussions/${DISCUSSION}`, () => HttpResponse.json({ id: DISCUSSION, notes: [] })),
+      http.put(`${MR}/discussions/${DISCUSSION}`, () =>
+        HttpResponse.json({ id: DISCUSSION, notes: [] }),
+      ),
     );
     await makeAdapter().resolveThread(REPO, 7, DISCUSSION);
     await Promise.all(pendingBodies);
@@ -343,7 +365,9 @@ describe("threads", () => {
           { id: DISCUSSION, notes: [{ id: 2 }, { id: 3 }] },
         ]),
       ),
-      http.put(`${MR}/discussions/${DISCUSSION}`, () => HttpResponse.json({ id: DISCUSSION, notes: [] })),
+      http.put(`${MR}/discussions/${DISCUSSION}`, () =>
+        HttpResponse.json({ id: DISCUSSION, notes: [] }),
+      ),
     );
     await makeAdapter().resolveThread(REPO, 7, "3");
     expect(requests.some((r) => r.method === "PUT" && r.url.includes(DISCUSSION))).toBe(true);
@@ -351,7 +375,9 @@ describe("threads", () => {
 
   it("edits an MR note in place", async () => {
     server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ id: 55 })));
-    await expect(makeAdapter().upsertComment(REPO, 7, "Updated", "55")).resolves.toEqual({ id: "55" });
+    await expect(makeAdapter().upsertComment(REPO, 7, "Updated", "55")).resolves.toEqual({
+      id: "55",
+    });
     await Promise.all(pendingBodies);
     const put = requests.find((r) => r.method === "PUT");
     expect(put?.url).toBe(`${MR}/notes/55`);
@@ -364,15 +390,23 @@ describe("threads", () => {
     ["a deleted note", "55"],
   ])("adds an MR note for %s", async (_name, commentId) => {
     server.use(
-      http.put(`${MR}/notes/55`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })),
+      http.put(`${MR}/notes/55`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
       http.post(`${MR}/notes`, () => HttpResponse.json({ id: 79 }, { status: 201 })),
     );
-    await expect(makeAdapter().upsertComment(REPO, 7, "Fresh", commentId)).resolves.toEqual({ id: "79" });
+    await expect(makeAdapter().upsertComment(REPO, 7, "Fresh", commentId)).resolves.toEqual({
+      id: "79",
+    });
     expect((await posts("/merge_requests/7/notes"))[0]?.body).toEqual({ body: "Fresh" });
   });
 
   it("doesn't add a note when editing fails otherwise", async () => {
-    server.use(http.put(`${MR}/notes/55`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })));
+    server.use(
+      http.put(`${MR}/notes/55`, () =>
+        HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+      ),
+    );
     await expect(makeAdapter().upsertComment(REPO, 7, "Body", "55")).rejects.toThrow();
     expect(await posts("/merge_requests/7/notes")).toHaveLength(0);
   });
@@ -421,51 +455,71 @@ describe("getReadOnlyCloneCredential", () => {
     const rotated = await adapter.getReadOnlyCloneCredential(REPO);
     expect(rotated.token).toBe("glpat-read-2");
     // Tomorrow would be inside the rotation window, so the new token gets the day after.
-    expect(((await posts("/access_tokens"))[1]!.body as { expires_at: string }).expires_at).toBe("2026-10-06");
+    expect(((await posts("/access_tokens"))[1]!.body as { expires_at: string }).expires_at).toBe(
+      "2026-10-06",
+    );
     expect(rotated.expiresAt).toEqual(new Date("2026-10-06T00:00:00Z"));
     expect((await cache.get(REPO, "read_repository"))?.externalId).toBe("302");
   });
 
   it("deduplicates concurrent creation and doesn't cache failures", async () => {
     const adapter = makeAdapter();
-    await Promise.all([adapter.getReadOnlyCloneCredential(REPO), adapter.getReadOnlyCloneCredential(REPO)]);
+    await Promise.all([
+      adapter.getReadOnlyCloneCredential(REPO),
+      adapter.getReadOnlyCloneCredential(REPO),
+    ]);
     expect(await posts("/access_tokens")).toHaveLength(1);
 
     const failing = makeAdapter();
     server.use(
-      http.post(`${API}/access_tokens`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }), {
-        once: true,
-      }),
+      http.post(
+        `${API}/access_tokens`,
+        () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+        {
+          once: true,
+        },
+      ),
     );
     await expect(failing.getReadOnlyCloneCredential(REPO)).rejects.toThrow();
-    await expect(failing.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({ token: "glpat-read-2" });
+    await expect(failing.getReadOnlyCloneCredential(REPO)).resolves.toMatchObject({
+      token: "glpat-read-2",
+    });
   });
 });
 
 describe("clone token minting permission", () => {
-  it.each([400, 403])("maps GitLab's %i for a bot that can't create project access tokens", async (status) => {
-    server.use(
-      http.post(
-        `${API}/access_tokens`,
-        () =>
-          HttpResponse.json(
-            { message: `${status} User does not have permission to create project access token` },
-            { status },
-          ),
-        { once: true },
-      ),
-    );
-    const result = makeAdapter().getWriteCloneCredential(REPO);
-    await expect(result).rejects.toBeInstanceOf(CloneCredentialPermissionError);
-    await expect(result).rejects.toMatchObject({ repo: REPO, access: "write" });
-    await expect(result).rejects.toThrow(/service account's \(or real user's\) personal access token with the Maintainer role/);
-  });
+  it.each([400, 403])(
+    "maps GitLab's %i for a bot that can't create project access tokens",
+    async (status) => {
+      server.use(
+        http.post(
+          `${API}/access_tokens`,
+          () =>
+            HttpResponse.json(
+              { message: `${status} User does not have permission to create project access token` },
+              { status },
+            ),
+          { once: true },
+        ),
+      );
+      const result = makeAdapter().getWriteCloneCredential(REPO);
+      await expect(result).rejects.toBeInstanceOf(CloneCredentialPermissionError);
+      await expect(result).rejects.toMatchObject({ repo: REPO, access: "write" });
+      await expect(result).rejects.toThrow(
+        /service account's \(or real user's\) personal access token with the Maintainer role/,
+      );
+    },
+  );
 
   it("leaves other mint failures alone", async () => {
     server.use(
-      http.post(`${API}/access_tokens`, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }), {
-        once: true,
-      }),
+      http.post(
+        `${API}/access_tokens`,
+        () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 }),
+        {
+          once: true,
+        },
+      ),
     );
     const result = makeAdapter().getReadOnlyCloneCredential(REPO);
     await expect(result).rejects.toThrow();
@@ -530,7 +584,9 @@ describe("hasWriteAccess", () => {
     server.use(
       http.get(`${HOST}/api/v4/users`, ({ request }) => {
         const username = new URL(request.url).searchParams.get("username");
-        return HttpResponse.json(username === "ghost" ? [] : [{ id: username === "dev" ? 1 : 2, username }]);
+        return HttpResponse.json(
+          username === "ghost" ? [] : [{ id: username === "dev" ? 1 : 2, username }],
+        );
       }),
       http.get(`${API}/members/all/1`, () => HttpResponse.json({ id: 1, access_level: 30 })),
       http.get(`${API}/members/all/2`, () => HttpResponse.json({ id: 2, access_level: 20 })),
@@ -544,7 +600,9 @@ describe("hasWriteAccess", () => {
   it("treats non-members as having no access", async () => {
     server.use(
       http.get(`${HOST}/api/v4/users`, () => HttpResponse.json([{ id: 5, username: "outsider" }])),
-      http.get(`${API}/members/all/5`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })),
+      http.get(`${API}/members/all/5`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
     );
     await expect(makeAdapter().hasWriteAccess(REPO, "outsider")).resolves.toBe(false);
   });
@@ -553,10 +611,14 @@ describe("hasWriteAccess", () => {
 describe("verifyWebhook", () => {
   it("accepts only the configured X-Gitlab-Token", async () => {
     const adapter = makeAdapter();
-    await expect(adapter.verifyWebhook(new Headers({ "X-Gitlab-Token": SECRET }), "{}")).resolves.toBe(true);
+    await expect(
+      adapter.verifyWebhook(new Headers({ "X-Gitlab-Token": SECRET }), "{}"),
+    ).resolves.toBe(true);
     await expect(adapter.verifyWebhook({ "x-gitlab-token": SECRET }, "{}")).resolves.toBe(true);
     await expect(adapter.verifyWebhook({ "x-gitlab-token": "wrong" }, "{}")).resolves.toBe(false);
-    await expect(adapter.verifyWebhook({ "x-gitlab-token": `${SECRET}x` }, "{}")).resolves.toBe(false);
+    await expect(adapter.verifyWebhook({ "x-gitlab-token": `${SECRET}x` }, "{}")).resolves.toBe(
+      false,
+    );
     await expect(adapter.verifyWebhook({}, "{}")).resolves.toBe(false);
   });
 
@@ -569,7 +631,12 @@ describe("verifyWebhook", () => {
 describe("merge request operations", () => {
   const MRS = `${API}/merge_requests`;
   const MR_URL = `${HOST}/acme/tools/widgets/-/merge_requests/12`;
-  const NEW_MR = { sourceBranch: "ralph/epic", targetBranch: "main", title: "Build the epic", body: "## Summary\n\nDone." };
+  const NEW_MR = {
+    sourceBranch: "ralph/epic",
+    targetBranch: "main",
+    title: "Build the epic",
+    body: "## Summary\n\nDone.",
+  };
 
   function mrHandler(iid: number, fields: { title: string; draft: boolean }) {
     return http.get(`${MRS}/${iid}`, () => HttpResponse.json({ ...mrJson, iid, ...fields }));
@@ -581,7 +648,9 @@ describe("merge request operations", () => {
 
   async function edits(iid: number) {
     await Promise.all(pendingBodies);
-    return requests.filter((r) => r.method === "PUT" && r.url.endsWith(`/merge_requests/${iid}`)).map((r) => r.body);
+    return requests
+      .filter((r) => r.method === "PUT" && r.url.endsWith(`/merge_requests/${iid}`))
+      .map((r) => r.body);
   }
 
   it("finds the open MR for a branch, ignoring MRs from forks", async () => {
@@ -590,7 +659,13 @@ describe("merge request operations", () => {
       http.get(MRS, ({ request }) => {
         query = new URL(request.url).searchParams;
         return HttpResponse.json([
-          { iid: 3, web_url: `${HOST}/fork/-/merge_requests/3`, draft: false, source_project_id: 5, target_project_id: 99 },
+          {
+            iid: 3,
+            web_url: `${HOST}/fork/-/merge_requests/3`,
+            draft: false,
+            source_project_id: 5,
+            target_project_id: 99,
+          },
           { iid: 12, web_url: MR_URL, draft: true, source_project_id: 99, target_project_id: 99 },
         ]);
       }),
@@ -610,7 +685,11 @@ describe("merge request operations", () => {
   });
 
   it("creates a draft MR by prefixing the title with Draft:", async () => {
-    server.use(http.post(MRS, () => HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 })));
+    server.use(
+      http.post(MRS, () =>
+        HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 }),
+      ),
+    );
     const created = await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true });
     expect(created).toEqual({ number: 12, url: MR_URL, created: true });
     const [post] = await posts("/merge_requests");
@@ -624,8 +703,16 @@ describe("merge request operations", () => {
   });
 
   it("creates a ready MR without the prefix (removing one the title already had)", async () => {
-    server.use(http.post(MRS, () => HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 })));
-    await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, title: "Draft: Build the epic", draft: false });
+    server.use(
+      http.post(MRS, () =>
+        HttpResponse.json({ ...mrJson, iid: 12, web_url: MR_URL }, { status: 201 }),
+      ),
+    );
+    await makeAdapter().createChangeRequest(REPO, {
+      ...NEW_MR,
+      title: "Draft: Build the epic",
+      draft: false,
+    });
     const [post] = await posts("/merge_requests");
     expect(post?.body).toMatchObject({ title: "Build the epic" });
   });
@@ -639,7 +726,9 @@ describe("merge request operations", () => {
         ),
       ),
       http.get(MRS, () =>
-        HttpResponse.json([{ iid: 12, web_url: MR_URL, draft: false, source_project_id: 99, target_project_id: 99 }]),
+        HttpResponse.json([
+          { iid: 12, web_url: MR_URL, draft: false, source_project_id: 99, target_project_id: 99 },
+        ]),
       ),
     );
     const created = await makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true });
@@ -647,8 +736,12 @@ describe("merge request operations", () => {
   });
 
   it("propagates other create errors", async () => {
-    server.use(http.post(MRS, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })));
-    await expect(makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true })).rejects.toThrow("403 Forbidden");
+    server.use(
+      http.post(MRS, () => HttpResponse.json({ message: "403 Forbidden" }, { status: 403 })),
+    );
+    await expect(
+      makeAdapter().createChangeRequest(REPO, { ...NEW_MR, draft: true }),
+    ).rejects.toThrow("403 Forbidden");
   });
 
   it("updates the title of a draft MR, keeping it a draft", async () => {
@@ -665,7 +758,11 @@ describe("merge request operations", () => {
   });
 
   it("throws ChangeRequestNotFoundError when updating a missing MR", async () => {
-    server.use(http.put(`${MRS}/404`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })));
+    server.use(
+      http.put(`${MRS}/404`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
+    );
     const error = await makeAdapter()
       .updateChangeRequest(REPO, 404, { body: "x" })
       .catch((e: unknown) => e);
@@ -686,8 +783,14 @@ describe("merge request operations", () => {
   });
 
   it("throws ChangeRequestNotFoundError when marking a missing MR ready", async () => {
-    server.use(http.get(`${MRS}/404`, () => HttpResponse.json({ message: "404 Not found" }, { status: 404 })));
-    await expect(makeAdapter().markChangeRequestReady(REPO, 404)).rejects.toBeInstanceOf(ChangeRequestNotFoundError);
+    server.use(
+      http.get(`${MRS}/404`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
+    );
+    await expect(makeAdapter().markChangeRequestReady(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
   });
 
   it("strips every draft marker GitLab recognises", () => {
@@ -888,7 +991,12 @@ describe("getCommitDiff", () => {
           "@@ -0,0 +1,3 @@\n+export function importRows(rows: string[]) {\n+  return rows.map((row) => row.trim());\n+}",
         truncated: false,
       },
-      expect.objectContaining({ path: "src/app.ts", status: "modified", additions: 2, deletions: 1 }),
+      expect.objectContaining({
+        path: "src/app.ts",
+        status: "modified",
+        additions: 2,
+        deletions: 1,
+      }),
       expect.objectContaining({
         path: "docs/importing.md",
         previousPath: "docs/import.md",
@@ -930,7 +1038,9 @@ describe("getCommitDiff", () => {
   it("throws CommitNotFoundError for a commit GitLab doesn't have", async () => {
     const adapter = makeAdapter();
     server.use(
-      http.get(COMMIT, () => HttpResponse.json({ message: "404 Commit Not Found" }, { status: 404 })),
+      http.get(COMMIT, () =>
+        HttpResponse.json({ message: "404 Commit Not Found" }, { status: 404 }),
+      ),
     );
     await expect(adapter.getCommitDiff(REPO, SHA)).rejects.toBeInstanceOf(CommitNotFoundError);
   });

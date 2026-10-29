@@ -1,8 +1,4 @@
-import {
-  RALPH_CLEANUP_JOB_TYPE,
-  RALPH_JOB_TYPES,
-  RALPH_PREPARE_JOB_TYPE,
-} from "@omniralph/shared";
+import { RALPH_CLEANUP_JOB_TYPE, RALPH_JOB_TYPES, RALPH_PREPARE_JOB_TYPE } from "@omniralph/shared";
 import type { Capability } from "../index.js";
 import type { StoryOptions } from "../../lifecycle/story-attempt.js";
 import { RALPH_CLEANUP_TOOL_POLICY, RALPH_PREPARE_TOOL_POLICY } from "./policy.js";
