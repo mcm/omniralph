@@ -129,7 +129,7 @@ export function PlaybooksCard({ detail }: { detail: RepositoryDetail }) {
           playbooks: result.card,
         })),
     }),
-    onDirtyChange: useUnsavedCard("Playbooks", "advanced"),
+    onDirtyChange: useUnsavedCard("Playbooks"),
   });
   const disabled = !canEdit || card.saving;
 

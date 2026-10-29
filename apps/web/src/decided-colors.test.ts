@@ -74,7 +74,7 @@ const ALLOWED: Allowed[] = [
   {
     family: "lavender",
     file: "packages/ui/styles/shell.css",
-    selector: /^\.or-(?:nav__count|topbar__alert)$/,
+    selector: /^\.or-(?:nav__count|topbar__alert--need)$/,
     reason: "the needs-you count badge in the navigation, and its dot on the phone's menu button",
   },
   {

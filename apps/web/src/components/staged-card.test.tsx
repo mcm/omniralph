@@ -55,7 +55,7 @@ function ThingCard({ saved }: { saved: Thing }) {
       request: (draft) => request(draft),
       applyResult: (result, cache) => cache.set<Thing>(KEY, () => result.card),
     }),
-    onDirtyChange: useUnsavedCard("Thing", "thing"),
+    onDirtyChange: useUnsavedCard("Thing"),
   });
   return (
     <section id="thing">

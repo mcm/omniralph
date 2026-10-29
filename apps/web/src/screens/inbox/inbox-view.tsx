@@ -197,6 +197,7 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
       view={itemParam ? "detail" : "list"}
       backLink={{ label: "Inbox", href: inboxHref(tab) }}
       listLabel="Inbox"
+      title="Inbox"
       detailLabel="Item"
       listWidth={INBOX_LIST_WIDTH}
     />

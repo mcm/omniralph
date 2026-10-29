@@ -121,7 +121,7 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
           agents: result.card,
         })),
     }),
-    onDirtyChange: useUnsavedCard("Agents", "agents"),
+    onDirtyChange: useUnsavedCard("Agents"),
   });
   const { draft, set } = card;
   const disabled = !canEdit || card.saving;

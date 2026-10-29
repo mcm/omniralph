@@ -365,7 +365,7 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
         ),
       success: "Saved the routing rules",
     }),
-    onDirtyChange: useUnsavedCard("Routing rules", "routing-rules"),
+    onDirtyChange: useUnsavedCard("Routing rules"),
     conflictMessage: ROUTING_RULES_CONFLICT,
   });
   const rules = card.draft.rules;

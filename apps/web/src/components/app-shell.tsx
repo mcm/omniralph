@@ -29,6 +29,7 @@ import { QueryProvider } from "./query-provider";
 import { SavedThemeProvider } from "./saved-theme";
 import { SearchProvider, useSearch } from "./search/search-palette";
 import { ShowAdvancedProvider } from "./show-advanced";
+import { UnsavedChangesProvider } from "./unsaved-changes";
 import { UserMenu } from "./user-menu";
 
 /**
@@ -40,7 +41,8 @@ import { UserMenu } from "./user-menu";
  * and a chat (`/ask/new`, `/ask/{id}`) open full screen, without the tab bar. Search and
  * jump (`SearchProvider`) opens from the frame's search buttons or ⌘K / Ctrl+K. The keyboard
  * shortcuts (`ShortcutProvider` with `SHORTCUTS`, `src/lib/shortcuts.ts`) work on every page;
- * the shell's own keys are in `AppShortcuts`.
+ * the shell's own keys are in `AppShortcuts`. `UnsavedChangesProvider` asks before any link,
+ * the frame's nav included, leaves a page with unsaved changes.
  */
 export function AppShell({
   user,
@@ -60,10 +62,7 @@ export function AppShell({
   scopeCookie: string | null;
   /** The user's saved "Show advanced settings" preference (see `useShowAdvanced`). */
   showAdvanced: boolean;
-  /**
-   * The page. Today's pages come wrapped in `app/(app)/legacy-frame.tsx` (the library's
-   * tooltips and the unsaved-changes guard and bar) until Epics 5–10 replace them.
-   */
+  /** The page. */
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -118,7 +117,7 @@ export function AppShell({
                               userMenu={(trigger) => <UserMenu trigger={trigger} />}
                             >
                               <LiveNoticeSlot />
-                              {children}
+                              <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
                             </AskFrame>
                           </SearchProvider>
                         </AskPanelProvider>

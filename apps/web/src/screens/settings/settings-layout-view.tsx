@@ -53,6 +53,7 @@ export function SettingsLayoutView({ children }: { children: ReactNode }) {
       view={index ? "list" : "detail"}
       backLink={{ label: "Settings", href: SETTINGS_PATH }}
       listLabel="Settings sections"
+      title="Settings"
       detailLabel="Setting"
       listWidth={NAV_WIDTH}
     />

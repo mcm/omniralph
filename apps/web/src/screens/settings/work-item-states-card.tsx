@@ -159,7 +159,7 @@ function StatesForm({
           { exact: true },
         ),
     }),
-    onDirtyChange: useUnsavedCard("Work item states", "work-item-states"),
+    onDirtyChange: useUnsavedCard("Work item states"),
   });
   const overlap = statesOverlap(card.draft);
   const readyError = card.fieldErrors["ready.types"];

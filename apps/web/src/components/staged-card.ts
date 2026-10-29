@@ -59,10 +59,10 @@ export function useStagedSave<T, R>(options: StagedSaveOptions<T, R>): (draft: T
 
 /**
  * A staged card's `onDirtyChange`: while the card is dirty it is registered with
- * `UnsavedChangesProvider` under `label`, linking to `anchorId`, so leaving the page asks first.
+ * `UnsavedChangesProvider` under `label`, so leaving the page asks first.
  */
-export function useUnsavedCard(label: string, anchorId: string): (dirty: boolean) => void {
+export function useUnsavedCard(label: string): (dirty: boolean) => void {
   const [dirty, setDirty] = React.useState(false);
-  useUnsavedChanges(label, anchorId, dirty);
+  useUnsavedChanges(label, dirty);
   return setDirty;
 }

@@ -352,6 +352,7 @@ export function BacklogView({
         view={workItemId ? "detail" : "list"}
         backLink={{ label: "Backlog", href: backlogHref(filters) }}
         listLabel="Backlog"
+        title="Backlog"
         detailLabel="Work item"
       />
       {creating

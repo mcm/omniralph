@@ -60,7 +60,7 @@ export function AskCard({ detail, titleId }: { detail: RepositoryDetail; titleId
           (row) => ({ ...row, askEnabled: result.card.enabled }),
         ),
     }),
-    onDirtyChange: useUnsavedCard("Ask", "ask"),
+    onDirtyChange: useUnsavedCard("Ask"),
   });
   const askError = card.fieldErrors.askEnabled;
 

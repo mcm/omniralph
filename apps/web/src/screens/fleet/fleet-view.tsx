@@ -290,6 +290,7 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
         view={agentId ? "detail" : "list"}
         backLink={{ label: "Fleet", href: FLEET_PATH }}
         listLabel="Fleet"
+        title="Fleet"
         detailLabel="Agent"
         fixedPane="detail"
         listWidth={PANEL_WIDTH}

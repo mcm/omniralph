@@ -166,13 +166,13 @@ describe("Ask's stylesheets", () => {
     expect(tokens.filter((name) => !name.startsWith("--or-"))).toEqual([]);
   });
 
-  it("draws the member's bubble right-aligned on --or-sel, at most 84 % wide, and the status in --or-sec", () => {
+  it("draws the member's bubble right-aligned on --or-sel, at most 84 % wide (75ch at most), and the status in --or-sec", () => {
     const css = uncomment(sheets.find(({ file }) => file === "ask-messages.css")!.text);
     const rule = (selector: string) =>
       css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
     expect(rule(".or-ask-user")).toMatch(/justify-content:\s*flex-end/);
     expect(rule(".or-ask-user__bubble")).toMatch(/background:\s*var\(--or-sel\)/);
-    expect(rule(".or-ask-user__bubble")).toMatch(/max-width:\s*84%/);
+    expect(rule(".or-ask-user__bubble")).toMatch(/max-width:\s*min\(84%, 75ch\)/);
     expect(rule(".or-ask-om__status")).toMatch(/color:\s*var\(--or-sec\)/);
   });
 });

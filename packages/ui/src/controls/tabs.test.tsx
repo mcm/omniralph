@@ -56,6 +56,23 @@ describe("Tabs", () => {
     expect(count("Running, 2")).toBe("or-tab__count");
   });
 
+  it("keeps a count of 0 neutral whatever its tone", () => {
+    render(
+      <Tabs
+        aria-label="Inbox"
+        value="need"
+        onValueChange={() => {}}
+        tabs={[
+          { value: "need", label: "Needs you", count: 0, countTone: "need" },
+          { value: "failed", label: "Problems", count: 0, countTone: "fail" },
+        ]}
+      />,
+    );
+    for (const name of ["Needs you, 0", "Problems, 0"]) {
+      expect(tab(name).querySelector(".or-tab__count")!.className).toBe("or-tab__count");
+    }
+  });
+
   it("selects a tab on click and shows its panel", async () => {
     const { user, onValueChange } = setup();
     await user.click(tab("Failed, 1"));

@@ -237,12 +237,13 @@ describe("the step page", () => {
     renderWith(<RunStepView runId={RUN_ID} stepId={stepId} />, search);
   const panel = () => screen.getByRole("region", { name: "Selected step" });
 
-  it("shows ‹ {run title} back to the run, the step's state and the step panel at full width", async () => {
+  it("shows ‹ {run title} back to the run, the step's name and state and the step panel at full width", async () => {
     const { container } = renderStep();
     const back = await screen.findByRole("link", { name: "Customer portal billing export" });
     expect(back.textContent).toBe("‹ Customer portal billing export");
     expect(back.getAttribute("href")).toBe(`/runs/${RUN_ID}?${FILTERS}&step=2`);
-    const status = screen.getByRole("status", { name: "Story 2 · Failed" });
+    expect(screen.getByRole("heading", { level: 1, name: "Story 2" })).toBeTruthy();
+    const status = screen.getByRole("status", { name: "Failed" });
     expect(status.className).toContain("or-statusline--fail");
     expect(status.querySelector(".or-dot")!.getAttribute("aria-label")).toBe("Failed");
     // The panel fills the page: no split view, no progress card around it.

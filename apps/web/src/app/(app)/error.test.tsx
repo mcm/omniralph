@@ -4,8 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AppError from "./error";
 
-vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-
 afterEach(cleanup);
 
 describe("AppError", () => {
@@ -15,8 +13,7 @@ describe("AppError", () => {
     render(
       <AppError error={Object.assign(new Error("boom"), { digest: "123abc" })} retry={retry} />,
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Something went wrong" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Couldn't show this page" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Couldn't show this page" })).toBeTruthy();
     // The message isn't for users (production hides server messages anyway); the digest is.
     expect(document.body.textContent).not.toContain("boom");
     expect(document.body.textContent).toContain("123abc");

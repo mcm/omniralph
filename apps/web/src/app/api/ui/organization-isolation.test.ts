@@ -201,7 +201,6 @@ vi.mock("@/lib/auth/session", async () => {
 });
 // The signed-in layout's shell is a client component; the test reads the props it gets.
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-vi.mock("../../(app)/legacy-frame", () => ({ LegacyFrame: () => null }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.APP_URL = "https://omniralph.example.com/";

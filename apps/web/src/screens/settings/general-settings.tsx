@@ -72,7 +72,7 @@ function GeneralCard({ settings }: { settings: OrganizationSettings }) {
         ),
       success: "Renamed",
     }),
-    onDirtyChange: useUnsavedCard("General", "general"),
+    onDirtyChange: useUnsavedCard("General"),
   });
 
   return (

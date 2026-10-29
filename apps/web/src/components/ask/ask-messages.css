@@ -5,7 +5,7 @@
 }
 
 .or-ask-user__bubble {
-  max-width: 84%;
+  max-width: min(84%, 75ch);
   margin: 0;
   padding: 8px 12px;
   border-radius: var(--or-radius-lg);
@@ -43,8 +43,10 @@
   white-space: pre;
 }
 
+/* A readable measure (about 75 characters a line) on the full Ask page. */
 .or-ask-om__body {
   min-width: 0;
+  max-width: 75ch;
   overflow-wrap: anywhere;
 }
 

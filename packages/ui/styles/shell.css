@@ -298,6 +298,7 @@
   position: relative;
 }
 
+/* The menu button's alert dot, in the tone of the most pressing alert behind it. */
 .or-topbar__alert {
   position: absolute;
   top: 7px;
@@ -305,8 +306,19 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--or-acc);
   box-shadow: 0 0 0 2px var(--or-side);
+}
+
+.or-topbar__alert--fail {
+  background: var(--or-fail);
+}
+
+.or-topbar__alert--need {
+  background: var(--or-acc);
+}
+
+.or-topbar__alert--run {
+  background: var(--or-run);
 }
 
 .or-topbar__brand {

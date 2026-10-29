@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   guardedHref,
   installUnsavedGuard,
-  unsavedAnchorId,
   unsavedSummary,
   type GuardAnchor,
 } from "./unsaved-changes";
@@ -29,13 +28,6 @@ describe("unsavedSummary", () => {
   it("counts the cards", () => {
     expect(unsavedSummary(1)).toBe("1 card has unsaved changes");
     expect(unsavedSummary(3)).toBe("3 cards have unsaved changes");
-  });
-});
-
-describe("unsavedAnchorId", () => {
-  it("slugs the card title", () => {
-    expect(unsavedAnchorId("Coding › Tools")).toBe("settings-coding-tools");
-    expect(unsavedAnchorId("›")).toBe("settings-card");
   });
 });
 

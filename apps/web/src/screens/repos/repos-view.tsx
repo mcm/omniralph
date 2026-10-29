@@ -249,6 +249,7 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
         view={repositoryId ? "detail" : "list"}
         backLink={{ label: "Repos", href: REPOS_PATH }}
         listLabel="Repos"
+        title="Repos"
         detailLabel="Repo"
       />
       {admin ? (

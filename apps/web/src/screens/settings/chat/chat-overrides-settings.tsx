@@ -204,7 +204,7 @@ function DefaultsCard({
         ),
       success: "Saved the chat playbooks",
     }),
-    onDirtyChange: useUnsavedCard("Organization default", "chat-defaults"),
+    onDirtyChange: useUnsavedCard("Organization default"),
   });
 
   return (

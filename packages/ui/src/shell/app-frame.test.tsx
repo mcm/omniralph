@@ -226,11 +226,14 @@ describe("AppFrame", () => {
   });
 
   describe("phone top bar", () => {
-    it("names the hamburger with the drawer entries' alerts and shows the alert dot", () => {
+    it("names the hamburger with the drawer entries' alerts and shows the alert dot in their tone", () => {
       renderFrame();
       const header = within(screen.getByRole("banner"));
       const hamburger = header.getByRole("button", { name: "Open menu, 2 alerts" });
-      expect(hamburger.querySelector(".or-topbar__alert")).toBeTruthy();
+      // Fleet's failed dot outranks Settings' running one: the dot is coral, not lavender.
+      expect(hamburger.querySelector(".or-topbar__alert")!.className).toBe(
+        "or-topbar__alert or-topbar__alert--fail",
+      );
       expect(header.getByRole("link", { name: "Omniralph home" }).getAttribute("href")).toBe("/");
     });
 
