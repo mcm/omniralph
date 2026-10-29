@@ -4,8 +4,13 @@ import {
   getRepositoryWithConnection,
   type Database,
   type RunIndexEntry,
+  type ScmConnection,
 } from "@omniralph/db";
-import { CommitNotFoundError, DEFAULT_COMMIT_DIFF_MAX_FILES } from "@omniralph/scm";
+import {
+  CommitNotFoundError,
+  DEFAULT_COMMIT_DIFF_MAX_FILES,
+  type ScmAdapter,
+} from "@omniralph/scm";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { StoryDiff } from "@/lib/api/runs";
 import { scmAdapterFor } from "@/lib/scm/adapters";
@@ -24,7 +29,10 @@ export async function loadStoryDiff(
   db: Database,
   run: RunIndexEntry,
   stepId: string,
-  adapterFor = scmAdapterFor,
+  adapterFor: (
+    db: Database,
+    connection: ScmConnection,
+  ) => Pick<ScmAdapter, "getCommitDiff"> = scmAdapterFor,
 ): Promise<StoryDiff> {
   const facts = run.kind === "epic" ? await getRalphRunDetailFacts(db, run.id) : null;
   const story = facts?.stories.find((s) => s.id === stepId);
