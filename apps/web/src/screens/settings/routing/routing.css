@@ -283,4 +283,9 @@
     flex-direction: column;
     align-items: stretch;
   }
+
+  /* In the column the flex basis would be a 280 px height: size the field to its content. */
+  .or-routing-test__field {
+    flex: none;
+  }
 }
