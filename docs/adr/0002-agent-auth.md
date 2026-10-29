@@ -111,7 +111,7 @@ code-host or Vercel credentials. Their identity is:
 - **Access and job tokens.** **RS256** JWTs signed by
   **Vercel KMS** (`signJWT`, issuer `KMS_AGENT_ISSUER_ID`, one issuer per Vercel
   environment), so no signing key ever sits in an env var. Access tokens last a
-  day (`AGENT_ACCESS_TOKEN_TTL_SECONDS`, 86,400s; see *Access-token lifetime*
+  day (`AGENT_ACCESS_TOKEN_TTL_SECONDS`, 86,400s; see _Access-token lifetime_
   below), job tokens 900s (`JOB_TOKEN_TTL_SECONDS`). Both carry
   `aud: "omniralph-harness"`; tokens with the audience from before the
   rename are rejected. Access tokens: `typ: "harness"`, `sub: harnessId`. Job tokens
